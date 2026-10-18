@@ -260,7 +260,7 @@ void main() {
 
     test('unknown future outbox records fail closed instead of converting', () {
       final future = record(status: DurableOutboxStatus.queued).toJson()
-        ..['outboxVersion'] = fieldMergeOutboxRecordVersion + 1;
+        ..['outboxVersion'] = pageChangeOutboxRecordVersion + 1;
 
       expect(
         () => DurableOutboxRecord.fromJson(future),

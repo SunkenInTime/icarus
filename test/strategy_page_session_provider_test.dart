@@ -1870,7 +1870,8 @@ void main() {
         container.read(placedImageProvider).images.map((i) => i.pictureId),
         unorderedEquals(['uploaded', 'uploading']),
       );
-      expect(gaps, (unsavedEdits: false, waitingForCloud: false));
+      expect(
+          gaps, (unsavedEdits: false, waitingForCloud: false, notSaved: false));
       await _settle();
     });
 
@@ -1904,7 +1905,8 @@ void main() {
 
       final gaps = await container.read(strategyProvider.notifier).addPage();
 
-      expect(gaps, (unsavedEdits: false, waitingForCloud: true));
+      expect(
+          gaps, (unsavedEdits: false, waitingForCloud: true, notSaved: false));
       expect(
           container.read(strategyPageSessionProvider).activePageId, 'page-1');
       // The add stays queued, to land later.
@@ -2125,13 +2127,15 @@ void main() {
       source: StrategySource.cloud,
       selectFirstPageIfNeeded: true,
     );
-    // Offline, a page added second: [page-1, added, page-2].
+    // A page added second for the server to copy, its add not landed:
+    // [page-1, added, page-2]. (One this computer copied would open.)
     await queue.enqueuePageChange(const PageAddOp(
       opId: 'add-x',
       pagePublicId: 'page-x',
       payload: {'name': 'Page 2', 'isAutoNamed': true},
       sortIndex: 1,
       expectedStrategyRevision: 1,
+      copyContentFromPagePublicId: 'page-1',
     ));
 
     await container.read(strategyProvider.notifier).deletePage('page-1');

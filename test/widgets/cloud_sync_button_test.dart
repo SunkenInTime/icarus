@@ -1297,6 +1297,27 @@ void main() {
       expect(session.useCloudCount, 0);
     });
 
+    testWidgets(
+        'a copy that did not finish saving offers Use cloud, not Keep mine',
+        (tester) async {
+      final queue = _AttentionOpQueue(3);
+      final session = _ConflictSession();
+      final container = _createConflictContainer(
+        queue: queue,
+        session: session,
+      );
+      addTearDown(container.dispose);
+      container
+          .read(strategySaveStateProvider.notifier)
+          .setCloudSyncError(incompletePageCopyMessage('Page 2'));
+      await openPopover(tester, container);
+
+      expect(find.textContaining("didn't finish saving"), findsOneWidget);
+      expect(find.text('Keep mine'), findsNothing);
+      expect(find.text('Retry sync'), findsNothing);
+      expect(find.text('Use cloud'), findsOneWidget);
+    });
+
     testWidgets('a Keep both that cannot load the cloud version says so',
         (tester) async {
       final queue = _AttentionOpQueue(1);

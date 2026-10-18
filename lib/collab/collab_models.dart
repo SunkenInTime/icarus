@@ -1582,6 +1582,7 @@ class RemotePageSnapshot {
     this.fromCopy = false,
     this.copiedAt,
     this.serverAnswer,
+    this.madeHere = false,
   });
 
   final RemotePage page;
@@ -1600,6 +1601,11 @@ class RemotePageSnapshot {
 
   /// See [RemoteStrategyShell.serverAnswer].
   final ConvexObject? serverAnswer;
+
+  /// A page this computer added (see page_made_here.dart) whose add the
+  /// server does not show yet: empty, with what is queued for it drawn on
+  /// top. It is never read from the server, nor kept in the copy.
+  final bool madeHere;
 }
 
 /// The bounded live editor state: one strategy shell and at most one page body.
@@ -1613,7 +1619,21 @@ class RemoteEditorSnapshot {
   final RemotePageSnapshot? activePage;
 
   RemoteStrategyHeader get header => shell.header;
-  List<RemotePage> get pages => shell.pages;
+
+  /// The pages the editor can be on: the shell's, and the page on screen
+  /// when this computer made it and the shell does not list it yet (see
+  /// RemotePageSnapshot.madeHere). The pages bar draws the shell's pages
+  /// with this device's page changes instead (drawnCloudPagesProvider).
+  List<RemotePage> get pages {
+    final page = activePage;
+    if (page == null ||
+        !page.madeHere ||
+        shell.pages.any((listed) => listed.publicId == page.page.publicId)) {
+      return shell.pages;
+    }
+    return [...shell.pages, page.page];
+  }
+
   Map<String, List<RemoteElement>> get elementsByPage => activePage == null
       ? const <String, List<RemoteElement>>{}
       : <String, List<RemoteElement>>{

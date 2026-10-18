@@ -359,10 +359,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _isDisposed = false;
     _store = ref.read(durableStrategyOutboxStoreProvider);
     final loaded = _store.load();
-    _recordsByStorageKey = {
+    _recordsByStorageKey = _holdIncompletePageCopies({
       for (final record in loaded.records)
         record.storageKey: _retiredAsAttention(_resumedAfterUpgrade(record)),
-    };
+    });
     ref.onDispose(() {
       _isDisposed = true;
       _retryTimer?.cancel();
@@ -942,6 +942,152 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         if (record.successorPending case final successor?) successor.op,
       ],
     ].any((op) => op is PageDeleteOp && op.pagePublicId == pageId);
+  }
+
+  /// Queues the copy of a page this computer made for "+" (see
+  /// page_made_here.dart) for [strategyPublicId], which must be the active
+  /// strategy: [add], which copies nothing on the server, at the end of the
+  /// page changes, then [content], what the copy holds, as work for its page
+  /// made off the canvas (see [enqueueOffCanvas]). The add and its content
+  /// are stored in one write, so the copy is kept whole or not at all, and
+  /// the content is sent once the add lands (see [_selectBatch]). False,
+  /// with nothing queued, when that write fails (the queue reports the
+  /// failure) or another strategy is active.
+  Future<bool> enqueuePageCopy(
+    PageAddOp add,
+    List<StrategyOp> content, {
+    required String strategyPublicId,
+  }) {
+    assert(add.copyContentFromPagePublicId == null);
+    final accountId = state.accountId;
+    final clientId = state.clientId;
+    if (accountId == null ||
+        clientId == null ||
+        state.strategyPublicId != strategyPublicId) {
+      return Future.value(false);
+    }
+    return _serializeWrite(() async {
+      final list = _pageChangeRecords(accountId, strategyPublicId);
+      final now = DateTime.now();
+      final oversized = cloudOperationExceedsPolicy(add);
+      final addRecord = DurableOutboxRecord(
+        accountId: accountId,
+        strategyPublicId: strategyPublicId,
+        entityKey: EntitySyncKey.pageChange(const Uuid().v4()),
+        pending: PendingOp(op: add, clientId: clientId),
+        status: oversized
+            ? DurableOutboxStatus.attention
+            : DurableOutboxStatus.queued,
+        createdAt: now,
+        updatedAt: now,
+        lastError: oversized ? cloudOperationTooLargeMessage : null,
+        pageChangeSequence: list.fold<int>(
+              0,
+              (last, record) => math.max(last, record.pageChangeSequence ?? 0),
+            ) +
+            1,
+      );
+      return _putPageCopyLocked(addRecord, content, clientId: clientId);
+    });
+  }
+
+  /// Turns the add of [pageId] in [strategyPublicId] that "+" queued for
+  /// the server to copy the page into one that copies nothing, with
+  /// [content], the copy this computer made, queued behind it, all in one
+  /// write (see [enqueuePageCopy]). The add keeps its place among the page
+  /// changes. Only an add never sent is changed, as enqueuePageChange
+  /// judges it: one sent may have landed, copy and all. False, changing
+  /// nothing, for any other, or when the write fails.
+  Future<bool> copyWaitingPageAddHere(
+    String pageId,
+    List<StrategyOp> content, {
+    required String strategyPublicId,
+  }) {
+    final accountId = state.accountId;
+    if (accountId == null || state.strategyPublicId != strategyPublicId) {
+      return Future.value(false);
+    }
+    return _serializeWrite(() async {
+      final waiting = _pageChangeRecords(accountId, strategyPublicId)
+          .where((record) =>
+              record.pending.op is PageAddOp &&
+              record.pending.op.pagePublicId == pageId)
+          .firstOrNull;
+      final add = waiting?.pending.op;
+      if (waiting == null ||
+          add is! PageAddOp ||
+          add.copyContentFromPagePublicId == null ||
+          waiting.status != DurableOutboxStatus.queued ||
+          waiting.pending.attempts > 0 ||
+          _uncertainDurableRecords.contains(waiting.storageKey) ||
+          !identical(_recordsByStorageKey[waiting.storageKey], waiting)) {
+        return false;
+      }
+      final addRecord = waiting.copyWith(
+        pending: PendingOp(
+          op: PageAddOp(
+            opId: const Uuid().v4(),
+            pagePublicId: add.pagePublicId,
+            payload: add.payload,
+            sortIndex: add.sortIndex,
+            expectedStrategyRevision: add.expectedStrategyRevision,
+          ),
+          clientId: waiting.pending.clientId,
+        ),
+        updatedAt: DateTime.now(),
+      );
+      return _putPageCopyLocked(
+        addRecord,
+        content,
+        clientId: waiting.pending.clientId,
+      );
+    });
+  }
+
+  /// Stores [addRecord], naming the copy's items and lineup groups (see
+  /// DurableOutboxRecord.pageCopyKeys), and a new record for each op of
+  /// [content], work for the new page that waits for its add (see
+  /// DurableOutboxRecord.waitsForPageAdd), in one write, then holds them.
+  /// False, holding none of them, when the write fails.
+  Future<bool> _putPageCopyLocked(
+    DurableOutboxRecord addRecord,
+    List<StrategyOp> content, {
+    required String clientId,
+  }) async {
+    final records = [
+      addRecord.copyWith(pageCopyKeys: [
+        for (final op in content) '${EntitySyncKey.forStrategyOp(op)!}',
+      ]),
+      for (final op in content)
+        DurableOutboxRecord(
+          accountId: addRecord.accountId,
+          strategyPublicId: addRecord.strategyPublicId,
+          entityKey: EntitySyncKey.forStrategyOp(op)!,
+          pending: PendingOp(op: op, clientId: clientId),
+          status: cloudOperationExceedsPolicy(op)
+              ? DurableOutboxStatus.attention
+              : DurableOutboxStatus.queued,
+          createdAt: addRecord.createdAt,
+          updatedAt: addRecord.updatedAt,
+          lastError: cloudOperationExceedsPolicy(op)
+              ? cloudOperationTooLargeMessage
+              : null,
+          waitsForPageAdd: true,
+        ),
+    ];
+    try {
+      await _store.putAll(records);
+    } catch (error, stackTrace) {
+      _recordPersistenceFailure(error, stackTrace);
+      return false;
+    }
+    for (final record in records) {
+      _recordsByStorageKey[record.storageKey] = record;
+    }
+    _publishAccountSummary();
+    _refreshActiveQueueView();
+    _scheduleFlush(flushImmediately: true);
+    return true;
   }
 
   /// Queues [op], work for a page the canvas did not draw it on (an item
@@ -2112,6 +2258,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     required bool ignoreBackoff,
   }) {
     return _serializeWrite(() async {
+      final held = _holdIncompletePageCopies(_recordsByStorageKey);
+      if (!identical(held, _recordsByStorageKey)) {
+        _recordsByStorageKey = held;
+        _refreshActiveQueueView();
+      }
       final now = DateTime.now();
       final selected = _selectBatch(
         accountId: accountId,
@@ -2847,6 +2998,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           : (successorPending ?? current?.successorPending),
       lastError: lastError,
       pageChangeSequence: current?.pageChangeSequence,
+      waitsForPageAdd: current?.waitsForPageAdd ?? false,
+      pageCopyKeys: current?.pageCopyKeys,
     );
   }
 
@@ -2862,6 +3015,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   Future<void> _putRecord(DurableOutboxRecord record) async {
+    if (!record.waitsForPageAdd && _waitsForPageAdd(record)) {
+      record = record.copyWith(waitsForPageAdd: true);
+    }
     try {
       await _store.put(record);
       _recordsByStorageKey[record.storageKey] = record;
@@ -2882,7 +3038,95 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _publishAccountSummary();
   }
 
+  /// [records] with every page copy that did not finish saving held back
+  /// (see DurableOutboxRecord.pageCopyKeys): a write cut short can leave the
+  /// add and only some of its items on disk, each readable. Such an add, and
+  /// the items of it that are there, wait in attention with
+  /// [incompletePageCopyMessage] instead of being sent as a smaller copy.
+  /// [records] itself when nothing is held.
+  Map<String, DurableOutboxRecord> _holdIncompletePageCopies(
+    Map<String, DurableOutboxRecord> records,
+  ) {
+    final keysByStrategy = <(String, String), Set<String>>{};
+    Set<String> keysOf(DurableOutboxRecord record) =>
+        keysByStrategy.putIfAbsent(
+          (record.accountId, record.strategyPublicId),
+          () => {
+            for (final other in records.values)
+              if (other.accountId == record.accountId &&
+                  other.strategyPublicId == record.strategyPublicId)
+                '${other.entityKey}',
+          },
+        );
+    Map<String, DurableOutboxRecord>? held;
+    for (final add in records.values) {
+      final copyKeys = add.pageCopyKeys;
+      if (copyKeys == null ||
+          add.status == DurableOutboxStatus.attention ||
+          add.pending.op is! PageAddOp) {
+        continue;
+      }
+      final present = keysOf(add);
+      if (copyKeys.every(present.contains)) continue;
+      final message = incompletePageCopyMessage(
+        (add.pending.op as PageAddOp).payload['name'] as String? ?? 'a page',
+      );
+      held ??= Map.of(records);
+      for (final record in [
+        add,
+        for (final other in records.values)
+          if (other.accountId == add.accountId &&
+              other.strategyPublicId == add.strategyPublicId &&
+              copyKeys.contains('${other.entityKey}'))
+            other,
+      ]) {
+        held[record.storageKey] = record.copyWith(
+          status: DurableOutboxStatus.attention,
+          lastError: message,
+        );
+      }
+    }
+    return held ?? records;
+  }
+
+  /// Whether [record] is work for a page whose add, made on this device,
+  /// is still in its strategy's page changes (see
+  /// DurableOutboxRecord.waitsForPageAdd).
+  bool _waitsForPageAdd(DurableOutboxRecord record) {
+    final pageId = record.entityKey.pageId;
+    if (pageId == null || _isPageChange(record)) return false;
+    return _recordsByStorageKey.values.any((other) =>
+        _isPageChange(other) &&
+        other.accountId == record.accountId &&
+        other.strategyPublicId == record.strategyPublicId &&
+        other.pending.op is PageAddOp &&
+        other.pending.op.pagePublicId == pageId);
+  }
+
   Future<void> _removeRecordByStorageKey(String storageKey) async {
+    // A copy's item removed here on purpose (cancelled before it was sent,
+    // say) leaves its add's list first: missing from it, it would read as
+    // a copy cut short. Done before the removal, a crash between the two
+    // leaves an item the add no longer names, which is still sent.
+    final removed = _recordsByStorageKey[storageKey];
+    if (removed != null) {
+      final key = '${removed.entityKey}';
+      for (final add in _recordsByStorageKey.values.toList()) {
+        final copyKeys = add.pageCopyKeys;
+        if (copyKeys == null ||
+            add.accountId != removed.accountId ||
+            add.strategyPublicId != removed.strategyPublicId ||
+            !copyKeys.contains(key)) {
+          continue;
+        }
+        await _putRecord(add.copyWith(
+          pageCopyKeys: [
+            for (final other in copyKeys)
+              if (other != key) other,
+          ],
+        ));
+      }
+    }
     try {
       await _store.remove(storageKey);
       _recordsByStorageKey.remove(storageKey);
@@ -4061,7 +4305,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             reason == teammateDeletedMessage ||
             reason == retiredLineupOpMessage ||
             reason == undrawableWorkMessage ||
-            reason == pageDeletedMessage) {
+            reason == pageDeletedMessage ||
+            isIncompletePageCopyReason(reason)) {
           // A second, different reason is other work too: one explanation
           // must not stand for both.
           if (specificReason != null && reason != specificReason) {
@@ -4074,7 +4319,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       }
       if (specificReason != null) {
         return hasOtherWork
-            ? '$specificReason. $otherWorkNeedsAttentionNote'
+            ? withOtherWorkNeedsAttentionNote(specificReason)
             : specificReason;
       }
       return 'Some saved work needs attention.';

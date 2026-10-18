@@ -12,6 +12,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/field_merge.dart';
+import 'package:icarus/collab/page_made_here.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -508,6 +509,35 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       queue.pausedByEntityKey,
       queue.attentionByEntityKey,
     ].any((intents) => intents.keys.any((key) => key.pageId == pageId));
+  }
+
+  /// [pageId]'s items and lineup groups as the canvas draws them, in cloud
+  /// form, each with the place it is synced at: what "+" copies when this
+  /// computer makes the copy (see StrategyProvider.addPage). Null unless
+  /// the canvas shows [pageId].
+  ({List<DrawnRow> elements, List<DrawnRow> lineups})? drawnRows(
+    String pageId,
+  ) {
+    if (state.hydratedPageId != pageId) return null;
+    final elements = <DrawnRow>[];
+    final lineups = <DrawnRow>[];
+    DrawnRow row(_NormalizedEntity entity) => (
+          publicId: entity.key.entityId!,
+          payload: Map<String, dynamic>.from(entity.payload as Map),
+          sortIndex: entity.sortIndex ?? 0,
+        );
+    for (final entity in _normalizedLocalEntities(pageId).values) {
+      switch (entity.overlayEntityType) {
+        case ActivePageOverlayEntityType.element:
+          elements.add(row(entity));
+        case ActivePageOverlayEntityType.lineup:
+          lineups.add(row(entity));
+        case ActivePageOverlayEntityType.pageDescriptor:
+        case ActivePageOverlayEntityType.pageContent:
+          break;
+      }
+    }
+    return (elements: elements, lineups: lineups);
   }
 
   bool hasOverlayForPage(String pageId) {
