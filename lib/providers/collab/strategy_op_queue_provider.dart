@@ -758,7 +758,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           updatedAt: DateTime.now(),
         ));
       } else {
-        final now = DateTime.now();
+        final now = _madeAt();
         final oversized = cloudOperationExceedsPolicy(op);
         await _putRecord(DurableOutboxRecord(
           accountId: accountId,
@@ -787,6 +787,19 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _refreshActiveQueueView();
     _scheduleFlush(flushImmediately: flushImmediately);
   }
+
+  /// When a record is made now: always after the last one made here, even
+  /// on a clock too coarse to tell them apart, so the order work was made
+  /// in is kept (see [_selectBatch] and [_isBehindDelete]).
+  DateTime _madeAt() {
+    final now = DateTime.now();
+    final last = _lastMadeAt;
+    return _lastMadeAt = last != null && !now.isAfter(last)
+        ? last.add(const Duration(milliseconds: 1))
+        : now;
+  }
+
+  DateTime? _lastMadeAt;
 
   static bool _isPageChange(DurableOutboxRecord record) =>
       record.entityKey.kind == EntitySyncKeyKind.pageChange;
@@ -821,30 +834,48 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       [record.pending.op, record.successorPending?.op]
           .any((op) => op != null && isPageChangeOp(op));
 
+  /// Where a side change of [key]'s page waits apart from the page's
+  /// slot, or null when it goes in the slot as usual. While the slot holds
+  /// page changes saved by a build before the list (see [_isOldPageChange]),
+  /// a new side change is never merged into them: it waits as a record of
+  /// its own at the end of the list, which goes once they have drained. It
+  /// stays there, folded into, until it is first sent.
+  ({EntitySyncKey parkedKey, DurableOutboxRecord? parked, bool slotIsOld})?
+      _parkedSideChange(EntitySyncKey key, StrategyOp? desired) {
+    final slot = _recordForActiveKey(key);
+    final slotIsOld = slot != null && _isOldPageChange(slot);
+    final parkedKey = EntitySyncKey.pageChange('side~${key.pageId}');
+    final parked = _recordForActiveKey(parkedKey);
+    final parkedUnsent = parked != null &&
+        parked.status == DurableOutboxStatus.queued &&
+        parked.pending.attempts == 0;
+    if (!slotIsOld && !parkedUnsent) return null;
+    return (
+      parkedKey: parkedKey,
+      parked: parkedUnsent ? parked : null,
+      slotIsOld: slotIsOld,
+    );
+  }
+
+  /// Whether [record] holds [op], as its change or the one behind it.
+  static bool _holdsOp(DurableOutboxRecord record, StrategyOp op) =>
+      record.pending.op.opId == op.opId ||
+      record.successorPending?.op.opId == op.opId;
+
   /// [strategyPublicId]'s page changes saved by a build before the list
-  /// (see [_isOldPageChange]), in the order they go out: the renames ahead
-  /// of the adds, deletes and reorders, which follow in the order they
-  /// were made. They all go in one batch, as those builds sent them, and
-  /// the server chains adds, deletes and reorders made from one revision
-  /// (applyBatch in convex/ops.ts); a rename sent after a reorder that
-  /// moved its page would be refused for this device's own change.
+  /// (see [_isOldPageChange]), in the order those builds send them: the
+  /// outbox's own order.
   List<DurableOutboxRecord> _oldPageChangeRecords(
     String accountId,
     String strategyPublicId,
-  ) {
-    final old = [
-      for (final record in _recordsByStorageKey.values)
-        if (record.accountId == accountId &&
-            record.strategyPublicId == strategyPublicId &&
-            _isOldPageChange(record))
-          record,
-    ];
-    return [
-      ...old.where((record) => !renumbersPages(record.pending.op)),
-      ...old.where((record) => renumbersPages(record.pending.op)).toList()
-        ..sort((left, right) => left.createdAt.compareTo(right.createdAt)),
-    ];
-  }
+  ) =>
+      [
+        for (final record in _recordsByStorageKey.values)
+          if (record.accountId == accountId &&
+              record.strategyPublicId == strategyPublicId &&
+              _isOldPageChange(record))
+            record,
+      ];
 
   static int _inListOrder(DurableOutboxRecord left, DurableOutboxRecord right) {
     final place =
@@ -887,20 +918,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         snapshot.header.publicId != strategyPublicId) {
       return const [];
     }
-    bool shown(({StrategyOp op, int revision, bool applied}) landed) {
-      if (renumbersPages(landed.op)) {
-        return snapshot.header.revision >= landed.revision;
-      }
-      final page = snapshot.pages
-          .where((page) => page.publicId == landed.op.pagePublicId)
-          .firstOrNull;
-      return page == null || page.revision >= landed.revision;
-    }
-
     final old = _oldPageChangeRecords(accountId, strategyPublicId);
     return [
       for (final landed in _landedPageChanges)
-        if (!shown(landed)) landed.op,
+        if (!_readShows(snapshot, landed)) landed.op,
       for (final record in old)
         if (isPageChangeOp(record.pending.op)) record.pending.op,
       for (final record in old)
@@ -910,6 +931,41 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       for (final record in _pageChangeRecords(accountId, strategyPublicId))
         record.pending.op,
     ];
+  }
+
+  /// Whether [snapshot]'s read already shows [landed].
+  static bool _readShows(
+    RemoteEditorSnapshot snapshot,
+    ({StrategyOp op, int revision, bool applied}) landed,
+  ) {
+    if (renumbersPages(landed.op)) {
+      return snapshot.header.revision >= landed.revision;
+    }
+    final page = snapshot.pages
+        .where((page) => page.publicId == landed.op.pagePublicId)
+        .firstOrNull;
+    return page == null || page.revision >= landed.revision;
+  }
+
+  /// The revision of each page this device's own rename (or side change
+  /// from the list) moved it to since [snapshot]'s read, as #331's
+  /// knownStrategyHeader does for the strategy: a rename made from the page
+  /// as drawn is made against it, and not refused for this device's own
+  /// change.
+  Map<String, int> landedPageRevisions(RemoteEditorSnapshot snapshot) {
+    if (snapshot.header.publicId != state.strategyPublicId) return const {};
+    final revisions = <String, int>{};
+    for (final landed in _landedPageChanges) {
+      final pageId = landed.op.pagePublicId;
+      if (!landed.applied ||
+          landed.op is! PagePatchOp ||
+          pageId == null ||
+          _readShows(snapshot, landed)) {
+        continue;
+      }
+      revisions[pageId] = math.max(revisions[pageId] ?? 0, landed.revision);
+    }
+    return revisions;
   }
 
   /// Whether the active strategy's page [pageId] was deleted on this device
@@ -1081,6 +1137,62 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         // content never touches.
         if (key.kind == EntitySyncKeyKind.pageChange) continue;
         final desired = desiredOps[key];
+        if (key.kind == EntitySyncKeyKind.pageDescriptor) {
+          final parking = _parkedSideChange(key, desired);
+          if (parking != null) {
+            final (:parkedKey, :parked, :slotIsOld) = parking;
+            if (desired != null &&
+                !(slotIsOld && _holdsOp(_recordForActiveKey(key)!, desired))) {
+              // A new side change: it waits on its own (see
+              // _parkedSideChange), never merged into the old record.
+              if (parked?.pending.op case final waiting?
+                  when _sameIntent(waiting, desired) ||
+                      waiting.opId == desired.opId) {
+                continue;
+              }
+              final pending = PendingOp(
+                op: desired,
+                clientId: parked?.pending.clientId ?? state.clientId!,
+              );
+              writtenByCanvas(pending, desired, from: parked?.pending.op);
+              final now = _madeAt();
+              await _putRecord(parked?.copyWith(
+                    pending: pending,
+                    updatedAt: now,
+                  ) ??
+                  DurableOutboxRecord(
+                    accountId: accountId,
+                    strategyPublicId: strategyPublicId,
+                    entityKey: parkedKey,
+                    pending: pending,
+                    status: DurableOutboxStatus.queued,
+                    createdAt: now,
+                    updatedAt: now,
+                    pageChangeSequence: _pageChangeRecords(
+                          accountId,
+                          strategyPublicId,
+                        ).fold<int>(
+                          0,
+                          (last, record) =>
+                              math.max(last, record.pageChangeSequence ?? 0),
+                        ) +
+                        1,
+                  ));
+              queued[parkedKey] =
+                  QueuedEntityIntent(entityKey: parkedKey, pending: pending);
+              changed = true;
+              continue;
+            }
+            if (desired == null && parked != null) {
+              // Set back to what the server has: the waiting change goes.
+              await _removeRecordByStorageKey(parked.storageKey);
+              queued.remove(parkedKey);
+              changed = true;
+            }
+            // The old record itself is reconciled as before the list.
+            if (!slotIsOld) continue;
+          }
+        }
         final existing = queued[key];
         final inFlightIntent = state.inFlightByEntityKey[key];
         final inFlight = inFlightIntent?.pending.op;
@@ -1307,28 +1419,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         }
 
         final base = pausedIntent ?? existing;
-        // A side change of a page whose slot holds a delete or move saved
-        // by a build before the list: merged, it would replace that change.
-        // It waits behind it instead, as work made while one is being sent
-        // does, and goes once it lands.
-        if (base != null &&
-            (base.pending.op is PageDeleteOp ||
-                base.pending.op is PageReorderOp)) {
-          final pending = PendingOp(op: desired, clientId: state.clientId!);
-          writtenByCanvas(pending, desired);
-          final current = _recordForActiveKey(key);
-          if (current == null) {
-            throw StateError('Durable outbox record is missing for $key.');
-          }
-          await _putRecord(current.copyWith(
-            successorPending: pending,
-            updatedAt: DateTime.now(),
-          ));
-          successors[key] =
-              QueuedEntityIntent(entityKey: key, pending: pending);
-          changed = true;
-          continue;
-        }
         final merged = base == null
             ? desired
             : _mergeQueuedIntent(base.pending.op, desired);
@@ -1816,6 +1906,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         lastError: errorMessage,
         clearError: errorMessage == null,
       );
+      // Work the dropped change held back (a page change behind a refused
+      // one, an edit behind a refused delete) can go now.
+      if (discarded.isNotEmpty) _scheduleFlush(flushImmediately: true);
       return Set<EntitySyncKey>.unmodifiable(discarded);
     });
   }
@@ -2170,15 +2263,18 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// the page is. Adds, deletes and reorders go strictly in the order they
   /// were made, each placed against the ones before it: one refused, paused
   /// or still backing off holds those after it. Everything else on a page
-  /// whose add has not landed waits for it, and goes after it. A delete
-  /// goes after everything else made on its page before it, so the page's
-  /// last edits are in the trash with it; a rename or side change made
-  /// after it waits behind it (see [_isBehindDelete]).
+  /// whose add has not landed waits for it.
   ///
-  /// Page changes saved by a build before the list go first, as that build
-  /// sent them (see [_oldPageChangeRecords]), and the list waits until none
-  /// is left, landed or settled by the user. Only a rename of a page none
-  /// of them renames goes ahead of them, as renames go ahead in the list.
+  /// A page change keeps its place among the other waiting work: it goes
+  /// only once the work made before it is in the batch, and after it (an
+  /// add copies its source page as the server has it then). A delete also
+  /// goes after the rest of its page's work, so the page's last edits are
+  /// in the trash with it; a rename or side change made after it waits
+  /// behind it (see [_isBehindDelete]).
+  ///
+  /// Page changes saved by a build before the list are sent as that build
+  /// sends them, with the rest of the outbox (see [_oldPageChangeRecords]).
+  /// The list waits until none is left, landed or settled by the user.
   List<DurableOutboxRecord> _selectBatch({
     required String accountId,
     required String strategyPublicId,
@@ -2197,7 +2293,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             record.strategyPublicId == strategyPublicId)
         .toList(growable: false);
     final list = records.where(_isPageChange).toList()..sort(_inListOrder);
-    final old = _oldPageChangeRecords(accountId, strategyPublicId);
     final behindDelete = _isBehindDelete(list);
     final unlandedAdds = {
       for (final record in list)
@@ -2217,25 +2312,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         !unlandedAdds.contains(record.entityKey.pageId) &&
         !behindDelete(record) &&
         waiting(record));
-    if (old.isNotEmpty) {
-      // A rename made since goes ahead of them, alone, unless one of them
-      // renames the same page: it was made against the page as the server
-      // has it now, which a move of theirs would move on, and where a page
-      // is does not change its name.
-      final renamedBefore = {
-        for (final record in old)
-          for (final op in [record.pending.op, record.successorPending?.op])
-            if (op is PagePatchOp && op.payload.containsKey('name'))
-              op.pagePublicId,
-      };
-      final early = renames
-          .where((record) =>
-              sendable(record) &&
-              !renamedBefore.contains(record.pending.op.pagePublicId))
-          .firstOrNull;
-      if (early != null) return [early];
-    }
-    final next = old.isNotEmpty
+    final next = records.any(_isOldPageChange)
         ? null
         : renames.where(sendable).firstOrNull ??
             (renumbering != null &&
@@ -2244,27 +2321,30 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                     !sideChangesWaiting
                 ? renumbering
                 : null);
-    final nextPage = next?.pending.op.pagePublicId;
-    final others = [
-      ...records.where((record) => !_isOldPageChange(record)),
-      ...old,
-    ]
+    final nextOp = next?.pending.op;
+    final nextPage = nextOp?.pagePublicId;
+    // Work that goes ahead of the page change: made before it, and for a
+    // delete, the rest of its page's work.
+    bool ahead(DurableOutboxRecord record) =>
+        next != null &&
+        (!record.createdAt.isAfter(next.createdAt) ||
+            (nextOp is PageDeleteOp && record.entityKey.pageId == nextPage));
+    final others = records
         .where((record) =>
             !_isPageChange(record) &&
             sendable(record) &&
             !unlandedAdds.contains(record.entityKey.pageId) &&
             !behindDelete(record) &&
-            // One change to a page's side or name per batch: the second
-            // waits to be moved onto the revision the first lands at.
-            !(next?.pending.op is PagePatchOp &&
-                record.entityKey == EntitySyncKey.pageDescriptor(nextPage!)))
+            // One change to a page's side or name per batch: one made after
+            // the rename waits to be moved onto the revision it lands at.
+            !(nextOp is PagePatchOp &&
+                record.entityKey == EntitySyncKey.pageDescriptor(nextPage!) &&
+                !ahead(record)))
         .toList(growable: false);
 
-    final first = next?.pending.op is PageAddOp ? next : null;
-    final batchClientId =
-        (first ?? others.firstOrNull ?? next)?.pending.clientId;
+    final batchClientId = (others.firstOrNull ?? next)?.pending.clientId;
     if (batchClientId == null) return const <DurableOutboxRecord>[];
-    final selected = <DurableOutboxRecord>[if (first != null) first];
+    final selected = <DurableOutboxRecord>[];
     bool fits(DurableOutboxRecord candidate) =>
         selected.length < _maxBatchSize &&
         serializedCloudBatchUtf8Bytes(
@@ -2273,46 +2353,42 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               ops: [...selected, candidate].map((record) => record.pending.op),
             ) <=
             maxCloudBatchBytes;
-    final last =
-        first == null && next != null && next.pending.clientId == batchClientId
-            ? next
-            : null;
-    final room = last == null ? 0 : 1;
+    final room = next?.pending.clientId == batchClientId ? 1 : 0;
     for (final candidate in others) {
       if (candidate.pending.clientId != batchClientId) continue;
       if (selected.length + room >= _maxBatchSize || !fits(candidate)) break;
       selected.add(candidate);
     }
-    if (last != null && fits(last)) {
-      final op = last.pending.op;
-      final pageWork = op is PageDeleteOp
-          ? records.where((record) =>
-              !_isPageChange(record) &&
-              record.entityKey.pageId == op.pagePublicId &&
-              !behindDelete(record) &&
-              waiting(record))
-          : const <DurableOutboxRecord>[];
-      if (pageWork.every(selected.contains)) selected.add(last);
+    if (room == 1 && fits(next!)) {
+      final waitedFor = records.where((record) =>
+          !_isPageChange(record) &&
+          waiting(record) &&
+          !behindDelete(record) &&
+          !unlandedAdds.contains(record.entityKey.pageId) &&
+          ahead(record));
+      // A side change of the renamed page made before the rename lands
+      // first: the rename then follows, moved onto its revision.
+      final sameSlot = nextOp is PagePatchOp &&
+          selected.any((record) =>
+              record.entityKey == EntitySyncKey.pageDescriptor(nextPage!));
+      if (!sameSlot && waitedFor.every(selected.contains)) {
+        return [
+          ...selected.where(ahead),
+          next,
+          ...selected.where((record) => !ahead(record)),
+        ];
+      }
     }
     return selected;
   }
 
-  /// The revision [sent], this device's own change, moved its row to, as
-  /// [ack] tells it, or null when the answer cannot say the change was
-  /// this device's. Applied, it is the revision it landed at. An add from
-  /// the list answered with no change is one sent before whose answer was
-  /// lost: the server answers an op id it has seen with the revision that
-  /// op landed at (applyBatch in convex/ops.ts), and nothing but this add
-  /// makes its page. Any other no-change answer carries the row's revision
-  /// now, which may be a teammate's.
-  static int? _ownRevision(DurableOutboxRecord sent, OpAck ack) =>
-      switch (ack) {
-        AppliedOpAck(:final revision) => revision,
-        NoopOpAck(:final currentRevision?)
-            when _isPageChange(sent) && sent.pending.op is PageAddOp =>
-          currentRevision,
-        _ => null,
-      };
+  /// The revision [ack] says this device's own change moved its row to, or
+  /// null when it cannot say the change was this device's. Only an applied
+  /// answer can: a no-change answer carries the row's revision now, which
+  /// may be a teammate's (an add sent again after its op record expired on
+  /// the server is answered that way too).
+  static int? _ownRevision(OpAck ack) =>
+      ack is AppliedOpAck ? ack.revision : null;
 
   /// [delete], this device's delete of a page, landed: the renames and side
   /// changes made after it (see [_isBehindDelete]) go with the page, unsent.
@@ -2385,7 +2461,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     for (final ack in acks) {
       final sent = byOpId[ack.opId];
       if (sent == null) continue;
-      final ownRevision = _ownRevision(sent, ack);
+      final ownRevision = _ownRevision(ack);
       if (ownRevision != null && _takesStrategyRevision(sent.pending.op)) {
         await _advanceOwnStrategyRevision(sent, ownRevision);
       }
@@ -2404,7 +2480,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       }
       if ((ack.isAck, ownRevision ?? ack.appliedRevision)
           case (true, final revision?)
-          when isPageChangeOp(sent.pending.op) &&
+          when (_isPageChange(sent) || isPageChangeOp(sent.pending.op)) &&
               _isActive(sent.accountId, sent.strategyPublicId)) {
         _landedPageChanges.add((
           op: sent.pending.op,
@@ -2421,30 +2497,19 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       // Only an accepted predecessor establishes a revision for automatic
       // promotion. A rejected predecessor leaves both intents in attention.
       final successorRevision = ack.appliedRevision;
-      if (successor != null && ack.isAck && sent.pending.op is PageDeleteOp) {
-        // Made after the page's delete, which has landed: it goes with the
-        // page (see _isBehindDelete).
-        await _removeRecordByStorageKeyIfCurrent(sent.storageKey, ack.opId);
-      } else if (successor != null && ack.isAck && successorRevision != null) {
+      if (successor != null && ack.isAck && successorRevision != null) {
         final predecessorCreatedEntity =
             sent.pending.op is ElementAddOp || sent.pending.op is LineupAddOp;
         final promoted = PendingOp(
-          // A page's side or name waits behind an add, delete or reorder of
-          // the page only in a slot saved by a build before the list: the
-          // revision that one landed at is the strategy's, not the page's,
-          // and the other way round, so the successor keeps its own.
-          op: _takesStrategyRevision(sent.pending.op) !=
-                  _takesStrategyRevision(successor.op)
-              ? successor.op
-              : _onLandedPredecessor(
-                  _rebaseRejectedOp(
-                    successor.op,
-                    successorRevision,
-                    preserveAdd: !predecessorCreatedEntity,
-                  ),
-                  original: successor.op,
-                  predecessor: sent.pending.op,
-                ),
+          op: _onLandedPredecessor(
+            _rebaseRejectedOp(
+              successor.op,
+              successorRevision,
+              preserveAdd: !predecessorCreatedEntity,
+            ),
+            original: successor.op,
+            predecessor: sent.pending.op,
+          ),
           clientId: successor.clientId,
         );
         _keepCanvasWritten(successor.op, promoted.op, keepLive: true);
@@ -2724,6 +2789,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             : 'Cloud work could not be removed from the durable outbox: '
                 '$persistenceError',
       );
+      // Work the dropped work held back can go now.
+      _scheduleFlush(flushImmediately: true);
     });
     final left = state;
     return ![
@@ -2872,7 +2939,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     String? lastError,
   }) {
     final current = _recordForActiveKey(key);
-    final now = DateTime.now();
+    final now = current == null ? _madeAt() : DateTime.now();
     return DurableOutboxRecord(
       accountId: state.accountId!,
       strategyPublicId: state.strategyPublicId!,

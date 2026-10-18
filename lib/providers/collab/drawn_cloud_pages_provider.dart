@@ -12,9 +12,12 @@ final drawnCloudPagesProvider = Provider<DrawnPages?>((ref) {
   final snapshot = ref.watch(remoteEditorSnapshotProvider).valueOrNull;
   if (snapshot == null) return null;
   ref.watch(strategyOpQueueProvider);
-  final changes =
-      ref.read(strategyOpQueueProvider.notifier).pageChangesToDraw(snapshot);
-  return DrawnPages(drawPages(snapshot.pages, changes));
+  final queue = ref.read(strategyOpQueueProvider.notifier);
+  return DrawnPages(drawPages(
+    snapshot.pages,
+    queue.pageChangesToDraw(snapshot),
+    pageRevisions: queue.landedPageRevisions(snapshot),
+  ));
 });
 
 /// A list of drawn pages that compares by its pages, so what reads it

@@ -291,7 +291,7 @@ class RemoteEditorSnapshotNotifier
     );
     return [
       for (final page in listed)
-        if (page.revision != null) page.publicId,
+        if (page.opens) page.publicId,
     ];
   }
 

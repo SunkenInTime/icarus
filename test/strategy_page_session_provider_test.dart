@@ -2100,6 +2100,45 @@ void main() {
     expect(container.read(strategyPageSessionProvider).activePageId, 'page-2');
   });
 
+  test(
+      'deleting the page on screen while the delete waits moves past a page '
+      'whose add has not landed to one that can open', () async {
+    final first = _page('page-1', 0);
+    final second = _page('page-2', 1);
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(
+      remote: _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [first, second],
+          activePage: _pageSnapshot(first),
+        ),
+        pageCatalog: {
+          'page-1': _pageSnapshot(first),
+          'page-2': _pageSnapshot(second),
+        },
+      ),
+      queue: queue,
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    // Offline, a page added second: [page-1, added, page-2].
+    await queue.enqueuePageChange(const PageAddOp(
+      opId: 'add-x',
+      pagePublicId: 'page-x',
+      payload: {'name': 'Page 2', 'isAutoNamed': true},
+      sortIndex: 1,
+      expectedStrategyRevision: 1,
+    ));
+
+    await container.read(strategyProvider.notifier).deletePage('page-1');
+
+    expect(container.read(strategyPageSessionProvider).activePageId, 'page-2');
+  });
+
   QueuedEntityIntent refusedOnPage2() => const QueuedEntityIntent(
         entityKey: EntitySyncKey.element('page-2', 'text-2'),
         pending: PendingOp(

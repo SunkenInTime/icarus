@@ -1016,7 +1016,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     };
     if (targetIndex < 0 || targetIndex >= pages.length) return null;
     final target = pages[targetIndex];
-    return target.revision == null ? null : target.publicId;
+    return target.opens ? target.publicId : null;
   }
 
   /// [widgetId] on the page on screen as cloud element data, or null when it
@@ -1734,11 +1734,14 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
       final activePageId = ref.read(strategyPageSessionProvider).activePageId ??
           pages.first.publicId;
-      final remaining = pages
-          .where((page) => page.publicId != pageId)
-          .toList(growable: false);
-      final nextActivePageId = activePageId == pageId && remaining.isNotEmpty
-          ? remaining.first.publicId
+      // The page on screen goes to the first other page that can open
+      // (DrawnPage.opens).
+      final nextActivePageId = activePageId == pageId
+          ? pages
+                  .where((page) => page.publicId != pageId && page.opens)
+                  .firstOrNull
+                  ?.publicId ??
+              activePageId
           : activePageId;
 
       if (activePageId == pageId) {

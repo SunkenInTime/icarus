@@ -231,7 +231,7 @@ void main() {
       PageAddOp(
         opId: 'add-$pageId',
         pagePublicId: pageId,
-        payload: const {'name': 'Page', 'isAutoNamed': true},
+        payload: {'name': 'Page ${at + 1}', 'isAutoNamed': true},
         sortIndex: at,
         expectedStrategyRevision: revision,
       );
@@ -255,18 +255,24 @@ void main() {
     expect(queue().needsAttention, isFalse);
   });
 
-  test(
-      'an add whose answer was lost, then a delete of its page: the page '
-      'ends deleted on the server', () async {
-    final notifier = open();
+  /// Online, [op] reaches the server, which applies it, and the connection
+  /// drops before its answer comes.
+  Future<void> answerLost(
+      StrategyOpQueueNotifier notifier, StrategyOp op) async {
     online.state = true;
     await _settle();
-    await notifier.enqueue(add('page-new', at: 3, revision: 1));
-    // The server makes the page, and the connection drops before it says so.
+    await notifier.enqueue(op);
     server.loseNextReply = true;
     await notifier.flushNow();
     await _settle();
     online.state = false;
+  }
+
+  test(
+      'an add whose answer was lost, then a delete of its page: the delete is '
+      'refused once and waits for the user, and Keep mine lands it', () async {
+    final notifier = open();
+    await answerLost(notifier, add('page-new', at: 3, revision: 1));
     expect(server.order, ['page-1', 'page-2', 'page-3', 'page-new']);
     expect(queue().pending.single.op.opId, 'add-page-new');
 
@@ -279,10 +285,39 @@ void main() {
     ));
     await reconnectAndSend(notifier);
 
+    // The add's answer, sent again, cannot say the revision it moved to was
+    // this device's, so the delete is not moved past it.
+    expect(server.page('page-new').trashed, isFalse);
+    expect(
+      queue().attentionByEntityKey.values.single.pending.op.opId,
+      'delete-new',
+    );
+
+    await notifier.retryRejected();
+    await _settle();
+
     expect(server.order, ['page-1', 'page-2', 'page-3']);
-    expect(server.page('page-new').trashed, isTrue);
     expect(queue().pending, isEmpty);
     expect(queue().needsAttention, isFalse);
+  });
+
+  test(
+      'an add sent again after the server forgot it: a delete made behind it '
+      'is not moved past a teammate\'s change', () async {
+    final notifier = open();
+    await answerLost(notifier, add('page-new', at: 3, revision: 1));
+    // A read showed the page; the user deletes page 1 against it.
+    await notifier.enqueue(delete('page-1'));
+    server.teammateMoves('page-2', 0);
+    server.expireOpRecords();
+
+    await reconnectAndSend(notifier);
+
+    expect(server.page('page-1').trashed, isFalse);
+    expect(
+      queue().attentionByEntityKey.values.single.pending.op.opId,
+      'delete-page-1',
+    );
   });
 
   test(
@@ -358,8 +393,9 @@ void main() {
       expect(server.calls.expand((ops) => ops).map((op) => op.opId),
           ['delete-page-2']);
 
+      // Use cloud on the refused delete: what it held goes by itself.
       await notifier.discardRejected({refused.key});
-      await reconnectAndSend(notifier);
+      await _settle();
 
       expect(server.order, ['page-1', 'page-2', 'page-3', 'page-4']);
       expect(server.page('page-2').name, 'Retake');
@@ -367,6 +403,66 @@ void main() {
       expect(queue().pending, isEmpty);
       expect(queue().needsAttention, isFalse);
     });
+  });
+
+  test(
+      'a second rename before a read is made against the revision the first '
+      'one landed at', () async {
+    final notifier = open();
+    final read = server.snapshot();
+    await notifier.enqueue(rename('page-2', 'Retake'));
+    await reconnectAndSend(notifier);
+
+    // No read since: the page as the bar draws it.
+    final drawn = drawPages(
+      read.pages,
+      notifier.pageChangesToDraw(read),
+      pageRevisions: notifier.landedPageRevisions(read),
+    ).firstWhere((page) => page.publicId == 'page-2');
+    expect((drawn.name, drawn.revision), ('Retake', 2));
+    await notifier.enqueue(PagePatchOp(
+      opId: 'rename-again',
+      pagePublicId: 'page-2',
+      payload: const {'name': 'Execute', 'isAutoNamed': false},
+      expectedPageRevision: drawn.revision!,
+    ));
+    await notifier.flushNow();
+    await _settle();
+
+    expect(server.page('page-2').name, 'Execute');
+    expect(queue().needsAttention, isFalse);
+  });
+
+  test(
+      'connected, an edit made before "+" is sent ahead of the add, so the '
+      'page it copies has it', () async {
+    final notifier = open();
+    online.state = true;
+    await _settle();
+    await notifier.enqueue(const ElementPatchOp(
+      opId: 'edit',
+      elementPublicId: 'element-1',
+      pagePublicId: 'page-1',
+      payload: {'value': 'last stroke'},
+      expectedElementRevision: 1,
+    ));
+    await notifier.enqueue(const PageAddOp(
+      opId: 'add-copy',
+      pagePublicId: 'page-new',
+      payload: {'name': 'Page 2', 'isAutoNamed': true},
+      sortIndex: 1,
+      expectedStrategyRevision: 1,
+      copyContentFromPagePublicId: 'page-1',
+    ));
+    await notifier.flushNow();
+    await _settle();
+
+    final sent = [
+      for (final ops in server.calls)
+        for (final op in ops) op.opId,
+    ];
+    expect(sent, containsAllInOrder(['edit', 'add-copy']));
+    expect(queue().pending, isEmpty);
   });
 
   test('a refused move holds the moves made after it, and says so', () async {
@@ -455,8 +551,8 @@ void main() {
     }
 
     test(
-        'are sent first and unchanged, and the changes made after the '
-        'upgrade follow them', () async {
+        'are sent as those builds send them, unchanged, and the changes made '
+        'after the upgrade follow them', () async {
       final moveSecond = move('page-2', 0);
       final renameFirst = rename('page-1', 'Execute');
       final moveFirst = move('page-1', 2);
@@ -467,7 +563,6 @@ void main() {
         expectedPageRevision: 1,
       );
       final records = [
-        old('page-2', moveSecond, hour: 9),
         // Being sent when the app closed, with a move made behind it.
         old(
           'page-1',
@@ -476,6 +571,7 @@ void main() {
           successor: PendingOp(op: moveFirst, clientId: 'old-client'),
           hour: 10,
         ),
+        old('page-2', moveSecond, hour: 9),
         // A rename and a side change, merged into one as those builds did.
         old('page-3', renameAndSide, hour: 11),
       ];
@@ -521,19 +617,25 @@ void main() {
 
       await reconnectAndSend(container!.read(strategyOpQueueProvider.notifier));
 
-      // Sent in one batch, as those builds sent them, renames first.
+      // Sent in one batch, in the outbox's order, as those builds send them.
       expect(
         server.calls.first.map((op) => jsonEncode(op.toConvexJson())),
-        [renameFirst, renameAndSide, moveSecond]
+        [renameFirst, moveSecond, renameAndSide]
             .map((op) => jsonEncode(op.toConvexJson())),
       );
+      // Then the move behind the rename, as those builds send it once the
+      // rename lands, and only then this build's move.
       expect(
-        server.calls.skip(1).map((ops) => ops.map((op) => op.opId).toList()),
+        server.calls.skip(1).map((ops) => [
+              for (final op in ops)
+                (op.runtimeType, op.pagePublicId, op.sortIndex),
+            ]),
         [
-          ['move-page-1-2'],
-          ['move-3-first'],
+          [(PageReorderOp, 'page-1', 2)],
+          [(PageReorderOp, 'page-3', 0)],
         ],
       );
+      expect(server.calls.last.single.opId, 'move-3-first');
       expect(server.order, ['page-3', 'page-2', 'page-1']);
       expect(server.page('page-1').name, 'Execute');
       expect(server.page('page-3').name, 'B site');
@@ -544,38 +646,97 @@ void main() {
     });
 
     test(
-        'a rename made after the upgrade goes ahead of a waiting move, which '
-        'moves its page', () async {
-      await oldOutbox([old('page-2', move('page-2', 0), hour: 9)]);
+        'a rename made after the upgrade waits for them, even for a page an '
+        'old add makes', () async {
+      store = MemoryDurableStrategyOutboxStore({
+        for (final record in [
+          old('page-x', add('page-x', at: 3, revision: 1), hour: 9),
+        ])
+          record.storageKey: stored(record),
+      });
       final notifier = open();
-      // Made against page 1 as drawn: the server's, before the move.
-      await notifier.enqueue(rename('page-1', 'Default'));
+      await notifier.enqueue(const PagePatchOp(
+        opId: 'rename-x',
+        pagePublicId: 'page-x',
+        payload: {'name': 'New X', 'isAutoNamed': false},
+        expectedPageRevision: 1,
+      ));
 
       await reconnectAndSend(notifier);
 
       expect(
         server.calls.map((ops) => ops.map((op) => op.opId).toList()),
         [
-          ['rename-page-1-Default'],
-          ['move-page-2-0'],
+          ['add-page-x'],
+          ['rename-x'],
         ],
       );
-      expect(server.order, ['page-2', 'page-1', 'page-3']);
-      expect(server.page('page-1').name, 'Default');
-      expect(queue().pending, isEmpty);
+      expect(server.page('page-x').name, 'New X');
       expect(queue().needsAttention, isFalse);
     });
 
+    test('moves are sent in the order those builds send them', () async {
+      // The outbox's own order, not the order the moves were made in.
+      store = MemoryDurableStrategyOutboxStore({
+        for (final record in [
+          old('page-1', move('page-1', 2), hour: 10),
+          old('page-2', move('page-2', 2), hour: 9),
+        ])
+          record.storageKey: stored(record),
+      });
+
+      await reconnectAndSend(open());
+
+      // [1, 2, 3] -> 1 last: [2, 3, 1] -> 2 last: [3, 1, 2].
+      expect(server.order, ['page-3', 'page-1', 'page-2']);
+    });
+
     test(
-        'a side change of a page whose slot holds a waiting move waits '
-        'behind the move, which is kept', () async {
-      await oldOutbox([old('page-2', move('page-2', 0), hour: 9)]);
+        'a side change of a page whose old record holds a refused rename and '
+        'a move behind it waits on its own, and the move is kept', () async {
+      final kept = old(
+        'page-2',
+        rename('page-2', 'Retake'),
+        status: DurableOutboxStatus.attention,
+        successor: PendingOp(op: move('page-2', 0), clientId: 'old-client'),
+        hour: 9,
+      );
+      store = MemoryDurableStrategyOutboxStore({kept.storageKey: stored(kept)});
       final notifier = open();
 
       await flipSide(notifier, 'page-2');
+
       expect(
         queue()
             .successorByEntityKey[const EntitySyncKey.pageDescriptor('page-2')]
+            ?.pending
+            .op,
+        isA<PageReorderOp>(),
+      );
+      expect(
+        queue()
+            .queuedByEntityKey[const EntitySyncKey.pageChange('side~page-2')]
+            ?.pending
+            .op
+            .opId,
+        'side-page-2',
+      );
+    });
+
+    test(
+        'a side change of a page whose slot holds a waiting move waits on '
+        'its own until the move is sent, and the old record is untouched',
+        () async {
+      final moveSecond = old('page-2', move('page-2', 0), hour: 9);
+      final box = await oldOutbox([moveSecond]);
+      final before = box.get(moveSecond.storageKey);
+      final notifier = open();
+
+      await flipSide(notifier, 'page-2');
+      expect(box.get(moveSecond.storageKey), before);
+      expect(
+        queue()
+            .queuedByEntityKey[const EntitySyncKey.pageChange('side~page-2')]
             ?.pending
             .op
             .opId,
@@ -745,6 +906,9 @@ class _PageServer extends ConvexStrategyRepository {
   /// While set, the next batch is applied but its answer never arrives.
   bool loseNextReply = false;
 
+  /// The server's op records expire: an op id sent again is applied as new.
+  void expireOpRecords() => _answered.clear();
+
   @override
   Future<List<OpAck>> applyBatch({
     required String strategyPublicId,
@@ -787,9 +951,16 @@ class _PageServer extends ConvexStrategyRepository {
   }
 
   OpAck _apply(StrategyOp op, int? expected) {
+    // Refused with the row's revision now, as the server answers.
     RejectedOpAck mismatch() => RejectedOpAck(
           opId: op.opId,
           rejectionReason: OpRejectionReason.revisionMismatch,
+          current: renumbersPages(op)
+              ? StrategyCurrentSnapshot(revision: revision, value: const {})
+              : PageCurrentSnapshot(
+                  revision: page(op.pagePublicId!).revision,
+                  value: const {},
+                ),
         );
     switch (op) {
       case PageReorderOp(:final pagePublicId, :final sortIndex):
@@ -822,6 +993,24 @@ class _PageServer extends ConvexStrategyRepository {
         revision += 1;
         return AppliedOpAck(opId: op.opId, revision: revision);
       case PageAddOp(:final pagePublicId, :final payload, :final sortIndex):
+        final existing =
+            pages.where((page) => page.id == pagePublicId).firstOrNull;
+        if (existing != null) {
+          if (existing.trashed) return _pageDeleted(op);
+          final identical =
+              existing.name == (payload['name'] as String? ?? 'Page') &&
+                  existing.isAutoNamed == (payload['isAutoNamed'] == true) &&
+                  existing.sortIndex == sortIndex.clamp(0, _live.length - 1) &&
+                  existing.isAttack == (payload['isAttack'] as bool? ?? true);
+          // The page is there already: no change, at the strategy's
+          // revision now, whoever made it.
+          return identical
+              ? NoopOpAck(opId: op.opId, currentRevision: revision)
+              : RejectedOpAck(
+                  opId: op.opId,
+                  rejectionReason: OpRejectionReason.alreadyExists,
+                );
+        }
         if (expected != revision) return mismatch();
         final ordered = _live;
         final added = _ServerPage(

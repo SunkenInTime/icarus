@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:icarus/collab/collab_models.dart';
 
 /// Page changes are what a user does to a cloud strategy's list of pages:
@@ -43,6 +45,11 @@ class DrawnPage {
   /// add has not landed (the server makes it at revision 1).
   final int? revision;
 
+  /// Whether the page can open on the canvas: it is on the server, so a
+  /// read of it exists. A page whose add has not landed has nothing to
+  /// open yet.
+  bool get opens => revision != null;
+
   DrawnPage copyWith({String? name, bool? isAutoNamed, bool? isAttack}) =>
       DrawnPage(
         publicId: publicId,
@@ -69,11 +76,14 @@ class DrawnPage {
 /// [serverPages] in order, with [changes] applied the way the server
 /// applies them (convex/ops.ts applyPageOp), in the order given. Changes
 /// the server would refuse or find nothing to do for (a page already gone,
-/// or added twice) change nothing here either.
+/// or added twice) change nothing here either. A page in [pageRevisions]
+/// is drawn at that revision when it is newer than the read's: this
+/// device's own change moved it there.
 List<DrawnPage> drawPages(
   Iterable<RemotePage> serverPages,
-  Iterable<StrategyOp> changes,
-) {
+  Iterable<StrategyOp> changes, {
+  Map<String, int> pageRevisions = const {},
+}) {
   final ordered = [...serverPages]
     ..sort((left, right) => left.sortIndex.compareTo(right.sortIndex));
   final pages = [
@@ -83,7 +93,7 @@ List<DrawnPage> drawPages(
         name: page.name,
         isAutoNamed: page.isAutoNamed == true,
         isAttack: page.isAttack,
-        revision: page.revision,
+        revision: math.max(page.revision, pageRevisions[page.publicId] ?? 0),
       ),
   ];
   int indexOf(String pageId) =>
