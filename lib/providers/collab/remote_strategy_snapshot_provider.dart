@@ -5,12 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
-import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 
 final remoteEditorSnapshotProvider =
@@ -51,7 +51,9 @@ class RemoteEditorSnapshotNotifier
   /// Bumped by every read of the shell and page, and by a page selection:
   /// a read that finishes after a newer one started changes nothing.
   int _readEpoch = 0;
-  Map<String, RemoteImageAsset>? _lastReconciledAssetsById;
+
+  /// The page last checked for images to upload, and the assets it had.
+  ({String pageId, Map<String, RemoteImageAsset> assets})? _lastReconciled;
 
   @override
   Future<RemoteEditorSnapshot?> build() async {
@@ -76,7 +78,7 @@ class RemoteEditorSnapshotNotifier
     final linkView = ref.read(shareLinkViewProvider);
     _shareToken =
         linkView?.strategyPublicId == strategyPublicId ? linkView!.token : null;
-    _lastReconciledAssetsById = null;
+    _lastReconciled = null;
     ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(
           strategyPublicId,
           accountId: ref.read(authProvider).user?.id,
@@ -203,7 +205,7 @@ class RemoteEditorSnapshotNotifier
     _activeStrategyPublicId = null;
     _activePagePublicId = null;
     _shareToken = null;
-    _lastReconciledAssetsById = null;
+    _lastReconciled = null;
     _disposeSubscriptions();
     ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(
           null,
@@ -366,24 +368,46 @@ class RemoteEditorSnapshotNotifier
   }
 
   void _reconcilePageMedia(RemotePageSnapshot page) {
-    if (!_shouldReconcilePageMedia(page.assetsById)) return;
+    if (!_shouldReconcilePageMedia(page)) return;
     final strategyPublicId = _activeStrategyPublicId;
     if (strategyPublicId == null) return;
     unawaited(
       ref.read(cloudMediaUploadQueueProvider.notifier).reconcilePageMedia(
             strategyPublicId: strategyPublicId,
-            placedImages: ref.read(placedImageProvider).images,
+            placedImages: _imagesOn(page),
             assetsById: page.assetsById,
           ),
     );
   }
 
-  bool _shouldReconcilePageMedia(Map<String, RemoteImageAsset> next) {
-    final previous = _lastReconciledAssetsById;
-    if (previous != null && previous.length == next.length) {
+  /// The images [page] places, as the server has them. Not the canvas's:
+  /// a page switch reads the next page while the canvas still shows the one
+  /// it leaves, whose pictures the next page's assets don't list.
+  static List<PlacedImage> _imagesOn(RemotePageSnapshot page) {
+    final images = <PlacedImage>[];
+    for (final element in page.elements) {
+      if (element.elementType != 'image' || element.deleted) continue;
+      try {
+        images.add(PlacedImage.fromJson(element.decodedPayload()));
+      } catch (_) {
+        // The editor skips a malformed image too, so it has nothing to send.
+      }
+    }
+    return images;
+  }
+
+  /// Whether [page] needs checking: it is another page than the one last
+  /// checked, or its assets changed since.
+  bool _shouldReconcilePageMedia(RemotePageSnapshot page) {
+    final pageId = page.page.publicId;
+    final next = page.assetsById;
+    final previous = _lastReconciled;
+    if (previous != null &&
+        previous.pageId == pageId &&
+        previous.assets.length == next.length) {
       var same = true;
       for (final entry in next.entries) {
-        final old = previous[entry.key];
+        final old = previous.assets[entry.key];
         if (old == null ||
             old.publicId != entry.value.publicId ||
             old.url != entry.value.url ||
@@ -394,7 +418,7 @@ class RemoteEditorSnapshotNotifier
       }
       if (same) return false;
     }
-    _lastReconciledAssetsById = Map.unmodifiable(next);
+    _lastReconciled = (pageId: pageId, assets: Map.unmodifiable(next));
     return true;
   }
 
