@@ -544,6 +544,29 @@ void main() {
     });
 
     test(
+        'a rename made after the upgrade goes ahead of a waiting move, which '
+        'moves its page', () async {
+      await oldOutbox([old('page-2', move('page-2', 0), hour: 9)]);
+      final notifier = open();
+      // Made against page 1 as drawn: the server's, before the move.
+      await notifier.enqueue(rename('page-1', 'Default'));
+
+      await reconnectAndSend(notifier);
+
+      expect(
+        server.calls.map((ops) => ops.map((op) => op.opId).toList()),
+        [
+          ['rename-page-1-Default'],
+          ['move-page-2-0'],
+        ],
+      );
+      expect(server.order, ['page-2', 'page-1', 'page-3']);
+      expect(server.page('page-1').name, 'Default');
+      expect(queue().pending, isEmpty);
+      expect(queue().needsAttention, isFalse);
+    });
+
+    test(
         'a side change of a page whose slot holds a waiting move waits '
         'behind the move, which is kept', () async {
       await oldOutbox([old('page-2', move('page-2', 0), hour: 9)]);

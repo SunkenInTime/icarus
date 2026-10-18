@@ -2177,7 +2177,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   ///
   /// Page changes saved by a build before the list go first, as that build
   /// sent them (see [_oldPageChangeRecords]), and the list waits until none
-  /// is left, landed or settled by the user, so the two never interleave.
+  /// is left, landed or settled by the user. Only a rename of a page none
+  /// of them renames goes ahead of them, as renames go ahead in the list.
   List<DurableOutboxRecord> _selectBatch({
     required String accountId,
     required String strategyPublicId,
@@ -2216,6 +2217,24 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         !unlandedAdds.contains(record.entityKey.pageId) &&
         !behindDelete(record) &&
         waiting(record));
+    if (old.isNotEmpty) {
+      // A rename made since goes ahead of them, alone, unless one of them
+      // renames the same page: it was made against the page as the server
+      // has it now, which a move of theirs would move on, and where a page
+      // is does not change its name.
+      final renamedBefore = {
+        for (final record in old)
+          for (final op in [record.pending.op, record.successorPending?.op])
+            if (op is PagePatchOp && op.payload.containsKey('name'))
+              op.pagePublicId,
+      };
+      final early = renames
+          .where((record) =>
+              sendable(record) &&
+              !renamedBefore.contains(record.pending.op.pagePublicId))
+          .firstOrNull;
+      if (early != null) return [early];
+    }
     final next = old.isNotEmpty
         ? null
         : renames.where(sendable).firstOrNull ??
