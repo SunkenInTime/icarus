@@ -17,7 +17,7 @@
       "type": "feat"
     },
     {
-      "message": "Keep working without a connection. Your cloud strategies stay on this computer, your edits are saved here, and they sync when you're back online. Creating, sharing and moving things in the cloud waits for the connection.",
+      "message": "Keep working without a connection. Your cloud strategies stay on this computer: open them, edit them, and add, rename, move or delete pages, and it all syncs when you're back online. If a teammate changed something you changed offline, Icarus asks before replacing it. Creating, sharing and moving strategies in the cloud waits for the connection.",
       "type": "feat"
     },
     {
