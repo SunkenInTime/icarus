@@ -1898,16 +1898,18 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final strategyId = strategyState.strategyId;
     if (activePageId != null && strategyId != null) {
       ref.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
-      final desiredOpsByEntityKey =
-          ref.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-                strategyPublicId: strategyId,
-                pageId: activePageId,
-              );
+      final liveSync = ref.read(activePageLiveSyncProvider.notifier);
+      final madeLive = liveSync.liveStampForEdits(activePageId);
+      final desiredOpsByEntityKey = liveSync.syncLocalPage(
+        strategyPublicId: strategyId,
+        pageId: activePageId,
+      );
       if (desiredOpsByEntityKey != null) {
         await ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
               pageId: activePageId,
               desiredOpsByEntityKey: desiredOpsByEntityKey,
               flushImmediately: false,
+              madeLive: madeLive,
             );
       }
       if (_canSafelyReapplyRemotePage()) {

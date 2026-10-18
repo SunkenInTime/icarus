@@ -7,6 +7,7 @@ import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
@@ -14,7 +15,6 @@ import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
-import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/strategy/copied_page_check.dart';
 
@@ -79,7 +79,34 @@ class RemoteEditorSnapshotNotifier
   /// Bumped by every read of the shell and page, and by a page selection:
   /// a read that finishes after a newer one started changes nothing.
   int _readEpoch = 0;
-  Map<String, RemoteImageAsset>? _lastReconciledAssetsById;
+
+  /// The page last checked for images to upload, and the assets it had.
+  ({String pageId, Map<String, RemoteImageAsset> assets})? _lastReconciled;
+
+  /// The connection each page answer was received on (see
+  /// StrategyOpQueueNotifier.liveStamp), keyed by the answer itself. None for
+  /// an answer received while disconnected.
+  final Expando<int> _receivedOn = Expando('receivedOn');
+
+  /// Whether [page] is a live server answer received on the connection that
+  /// is up now: none since its connection dropped, and none from this
+  /// computer's copy. Work made on a page drawn from anything else keeps its
+  /// conflict check when sent (see StrategyOp.forSend).
+  bool answeredOnCurrentConnection(RemotePageSnapshot? page) {
+    if (page == null || page.fromCopy) return false;
+    final receivedOn = _receivedOn[page];
+    return receivedOn != null && receivedOn == _connectionStamp;
+  }
+
+  int? get _connectionStamp =>
+      ref.read(strategyOpQueueProvider.notifier).liveStamp;
+
+  /// Records that [page] was received now.
+  RemotePageSnapshot _received(RemotePageSnapshot page) {
+    final stamp = _connectionStamp;
+    if (stamp != null && !page.fromCopy) _receivedOn[page] = stamp;
+    return page;
+  }
 
   @override
   Future<RemoteEditorSnapshot?> build() async {
@@ -114,7 +141,7 @@ class RemoteEditorSnapshotNotifier
     final linkView = ref.read(shareLinkViewProvider);
     _shareToken =
         linkView?.strategyPublicId == strategyPublicId ? linkView!.token : null;
-    _lastReconciledAssetsById = null;
+    _lastReconciled = null;
     ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(
           strategyPublicId,
           accountId: ref.read(authProvider).user?.id,
@@ -254,7 +281,7 @@ class RemoteEditorSnapshotNotifier
     _activeStrategyPublicId = null;
     _activePagePublicId = null;
     _shareToken = null;
-    _lastReconciledAssetsById = null;
+    _lastReconciled = null;
     _disposeSubscriptions();
     ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(
           null,
@@ -293,15 +320,13 @@ class RemoteEditorSnapshotNotifier
       final pageAskedAt = DateTime.now();
       final read = pageId == null
           ? null
-          : await repository.fetchPageSnapshot(
+          : _received(await repository.fetchPageSnapshot(
               strategyPublicId: strategyPublicId,
               pagePublicId: pageId,
               shareToken: _shareToken,
-            );
+            ));
       if (read != null) _keepPage(read, askedAt: pageAskedAt, scope: scope);
-      final page = read == null
-          ? null
-          : upgradeRemotePageSnapshot(read, shell.header.mapData);
+      final page = read == null ? null : _upgraded(read, shell.header.mapData);
       if (epoch != _readEpoch || _holdsNewerShell(shell)) return;
       state = AsyncData(RemoteEditorSnapshot(shell: shell, activePage: page));
       if (page != null) _reconcilePageMedia(page);
@@ -420,7 +445,7 @@ class RemoteEditorSnapshotNotifier
             _activeStrategyPublicId != strategyPublicId ||
             _activePagePublicId != pagePublicId ||
             ref.read(authProvider).hasActiveAuthIncident) return;
-        _replacePage(page);
+        _replacePage(_received(page));
       },
       onError: (Object error, StackTrace stackTrace) =>
           _handleSubscriptionError(
@@ -476,7 +501,7 @@ class RemoteEditorSnapshotNotifier
                 shareToken: _shareToken,
               );
       _keepPage(page, askedAt: askedAt, scope: scope);
-      return page;
+      return _received(page);
     } catch (error) {
       if (_keepsCopy && isConvexReadUnanswered(error)) {
         final kept = _keptPage(strategyPublicId, pagePublicId);
@@ -577,30 +602,60 @@ class RemoteEditorSnapshotNotifier
     final current = state.valueOrNull;
     if (current == null || page.page.publicId != _activePagePublicId) return;
     state = AsyncData(current.copyWith(
-      activePage: upgradeRemotePageSnapshot(page, current.header.mapData),
+      activePage: _upgraded(page, current.header.mapData),
     ));
     _reconcilePageMedia(page);
   }
 
+  /// [page] as this build draws it, received when [page] was.
+  RemotePageSnapshot _upgraded(RemotePageSnapshot page, String mapData) {
+    final upgraded = upgradeRemotePageSnapshot(page, mapData);
+    final receivedOn = _receivedOn[page];
+    if (receivedOn != null) _receivedOn[upgraded] = receivedOn;
+    return upgraded;
+  }
+
   void _reconcilePageMedia(RemotePageSnapshot page) {
-    if (!_shouldReconcilePageMedia(page.assetsById)) return;
+    if (!_shouldReconcilePageMedia(page)) return;
     final strategyPublicId = _activeStrategyPublicId;
     if (strategyPublicId == null) return;
     unawaited(
       ref.read(cloudMediaUploadQueueProvider.notifier).reconcilePageMedia(
             strategyPublicId: strategyPublicId,
-            placedImages: ref.read(placedImageProvider).images,
+            placedImages: _imagesOn(page),
             assetsById: page.assetsById,
           ),
     );
   }
 
-  bool _shouldReconcilePageMedia(Map<String, RemoteImageAsset> next) {
-    final previous = _lastReconciledAssetsById;
-    if (previous != null && previous.length == next.length) {
+  /// The images [page] places, as the server has them. Not the canvas's:
+  /// a page switch reads the next page while the canvas still shows the one
+  /// it leaves, whose pictures the next page's assets don't list.
+  static List<PlacedImage> _imagesOn(RemotePageSnapshot page) {
+    final images = <PlacedImage>[];
+    for (final element in page.elements) {
+      if (element.elementType != 'image' || element.deleted) continue;
+      try {
+        images.add(PlacedImage.fromJson(element.decodedPayload()));
+      } catch (_) {
+        // The editor skips a malformed image too, so it has nothing to send.
+      }
+    }
+    return images;
+  }
+
+  /// Whether [page] needs checking: it is another page than the one last
+  /// checked, or its assets changed since.
+  bool _shouldReconcilePageMedia(RemotePageSnapshot page) {
+    final pageId = page.page.publicId;
+    final next = page.assetsById;
+    final previous = _lastReconciled;
+    if (previous != null &&
+        previous.pageId == pageId &&
+        previous.assets.length == next.length) {
       var same = true;
       for (final entry in next.entries) {
-        final old = previous[entry.key];
+        final old = previous.assets[entry.key];
         if (old == null ||
             old.publicId != entry.value.publicId ||
             old.url != entry.value.url ||
@@ -611,7 +666,7 @@ class RemoteEditorSnapshotNotifier
       }
       if (same) return false;
     }
-    _lastReconciledAssetsById = Map.unmodifiable(next);
+    _lastReconciled = (pageId: pageId, assets: Map.unmodifiable(next));
     return true;
   }
 

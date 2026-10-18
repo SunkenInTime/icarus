@@ -1,20 +1,32 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/durable_cloud_media_outbox.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('a refresh after a failed page selection resumes its live read',
       () async {
     final repository = _Repository();
@@ -63,6 +75,52 @@ void main() {
           .revision,
       2,
     );
+  });
+
+  test(
+      'a page answer counts as live only on the connection it came on, and '
+      'never from the copy', () async {
+    final repository = _Repository();
+    final queue = _StampedOpQueue();
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(() => queue),
+      convexConnectionSnapshotProvider.overrideWithValue(true),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+    ]);
+    addTearDown(container.dispose);
+    final remote = container.read(remoteEditorSnapshotProvider.notifier);
+    RemotePageSnapshot? active() =>
+        container.read(remoteEditorSnapshotProvider).valueOrNull?.activePage;
+    await container.read(remoteEditorSnapshotProvider.future);
+    await remote.openStrategy('strategy', activePagePublicId: 'a');
+    expect(remote.answeredOnCurrentConnection(active()), isTrue);
+
+    // The connection drops and comes back: the page held was read before.
+    queue.stamp = null;
+    expect(remote.answeredOnCurrentConnection(active()), isFalse);
+    queue.stamp = 1;
+    expect(remote.answeredOnCurrentConnection(active()), isFalse);
+
+    // A teammate's change comes in on the live read: a fresh answer.
+    repository.pageStreams['a']!.add(_page('a', revision: 2));
+    await _settle();
+    expect(remote.answeredOnCurrentConnection(active()), isTrue);
+
+    // Page b, read before another drop, is shown after it came back.
+    final b = await remote.fetchPage('b');
+    queue.stamp = 2;
+    await remote.setActivePage('b', fetched: b);
+    expect(active()?.page.publicId, 'b');
+    expect(remote.answeredOnCurrentConnection(active()), isFalse);
+
+    // An answer from this computer's copy is never live.
+    repository.pagesFromCopy = true;
+    await remote.refresh();
+    expect(active()?.fromCopy, isTrue);
+    expect(remote.answeredOnCurrentConnection(active()), isFalse);
   });
 
   test('a restored page is read fresh with the shell and watched again',
@@ -266,6 +324,127 @@ void main() {
     expect(repository.readTokens, everyElement(isNull));
   });
 
+  group('checking which images to upload', () {
+    const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+
+    // The editor lays out the pages it opens.
+    setUpAll(() => CoordinateSystem(playAreaSize: const Size(1920, 1080)));
+
+    // Like every desktop, this one keeps the image files of the strategy.
+    Future<(ProviderContainer, _EnqueueRecordingMediaQueue)> desktop(
+      _Repository repository,
+    ) async {
+      final dir = await Directory.systemTemp.createTemp('remote_editor_media');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(pathProvider, (_) async => dir.path);
+      addTearDown(() async {
+        messenger.setMockMethodCallHandler(pathProvider, null);
+        await dir.delete(recursive: true);
+      });
+      for (final id in ['image-a', 'image-b']) {
+        await PlacedImageProvider.writeImageBytes(
+          imageBytes: Uint8List.fromList([137, 80, 78, 71]),
+          strategyID: 'strategy',
+          imageID: id,
+          fileExtension: '.png',
+        );
+      }
+      final mediaQueue = _EnqueueRecordingMediaQueue();
+      final container = ProviderContainer(overrides: [
+        convexStrategyRepositoryProvider.overrideWithValue(repository),
+        authProvider.overrideWith(_ReadyAuthProvider.new),
+        strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+        cloudMediaUploadQueueProvider.overrideWith(() => mediaQueue),
+        cloudMediaAccountIdProvider.overrideWithValue('account-a'),
+        durableCloudMediaOutboxStoreProvider
+            .overrideWithValue(MemoryDurableCloudMediaOutboxStore()),
+        imageFilesOnDeviceProvider.overrideWithValue(true),
+        convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
+      ]);
+      addTearDown(container.dispose);
+      return (container, mediaQueue);
+    }
+
+    // Page a shows image-a, whose picture the server already serves.
+    Future<(ProviderContainer, _EnqueueRecordingMediaQueue)> openOnPageA(
+      _Repository repository,
+    ) async {
+      final (container, mediaQueue) = await desktop(repository);
+      repository.pageSnapshots['a'] = _page(
+        'a',
+        images: [_image('image-a')],
+        assets: [_activeAsset('image-a')],
+      );
+      final remote = container.read(remoteEditorSnapshotProvider.notifier);
+      await container.read(remoteEditorSnapshotProvider.future);
+      await remote.openStrategy('strategy', activePagePublicId: 'a');
+      container
+          .read(placedImageProvider.notifier)
+          .fromHive([_image('image-a')]);
+      await mediaQueue.reconciled();
+      expect(mediaQueue.enqueued, isEmpty);
+      return (container, mediaQueue);
+    }
+
+    test('switching from a page with an image to one without uploads nothing',
+        () async {
+      final repository = _Repository();
+      final (container, mediaQueue) = await openOnPageA(repository);
+
+      // While page b is read, the canvas still shows page a.
+      await container
+          .read(remoteEditorSnapshotProvider.notifier)
+          .setActivePage('b');
+      await mediaQueue.reconciled();
+
+      expect(mediaQueue.enqueued, isEmpty);
+    });
+
+    test("switching pages checks the next page's own images", () async {
+      final repository = _Repository();
+      final (container, mediaQueue) = await openOnPageA(repository);
+      // Page b shows a copy of image-a, so its assets are page a's, and
+      // image-b, whose upload never reached the server.
+      repository.pageSnapshots['b'] = _page(
+        'b',
+        images: [
+          _image('image-a-copy', assetId: 'image-a'),
+          _image('image-b'),
+        ],
+        assets: [_activeAsset('image-a')],
+      );
+
+      await container
+          .read(remoteEditorSnapshotProvider.notifier)
+          .setActivePage('b');
+      await mediaQueue.reconciled();
+
+      expect(mediaQueue.enqueued, ['image-b']);
+    });
+
+    test('opening a strategy on a later page uploads nothing again', () async {
+      final repository = _Repository();
+      // Page b, not the first page, shows image-b, already on the server.
+      repository.pageSnapshots['b'] = _page(
+        'b',
+        images: [_image('image-b')],
+        assets: [_activeAsset('image-b')],
+      );
+      final (container, mediaQueue) = await desktop(repository);
+      await container.read(remoteEditorSnapshotProvider.future);
+
+      await container
+          .read(strategyProvider.notifier)
+          .openCloudStrategy('strategy', pageId: 'b');
+      await mediaQueue.reconciled();
+
+      expect(container.read(placedImageProvider).images.map((i) => i.id),
+          ['image-b']);
+      expect(mediaQueue.enqueued, isEmpty);
+    });
+  });
+
   group('a refused read of the open strategy', () {
     const forbidden = ConvexFunctionException(
       code: ConvexErrorCode.forbidden,
@@ -446,16 +625,56 @@ RemoteStrategyShell _shell(List<String> pageIds, {int revision = 1}) =>
       pages: [for (final id in pageIds) _remotePage(id)],
     );
 
-RemotePageSnapshot _page(String id, {int revision = 1}) => RemotePageSnapshot(
+RemotePageSnapshot _page(
+  String id, {
+  int revision = 1,
+  List<PlacedImage> images = const [],
+  List<RemoteImageAsset> assets = const [],
+}) =>
+    RemotePageSnapshot(
       page: _remotePage(id, revision: revision),
       content: RemotePageContent(
         revision: 1,
         createdAt: DateTime.utc(2026),
         updatedAt: DateTime.utc(2026),
       ),
-      elements: const [],
+      elements: [
+        for (final image in images)
+          RemoteElement(
+            publicId: image.id,
+            strategyPublicId: 'strategy',
+            pagePublicId: id,
+            elementType: 'image',
+            payload: cloudElementPayload(
+              kind: 'image',
+              data: cloudImagePayloadFromPlacedImage(image),
+            ),
+            sortIndex: 0,
+            revision: 1,
+            deleted: false,
+          ),
+      ],
       lineups: const [],
-      assetsById: const {},
+      assetsById: {for (final asset in assets) asset.publicId: asset},
+    );
+
+PlacedImage _image(String id, {String? assetId}) => PlacedImage(
+      position: const Offset(100, 100),
+      id: id,
+      aspectRatio: 16 / 9,
+      scale: 1,
+      fileExtension: '.png',
+      assetId: assetId,
+    );
+
+RemoteImageAsset _activeAsset(String id) => RemoteImageAsset(
+      publicId: id,
+      fileExtension: '.png',
+      width: 16,
+      height: 9,
+      url: 'https://media.example.com/$id.png',
+      legacyStoragePath: null,
+      uploadStatus: 'active',
     );
 
 class _Repository extends ConvexStrategyRepository {
@@ -482,6 +701,12 @@ class _Repository extends ConvexStrategyRepository {
 
   /// Pages whose next read fails.
   final failNextRead = <String>{};
+
+  /// What reads of a page answer; an empty page when it has none.
+  final pageSnapshots = <String, RemotePageSnapshot>{};
+
+  /// While set, page reads answer from this computer's copy.
+  bool pagesFromCopy = false;
 
   @override
   Future<RemoteStrategyShell> fetchShell(
@@ -523,7 +748,17 @@ class _Repository extends ConvexStrategyRepository {
     if (failPageReads || failNextRead.remove(pagePublicId)) {
       throw StateError('offline');
     }
-    return _page(pagePublicId);
+    final page = pageSnapshots[pagePublicId] ?? _page(pagePublicId);
+    return pagesFromCopy
+        ? RemotePageSnapshot(
+            page: page.page,
+            content: page.content,
+            elements: page.elements,
+            lineups: page.lineups,
+            assetsById: page.assetsById,
+            fromCopy: true,
+          )
+        : page;
   }
 
   @override
@@ -608,10 +843,56 @@ class _IdleOpQueue extends StrategyOpQueueNotifier {
   }) {}
 }
 
+/// The queue, its connection stamp set by the test (see
+/// StrategyOpQueueNotifier.liveStamp).
+class _StampedOpQueue extends _IdleOpQueue {
+  int? stamp = 0;
+
+  @override
+  int? get liveStamp => stamp;
+}
+
 class _IdleMediaQueue extends CloudMediaUploadQueueNotifier {
   @override
   CloudMediaUploadQueueState build() =>
       const CloudMediaUploadQueueState(jobs: [], isProcessing: false);
+}
+
+/// The real queue deciding which pictures need uploading. It records each
+/// upload it queues instead of sending it.
+class _EnqueueRecordingMediaQueue extends CloudMediaUploadQueueNotifier {
+  final List<String> enqueued = [];
+  final List<Future<void>> _reconciles = [];
+
+  /// Waits for every page check started so far, file reads included.
+  Future<void> reconciled() => Future.wait(_reconciles);
+
+  @override
+  Future<void> reconcilePageMedia({
+    required String strategyPublicId,
+    required Iterable<PlacedImage> placedImages,
+    required Map<String, RemoteImageAsset> assetsById,
+  }) {
+    final reconcile = super.reconcilePageMedia(
+      strategyPublicId: strategyPublicId,
+      placedImages: placedImages,
+      assetsById: assetsById,
+    );
+    _reconciles.add(reconcile);
+    return reconcile;
+  }
+
+  @override
+  Future<void> enqueueJobForLocalBytes({
+    required String strategyPublicId,
+    required String assetPublicId,
+    required String fileExtension,
+    String? mimeType,
+    int? width,
+    int? height,
+  }) async {
+    enqueued.add(assetPublicId);
+  }
 }
 
 class _UnusedTransport implements ConvexTransport {

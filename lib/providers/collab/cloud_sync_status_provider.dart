@@ -114,3 +114,23 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   }
   return CloudSyncStatus.synced;
 });
+
+/// How many outbox records of the open cloud strategy, for the signed-in
+/// account, hold changes that have not landed.
+final openStrategyUnsentChangesProvider = Provider<int>((ref) {
+  final strategy = ref.watch(strategyProvider);
+  if (strategy.source != StrategySource.cloud) return 0;
+  return ref.watch(strategyOpQueueProvider.select(
+    (queue) =>
+        queue
+            .accountOutbox.strategies[strategy.strategyId]?.unsentRecordCount ??
+        0,
+  ));
+});
+
+/// The sync status while offline, with [waiting] changes saved on this
+/// computer that have not reached the server.
+String offlineSyncLabel(int waiting) => waiting == 0
+    ? 'Offline, changes stay on this device'
+    : 'Offline · $waiting ${waiting == 1 ? 'change' : 'changes'} saved on '
+        'this computer';

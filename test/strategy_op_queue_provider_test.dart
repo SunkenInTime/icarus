@@ -1107,6 +1107,31 @@ void main() {
       });
     }
 
+    test('work held because it no longer fits keeps that reason on reload',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      await store.put(_savedRecord(
+        _lineupAdd(opId: 'held-lineup'),
+        status: DurableOutboxStatus.attention,
+        lastError: undrawableWorkMessage,
+        latestServerRevision: 3,
+      ));
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _RecordingAckRepository(),
+      );
+      addTearDown(container.dispose);
+
+      container
+          .read(strategyOpQueueProvider.notifier)
+          .setActiveStrategy('strategy-1', accountId: 'account-a');
+
+      final error = container.read(strategyOpQueueProvider).lastError!;
+      expect(error, undrawableWorkMessage);
+      expect(isSpecificAttentionReason(error), isTrue);
+      expect(friendlyCloudSyncError(error), contains('no longer fits'));
+    });
+
     test('an old-format lineup add is shown, never sent, and kept on restart',
         () async {
       final store = MemoryDurableStrategyOutboxStore();

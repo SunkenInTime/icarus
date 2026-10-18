@@ -67,6 +67,11 @@ class StrategyOutboxSummary {
       successorCount;
   bool get hasRunnableWork => queuedCount > 0 || inFlightCount > 0;
   bool get needsAttention => pausedCount > 0 || attentionCount > 0;
+
+  /// How many outbox records hold changes that have not landed: one per
+  /// item, however many edits to it are waiting.
+  int get unsentRecordCount =>
+      queuedCount + inFlightCount + pausedCount + attentionCount;
 }
 
 class AccountStrategyOutboxSummary {
@@ -522,6 +527,20 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// How many op IDs are remembered as the canvas's work; for tests.
   int get canvasWorkCount => _canvasOpIds.length;
 
+  /// Whether [opId] is work the canvas holds: queued from its edits, or
+  /// drawn on it from the outbox ([noteDrawnWork]).
+  bool isCanvasWork(String opId) => _canvasOpIds.contains(opId);
+
+  /// The canvas now shows [opIds], work recovered from the outbox that it
+  /// drew on load: their acks are the canvas's own from here on, as if it
+  /// had queued them. Ops no longer in the outbox are left out.
+  void noteDrawnWork(Iterable<String> opIds) {
+    final pendingOpIds = {
+      for (final pending in state.pending) pending.op.opId,
+    };
+    _canvasOpIds.addAll(opIds.where(pendingOpIds.contains));
+  }
+
   Future<void> enqueue(
     StrategyOp op, {
     bool flushImmediately = false,
@@ -723,18 +742,30 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final successorIntent = successors[key];
         final pausedIntent = paused[key];
         final attentionIntent = attention[key];
-        // Kept work that has landed or been replaced since is not written
-        // again.
-        if (desired != null &&
-            heldOpIds.contains(desired.opId) &&
-            ![
-              existing?.pending,
-              inFlightIntent?.pending,
-              successorIntent?.pending,
-              pausedIntent?.pending,
-              attentionIntent?.pending,
-            ].any((pending) => pending?.op.opId == desired.opId)) {
-          continue;
+        if (desired != null && heldOpIds.contains(desired.opId)) {
+          // Kept work that has landed or been replaced since is not written
+          // again.
+          if (![
+            existing?.pending,
+            inFlightIntent?.pending,
+            successorIntent?.pending,
+            pausedIntent?.pending,
+            attentionIntent?.pending,
+          ].any((pending) => pending?.op.opId == desired.opId)) {
+            continue;
+          }
+          // Kept paused or refused work stays as it is, unless its record
+          // could not be saved and is written again here.
+          if ((pausedIntent != null || attentionIntent != null) &&
+              !_uncertainDurableRecords.contains(
+                DurableOutboxRecord.createStorageKey(
+                  accountId: accountId,
+                  strategyPublicId: strategyPublicId,
+                  entityKey: key,
+                ),
+              )) {
+            continue;
+          }
         }
 
         // A rejected op remains the durable authority until the user
@@ -996,6 +1027,64 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     );
     _scheduleFlush(flushImmediately: flushImmediately);
   }
+
+  /// Holds the waiting work of each of [waiting]'s entities in attention,
+  /// with [undrawableWorkMessage]: merged onto the server's version as it
+  /// is now (at revision serverRevision), it can't be read. It is neither
+  /// sent nor dropped until the user chooses: Keep mine saves the user's
+  /// version whole over the server's at that revision, Use cloud drops it.
+  /// Only work still waiting as the op the page tried to draw (opId) and
+  /// not being sent is held; refused work keeps its own reason.
+  Future<void> holdWorkThatNoLongerFits(
+    Map<EntitySyncKey, ({String opId, int? serverRevision})> waiting,
+  ) {
+    return _serializeWrite(() async {
+      var changed = false;
+      try {
+        for (final MapEntry(:key, value: (:opId, :serverRevision))
+            in waiting.entries) {
+          final record = _recordForActiveKey(key);
+          if (record == null ||
+              record.pending.op.opId != opId ||
+              record.lastError == undrawableWorkMessage ||
+              // Refused for a reason of its own (a deleted page, lost edit
+              // access, an older format): that reason stands.
+              (record.status == DurableOutboxStatus.attention &&
+                  !_refusedAsConflict(record.lastError)) ||
+              // Being sent now: the server's answer decides.
+              (record.status == DurableOutboxStatus.inFlight &&
+                  _drainingStrategy ==
+                      (
+                        accountId: record.accountId,
+                        strategyPublicId: record.strategyPublicId,
+                      ))) {
+            continue;
+          }
+          await _putRecord(record.copyWith(
+            status: DurableOutboxStatus.attention,
+            updatedAt: DateTime.now(),
+            lastError: undrawableWorkMessage,
+            latestServerRevision: serverRevision ?? record.latestServerRevision,
+          ));
+          changed = true;
+        }
+      } catch (error, stackTrace) {
+        _recordPersistenceFailure(error, stackTrace);
+        return;
+      }
+      if (changed) _refreshActiveQueueView(clearError: true);
+    });
+  }
+
+  /// Whether [refusal] says the server refused the work because it collided
+  /// with the row as it is now: what Keep mine resolves by sending the
+  /// user's version over it.
+  static bool _refusedAsConflict(String? refusal) => {
+        OpRejectionReason.fieldConflict.wireName,
+        OpRejectionReason.mergeInvalid.wireName,
+        OpRejectionReason.revisionMismatch.wireName,
+        OpRejectionReason.missingExpectedRevision.wireName,
+      }.contains(refusal);
 
   void clearStaleError() {
     if (state.lastError == null ||
@@ -2897,7 +2986,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         base: mergeBaseValues(serverHas, fields, lineup: lineup),
       ));
     }
-    if (refusal == OpRejectionReason.mergeInvalid.wireName) {
+    // Merged onto the server's version it can't stand (or can't be read,
+    // undrawableWorkMessage): the user's version replaces the server's
+    // whole.
+    if (refusal == OpRejectionReason.mergeInvalid.wireName ||
+        refusal == undrawableWorkMessage) {
       return op.withMerge(null);
     }
     return op;
@@ -3228,8 +3321,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       });
       if (hasOversizedWork) return cloudOperationTooLargeMessage;
       // A change the server refused for its own reason (a lineup, a page
-      // in the trash) keeps that reason, so the sync button does not call
-      // it a conflict. Other attention beside it is noted so it is not left
+      // in the trash), or held because it no longer fits the page, keeps
+      // that reason, so the sync button does not call it a conflict. Other attention beside it is noted so it is not left
       // unexplained.
       String? specificReason;
       var hasOtherWork = false;
@@ -3245,6 +3338,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             reason == lineupOverlapMessage ||
             reason == teammateDeletedMessage ||
             reason == retiredLineupOpMessage ||
+            reason == undrawableWorkMessage ||
             reason == pageDeletedMessage) {
           // A second, different reason is other work too: one explanation
           // must not stand for both.
