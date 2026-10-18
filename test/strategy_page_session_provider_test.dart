@@ -1018,6 +1018,77 @@ class _FakeServer {
   /// The answer to each element and lineup op taken, by op id.
   final Map<String, OpAck> _answers = {};
 
+  /// The strategy's map, theme and revision as this server holds them. A
+  /// strategy patch is checked against the revision whole, as the real
+  /// server does (see applyStrategyOp in convex/ops.ts): strategy patches
+  /// have no field merge.
+  String strategyMap = 'ascent';
+  String? strategyThemeProfileId;
+  CloudPayload? strategyThemePalette;
+  int strategyRevision = 1;
+
+  /// Every strategy patch this server answered, in order.
+  final List<StrategyPatchOp> strategyPatches = [];
+
+  /// A teammate's map change, landed: the strategy moves to a new revision.
+  void teammateSetsMap(String mapData) {
+    strategyMap = mapData;
+    strategyRevision += 1;
+  }
+
+  OpAck _applyStrategyPatch(StrategyPatchOp op) {
+    strategyPatches.add(op);
+    switch (_answers[op.opId]) {
+      case final RejectedOpAck refused:
+        return refused;
+      case final OpAck accepted?:
+        return NoopOpAck(
+          opId: op.opId,
+          currentRevision: accepted.appliedRevision,
+        );
+      case null:
+        break;
+    }
+    final payload = op.payload;
+    final map = payload['mapData'] as String? ?? strategyMap;
+    final profileId = payload['clearThemeProfileId'] == true
+        ? null
+        : payload['themeProfileId'] as String? ?? strategyThemeProfileId;
+    final palette = payload['clearThemeOverridePalette'] == true
+        ? null
+        : (payload['themeOverridePalette'] as Map?)?.cast<String, dynamic>() ??
+            strategyThemePalette;
+    final OpAck answer;
+    if (map == strategyMap &&
+        profileId == strategyThemeProfileId &&
+        _sameJson(palette, strategyThemePalette)) {
+      answer = NoopOpAck(opId: op.opId, currentRevision: strategyRevision);
+    } else if (op.expectedStrategyRevision != strategyRevision) {
+      answer = RejectedOpAck(
+        opId: op.opId,
+        rejectionReason: OpRejectionReason.revisionMismatch,
+        current: StrategyCurrentSnapshot(
+          revision: strategyRevision,
+          value: {
+            'mapData': strategyMap,
+            if (strategyThemeProfileId != null)
+              'themeProfileId': strategyThemeProfileId,
+            if (strategyThemePalette != null)
+              'themeOverridePalette': strategyThemePalette,
+          },
+        ),
+      );
+    } else {
+      strategyMap = map;
+      strategyThemeProfileId = profileId;
+      strategyThemePalette = palette;
+      strategyRevision += 1;
+      answer = AppliedOpAck(opId: op.opId, revision: strategyRevision);
+    }
+    _answers[op.opId] = answer;
+    return answer;
+  }
+
   /// Whether a patch that names its fields (FieldMerge) is merged onto the
   /// row as it is now, and a delete with lastWriterWins goes through, as the
   /// real server does (see convex/lib/fieldMerge.ts). Off, every op is
@@ -1080,6 +1151,7 @@ class _FakeServer {
       [for (final op in ops) apply(op)];
 
   OpAck apply(StrategyOp op) {
+    if (op is StrategyPatchOp) return _applyStrategyPatch(op);
     final (rows, change) = switch (op) {
       LineupAddOp(:final payload, :final sortIndex) => (
           _lineups,
@@ -1384,6 +1456,7 @@ RemoteEditorSnapshot _editorSnapshot({
   int shellRevision = 1,
   String? mapData,
   String? themeProfileId,
+  CloudPayload? themeOverridePalette,
   String role = 'owner',
 }) {
   final now = DateTime.utc(2026);
@@ -1397,6 +1470,7 @@ RemoteEditorSnapshot _editorSnapshot({
         createdAt: now,
         updatedAt: now,
         themeProfileId: themeProfileId,
+        themeOverridePalette: themeOverridePalette,
         role: role,
       ),
       pages: pages,
@@ -7189,7 +7263,8 @@ void main() {
     /// sends to [server] through [repository] and reads it back after every
     /// batch. A batch waits for [hold] while it is set. The queue reaches
     /// the server while [_online] holds. Returns the container and the
-    /// batches sent. The server's header names [themeProfileId], if given.
+    /// batches sent. The live read's strategy header is [server]'s; it names
+    /// [themeProfileId], if given.
     Future<(ProviderContainer, List<List<StrategyOp>>)> openOnRealQueue(
       RemotePage page, {
       DurableStrategyOutboxStore? store,
@@ -7209,10 +7284,15 @@ void main() {
             lineups: otherLineups[other.publicId] ?? const [],
           ),
       };
+      if (themeProfileId != null)
+        server.strategyThemeProfileId = themeProfileId;
       var shown = page.publicId;
       RemoteEditorSnapshot read() => _editorSnapshot(
             pages: [page, ...otherPages],
-            themeProfileId: themeProfileId,
+            mapData: server.strategyMap,
+            shellRevision: server.strategyRevision,
+            themeProfileId: server.strategyThemeProfileId,
+            themeOverridePalette: server.strategyThemePalette,
             activePage: others[shown] ??
                 _pageSnapshot(
                   page,
@@ -8419,21 +8499,24 @@ void main() {
       const theme = 'immutable-default-map-theme';
 
       /// The outbox as an offline map change to Bind left it: the strategy
-      /// patch, made against the strategy at revision 1 on Ascent.
-      Future<MemoryDurableStrategyOutboxStore> waitingMapChange() async {
+      /// patch, made against the strategy at revision 1 on Ascent. [payload]
+      /// is what the patch sets.
+      Future<MemoryDurableStrategyOutboxStore> waitingMapChange({
+        CloudPayload payload = const {
+          'mapData': 'bind',
+          'themeProfileId': theme,
+          'clearThemeOverridePalette': true,
+        },
+      }) async {
         final store = MemoryDurableStrategyOutboxStore();
         await store.put(DurableOutboxRecord(
           accountId: 'account-a',
           strategyPublicId: 'cloud-strategy',
           entityKey: const EntitySyncKey.strategy(),
-          pending: const PendingOp(
+          pending: PendingOp(
             op: StrategyPatchOp(
               opId: 'map-to-bind',
-              payload: {
-                'mapData': 'bind',
-                'themeProfileId': theme,
-                'clearThemeOverridePalette': true,
-              },
+              payload: payload,
               expectedStrategyRevision: 1,
             ),
             clientId: 'test-client',
@@ -8474,6 +8557,106 @@ void main() {
         expect(sent.single.opId, 'map-to-bind');
         expect(sent.single.payload['mapData'], 'bind');
         expect(store.load().records, isEmpty);
+        expect((server.strategyMap, server.strategyRevision), ('bind', 2));
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      });
+
+      test(
+          "a theme change after it doesn't carry it over a teammate's newer "
+          'map: the server refuses it and the user is asked', () async {
+        final page = _page('page-1', 0);
+        // While this device was off, a teammate moved the strategy to Haven.
+        server = _FakeServer(page.publicId)..teammateSetsMap('haven');
+        final store = await waitingMapChange();
+        final (container, _) = await openOnRealQueue(page,
+            store: store, online: false, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(container.read(mapProvider).currentMap, MapValue.bind);
+
+        container
+            .read(strategyThemeProvider.notifier)
+            .setProfile(MapThemeProfilesProvider.immutableValorantProfileId);
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        // Bind was made against revision 1, and so is the change carrying it.
+        final waiting =
+            store.load().records.single.pending.op as StrategyPatchOp;
+        expect(waiting.expectedStrategyRevision, 1);
+        expect(waiting.payload['mapData'], 'bind');
+        expect(waiting.payload['themeProfileId'],
+            MapThemeProfilesProvider.immutableValorantProfileId);
+
+        container.read(_online.notifier).state = true;
+        await container.read(strategyOpQueueProvider.notifier).flushNow();
+        await _until(() => container
+            .read(strategyOpQueueProvider)
+            .attentionByEntityKey
+            .containsKey(const EntitySyncKey.strategy()));
+        expect((server.strategyMap, server.strategyRevision), ('haven', 2));
+        expect(container.read(strategyConflictProvider), hasLength(1));
+
+        // Choosing the cloud's version draws the teammate's map.
+        expect(
+            await container
+                .read(strategyPageSessionProvider.notifier)
+                .useCloudVersionsForRejected(),
+            isTrue);
+        expect(container.read(mapProvider).currentMap, MapValue.haven);
+        expect(store.load().records, isEmpty);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      });
+
+      test('a custom theme waiting with it is kept through a save', () async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId);
+        final palette = MapThemePalette(
+          baseColorValue: 0xFF102030,
+          detailColorValue: 0xFF405060,
+          highlightColorValue: 0xFF708090,
+        );
+        // As a custom palette leaves it: no profile, the palette alone.
+        final store = await waitingMapChange(payload: {
+          'mapData': 'bind',
+          'clearThemeProfileId': true,
+          'themeOverridePalette': palette.toJson(),
+        });
+        final (container, batches) = await openOnRealQueue(page,
+            store: store, online: false, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(container.read(strategyThemeProvider).profileId, isNull);
+        expect(container.read(strategyThemeProvider).overridePalette?.toJson(),
+            palette.toJson());
+
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(store.load().records.single.pending.op.opId, 'map-to-bind');
+
+        container.read(_online.notifier).state = true;
+        await container.read(strategyOpQueueProvider.notifier).flushNow();
+        await _until(
+            () => container.read(strategyOpQueueProvider).pending.isEmpty);
+        final sent = [
+          for (final batch in batches) ...batch.whereType<StrategyPatchOp>(),
+        ];
+        expect(sent.single.opId, 'map-to-bind');
+        expect(server.strategyThemeProfileId, isNull);
+        expect(server.strategyThemePalette, palette.toJson());
         for (var i = 0; i < 10; i++) {
           await _settle();
         }

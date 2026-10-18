@@ -1279,12 +1279,16 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
   }
 
-  String _resolveThemeProfileId(StrategySource source, String strategyId) {
+  /// The theme profile the strategy names. A cloud strategy may name none
+  /// (a custom palette alone, say): the canvas keeps none too, so it
+  /// compares equal to the header it was drawn from, and the palette shown
+  /// falls back to the default (see effectiveMapThemePaletteProvider).
+  String? _resolveThemeProfileId(StrategySource source, String strategyId) {
     if (source == StrategySource.cloud) {
       final header = ref.read(remoteEditorSnapshotProvider).valueOrNull?.header;
-      return _cloudThemeProfileId(
-        header == null ? null : drawnStrategyHeader(ref, header),
-      );
+      return header == null
+          ? null
+          : drawnStrategyHeader(ref, header).themeProfileId;
     }
 
     final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(
@@ -1309,10 +1313,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         .get(strategyId)
         ?.themeOverridePalette;
   }
-
-  static String _cloudThemeProfileId(RemoteStrategyHeader? header) =>
-      header?.themeProfileId ??
-      MapThemeProfilesProvider.immutableDefaultProfileId;
 
   static MapThemePalette? _cloudThemeOverridePalette(
     RemoteStrategyHeader? header,
@@ -1341,7 +1341,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             )
             .key,
         theme: StrategyThemeState(
-          profileId: _cloudThemeProfileId(header),
+          profileId: header.themeProfileId,
           overridePalette: _cloudThemeOverridePalette(header),
         ),
       );

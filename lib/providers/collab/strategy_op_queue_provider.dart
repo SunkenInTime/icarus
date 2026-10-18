@@ -2821,10 +2821,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     if (existing case StrategyPatchOp()) {
       if (desired case StrategyPatchOp()) {
+        // The waiting change was made against its revision, and a strategy
+        // patch has no field merge: carried into a newer edit, it keeps
+        // that revision, so a teammate's header that landed since is
+        // refused and the user asked, never written over in silence.
         return StrategyPatchOp(
           opId: replacementOpId,
           payload: {...existing.payload, ...desired.payload},
-          expectedStrategyRevision: desired.expectedStrategyRevision,
+          expectedStrategyRevision: existing.expectedStrategyRevision,
         );
       }
     }
