@@ -1638,6 +1638,8 @@ class WeaponTypeAdapter extends TypeAdapter<WeaponType> {
         return WeaponType.ares;
       case 19:
         return WeaponType.odin;
+      case 20:
+        return WeaponType.warden;
       default:
         return WeaponType.none;
     }
@@ -1686,6 +1688,8 @@ class WeaponTypeAdapter extends TypeAdapter<WeaponType> {
         writer.writeByte(18);
       case WeaponType.odin:
         writer.writeByte(19);
+      case WeaponType.warden:
+        writer.writeByte(20);
     }
   }
 

@@ -2,6 +2,7 @@
 //! these views in Python under `tools/`; each module here names the tool its
 //! rules come from, and departs from it only where it says so.
 
+mod blinds;
 mod casts;
 mod kills;
 mod movement;
@@ -263,6 +264,7 @@ pub(crate) fn analyse(
     let rounds = rounds::rounds(&mut cx);
     let kills = kills::kills(&mut cx, &teams);
     let vitals = vitals::vitals(&mut cx, &rounds);
+    let blinds = blinds::blinds(&cx);
     let utility = utility::utility(
         &mut cx,
         &collector.moves,
@@ -341,6 +343,7 @@ pub(crate) fn analyse(
         rounds,
         kills,
         vitals,
+        blinds,
         utility,
         casts,
         movement,

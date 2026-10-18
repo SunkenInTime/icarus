@@ -6,6 +6,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/account_avatar.dart';
@@ -78,7 +79,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
   @override
   Widget build(BuildContext context) {
     final tab = ref.watch(libraryTabProvider);
-    final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
+    final cloudBrowsable = ref.watch(isCloudLibraryBrowsableProvider);
     final isWebBeta = ref.watch(platformPolicyProvider).isWebBeta;
     // Signed out on the web beta, My Library holds only the sign-in action,
     // so there is nothing to search, sort, or create.
@@ -118,7 +119,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             label: 'Shared',
             semanticsLabel: 'Shared library',
             selected: tab == LibraryTab.shared,
-            dimmed: !cloudAvailable,
+            dimmed: !cloudBrowsable,
             onTap: () {
               if (navigation.showShared()) return;
               // Signed in but the cloud is unreachable: My Library carries
@@ -175,7 +176,14 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
                 key: const ValueKey('cloud-add-shared-item'),
                 height: _controlHeight,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                onPressed: () => showAddSharedItemDialog(context),
+                onPressed: () {
+                  if (refuseCloudChangeWhileOffline(
+                    ref.read(cloudLibraryShowsCopyProvider),
+                  )) {
+                    return;
+                  }
+                  showAddSharedItemDialog(context);
+                },
                 leading: const Icon(LucideIcons.link, size: 14),
                 child: const Text('Add by Link or Code'),
               )

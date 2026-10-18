@@ -4,31 +4,38 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/collab/replay_capture_record.dart';
+import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/replay/replay_capture.dart';
 import 'package:icarus/replay/replay_document.dart';
+import 'package:icarus/replay/replay_drawing.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/replay_view.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
 import 'package:icarus/widgets/replay/replay_select.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Where the match stands, and the one thing to do with it: capture the
-/// moment into a strategy.
+/// Where the match stands, and what to do with the moment on screen: draw
+/// over it, or capture it into a strategy.
 class ReplayMatchCard extends ConsumerStatefulWidget {
   const ReplayMatchCard({
     super.key,
     required this.playback,
+    required this.drawing,
     required this.map,
     required this.onReturnFromEditor,
   });
 
   final ReplayPlayback playback;
+  final ReplayDrawing drawing;
   final MapValue map;
 
   /// Called after the captured strategy's editor closes, which leaves its
@@ -63,12 +70,12 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     try {
       // A fresh frame: the saved page must not share objects with the one
       // on screen.
-      final frame = playback.frames.frameAt(
-        playback.timeMs,
-        perspective: playback.perspective,
+      final frame = playback.freshFrame();
+      final strategy = await _capture.capture(
+        frame,
+        pageName: replayMomentLabel(playback),
+        drawings: widget.drawing.forCapture(),
       );
-      final strategy =
-          await _capture.capture(frame, pageName: replayMomentLabel(playback));
       _strategyIds.add(strategy.id);
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
@@ -228,6 +235,11 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     final strategy = _capture.strategy;
     final inCloud = strategy?.source == StrategySource.cloud;
     final queue = ref.watch(replayCaptureQueueProvider);
+    final bindings = ref.watch(appPreferencesProvider).customShortcutBindings;
+    final drawKey =
+        ShortcutInfo.displayLabelFor(IcarusShortcutAction.draw.name, bindings);
+    final eraseKey =
+        ShortcutInfo.displayLabelFor(IcarusShortcutAction.erase.name, bindings);
     // A strategy found deleted or on another map holds none of them now.
     final captured = !inCloud
         ? strategy?.pageCount ?? 0
@@ -242,7 +254,9 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
         inCloud && (ref.watch(convexConnectionProvider).valueOrNull ?? false);
     final upgradeRequired = inCloud && ref.watch(clientUpgradeRequiredProvider);
     return Container(
-      width: 260,
+      // Wide enough for the editor's drawing panel, shapes and strokes on
+      // one row as in the sidebar.
+      width: 300,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: theme.colorScheme.card,
@@ -297,6 +311,38 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  ReplaySelect(
+                    listenable: widget.drawing,
+                    select: () => (
+                      widget.drawing.active && !widget.drawing.erasing,
+                      widget.drawing.erasing,
+                    ),
+                    builder: (context, shown) {
+                      final (drawing, erasing) = shown;
+                      return Row(
+                        spacing: 8,
+                        children: [
+                          _ToolButton(
+                            icon: LucideIcons.pencil,
+                            tooltip: drawing
+                                ? 'Stop drawing ($drawKey)'
+                                : 'Draw ($drawKey)',
+                            selected: drawing,
+                            onPressed: widget.drawing.toggle,
+                          ),
+                          _ToolButton(
+                            icon: CustomIcons.eraser,
+                            tooltip: erasing
+                                ? 'Stop erasing ($eraseKey)'
+                                : 'Eraser ($eraseKey)',
+                            selected: erasing,
+                            onPressed: widget.drawing.toggleEraser,
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 8),
                   ShadTooltip(
                     builder: (context) =>
                         const Text("See the other team's side"),
@@ -310,6 +356,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
                   ),
                 ],
               ),
+              _DrawingTools(drawing: widget.drawing),
               if (captured > 0) ...[
                 const SizedBox(height: 8),
                 Row(
@@ -472,6 +519,93 @@ class _CloudStatus extends StatelessWidget {
         CaptureFailureKind.pageDeleted => 'Its page was deleted.',
         _ => 'The cloud refused it.',
       };
+}
+
+/// The pen's tools, under the card's actions while the pen is out: draw
+/// freehand or a straight arrow, and clear what is drawn.
+/// The editor's drawing panel while the pen is out, the same pen the
+/// editor draws with, and Clear once something is drawn.
+class _DrawingTools extends StatelessWidget {
+  const _DrawingTools({required this.drawing});
+
+  final ReplayDrawing drawing;
+
+  @override
+  Widget build(BuildContext context) {
+    return ReplaySelect(
+      listenable: drawing,
+      select: () => (
+        drawing.active && !drawing.erasing,
+        drawing.active && drawing.strokes.isNotEmpty,
+      ),
+      builder: (context, shown) {
+        final (pen, clearable) = shown;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (pen) const DrawingTools(padding: EdgeInsets.only(top: 8)),
+            if (clearable)
+              Align(
+                alignment: Alignment.centerRight,
+                child: ShadButton.link(
+                  height: 24,
+                  padding: EdgeInsets.zero,
+                  onPressed: drawing.clear,
+                  child: const Text('Clear'),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// A tool in the card: outlined at rest, a raised violet surface while it
+/// is on, like the editor's checked tools.
+class _ToolButton extends StatelessWidget {
+  const _ToolButton({
+    required this.icon,
+    required this.tooltip,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  /// The Shad buttons' own corner radius.
+  static const double _radius = 6;
+
+  @override
+  Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+    final glyph = Icon(icon, size: 16);
+    return ShadTooltip(
+      builder: (context) => Text(tooltip),
+      child: selected
+          ? DecoratedBox(
+              decoration: Settings.raisedPrimary(_radius),
+              child: ShadIconButton.ghost(
+                width: 32,
+                height: 32,
+                foregroundColor: theme.primaryForeground,
+                hoverForegroundColor: theme.primaryForeground,
+                hoverBackgroundColor: Colors.transparent,
+                onPressed: onPressed,
+                icon: glyph,
+              ),
+            )
+          : ShadIconButton.outline(
+              width: 32,
+              height: 32,
+              onPressed: onPressed,
+              icon: glyph,
+            ),
+    );
+  }
 }
 
 class _Score extends StatelessWidget {

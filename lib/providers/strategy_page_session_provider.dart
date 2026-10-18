@@ -13,6 +13,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
@@ -128,6 +129,11 @@ class StrategyPageSessionState {
     );
   }
 }
+
+/// How a page switch ended: on the page asked for, on the page it started
+/// from, or handed over to a newer switch (or another strategy) that
+/// started while it waited.
+enum _PageSwitch { switched, stayed, superseded }
 
 class _RemotePageHydrationKey {
   const _RemotePageHydrationKey({
@@ -311,13 +317,25 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     String? preferredPageId,
   }) async {
     _pageSessionGeneration++;
+    // As in reset: a switch this supersedes leaves its transition here.
+    ref.read(transitionProvider.notifier).complete();
+    state = state.copyWith(transitionState: PageTransitionState.idle);
     final pageSource = _resolvePageSource(strategyId, source);
     final pageIds = await pageSource.listPageIds();
-    final initialPageId = pageIds.contains(preferredPageId)
-        ? preferredPageId
-        : pageIds.contains(state.activePageId)
-            ? state.activePageId
-            : null;
+    // Drawn from this computer's copy, the page the copy could show is the
+    // only one there is to open (see RemoteEditorSnapshotNotifier).
+    final copiedPage = source == StrategySource.cloud
+        ? ref.read(remoteEditorSnapshotProvider).valueOrNull?.activePage
+        : null;
+    final initialPageId = copiedPage != null &&
+            copiedPage.fromCopy &&
+            pageIds.contains(copiedPage.page.publicId)
+        ? copiedPage.page.publicId
+        : pageIds.contains(preferredPageId)
+            ? preferredPageId
+            : pageIds.contains(state.activePageId)
+                ? state.activePageId
+                : null;
     final selected = initialPageId ??
         (selectFirstPageIfNeeded && pageIds.isNotEmpty ? pageIds.first : null);
 
@@ -351,7 +369,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (pageId == state.activePageId || _deletedPageHoldsWork()) {
       return;
     }
-    await _switchToPage(pageId, animated: false);
+    // An animated switch still waiting gives way to this one and leaves its
+    // transition (see _PageSwitch.superseded): this switch ends it.
+    if (state.transitionState != PageTransitionState.idle) {
+      ref.read(transitionProvider.notifier).complete();
+      state = state.copyWith(transitionState: PageTransitionState.idle);
+    }
+    final outcome = await _switchToPage(pageId, animated: false);
+    if (outcome == _PageSwitch.stayed) _resumePendingRemoteReapplyIfPossible();
   }
 
   Future<void> setActivePageAnimated(
@@ -406,14 +431,18 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     );
 
     try {
-      final switched = await _switchToPage(
+      final outcome = await _switchToPage(
         pageId,
         animated: true,
         direction: direction,
       );
-      if (!switched) {
+      // A newer switch took over while this one waited: the transition is
+      // that switch's now.
+      if (outcome == _PageSwitch.superseded) return;
+      if (outcome == _PageSwitch.stayed) {
         transitionNotifier.complete();
         state = state.copyWith(transitionState: PageTransitionState.idle);
+        _resumePendingRemoteReapplyIfPossible();
         return;
       }
     } catch (error, stackTrace) {
@@ -848,9 +877,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           strategyId: strategyId,
           canApply: () => redrawn = unchangedCanvas(),
           loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot!,
+          // Choosing the cloud's map and theme draws the server's, not the
+          // refused change waiting over them (see drawnStrategyHeader).
           preservedMetadata:
               rejected.containsKey(const EntitySyncKey.strategy())
-                  ? null
+                  ? _cloudHeaderMetadata(snapshot.header)
                   : localMetadata,
         );
         if (!redrawn) return false;
@@ -1021,6 +1052,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   void reset() {
     _remoteChangeWaitsForEditor = false;
     _pageSessionGeneration++;
+    // A switch still waiting gives way without ending its transition (see
+    // _PageSwitch.superseded): ending the session ends it.
+    ref.read(transitionProvider.notifier).complete();
     state = const StrategyPageSessionState(
       activePageId: null,
       availablePageIds: [],
@@ -1034,19 +1068,20 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     ref.read(activePageLiveSyncProvider.notifier).reset();
   }
 
-  /// Returns false, leaving the page on screen, if a teammate deleted it
-  /// while its work was being flushed.
-  Future<bool> _switchToPage(
+  /// Stays on the page on screen ([_PageSwitch.stayed]) if a teammate
+  /// deleted it while its work was being flushed, or if the server can't
+  /// send the cloud page asked for.
+  Future<_PageSwitch> _switchToPage(
     String pageId, {
     required bool animated,
     PageTransitionDirection? direction,
   }) async {
-    _pageSessionGeneration++;
+    final generation = ++_pageSessionGeneration;
     final strategyState = ref.read(strategyProvider);
     final strategyId = strategyState.strategyId;
     final source = strategyState.source;
     if (strategyId == null || source == null) {
-      return true;
+      return _PageSwitch.switched;
     }
 
     final pageSource = _resolvePageSource(strategyId, source);
@@ -1060,15 +1095,35 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           .flushNow()
           .timeout(const Duration(milliseconds: 750), onTimeout: () {});
       // The page may have been deleted while its work was flushed.
-      if (_deletedPageHoldsWork()) return false;
+      if (_deletedPageHoldsWork()) return _PageSwitch.stayed;
+      // Read the page before leaving this one. Leaving first dropped this
+      // page's server copy, and with it every later edit's way into the
+      // queue, whenever the read then failed (offline, say).
+      final remote = ref.read(remoteEditorSnapshotProvider.notifier);
+      bool superseded() =>
+          generation != _pageSessionGeneration ||
+          ref.read(strategyProvider).strategyId != strategyId;
+      final RemotePageSnapshot target;
+      try {
+        target = await remote.fetchPage(pageId);
+      } catch (error) {
+        if (superseded()) return _PageSwitch.superseded;
+        AppErrorReporter.reportInfo(
+          'Page $pageId could not be read; staying on this page: $error',
+          source: 'strategy_page_session',
+        );
+        _showPageUnreachable(pageId);
+        return _PageSwitch.stayed;
+      }
+      if (superseded()) return _PageSwitch.superseded;
+      // Or deleted while the page was read.
+      if (_deletedPageHoldsWork()) return _PageSwitch.stayed;
       state = state.copyWith(activePageId: pageId);
       ref.read(activePageLiveSyncProvider.notifier).setContext(
             strategyPublicId: strategyId,
             activePageId: pageId,
           );
-      await ref
-          .read(remoteEditorSnapshotProvider.notifier)
-          .setActivePage(pageId);
+      await remote.setActivePage(pageId, fetched: target);
     }
 
     final pageData = await pageSource.loadPage(pageId);
@@ -1082,7 +1137,26 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (animated && direction != null) {
       _updateHydrationBookkeeping(pageData.pageId);
     }
-    return true;
+    return _PageSwitch.switched;
+  }
+
+  void _showPageUnreachable(String pageId) {
+    final name = ref
+        .read(remoteEditorSnapshotProvider)
+        .valueOrNull
+        ?.pages
+        .where((page) => page.publicId == pageId)
+        .firstOrNull
+        ?.name;
+    try {
+      Settings.showToast(
+        message: "Couldn't open ${name ?? 'that page'}. Check your "
+            'connection and try again.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+    } catch (error) {
+      // No overlay to show it on (tests); the page staying put says enough.
+    }
   }
 
   Future<void> _rehydrateActivePageFromSource(
@@ -1214,11 +1288,16 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
   }
 
-  String _resolveThemeProfileId(StrategySource source, String strategyId) {
+  /// The theme profile the strategy names. A cloud strategy may name none
+  /// (a custom palette alone, say): the canvas keeps none too, so it
+  /// compares equal to the header it was drawn from, and the palette shown
+  /// falls back to the default (see effectiveMapThemePaletteProvider).
+  String? _resolveThemeProfileId(StrategySource source, String strategyId) {
     if (source == StrategySource.cloud) {
-      final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      return snapshot?.header.themeProfileId ??
-          MapThemeProfilesProvider.immutableDefaultProfileId;
+      final header = ref.read(remoteEditorSnapshotProvider).valueOrNull?.header;
+      return header == null
+          ? null
+          : drawnStrategyHeader(ref, header).themeProfileId;
     }
 
     final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(
@@ -1233,25 +1312,48 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     String strategyId,
   ) {
     if (source == StrategySource.cloud) {
-      final payload = ref
-          .read(remoteEditorSnapshotProvider)
-          .valueOrNull
-          ?.header
-          .themeOverridePalette;
-      if (payload == null || payload.isEmpty) {
-        return null;
-      }
-      try {
-        return MapThemePalette.fromJson(payload);
-      } catch (_) {
-        return null;
-      }
+      final header = ref.read(remoteEditorSnapshotProvider).valueOrNull?.header;
+      return _cloudThemeOverridePalette(
+        header == null ? null : drawnStrategyHeader(ref, header),
+      );
     }
 
     return Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .get(strategyId)
         ?.themeOverridePalette;
   }
+
+  static MapThemePalette? _cloudThemeOverridePalette(
+    RemoteStrategyHeader? header,
+  ) {
+    final payload = header?.themeOverridePalette;
+    if (payload == null || payload.isEmpty) {
+      return null;
+    }
+    try {
+      return MapThemePalette.fromJson(payload);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The map and theme [header] (the server's) sets, to draw in place of
+  /// what the canvas has when the user chooses the cloud's version of them.
+  static ({MapValue map, StrategyThemeState theme}) _cloudHeaderMetadata(
+    RemoteStrategyHeader header,
+  ) =>
+      (
+        map: Maps.mapNames.entries
+            .firstWhere(
+              (entry) => entry.value == header.mapData,
+              orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
+            )
+            .key,
+        theme: StrategyThemeState(
+          profileId: header.themeProfileId,
+          overridePalette: _cloudThemeOverridePalette(header),
+        ),
+      );
 
   bool _canSafelyReapplyRemotePage() {
     final saveState = ref.read(strategySaveStateProvider);
@@ -1826,16 +1928,18 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final strategyId = strategyState.strategyId;
     if (activePageId != null && strategyId != null) {
       ref.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
-      final desiredOpsByEntityKey =
-          ref.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-                strategyPublicId: strategyId,
-                pageId: activePageId,
-              );
+      final liveSync = ref.read(activePageLiveSyncProvider.notifier);
+      final madeLive = liveSync.liveStampForEdits(activePageId);
+      final desiredOpsByEntityKey = liveSync.syncLocalPage(
+        strategyPublicId: strategyId,
+        pageId: activePageId,
+      );
       if (desiredOpsByEntityKey != null) {
         await ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
               pageId: activePageId,
               desiredOpsByEntityKey: desiredOpsByEntityKey,
               flushImmediately: false,
+              madeLive: madeLive,
             );
       }
       if (_canSafelyReapplyRemotePage()) {

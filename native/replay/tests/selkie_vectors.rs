@@ -1,6 +1,6 @@
 //! Selkie against the recorded Oodle archives: set `ICARUS_OODLE_VECTORS` to
 //! the vectors directory (skipped otherwise). Every archive in its
-//! `manifest.json`, and the `quick.json` smoke set, must inflate to its
+//! `manifest.json`, and the `quick.json` and `quick-1308.json` sets, must inflate to its
 //! recorded output byte for byte. With `--features dev-vectors` the outputs
 //! are also checked against the manifest's sha256.
 
@@ -65,7 +65,7 @@ fn every_recorded_archive_inflates_byte_for_byte() {
         "Selkie: {archives} archives, {bytes} bytes in {elapsed:?} ({:.0} MB/s)",
         bytes as f64 / 1e6 / elapsed.as_secs_f64()
     );
-    assert_eq!(archives, 259);
+    assert_eq!(archives, 263);
 }
 
 #[test]
@@ -73,6 +73,15 @@ fn the_quick_set_inflates_byte_for_byte() {
     let Some(dir) = vectors() else { return };
     let (archives, _, _) = check_all(&dir, "quick.json");
     assert_eq!(archives, 3);
+}
+
+/// 13.08's controls and the archive whose regions reach past 0xbfffff,
+/// with its one four-byte far entry (spec.md, "13.08 extension").
+#[test]
+fn the_13_08_set_inflates_byte_for_byte() {
+    let Some(dir) = vectors() else { return };
+    let (archives, _, _) = check_all(&dir, "quick-1308.json");
+    assert_eq!(archives, 4);
 }
 
 #[cfg(feature = "dev-vectors")]

@@ -23,6 +23,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/ability_vision_cone_com
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
+import 'package:icarus/view_cone/cone_coverage.dart';
 
 Offset _overlayScreenPosition({
   required PlacedWidget widget,
@@ -464,7 +465,11 @@ class _EntryRenderer {
         );
       }
     }
-    final fadedChild = Opacity(opacity: opacity, child: child);
+    // Cones join the page's coverage layer, which this Opacity can't reach.
+    final fadedChild = ConeFade(
+      opacity: opacity,
+      child: Opacity(opacity: opacity, child: child),
+    );
     if (widget is PlacedText || widget is PlacedImage) {
       return CanonicalPositionedBox(
         key: key,

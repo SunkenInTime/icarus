@@ -15,6 +15,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/collab/generated/convex_error_codes.dart';
 import 'package:icarus/collab/pending_media_bytes_store.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -25,6 +26,7 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
@@ -180,6 +182,72 @@ class _R2Repository implements ConvexStrategyRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// The server, which serves the pictures in [served] and answers NOT_FOUND
+/// for any other, as `images.getAssetUrl` does.
+class _ServingRepository extends _R2Repository {
+  _ServingRepository(this.served);
+
+  final Set<String> served;
+  final List<String> urlChecks = [];
+
+  @override
+  Future<String?> getImageAssetUrl({
+    required String strategyPublicId,
+    required String assetPublicId,
+    String? shareToken,
+  }) async {
+    urlChecks.add(assetPublicId);
+    if (!served.contains(assetPublicId)) {
+      throw ConvexFunctionException(
+        code: ConvexErrorCode.notFound,
+        rawCode: 'NOT_FOUND',
+        message: 'Asset not found: $assetPublicId',
+      );
+    }
+    return 'https://media.example.com/$assetPublicId.png';
+  }
+}
+
+/// [_ServingRepository] whose served check waits for [urlGate], saying when
+/// it is asked.
+class _HeldServingRepository extends _ServingRepository {
+  _HeldServingRepository(super.served);
+
+  final urlAsked = Completer<void>();
+  final urlGate = Completer<void>();
+
+  @override
+  Future<String?> getImageAssetUrl({
+    required String strategyPublicId,
+    required String assetPublicId,
+    String? shareToken,
+  }) async {
+    if (!urlAsked.isCompleted) urlAsked.complete();
+    await urlGate.future;
+    return super.getImageAssetUrl(
+      strategyPublicId: strategyPublicId,
+      assetPublicId: assetPublicId,
+      shareToken: shareToken,
+    );
+  }
+}
+
+/// Holds single writes while [hold] is set, saying when one starts.
+class _HoldableOutboxStore extends MemoryDurableCloudMediaOutboxStore {
+  Completer<void>? hold;
+  final putStarted = Completer<void>();
+
+  @override
+  Future<void> put(CloudMediaUploadJob job) async {
+    final gate = hold;
+    if (gate != null) {
+      if (!putStarted.isCompleted) putStarted.complete();
+      await gate.future;
+    }
+    await super.put(job);
+  }
+}
+
 LineUpGroup _breachGroup() => LineUpGroup(
       id: 'breach-group',
       agent: PlacedAgent(
@@ -274,6 +342,7 @@ ProviderContainer _webSession({
   MemoryDurableStrategyOutboxStore? strategyStore,
   bool online = false,
   ConvexStrategyRepository? repository,
+  CloudMediaReferenceLoader? referenceLoader,
 }) {
   return ProviderContainer(
     overrides: [
@@ -296,7 +365,8 @@ ProviderContainer _webSession({
           .overrideWith((ref) => ref.watch(_capabilities)),
       strategyOpQueueProvider.overrideWith(_OpQueue.new),
       cloudMediaReferenceLoaderProvider.overrideWithValue(
-        (_, __) async => throw StateError('no server reads in this test'),
+        referenceLoader ??
+            (_, __) async => throw StateError('no server reads in this test'),
       ),
     ],
   );
@@ -1009,6 +1079,274 @@ void main() {
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpWidget(const SizedBox());
     container.dispose();
+  });
+
+  group('an upload whose bytes a refresh took', () {
+    // Toasts sit in an overlay entry still animating in, so offstage counts.
+    final failedToast = find.byWidgetPredicate(
+      (widget) =>
+          widget is Text &&
+          widget.data == 'Media upload failed. Tap Save to retry cloud sync.',
+      skipOffstage: false,
+    );
+    Future<void> pumpToasts(WidgetTester tester) => tester.pumpWidget(
+          const ToastificationWrapper(child: ShadApp(home: SizedBox())),
+        );
+    Future<void> settleToasts(WidgetTester tester) async {
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    // toastification is a global: clear it and let every auto-close timer
+    // run out, so no toast outlives its test or lands in the next one.
+    Future<void> clearToasts(WidgetTester tester) async {
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    }
+
+    // The server shows the picture on a page.
+    Future<Set<String>?> referenced(String _, Iterable<String> ids) async =>
+        ids.toSet().intersection({_imageId});
+
+    testWidgets(
+        'is settled, not failed, when the server already serves its picture',
+        (tester) async {
+      await pumpToasts(tester);
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      final bytesStore = MemoryPendingMediaBytesStore([_record(_imageId)]);
+      await tester.runAsync(() => mediaStore.put(_job(_imageId)));
+      final repository = _ServingRepository({_imageId});
+
+      // The picture uploads. Once attached, browser storage lets its bytes
+      // go; the editor keeps painting them until the cloud URL arrives.
+      final puts = <http.Request>[];
+      late ProviderContainer first;
+      await tester.runAsync(() => _uploadAll(
+            () => first = _webSession(
+              mediaStore: mediaStore,
+              bytesStore: bytesStore,
+              online: true,
+              repository: repository,
+            ),
+            repository,
+            puts,
+          ));
+      expect(bytesStore.values, isEmpty);
+
+      // Builds before #327 checked the page being left against the next
+      // page's assets on a page switch, so the picture looked missing and
+      // was queued again from the painted bytes. The refresh comes before
+      // that upload went.
+      await tester.runAsync(() async {
+        await first
+            .read(cloudMediaUploadQueueProvider.notifier)
+            .reconcilePageMedia(
+          strategyPublicId: 'strategy-a',
+          placedImages: [
+            PlacedImage(
+              id: _imageId,
+              position: Offset.zero,
+              aspectRatio: 1,
+              scale: 1,
+              fileExtension: '.png',
+            ),
+          ],
+          assetsById: const {},
+        );
+        await _settle();
+      });
+      expect(mediaStore.values.keys, ['account-a|$_imageId']);
+      first.dispose();
+
+      late ProviderContainer reloaded;
+      await tester.runAsync(() async {
+        reloaded = _webSession(
+          mediaStore: mediaStore,
+          bytesStore: bytesStore,
+          online: true,
+          repository: repository,
+          referenceLoader: referenced,
+        );
+        await reloaded
+            .read(cloudMediaUploadQueueProvider.notifier)
+            .retryNow(ignoreBackoff: true);
+        await _until(() => mediaStore.values.isEmpty);
+      });
+      addTearDown(reloaded.dispose);
+      await settleToasts(tester);
+
+      expect(mediaStore.values, isEmpty);
+      expect(reloaded.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+      expect(failedToast, findsNothing);
+      expect(
+        reloaded.read(cloudSyncStatusProvider),
+        isNot(CloudSyncStatus.attention),
+      );
+      expect(puts, hasLength(1), reason: 'nothing is sent again');
+      expect(repository.urlChecks, [_imageId]);
+      await clearToasts(tester);
+    });
+
+    testWidgets(
+        'one already failed for that is settled when the app next loads',
+        (tester) async {
+      await pumpToasts(tester);
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await tester.runAsync(() => mediaStore.put(
+            _job(_imageId, state: CloudMediaJobState.failed).copyWith(
+              attempts: 4,
+              lastError: 'Local media file is missing.',
+            ),
+          ));
+      final repository = _ServingRepository({_imageId});
+
+      late ProviderContainer container;
+      await tester.runAsync(() async {
+        container = _webSession(
+          mediaStore: mediaStore,
+          bytesStore: MemoryPendingMediaBytesStore(),
+          online: true,
+          repository: repository,
+          referenceLoader: referenced,
+        );
+        container.read(cloudMediaUploadQueueProvider);
+        await _until(() => mediaStore.values.isEmpty);
+      });
+      addTearDown(container.dispose);
+      await settleToasts(tester);
+
+      expect(mediaStore.values, isEmpty);
+      expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+      expect(failedToast, findsNothing);
+      expect(
+        container.read(cloudSyncStatusProvider),
+        isNot(CloudSyncStatus.attention),
+      );
+      await clearToasts(tester);
+    });
+
+    // The picture is queued again, with its bytes, while the server is being
+    // asked about the old job: that newer job must still upload.
+    Future<void> newerJobRace(
+      WidgetTester tester, {
+      required bool stillWriting,
+    }) async {
+      await pumpToasts(tester);
+      // Made inside runAsync: completers made in the test's fake zone would
+      // never wake what awaits them there.
+      late _HoldableOutboxStore mediaStore;
+      late _HeldServingRepository repository;
+      final bytesStore = MemoryPendingMediaBytesStore();
+      await tester.runAsync(() async {
+        mediaStore = _HoldableOutboxStore();
+        repository = _HeldServingRepository({_imageId});
+        await mediaStore.put(_job(_imageId));
+      });
+      final puts = <http.Request>[];
+      final client = MockClient((request) async {
+        puts.add(request);
+        return http.Response('', 200, headers: {'etag': '"etag"'});
+      });
+
+      late ProviderContainer container;
+      await tester.runAsync(() => http.runWithClient(() async {
+            container = _webSession(
+              mediaStore: mediaStore,
+              bytesStore: bytesStore,
+              online: true,
+              repository: repository,
+              referenceLoader: referenced,
+            );
+            final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+            unawaited(queue.retryNow(ignoreBackoff: true));
+            await repository.urlAsked.future;
+
+            await container.read(placedImageProvider.notifier).saveSecureImage(
+                  _imageBytes,
+                  _imageId,
+                  '.png',
+                  strategyId: 'strategy-a',
+                );
+            if (stillWriting) mediaStore.hold = Completer<void>();
+            final enqueue = queue.enqueueJobForLocalBytes(
+              strategyPublicId: 'strategy-a',
+              assetPublicId: _imageId,
+              fileExtension: '.png',
+              width: 99,
+            );
+            if (stillWriting) {
+              await mediaStore.putStarted.future;
+              repository.urlGate.complete();
+              await _settle();
+              mediaStore.hold!.complete();
+            } else {
+              await enqueue;
+              repository.urlGate.complete();
+            }
+            await enqueue;
+            await _until(() => repository.completedAssetIds.isNotEmpty);
+          }, () => client));
+      addTearDown(container.dispose);
+      // The newer job uploaded, so neither stale outcome happened: it was not
+      // removed, and it was not marked failed (that would hold it back).
+      expect(repository.completedAssetIds, [_imageId]);
+      expect(puts, hasLength(1));
+      expect(mediaStore.values, isEmpty);
+      // Drop the upload progress toast before a frame builds it.
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(seconds: 4));
+    }
+
+    testWidgets(
+        'leaves a newer job of the picture still being saved to upload',
+        (tester) => newerJobRace(tester, stillWriting: true));
+
+    testWidgets(
+        'leaves a newer job of the picture saved meanwhile to upload, unfailed',
+        (tester) => newerJobRace(tester, stillWriting: false));
+
+    testWidgets(
+        'still fails, on screen, when the server does not have its picture',
+        (tester) async {
+      await pumpToasts(tester);
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await tester.runAsync(() => mediaStore.put(_job(_imageId)));
+      final repository = _ServingRepository(const {});
+
+      late ProviderContainer container;
+      await tester.runAsync(() async {
+        container = _webSession(
+          mediaStore: mediaStore,
+          bytesStore: MemoryPendingMediaBytesStore(),
+          online: true,
+          repository: repository,
+          referenceLoader: referenced,
+        );
+        await container
+            .read(cloudMediaUploadQueueProvider.notifier)
+            .retryNow(ignoreBackoff: true);
+        await _until(
+          () => container
+              .read(cloudMediaUploadQueueProvider)
+              .jobs
+              .any((job) => job.isFailed),
+        );
+      });
+      addTearDown(container.dispose);
+      await settleToasts(tester);
+
+      final job = container.read(cloudMediaUploadQueueProvider).jobs.single;
+      expect(job.state, CloudMediaJobState.failed);
+      expect(job.lastError, 'Local media file is missing.');
+      expect(mediaStore.values.keys, ['account-a|$_imageId']);
+      expect(failedToast, findsOneWidget);
+      expect(
+        container.read(cloudSyncStatusProvider),
+        CloudSyncStatus.attention,
+      );
+      await clearToasts(tester);
+    });
   });
 
   test('desktop never opens the pending-bytes box', () async {

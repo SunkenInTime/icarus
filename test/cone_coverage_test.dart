@@ -1,0 +1,393 @@
+import 'dart:ui' as ui;
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/view_cone/cone_coverage.dart';
+import 'package:icarus/widgets/map_svg_color_mapper.dart';
+
+/// Fills its whole box, as a cone fills its lit area.
+class _BoxCone extends CustomPainter implements ConeAreaPainter {
+  @override
+  double get opacity => 1;
+
+  @override
+  void paintArea(Canvas canvas, Size size, Paint fill,
+          {bool clipToFloor = true}) =>
+      canvas.drawRect(Offset.zero & size, fill);
+
+  @override
+  void paint(Canvas canvas, Size size) =>
+      paintArea(canvas, size, Paint()..color = const Color(0x80FF0000));
+
+  @override
+  bool shouldRepaint(_BoxCone oldDelegate) => false;
+}
+
+/// A cone that is a triangle (its long edge diagonal, so antialiased), or
+/// one that composes its area in a layer of its own, as cones that overlook
+/// measured floors do.
+class _ShapedCone extends CustomPainter implements ConeAreaPainter {
+  _ShapedCone({this.layered = false});
+
+  final bool layered;
+
+  @override
+  double get opacity => 1;
+
+  @override
+  void paintArea(Canvas canvas, Size size, Paint fill,
+      {bool clipToFloor = true}) {
+    if (layered) {
+      canvas.saveLayer(Offset.zero & size, Paint());
+      canvas.drawRect(Offset.zero & size, fill);
+      canvas.restore();
+      return;
+    }
+    canvas.drawPath(
+        Path()
+          ..moveTo(0, 0)
+          ..lineTo(size.width, 0)
+          ..lineTo(0, size.height)
+          ..close(),
+        fill);
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) =>
+      paintArea(canvas, size, Paint()..color = const Color(0x80FF0000));
+
+  @override
+  bool shouldRepaint(_ShapedCone oldDelegate) => false;
+}
+
+/// A box cone that notes whether it was asked to clip itself to the floor.
+class _NotingCone extends _BoxCone {
+  final clipped = <bool>[];
+
+  @override
+  void paintArea(Canvas canvas, Size size, Paint fill,
+      {bool clipToFloor = true}) {
+    clipped.add(clipToFloor);
+    super.paintArea(canvas, size, fill, clipToFloor: clipToFloor);
+  }
+}
+
+const _floor = Color(0xFF202020);
+const _revealed = Color(0xFF808080);
+
+/// A floor, the coverage layer on it, and cones at [cones] (top-left, 40 px
+/// square) placed above, the way the editor stacks them.
+Widget _page(
+  ConeCoverage? coverage,
+  List<Offset> cones, {
+  double fade = 1,
+  List<double>? fades,
+  List<ConeAreaPainter>? painters,
+  double turn = 0,
+  Path? paintedFloor,
+}) {
+  final placed = Stack(children: [
+    for (final (i, at) in cones.indexed)
+      Positioned(
+        left: at.dx,
+        top: at.dy,
+        child: ConeFade(
+          opacity: fades?[i] ?? fade,
+          child: Transform.rotate(
+            angle: turn,
+            child: ConeArea(
+              size: const Size(40, 40),
+              painter: painters?[i] ?? _BoxCone(),
+              fallback: _BoxCone(),
+            ),
+          ),
+        ),
+      ),
+  ]);
+  return Directionality(
+    textDirection: TextDirection.ltr,
+    child: Center(
+      child: RepaintBoundary(
+        key: const ValueKey('page'),
+        child: SizedBox(
+          width: 100,
+          height: 100,
+          child: Stack(children: [
+            const Positioned.fill(child: ColoredBox(color: _floor)),
+            // The revealed map, here a plain revealed floor.
+            if (coverage != null)
+              Positioned.fill(
+                child: ConeCoverageLayer(
+                  coverage: coverage,
+                  floor: paintedFloor,
+                  child: const ColoredBox(color: _revealed),
+                ),
+              ),
+            Positioned.fill(
+              child: coverage == null
+                  ? placed
+                  : ConeCoverageScope(coverage: coverage, child: placed),
+            ),
+          ]),
+        ),
+      ),
+    ),
+  );
+}
+
+Future<Color> Function(int x, int y) _pixels(WidgetTester tester) {
+  ByteDataHolder? held;
+  return (x, y) async {
+    held ??= await tester.runAsync(() async {
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+          find.byKey(const ValueKey('page')));
+      final image = await boundary.toImage();
+      return ByteDataHolder(
+        (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!,
+        image.width,
+      );
+    });
+    final i = (y * held!.width + x) * 4;
+    final d = held!.data;
+    return Color.fromARGB(
+        d.getUint8(i + 3), d.getUint8(i), d.getUint8(i + 1), d.getUint8(i + 2));
+  };
+}
+
+class ByteDataHolder {
+  ByteDataHolder(this.data, this.width);
+  final ByteData data;
+  final int width;
+}
+
+void main() {
+  testWidgets('overlapping cones lift the floor once, to one colour',
+      (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    // Two cones overlapping on x 30..50.
+    await tester
+        .pumpWidget(_page(coverage, const [Offset(10, 10), Offset(30, 10)]));
+    final at = _pixels(tester);
+    expect(await at(20, 30), _revealed, reason: 'one cone');
+    expect(await at(40, 30), _revealed, reason: 'two cones: no stacking');
+    expect(await at(60, 30), _revealed, reason: 'the other cone');
+    expect(await at(80, 80), _floor, reason: 'no cone');
+  });
+
+  testWidgets(
+      'a layer given the floor reveals only the floor, and spares cones '
+      'clipping themselves', (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    // The painted floor is the left 30 px; the cone covers x 10..50.
+    final cone = _NotingCone();
+    await tester.pumpWidget(_page(coverage, const [Offset(10, 10)],
+        painters: [cone],
+        paintedFloor: Path()..addRect(const Rect.fromLTWH(0, 0, 30, 100))));
+    final at = _pixels(tester);
+    expect(await at(20, 30), _revealed, reason: 'cone on the floor');
+    expect(await at(40, 30), _floor, reason: 'cone off the floor');
+    expect(cone.clipped, isNotEmpty);
+    expect(cone.clipped, everyElement(isFalse));
+
+    // Without the floor, cones still clip themselves.
+    final alone = _NotingCone();
+    await tester
+        .pumpWidget(_page(coverage, const [Offset(10, 10)], painters: [alone]));
+    expect(alone.clipped, isNotEmpty);
+    expect(alone.clipped, everyElement(isTrue));
+  });
+
+  testWidgets('a cone with no layer above it paints itself', (tester) async {
+    await tester.pumpWidget(_page(null, const [Offset(10, 10)]));
+    final at = _pixels(tester);
+    expect(await at(20, 30), isNot(_floor));
+    expect(await at(20, 30), isNot(_revealed));
+  });
+
+  testWidgets('a cone that goes stops showing', (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    await tester.pumpWidget(_page(coverage, const [Offset(10, 10)]));
+    expect(coverage.areas, hasLength(1));
+    await tester.pumpWidget(_page(coverage, const []));
+    expect(coverage.areas, isEmpty);
+    expect(await _pixels(tester)(20, 30), _floor);
+  });
+
+  test('the revealed floor sits between floor and walls, on any theme', () {
+    final valorant = MapThemePalette(
+      baseColorValue: 0xFF767676,
+      detailColorValue: 0xFFFFFFFF,
+      highlightColorValue: 0xFFF6F23E,
+    );
+    // VALORANT's own minimap lifts this floor to 181.
+    expect(revealedFloorColor(valorant).toARGB32(), 0xFFB5B5B5);
+    // A light floor with dark walls darkens instead.
+    final light = MapThemePalette(
+      baseColorValue: 0xFFE0E0E0,
+      detailColorValue: 0xFF202020,
+      highlightColorValue: 0xFF3060FF,
+    );
+    expect(revealedFloorColor(light).computeLuminance(),
+        lessThan(light.baseColor.computeLuminance()));
+  });
+
+  testWidgets('a faded cone lifts the floor only that far', (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    await tester.pumpWidget(_page(coverage, const [Offset(10, 10)], fade: 0.5));
+    final half = await _pixels(tester)(20, 30);
+    // Halfway from 0x20 to 0x80.
+    expect((half.r * 255).round(), closeTo(0x50, 1));
+  });
+
+  testWidgets('cones fading together lift the floor once', (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    await tester.pumpWidget(
+        _page(coverage, const [Offset(10, 10), Offset(30, 10)], fade: 0.5));
+    final at = _pixels(tester);
+    expect(await at(40, 30), await at(20, 30), reason: 'overlap, as one cone');
+  });
+
+  testWidgets('a cone fading in over one fading out lifts to the stronger',
+      (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    await tester.pumpWidget(_page(
+        coverage, const [Offset(10, 10), Offset(30, 10)],
+        fades: const [0.51, 0.49]));
+    final at = _pixels(tester);
+    // The weaker cone is drawn last; the overlap is still the stronger one.
+    expect(await at(40, 30), await at(20, 30), reason: 'overlap = 0.51 cone');
+    expect(await at(40, 30), isNot(await at(60, 30)));
+  });
+
+  testWidgets('cone edges stay antialiased', (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    await tester.pumpWidget(
+        _page(coverage, const [Offset(10, 10)], painters: [_ShapedCone()]));
+    final at = _pixels(tester);
+    // Pixels on the triangle's diagonal edge lie between floor and
+    // revealed floor.
+    var between = false;
+    for (var x = 12; x < 48; x++) {
+      for (var y = 57 - x; y <= 61 - x; y++) {
+        final r = ((await at(x, y)).r * 255).round();
+        if (r > 0x20 + 8 && r < 0x80 - 8) between = true;
+      }
+    }
+    expect(between, isTrue);
+  });
+
+  testWidgets('a cone composed in its own layer still lets the stronger win',
+      (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    await tester.pumpWidget(_page(
+        coverage, const [Offset(10, 10), Offset(30, 10)],
+        fades: const [0.8, 0.2],
+        painters: [_ShapedCone(layered: true), _ShapedCone(layered: true)]));
+    final at = _pixels(tester);
+    expect(await at(40, 30), await at(20, 30), reason: 'overlap = 0.8 cone');
+  });
+
+  testWidgets('coincident cone edges do not stack, in either order',
+      (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    // Edge pixels of one triangle cone.
+    await tester.pumpWidget(
+        _page(coverage, const [Offset(10, 10)], painters: [_ShapedCone()]));
+    final one = _pixels(tester);
+    final single = [for (var x = 12; x < 48; x++) await one(x, 59 - x)];
+    // Ten of the same cone, edges on top of each other.
+    await tester.pumpWidget(_page(
+        coverage, [for (var i = 0; i < 10; i++) const Offset(10, 10)],
+        painters: [for (var i = 0; i < 10; i++) _ShapedCone()]));
+    final ten = _pixels(tester);
+    expect([for (var x = 12; x < 48; x++) await ten(x, 59 - x)], single);
+    // A strong cone whose edge half covers a pixel, and a weak cone fully
+    // covering it: the same either way round.
+    Future<Color> edge(List<double> fades, List<ConeAreaPainter> painters,
+        List<Offset> at) async {
+      await tester
+          .pumpWidget(_page(coverage, at, fades: fades, painters: painters));
+      return _pixels(tester)(30, 29);
+    }
+
+    final strongFirst = await edge(const [0.8, 0.2],
+        [_ShapedCone(), _BoxCone()], const [Offset(10, 10), Offset(10, 10)]);
+    final weakFirst = await edge(const [0.2, 0.8], [_BoxCone(), _ShapedCone()],
+        const [Offset(10, 10), Offset(10, 10)]);
+    expect(weakFirst, strongFirst);
+  });
+
+  testWidgets('cones off the pixel grid do not stack at their edges',
+      (tester) async {
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+    for (final turn in [0.0, 0.37]) {
+      Future<List<Color>> region(int count) async {
+        await tester.pumpWidget(_page(coverage,
+            [for (var i = 0; i < count; i++) const Offset(20.37, 20.61)],
+            painters: [for (var i = 0; i < count; i++) _ShapedCone()],
+            turn: turn));
+        final at = _pixels(tester);
+        return [
+          for (var y = 10; y < 80; y += 1)
+            for (var x = 10; x < 80; x += 3) await at(x, y),
+        ];
+      }
+
+      expect(await region(10), await region(1), reason: 'turn $turn');
+    }
+  });
+
+  test('the revealed map changes only the floor', () {
+    final palette = MapThemePalette(
+      baseColorValue: 0xFF767676,
+      detailColorValue: 0xFFFFFFFF,
+      highlightColorValue: 0xFFF6F23E,
+    );
+    final normal = MapSvgColorMapper.forPalette(palette);
+    final revealed = MapSvgColorMapper.revealed(palette);
+    Color through(MapSvgColorMapper mapper, Color color) =>
+        mapper.substitute(null, 'path', 'fill', color);
+    expect(through(revealed, MapSvgSourceColors.base).toARGB32(),
+        revealedFloorColor(palette).toARGB32());
+    for (final color in [
+      MapSvgSourceColors.detail,
+      MapSvgSourceColors.highlight,
+      MapSvgSourceColors.highlight.withValues(alpha: 0.23),
+      const Color(0xFFABCDEF),
+    ]) {
+      expect(through(revealed, color), through(normal, color),
+          reason: '$color');
+    }
+  });
+
+  test('floor and walls too alike still get a revealed floor that shows', () {
+    for (var grey = 0; grey <= 255; grey += 5) {
+      final floor = 0xFF000000 | grey << 16 | grey << 8 | grey;
+      final palette = MapThemePalette(
+        baseColorValue: floor,
+        detailColorValue: floor,
+        highlightColorValue: 0xFFF6F23E,
+      );
+      final revealed = revealedFloorColor(palette).computeLuminance();
+      final base = palette.baseColor.computeLuminance();
+      final ratio =
+          (math.max(revealed, base) + 0.05) / (math.min(revealed, base) + 0.05);
+      expect(ratio, greaterThanOrEqualTo(revealedFloorMinContrast),
+          reason: floor.toRadixString(16));
+    }
+  });
+}

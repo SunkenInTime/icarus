@@ -21,6 +21,7 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/canonical_map_artwork.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
+import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 
@@ -106,7 +107,11 @@ class ScreenshotView extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context, WidgetRef ref) => ConeCoverageHost(
+        builder: (context, cones) => _build(context, ref, cones),
+      );
+
+  Widget _build(BuildContext context, WidgetRef ref, ConeCoverage cones) {
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
     String barrierAssetName =
@@ -157,6 +162,33 @@ class ScreenshotView extends ConsumerWidget {
               ),
             ),
           ),
+          // View cones: the map as they reveal it, shown wherever one
+          // reaches, as in the editor.
+          Positioned.fill(
+            child: ConeCoverageLayer(
+              coverage: cones,
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: mapLeft,
+                    top: 0,
+                    width: mapWidth,
+                    height: CoordinateSystem.screenShotSize.height,
+                    child: CanonicalMapArtwork(
+                      map: mapValue,
+                      isAttack: isAttack,
+                      child: SvgPicture.asset(
+                        assetName,
+                        colorMapper:
+                            MapSvgColorMapper.revealed(effectivePalette),
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           if (showSpawnBarrier)
             Positioned(
               left: mapLeft,
@@ -202,7 +234,10 @@ class ScreenshotView extends ConsumerWidget {
               ),
             ),
           Positioned.fill(
-            child: placedWidgetsOverride ?? const PlacedWidgetBuilder(),
+            child: ConeCoverageScope(
+              coverage: cones,
+              child: placedWidgetsOverride ?? const PlacedWidgetBuilder(),
+            ),
           ),
 
           //Painting

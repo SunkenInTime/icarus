@@ -58,7 +58,7 @@ dependencies = [
 
 [[package]]
 name = "icarus_replay"
-version = "0.2.0"
+version = "0.3.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -301,7 +301,6 @@ source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.2.5#c4d6cc0e5ec3904f
 [[package]]
 name = "vrf-transform"
 version = "0.2.5"
-source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.2.5#c4d6cc0e5ec3904fdb64b350b2656b8e3ff33d53"
 dependencies = [
  "vrf-bitio",
 ]

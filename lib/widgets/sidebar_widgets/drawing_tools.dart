@@ -10,7 +10,13 @@ import 'package:icarus/widgets/sidebar_widgets/color_library.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class DrawingTools extends ConsumerWidget {
-  const DrawingTools({super.key});
+  const DrawingTools({
+    super.key,
+    this.padding = const EdgeInsets.only(left: 16, right: 16, top: 8),
+  });
+
+  /// The sidebar's inset by default; a card that pads itself passes less.
+  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -24,7 +30,7 @@ class DrawingTools extends ConsumerWidget {
     );
 
     return Padding(
-      padding: const EdgeInsets.only(left: 16, right: 16, top: 8),
+      padding: padding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

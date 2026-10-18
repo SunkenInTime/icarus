@@ -49,7 +49,10 @@ void main() {
       final container = _cloudContainer(store: store, connected: false);
       await _pressSave(tester, container);
 
-      expect(find.text('Offline, changes stay on this device'), findsOneWidget);
+      expect(
+        find.text('Offline · 1 change saved on this computer'),
+        findsOneWidget,
+      );
       expect(find.text('Saved'), findsNothing);
       expect(store.values, hasLength(1));
       await _finish(tester, container);

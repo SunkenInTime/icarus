@@ -98,6 +98,9 @@ class Settings {
 
   static const Color enemyOutlineColor = Color.fromARGB(139, 255, 82, 82);
   static const Color allyOutlineColor = Color.fromARGB(106, 105, 240, 175);
+
+  /// The crossed-out eye on a flashed agent's washed icon in replays.
+  static const Color flashedEyeInk = Color(0xE6141418);
   static Color get attackColor => tacticalVioletTheme.destructive;
 
   /// Defend-side label color. Deliberately NOT the violet primary (reserved

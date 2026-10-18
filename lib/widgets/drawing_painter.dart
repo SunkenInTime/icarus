@@ -69,7 +69,6 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
         updateCounter: drawingState.updateCounter,
         coordinateSystem: coordinateSystem,
         elements: drawingState.elements, // Pass the data directly
-        drawingProvider: ref.read(drawingProvider.notifier),
         currentLine: drawingState.currentElement);
 
     final currentInteractionState = ref.watch(interactionStateProvider);
@@ -285,7 +284,7 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                 ),
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: _TraversalTimeOverlay(
+                    child: TraversalTimeOverlay(
                       coordinateSystem: coordinateSystem,
                       mapScale: mapScale,
                       isAttack: isAttack,
@@ -303,8 +302,11 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
   }
 }
 
-class _TraversalTimeOverlay extends StatelessWidget {
-  const _TraversalTimeOverlay({
+/// The time each traversal-timed stroke takes to walk, in a card at its
+/// end. [isAttack] turns the cards upright on a flipped defense layer.
+class TraversalTimeOverlay extends StatelessWidget {
+  const TraversalTimeOverlay({
+    super.key,
     required this.coordinateSystem,
     required this.mapScale,
     required this.isAttack,
@@ -524,14 +526,12 @@ class DrawingPainter extends CustomPainter {
   final List<DrawingElement> elements; // Store the drawing elements
   final DrawingElement? currentLine;
   final int updateCounter;
-  final DrawingProvider drawingProvider;
 
   DrawingPainter({
     required this.updateCounter,
     required this.currentLine,
     required this.coordinateSystem,
     required this.elements,
-    required this.drawingProvider,
   });
 
   @override

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -16,6 +17,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/replay/replay_cone_cuts.dart';
 import 'package:icarus/replay/replay_cone_worker.dart';
 import 'package:icarus/replay/replay_decoder.dart';
+import 'package:icarus/replay/replay_drawing.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_files.dart';
@@ -62,6 +64,10 @@ class _ReplayViewState extends ConsumerState<ReplayView>
   Timer? _progressTimer;
 
   ReplayPlayback? _playback;
+
+  /// What the user draws over the paused replay. The screen's own, never
+  /// the editor's drawings.
+  ReplayDrawing? _drawing;
   ProviderSubscription<AsyncValue<SvgHeightRuntime?>>? _heightRuntime;
   SvgHeightVisibility? _heightModel;
   SvgHeightRuntime? _heightRuntimeValue;
@@ -117,7 +123,10 @@ class _ReplayViewState extends ConsumerState<ReplayView>
         perspective: perspective,
       )..addListener(_syncMapSide);
       if (_heightModel != null) playback.heightModel = _heightModel;
-      setState(() => _playback = playback);
+      setState(() {
+        _playback = playback;
+        _drawing = ReplayDrawing(playback);
+      });
       unawaited(_startConeCuts());
       claimEditorState();
       _ticker.start();
@@ -248,6 +257,7 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     _loader.cancel();
     _ticker.dispose();
     _coneCuts?.dispose();
+    _drawing?.dispose();
     _playback
       ?..removeListener(_syncMapSide)
       ..dispose();
@@ -256,23 +266,34 @@ class _ReplayViewState extends ConsumerState<ReplayView>
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     final playback = _playback;
-    if (playback == null || event is KeyUpEvent) return KeyEventResult.ignored;
-    switch (event.logicalKey) {
-      case LogicalKeyboardKey.space:
-        if (event is KeyRepeatEvent) return KeyEventResult.handled;
-        playback.togglePlaying();
-      case LogicalKeyboardKey.arrowLeft:
-        playback.seek(playback.timeMs - 5000);
-      case LogicalKeyboardKey.arrowRight:
-        playback.seek(playback.timeMs + 5000);
-      case LogicalKeyboardKey.arrowUp:
-        playback.previousRound();
-      case LogicalKeyboardKey.arrowDown:
-        playback.nextRound();
-      default:
-        return KeyEventResult.ignored;
+    final drawing = _drawing;
+    if (playback == null || drawing == null || event is KeyUpEvent) {
+      return KeyEventResult.ignored;
     }
-    return KeyEventResult.handled;
+    // The pen and the eraser answer to the editor's Draw and Eraser keys,
+    // whatever the user bound them to, so the habit carries over.
+    final draw = ShortcutInfo.effectiveBindingFor(
+      IcarusShortcutAction.draw.name,
+      ref.read(appPreferencesProvider).customShortcutBindings,
+    ).toActivator();
+    if (draw.accepts(event, HardwareKeyboard.instance)) {
+      if (event is! KeyRepeatEvent) drawing.toggle();
+      return KeyEventResult.handled;
+    }
+    final erase = ShortcutInfo.effectiveBindingFor(
+      IcarusShortcutAction.erase.name,
+      ref.read(appPreferencesProvider).customShortcutBindings,
+    ).toActivator();
+    if (erase.accepts(event, HardwareKeyboard.instance)) {
+      if (event is! KeyRepeatEvent) drawing.toggleEraser();
+      return KeyEventResult.handled;
+    }
+    // Esc puts the pen away before it stops watching a player.
+    if (event.logicalKey == LogicalKeyboardKey.escape && drawing.active) {
+      drawing.stop();
+      return KeyEventResult.handled;
+    }
+    return replayKey(playback, event);
   }
 
   @override
@@ -290,6 +311,7 @@ class _ReplayViewState extends ConsumerState<ReplayView>
               child: playback != null
                   ? _ReplayBench(
                       playback: playback,
+                      drawing: _drawing!,
                       map: map!,
                       onReturnFromEditor: claimEditorState,
                     )
@@ -305,6 +327,55 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     );
   }
 }
+
+/// What a key does to [playback]: Space plays and pauses, the arrows move
+/// through time and rounds, 1–0 watch a player (the allies top to bottom on
+/// 1–5, the enemies on 6–0, as the roster lists them) and Esc stops
+/// watching.
+KeyEventResult replayKey(ReplayPlayback playback, KeyEvent event) {
+  if (event is KeyUpEvent) return KeyEventResult.ignored;
+  final slot = _watchSlots.indexOf(event.logicalKey);
+  if (slot >= 0) {
+    // Held down, the key would flick between watching and not.
+    if (event is KeyRepeatEvent) return KeyEventResult.handled;
+    final player = playback.playerInSlot(slot);
+    if (player == null) return KeyEventResult.ignored;
+    playback.watch(player.subject);
+    return KeyEventResult.handled;
+  }
+  switch (event.logicalKey) {
+    case LogicalKeyboardKey.space:
+      if (event is KeyRepeatEvent) return KeyEventResult.handled;
+      playback.togglePlaying();
+    case LogicalKeyboardKey.arrowLeft:
+      playback.seek(playback.timeMs - 5000);
+    case LogicalKeyboardKey.arrowRight:
+      playback.seek(playback.timeMs + 5000);
+    case LogicalKeyboardKey.arrowUp:
+      playback.previousRound();
+    case LogicalKeyboardKey.arrowDown:
+      playback.nextRound();
+    case LogicalKeyboardKey.escape when playback.watching != null:
+      playback.stopWatching();
+    default:
+      return KeyEventResult.ignored;
+  }
+  return KeyEventResult.handled;
+}
+
+/// The number row, 1 to 0, as the game's replay numbers its players.
+const _watchSlots = [
+  LogicalKeyboardKey.digit1,
+  LogicalKeyboardKey.digit2,
+  LogicalKeyboardKey.digit3,
+  LogicalKeyboardKey.digit4,
+  LogicalKeyboardKey.digit5,
+  LogicalKeyboardKey.digit6,
+  LogicalKeyboardKey.digit7,
+  LogicalKeyboardKey.digit8,
+  LogicalKeyboardKey.digit9,
+  LogicalKeyboardKey.digit0,
+];
 
 class _ReplayStrip extends StatelessWidget {
   const _ReplayStrip({required this.map, required this.probe});
@@ -371,11 +442,13 @@ String replayMapName(MapValue map) {
 class _ReplayBench extends StatelessWidget {
   const _ReplayBench({
     required this.playback,
+    required this.drawing,
     required this.map,
     required this.onReturnFromEditor,
   });
 
   final ReplayPlayback playback;
+  final ReplayDrawing drawing;
   final MapValue map;
   final VoidCallback onReturnFromEditor;
 
@@ -387,6 +460,7 @@ class _ReplayBench extends StatelessWidget {
           child: RepaintBoundary(
             child: ReplayCanvas(
               playback: playback,
+              drawing: drawing,
               map: map,
               reservedRight: ReplayRoster.width + 16,
             ),
@@ -398,6 +472,7 @@ class _ReplayBench extends StatelessWidget {
             padding: const EdgeInsets.all(8),
             child: ReplayMatchCard(
               playback: playback,
+              drawing: drawing,
               map: map,
               onReturnFromEditor: onReturnFromEditor,
             ),
@@ -412,8 +487,12 @@ class _ReplayBench extends StatelessWidget {
         Positioned(
           left: 8,
           right: ReplayRoster.width + 16,
-          bottom: 8,
-          child: Center(child: ReplayDock(playback: playback)),
+          // The dock keeps the other 4 px itself, and gives them up while
+          // its story is open.
+          bottom: 4,
+          child: Center(
+            child: ReplayDock(playback: playback, drawing: drawing),
+          ),
         ),
       ],
     );

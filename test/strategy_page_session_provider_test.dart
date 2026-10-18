@@ -43,6 +43,7 @@ import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/lineup_conflicts_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
@@ -60,6 +61,7 @@ import 'package:icarus/providers/transition_provider.dart'
     hide PageTransitionState;
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/lineup_group_changes.dart';
+import 'package:icarus/strategy/copied_page_check.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/const/page_copy_id.dart';
@@ -98,14 +100,41 @@ class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
   /// Runs as each page is asked for, before it is read.
   void Function(String? pagePublicId)? onSetActivePage;
 
+  /// While set, every page read fails, as with the connection down.
+  bool offline = false;
+
+  /// Runs while a page is read, before the read answers.
+  Future<void> Function(String pagePublicId)? onFetchPage;
+
   @override
-  Future<RemotePageSnapshot?> setActivePage(String? pagePublicId) async {
+  Future<RemotePageSnapshot> fetchPage(String pagePublicId) async {
+    await onFetchPage?.call(pagePublicId);
+    if (offline || pagePublicId == failingPageId) {
+      throw StateError('Failed to load $pagePublicId');
+    }
+    final page = pageCatalog[pagePublicId];
+    if (page == null) throw StateError('No page $pagePublicId');
+    return page;
+  }
+
+  @override
+  Future<RemotePageSnapshot?> setActivePage(
+    String? pagePublicId, {
+    RemotePageSnapshot? fetched,
+  }) async {
     selectedPageIds.add(pagePublicId);
     onSetActivePage?.call(pagePublicId);
     if (pagePublicId == failingPageId) {
       throw StateError('Failed to load $pagePublicId');
     }
     final current = state.valueOrNull ?? initialSnapshot;
+    if (offline && fetched == null) {
+      // Like the real read: the page asked for is the active one, and its
+      // read failed, so no page is held.
+      state = AsyncData(
+          RemoteEditorSnapshot(shell: current.shell, activePage: null));
+      return null;
+    }
     final page = pagePublicId == null ? null : pageCatalog[pagePublicId];
     state = AsyncData(RemoteEditorSnapshot(
       shell: current.shell,
@@ -146,6 +175,25 @@ class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
 
   /// A live read refused for auth: no snapshot until a later read works.
   void failRead() => state = const AsyncData(null);
+
+  /// Page answers received before the connection last came back.
+  final Set<RemotePageSnapshot> _staleAnswers = Set.identity();
+
+  /// Marks every page answer held now as received before the connection
+  /// last came back: the connection dropped and returned, and no page has
+  /// been read since.
+  void markAnswersStale() {
+    _staleAnswers.addAll(pageCatalog.values);
+    if (state.valueOrNull?.activePage case final page?) {
+      _staleAnswers.add(page);
+    }
+  }
+
+  /// Every page this holds was read live, on the connection up now, unless
+  /// [markAnswersStale] said otherwise.
+  @override
+  bool answeredOnCurrentConnection(RemotePageSnapshot? page) =>
+      page != null && !page.fromCopy && !_staleAnswers.contains(page);
 }
 
 class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
@@ -639,6 +687,10 @@ class _ServerRepository implements ConvexStrategyRepository {
   /// While set, a batch waits for it before it reaches the server.
   Completer<void>? hold;
 
+  /// While set, a batch's answers wait for it once the server has taken
+  /// the batch and the live read can show it: the read arrives first.
+  Completer<void>? holdAnswer;
+
   /// While set, the next batch reaches the server, then this runs and the
   /// answer is lost on its way back: the send fails as if offline.
   void Function()? loseNextAnswer;
@@ -667,6 +719,7 @@ class _ServerRepository implements ConvexStrategyRepository {
   }) async {
     batches.add(ops);
     await hold?.future;
+    server.beginBatch();
     final acks = [
       for (final op in ops) refuse?.call(op) ?? server.apply(op),
     ];
@@ -676,6 +729,7 @@ class _ServerRepository implements ConvexStrategyRepository {
       throw const SocketException('The answer was lost.');
     }
     afterBatch();
+    await holdAnswer?.future;
     return acks;
   }
 
@@ -991,6 +1045,109 @@ class _FakeServer {
   /// The answer to each element and lineup op taken, by op id.
   final Map<String, OpAck> _answers = {};
 
+  /// The strategy's map, theme and revision as this server holds them. A
+  /// strategy patch, and a page added, deleted or reordered, is checked
+  /// against the revision and moves it on, as the real server does (see
+  /// applyStrategyOp and applyPageOp in convex/ops.ts): strategy patches
+  /// have no field merge.
+  String strategyMap = 'ascent';
+  String? strategyThemeProfileId;
+  CloudPayload? strategyThemePalette;
+  int strategyRevision = 1;
+
+  /// Every strategy patch this server answered, in order.
+  final List<StrategyPatchOp> strategyPatches = [];
+
+  /// The revision the batch being applied was made from, once one of its
+  /// ops landed from it: later ops made from it too land after it, as the
+  /// real server chains them (see applyBatch in convex/ops.ts).
+  int? _batchBase;
+
+  /// Starts a batch (see [_batchBase]).
+  void beginBatch() => _batchBase = null;
+
+  /// The answer to [op], which takes the strategy's revision, given what it
+  /// [changes]: refused if made from another revision, else [land] runs and
+  /// the strategy moves on.
+  OpAck _checkStrategyRevision(
+    StrategyOp op, {
+    required bool changes,
+    required void Function() land,
+  }) {
+    switch (_answers[op.opId]) {
+      case final RejectedOpAck refused:
+        return refused;
+      case final OpAck accepted?:
+        return NoopOpAck(
+          opId: op.opId,
+          currentRevision: accepted.appliedRevision,
+        );
+      case null:
+        break;
+    }
+    final expected = op.expectedRevision == _batchBase
+        ? strategyRevision
+        : op.expectedRevision;
+    final OpAck answer;
+    if (!changes) {
+      answer = NoopOpAck(opId: op.opId, currentRevision: strategyRevision);
+    } else if (expected != strategyRevision) {
+      answer = RejectedOpAck(
+        opId: op.opId,
+        rejectionReason: OpRejectionReason.revisionMismatch,
+        current: StrategyCurrentSnapshot(
+          revision: strategyRevision,
+          value: {
+            'mapData': strategyMap,
+            if (strategyThemeProfileId != null)
+              'themeProfileId': strategyThemeProfileId,
+            if (strategyThemePalette != null)
+              'themeOverridePalette': strategyThemePalette,
+          },
+        ),
+      );
+    } else {
+      if (op.expectedRevision == strategyRevision) {
+        _batchBase ??= op.expectedRevision;
+      }
+      land();
+      strategyRevision += 1;
+      answer = AppliedOpAck(opId: op.opId, revision: strategyRevision);
+    }
+    _answers[op.opId] = answer;
+    return answer;
+  }
+
+  /// A teammate's map change, landed: the strategy moves to a new revision.
+  void teammateSetsMap(String mapData) {
+    strategyMap = mapData;
+    strategyRevision += 1;
+  }
+
+  OpAck _applyStrategyPatch(StrategyPatchOp op) {
+    strategyPatches.add(op);
+    final payload = op.payload;
+    final map = payload['mapData'] as String? ?? strategyMap;
+    final profileId = payload['clearThemeProfileId'] == true
+        ? null
+        : payload['themeProfileId'] as String? ?? strategyThemeProfileId;
+    final palette = payload['clearThemeOverridePalette'] == true
+        ? null
+        : (payload['themeOverridePalette'] as Map?)?.cast<String, dynamic>() ??
+            strategyThemePalette;
+    return _checkStrategyRevision(
+      op,
+      changes: map != strategyMap ||
+          profileId != strategyThemeProfileId ||
+          !_sameJson(palette, strategyThemePalette),
+      land: () {
+        strategyMap = map;
+        strategyThemeProfileId = profileId;
+        strategyThemePalette = palette;
+      },
+    );
+  }
+
   /// Whether a patch that names its fields (FieldMerge) is merged onto the
   /// row as it is now, and a delete with lastWriterWins goes through, as the
   /// real server does (see convex/lib/fieldMerge.ts). Off, every op is
@@ -1053,6 +1210,10 @@ class _FakeServer {
       [for (final op in ops) apply(op)];
 
   OpAck apply(StrategyOp op) {
+    if (op is StrategyPatchOp) return _applyStrategyPatch(op);
+    if (op is PageAddOp || op is PageDeleteOp || op is PageReorderOp) {
+      return _checkStrategyRevision(op, changes: true, land: () {});
+    }
     final (rows, change) = switch (op) {
       LineupAddOp(:final payload, :final sortIndex) => (
           _lineups,
@@ -1357,6 +1518,7 @@ RemoteEditorSnapshot _editorSnapshot({
   int shellRevision = 1,
   String? mapData,
   String? themeProfileId,
+  CloudPayload? themeOverridePalette,
   String role = 'owner',
 }) {
   final now = DateTime.utc(2026);
@@ -1370,6 +1532,7 @@ RemoteEditorSnapshot _editorSnapshot({
         createdAt: now,
         updatedAt: now,
         themeProfileId: themeProfileId,
+        themeOverridePalette: themeOverridePalette,
         role: role,
       ),
       pages: pages,
@@ -1377,6 +1540,15 @@ RemoteEditorSnapshot _editorSnapshot({
     activePage: activePage,
   );
 }
+
+RemotePageSnapshot _fromCopy(RemotePageSnapshot page) => RemotePageSnapshot(
+      page: page.page,
+      content: page.content,
+      elements: page.elements,
+      lineups: page.lineups,
+      assetsById: page.assetsById,
+      fromCopy: true,
+    );
 
 Future<ProviderContainer> _cloudContainer({
   required _FakeRemoteEditorNotifier remote,
@@ -1890,6 +2062,173 @@ void main() {
     expect(queue.livePageRetries.last, contains('page-2'));
   });
 
+  test('a strategy drawn from the copy opens on the page the copy could show',
+      () async {
+    final first = _page('page-1', 0);
+    final second = _page('page-2', 1);
+    // Offline, page-1 isn't kept on this computer; page-2 is.
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [first, second],
+      activePage: _fromCopy(_pageSnapshot(second, text: 'kept')),
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+          preferredPageId: 'page-1',
+        );
+
+    expect(container.read(strategyPageSessionProvider).activePageId, 'page-2');
+    expect(remote.selectedPageIds, isNot(contains('page-1')));
+    expect(
+      container.read(textProvider).map((text) => text.text),
+      ['kept'],
+    );
+  });
+
+  group('a copied page is drawable exactly when hydration draws it:', () {
+    // One real row of each kind, as the canvas writes it.
+    final rows = <String, Map<String, dynamic>>{
+      'agent': {
+        'kind': 'plain',
+        'id': 'agent',
+        'isDeleted': false,
+        'position': {'dx': 75.0, 'dy': 90.0},
+        'type': 'jett',
+        'isAlly': true,
+        'state': 'none',
+        'lineUpID': null,
+      },
+      'ability': {
+        'id': 'ability',
+        'isDeleted': false,
+        'position': {'dx': 510.0, 'dy': 210.0},
+        'data': {'type': 'breach', 'index': 2},
+        'isAlly': true,
+        'rotation': -0.78,
+        'length': 184.96,
+        'lineUpID': null,
+        'armLengthsMeters': [10.0, 10.0, 10.0, 10.0],
+      },
+      'drawing': {
+        'type': 'lineDrawing',
+        'colorValue': 4294626325,
+        'thickness': 8.0,
+        'isDotted': true,
+        'hasArrow': true,
+        'id': 'drawing',
+        'boundingBox': {
+          'min': {'dx': 80.0, 'dy': 690.0},
+          'max': {'dx': 620.0, 'dy': 840.0},
+        },
+        'lineStart': {'dx': 80.0, 'dy': 840.0},
+        'lineEnd': {'dx': 620.0, 'dy': 690.0},
+      },
+      'text': {
+        'id': 'text',
+        'isDeleted': false,
+        'position': {'dx': 1450.0, 'dy': 90.0},
+        'text': 'Dynamic text',
+        'size': 250.0,
+        'fontSize': 19.0,
+        'sizeVersion': 1,
+      },
+      'image': {
+        'id': 'image',
+        'isDeleted': false,
+        'position': {'dx': 1390.0, 'dy': 400.0},
+        'aspectRatio': 1.77,
+        'fileExtension': '.png',
+        'scale': 280.0,
+        'sizeVersion': 1,
+        'link': '',
+      },
+      'utility': {
+        'id': 'utility',
+        'isDeleted': false,
+        'position': {'dx': 690.0, 'dy': 650.0},
+        'type': 'viewCone40',
+        'rotation': 2.67,
+        'length': 135.0,
+        'angle': 40.0,
+        'isAlly': true,
+      },
+    };
+
+    /// The ids hydration drew from a page holding [data] as one [kind] row.
+    Future<Set<String>> hydrated(String kind, Map<String, dynamic> data) async {
+      final first = _page('page-1', 0);
+      final page = _pageSnapshot(first, elements: [
+        RemoteElement(
+          publicId: kind,
+          strategyPublicId: 'cloud-strategy',
+          pagePublicId: 'page-1',
+          elementType: kind,
+          payload: cloudElementPayload(kind: kind, data: data),
+          sortIndex: 0,
+          revision: 1,
+          deleted: false,
+        ),
+      ]);
+      expect(page.elements.single.payload['payloadVersion'], isNotNull);
+      final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(pages: [first], activePage: page),
+      );
+      final container = await _cloudContainer(
+        remote: remote,
+        queue: _FakeStrategyOpQueueNotifier(),
+      );
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      return {
+        for (final item in container.read(agentProvider)) item.id,
+        for (final item in container.read(abilityProvider)) item.id,
+        for (final item in container.read(drawingProvider).elements) item.id,
+        for (final item in container.read(textProvider)) item.id,
+        for (final item in container.read(placedImageProvider).images) item.id,
+        for (final item in container.read(utilityProvider)) item.id,
+      };
+    }
+
+    bool drawable(String kind, Map<String, dynamic> data) =>
+        copiedPageIsDrawable(_pageSnapshot(_page('page-1', 0), elements: [
+          RemoteElement(
+            publicId: kind,
+            strategyPublicId: 'cloud-strategy',
+            pagePublicId: 'page-1',
+            elementType: kind,
+            payload: cloudElementPayload(kind: kind, data: data),
+            sortIndex: 0,
+            revision: 1,
+            deleted: false,
+          ),
+        ]));
+
+    for (final MapEntry(key: kind, value: data) in rows.entries) {
+      test('a whole $kind', () async {
+        expect(await hydrated(kind, data), {kind});
+        expect(drawable(kind, data), isTrue);
+      });
+      test('a $kind without its position or type', () async {
+        final broken = Map<String, dynamic>.of(data)
+          ..remove('position')
+          ..remove('type');
+        final drawn = (await hydrated(kind, broken)).contains(kind);
+        expect(drawable(kind, broken), drawn);
+      });
+    }
+  });
+
   test('"Use cloud" is not overridden when its refresh finds the page back',
       () async {
     final first = _page('page-1', 0);
@@ -2097,24 +2436,69 @@ void main() {
         );
     remote.failingPageId = pageTwo.publicId;
 
-    await expectLater(
-      container
-          .read(strategyPageSessionProvider.notifier)
-          .setActivePageAnimated(
-            pageTwo.publicId,
-            direction: PageTransitionDirection.forward,
-          ),
-      throwsStateError,
-    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .setActivePageAnimated(
+          pageTwo.publicId,
+          direction: PageTransitionDirection.forward,
+        );
 
     final session = container.read(strategyPageSessionProvider);
     expect(session.activePageId, pageOne.publicId);
     expect(session.transitionState, PageTransitionState.idle);
     expect(container.read(transitionProvider).active, isFalse);
-    expect(remote.selectedPageIds, [pageTwo.publicId, pageOne.publicId]);
+    // The page that could not be read was never made the active one.
+    expect(remote.selectedPageIds, isEmpty);
     expect(
       container.read(activePageLiveSyncProvider).hydratedPageId,
       pageOne.publicId,
+    );
+  });
+
+  test('a page switch while offline keeps saving the page on screen', () async {
+    final pageOne = _page('page-1', 0);
+    final pageTwo = _page('page-2', 1);
+    final pageOneSnapshot = _pageSnapshot(pageOne, text: 'one');
+    final remote = _FakeRemoteEditorNotifier(
+      _editorSnapshot(
+        pages: [pageOne, pageTwo],
+        activePage: pageOneSnapshot,
+      ),
+      pageCatalog: {
+        pageOne.publicId: pageOneSnapshot,
+        pageTwo.publicId: _pageSnapshot(pageTwo, text: 'two'),
+      },
+    );
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    remote.offline = true;
+
+    await session.setActivePageAnimated(
+      pageTwo.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    container.read(agentProvider.notifier).addAgent(PlacedAgent(
+          id: 'agent-1',
+          type: AgentType.jett,
+          position: const Offset(40, 40),
+        ));
+    await session.flushCurrentPage();
+
+    expect(
+      container.read(strategyPageSessionProvider).activePageId,
+      pageOne.publicId,
+    );
+    expect(
+      container.read(strategyOpQueueProvider).queuedByEntityKey.keys,
+      contains(EntitySyncKey.element(pageOne.publicId, 'agent-1')),
     );
   });
 
@@ -2542,6 +2926,224 @@ void main() {
       expect(
         container.read(strategyOpQueueProvider).pausedByEntityKey.keys,
         [EntitySyncKey.forStrategyOp(paused)],
+      );
+    });
+  }
+
+  test('a deletion landing while a switch reads the next page tells the user',
+      () async {
+    final one = _page('page-1', 0, name: 'A exec');
+    final two = _page('page-2', 1);
+    final loadedOne = _pageSnapshot(
+      one,
+      settings: StrategySettings().toJson(),
+      elements: const [],
+    );
+    final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [one, two],
+          activePage: loadedOne,
+          themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+        ),
+        pageCatalog: {
+          one.publicId: loadedOne,
+          two.publicId: _pageSnapshot(two, text: 'two'),
+        });
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    container.read(editorPointersProvider.notifier)
+      ..markCanvas(1)
+      ..down(1);
+    container.read(drawingProvider.notifier)
+      ..startFreeDrawing(
+          const Offset(10, 20),
+          CoordinateSystem.instance,
+          Colors.white,
+          2,
+          false,
+          false,
+          false,
+          TraversalSpeedProfile.values.first)
+      ..finishFreeDrawing(const Offset(40, 50), CoordinateSystem.instance);
+    container.read(editorPointersProvider.notifier).release(1);
+    await _settle();
+    final stroke = container.read(drawingProvider).elements.single.id;
+    // The teammate's delete lands while page 2 is being read.
+    remote.onFetchPage = (_) async {
+      remote.onFetchPage = null;
+      remote.setSnapshot(_editorSnapshot(
+        pages: [two],
+        activePage: loadedOne,
+        themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+      ));
+    };
+
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .setActivePageAnimated(
+          two.publicId,
+          direction: PageTransitionDirection.forward,
+        );
+    await _settle();
+
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.deletedPage, (pageId: one.publicId, name: 'A exec'));
+    expect(session.activePageId, one.publicId);
+    expect(session.transitionState, PageTransitionState.idle);
+    expect(container.read(drawingProvider).elements.map((d) => d.id), [stroke]);
+  });
+
+  test('a switch still reading its page gives way to a newer one', () async {
+    final one = _page('page-1', 0);
+    final two = _page('page-2', 1);
+    final three = _page('page-3', 2);
+    final loadedOne = _pageSnapshot(one, text: 'one');
+    final remote = _FakeRemoteEditorNotifier(
+      _editorSnapshot(pages: [one, two, three], activePage: loadedOne),
+      pageCatalog: {
+        one.publicId: loadedOne,
+        two.publicId: _pageSnapshot(two, text: 'two'),
+        three.publicId: _pageSnapshot(three, text: 'three'),
+      },
+    );
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    final hold = Completer<void>();
+    remote.onFetchPage = (pageId) async {
+      if (pageId == two.publicId) await hold.future;
+    };
+
+    final first = session.setActivePageAnimated(
+      two.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    await _settle();
+    await session.setActivePageAnimated(
+      three.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    hold.complete();
+    await first;
+    await _settle();
+
+    final state = container.read(strategyPageSessionProvider);
+    expect(state.activePageId, three.publicId);
+    expect(remote.selectedPageIds, [three.publicId]);
+    expect(
+      container.read(activePageLiveSyncProvider).hydratedPageId,
+      three.publicId,
+    );
+  });
+
+  test('a direct switch overtaking an animated one ends its transition',
+      () async {
+    final one = _page('page-1', 0);
+    final two = _page('page-2', 1);
+    final three = _page('page-3', 2);
+    final loadedOne = _pageSnapshot(one, text: 'one');
+    final remote = _FakeRemoteEditorNotifier(
+      _editorSnapshot(pages: [one, two, three], activePage: loadedOne),
+      pageCatalog: {
+        one.publicId: loadedOne,
+        two.publicId: _pageSnapshot(two, text: 'two'),
+        three.publicId: _pageSnapshot(three, text: 'three'),
+      },
+    );
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    final hold = Completer<void>();
+    remote.onFetchPage = (pageId) async {
+      if (pageId == two.publicId) await hold.future;
+    };
+
+    final animated = session.setActivePageAnimated(
+      two.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    await _settle();
+    await session.setActivePage(three.publicId);
+    hold.complete();
+    await animated;
+    await _settle();
+
+    final transition = container.read(transitionProvider);
+    expect(transition.hideView, isFalse);
+    expect(transition.phase, PageTransitionPhase.idle);
+    final state = container.read(strategyPageSessionProvider);
+    expect(state.activePageId, three.publicId);
+    expect(state.transitionState, PageTransitionState.idle);
+  });
+
+  for (final readWorks in [true, false]) {
+    test(
+        'closing and reopening while a switch reads its page leaves no '
+        'transition behind (read works: $readWorks)', () async {
+      final one = _page('page-1', 0);
+      final two = _page('page-2', 1);
+      final loadedOne = _pageSnapshot(one, text: 'one');
+      final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(pages: [one, two], activePage: loadedOne),
+        pageCatalog: {
+          one.publicId: loadedOne,
+          two.publicId: _pageSnapshot(two, text: 'two'),
+        },
+      );
+      final container = await _cloudContainer(
+        remote: remote,
+        queue: _FakeStrategyOpQueueNotifier(),
+      );
+      final session = container.read(strategyPageSessionProvider.notifier);
+      Future<void> open() => session.initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      await open();
+      final hold = Completer<void>();
+      remote.onFetchPage = (_) => hold.future;
+      if (!readWorks) remote.failingPageId = two.publicId;
+
+      final switching = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      expect(container.read(transitionProvider).hideView, isTrue);
+      session.reset();
+      await open();
+      hold.complete();
+      await switching;
+      await _settle();
+
+      final transition = container.read(transitionProvider);
+      expect(transition.hideView, isFalse);
+      expect(transition.phase, PageTransitionPhase.idle);
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        one.publicId,
       );
     });
   }
@@ -3705,13 +4307,25 @@ void main() {
         );
       }
 
+      test('opening the page draws it, and sends nothing over it', () async {
+        final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
+        final (container, queue) = await openRecovering(remote);
+        expect(container.read(textProvider).single.text, 'recovered');
+        await container.read(strategyProvider.notifier).forceSaveNow(
+              'cloud-strategy',
+            );
+        await _settle();
+        expect(queue.state.queuedByEntityKey[key]?.pending.op.opId,
+            'recovered-edit');
+      });
+
       for (final ackFirst in [false, true]) {
         test(
-            'landing under a held item makes the drop conflict '
+            'a drop on it after it lands goes against what landed '
             '(${ackFirst ? 'ack' : 'live read'} first)', () async {
           final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
           final (container, queue) = await openRecovering(remote);
-          expect(container.read(textProvider).single.text, 'a');
+          expect(container.read(textProvider).single.text, 'recovered');
           container.read(editorPointersProvider.notifier)
             ..holdEntity(1, 'a')
             ..down(1);
@@ -3721,30 +4335,30 @@ void main() {
           await _settle();
           // Nothing re-sends the version on screen over the recovered edit.
           expect(queue.state.queuedByEntityKey[key], isNull);
-          expect(container.read(textProvider).single.text, 'a');
-          // The drag ends on the old text: sent against the version the user
-          // saw, so the server refuses it instead of replacing 'recovered'.
+          expect(container.read(textProvider).single.text, 'recovered');
+          // The user saw the recovered edit all along, which is what landed.
           container
               .read(textProvider.notifier)
               .updatePosition(const Offset(300, 300), 'a');
-          expect(elementOps(container)['a']!.expectedRevision, 1);
+          expect(elementOps(container)['a']!.expectedRevision, 2);
           await _settle();
         });
       }
 
-      test('an edit after it lands, before the page reloads, conflicts',
-          () async {
+      test(
+          'an edit after it lands, before the page reloads, goes against '
+          'what landed', () async {
         final remote = _FakeRemoteEditorNotifier(snapshot([text('a', 0)]));
         final (container, queue) = await openRecovering(remote);
         // The live read has not caught up with the landed edit yet.
         landRecovered(queue);
         await _settle();
         expect(queue.state.queuedByEntityKey[key], isNull);
-        expect(container.read(textProvider).single.text, 'a');
+        expect(container.read(textProvider).single.text, 'recovered');
         container
             .read(textProvider.notifier)
             .updatePosition(const Offset(300, 300), 'a');
-        expect(elementOps(container)['a']!.expectedRevision, 1);
+        expect(elementOps(container)['a']!.expectedRevision, 2);
         await _settle();
       });
 
@@ -3780,7 +4394,8 @@ void main() {
 
       test(
           'an edit still on its way when the user leaves for a local '
-          'strategy and comes back conflicts with a drop over it', () async {
+          'strategy and comes back is drawn, and a drop over it goes against '
+          'what landed', () async {
         final box = await _openStrategyBox();
         await box.put(
           'local-strategy',
@@ -3870,8 +4485,10 @@ void main() {
 
         await open('local-strategy', StrategySource.local);
         await open('cloud-strategy', StrategySource.cloud);
-        // Drawn from the server, which has not applied the move yet.
-        expect(container.read(textProvider).single.position, drawnAt);
+        // The server has not applied the move yet; the canvas draws it over
+        // the server's version.
+        final moved = container.read(textProvider).single.position;
+        expect(moved, isNot(drawnAt));
 
         container.read(editorPointersProvider.notifier)
           ..holdEntity(1, 'a')
@@ -3897,17 +4514,16 @@ void main() {
             .read(strategyOpQueueProvider)
             .lastAckBatch
             .singleWhere((acked) => acked.entityKey == key);
-        expect(container.read(textProvider).single.position, drawnAt);
+        expect(container.read(textProvider).single.position, moved);
 
         container
             .read(textProvider.notifier)
             .updatePosition(const Offset(300, 300), 'a');
         final sent = await nextEdit;
-        // Against the version the user saw: the server refuses it instead
-        // of replacing the move.
-        expect(sent.expectedRevision, 1);
-        // The queue said the move it accepted was not the canvas's work.
-        expect(landing.restored, isTrue);
+        // Against the move the user saw, which is what landed.
+        expect(sent.expectedRevision, 2);
+        // The queue took the move it accepted as the canvas's: it drew it.
+        expect(landing.restored, isFalse);
         await _settle();
       });
     });
@@ -6899,7 +7515,8 @@ void main() {
     /// sends to [server] through [repository] and reads it back after every
     /// batch. A batch waits for [hold] while it is set. The queue reaches
     /// the server while [_online] holds. Returns the container and the
-    /// batches sent. The server's header names [themeProfileId], if given.
+    /// batches sent. The live read's strategy header is [server]'s; it names
+    /// [themeProfileId], if given.
     Future<(ProviderContainer, List<List<StrategyOp>>)> openOnRealQueue(
       RemotePage page, {
       DurableStrategyOutboxStore? store,
@@ -6908,6 +7525,7 @@ void main() {
       Map<String, List<RemoteElement>> otherElements = const {},
       Map<String, List<RemoteLineup>> otherLineups = const {},
       String? themeProfileId,
+      bool online = true,
     }) async {
       final others = {
         for (final other in otherPages)
@@ -6918,10 +7536,15 @@ void main() {
             lineups: otherLineups[other.publicId] ?? const [],
           ),
       };
+      if (themeProfileId != null)
+        server.strategyThemeProfileId = themeProfileId;
       var shown = page.publicId;
       RemoteEditorSnapshot read() => _editorSnapshot(
             pages: [page, ...otherPages],
-            themeProfileId: themeProfileId,
+            mapData: server.strategyMap,
+            shellRevision: server.strategyRevision,
+            themeProfileId: server.strategyThemeProfileId,
+            themeOverridePalette: server.strategyThemePalette,
             activePage: others[shown] ??
                 _pageSnapshot(
                   page,
@@ -6973,6 +7596,7 @@ void main() {
             .overrideWith(() => _RecordingMediaQueue()),
       ]);
       addTearDown(container.dispose);
+      container.read(_online.notifier).state = online;
       container.listen(strategyPageSessionProvider, (_, __) {});
       await container.read(remoteEditorSnapshotProvider.future);
       container
@@ -7121,7 +7745,8 @@ void main() {
             .map((e) => e.publicId),
         [copyId],
       );
-      expect(container.read(textProvider), isEmpty);
+      // Drawn from the outbox on arrival, before it landed.
+      expect(container.read(textProvider).map((t) => t.id), [copyId]);
       container.read(agentProvider.notifier).addAgent(PlacedAgent(
             id: 'agent-1',
             type: AgentType.jett,
@@ -7210,7 +7835,8 @@ void main() {
       for (var i = 0; i < 10; i++) {
         await _settle();
       }
-      expect(container.read(lineUpProvider).links, isEmpty);
+      // Drawn from the outbox on arrival, before they landed.
+      expect(container.read(lineUpProvider).links, hasLength(1));
       container.read(agentProvider.notifier).addAgent(PlacedAgent(
             id: 'agent-1',
             type: AgentType.jett,
@@ -8123,6 +8749,343 @@ void main() {
       expect(container.read(strategyConflictProvider), hasLength(1));
     });
 
+    group('a map change still waiting after a restart', () {
+      const theme = 'immutable-default-map-theme';
+
+      /// The outbox as an offline map change to Bind left it: the strategy
+      /// patch, made against the strategy at revision 1 on Ascent. [payload]
+      /// is what the patch sets.
+      Future<MemoryDurableStrategyOutboxStore> waitingMapChange({
+        CloudPayload payload = const {
+          'mapData': 'bind',
+          'themeProfileId': theme,
+          'clearThemeOverridePalette': true,
+        },
+      }) async {
+        final store = MemoryDurableStrategyOutboxStore();
+        await store.put(DurableOutboxRecord(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          entityKey: const EntitySyncKey.strategy(),
+          pending: PendingOp(
+            op: StrategyPatchOp(
+              opId: 'map-to-bind',
+              payload: payload,
+              expectedStrategyRevision: 1,
+            ),
+            clientId: 'test-client',
+          ),
+          status: DurableOutboxStatus.queued,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ));
+        return store;
+      }
+
+      test('is drawn, kept through a save, and sent once online', () async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId);
+        final store = await waitingMapChange();
+        final (container, batches) = await openOnRealQueue(page,
+            store: store, online: false, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(container.read(mapProvider).currentMap, MapValue.bind);
+
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(store.load().records.single.pending.op.opId, 'map-to-bind');
+
+        container.read(_online.notifier).state = true;
+        await container.read(strategyOpQueueProvider.notifier).flushNow();
+        await _until(
+            () => container.read(strategyOpQueueProvider).pending.isEmpty);
+        final sent = [
+          for (final batch in batches) ...batch.whereType<StrategyPatchOp>(),
+        ];
+        expect(sent.single.opId, 'map-to-bind');
+        expect(sent.single.payload['mapData'], 'bind');
+        expect(store.load().records, isEmpty);
+        expect((server.strategyMap, server.strategyRevision), ('bind', 2));
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      });
+
+      test(
+          "a theme change after it doesn't carry it over a teammate's newer "
+          'map: the server refuses it and the user is asked', () async {
+        final page = _page('page-1', 0);
+        // While this device was off, a teammate moved the strategy to Haven.
+        server = _FakeServer(page.publicId)..teammateSetsMap('haven');
+        final store = await waitingMapChange();
+        final (container, _) = await openOnRealQueue(page,
+            store: store, online: false, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(container.read(mapProvider).currentMap, MapValue.bind);
+
+        container
+            .read(strategyThemeProvider.notifier)
+            .setProfile(MapThemeProfilesProvider.immutableValorantProfileId);
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        // Bind was made against revision 1, and so is the change carrying it.
+        final waiting =
+            store.load().records.single.pending.op as StrategyPatchOp;
+        expect(waiting.expectedStrategyRevision, 1);
+        expect(waiting.payload['mapData'], 'bind');
+        expect(waiting.payload['themeProfileId'],
+            MapThemeProfilesProvider.immutableValorantProfileId);
+
+        container.read(_online.notifier).state = true;
+        await container.read(strategyOpQueueProvider.notifier).flushNow();
+        await _until(() => container
+            .read(strategyOpQueueProvider)
+            .attentionByEntityKey
+            .containsKey(const EntitySyncKey.strategy()));
+        expect((server.strategyMap, server.strategyRevision), ('haven', 2));
+        expect(container.read(strategyConflictProvider), hasLength(1));
+
+        // Choosing the cloud's version draws the teammate's map.
+        expect(
+            await container
+                .read(strategyPageSessionProvider.notifier)
+                .useCloudVersionsForRejected(),
+            isTrue);
+        expect(container.read(mapProvider).currentMap, MapValue.haven);
+        expect(store.load().records, isEmpty);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      });
+
+      test('a custom theme waiting with it is kept through a save', () async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId);
+        final palette = MapThemePalette(
+          baseColorValue: 0xFF102030,
+          detailColorValue: 0xFF405060,
+          highlightColorValue: 0xFF708090,
+        );
+        // As a custom palette leaves it: no profile, the palette alone.
+        final store = await waitingMapChange(payload: {
+          'mapData': 'bind',
+          'clearThemeProfileId': true,
+          'themeOverridePalette': palette.toJson(),
+        });
+        final (container, batches) = await openOnRealQueue(page,
+            store: store, online: false, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(container.read(strategyThemeProvider).profileId, isNull);
+        expect(container.read(strategyThemeProvider).overridePalette?.toJson(),
+            palette.toJson());
+
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(store.load().records.single.pending.op.opId, 'map-to-bind');
+
+        container.read(_online.notifier).state = true;
+        await container.read(strategyOpQueueProvider.notifier).flushNow();
+        await _until(
+            () => container.read(strategyOpQueueProvider).pending.isEmpty);
+        final sent = [
+          for (final batch in batches) ...batch.whereType<StrategyPatchOp>(),
+        ];
+        expect(sent.single.opId, 'map-to-bind');
+        expect(server.strategyThemeProfileId, isNull);
+        expect(server.strategyThemePalette, palette.toJson());
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      });
+
+      test('set back to the cloud map, nothing is left to send', () async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId);
+        final store = await waitingMapChange();
+        final (container, batches) = await openOnRealQueue(page,
+            store: store, online: false, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        container.read(mapProvider.notifier).updateMap(MapValue.ascent);
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(store.load().records, isEmpty);
+        expect(batches, isEmpty);
+      });
+    });
+
+    group("a strategy change and this device's own page changes", () {
+      const valorant = MapThemeProfilesProvider.immutableValorantProfileId;
+
+      /// Opens two pages online, every batch held until [hold] completes.
+      Future<(ProviderContainer, List<List<StrategyOp>>)> openTwoPages(
+        Completer<void> hold,
+      ) async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId);
+        final opened = await openOnRealQueue(page,
+            hold: hold,
+            otherPages: [_page('page-2', 1)],
+            themeProfileId: 'immutable-default-map-theme');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        return opened;
+      }
+
+      Future<void> waitForSend<T extends StrategyOp>(
+        List<List<StrategyOp>> batches,
+      ) =>
+          _until(() => batches.any((batch) => batch.any((op) => op is T)));
+
+      /// Waits until nothing is left to send: landed, or refused.
+      Future<void> settled(ProviderContainer container) async {
+        await _until(() {
+          final queue = container.read(strategyOpQueueProvider);
+          return queue.queuedByEntityKey.isEmpty &&
+              queue.inFlightByEntityKey.isEmpty &&
+              queue.successorByEntityKey.isEmpty;
+        });
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      }
+
+      void expectLandedWithoutConflict(ProviderContainer container) {
+        expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+            isEmpty);
+        expect(container.read(strategyConflictProvider), isEmpty);
+      }
+
+      test(
+          'a map and theme changed while a page reorder is sent land after '
+          'it, its live read arriving before its answer', () async {
+        final hold = Completer<void>();
+        final (container, batches) = await openTwoPages(hold);
+        final answer = repository.holdAnswer = Completer<void>();
+        unawaited(container.read(strategyProvider.notifier).reorderPage(0, 1));
+        await waitForSend<PageReorderOp>(batches);
+        container.read(mapProvider.notifier).updateMap(MapValue.bind);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+
+        hold.complete();
+        await _until(() => server.strategyRevision == 2);
+        showServer();
+        for (var i = 0; i < 5; i++) {
+          await _settle();
+        }
+        container.read(strategyThemeProvider.notifier).setProfile(valorant);
+        for (var i = 0; i < 5; i++) {
+          await _settle();
+        }
+        answer.complete();
+        await settled(container);
+
+        expect(
+          (server.strategyMap, server.strategyThemeProfileId),
+          ('bind', valorant),
+        );
+        expect(server.strategyRevision, 3);
+        expectLandedWithoutConflict(container);
+      });
+
+      for (final (name, change) in [
+        (
+          'reorder',
+          (ProviderContainer container) =>
+              container.read(strategyProvider.notifier).reorderPage(0, 1),
+        ),
+        (
+          'delete',
+          (ProviderContainer container) =>
+              container.read(strategyProvider.notifier).deletePage('page-2'),
+        ),
+        (
+          'add',
+          (ProviderContainer container) =>
+              container.read(strategyProvider.notifier).addPage(),
+        ),
+      ]) {
+        test('a page $name made while a map change is sent lands after it',
+            () async {
+          final hold = Completer<void>();
+          final (container, batches) = await openTwoPages(hold);
+          container.read(mapProvider.notifier).updateMap(MapValue.bind);
+          await waitForSend<StrategyPatchOp>(batches);
+          unawaited(change(container));
+          for (var i = 0; i < 10; i++) {
+            await _settle();
+          }
+          hold.complete();
+          await settled(container);
+
+          expectLandedWithoutConflict(container);
+          expect(server.strategyMap, 'bind');
+          expect(server.strategyRevision, 3);
+        });
+      }
+
+      test(
+          "a teammate's change landing after this device's own still "
+          'refuses the change waiting behind it', () async {
+        final hold = Completer<void>();
+        final (container, batches) = await openTwoPages(hold);
+        final answer = repository.holdAnswer = Completer<void>();
+        unawaited(container.read(strategyProvider.notifier).reorderPage(0, 1));
+        await waitForSend<PageReorderOp>(batches);
+        container.read(mapProvider.notifier).updateMap(MapValue.bind);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+
+        hold.complete();
+        await _until(() => server.strategyRevision == 2);
+        // Before this device hears its reorder landed, a teammate moves
+        // the strategy to Haven.
+        server.teammateSetsMap('haven');
+        answer.complete();
+        await _until(() => container
+            .read(strategyOpQueueProvider)
+            .attentionByEntityKey
+            .containsKey(const EntitySyncKey.strategy()));
+
+        expect((server.strategyMap, server.strategyRevision), ('haven', 3));
+        final refused = sentFor(batches, const EntitySyncKey.strategy());
+        expect(
+          [for (final op in refused) op.expectedRevision],
+          [2],
+        );
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      });
+    });
+
     test('offline edits to a group nobody changed land on reconnect', () async {
       final page = _page('page-1', 0);
       server = _FakeServer(page.publicId, lineups: [fanIn(page.publicId)]);
@@ -8166,6 +9129,681 @@ void main() {
       expect(queueState().needsAttention, isFalse);
       expect(store.load().records, isEmpty);
       expect(container.read(strategyConflictProvider), isEmpty);
+    });
+
+    group('after a restart with changes still in the outbox', () {
+      const theme = 'immutable-default-map-theme';
+
+      /// Opens [page] (texts a, b and c on a server that merges by field),
+      /// takes the connection away, then moves a, retypes b, deletes c and
+      /// adds d, and returns the outbox they are saved in: the app is then
+      /// closed with them unsent.
+      Future<DurableStrategyOutboxStore> editOffline(RemotePage page) async {
+        server = _FakeServer(page.publicId, elements: [
+          _textElement(page.publicId, 'a', 'alpha', worldSized: true),
+          _textElement(page.publicId, 'b', 'bravo',
+              sortIndex: 1, worldSized: true),
+          _textElement(page.publicId, 'c', 'charlie',
+              sortIndex: 2, worldSized: true),
+        ])
+          ..mergesByField = true;
+        final store = MemoryDurableStrategyOutboxStore();
+        final (container, batches) =
+            await openOnRealQueue(page, store: store, themeProfileId: theme);
+        container.read(_online.notifier).state = false;
+        final texts = container.read(textProvider.notifier);
+        texts.updatePosition(const Offset(300, 300), 'a');
+        texts.commitText('b', 'bravo offline');
+        texts.removeText('c');
+        texts.addText(PlacedText(id: 'd', position: const Offset(50, 60))
+          ..text = 'delta'
+          ..markSizeAsWorld());
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(batches, isEmpty);
+        expect(store.load().records, hasLength(4));
+        return store;
+      }
+
+      PlacedText textOn(ProviderContainer container, String id) =>
+          container.read(textProvider).singleWhere((text) => text.id == id);
+
+      test(
+          'opening the page draws them before they land, and each lands '
+          'once', () async {
+        final page = _page('page-1', 0);
+        final store = await editOffline(page);
+        // Meanwhile a teammate retypes a, a field the move left alone.
+        server.teammateEditElement('a', (data) => data['text'] = 'theirs');
+
+        // Started again online, with the first send held on its way.
+        final hold = Completer<void>();
+        final (container, batches) = await openOnRealQueue(page,
+            store: store, hold: hold, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+
+        // The page shows the server's version with the waiting work on top,
+        // field by field: the move over the teammate's text.
+        expect(container.read(textProvider).map((text) => text.id).toSet(),
+            {'a', 'b', 'd'});
+        expect(textOn(container, 'a').text, 'theirs');
+        expect(textOn(container, 'a').position, isNot(const Offset(10, 20)));
+        expect(textOn(container, 'b').text, 'bravo offline');
+        expect(textOn(container, 'd').text, 'delta');
+        expect(store.load().records, hasLength(4));
+
+        // The move goes as it was saved: checked against what it was made
+        // against, not against the teammate's version drawn under it.
+        final move = sentFor(batches, EntitySyncKey.element(page.publicId, 'a'))
+            .single as ElementPatchOp;
+        expect(move.expectedElementRevision, 1);
+        expect(move.merge?.base, isNotNull);
+
+        hold.complete();
+        await _until(
+            () => container.read(strategyOpQueueProvider).pending.isEmpty);
+        showServer();
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+
+        for (final id in ['a', 'b', 'c', 'd']) {
+          expect(
+            sentFor(batches, EntitySyncKey.element(page.publicId, id)),
+            hasLength(1),
+            reason: id,
+          );
+        }
+        expect(store.load().records, isEmpty);
+        expect(cloudPayloadData(server.element('a').payload)['text'], 'theirs');
+        expect(cloudPayloadData(server.element('b').payload)['text'],
+            'bravo offline');
+        expect(server.element('c').deleted, isTrue);
+        expect(server.element('d').deleted, isFalse);
+        expect(container.read(textProvider).map((text) => text.id).toSet(),
+            {'a', 'b', 'd'});
+        expect(textOn(container, 'a').text, 'theirs');
+        expect(container.read(strategyConflictProvider), isEmpty);
+      });
+
+      test('saving the page over them changes none of them', () async {
+        final page = _page('page-1', 0);
+        final store = await editOffline(page);
+        final saved = {
+          for (final record in store.load().records)
+            record.entityKey: record.pending.op.opId,
+        };
+        // Started again while still offline.
+        final (container, batches) = await openOnRealQueue(page,
+            store: store, online: false, themeProfileId: theme);
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(
+          {
+            for (final record in store.load().records)
+              record.entityKey: record.pending.op.opId,
+          },
+          saved,
+        );
+        expect(batches, isEmpty);
+        expect(textOn(container, 'b').text, 'bravo offline');
+      });
+
+      test('an edit on top of one keeps what it was made against', () async {
+        final page = _page('page-1', 0);
+        final store = await editOffline(page);
+        final (container, _) = await openOnRealQueue(page,
+            store: store, online: false, themeProfileId: theme);
+        // Retyping a, which waits with its move.
+        container.read(textProvider.notifier).commitText('a', 'alpha again');
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        final record = store
+            .load()
+            .records
+            .singleWhere((record) => record.entityKey.entityId == 'a');
+        final edit = record.pending.op as ElementPatchOp;
+        expect(edit.expectedElementRevision, 1);
+        expect(edit.merge!.fields, containsAll(['position', 'text']));
+        // The move's base is the position before it, and the text's the
+        // text the user saw.
+        expect(
+          edit.merge!.base!['position'],
+          cloudPayloadData(
+              _textElement(page.publicId, 'a', 'alpha', worldSized: true)
+                  .payload)['position'],
+        );
+        expect(edit.merge!.base!['text'], 'alpha');
+      });
+
+      test(
+          'a landed change stays drawn when an older answer arrives late, and '
+          'nothing writes the older version back', () async {
+        final page = _page('page-1', 0);
+        final store = await editOffline(page);
+        final hold = Completer<void>();
+        final (container, batches) = await openOnRealQueue(page,
+            store: store, hold: hold, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(textOn(container, 'b').text, 'bravo offline');
+        // The server's rows from before the changes land.
+        final before = server.elements;
+
+        // They land; the read that follows the acks is held on its way.
+        final gate = liveRead.refreshGate = Completer<void>();
+        hold.complete();
+        await _until(
+            () => container.read(strategyOpQueueProvider).pending.isEmpty);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(cloudPayloadData(server.element('b').payload)['text'],
+            'bravo offline');
+
+        // An older answer arrives late: the rows from before, with an
+        // unrelated change to the page's settings.
+        liveRead.setSnapshot(_editorSnapshot(
+          pages: [page],
+          themeProfileId: theme,
+          activePage: _pageSnapshot(
+            page,
+            settings: settingsFor(1),
+            contentRevision: 2,
+            elements: before,
+          ),
+        ));
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(textOn(container, 'b').text, 'bravo offline');
+
+        // Moving b sends its move, never its old text.
+        container
+            .read(textProvider.notifier)
+            .updatePosition(const Offset(320, 320), 'b');
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        await _until(() =>
+            sentFor(batches, EntitySyncKey.element(page.publicId, 'b'))
+                    .length ==
+                2 &&
+            container.read(strategyOpQueueProvider).pending.isEmpty);
+        gate.complete();
+        showServer();
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(cloudPayloadData(server.element('b').payload)['text'],
+            'bravo offline');
+        expect(textOn(container, 'b').text, 'bravo offline');
+      });
+
+      for (final refused in [true, false]) {
+        test(
+            'a ${refused ? 'refused' : 'waiting'} lineup change that no longer '
+            'fits the group is drawn whole, kept through an edit on top, and '
+            'Keep mine saves it', () async {
+          final page = _page('page-1', 0);
+          // Two lineups from one origin. A teammate deleted link-a, and with
+          // it the landing only it used.
+          Map<String, dynamic> linkA({String notes = 'remote lineup'}) =>
+              _linkJson('link-a',
+                  originId: 'origin', landingId: 'landing-a', notes: notes);
+          final linkB =
+              _linkJson('link-b', originId: 'origin', landingId: 'landing-b');
+          server = _FakeServer(page.publicId, lineups: [
+            _groupRow(
+              page.publicId,
+              'link-a',
+              origins: [_originJson('origin')],
+              landings: [_landingJson('landing-b', const Offset(60, 60))],
+              links: [linkB],
+              revision: 8,
+            ),
+          ])
+            ..mergesByField = true;
+          // Offline, the user had changed link-a's notes.
+          final edited = _groupRow(
+            page.publicId,
+            'link-a',
+            origins: [_originJson('origin')],
+            landings: [
+              _landingJson('landing-a'),
+              _landingJson('landing-b', const Offset(60, 60)),
+            ],
+            links: [linkA(notes: 'offline'), linkB],
+          ).payload;
+          final key = EntitySyncKey.lineup(page.publicId, 'link-a');
+          final store = MemoryDurableStrategyOutboxStore();
+          await store.put(DurableOutboxRecord(
+            accountId: 'account-a',
+            strategyPublicId: 'cloud-strategy',
+            entityKey: key,
+            pending: PendingOp(
+              op: LineupPatchOp(
+                opId: 'notes-edit',
+                lineupPublicId: 'link-a',
+                pagePublicId: page.publicId,
+                payload: edited,
+                sortIndex: 0,
+                expectedLineupRevision: 7,
+                merge: FieldMerge(
+                  fields: const ['links/link-a'],
+                  base: {'links/link-a': linkA()},
+                ),
+              ),
+              clientId: 'test-client',
+            ),
+            status: refused
+                ? DurableOutboxStatus.attention
+                : DurableOutboxStatus.queued,
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+            lastError:
+                refused ? OpRejectionReason.fieldConflict.wireName : null,
+          ));
+
+          final (container, batches) = await openOnRealQueue(page,
+              store: store, online: false, themeProfileId: theme);
+          for (var i = 0; i < 10; i++) {
+            await _settle();
+          }
+          LineUpLink onScreen(String id) =>
+              container.read(lineUpProvider).linkById(id)!;
+
+          // The page opened. Merged onto the cloud's group link-a would aim
+          // at a landing that is gone, so the group is drawn as the user
+          // had it, link-a's notes included.
+          expect(
+            container.read(lineUpProvider).links.map((link) => link.id),
+            unorderedEquals(['link-a', 'link-b']),
+          );
+          expect(onScreen('link-a').notes, 'offline');
+          // The change is kept, waiting for the user, and was not sent.
+          var record = store.load().records.single;
+          expect(record.pending.op.opId, 'notes-edit');
+          expect(record.status, DurableOutboxStatus.attention);
+          expect(record.lastError, undrawableWorkMessage);
+          expect(record.latestServerRevision, 8);
+          expect(container.read(cloudSyncStatusProvider),
+              CloudSyncStatus.attention);
+
+          // The user edits link-b, in the same group.
+          container
+              .read(lineUpProvider.notifier)
+              .updateLink(onScreen('link-b').copyWith(notes: 'b edited'));
+          await container
+              .read(strategyProvider.notifier)
+              .forceSaveNow('cloud-strategy');
+          for (var i = 0; i < 10; i++) {
+            await _settle();
+          }
+          record = store.load().records.single;
+          expect(record.pending.op.opId, 'notes-edit');
+          expect(record.status, DurableOutboxStatus.attention);
+          // Each side's changes are still told from the version the user's
+          // change was made from.
+          final conflict = container.read(lineupConflictsProvider)!.single;
+          expect(
+            [for (final change in conflict.yours) change.description],
+            ['notes edited', 'notes edited'],
+          );
+          expect(
+            [for (final change in conflict.cloud!) change.description],
+            ['deleted'],
+          );
+
+          // Keep mine, once back online: the user's group is saved whole.
+          container.read(_online.notifier).state = true;
+          final queue = container.read(strategyOpQueueProvider.notifier);
+          await queue.retryRejected(flushImmediately: false);
+          await queue.flushNow();
+          await _until(
+              () => container.read(strategyOpQueueProvider).pending.isEmpty);
+          for (var i = 0; i < 10; i++) {
+            await _settle();
+          }
+          expect(sentFor(batches, key), hasLength(1));
+          final saved = lineUpGraphFromRemoteLineups(server.liveRows);
+          expect(
+            {for (final link in saved.links) link.id: link.notes},
+            {'link-a': 'offline', 'link-b': 'b edited'},
+          );
+          expect(saved.landings.map((landing) => landing.id),
+              containsAll(['landing-a', 'landing-b']));
+          expect(store.load().records, isEmpty);
+        });
+      }
+
+      test(
+          'a lineup change that no longer fits lists what the teammate '
+          'changed, and only Keep mine replaces it', () async {
+        final page = _page('page-1', 0);
+        Map<String, dynamic> linkA({String notes = 'remote lineup'}) =>
+            _linkJson('link-a',
+                originId: 'origin',
+                landingId: 'landing-a',
+                name: 'Heaven',
+                notes: notes);
+        Map<String, dynamic> linkB({String notes = 'remote lineup'}) =>
+            _linkJson('link-b',
+                originId: 'origin',
+                landingId: 'landing-b',
+                name: 'Mid',
+                notes: notes);
+        // A teammate deleted Heaven, and with it the landing only it used,
+        // and retyped Mid's notes.
+        server = _FakeServer(page.publicId, lineups: [
+          _groupRow(
+            page.publicId,
+            'link-a',
+            origins: [_originJson('origin')],
+            landings: [_landingJson('landing-b', const Offset(60, 60))],
+            links: [linkB(notes: 'theirs')],
+            revision: 8,
+          ),
+        ])
+          ..mergesByField = true;
+        // Offline, before that, the user had changed Heaven's notes.
+        final edited = _groupRow(
+          page.publicId,
+          'link-a',
+          origins: [_originJson('origin')],
+          landings: [
+            _landingJson('landing-a'),
+            _landingJson('landing-b', const Offset(60, 60)),
+          ],
+          links: [linkA(notes: 'offline'), linkB()],
+        ).payload;
+        final key = EntitySyncKey.lineup(page.publicId, 'link-a');
+        final store = MemoryDurableStrategyOutboxStore();
+        await store.put(DurableOutboxRecord(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          entityKey: key,
+          pending: PendingOp(
+            op: LineupPatchOp(
+              opId: 'notes-edit',
+              lineupPublicId: 'link-a',
+              pagePublicId: page.publicId,
+              payload: edited,
+              sortIndex: 0,
+              expectedLineupRevision: 7,
+              merge: FieldMerge(
+                fields: const ['links/link-a'],
+                base: {'links/link-a': linkA()},
+              ),
+            ),
+            clientId: 'test-client',
+          ),
+          status: DurableOutboxStatus.queued,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ));
+
+        final (container, batches) = await openOnRealQueue(page,
+            store: store, online: false, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(container.read(lineUpProvider).linkById('link-b')!.notes,
+            'remote lineup');
+
+        // The reason is the one that says why, and each side's changes are
+        // told from the version the user's change was made from: theirs is
+        // not hidden behind the user's version on screen.
+        expect(container.read(strategyOpQueueProvider).lastError,
+            undrawableWorkMessage);
+        String listed(List<LineupChange> changes) => [
+              for (final change in changes)
+                '${change.label}: ${change.description}',
+            ].join('; ');
+        final conflict = container.read(lineupConflictsProvider)!.single;
+        expect(listed(conflict.yours), 'Heaven: notes edited');
+        expect(listed(conflict.cloud!), 'Mid: notes edited; Heaven: deleted');
+
+        // Back online, nothing is sent, and the teammate's notes stand.
+        container.read(_online.notifier).state = true;
+        final queue = container.read(strategyOpQueueProvider.notifier);
+        await queue.flushNow();
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(sentFor(batches, key), isEmpty);
+        expect(
+          {
+            for (final link
+                in lineUpGraphFromRemoteLineups(server.liveRows).links)
+              link.id: link.notes,
+          },
+          {'link-b': 'theirs'},
+        );
+
+        // Only Keep mine replaces the group with the user's, as the popover
+        // says: Heaven back with its notes, and Mid's notes as the user has
+        // them.
+        await queue.retryRejected(flushImmediately: false);
+        await queue.flushNow();
+        await _until(
+            () => container.read(strategyOpQueueProvider).pending.isEmpty);
+        expect(sentFor(batches, key), hasLength(1));
+        expect(
+          {
+            for (final link
+                in lineUpGraphFromRemoteLineups(server.liveRows).links)
+              link.id: link.notes,
+          },
+          {'link-a': 'offline', 'link-b': 'remote lineup'},
+        );
+      });
+
+      test(
+          'refused work recovered after a restart survives an edit on top and '
+          'Keep mine', () async {
+        final page = _page('page-1', 0);
+        final b = _textElement(page.publicId, 'b', 'bravo', worldSized: true);
+        server = _FakeServer(page.publicId, elements: [b])
+          ..mergesByField = true;
+        final payload = jsonDecode(jsonEncode(b.payload)) as CloudPayload;
+        (payload['data'] as Map<String, dynamic>)['text'] = 'mine';
+        final store = MemoryDurableStrategyOutboxStore();
+        await store.put(DurableOutboxRecord(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          entityKey: EntitySyncKey.element(page.publicId, 'b'),
+          pending: PendingOp(
+            op: ElementPatchOp(
+              opId: 'refused-text',
+              elementPublicId: 'b',
+              pagePublicId: page.publicId,
+              payload: payload,
+              sortIndex: 0,
+              expectedElementRevision: 1,
+              merge:
+                  const FieldMerge(fields: ['text'], base: {'text': 'bravo'}),
+            ),
+            clientId: 'test-client',
+          ),
+          status: DurableOutboxStatus.attention,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+          lastError: OpRejectionReason.fieldConflict.wireName,
+          latestServerRevision: 1,
+        ));
+        final (container, _) = await openOnRealQueue(page,
+            store: store, themeProfileId: 'immutable-default-map-theme');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(container.read(textProvider).single.text, 'mine');
+        container
+            .read(textProvider.notifier)
+            .updatePosition(const Offset(300, 300), 'b');
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        final queue = container.read(strategyOpQueueProvider.notifier);
+        await queue.retryRejected(flushImmediately: false);
+        await queue.flushNow();
+        await _until(
+            () => container.read(strategyOpQueueProvider).pending.isEmpty);
+        expect(cloudPayloadData(server.element('b').payload)['text'], 'mine');
+        expect(store.load().records, isEmpty);
+      });
+
+      test(
+          'paused and refused work is drawn and stays as it waits, neither '
+          'sent nor dropped', () async {
+        final page = _page('page-1', 0);
+        final a = _textElement(page.publicId, 'a', 'alpha', worldSized: true);
+        final b = _textElement(page.publicId, 'b', 'bravo',
+            sortIndex: 1, worldSized: true);
+        server = _FakeServer(page.publicId, elements: [a, b])
+          ..mergesByField = true;
+        CloudPayload retyped(RemoteElement element, String text) {
+          final payload =
+              jsonDecode(jsonEncode(element.payload)) as CloudPayload;
+          (payload['data'] as Map<String, dynamic>)['text'] = text;
+          return payload;
+        }
+
+        DurableOutboxRecord record(
+          RemoteElement element,
+          String opId,
+          String text,
+          DurableOutboxStatus status,
+          String lastError,
+        ) =>
+            DurableOutboxRecord(
+              accountId: 'account-a',
+              strategyPublicId: 'cloud-strategy',
+              entityKey: EntitySyncKey.element(page.publicId, element.publicId),
+              pending: PendingOp(
+                op: ElementPatchOp(
+                  opId: opId,
+                  elementPublicId: element.publicId,
+                  pagePublicId: page.publicId,
+                  payload: retyped(element, text),
+                  sortIndex: element.sortIndex,
+                  expectedElementRevision: 1,
+                  merge: FieldMerge(
+                    fields: const ['text'],
+                    base: {'text': cloudPayloadData(element.payload)['text']},
+                  ),
+                ),
+                clientId: 'test-client',
+                attempts: status == DurableOutboxStatus.paused ? 8 : 0,
+              ),
+              status: status,
+              createdAt: DateTime.utc(2026),
+              updatedAt: DateTime.utc(2026),
+              lastError: lastError,
+            );
+        final store = MemoryDurableStrategyOutboxStore();
+        await store.put(record(a, 'paused-edit', 'alpha paused',
+            DurableOutboxStatus.paused, 'Cloud connection is offline.'));
+        await store.put(record(
+            b,
+            'refused-edit',
+            'bravo refused',
+            DurableOutboxStatus.attention,
+            OpRejectionReason.fieldConflict.wireName));
+
+        final (container, batches) =
+            await openOnRealQueue(page, store: store, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(textOn(container, 'a').text, 'alpha paused');
+        expect(textOn(container, 'b').text, 'bravo refused');
+
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(batches, isEmpty);
+        expect(
+          {
+            for (final record in store.load().records)
+              record.entityKey.entityId: (
+                record.pending.op.opId,
+                record.status,
+              ),
+          },
+          {
+            'a': ('paused-edit', DurableOutboxStatus.paused),
+            'b': ('refused-edit', DurableOutboxStatus.attention),
+          },
+        );
+        final queue = container.read(strategyOpQueueProvider);
+        expect(queue.pausedByEntityKey.keys.single.entityId, 'a');
+        expect(queue.attentionByEntityKey.keys.single.entityId, 'b');
+        expect(
+            container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
+      });
+
+      test(
+          'an edit on a page not read again since the connection came back '
+          'keeps its conflict check', () async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId, elements: [
+          _textElement(page.publicId, 'a', 'alpha', worldSized: true),
+        ])
+          ..mergesByField = true;
+        final (container, batches) =
+            await openOnRealQueue(page, themeProfileId: theme);
+        final key = EntitySyncKey.element(page.publicId, 'a');
+        Future<ElementPatchOp> move(Offset to, int count) async {
+          container.read(textProvider.notifier).updatePosition(to, 'a');
+          await container
+              .read(strategyProvider.notifier)
+              .forceSaveNow('cloud-strategy');
+          await _until(() =>
+              sentFor(batches, key).length == count &&
+              container.read(strategyOpQueueProvider).pending.isEmpty);
+          for (var i = 0; i < 10; i++) {
+            await _settle();
+          }
+          return sentFor(batches, key).last as ElementPatchOp;
+        }
+
+        // The connection drops and comes back; the page is not read again.
+        container.read(_online.notifier).state = false;
+        await _settle();
+        container.read(_online.notifier).state = true;
+        liveRead.markAnswersStale();
+        await _settle();
+
+        final checked = await move(const Offset(300, 300), 1);
+        expect(checked.merge?.base, isNotNull);
+
+        // Its landing read the page again, live: the next edit is the last
+        // write.
+        final live = await move(const Offset(320, 320), 2);
+        expect(live.merge?.base, isNull);
+      });
     });
 
     test(

@@ -13,9 +13,14 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
+import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
@@ -172,6 +177,61 @@ void main() {
     expect(find.byKey(const ValueKey('cloud-loading-banner')), findsOneWidget);
   });
 
+  testWidgets('a session that gave up connecting says so, and Retry reconnects',
+      (tester) async {
+    final local = _strategy('local-plan', 'Local Plan');
+    await tester.runAsync(() async {
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+          .put(local.id, local);
+    });
+    final auth = _TestAuthProvider(_cloudUnreachable);
+    await tester.pumpWidget(
+      _cloudApp(FolderContent(onCreateStrategy: () {}), authNotifier: auth),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Local Plan'), findsOneWidget);
+    expect(find.byKey(const ValueKey('cloud-error-banner')), findsOneWidget);
+    expect(find.byKey(const ValueKey('cloud-loading-banner')), findsNothing);
+
+    await tester.tap(find.text('Retry'));
+    expect(auth.reconnects, ['library_root_retry']);
+  });
+
+  testWidgets('a build the server refuses asks for the update above the root',
+      (tester) async {
+    final local = _strategy('local-plan', 'Local Plan');
+    await tester.runAsync(() async {
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+          .put(local.id, local);
+    });
+    await tester.pumpWidget(
+      _cloudApp(
+        FolderContent(onCreateStrategy: () {}),
+        auth: _cloudUnreachable,
+        extraOverrides: [
+          appUpdateStatusProvider.overrideWith(
+            (ref) async => const UpdateCheckResult(
+              isSupported: true,
+              isUpdateAvailable: false,
+              source: 'test',
+            ),
+          ),
+          desktopUpdateControllerProvider.overrideWithValue(null),
+        ],
+      ),
+    );
+    ProviderScope.containerOf(tester.element(find.byType(FolderContent)))
+        .read(clientUpgradeRequiredProvider.notifier)
+        .noteError(clientUpgradeRequiredQueueError);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Local Plan'), findsOneWidget);
+    expect(find.byKey(const ValueKey('cloud-upgrade-banner')), findsOneWidget);
+    expect(find.text('Retry'), findsNothing);
+  });
+
   testWidgets('an empty computer waits for the cloud before saying empty',
       (tester) async {
     final cloudStrategies = StreamController<List<CloudStrategyEntry>>();
@@ -224,10 +284,13 @@ Widget _cloudApp(
   Stream<List<CloudFolderEntry>>? folders,
   Stream<List<CloudStrategyEntry>>? strategies,
   AppAuthState auth = _cloudReady,
+  _TestAuthProvider? authNotifier,
+  List<Override> extraOverrides = const [],
 }) {
   return ProviderScope(
     overrides: [
-      authProvider.overrideWith(() => _TestAuthProvider(auth)),
+      ...extraOverrides,
+      authProvider.overrideWith(() => authNotifier ?? _TestAuthProvider(auth)),
       libraryWorkspaceProvider.overrideWith(_CloudWorkspaceNotifier.new),
       cloudLibrarySectionProvider.overrideWith(
         () => _CloudSectionNotifier(section),
@@ -265,13 +328,28 @@ const _cloudReady = AppAuthState(
   user: null,
 );
 
+/// Signed in, and setting up the cloud gave up.
+const _cloudUnreachable = AppAuthState(
+  isLoading: false,
+  isAuthenticated: true,
+  isConvexUserReady: false,
+  convexAuthStatus: ConvexAuthStatus.incident,
+  user: null,
+);
+
 class _TestAuthProvider extends AuthProvider {
   _TestAuthProvider(this._state);
 
   final AppAuthState _state;
+  final reconnects = <String>[];
 
   @override
   AppAuthState build() => _state;
+
+  @override
+  Future<void> reinitializeConvexAuth({String source = 'manual'}) async {
+    reconnects.add(source);
+  }
 }
 
 class _CloudWorkspaceNotifier extends LibraryWorkspaceNotifier {

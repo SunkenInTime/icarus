@@ -62,10 +62,15 @@ class ReplayFrame {
   List<PlacedWidget> get widgets => [...utilities, ...abilities, ...agents];
 }
 
-/// A player's view cone as drawn: where it is aimed now, and its latest cut
+/// A player's view cone as drawn: where it is aimed now, its latest cut
 /// (see [ReplayConeCuts]), which may lag the aim by a frame or two and is
-/// carried along to it. No cut yet draws no cone.
-typedef ReplayConeSource = ({ReplayConeAim aim, ReplayConeCut? cut});
+/// carried along to it, and how much of its reach a flash leaves, 1 when
+/// unflashed. No cut yet draws no cone.
+typedef ReplayConeSource = ({
+  ReplayConeAim aim,
+  ReplayConeCut? cut,
+  double sight,
+});
 
 /// Something the viewer animates for a moment. Positions are canonical
 /// world units, like placed widgets'.
@@ -116,6 +121,30 @@ class ReplayExit extends ReplayEffect {
   final bool dimmed;
 }
 
+/// A flashed player: their icon washed white by how blind they are, marked
+/// with a crossed-out eye, and outlined by how much of the flash has passed.
+class ReplayFlashed extends ReplayEffect {
+  const ReplayFlashed({
+    required this.agentId,
+    required this.centre,
+    required this.blindness,
+    required this.progress,
+    required super.isAlly,
+  });
+
+  /// The flashed agent's placed id, so the wash is drawn with that agent.
+  final String agentId;
+
+  /// The icon's centre, where the player stands.
+  final Offset centre;
+
+  /// 1 fully blind, falling to 0 as sight comes back.
+  final double blindness;
+
+  /// How much of the flash has passed: 0 as it lands, 1 as it wears off.
+  final double progress;
+}
+
 /// A thrown utility in flight: its ability's icon where it is now, and the
 /// path it took over the last moment.
 class ReplayFlight extends ReplayEffect {
@@ -129,6 +158,39 @@ class ReplayFlight extends ReplayEffect {
 
   /// Oldest first; the last point is where it is now.
   final List<Offset> trail;
+}
+
+/// A directed area a projectile is sweeping out from where it was cast
+/// (Paranoia, Undercut): the area as far as the projectile has flown.
+///
+/// The frame's placed ability is the one a capture saves: it stands where
+/// the utility was cast with its area hidden, since a placed ability can
+/// only draw its full length. This is the part of the area swept so far.
+class ReplaySweep extends ReplayEffect {
+  const ReplaySweep({
+    required this.area,
+    required this.from,
+    required this.to,
+    required this.halfWidth,
+    required this.opacity,
+    required super.isAlly,
+  });
+
+  /// The placed ability with its area shown, drawn only up to [to].
+  final PlacedAbility area;
+
+  /// Where it was cast, which the area runs from.
+  final Offset from;
+
+  /// How far the area reaches: the projectile's head, never past the
+  /// ability's full length.
+  final Offset to;
+
+  /// Half the area's width across the way it runs, world units.
+  final double halfWidth;
+
+  /// 1 while the utility is up, falling to 0 as it fades out.
+  final double opacity;
 }
 
 /// How a player stands at one moment.
@@ -178,18 +240,6 @@ class ReplayFrameBuilder {
   late final List<ReplayAbilityEntry?> _entries = [
     for (final utility in document.utility) replayAbilityFor(utility.classPath),
   ];
-
-  /// The owner of each utility actor when the replay does not name one but
-  /// only one player could have cast it.
-  late final Map<AgentType, ReplayPlayer?> _soleCasterByAgent = () {
-    final byAgent = <AgentType, ReplayPlayer?>{};
-    for (final player in document.players) {
-      final agent = replayAgentType(player.agentId);
-      if (agent == null) continue;
-      byAgent[agent] = byAgent.containsKey(agent) ? null : player;
-    }
-    return byAgent;
-  }();
 
   /// Whether [player] is alive at [timeMs]: whichever came last this round
   /// of the round starting (alive), a health reading (alive above 0, which
@@ -277,8 +327,7 @@ class ReplayFrameBuilder {
   }
 
   ReplayPlayer? ownerOf(ReplayUtility utility, ReplayAbilityEntry entry) =>
-      document.playerBySubject(utility.owner) ??
-      _soleCasterByAgent[entry.agent];
+      replayCasterOf(document, utility, entry);
 
   /// How long a utility's arrival ring and its exit last.
   static const activationMs = 450;
@@ -287,13 +336,18 @@ class ReplayFrameBuilder {
   /// How much of a thrown utility's path trails behind it.
   static const trailMs = 350;
 
+  /// The placed id of [subject]'s agent on every frame.
+  static String agentIdOf(String subject) => 'replay-player-$subject';
+
   /// The moment at [timeMs]. With [cuts], each living player's cone is
   /// asked for where they are now and drawn from its latest cut; see
-  /// [ReplayFrame.cones].
+  /// [ReplayFrame.cones]. While [watching] a player, only theirs is: the
+  /// rest are drawn without a cone, and none is cut for them.
   ReplayFrame frameAt(
     int timeMs, {
     required ReplayTeam perspective,
     ReplayConeCuts? cuts,
+    String? watching,
   }) {
     final round = document.roundAt(timeMs);
     final isAttack = (round?.attackingTeam ?? ReplayTeam.red) == perspective;
@@ -301,6 +355,7 @@ class ReplayFrameBuilder {
 
     final agents = <PlacedAgentNode>[];
     final cones = <String, ReplayConeSource>{};
+    final flashed = <ReplayFlashed>[];
     for (final player in document.players) {
       final type = replayAgentType(player.agentId);
       final team = player.team;
@@ -315,10 +370,29 @@ class ReplayFrameBuilder {
       if (!_onCanvas(standing)) continue;
       final position = standing - agentAnchor;
       final isAlly = team == perspective;
-      final id = 'replay-player-${player.subject}';
+      final id = agentIdOf(player.subject);
       final visionElevation = _visionElevation(pose);
       final rotation = projection.rotationForYaw(pose.yaw);
-      if (state.alive && cuts != null) {
+      // A flash shortens the cone; one shorter than the editor allows is
+      // none, so a capture keeps exactly what is drawn.
+      final flash =
+          state.alive ? document.blinds[player.subject]?.flashAt(timeMs) : null;
+      final blindness = flash?.blindness ?? 0.0;
+      final sightLength = coneLength * (1 - blindness);
+      final watched = watching == null || watching == player.subject;
+      final sees = watched &&
+          state.alive &&
+          sightLength >= ViewConeUtility.minLength;
+      if (flash != null) {
+        flashed.add(ReplayFlashed(
+          agentId: id,
+          centre: standing,
+          blindness: blindness,
+          progress: flash.progress,
+          isAlly: isAlly,
+        ));
+      }
+      if (sees && cuts != null) {
         final aim = ReplayConeAim(
           origin: standing,
           rotation: rotation,
@@ -331,20 +405,21 @@ class ReplayFrameBuilder {
           aim: aim,
           // A cut from the other side's map is no cut at all.
           cut: cut != null && cut.aim.isAttack == isAttack ? cut : null,
+          sight: sightLength / coneLength,
         );
       }
       // What they carried out of the buy phase.
       final weapon =
           replayWeaponType(round?.economyFor(player.subject)?.weapon);
       agents.add(
-        state.alive
+        sees
             ? PlacedViewConeAgent(
                 id: id,
                 type: type,
                 position: position,
                 presetType: UtilityType.viewCone180,
                 rotation: rotation,
-                length: coneLength,
+                length: sightLength,
                 visionElevation: visionElevation,
                 isAlly: isAlly,
                 weapon: weapon,
@@ -354,7 +429,7 @@ class ReplayFrameBuilder {
                 type: type,
                 position: position,
                 isAlly: isAlly,
-                state: AgentState.dead,
+                state: state.alive ? AgentState.none : AgentState.dead,
                 weapon: weapon,
               ),
       );
@@ -363,7 +438,7 @@ class ReplayFrameBuilder {
     final abilities = <PlacedAbility>[];
     final occluders = <VisionOccluder>[];
     final dimmed = <String>{};
-    final effects = <ReplayEffect>[];
+    final effects = <ReplayEffect>[...flashed];
     final mapScale = Maps.mapScale[projection.map] ?? 1.0;
     for (var i = 0; i < document.utility.length; i++) {
       final utility = document.utility[i];
@@ -405,15 +480,46 @@ class ReplayFrameBuilder {
         id: 'replay-utility-${utility.id}',
         isAlly: isAlly,
       );
-      final at = utility.positionAt(shownAt);
+      // A sweep stands where it was cast, its icon alone placed: the area
+      // swept so far is drawn under it (see ReplaySweep).
+      final sweeps = entry.kind == ReplayUtilityKind.sweep;
+      final at = sweeps ? utility.position : utility.positionAt(shownAt);
       final centre = projection.toWorld(at.x, at.y);
+      if (sweeps) {
+        effects.add(ReplaySweep(
+          area: ability,
+          from: centre,
+          to: entry.sweptTo(
+            utility: utility,
+            projection: projection,
+            timeMs: shownAt,
+            placed: ability,
+          ),
+          halfWidth: CoordinateSystem.virtualLengthInWorld(
+              (entry.ability.abilityData as SquareAbility).width *
+                  mapScale /
+                  2),
+          opacity: active ? 1 : 1 - (timeMs - endMs!) / exitMs,
+          isAlly: isAlly,
+        ));
+      }
+      final placed = sweeps
+          ? PlacedAbility(
+              data: ability.data,
+              position: ability.position,
+              id: ability.id,
+              isAlly: ability.isAlly,
+              rotation: ability.rotation,
+              visualState: const AbilityVisualState(showRangeFill: false),
+            )
+          : ability;
       final radius = _radiusOf(entry, mapScale);
       final faint =
           (entry.kind == ReplayUtilityKind.area && entry.blocks == null) ||
               entry.kind == ReplayUtilityKind.rectangle;
       if (!active) {
         effects.add(ReplayExit(
-          ability: ability,
+          ability: placed,
           centre: centre,
           radius: radius,
           progress: (timeMs - endMs!) / exitMs,
@@ -422,8 +528,8 @@ class ReplayFrameBuilder {
         ));
         continue;
       }
-      abilities.add(ability);
-      if (faint) dimmed.add(ability.id);
+      abilities.add(placed);
+      if (faint) dimmed.add(placed.id);
       final occluder = _occluderOf(entry, utility, timeMs, centre, radius);
       if (occluder != null) occluders.add(occluder);
       final age = timeMs - utility.spawnMs;

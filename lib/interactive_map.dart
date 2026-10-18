@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
+import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
@@ -28,6 +30,7 @@ import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placement_editor.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
+import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -112,6 +115,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
     });
   }
 
+  /// The page's view cones, painted together on the map art.
+  final _cones = ConeCoverage();
+
   @override
   void initState() {
     super.initState();
@@ -122,7 +128,23 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   void dispose() {
     controller.removeListener(_scheduleZoomSync);
     controller.dispose();
+    _cones.dispose();
     super.dispose();
+  }
+
+  /// The painted floor, which the revealed map is clipped to once; null
+  /// until the map's height model loads (no height cones show before it
+  /// does).
+  Path? _revealedFloor(bool isAttack) {
+    final map = ref.watch(mapProvider).currentMap;
+    final model = ref
+        .watch(svgHeightRuntimeProvider(map))
+        .asData
+        ?.value
+        ?.model(isAttack);
+    if (model == null) return null;
+    return SvgHeightMapTransform.forMap(map)
+        .floorOnScreen(model, isAttack: isAttack);
   }
 
   @override
@@ -297,6 +319,44 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                       ),
                                     ),
                                   ),
+                                  // View cones: the map as they reveal it,
+                                  // shown wherever one reaches.
+                                  Positioned.fill(
+                                    child: IgnorePointer(
+                                      child: ConeCoverageLayer(
+                                        coverage: _cones,
+                                        floor: _revealedFloor(isAttack),
+                                        opacity: ref
+                                                .watch(interactionStateProvider)
+                                                .isLineUpMode
+                                            ? 0.2
+                                            : 1.0,
+                                        child: Stack(
+                                          children: [
+                                            Positioned(
+                                              left: mapLeft,
+                                              top: 0,
+                                              width: mapWidth,
+                                              height: height,
+                                              child: CanonicalMapArtwork(
+                                                map: ref
+                                                    .watch(mapProvider)
+                                                    .currentMap,
+                                                isAttack: isAttack,
+                                                child: SvgPicture.asset(
+                                                  assetName,
+                                                  colorMapper: MapSvgColorMapper
+                                                      .revealed(
+                                                          effectivePalette),
+                                                  fit: BoxFit.contain,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                   if (ref.watch(mapProvider).showSpawnBarrier)
                                     Positioned(
                                       left: mapLeft,
@@ -355,7 +415,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                                       .isLineUpMode
                                                   ? 0.2
                                                   : 1.0,
-                                              child: PlacedWidgetBuilder(),
+                                              child: ConeCoverageScope(
+                                                  coverage: _cones,
+                                                  child: PlacedWidgetBuilder()),
                                             ),
                                     ),
                                   ),
@@ -369,7 +431,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                   Positioned.fill(
                                     child: transitionPresentation.active
                                         ? RepaintBoundary(
-                                            child: PageTransitionOverlay(),
+                                            child: ConeCoverageScope(
+                                                coverage: _cones,
+                                                child: PageTransitionOverlay()),
                                           )
                                         : SizedBox.shrink(),
                                   ),
@@ -377,7 +441,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                     child: transitionPresentation.hideView &&
                                             transitionPresentation.phase ==
                                                 PageTransitionPhase.preparing
-                                        ? TemporaryWidgetBuilder()
+                                        ? ConeCoverageScope(
+                                            coverage: _cones,
+                                            child: TemporaryWidgetBuilder())
                                         : SizedBox.shrink(),
                                   ),
                                   // Painting

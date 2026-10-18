@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -10,10 +9,16 @@ import 'package:icarus/view_cone/vision_occluders.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 
 /// Every view cone of a replay moment in one layer, drawn as the editor
-/// draws a placed cone (the same cut, gradient and clip to the painted
-/// floor) but clipped to the floor once for all of them, from cuts made off
-/// the UI thread. A cut lagging its agent is carried along and turned with
-/// it. Smokes and smoke walls are erased from each cone they hide part of.
+/// draws placed cones (the same cut, opaque where each reaches, as the mask
+/// a [RevealedFloor] shows the revealed map through; see
+/// `lib/view_cone/cone_coverage.dart`), from cuts made off the UI thread. A
+/// cut lagging its agent is carried along and turned with it. Smokes and
+/// smoke walls are erased from each cone they hide part of.
+///
+/// Cones are not clipped to the painted floor here: the revealed map is,
+/// once, with the map (see [RevealedFloor]). On Windows the engine can only
+/// clip to a shape that complex with a mask drawn on the CPU, which with
+/// cones moving every frame cost more than the cones themselves.
 class ReplayConesPainter extends CustomPainter {
   ReplayConesPainter({
     required this.cones,
@@ -36,10 +41,9 @@ class ReplayConesPainter extends CustomPainter {
   final double apertureDegrees;
 
   static final _conePaths = Expando<Path>();
-  static final _floors = Expando<(Size, Float64List, Path)>();
 
-  /// The editor's cone fill, see [SvgHeightViewConePainter].
-  static const _coneGrey = Color.fromARGB(255, 147, 147, 147);
+  /// Where a cone reaches, for [RevealedFloor] to show the revealed map.
+  static final _reach = Paint()..color = const Color(0xFFFFFFFF);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -49,26 +53,14 @@ class ReplayConesPainter extends CustomPainter {
     final scale = coordinates.worldHeightToScreen(transform.scale);
     final toScreen = (Offset source) => coordinates.coordinateToScreen(
         transform.sideWorldFromSource(source, isAttack: isAttack));
-    final shift = toScreen(Offset.zero);
-    final sourceToScreen = Float64List(16)
-      ..[0] = scale
-      ..[5] = scale
-      ..[10] = 1
-      ..[12] = shift.dx
-      ..[13] = shift.dy
-      ..[15] = 1;
-
-    canvas.save();
-    // Cone pixels never land off the painted floor, nor in its holes. The
-    // fill is faint at any floor edge, which wall ink mostly covers, so a
-    // hard edge reads the same and spares an antialiased mask every frame.
-    canvas.clipPath(_floor(size, sourceToScreen), doAntiAlias: false);
-    for (final (:aim, :cut) in cones) {
+    final sourceToScreen = transform.sourceToScreen(isAttack: isAttack);
+    for (final (:aim, :cut, :sight) in cones) {
       final cone = cut?.cone;
       final origin = cut?.origin;
       if (cut == null || cone == null || origin == null) continue;
       if (cone.polygon.length < 3) continue;
-      final reach = _range(transform);
+      // A flashed player's cone reaches only as far as they can see.
+      final reach = _range(transform) * sight;
       // Where the agent stands now, in height-model space. Smokes do not
       // move with a lagging cut, so they are judged from here.
       final standing = _source(aim.origin, transform);
@@ -92,17 +84,13 @@ class ReplayConesPainter extends CustomPainter {
       canvas.clipPath(_wedge(apex, facing, reach * scale));
       canvas.translate(apex.dx - from.dx, apex.dy - from.dy);
       canvas.transform(sourceToScreen);
-      // The cut lies within reach, so filling it with the editor's gradient
-      // is the editor's clipped circle, without a clip mask per cone.
+      // The wedge clip already stops the cut at reach.
       final reachRect = Rect.fromCircle(center: origin, radius: reach);
       paintSvgConeArea(
         canvas,
         cone,
         _conePaths[cone] ??= Path()..addPolygon(cone.polygon, true),
-        Paint()
-          ..shader = RadialGradient(
-            colors: [_coneGrey.withValues(alpha: .5), Colors.transparent],
-          ).createShader(reachRect),
+        _reach,
         reachRect,
       );
       canvas.restore();
@@ -114,7 +102,6 @@ class ReplayConesPainter extends CustomPainter {
         canvas.restore();
       }
     }
-    canvas.restore();
   }
 
   /// The sector an agent at [apex] facing [facing] sees, out to [radius].
@@ -162,28 +149,6 @@ class ReplayConesPainter extends CustomPainter {
     if (near.isEmpty) return null;
     if (standsInsideSmoke(origin, near)) return _blind;
     return occluderShadows(origin, reach, near);
-  }
-
-  /// The painted floor on the canvas, built once per canvas size and side.
-  Path _floor(Size size, Float64List sourceToScreen) {
-    final cached = _floors[model];
-    if (cached != null &&
-        cached.$1 == size &&
-        cached.$2[0] == sourceToScreen[0] &&
-        cached.$2[12] == sourceToScreen[12] &&
-        cached.$2[13] == sourceToScreen[13]) {
-      return cached.$3;
-    }
-    Path? floor;
-    for (final receiver in model.receivers) {
-      final next = SvgHeightViewConePainter.ringsPath(receiver.rings,
-          evenOdd: receiver.evenOdd);
-      floor =
-          floor == null ? next : Path.combine(PathOperation.union, floor, next);
-    }
-    final screen = (floor ?? Path()).transform(sourceToScreen);
-    _floors[model] = (size, sourceToScreen, screen);
-    return screen;
   }
 
   @override

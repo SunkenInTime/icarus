@@ -17,6 +17,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/delete_page_dialog.dart';
 import 'package:icarus/widgets/dialogs/recently_deleted_dialog.dart';
+import 'package:icarus/widgets/keybind_badge.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 import 'package:icarus/widgets/new_page_copy_toast.dart';
@@ -1144,12 +1145,12 @@ class _PageRowState extends State<_PageRow> {
                               widget.showForwardIndicator) ...[
                             const SizedBox(width: 6),
                             if (widget.showBackwardIndicator)
-                              const _KeybindBadge(label: "A"),
+                              const KeybindBadge(label: "A"),
                             if (widget.showBackwardIndicator &&
                                 widget.showForwardIndicator)
                               const SizedBox(width: 4),
                             if (widget.showForwardIndicator)
-                              const _KeybindBadge(label: "D"),
+                              const KeybindBadge(label: "D"),
                             const SizedBox(width: 2),
                           ],
                           if (showActions) ...[
@@ -1198,39 +1199,6 @@ class _PageRowState extends State<_PageRow> {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _KeybindBadge extends StatelessWidget {
-  const _KeybindBadge({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 20,
-      width: 20,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.card,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Settings.tacticalVioletTheme.border),
-      ),
-      child: Center(
-        child: Text(
-          textAlign: TextAlign.center,
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Settings.tacticalVioletTheme.mutedForeground,
-                fontWeight: FontWeight.w700,
-                fontSize: 11,
-                height: 1.0,
-              ),
         ),
       ),
     );

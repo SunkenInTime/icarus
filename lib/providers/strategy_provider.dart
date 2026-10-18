@@ -24,6 +24,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -283,6 +284,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
+  /// A change to the cloud library asked for while the library shows this
+  /// computer's copy: refused at once, with the reason on screen.
+  bool _refuseCloudChangeOffline() =>
+      refuseCloudChangeWhileOffline(ref.read(cloudLibraryShowsCopyProvider));
+
   bool _selectedWorkspaceIsCloud() {
     return ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
   }
@@ -331,7 +337,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     await ref
         .read(remoteEditorSnapshotProvider.notifier)
-        .openStrategy(strategyID);
+        .openStrategy(strategyID, activePagePublicId: pageId);
     final snapshotState = ref.read(remoteEditorSnapshotProvider);
     final snapshot = snapshotState.valueOrNull;
     if (snapshot == null) {
@@ -361,13 +367,8 @@ class StrategyProvider extends Notifier<StrategyState> {
           selectFirstPageIfNeeded: true,
           preferredPageId: pageId,
         );
-    unawaited(
-      ref.read(cloudMediaUploadQueueProvider.notifier).reconcilePageMedia(
-            strategyPublicId: snapshot.header.publicId,
-            placedImages: ref.read(placedImageProvider).images,
-            assetsById: snapshot.assetsById,
-          ),
-    );
+    // Each page the editor reads is checked for images to upload as it
+    // arrives (see RemoteEditorSnapshotNotifier).
     unawaited(
       ref.read(cloudMediaUploadQueueProvider.notifier).setActiveStrategy(
             snapshot.header.publicId,
@@ -472,6 +473,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       ..setPendingCloudSync(true)
       ..setCloudSyncError(null);
 
+    if (_showsWaitingStrategyPatch()) return;
     final desiredOp = _buildDesiredStrategySyncOp();
     ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
           entityKey: const EntitySyncKey.strategy(),
@@ -539,6 +541,29 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     ref.read(strategySaveStateProvider.notifier).markDirty();
     refreshAutosaveScheduling();
+  }
+
+  /// Whether the canvas's map and theme are the strategy-level change still
+  /// waiting in the outbox, as it was drawn (see drawnStrategyHeader): that
+  /// change waits as it is.
+  bool _showsWaitingStrategyPatch() {
+    final strategyId = state.strategyId;
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (strategyId == null ||
+        snapshot == null ||
+        snapshot.header.publicId != strategyId) {
+      return false;
+    }
+    final drawn = drawnStrategyHeader(ref, snapshot.header);
+    final strategyTheme = ref.read(strategyThemeProvider);
+    final mapData = Maps.mapNames[ref.read(mapProvider).currentMap];
+    return !identical(drawn, snapshot.header) &&
+        mapData != null &&
+        drawn.shows(
+          mapData: mapData,
+          themeProfileId: strategyTheme.profileId,
+          themeOverridePalette: strategyTheme.overridePalette?.toJson(),
+        );
   }
 
   StrategyOp? _buildDesiredStrategySyncOp() {
@@ -1844,6 +1869,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final isCloud = !local && _selectedWorkspaceIsCloud();
+    if (isCloud && _refuseCloudChangeOffline()) {
+      throw StateError(cloudNeedsConnectionMessage);
+    }
     if (!isCloud) _requireLocalLibrary('create');
     final existingNames = isCloud
         ? (ref.read(cloudStrategiesProvider).valueOrNull ?? const [])
@@ -1966,6 +1994,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final resolvedSource = source ?? _resolveLibraryMutationSource();
     if (resolvedSource == StrategySource.cloud) {
+      if (_refuseCloudChangeOffline()) return;
       try {
         final shell = state.strategyId == strategyID &&
                 state.source == StrategySource.cloud
@@ -2023,6 +2052,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       // The server copies everything, images included, in one transaction:
       // a copy's images need asset rows of their own, which only the server
       // can create for bytes that are already uploaded.
+      if (_refuseCloudChangeOffline()) return;
       const sourceName = 'strategy:duplicate';
       final reporter = ref.read(cloudLibraryActionReporterProvider);
       final repository = ref.read(convexStrategyRepositoryProvider);
@@ -2116,6 +2146,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final resolvedSource = source ?? _resolveLibraryMutationSource();
     if (resolvedSource == StrategySource.cloud) {
+      if (_refuseCloudChangeOffline()) {
+        return CloudLibraryActionResult.cancelled;
+      }
       const sourceName = 'strategy:delete';
       final result = await ref.read(cloudLibraryActionReporterProvider).run(
             action: () async {
@@ -2481,6 +2514,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final resolvedSource = source ?? _resolveLibraryMutationSource();
     if (resolvedSource == StrategySource.cloud) {
+      if (_refuseCloudChangeOffline()) {
+        return CloudLibraryActionResult.cancelled;
+      }
       const sourceName = 'strategy:move';
       final result = await ref.read(cloudLibraryActionReporterProvider).run(
             action: () async {

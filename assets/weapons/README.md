@@ -25,3 +25,4 @@ The PNGs are unmodified and retain transparency. `WeaponIcon` fits their visible
 | marshal.png | [Marshal](https://media.valorant-api.com/weapons/c4883e50-4494-202c-3ec3-6b8a9284f00b/killstreamicon.png) |
 | spectre.png | [Spectre](https://media.valorant-api.com/weapons/462080d1-4035-2937-7c09-27aa2a5c27a7/killstreamicon.png) |
 | stinger.png | [Stinger](https://media.valorant-api.com/weapons/f7e1b454-4ad4-1063-ec0a-159e56b58941/killstreamicon.png) |
+| warden.png | [Warden](https://media.valorant-api.com/weapons/8db0a1bf-4a50-832a-4566-faaaa6d250ca/killstreamicon.png), retrieved 2026-10-15 |

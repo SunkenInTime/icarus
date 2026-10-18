@@ -8,7 +8,6 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -19,45 +18,16 @@ import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
-import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/replay/replay_capture.dart';
+import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_frame.dart';
+import 'package:icarus/replay/replay_map_projection.dart';
+import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
-import 'package:uuid/uuid.dart';
 
-/// What the library's New Strategy makes: one blank page.
-Future<StrategyData> createBlankStrategy(MapValue map, String name) async {
-  final strategy = StrategyData(
-    id: const Uuid().v4(),
-    name: name,
-    mapData: map,
-    versionNumber: Settings.versionNumber,
-    lastEdited: DateTime.now(),
-    folderID: null,
-    pages: [
-      StrategyPage(
-        id: const Uuid().v4(),
-        name: 'Page 1',
-        isAutoNamed: true,
-        drawingData: const [],
-        agentData: const [],
-        abilityData: const [],
-        textData: const [],
-        imageData: const [],
-        utilityData: const [],
-        sortIndex: 0,
-        isAttack: true,
-        settings: StrategySettings(),
-      ),
-    ],
-  );
-  await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-      .put(strategy.id, strategy);
-  return strategy;
-}
+import 'replay_test_support.dart';
 
 ReplayFrame frame({Offset position = const Offset(500, 500)}) => ReplayFrame(
       timeMs: 1000,
@@ -176,6 +146,40 @@ void main() {
         throwsStateError,
       );
       expect(box.isEmpty, isTrue);
+    });
+
+    test('watching one player, a capture saves only their cone', () async {
+      // Jett (Red) and Omen (Blue) standing apart, Omen watched.
+      final document = ReplayDocument.fromBytes(icrp(
+        {
+          ...sampleJson(),
+          'movement': {
+            'a': {'offset': 0, 'count': 3},
+            'b': {'offset': 3 * 24, 'count': 3},
+          },
+        },
+        records: [
+          for (var t = 0; t <= 2000; t += 1000) [t, 0, 0, 100, 90, 0],
+          for (var t = 0; t <= 2000; t += 1000) [t, 600, 0, 100, 90, 0],
+        ],
+      ));
+      final playback = ReplayPlayback(
+        document: document,
+        projection: ReplayMapProjection.forMapPath(document.match.mapPath)!,
+        perspective: ReplayTeam.red,
+      )
+        ..seek(1500)
+        ..watch('b');
+      addTearDown(playback.dispose);
+
+      await capture().capture(playback.freshFrame(), pageName: 'watching');
+
+      final agents = box.values.single.pages.single.agentData;
+      expect(agents, hasLength(2));
+      expect(
+        agents.whereType<PlacedViewConeAgent>().map((agent) => agent.id),
+        [ReplayFrameBuilder.agentIdOf('b')],
+      );
     });
   });
 

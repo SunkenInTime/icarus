@@ -1,0 +1,582 @@
+import 'dart:math' as math;
+
+import 'package:collection/collection.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/weapons.dart';
+import 'package:icarus/replay/replay_ability_catalog.dart';
+import 'package:icarus/replay/replay_agents.dart';
+import 'package:icarus/replay/replay_document.dart';
+import 'package:icarus/replay/replay_playback.dart';
+import 'package:icarus/replay/replay_weapons.dart';
+import 'package:icarus/widgets/replay/replay_match_card.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+
+enum ReplayEventKind {
+  kill,
+  plant,
+  defuse,
+  detonation,
+  ability;
+
+  ReplayEventFilter get filter => switch (this) {
+        kill => ReplayEventFilter.kills,
+        plant || defuse || detonation => ReplayEventFilter.spike,
+        ability => ReplayEventFilter.abilities,
+      };
+}
+
+/// The choices in the killfeed's filter, each showing some kinds of event.
+enum ReplayEventFilter {
+  kills('Kills'),
+  spike('Spike'),
+  abilities('Abilities');
+
+  const ReplayEventFilter(this.label);
+
+  final String label;
+}
+
+/// Which events the killfeed lists and the scrubber marks, kept while the
+/// app is open. Ability uses start hidden: a round has dozens of them.
+final replayEventFiltersProvider = StateProvider<Set<ReplayEventFilter>>(
+  (ref) => const {ReplayEventFilter.kills, ReplayEventFilter.spike},
+);
+
+/// Something that happened in a round: a kill, the spike planted, defused
+/// or detonating, or an ability used. The killfeed lists them; the scrubber
+/// marks them.
+class ReplayRoundEvent {
+  const ReplayRoundEvent._(
+    this.kind,
+    this.timeMs, {
+    this.kill,
+    this.subject,
+    this.site,
+    this.ability,
+  });
+
+  final ReplayEventKind kind;
+  final int timeMs;
+
+  /// The kill, for a kill.
+  final ReplayKill? kill;
+
+  /// Who planted or defused, when the replay says, or who used the ability.
+  final String? subject;
+
+  /// Where the spike was planted, for a plant or a detonation.
+  final String? site;
+
+  /// The ability used, for an ability use.
+  final AbilityInfo? ability;
+}
+
+final _eventsByRound = Expando<List<ReplayRoundEvent>>();
+
+/// [round]'s events in the order they happened; a kill comes before a
+/// spike event in the same millisecond, and both before an ability use.
+/// Worked out once per round: the roster asks for them every frame.
+List<ReplayRoundEvent> replayRoundEvents(
+  ReplayDocument document,
+  ReplayRound round,
+) =>
+    _eventsByRound[round] ??= List.unmodifiable(_roundEvents(document, round));
+
+List<ReplayRoundEvent> _roundEvents(
+  ReplayDocument document,
+  ReplayRound round,
+) {
+  final plant = round.plant;
+  final defuse = round.defuse;
+  final detonateMs = round.detonateMs;
+  // The round runs on past its end, through the post-round, until the next
+  // one starts; a death there is still this round's.
+  final nextStartMs = document.rounds
+      .where((next) => next.index == round.index + 1)
+      .firstOrNull
+      ?.startMs;
+  bool inRound(int timeMs) =>
+      timeMs >= round.startMs && (nextStartMs == null || timeMs < nextStartMs);
+  final events = [
+    for (final kill in document.kills)
+      if (inRound(kill.timeMs))
+        ReplayRoundEvent._(ReplayEventKind.kill, kill.timeMs, kill: kill),
+    if (plant != null)
+      ReplayRoundEvent._(
+        ReplayEventKind.plant,
+        plant.timeMs,
+        subject: plant.subject,
+        site: plant.site,
+      ),
+    if (defuse != null)
+      ReplayRoundEvent._(
+        ReplayEventKind.defuse,
+        defuse.timeMs,
+        subject: defuse.subject,
+      ),
+    if (detonateMs != null)
+      ReplayRoundEvent._(
+        ReplayEventKind.detonation,
+        detonateMs,
+        site: plant?.site,
+      ),
+    for (final use in _abilityUses(document))
+      if (inRound(use.timeMs)) use,
+  ];
+  mergeSort(events, compare: (a, b) => a.timeMs.compareTo(b.timeMs));
+  return events;
+}
+
+final _abilityUsesByDocument = Expando<List<ReplayRoundEvent>>();
+
+/// Every ability use in [document], one per cast, at the moment its first
+/// actor appeared. Utility nobody can be named for is left out.
+List<ReplayRoundEvent> _abilityUses(ReplayDocument document) =>
+    _abilityUsesByDocument[document] ??= () {
+      final uses = <ReplayRoundEvent>[];
+      // A round runs until the next one starts, as for kills; no cast
+      // carries over into the next.
+      final roundStarts = [for (final round in document.rounds) round.startMs]
+        ..sort();
+      int roundOf(int timeMs) =>
+          roundStarts.lastIndexWhere((startMs) => startMs <= timeMs);
+      int? castsRound;
+      // Each caster's casts of each ability so far this round. A later
+      // actor joins the newest one that takes it: two smokes can be up at
+      // once, and the first may land after the second.
+      final casts = <(String, AgentType, int), List<_Cast>>{};
+      for (final utility in document.utility) {
+        final round = roundOf(utility.spawnMs);
+        if (round != castsRound) {
+          castsRound = round;
+          casts.clear();
+        }
+        final entry = replayAbilityFor(utility.classPath);
+        if (entry == null) continue;
+        final caster = replayCasterOf(document, utility, entry);
+        if (caster == null) continue;
+        final earlier =
+            casts[(caster.subject, entry.agent, entry.abilityIndex)] ??= [];
+        final cast = earlier.reversed.firstWhereOrNull(
+          (cast) => cast.takes(utility),
+        );
+        if (cast != null) {
+          cast.add(utility);
+          continue;
+        }
+        earlier.add(_Cast(utility));
+        uses.add(ReplayRoundEvent._(
+          ReplayEventKind.ability,
+          utility.spawnMs,
+          subject: caster.subject,
+          ability: entry.ability,
+        ));
+      }
+      return uses;
+    }();
+
+/// The utility actors of one cast so far.
+class _Cast {
+  _Cast(ReplayUtility first)
+      : startMs = first.spawnMs,
+        endMs = first.endMs;
+
+  /// How far apart, at most, the actors of one cast appear together or one
+  /// after another.
+  static const _slackMs = 100;
+
+  final int startMs;
+
+  /// When its last actor closes; null when one lasts to the end of the
+  /// replay.
+  int? endMs;
+
+  /// Whether [utility] is part of this cast: it appeared with the cast's
+  /// first actor (Brimstone's smokes land together), or it is a follow-up
+  /// ([replayFollowsCast]) to an actor of the cast still up or just gone.
+  /// Another of the same thrown later is a new cast, however soon.
+  bool takes(ReplayUtility utility) =>
+      utility.spawnMs - startMs <= _slackMs ||
+      (replayFollowsCast(utility.classPath) &&
+          (endMs == null || utility.spawnMs <= endMs! + _slackMs));
+
+  void add(ReplayUtility utility) {
+    final end = utility.endMs;
+    endMs = endMs == null || end == null ? null : math.max(endMs!, end);
+  }
+}
+
+/// Valorant's own art for how a round ended, as its match history draws
+/// it: white glyphs on transparency, so any tint takes.
+String replayRoundEndAsset(ReplayRoundEnd end) => switch (end) {
+      ReplayRoundEnd.elimination => 'assets/replay/round-elimination.png',
+      ReplayRoundEnd.detonated => 'assets/replay/round-detonated.png',
+      ReplayRoundEnd.defused => 'assets/replay/round-defused.png',
+      ReplayRoundEnd.time => 'assets/replay/round-time.png',
+      ReplayRoundEnd.surrender => 'assets/replay/round-surrender.png',
+    };
+
+/// How a round ended, in [color]: the round strip's slots, and the
+/// killfeed's and the scrubber's defuse and detonation. A plant draws the
+/// spike ([replaySpikeAsset]) instead.
+class ReplayRoundEndGlyph extends StatelessWidget {
+  const ReplayRoundEndGlyph(
+    this.end, {
+    super.key,
+    required this.size,
+    required this.color,
+  });
+
+  final ReplayRoundEnd end;
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Image.asset(
+        replayRoundEndAsset(end),
+        width: size,
+        height: size,
+        color: color,
+        colorBlendMode: BlendMode.srcIn,
+        // The art is 50 to 64 px: mipmaps keep it crisp at a quarter.
+        filterQuality: FilterQuality.medium,
+      );
+}
+
+/// Valorant's spike, the art the map draws a planted spike with.
+const String replaySpikeAsset = 'assets/spike.svg';
+
+/// How big an event line draws its parts. Everything but the clock and the
+/// gaps follows the portrait.
+class _LineSizes {
+  const _LineSizes({
+    required this.clock,
+    required this.font,
+    required this.portrait,
+    required this.gap,
+  });
+
+  /// The scrubber's hover card: as small as the line still reads.
+  static const compact =
+      _LineSizes(clock: 36, font: 11, portrait: 22, gap: 6);
+
+  /// A line [width] wide, as the killfeed draws it: the portraits take a
+  /// sixth of what the clock leaves, so the line grows with its panel.
+  factory _LineSizes.across(double width) {
+    const clock = 40.0;
+    return _LineSizes(
+      clock: clock,
+      font: 12,
+      portrait: ((width - clock) / 6).clamp(22.0, 40.0).floorToDouble(),
+      gap: 8,
+    );
+  }
+
+  final double clock;
+
+  /// The size of the line's words: its clock, and an ability's name.
+  final double font;
+  final double portrait;
+  final double gap;
+
+  double get assist => (portrait * 0.64).roundToDouble();
+  double get weapon => (portrait * 0.55).roundToDouble();
+
+  /// An ability's icon, or a glyph standing for the event.
+  double get glyph => (portrait * 0.73).roundToDouble();
+  double get siteFont => (portrait * 0.55).roundToDouble().clamp(12, 16);
+}
+
+/// One event as the killfeed shows it: the time since barriers dropped,
+/// then who did what. A kill reads killer, assists, what killed, victim.
+/// The scrubber's hover card draws this same line, small.
+class ReplayEventLine extends StatelessWidget {
+  const ReplayEventLine({
+    super.key,
+    required this.event,
+    required this.playback,
+    this.fill = false,
+  });
+
+  final ReplayRoundEvent event;
+  final ReplayPlayback playback;
+
+  /// Whether the line spans its width, as the killfeed draws it: who acted
+  /// on the left, the victim on the right edge, what happened centred
+  /// between them, all sized to the room. Otherwise it is as narrow as it
+  /// reads, for the hover card.
+  final bool fill;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!fill) return _line(context, _LineSizes.compact);
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          _line(context, _LineSizes.across(constraints.maxWidth)),
+    );
+  }
+
+  Widget _line(BuildContext context, _LineSizes sizes) {
+    final theme = ShadTheme.of(context);
+    final round = playback.round;
+    final since =
+        round == null ? event.timeMs : event.timeMs - round.playStartMs;
+    final (actor, what, victim) = switch (event.kind) {
+      ReplayEventKind.kill => _kill(event.kill!, sizes),
+      ReplayEventKind.plant => (
+          _actor(event.subject, sizes),
+          [_spike(sizes), ..._site(theme, sizes)],
+          null,
+        ),
+      ReplayEventKind.defuse => (
+          _actor(event.subject, sizes),
+          [_roundEnd(ReplayRoundEnd.defused, sizes)],
+          null,
+        ),
+      ReplayEventKind.detonation => (
+          null,
+          [
+            _roundEnd(ReplayRoundEnd.detonated, sizes),
+            ..._site(theme, sizes),
+          ],
+          null,
+        ),
+      ReplayEventKind.ability => (
+          _actor(event.subject, sizes),
+          [
+            Image.asset(
+              event.ability!.iconPath,
+              width: sizes.glyph,
+              height: sizes.glyph,
+            ),
+            SizedBox(width: sizes.gap - 2),
+            Text(
+              event.ability!.name,
+              style: theme.textTheme.muted.copyWith(fontSize: sizes.font),
+            ),
+          ],
+          null,
+        ),
+    };
+    final clock = SizedBox(
+      width: sizes.clock,
+      child: Text(
+        // A cast in the buy phase counts down to the barriers.
+        since < 0 ? '-${replayClockLabel(-since)}' : replayClockLabel(since),
+        style: theme.textTheme.muted.copyWith(
+          fontSize: sizes.font,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+    );
+    if (!fill) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          clock,
+          if (actor != null) ...[actor, SizedBox(width: sizes.gap)],
+          ...what,
+          if (victim != null) ...[SizedBox(width: sizes.gap), victim],
+        ],
+      );
+    }
+    // An empty side keeps its room, so what happened stays centred.
+    final empty = SizedBox(width: sizes.portrait);
+    return Row(
+      children: [
+        clock,
+        actor ?? empty,
+        SizedBox(width: sizes.gap),
+        Expanded(
+          child: Center(
+            // Four assists can crowd the gun; it shrinks rather than spill.
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(mainAxisSize: MainAxisSize.min, children: what),
+            ),
+          ),
+        ),
+        SizedBox(width: sizes.gap),
+        victim ?? empty,
+      ],
+    );
+  }
+
+  /// Who killed with their assists, what killed, and who died.
+  (Widget?, List<Widget>, Widget) _kill(ReplayKill kill, _LineSizes sizes) {
+    final document = playback.document;
+    final killer = document.playerBySubject(kill.killer);
+    final source = _source(
+      kill.damageSource,
+      replayAgentType(killer?.agentId),
+      sizes,
+    );
+    final victim = ReplayAgentIcon(
+      player: document.playerBySubject(kill.victim),
+      perspective: playback.perspective,
+      size: sizes.portrait,
+    );
+    // A fall or the spike: no killer, just what killed, or a skull when
+    // that isn't known, so the row still reads as a death.
+    if (kill.killer == null) {
+      return (null, [source ?? _glyph(LucideIcons.skull, sizes)], victim);
+    }
+    final actor = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ReplayAgentIcon(
+          player: killer,
+          perspective: playback.perspective,
+          size: sizes.portrait,
+        ),
+        for (final assist in kill.assists) ...[
+          const SizedBox(width: 2),
+          Opacity(
+            opacity: 0.6,
+            child: ReplayAgentIcon(
+              player: document.playerBySubject(assist),
+              perspective: playback.perspective,
+              size: sizes.assist,
+            ),
+          ),
+        ],
+      ],
+    );
+    return (
+      actor,
+      [
+        source ??
+            Icon(
+              LucideIcons.crosshair,
+              size: sizes.weapon,
+              color: Settings.tacticalVioletTheme.mutedForeground,
+            ),
+      ],
+      victim,
+    );
+  }
+
+  /// The gun or the ability that killed, or null when the source is unknown.
+  static Widget? _source(
+    String? damageSource,
+    AgentType? killer,
+    _LineSizes sizes,
+  ) {
+    final weapon = replayWeaponType(damageSource);
+    if (weapon != WeaponType.none) {
+      // The silhouettes point left; turned, the barrel faces the victim.
+      return Transform.flip(
+        flipX: true,
+        child: Image.asset(weapon.iconPath, height: sizes.weapon),
+      );
+    }
+    final ability = replayKillAbility(damageSource, killer);
+    if (ability != null) {
+      return Image.asset(
+        ability.iconPath,
+        width: sizes.glyph,
+        height: sizes.glyph,
+      );
+    }
+    return null;
+  }
+
+  Widget? _actor(String? subject, _LineSizes sizes) {
+    final player = playback.document.playerBySubject(subject);
+    if (player == null) return null;
+    return ReplayAgentIcon(
+      player: player,
+      perspective: playback.perspective,
+      size: sizes.portrait,
+    );
+  }
+
+  static Widget _glyph(IconData icon, _LineSizes sizes) => Icon(
+        icon,
+        size: sizes.glyph,
+        color: Settings.tacticalVioletTheme.mutedForeground,
+      );
+
+  static Widget _roundEnd(ReplayRoundEnd end, _LineSizes sizes) =>
+      ReplayRoundEndGlyph(
+        end,
+        size: sizes.glyph,
+        color: Settings.tacticalVioletTheme.mutedForeground,
+      );
+
+  /// The spike, in the muted ink of the other event glyphs.
+  static Widget _spike(_LineSizes sizes) => SvgPicture.asset(
+        replaySpikeAsset,
+        height: sizes.glyph,
+        colorFilter: ColorFilter.mode(
+          Settings.tacticalVioletTheme.mutedForeground,
+          BlendMode.srcIn,
+        ),
+      );
+
+  List<Widget> _site(ShadThemeData theme, _LineSizes sizes) {
+    final site = event.site;
+    if (site == null) return const [];
+    return [
+      const SizedBox(width: 4),
+      Text(
+        site,
+        style: TextStyle(
+          fontSize: sizes.siteFont,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.mutedForeground,
+        ),
+      ),
+    ];
+  }
+}
+
+/// A player as their agent's icon, bordered in their team's colour: the
+/// replay has no names, and both teams can field the same agent.
+class ReplayAgentIcon extends StatelessWidget {
+  const ReplayAgentIcon({
+    super.key,
+    required this.player,
+    required this.perspective,
+    this.size = 22,
+  });
+
+  final ReplayPlayer? player;
+  final ReplayTeam perspective;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final agent = player == null ? null : replayAgentType(player!.agentId);
+    final radius = BorderRadius.circular(
+      size < 22
+          ? 3
+          : size < 28
+              ? 4
+              : 6,
+    );
+    // The portrait is cut to the rounded square and the team border drawn
+    // over it, so the art's corners never poke past the border.
+    return Container(
+      width: size,
+      height: size,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Settings.tacticalVioletTheme.secondary,
+        borderRadius: radius,
+      ),
+      foregroundDecoration: BoxDecoration(
+        borderRadius: radius,
+        border: Border.all(
+          color: player?.team?.colorFor(perspective) ??
+              Settings.tacticalVioletTheme.border,
+        ),
+      ),
+      child:
+          agent == null ? null : Image.asset(AgentData.agents[agent]!.iconPath),
+    );
+  }
+}

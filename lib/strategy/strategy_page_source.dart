@@ -1,7 +1,4 @@
-import 'dart:convert';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/collab/canonical_json.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -26,6 +23,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/strategy/cloud_element_decoding.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -221,6 +219,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
             );
     if (projected != null &&
         (page.publicId == activePageId() ||
+            projected.drawsQueuedWork ||
             ref
                 .read(activePageLiveSyncProvider.notifier)
                 .hasOverlayForPage(page.publicId))) {
@@ -232,6 +231,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       throw StateError(
           'Remote page snapshot unavailable for ${page.publicId}.');
     }
+    final mapData = drawnStrategyHeader(ref, snapshot.header).mapData;
     final elements = pageSnapshot.elements;
     final lineups = pageSnapshot.lineups;
 
@@ -248,24 +248,16 @@ class CloudStrategyPageSource implements StrategyPageSource {
       }
       final payload = element.decodedPayload();
       try {
-        switch (element.elementType) {
-          case 'agent':
-            agents.add(PlacedAgentNode.fromJson(payload));
-            break;
-          case 'ability':
-            abilities.add(PlacedAbility.fromJson(payload));
-            break;
-          case 'drawing':
-            final decoded = DrawingProvider.fromJson(jsonEncode([payload]));
-            if (decoded.isNotEmpty) {
-              drawings.add(decoded.first);
-            }
-            break;
-          case 'text':
-            texts.add(PlacedText.fromJson(payload));
-            break;
-          case 'image':
-            final hydrated = PlacedImage.fromJson(payload);
+        switch (decodeCloudElement(element.elementType, payload)) {
+          case final PlacedAgentNode agent:
+            agents.add(agent);
+          case final PlacedAbility ability:
+            abilities.add(ability);
+          case final DrawingElement drawing:
+            drawings.add(drawing);
+          case final PlacedText text:
+            texts.add(text);
+          case final PlacedImage hydrated:
             final remoteAsset = snapshot.assetsById[hydrated.pictureId];
             images.add(hydrated);
             if (remoteAsset != null) {
@@ -275,10 +267,8 @@ class CloudStrategyPageSource implements StrategyPageSource {
                     asset: remoteAsset,
                   );
             }
-            break;
-          case 'utility':
-            utilities.add(PlacedUtility.fromJson(payload));
-            break;
+          case final PlacedUtility utility:
+            utilities.add(utility);
         }
       } catch (_) {
         // Ignore malformed payloads during hydration.
@@ -294,7 +284,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
         .noteLineupGroups(page.publicId, cloudLineups.groupOf);
 
     final mapValue = Maps.mapNames.entries.firstWhere(
-      (entry) => entry.value == snapshot.header.mapData,
+      (entry) => entry.value == mapData,
       orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
     );
 
@@ -332,7 +322,12 @@ class CloudStrategyPageSource implements StrategyPageSource {
   Future<bool> flushCurrentPage() async {
     // Whether this work is made live is judged as the canvas hands it over,
     // before it waits on anything (see StrategyOpQueueNotifier.liveStamp).
-    final madeLive = ref.read(strategyOpQueueProvider.notifier).liveStamp;
+    final pageId = activePageId();
+    final madeLive = pageId == null
+        ? null
+        : ref
+            .read(activePageLiveSyncProvider.notifier)
+            .liveStampForEdits(pageId);
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
     if (snapshot == null || snapshot.header.publicId != strategyId) {
       return false;
@@ -342,7 +337,6 @@ class CloudStrategyPageSource implements StrategyPageSource {
         .canEditPages) {
       return true;
     }
-    final pageId = activePageId();
     if (pageId == null) {
       return false;
     }
@@ -380,14 +374,18 @@ class CloudStrategyPageSource implements StrategyPageSource {
     final strategyTheme = ref.read(strategyThemeProvider);
     final desiredThemeOverride = strategyTheme.overridePalette?.toJson();
     final header = snapshot.header;
+    bool shows(RemoteStrategyHeader header) => header.shows(
+          mapData: currentMapData,
+          themeProfileId: strategyTheme.profileId,
+          themeOverridePalette: desiredThemeOverride,
+        );
 
-    final mapMatches = header.mapData == currentMapData;
-    final themeProfileMatches =
-        header.themeProfileId == strategyTheme.profileId;
-    final themeOverrideMatches =
-        cloudJsonEquivalent(header.themeOverridePalette, desiredThemeOverride);
+    // The canvas shows the strategy-level change still waiting in the
+    // outbox, as it was drawn: that change waits as it is.
+    final drawn = drawnStrategyHeader(ref, header);
+    if (!identical(drawn, header) && shows(drawn)) return;
 
-    if (mapMatches && themeProfileMatches && themeOverrideMatches) {
+    if (shows(header)) {
       await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
             entityKey: const EntitySyncKey.strategy(),
             desiredOp: null,
@@ -434,24 +432,16 @@ class CloudStrategyPageSource implements StrategyPageSource {
     for (final element in projected.elements) {
       final payload = cloudPayloadData(element.payload);
       try {
-        switch (element.elementType) {
-          case 'agent':
-            agents.add(PlacedAgentNode.fromJson(payload));
-            break;
-          case 'ability':
-            abilities.add(PlacedAbility.fromJson(payload));
-            break;
-          case 'drawing':
-            final decoded = DrawingProvider.fromJson(jsonEncode([payload]));
-            if (decoded.isNotEmpty) {
-              drawings.add(decoded.first);
-            }
-            break;
-          case 'text':
-            texts.add(PlacedText.fromJson(payload));
-            break;
-          case 'image':
-            final hydrated = PlacedImage.fromJson(payload);
+        switch (decodeCloudElement(element.elementType, payload)) {
+          case final PlacedAgentNode agent:
+            agents.add(agent);
+          case final PlacedAbility ability:
+            abilities.add(ability);
+          case final DrawingElement drawing:
+            drawings.add(drawing);
+          case final PlacedText text:
+            texts.add(text);
+          case final PlacedImage hydrated:
             final remoteAsset = snapshot.assetsById[hydrated.pictureId];
             images.add(hydrated);
             if (remoteAsset != null) {
@@ -461,10 +451,8 @@ class CloudStrategyPageSource implements StrategyPageSource {
                     asset: remoteAsset,
                   );
             }
-            break;
-          case 'utility':
-            utilities.add(PlacedUtility.fromJson(payload));
-            break;
+          case final PlacedUtility utility:
+            utilities.add(utility);
         }
       } catch (_) {
         // Ignore malformed payloads during hydration.
@@ -480,7 +468,8 @@ class CloudStrategyPageSource implements StrategyPageSource {
         .noteLineupGroups(page.publicId, cloudLineups.groupOf);
 
     final mapValue = Maps.mapNames.entries.firstWhere(
-      (entry) => entry.value == snapshot.header.mapData,
+      (entry) =>
+          entry.value == drawnStrategyHeader(ref, snapshot.header).mapData,
       orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
     );
 

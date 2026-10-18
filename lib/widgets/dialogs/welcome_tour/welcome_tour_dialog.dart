@@ -34,9 +34,9 @@ abstract final class WelcomeTourCopy {
       'they open on any computer and you can share them with your team. To '
       'bring an older one along, right-click it and choose **Move to cloud**.';
 
-  // What the release promises about replays. Icarus reads replays only up
-  // to VALORANT patch 13.06 for now, so this is the copy most likely to
-  // change before the release ships.
+  // What the release promises about replays. Icarus reads replays through
+  // VALORANT patch 13.08 except 13.07, and each new patch needs an update,
+  // so this is the copy most likely to change before the release ships.
   static const replaysTitle = 'Turn your matches into strategies';
   static const replaysBody =
       'The **Replays** tab lists matches you downloaded in VALORANT. Pause on '

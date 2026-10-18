@@ -142,6 +142,9 @@ impl MeasuredArrayRoutes {
             | "++Ares-Core+release-13.04"
             | "++Ares-Core+release-13.05"
             | "++Ares-Core+release-13.06" => Self::ALL,
+            // 13.08 (Icarus): no route has had its children re-parsed
+            // independently, and Icarus's output does not depend on them.
+            "++Ares-Core+release-13.08" => Self::NONE,
             _ => Self::NONE,
         }
     }
@@ -239,6 +242,7 @@ mod tests {
         ("++Ares-Core+release-13.04", ALL),
         ("++Ares-Core+release-13.05", ALL),
         ("++Ares-Core+release-13.06", ALL),
+        ("++Ares-Core+release-13.08", &[]),
     ];
 
     #[test]

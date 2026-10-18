@@ -235,8 +235,8 @@ class AgentData implements DraggableData {
         name: "Phoenix",
         abilityNames: const [
           "Blaze",
-          "Hot Hands",
           "Curveball",
+          "Hot Hands",
           "Run it Back",
         ],
       );
@@ -870,9 +870,9 @@ class AgentData implements DraggableData {
         role: AgentRole.sentinel,
         name: "Deadlock",
         abilityNames: const [
-          "Barrier Mesh",
-          "Sonic Sensor",
           "GravNet",
+          "Sonic Sensor",
+          "Barrier Mesh",
           "Annihilation",
         ],
       );
@@ -976,8 +976,8 @@ class AgentData implements DraggableData {
         role: AgentRole.sentinel,
         name: "Vyse",
         abilityNames: const [
-          "Razorvine",
           "Shear",
+          "Razorvine",
           "Arc Rose",
           "Steel Garden",
         ],
@@ -1125,8 +1125,8 @@ class AgentData implements DraggableData {
         abilityNames: const [
           "M-pulse Concuss",
           "M-pulse Healing",
-          "Harmonize",
           "Waveform",
+          "Harmonize",
         ],
       );
       // agent.abilities.
@@ -1154,19 +1154,19 @@ class AgentData implements DraggableData {
           hasCenterDot: true,
         ),
       );
-      final miksHarmonize = AbilityInfo(
+      final miksWaveform = AbilityInfo(
         type: AgentType.miks,
         index: 2,
-        name: "Harmonize",
+        name: "Waveform",
         iconPath: 'assets/agents/Miks/3.webp',
         abilityData: ImageAbility(
             imagePath: 'assets/agents/Miks/Smoke.webp',
             size: 4.1 * inGameMetersDiameter),
       );
-      final miksWaveform = AbilityInfo(
+      final miksHarmonize = AbilityInfo(
         type: AgentType.miks,
         index: 3,
-        name: "Waveform",
+        name: "Harmonize",
         iconPath: 'assets/agents/Miks/4.webp',
         abilityData: BaseAbility(iconPath: 'assets/agents/Miks/4.webp'),
       );
@@ -1185,8 +1185,8 @@ class AgentData implements DraggableData {
       );
       agent.abilities[0] = miksConcuss;
       agent.abilities[1] = miksHeal;
-      agent.abilities[2] = miksHarmonize;
-      agent.abilities[3] = miksWaveform;
+      agent.abilities[2] = miksWaveform;
+      agent.abilities[3] = miksHarmonize;
       agent.abilities.add(miksUlt);
 
       return agent;

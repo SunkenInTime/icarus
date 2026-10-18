@@ -15,6 +15,7 @@ import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/cloud_library_action.dart';
+import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:uuid/uuid.dart';
 
@@ -47,6 +48,11 @@ class FolderProvider extends Notifier<String?> {
     );
 
     if (targetWorkspace == LibraryWorkspace.cloud) {
+      if (refuseCloudChangeWhileOffline(
+        ref.read(cloudLibraryShowsCopyProvider),
+      )) {
+        throw StateError(cloudNeedsConnectionMessage);
+      }
       final icon = FolderIconRegistry.resolve(newFolder.iconId).iconData;
       try {
         await ref.read(convexStrategyRepositoryProvider).createFolder(
@@ -318,7 +324,12 @@ class FolderProvider extends Notifier<String?> {
     required String source,
     required String failureMessage,
     bool showFailureMessage = false,
-  }) {
+  }) async {
+    if (refuseCloudChangeWhileOffline(
+      ref.read(cloudLibraryShowsCopyProvider),
+    )) {
+      return CloudLibraryActionResult.cancelled;
+    }
     return ref.read(cloudLibraryActionReporterProvider).run(
           action: action,
           source: source,

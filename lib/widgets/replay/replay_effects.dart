@@ -5,6 +5,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/widgets/draggable_widgets/shared/framed_ability_icon_shell.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Where a canonical world point is drawn on the canvas, on [isAttack]'s side.
 Offset replayScreenPoint(Offset canonical, {required bool isAttack}) {
@@ -74,6 +75,12 @@ class ReplayEffectsPainter extends CustomPainter {
               ..strokeWidth = coordinates.scale(2 * (1 - progress) + 0.5)
               ..color = ink.withValues(alpha: 0.8 * (1 - progress)),
           );
+        case ReplayFlashed():
+          // Drawn over the agents, by [ReplayFlashPainter].
+          continue;
+        case ReplaySweep():
+          // Drawn under the utility, clipped by [ReplaySweepClipper].
+          continue;
         case ReplayFlight(:final trail):
           // The path just flown, fading toward its tail.
           if (trail.length < 2) continue;
@@ -99,6 +106,154 @@ class ReplayEffectsPainter extends CustomPainter {
   @override
   bool shouldRepaint(ReplayEffectsPainter oldDelegate) =>
       oldDelegate.effects != effects || oldDelegate.isAttack != isAttack;
+}
+
+/// Keeps the part of a sweep's area swept so far: from where it was cast to
+/// its head, as wide as the area. The icon at the cast point is left out,
+/// since the placed ability draws it already. The clip is no larger than the
+/// area, so the mask Skia draws for it on Windows stays small.
+class ReplaySweepClipper extends CustomClipper<Path> {
+  ReplaySweepClipper({
+    required this.sweep,
+    required this.isAttack,
+    required this.iconSide,
+  });
+
+  final ReplaySweep sweep;
+  final bool isAttack;
+
+  /// The ability icon's side on screen; it stands upright on the cast point.
+  final double iconSide;
+
+  /// Room past the area's sides, so its border is never cut.
+  static const _margin = 2.0;
+
+  @override
+  Path getClip(Size size) {
+    final from = replayScreenPoint(sweep.from, isAttack: isAttack);
+    final to = replayScreenPoint(sweep.to, isAttack: isAttack);
+    final reach = to - from;
+    // Nothing swept yet.
+    if (reach.distance < 0.5) return Path();
+    final along = reach / reach.distance;
+    final across = Offset(-along.dy, along.dx) *
+        (CoordinateSystem.instance.worldHeightToScreen(sweep.halfWidth) +
+            _margin);
+    final back = from - along * _margin;
+    final swept = Path()
+      ..addPolygon([back + across, back - across, to - across, to + across],
+          true);
+    final icon = Path()
+      ..addRect(
+          Rect.fromCenter(center: from, width: iconSide, height: iconSide));
+    return Path.combine(PathOperation.difference, swept, icon);
+  }
+
+  @override
+  bool shouldReclip(ReplaySweepClipper oldClipper) =>
+      oldClipper.sweep.from != sweep.from ||
+      oldClipper.sweep.to != sweep.to ||
+      oldClipper.isAttack != isAttack ||
+      oldClipper.iconSide != iconSide;
+}
+
+/// A flashed player's icon washed white and marked with a crossed-out eye,
+/// its outline filling in a lighter shade as the flash passes. Drawn just
+/// above that agent so agents stacked over it stay clear.
+class ReplayFlashPainter extends CustomPainter {
+  ReplayFlashPainter({
+    required this.flash,
+    required this.isAttack,
+    required this.agentSize,
+    required this.neutralTeamColors,
+  });
+
+  final ReplayFlashed flash;
+  final bool isAttack;
+
+  /// Whether agents wear neutral outlines, as [AgentWidget] draws them.
+  final bool neutralTeamColors;
+
+  /// The agent icon's size, as placed widgets are given it.
+  final double agentSize;
+
+  /// The agent icon's own corner radius.
+  static const _radius = Radius.circular(3);
+
+  /// The wash at full blindness: the agent stays recognisable through it.
+  static const _fullWash = 0.7;
+
+  /// The eye's size against the icon.
+  static const _eyeShare = 0.55;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final side = CoordinateSystem.instance.scale(agentSize);
+    final at = replayScreenPoint(flash.centre, isAttack: isAttack);
+    final box = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: at, width: side, height: side),
+      _radius,
+    );
+    canvas.drawRRect(
+      box,
+      Paint()
+        ..color = Colors.white.withValues(alpha: _fullWash * flash.blindness),
+    );
+
+    final eye = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(LucideIcons.eyeOff.codePoint),
+        style: TextStyle(
+          fontFamily: LucideIcons.eyeOff.fontFamily,
+          package: LucideIcons.eyeOff.fontPackage,
+          fontSize: side * _eyeShare,
+          color: Settings.flashedEyeInk,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    eye.paint(canvas, at - Offset(eye.width / 2, eye.height / 2));
+    eye.dispose();
+
+    // Over the agent's own 1 px border, which lies just inside its box:
+    // from top centre, clockwise, as far as the flash has gone.
+    final metric =
+        _outlineFromTop(box.deflate(0.5)).computeMetrics().first;
+    final trace = metric.extractPath(0, metric.length * flash.progress);
+    var team =
+        flash.isAlly ? Settings.allyOutlineColor : Settings.enemyOutlineColor;
+    if (neutralTeamColors) team = Settings.neutralTeamShade(team);
+    canvas.drawPath(
+      trace,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = Color.lerp(team.withValues(alpha: 1), Colors.white, 0.35)!,
+    );
+  }
+
+  /// [box]'s outline as one path from its top centre, clockwise.
+  static Path _outlineFromTop(RRect box) {
+    final r = Radius.circular(box.tlRadiusX);
+    return Path()
+      ..moveTo(box.center.dx, box.top)
+      ..lineTo(box.right - r.x, box.top)
+      ..arcToPoint(Offset(box.right, box.top + r.y), radius: r)
+      ..lineTo(box.right, box.bottom - r.y)
+      ..arcToPoint(Offset(box.right - r.x, box.bottom), radius: r)
+      ..lineTo(box.left + r.x, box.bottom)
+      ..arcToPoint(Offset(box.left, box.bottom - r.y), radius: r)
+      ..lineTo(box.left, box.top + r.y)
+      ..arcToPoint(Offset(box.left + r.x, box.top), radius: r)
+      ..close();
+  }
+
+  @override
+  bool shouldRepaint(ReplayFlashPainter oldDelegate) =>
+      oldDelegate.flash != flash ||
+      oldDelegate.isAttack != isAttack ||
+      oldDelegate.agentSize != agentSize ||
+      oldDelegate.neutralTeamColors != neutralTeamColors;
 }
 
 /// A thrown utility's icon where it is now, a little smaller than the

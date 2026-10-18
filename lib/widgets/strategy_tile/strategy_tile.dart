@@ -3,7 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
+import 'package:icarus/services/cloud_needs_connection.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -195,6 +200,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     // Moving to the cloud, it can't be opened, changed or moved elsewhere.
     final isMoving = !_isCloud &&
         ref.watch(movingToCloudProvider.select((ids) => ids.contains(id)));
+    final needsConnection = _needsConnection;
 
     final tile = DragTarget<GridItem>(
       onWillAcceptWithDetails: (details) {
@@ -325,7 +331,9 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                           borderRadius: strategyTileInnerRadius,
                                           overlay: isMoving
                                               ? const MovingToCloudBadge()
-                                              : widget.showDeviceBadge
+                                              : needsConnection
+                                                  ? const NeedsConnectionBadge()
+                                                  : widget.showDeviceBadge
                                                   ? const DeviceOnlyBadge()
                                                   : viewData.sharedBadge,
                                         ),
@@ -413,10 +421,17 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     );
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 200),
-      opacity: isMoving ? movingToCloudOpacity : 1,
+      // Dimmed like a move: readable, plainly not available.
+      opacity: isMoving || needsConnection ? movingToCloudOpacity : 1,
       child: tile,
     );
   }
+
+  /// A cloud action while the library shows this computer's copy: refused
+  /// at once, with the reason. Each of these needs the server.
+  bool _refusedOffline() =>
+      _isCloud &&
+      refuseCloudChangeWhileOffline(ref.read(cloudLibraryShowsCopyProvider));
 
   List<ShadContextMenuItem> _buildMenuItems() {
     final pinned = ref.watch(pinnedItemsProvider);
@@ -437,6 +452,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         onPressed: widget.canRename
             ? () {
                 _closeMenus();
+                if (_refusedOffline()) return;
                 _showRenameDialog();
               }
             : null,
@@ -448,6 +464,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         onPressed: widget.canDuplicate
             ? () {
                 _closeMenus();
+                if (_refusedOffline()) return;
                 _duplicateStrategy();
               }
             : null,
@@ -468,6 +485,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         child: const Text('Export'),
         onPressed: () {
           _closeMenus();
+          if (_refusedOffline()) return;
           _exportStrategy();
         },
       ),
@@ -477,6 +495,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
           child: const Text('Share'),
           onPressed: () {
             _closeMenus();
+            if (_refusedOffline()) return;
             _showShareDialog();
           },
         ),
@@ -487,6 +506,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
           child: const Text('Leave'),
           onPressed: () {
             _closeMenus();
+            if (_refusedOffline()) return;
             leaveSharedItem(
               context: context,
               ref: ref,
@@ -503,6 +523,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         onPressed: widget.canDelete
             ? () {
                 _closeMenus();
+                if (_refusedOffline()) return;
                 _showDeleteDialog();
               }
             : null,
@@ -512,8 +533,24 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     ];
   }
 
+  /// Offline, a cloud strategy this computer keeps no copy of can't open.
+  bool get _needsConnection =>
+      _isCloud &&
+      ref.watch(cloudOfflineProvider) &&
+      !ref.watch(strategyKeptOfflineProvider(_strategyId));
+
   Future<void> _openStrategy(BuildContext context) async {
     if (_isLoading) {
+      return;
+    }
+    if (_isCloud &&
+        ref.read(cloudOfflineProvider) &&
+        !ref.read(strategyKeptOfflineProvider(_strategyId))) {
+      Settings.showToast(
+        message: strategyNeedsConnectionMessage,
+        // Not an error: the neutral surface, as for other offline refusals.
+        backgroundColor: Settings.tacticalVioletTheme.secondary,
+      );
       return;
     }
 

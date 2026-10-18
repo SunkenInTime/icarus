@@ -20,7 +20,8 @@ enum WeaponType {
   outlaw('Outlaw', WeaponCategory.snipers),
   operator('Operator', WeaponCategory.snipers),
   ares('Ares', WeaponCategory.heavies),
-  odin('Odin', WeaponCategory.heavies);
+  odin('Odin', WeaponCategory.heavies),
+  warden('Warden', WeaponCategory.rifles);
 
   const WeaponType(this.displayName, this.category);
 

@@ -6,6 +6,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/map_artwork_registration.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
+import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 
 class SvgHeightMapTransform {
@@ -40,6 +41,48 @@ class SvgHeightMapTransform {
   Offset sideWorldFromSource(Offset point, {required bool isAttack}) =>
       offset +
       (point - (isAttack ? Offset.zero : defenseArtworkOffset)) * scale;
+
+  /// Height-model space to the screen, seen from one side: an even scale
+  /// and an offset.
+  Float64List sourceToScreen({required bool isAttack}) {
+    final coordinates = CoordinateSystem.instance;
+    final screenScale = coordinates.worldHeightToScreen(scale);
+    final shift = coordinates.coordinateToScreen(
+        sideWorldFromSource(Offset.zero, isAttack: isAttack));
+    return Float64List(16)
+      ..[0] = screenScale
+      ..[5] = screenScale
+      ..[10] = 1
+      ..[12] = shift.dx
+      ..[13] = shift.dy
+      ..[15] = 1;
+  }
+
+  /// The painted floor of [model] on screen: where a cone may reveal
+  /// anything. Off it, and in its holes, cones reveal nothing. Kept while
+  /// the screen stays put, so a clip to it can be drawn once and reused.
+  Path floorOnScreen(SvgHeightVisibility model, {required bool isAttack}) {
+    final toScreen = sourceToScreen(isAttack: isAttack);
+    final cached = _floors[model];
+    if (cached != null &&
+        cached.$1[0] == toScreen[0] &&
+        cached.$1[12] == toScreen[12] &&
+        cached.$1[13] == toScreen[13]) {
+      return cached.$2;
+    }
+    Path? floor;
+    for (final receiver in model.receivers) {
+      final next = SvgHeightViewConePainter.ringsPath(receiver.rings,
+          evenOdd: receiver.evenOdd);
+      floor =
+          floor == null ? next : Path.combine(PathOperation.union, floor, next);
+    }
+    final screen = (floor ?? Path()).transform(toScreen);
+    _floors[model] = (toScreen, screen);
+    return screen;
+  }
+
+  static final _floors = Expando<(Float64List, Path)>();
 }
 
 /// Compatibility accessors for Split-specific tests and audit tools.
@@ -170,7 +213,7 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
       widget.opacity,
     );
     if (_paintInputs == paintInputs) {
-      return RepaintBoundary(child: CustomPaint(size: size, painter: _painter));
+      return ConeArea(size: size, painter: _painter!, fallback: _painter!);
     }
     final apex = Offset(size.width / 2, size.height);
     final inverse = -widget.rotation;
@@ -220,7 +263,7 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
           ? null
           : (result.cone, transform, widget.range / mapTransform.scale),
     );
-    return RepaintBoundary(child: CustomPaint(size: size, painter: _painter));
+    return ConeArea(size: size, painter: _painter!, fallback: _painter!);
   }
 
   static Path _combinedReceiver(SvgHeightVisibility model) {
@@ -236,7 +279,8 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
   }
 }
 
-class SvgHeightViewConePainter extends CustomPainter {
+class SvgHeightViewConePainter extends CustomPainter
+    implements ConeAreaPainter {
   const SvgHeightViewConePainter({
     required this.visibilityPolygon,
     required this.receiverRings,
@@ -270,6 +314,7 @@ class SvgHeightViewConePainter extends CustomPainter {
   final bool receiverEvenOdd;
   final Offset apex;
   final double radius;
+  @override
   final double opacity;
 
   /// Translation applied to [_receiver] at paint time; see the widget.
@@ -280,8 +325,42 @@ class SvgHeightViewConePainter extends CustomPainter {
   /// coordinates by [paintSvgConeArea] instead of clipped to [_visibility].
   final (SvgVisibilityCone, Float64List, double)? floors;
 
+  /// Painting by itself: a grey fading toward the cone's reach.
   @override
-  void paint(Canvas canvas, Size size) {
+  void paint(Canvas canvas, Size size) =>
+      _paintArea(canvas, _fill, clipToFloor: true);
+
+  /// Painting into a [ConeCoverageLayer]: flat [fill].
+  @override
+  void paintArea(Canvas canvas, Size size, Paint fill,
+          {required bool clipToFloor}) =>
+      _paintArea(canvas, (_, __) => fill, clipToFloor: clipToFloor);
+
+  /// What a cone without height floors lights: what it sees, out to its
+  /// reach. Made once per painter, so painting it needs no clip. On Windows
+  /// the engine draws without a stencil buffer, so a clip to anything but a
+  /// rectangle, a rounded rectangle or a small convex polygon (unturned) is
+  /// a mask drawn on the CPU.
+  static final _lit = Expando<Path>();
+
+  /// Marks a painter whose lit area could not be made (path operations
+  /// can fail on awkward outlines); it is clipped instead, as it used to be.
+  static final _noLit = Path();
+
+  static Path _litArea(Path visibility, Offset apex, double radius) {
+    try {
+      return Path.combine(
+        PathOperation.intersect,
+        visibility,
+        Path()..addOval(Rect.fromCircle(center: apex, radius: radius)),
+      );
+    } on StateError {
+      return _noLit;
+    }
+  }
+
+  void _paintArea(Canvas canvas, Paint Function(Offset, double) fill,
+      {required bool clipToFloor}) {
     if ((_visibility == null && visibilityPolygon.length < 3) ||
         (_receiver == null && receiverRings.isEmpty)) return;
     final visibility =
@@ -289,21 +368,29 @@ class SvgHeightViewConePainter extends CustomPainter {
     final receiver =
         _receiver ?? _path(receiverRings, evenOdd: receiverEvenOdd);
     canvas.save();
-    // Receiver fill is the last geometric clip. No cone pixels can appear in
-    // the SVG's blank exterior or in authored holes in the playable fill.
-    canvas.translate(receiverOffset.dx, receiverOffset.dy);
-    canvas.clipPath(receiver);
-    canvas.translate(-receiverOffset.dx, -receiverOffset.dy);
+    if (clipToFloor) {
+      // Receiver fill is the last geometric clip. No cone pixels can appear
+      // in the SVG's blank exterior or in authored holes in the playable
+      // fill.
+      canvas.translate(receiverOffset.dx, receiverOffset.dy);
+      canvas.clipPath(receiver);
+      canvas.translate(-receiverOffset.dx, -receiverOffset.dy);
+    }
     final floors = this.floors;
     if (floors == null) {
-      canvas.clipPath(visibility);
-      canvas.drawCircle(apex, radius, _fill(apex, radius));
+      final lit = _lit[this] ??= _litArea(visibility, apex, radius);
+      if (identical(lit, _noLit)) {
+        canvas.clipPath(visibility);
+        canvas.drawCircle(apex, radius, fill(apex, radius));
+      } else {
+        canvas.drawPath(lit, fill(apex, radius));
+      }
     } else {
       final (cone, sourceToCanvas, range) = floors;
       final origin = cone.sector!.first;
       canvas.transform(sourceToCanvas);
       paintSvgConeArea(canvas, cone, cone.outlinePath(_identity),
-          _fill(origin, range), Rect.fromCircle(center: origin, radius: range));
+          fill(origin, range), Rect.fromCircle(center: origin, radius: range));
     }
     canvas.restore();
   }

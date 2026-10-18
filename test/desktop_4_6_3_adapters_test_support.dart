@@ -1,6 +1,7 @@
 // Desktop 4.6.3's adapters for the typeIds this build writes by hand, copied
 // verbatim from the desktop-stable-v4.6.3+103 tag (only the class names
-// changed). Every other adapter is unchanged since that release. Rollback
+// changed), plus its WeaponTypeAdapter, which this build extended with the
+// Warden. Every other adapter is unchanged since that release. Rollback
 // tests decode with these to prove 4.6.3 opens, and keeps, what this build
 // saves. Never edit them to match this build.
 
@@ -503,6 +504,119 @@ class Desktop463EllipseDrawingAdapter extends TypeAdapter<EllipseDrawing> {
       ..writeByte(7)
       ..write(obj.boundingBox);
   }
+}
+
+class Desktop463WeaponTypeAdapter extends TypeAdapter<WeaponType> {
+  @override
+  final typeId = 38;
+
+  @override
+  WeaponType read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return WeaponType.none;
+      case 1:
+        return WeaponType.classic;
+      case 2:
+        return WeaponType.shorty;
+      case 3:
+        return WeaponType.frenzy;
+      case 4:
+        return WeaponType.ghost;
+      case 5:
+        return WeaponType.bandit;
+      case 6:
+        return WeaponType.sheriff;
+      case 7:
+        return WeaponType.bulldog;
+      case 8:
+        return WeaponType.guardian;
+      case 9:
+        return WeaponType.phantom;
+      case 10:
+        return WeaponType.vandal;
+      case 11:
+        return WeaponType.bucky;
+      case 12:
+        return WeaponType.judge;
+      case 13:
+        return WeaponType.stinger;
+      case 14:
+        return WeaponType.spectre;
+      case 15:
+        return WeaponType.marshal;
+      case 16:
+        return WeaponType.outlaw;
+      case 17:
+        return WeaponType.operator;
+      case 18:
+        return WeaponType.ares;
+      case 19:
+        return WeaponType.odin;
+      default:
+        return WeaponType.none;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, WeaponType obj) {
+    switch (obj) {
+      case WeaponType.none:
+        writer.writeByte(0);
+      case WeaponType.classic:
+        writer.writeByte(1);
+      case WeaponType.shorty:
+        writer.writeByte(2);
+      case WeaponType.frenzy:
+        writer.writeByte(3);
+      case WeaponType.ghost:
+        writer.writeByte(4);
+      case WeaponType.bandit:
+        writer.writeByte(5);
+      case WeaponType.sheriff:
+        writer.writeByte(6);
+      case WeaponType.bulldog:
+        writer.writeByte(7);
+      case WeaponType.guardian:
+        writer.writeByte(8);
+      case WeaponType.phantom:
+        writer.writeByte(9);
+      case WeaponType.vandal:
+        writer.writeByte(10);
+      case WeaponType.bucky:
+        writer.writeByte(11);
+      case WeaponType.judge:
+        writer.writeByte(12);
+      case WeaponType.stinger:
+        writer.writeByte(13);
+      case WeaponType.spectre:
+        writer.writeByte(14);
+      case WeaponType.marshal:
+        writer.writeByte(15);
+      case WeaponType.outlaw:
+        writer.writeByte(16);
+      case WeaponType.operator:
+        writer.writeByte(17);
+      case WeaponType.ares:
+        writer.writeByte(18);
+      case WeaponType.odin:
+        writer.writeByte(19);
+      // Not in 4.6.3, which can never hold one; only Dart's exhaustive
+      // switch needs the case.
+      case WeaponType.warden:
+        throw StateError('Desktop 4.6.3 has no Warden');
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Desktop463WeaponTypeAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
 }
 
 int _readDrawingHiveColorValue(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/weapons.dart';
@@ -7,11 +8,13 @@ import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/replay/replay_weapons.dart';
+import 'package:icarus/widgets/keybind_badge.dart';
+import 'package:icarus/widgets/replay/replay_events.dart';
 import 'package:icarus/widgets/replay/replay_match_card.dart';
 import 'package:icarus/widgets/replay/replay_select.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Both teams as they stand right now, then the round's kills.
+/// Both teams as they stand right now, then the round's events.
 class ReplayRoster extends StatelessWidget {
   const ReplayRoster({super.key, required this.playback});
 
@@ -66,6 +69,8 @@ extension on ReplayRoster {
     final round = playback.round;
     return [
       playback.perspective,
+      playback.watching,
+      playback.following,
       round?.index,
       for (final player in playback.document.players)
         if (playback.frames.playerState(player, now) case final state) ...[
@@ -74,8 +79,8 @@ extension on ReplayRoster {
           state.armor?.round(),
         ],
       if (round != null)
-        playback.document.kills
-            .where((kill) => kill.timeMs >= round.startMs && kill.timeMs <= now)
+        replayRoundEvents(playback.document, round)
+            .where((event) => event.timeMs <= now)
             .length,
     ];
   }
@@ -96,35 +101,46 @@ class _TeamBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     final states = [
-      for (final player in playback.document.players)
-        if (player.team == team)
-          playback.frames.playerState(player, playback.timeMs),
+      for (final player in playback.playersOf(team))
+        playback.frames.playerState(player, playback.timeMs),
     ];
     final alive = states.where((state) => state.alive).length;
+    // Rows reach 6px further out than the header, so a watched row's
+    // surface frames its content and the content lines up with the header.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: team.colorFor(playback.perspective),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Row(
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: team.colorFor(playback.perspective),
+                  ),
                 ),
-              ),
-              const Spacer(),
-              Text('$alive alive', style: theme.textTheme.muted),
-            ],
+                const Spacer(),
+                Text('$alive alive', style: theme.textTheme.muted),
+              ],
+            ),
           ),
           const SizedBox(height: 6),
           for (final state in states)
             _PlayerRow(
+              // Keyed: a swap moves each player to the other block, and
+              // a row (its hover, its watched state) must go with them.
+              key: ValueKey(state.player.subject),
               state: state,
               economy: playback.round?.economyFor(state.player.subject),
+              watched: playback.watching == state.player.subject,
+              following: playback.following,
+              watchKey: playback.watchKeyOf(state.player),
+              onWatch: () => playback.watch(state.player.subject),
             ),
         ],
       ),
@@ -132,20 +148,111 @@ class _TeamBlock extends StatelessWidget {
   }
 }
 
-class _PlayerRow extends StatelessWidget {
-  const _PlayerRow({required this.state, required this.economy});
+/// One player as they stand. Clicking the row, or pressing the key drawn at
+/// its left edge, watches them; the watched player's row is raised and
+/// ringed in violet.
+class _PlayerRow extends StatefulWidget {
+  const _PlayerRow({
+    super.key,
+    required this.state,
+    required this.economy,
+    required this.watched,
+    required this.following,
+    required this.watchKey,
+    required this.onWatch,
+  });
 
   final ReplayPlayerState state;
   final ReplayEconomy? economy;
+  final bool watched;
+
+  /// Whether the camera follows the watched player.
+  final bool following;
+
+  /// The number key that watches this player, when they have one.
+  final String? watchKey;
+  final VoidCallback onWatch;
+
+  @override
+  State<_PlayerRow> createState() => _PlayerRowState();
+}
+
+class _PlayerRowState extends State<_PlayerRow> {
+  var _hovered = false;
+
+  /// What clicking the row (or pressing its key) does.
+  String _tooltip(String name) {
+    final action = !widget.watched
+        ? 'Watch'
+        : widget.following
+            ? 'Stop watching'
+            : 'Follow';
+    final key = widget.watchKey;
+    return key == null ? '$action $name' : '$action $name ($key)';
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
+    final state = widget.state;
+    final economy = widget.economy;
     final agent = replayAgentType(state.player.agentId);
     final agentData = agent == null ? null : AgentData.agents[agent];
     final weapon = replayWeaponType(economy?.weapon);
     final name = state.player.name ?? agentData?.name ?? 'Unknown agent';
     final credits = economy?.credits;
+    const radius = 8.0;
+    return ShadTooltip(
+      builder: (context) => Text(_tooltip(name)),
+      // A Shad detector, so the tooltip sees the hover.
+      child: ShadGestureDetector(
+        cursor: SystemMouseCursors.click,
+        behavior: HitTestBehavior.opaque,
+        onHoverChange: (hovered) => setState(() => _hovered = hovered),
+        onTap: widget.onWatch,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: widget.watched
+              ? Settings.raisedSurface(radius)
+              : BoxDecoration(
+                  color: _hovered ? theme.colorScheme.accent : null,
+                  borderRadius: BorderRadius.circular(radius),
+                ),
+          foregroundDecoration: widget.watched
+              ? BoxDecoration(
+                  borderRadius: BorderRadius.circular(radius),
+                  border: Border.all(color: Settings.accentInk),
+                )
+              : null,
+          child: Row(
+            children: [
+              // Numbered down the left edge, as a scoreboard numbers its
+              // players. Outside the dead fade: the dead can be watched too.
+              if (widget.watchKey case final key?)
+                KeybindBadge(label: key, lit: _hovered || widget.watched)
+              else
+                const SizedBox(width: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _content(theme, agentData, name, weapon, credits),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _content(
+    ShadThemeData theme,
+    AgentData? agentData,
+    String name,
+    WeaponType weapon,
+    int? credits,
+  ) {
+    final state = widget.state;
     return Opacity(
       opacity: state.alive ? 1 : 0.4,
       child: SizedBox(
@@ -155,6 +262,7 @@ class _PlayerRow extends StatelessWidget {
             Container(
               width: 28,
               height: 28,
+              clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 color: theme.colorScheme.secondary,
                 borderRadius: BorderRadius.circular(6),
@@ -257,103 +365,150 @@ class _VitalsBar extends StatelessWidget {
   }
 }
 
-/// This round's kills so far, newest first. Clicking one replays it.
-class _Killfeed extends StatelessWidget {
+/// This round's events so far, newest first, as far as the filter above
+/// them shows. Clicking one replays it.
+class _Killfeed extends ConsumerWidget {
   const _Killfeed({required this.playback});
 
   final ReplayPlayback playback;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = ShadTheme.of(context);
+    final filters = ref.watch(replayEventFiltersProvider);
     final round = playback.round;
     final now = playback.timeMs;
-    final kills = [
-      for (final kill in playback.document.kills)
-        if (round != null && kill.timeMs >= round.startMs && kill.timeMs <= now)
-          kill,
+    final events = [
+      if (round != null)
+        for (final event in replayRoundEvents(playback.document, round))
+          if (event.timeMs <= now && filters.contains(event.kind.filter)) event,
     ].reversed.toList();
-    if (kills.isEmpty) {
-      return Center(
-        child: Text('No kills yet this round', style: theme.textTheme.muted),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      itemCount: kills.length,
-      itemBuilder: (context, index) => _KillRow(
-        kill: kills[index],
-        playback: playback,
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Spread over the feed, every gap the same, the edges' too: the
+        // padding at either end matches the spacing between.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+          // Wraps rather than overflows, should a font run wide.
+          child: Wrap(
+            alignment: WrapAlignment.spaceEvenly,
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              for (final filter in ReplayEventFilter.values)
+                _FilterChip(
+                  filter: filter,
+                  selected: filters.contains(filter),
+                  onTap: () => ref
+                      .read(replayEventFiltersProvider.notifier)
+                      .update((shown) => shown.contains(filter)
+                          ? ({...shown}..remove(filter))
+                          : {...shown, filter}),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: events.isEmpty
+              ? Center(
+                  child: Text(
+                    _emptyText(filters),
+                    style: theme.textTheme.muted,
+                  ),
+                )
+              // Rows sit 6px in from the panel, like the players above, and
+              // the line inside sets their height.
+              : ListView.builder(
+                  padding: const EdgeInsets.all(6),
+                  itemCount: events.length,
+                  itemBuilder: (context, index) => ShadButton.ghost(
+                    height: 0,
+                    expands: true,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    onPressed: () => playback.seek(events[index].timeMs - 2000),
+                    child: ReplayEventLine(
+                      event: events[index],
+                      playback: playback,
+                      fill: true,
+                    ),
+                  ),
+                ),
+        ),
+      ],
     );
+  }
+
+  /// What an empty list means: with kills shown, that no one has died.
+  static String _emptyText(Set<ReplayEventFilter> filters) {
+    final spike = filters.contains(ReplayEventFilter.spike);
+    final abilities = filters.contains(ReplayEventFilter.abilities);
+    if (filters.contains(ReplayEventFilter.kills)) {
+      return 'No kills yet this round';
+    }
+    if (spike && abilities) return 'No plant or abilities yet this round';
+    if (spike) return 'No plant yet this round';
+    if (abilities) return 'No abilities used yet this round';
+    return 'Choose what to show';
   }
 }
 
-class _KillRow extends StatelessWidget {
-  const _KillRow({required this.kill, required this.playback});
+/// One choice in the killfeed's filter, drawn like the library's tabs: a
+/// raised zinc surface while its events show, flat and muted while they
+/// don't.
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    required this.filter,
+    required this.selected,
+    required this.onTap,
+  });
 
-  final ReplayKill kill;
-  final ReplayPlayback playback;
+  static const _radius = 6.0;
+
+  final ReplayEventFilter filter;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    final document = playback.document;
-    final killer = document.playerBySubject(kill.killer);
-    final victim = document.playerBySubject(kill.victim);
-    final round = playback.round;
-    final since = round == null ? kill.timeMs : kill.timeMs - round.playStartMs;
-    return ShadButton.ghost(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      mainAxisAlignment: MainAxisAlignment.start,
-      onPressed: () => playback.seek(kill.timeMs - 2000),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 36,
+    const theme = Settings.tacticalVioletTheme;
+    final ink = selected ? theme.foreground : theme.mutedForeground;
+    // One node: the button's label and role, and whether it is on.
+    return MergeSemantics(
+      child: Semantics(
+        toggled: selected,
+        child: DecoratedBox(
+          decoration: selected
+              ? Settings.raisedSurface(_radius)
+              : const BoxDecoration(),
+          child: ShadButton.ghost(
+            height: 26,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            gap: 6,
+            backgroundColor: selected ? Colors.transparent : null,
+            hoverBackgroundColor: selected ? Colors.transparent : null,
+            foregroundColor: ink,
+            hoverForegroundColor: theme.foreground,
+            onPressed: onTap,
+            leading: switch (filter) {
+              ReplayEventFilter.kills =>
+                const Icon(LucideIcons.crosshair, size: 14),
+              ReplayEventFilter.spike => SvgPicture.asset(
+                  replaySpikeAsset,
+                  height: 13,
+                  colorFilter: ColorFilter.mode(ink, BlendMode.srcIn),
+                ),
+              ReplayEventFilter.abilities =>
+                const Icon(LucideIcons.sparkles, size: 14),
+            },
             child: Text(
-              replayClockLabel(since),
-              style: theme.textTheme.muted.copyWith(fontSize: 11),
+              filter.label,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
             ),
           ),
-          _KillIcon(player: killer, perspective: playback.perspective),
-          const SizedBox(width: 6),
-          Icon(
-            LucideIcons.crosshair,
-            size: 12,
-            color: theme.colorScheme.mutedForeground,
-          ),
-          const SizedBox(width: 6),
-          _KillIcon(player: victim, perspective: playback.perspective),
-        ],
-      ),
-    );
-  }
-}
-
-class _KillIcon extends StatelessWidget {
-  const _KillIcon({required this.player, required this.perspective});
-
-  final ReplayPlayer? player;
-  final ReplayTeam perspective;
-
-  @override
-  Widget build(BuildContext context) {
-    final agent = player == null ? null : replayAgentType(player!.agentId);
-    return Container(
-      width: 22,
-      height: 22,
-      decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.secondary,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: player?.team?.colorFor(perspective) ??
-              Settings.tacticalVioletTheme.border,
         ),
       ),
-      child:
-          agent == null ? null : Image.asset(AgentData.agents[agent]!.iconPath),
     );
   }
 }

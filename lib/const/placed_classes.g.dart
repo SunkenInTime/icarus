@@ -118,6 +118,7 @@ const _$WeaponTypeEnumMap = {
   WeaponType.operator: 'operator',
   WeaponType.ares: 'ares',
   WeaponType.odin: 'odin',
+  WeaponType.warden: 'warden',
 };
 
 PlacedViewConeAgent _$PlacedViewConeAgentFromJson(Map<String, dynamic> json) =>

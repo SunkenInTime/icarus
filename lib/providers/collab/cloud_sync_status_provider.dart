@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -23,6 +25,28 @@ final cloudWorkDurabilityUncertainProvider = Provider<bool>((ref) {
       mediaQueueState.durabilityError != null;
 });
 
+/// Where the cloud session stands, for the chip: null when there is no
+/// session state to read (a build without auth, as in some tests), which
+/// leaves the chip to the socket and the queues.
+final _sessionStatusForSyncProvider = Provider<ConvexAuthStatus?>((ref) {
+  try {
+    return ref.watch(authProvider.select((auth) => auth.convexAuthStatus));
+  } catch (_) {
+    return null;
+  }
+});
+
+/// The copy on this computer the editor is drawing instead of the server's
+/// answer, and when that page was last matched with the server (null when
+/// unknown). Null while the editor shows live answers.
+final editorShownCopyProvider = Provider<({DateTime? copiedAt})?>((ref) {
+  final snapshot = ref.watch(remoteEditorSnapshotProvider).valueOrNull;
+  if (snapshot == null) return null;
+  final page = snapshot.activePage;
+  if (!snapshot.shell.fromCopy && !(page?.fromCopy ?? false)) return null;
+  return (copiedAt: page?.copiedAt);
+});
+
 final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   final saveState = ref.watch(strategySaveStateProvider);
   final opQueueState = ref.watch(strategyOpQueueProvider);
@@ -37,6 +61,7 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
     textDraftProvider.select((drafts) => drafts.isNotEmpty),
   );
   final isConnected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
+  final sessionStatus = ref.watch(_sessionStatusForSyncProvider);
 
   if (ref.watch(cloudWorkDurabilityUncertainProvider)) {
     return CloudSyncStatus.attention;
@@ -52,8 +77,19 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
       accountMediaErrorCount > 0) {
     return CloudSyncStatus.attention;
   }
-  if (!isConnected) {
+  // The socket can be back while the session is still offline, waiting on
+  // a retry: nothing syncs until the session is ready again.
+  if (!isConnected || sessionStatus == ConvexAuthStatus.offline) {
     return CloudSyncStatus.offline;
+  }
+  // Drawn from this computer's copy, because a read went unanswered: the
+  // server hasn't confirmed what is on screen, so nothing is "Synced".
+  if (ref.watch(editorShownCopyProvider) != null) {
+    return CloudSyncStatus.offline;
+  }
+  // The session needs the user (expired, or refused by the server).
+  if (sessionStatus == ConvexAuthStatus.incident) {
+    return CloudSyncStatus.attention;
   }
   if (saveState.cloudSyncError != null) {
     return CloudSyncStatus.attention;
@@ -71,5 +107,30 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
       !mediaQueueState.durableLoaded) {
     return CloudSyncStatus.syncing;
   }
+  // Synced is a promise the work is on the server, which only a ready
+  // session can keep.
+  if (sessionStatus != null && sessionStatus != ConvexAuthStatus.ready) {
+    return CloudSyncStatus.syncing;
+  }
   return CloudSyncStatus.synced;
 });
+
+/// How many outbox records of the open cloud strategy, for the signed-in
+/// account, hold changes that have not landed.
+final openStrategyUnsentChangesProvider = Provider<int>((ref) {
+  final strategy = ref.watch(strategyProvider);
+  if (strategy.source != StrategySource.cloud) return 0;
+  return ref.watch(strategyOpQueueProvider.select(
+    (queue) =>
+        queue
+            .accountOutbox.strategies[strategy.strategyId]?.unsentRecordCount ??
+        0,
+  ));
+});
+
+/// The sync status while offline, with [waiting] changes saved on this
+/// computer that have not reached the server.
+String offlineSyncLabel(int waiting) => waiting == 0
+    ? 'Offline, changes stay on this device'
+    : 'Offline · $waiting ${waiting == 1 ? 'change' : 'changes'} saved on '
+        'this computer';
