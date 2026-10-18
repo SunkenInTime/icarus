@@ -909,6 +909,61 @@ void main() {
       );
     });
 
+    test(
+        'a server that just came back and is slow to confirm the session '
+        'keeps the session offline, and it gets through on a later try',
+        () async {
+      AuthProvider.debugOfflineRetryDelay =
+          (_) => const Duration(milliseconds: 20);
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(authProvider);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+
+      // Back, but the server doesn't confirm the session within the wait.
+      convexApi
+        ..connected = true
+        ..reconnectResult = true;
+      convexApi.connectedController.add(true);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.offline,
+      );
+      expect(container.read(authProvider).activeAuthIncidentId, isNull);
+
+      convexApi.autoAuthenticateOnSetAuth = true;
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.ready,
+      );
+    });
+
+    test(
+        'a connected server that never confirms the session is an incident '
+        'after a few tries', () async {
+      AuthProvider.debugOfflineRetryDelay =
+          (_) => const Duration(milliseconds: 20);
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(authProvider);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+
+      convexApi
+        ..connected = true
+        ..reconnectResult = true;
+      convexApi.connectedController.add(true);
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.incident,
+      );
+    });
+
     test('a retry stays offline on screen until it succeeds', () async {
       final container = ProviderContainer();
       addTearDown(container.dispose);

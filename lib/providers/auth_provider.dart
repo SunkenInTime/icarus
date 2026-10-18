@@ -546,6 +546,12 @@ class AuthProvider extends Notifier<AppAuthState> {
   /// connection listener that retries the moment the socket is back.
   Timer? _offlineRetryTimer;
   int _offlineRetryAttempts = 0;
+
+  /// Retries that reached a connected server which then didn't confirm the
+  /// session in time. A server that has just come back can be slow to; past
+  /// [_maxSlowServerRetries] the session is treated as refused, as today.
+  int _slowServerRetries = 0;
+  static const _maxSlowServerRetries = 3;
   StreamSubscription<bool>? _offlineConnectionSub;
 
   late final AuthProviderSupabaseApi _supabaseApi;
@@ -1132,7 +1138,11 @@ class AuthProvider extends Notifier<AppAuthState> {
     );
     _offlineRetryTimer?.cancel();
     _offlineRetryTimer = Timer(
-      offlineRetryDelay(_offlineRetryAttempts++),
+      // Connected already: the server is back but was slow to confirm the
+      // session, so ask again soon rather than back off.
+      _convexApi.isConnected
+          ? offlineRetryDelay(0) * 0.4
+          : offlineRetryDelay(_offlineRetryAttempts++),
       () => _retryOffline('timer'),
     );
   }
@@ -1154,6 +1164,7 @@ class AuthProvider extends Notifier<AppAuthState> {
     _offlineConnectionSub?.cancel();
     _offlineConnectionSub = null;
     _offlineRetryAttempts = 0;
+    _slowServerRetries = 0;
   }
 
   /// Whether a setup failure came from the cloud being out of reach, not
@@ -1466,9 +1477,15 @@ class AuthProvider extends Notifier<AppAuthState> {
         return;
       }
 
+      final offlineFailure = _supabaseApi.currentSession?.user.id != null &&
+          (_isOfflineFailure(error) ||
+              (quietRetry &&
+                  error is TimeoutException &&
+                  _slowServerRetries++ < _maxSlowServerRetries));
       // An automatic retry that is still offline was reported when the
       // session first went offline.
-      if (state.convexAuthStatus != ConvexAuthStatus.offline) {
+      if (!offlineFailure ||
+          state.convexAuthStatus != ConvexAuthStatus.offline) {
         AppErrorReporter.reportWarning(
           error is TimeoutException
               ? 'Convex auth readiness timed out [$trigger]'
@@ -1491,9 +1508,7 @@ class AuthProvider extends Notifier<AppAuthState> {
 
       final upgradeRequired =
           ref.read(clientUpgradeRequiredProvider.notifier).noteError(error);
-      if (!upgradeRequired &&
-          _supabaseApi.currentSession?.user.id != null &&
-          _isOfflineFailure(error)) {
+      if (!upgradeRequired && offlineFailure) {
         _enterOffline();
         return;
       }
