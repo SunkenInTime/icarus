@@ -23,6 +23,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
@@ -325,6 +326,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   Future<void> enqueuePageChange(
     StrategyOp op, {
     bool flushImmediately = false,
+    SeenPage? seenPage,
   }) async {
     final gate = writeGate;
     if (gate != null) await gate.future;
@@ -1601,6 +1603,7 @@ Future<ProviderContainer> _cloudContainer({
     remoteEditorSnapshotProvider.overrideWith(() => remote),
     strategyOpQueueProvider.overrideWith(() => queue),
     cloudMediaAccountIdProvider.overrideWithValue('account-a'),
+    cloudCopyScopeProvider.overrideWithValue(null),
     cloudMediaUploadQueueProvider
         .overrideWith(() => mediaQueue ?? _RecordingMediaQueue()),
     if (repository != null)

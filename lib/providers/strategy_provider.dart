@@ -53,6 +53,9 @@ import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/drawn_cloud_pages_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/collab/cloud_strategy_copy_box.dart';
+import 'package:icarus/collab/page_changes.dart';
+import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/services/analytics_service.dart';
@@ -392,9 +395,12 @@ class StrategyProvider extends Notifier<StrategyState> {
         );
   }
 
+  /// Queues [ops]. [seenPage] goes with a page delete among them (see
+  /// StrategyOpQueueNotifier.enqueuePageChange).
   Future<void> enqueueOps(
     List<StrategyOp> ops, {
     bool flushImmediately = false,
+    SeenPage? seenPage,
   }) async {
     if (!_currentStrategyIsCloud() ||
         !_currentStrategyCanEditPages() ||
@@ -402,9 +408,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    ref
-        .read(strategyOpQueueProvider.notifier)
-        .enqueueAll(ops, flushImmediately: flushImmediately);
+    ref.read(strategyOpQueueProvider.notifier).enqueueAll(
+          ops,
+          flushImmediately: flushImmediately,
+          seenPage: seenPage,
+        );
     if (ref.read(strategyPageSessionProvider).isApplyingPage) {
       return;
     }
@@ -450,8 +458,34 @@ class StrategyProvider extends Notifier<StrategyState> {
       .read(strategyOpQueueProvider.notifier)
       .drawnStrategyRevision(snapshot);
 
-  Future<OpAck?> _enqueueCloudPageDescriptorOp(StrategyOp op) async {
-    await enqueueOps([op]);
+  /// Page [pageId] as the user sees it now, for its delete to be checked
+  /// against before it goes (see SeenPage): its name and side as drawn,
+  /// and its content as last read, from the canvas's read for the page on
+  /// screen, or else this computer's copy. Null for a page whose add has
+  /// not landed: no teammate has seen it either.
+  SeenPage? _seenPage(String pageId, RemoteEditorSnapshot snapshot) {
+    final drawn = ref.read(drawnCloudPagesProvider)?.byId(pageId);
+    if (drawn == null || drawn.revision == null) return null;
+    final active = snapshot.activePage;
+    if (active != null && active.page.publicId == pageId) {
+      return SeenPage.of(drawn, active);
+    }
+    final scope = ref.read(cloudCopyScopeProvider);
+    final copied = scope == null
+        ? null
+        : ref.read(cloudStrategyCopyStoreProvider).readPage(
+              scope,
+              snapshot.header.publicId,
+              pageId,
+            );
+    return SeenPage.of(drawn, copied);
+  }
+
+  Future<OpAck?> _enqueueCloudPageDescriptorOp(
+    StrategyOp op, {
+    SeenPage? seenPage,
+  }) async {
+    await enqueueOps([op], seenPage: seenPage);
     final queue = ref.read(strategyOpQueueProvider.notifier);
     await queue.flushNow();
     return ref
@@ -1856,11 +1890,14 @@ class StrategyProvider extends Notifier<StrategyState> {
             );
       }
 
-      final ack = await _enqueueCloudPageDescriptorOp(PageDeleteOp(
-        opId: const Uuid().v4(),
-        pagePublicId: pageId,
-        expectedStrategyRevision: _drawnStrategyRevision(snapshot),
-      ));
+      final ack = await _enqueueCloudPageDescriptorOp(
+        PageDeleteOp(
+          opId: const Uuid().v4(),
+          pagePublicId: pageId,
+          expectedStrategyRevision: _drawnStrategyRevision(snapshot),
+        ),
+        seenPage: _seenPage(pageId, snapshot),
+      );
       if (ack?.isAck ?? false) {
         await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       }

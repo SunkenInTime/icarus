@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/generated/convex_error_codes.dart';
+import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/collab/src/convex_client_types.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 
@@ -43,7 +44,8 @@ const editAccessRemovedMessage =
 /// conflict text.
 bool isSpecificAttentionReason(String error) {
   final lower = error.toLowerCase();
-  return lower.contains('too large for cloud sync') ||
+  return pageChangedSinceDelete(error) != null ||
+      lower.contains('too large for cloud sync') ||
       lower.contains(editAccessRemovedMessage.toLowerCase()) ||
       lower.contains(lineupPageMismatchMessage.toLowerCase()) ||
       lower.contains(lineupOverlapMessage.toLowerCase()) ||
@@ -133,6 +135,9 @@ enum ClientUpdateAvailability { available, checking, unavailable }
 String friendlyCloudSyncError(String raw) {
   if (isClientUpgradeRequiredReason(raw)) {
     return clientUpgradeRequiredMessage();
+  }
+  if (pageChangedSinceDelete(raw) case final page?) {
+    return '$page $pageChangedSinceDeleteReason. Review before deleting.';
   }
   final lower = raw.toLowerCase();
   if (lower.contains(_incompletePageCopyMark)) return raw;

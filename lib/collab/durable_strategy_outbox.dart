@@ -76,6 +76,7 @@ class DurableOutboxRecord {
     this.pageChangeSequence,
     this.waitsForPageAdd = false,
     this.pageCopyKeys,
+    this.seenPage,
   });
 
   final String accountId;
@@ -114,6 +115,13 @@ class DurableOutboxRecord {
   /// there, or was removed by this device on purpose (see
   /// StrategyOpQueueNotifier._holdIncompletePageCopiesLocked).
   final List<String>? pageCopyKeys;
+  /// For a page delete in the list: the page as this device saw it when the
+  /// user deleted it. Before a delete that was not made and sent within one
+  /// connection goes, the page is read again, and the delete waits for the
+  /// user if it changed (see StrategyOpQueueNotifier). Every rebuild of the
+  /// record keeps it; only the user's Delete anyway clears it. Null: sent
+  /// unread.
+  final SeenPage? seenPage;
 
   String get storageKey => createStorageKey(
         accountId: accountId,
@@ -143,6 +151,8 @@ class DurableOutboxRecord {
     CloudPayload? latestServerPayload,
     bool? waitsForPageAdd,
     List<String>? pageCopyKeys,
+    SeenPage? seenPage,
+    bool clearSeenPage = false,
   }) {
     return DurableOutboxRecord(
       accountId: accountId,
@@ -165,6 +175,7 @@ class DurableOutboxRecord {
       pageChangeSequence: pageChangeSequence,
       waitsForPageAdd: waitsForPageAdd ?? this.waitsForPageAdd,
       pageCopyKeys: pageCopyKeys ?? this.pageCopyKeys,
+      seenPage: clearSeenPage ? null : (seenPage ?? this.seenPage),
     );
   }
 
@@ -213,6 +224,7 @@ class DurableOutboxRecord {
           'pageChangeSequence': pageChangeSequence ??
               (throw StateError('A page change needs its place in the list')),
         if (_isPageChange && pageCopyKeys != null) 'pageCopyKeys': pageCopyKeys,
+        if (seenPage != null) 'seenPage': seenPage!.toJson(),
       };
 
   factory DurableOutboxRecord.fromJson(Map<String, dynamic> json) {
@@ -295,6 +307,9 @@ class DurableOutboxRecord {
               for (final key in json['pageCopyKeys'] as List)
                 if (key is String) key,
             ]
+          : null,
+      seenPage: isPageChange && json['seenPage'] != null
+          ? SeenPage.fromJson(json['seenPage'])
           : null,
     );
   }
