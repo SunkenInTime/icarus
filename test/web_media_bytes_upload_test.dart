@@ -208,6 +208,46 @@ class _ServingRepository extends _R2Repository {
   }
 }
 
+/// [_ServingRepository] whose served check waits for [urlGate], saying when
+/// it is asked.
+class _HeldServingRepository extends _ServingRepository {
+  _HeldServingRepository(super.served);
+
+  final urlAsked = Completer<void>();
+  final urlGate = Completer<void>();
+
+  @override
+  Future<String?> getImageAssetUrl({
+    required String strategyPublicId,
+    required String assetPublicId,
+    String? shareToken,
+  }) async {
+    if (!urlAsked.isCompleted) urlAsked.complete();
+    await urlGate.future;
+    return super.getImageAssetUrl(
+      strategyPublicId: strategyPublicId,
+      assetPublicId: assetPublicId,
+      shareToken: shareToken,
+    );
+  }
+}
+
+/// Holds single writes while [hold] is set, saying when one starts.
+class _HoldableOutboxStore extends MemoryDurableCloudMediaOutboxStore {
+  Completer<void>? hold;
+  final putStarted = Completer<void>();
+
+  @override
+  Future<void> put(CloudMediaUploadJob job) async {
+    final gate = hold;
+    if (gate != null) {
+      if (!putStarted.isCompleted) putStarted.complete();
+      await gate.future;
+    }
+    await super.put(job);
+  }
+}
+
 LineUpGroup _breachGroup() => LineUpGroup(
       id: 'breach-group',
       agent: PlacedAgent(
@@ -1185,6 +1225,86 @@ void main() {
       );
       await clearToasts(tester);
     });
+
+    // The picture is queued again, with its bytes, while the server is being
+    // asked about the old job: that newer job must still upload.
+    Future<void> newerJobRace(
+      WidgetTester tester, {
+      required bool stillWriting,
+    }) async {
+      await pumpToasts(tester);
+      // Made inside runAsync: completers made in the test's fake zone would
+      // never wake what awaits them there.
+      late _HoldableOutboxStore mediaStore;
+      late _HeldServingRepository repository;
+      final bytesStore = MemoryPendingMediaBytesStore();
+      await tester.runAsync(() async {
+        mediaStore = _HoldableOutboxStore();
+        repository = _HeldServingRepository({_imageId});
+        await mediaStore.put(_job(_imageId));
+      });
+      final puts = <http.Request>[];
+      final client = MockClient((request) async {
+        puts.add(request);
+        return http.Response('', 200, headers: {'etag': '"etag"'});
+      });
+
+      late ProviderContainer container;
+      await tester.runAsync(() => http.runWithClient(() async {
+            container = _webSession(
+              mediaStore: mediaStore,
+              bytesStore: bytesStore,
+              online: true,
+              repository: repository,
+              referenceLoader: referenced,
+            );
+            final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+            unawaited(queue.retryNow(ignoreBackoff: true));
+            await repository.urlAsked.future;
+
+            await container.read(placedImageProvider.notifier).saveSecureImage(
+                  _imageBytes,
+                  _imageId,
+                  '.png',
+                  strategyId: 'strategy-a',
+                );
+            if (stillWriting) mediaStore.hold = Completer<void>();
+            final enqueue = queue.enqueueJobForLocalBytes(
+              strategyPublicId: 'strategy-a',
+              assetPublicId: _imageId,
+              fileExtension: '.png',
+              width: 99,
+            );
+            if (stillWriting) {
+              await mediaStore.putStarted.future;
+              repository.urlGate.complete();
+              await _settle();
+              mediaStore.hold!.complete();
+            } else {
+              await enqueue;
+              repository.urlGate.complete();
+            }
+            await enqueue;
+            await _until(() => repository.completedAssetIds.isNotEmpty);
+          }, () => client));
+      addTearDown(container.dispose);
+      // The newer job uploaded, so neither stale outcome happened: it was not
+      // removed, and it was not marked failed (that would hold it back).
+      expect(repository.completedAssetIds, [_imageId]);
+      expect(puts, hasLength(1));
+      expect(mediaStore.values, isEmpty);
+      // Drop the upload progress toast before a frame builds it.
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(seconds: 4));
+    }
+
+    testWidgets(
+        'leaves a newer job of the picture still being saved to upload',
+        (tester) => newerJobRace(tester, stillWriting: true));
+
+    testWidgets(
+        'leaves a newer job of the picture saved meanwhile to upload, unfailed',
+        (tester) => newerJobRace(tester, stillWriting: false));
 
     testWidgets(
         'still fails, on screen, when the server does not have its picture',
