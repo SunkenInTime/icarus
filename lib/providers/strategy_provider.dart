@@ -361,13 +361,8 @@ class StrategyProvider extends Notifier<StrategyState> {
           selectFirstPageIfNeeded: true,
           preferredPageId: pageId,
         );
-    unawaited(
-      ref.read(cloudMediaUploadQueueProvider.notifier).reconcilePageMedia(
-            strategyPublicId: snapshot.header.publicId,
-            placedImages: ref.read(placedImageProvider).images,
-            assetsById: snapshot.assetsById,
-          ),
-    );
+    // Each page the editor reads is checked for images to upload as it
+    // arrives (see RemoteEditorSnapshotNotifier).
     unawaited(
       ref.read(cloudMediaUploadQueueProvider.notifier).setActiveStrategy(
             snapshot.header.publicId,

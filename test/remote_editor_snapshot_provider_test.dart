@@ -10,6 +10,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -20,6 +21,7 @@ import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
@@ -276,12 +278,14 @@ void main() {
     expect(repository.readTokens, everyElement(isNull));
   });
 
-  group('switching from a page with an image', () {
+  group('checking which images to upload', () {
     const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
 
-    // Page a shows image-a, whose picture the server already serves. Like
-    // every desktop, this one keeps the image files of the strategy.
-    Future<(ProviderContainer, _EnqueueRecordingMediaQueue)> openOnPageA(
+    // The editor lays out the pages it opens.
+    setUpAll(() => CoordinateSystem(playAreaSize: const Size(1920, 1080)));
+
+    // Like every desktop, this one keeps the image files of the strategy.
+    Future<(ProviderContainer, _EnqueueRecordingMediaQueue)> desktop(
       _Repository repository,
     ) async {
       final dir = await Directory.systemTemp.createTemp('remote_editor_media');
@@ -313,6 +317,14 @@ void main() {
         convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
       ]);
       addTearDown(container.dispose);
+      return (container, mediaQueue);
+    }
+
+    // Page a shows image-a, whose picture the server already serves.
+    Future<(ProviderContainer, _EnqueueRecordingMediaQueue)> openOnPageA(
+      _Repository repository,
+    ) async {
+      final (container, mediaQueue) = await desktop(repository);
       repository.pageSnapshots['a'] = _page(
         'a',
         images: [_image('image-a')],
@@ -329,7 +341,8 @@ void main() {
       return (container, mediaQueue);
     }
 
-    test('to a page without images uploads nothing again', () async {
+    test('switching from a page with an image to one without uploads nothing',
+        () async {
       final repository = _Repository();
       final (container, mediaQueue) = await openOnPageA(repository);
 
@@ -342,7 +355,7 @@ void main() {
       expect(mediaQueue.enqueued, isEmpty);
     });
 
-    test("checks the next page's own images", () async {
+    test("switching pages checks the next page's own images", () async {
       final repository = _Repository();
       final (container, mediaQueue) = await openOnPageA(repository);
       // Page b shows a copy of image-a, so its assets are page a's, and
@@ -362,6 +375,27 @@ void main() {
       await mediaQueue.reconciled();
 
       expect(mediaQueue.enqueued, ['image-b']);
+    });
+
+    test('opening a strategy on a later page uploads nothing again', () async {
+      final repository = _Repository();
+      // Page b, not the first page, shows image-b, already on the server.
+      repository.pageSnapshots['b'] = _page(
+        'b',
+        images: [_image('image-b')],
+        assets: [_activeAsset('image-b')],
+      );
+      final (container, mediaQueue) = await desktop(repository);
+      await container.read(remoteEditorSnapshotProvider.future);
+
+      await container
+          .read(strategyProvider.notifier)
+          .openCloudStrategy('strategy', pageId: 'b');
+      await mediaQueue.reconciled();
+
+      expect(container.read(placedImageProvider).images.map((i) => i.id),
+          ['image-b']);
+      expect(mediaQueue.enqueued, isEmpty);
     });
   });
 
