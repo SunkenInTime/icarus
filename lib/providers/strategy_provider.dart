@@ -41,14 +41,21 @@ import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/page_made_here.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/drawn_cloud_pages_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/collab/cloud_strategy_copy_box.dart';
+import 'package:icarus/collab/page_changes.dart';
+import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/services/analytics_service.dart';
@@ -83,8 +90,13 @@ enum PageCopyResult {
 
 /// What a new cloud page may lack, and whether it has reached the cloud
 /// yet (see StrategyProvider.addPage): edits to the page it copies that
-/// the server refused, which its copy never had.
-typedef NewPageGaps = ({bool unsavedEdits, bool waitingForCloud});
+/// the server refused, which its copy never had. [notSaved]: the copy this
+/// computer made could not be stored, so no page was added.
+typedef NewPageGaps = ({
+  bool unsavedEdits,
+  bool waitingForCloud,
+  bool notSaved,
+});
 
 class StrategyProvider extends Notifier<StrategyState> {
   @override
@@ -383,9 +395,12 @@ class StrategyProvider extends Notifier<StrategyState> {
         );
   }
 
+  /// Queues [ops]. [seenPage] goes with a page delete among them (see
+  /// StrategyOpQueueNotifier.enqueuePageChange).
   Future<void> enqueueOps(
     List<StrategyOp> ops, {
     bool flushImmediately = false,
+    SeenPage? seenPage,
   }) async {
     if (!_currentStrategyIsCloud() ||
         !_currentStrategyCanEditPages() ||
@@ -393,9 +408,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    ref
-        .read(strategyOpQueueProvider.notifier)
-        .enqueueAll(ops, flushImmediately: flushImmediately);
+    ref.read(strategyOpQueueProvider.notifier).enqueueAll(
+          ops,
+          flushImmediately: flushImmediately,
+          seenPage: seenPage,
+        );
     if (ref.read(strategyPageSessionProvider).isApplyingPage) {
       return;
     }
@@ -434,8 +451,41 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
   }
 
-  Future<OpAck?> _enqueueCloudPageDescriptorOp(StrategyOp op) async {
-    await enqueueOps([op]);
+  /// The strategy revision the pages bar shows: the read's, or the one this
+  /// device's own page change landed at since (see
+  /// StrategyOpQueueNotifier.drawnStrategyRevision).
+  int _drawnStrategyRevision(RemoteEditorSnapshot snapshot) => ref
+      .read(strategyOpQueueProvider.notifier)
+      .drawnStrategyRevision(snapshot);
+
+  /// Page [pageId] as the user sees it now, for its delete to be checked
+  /// against before it goes (see SeenPage): its name and side as drawn,
+  /// and its content as last read, from the canvas's read for the page on
+  /// screen, or else this computer's copy. Null for a page whose add has
+  /// not landed: no teammate has seen it either.
+  SeenPage? _seenPage(String pageId, RemoteEditorSnapshot snapshot) {
+    final drawn = ref.read(drawnCloudPagesProvider)?.byId(pageId);
+    if (drawn == null || drawn.revision == null) return null;
+    final active = snapshot.activePage;
+    if (active != null && active.page.publicId == pageId) {
+      return SeenPage.of(drawn, active);
+    }
+    final scope = ref.read(cloudCopyScopeProvider);
+    final copied = scope == null
+        ? null
+        : ref.read(cloudStrategyCopyStoreProvider).readPage(
+              scope,
+              snapshot.header.publicId,
+              pageId,
+            );
+    return SeenPage.of(drawn, copied);
+  }
+
+  Future<OpAck?> _enqueueCloudPageDescriptorOp(
+    StrategyOp op, {
+    SeenPage? seenPage,
+  }) async {
+    await enqueueOps([op], seenPage: seenPage);
     final queue = ref.read(strategyOpQueueProvider.notifier);
     await queue.flushNow();
     return ref
@@ -554,10 +604,12 @@ class StrategyProvider extends Notifier<StrategyState> {
         snapshot.header.publicId != strategyId) {
       return false;
     }
+    final waiting =
+        waitingStrategyPatch(ref.read(strategyOpQueueProvider), strategyId);
     final drawn = drawnStrategyHeader(ref, snapshot.header);
     final strategyTheme = ref.read(strategyThemeProvider);
     final mapData = Maps.mapNames[ref.read(mapProvider).currentMap];
-    return !identical(drawn, snapshot.header) &&
+    return waiting != null &&
         mapData != null &&
         drawn.shows(
           mapData: mapData,
@@ -575,25 +627,30 @@ class StrategyProvider extends Notifier<StrategyState> {
       return null;
     }
 
+    // The server's, as this device knows it holds them.
+    final header = knownStrategyHeader(ref, snapshot.header);
     final strategyTheme = ref.read(strategyThemeProvider);
-    final localMapData = Maps.mapNames[ref.read(mapProvider).currentMap] ??
-        snapshot.header.mapData;
+    final localMapData =
+        Maps.mapNames[ref.read(mapProvider).currentMap] ?? header.mapData;
     final localThemeProfileId = strategyTheme.profileId;
     final localThemeOverridePalette = strategyTheme.overridePalette?.toJson();
 
-    final matchesRemote = snapshot.header.mapData == localMapData &&
-        snapshot.header.themeProfileId == localThemeProfileId &&
+    final matchesRemote = header.mapData == localMapData &&
+        header.themeProfileId == localThemeProfileId &&
         cloudJsonEquivalent(
-          snapshot.header.themeOverridePalette,
+          header.themeOverridePalette,
           localThemeOverridePalette,
         );
-    if (matchesRemote) {
+    // A change that may still land would undo the canvas matching the
+    // server, so the canvas's values are written behind it.
+    if (matchesRemote &&
+        !strategyPatchMayLand(ref.read(strategyOpQueueProvider), strategyId)) {
       return null;
     }
 
     return StrategyPatchOp(
       opId: const Uuid().v4(),
-      expectedStrategyRevision: snapshot.header.revision,
+      expectedStrategyRevision: header.revision,
       payload: {
         'mapData': localMapData,
         if (localThemeProfileId != null) 'themeProfileId': localThemeProfileId,
@@ -745,9 +802,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      if (snapshot == null || snapshot.pages.isEmpty) return;
-      final ordered = [...snapshot.pages]
-        ..sortBySortIndex((item) => item.sortIndex);
+      final drawn = ref.read(drawnCloudPagesProvider)?.pages;
+      if (snapshot == null || drawn == null || drawn.isEmpty) return;
+      final ordered = [...drawn];
       if (oldIndex < 0 ||
           oldIndex >= ordered.length ||
           newIndex < 0 ||
@@ -763,7 +820,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         opId: const Uuid().v4(),
         pagePublicId: moved.publicId,
         sortIndex: targetIndex,
-        expectedStrategyRevision: snapshot.header.revision,
+        expectedStrategyRevision: _drawnStrategyRevision(snapshot),
       ));
       if (ack != null) {
         await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
@@ -983,12 +1040,13 @@ class StrategyProvider extends Notifier<StrategyState> {
             255;
   }
 
+  /// The page next to the one on screen, as the pages bar lists them. None
+  /// when that page is not in the cloud yet (its add is still waiting).
   String? _adjacentCloudPageId(
     RemoteEditorSnapshot snapshot,
     PageTransitionDirection direction,
   ) {
-    final pages = [...snapshot.pages]
-      ..sortBySortIndex((item) => item.sortIndex);
+    final pages = ref.read(drawnCloudPagesProvider)?.pages ?? const [];
     final currentIndex = pages.indexWhere(
       (page) =>
           page.publicId == ref.read(strategyPageSessionProvider).activePageId,
@@ -999,7 +1057,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       PageTransitionDirection.forward => currentIndex + 1,
     };
     if (targetIndex < 0 || targetIndex >= pages.length) return null;
-    return pages[targetIndex].publicId;
+    final target = pages[targetIndex];
+    // A copy reads its target from the server, so the page must be there.
+    return target.revision != null ? target.publicId : null;
   }
 
   /// [widgetId] on the page on screen as cloud element data, or null when it
@@ -1548,16 +1608,19 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// Adds a copy of the page on screen after it, and turns to it. In the
   /// cloud the server makes the copy (convex/lib/contentCopy.ts); what the
   /// copy may lack, or that it hasn't landed yet, is returned for the
-  /// caller to say.
+  /// caller to say. When the server can't make it (offline, the page on
+  /// screen not on the server yet, or no answer in [cloudPageAddWait] for
+  /// an add that never left), this computer copies the page as drawn, and
+  /// the new page opens and takes edits before its add lands (see
+  /// page_made_here.dart).
   Future<NewPageGaps> addPage([String? name]) async {
-    const none = (unsavedEdits: false, waitingForCloud: false);
+    const none = (unsavedEdits: false, waitingForCloud: false, notSaved: false);
     if (!_currentStrategyCanEditPages()) return none;
     if (_currentStrategyIsCloud()) {
       final strategyId = state.strategyId;
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      if (strategyId == null || snapshot == null) return none;
-      final pages = [...snapshot.pages]
-        ..sortBySortIndex((item) => item.sortIndex);
+      final pages = ref.read(drawnCloudPagesProvider)?.pages;
+      if (strategyId == null || snapshot == null || pages == null) return none;
       final pageID = const Uuid().v4();
       final activePageId = ref.read(strategyPageSessionProvider).activePageId;
       final activeIndex = pages.indexWhere(
@@ -1581,6 +1644,48 @@ class StrategyProvider extends Notifier<StrategyState> {
               .keys
               .any((key) => key.pageId == sourcePageId);
       final refusedBefore = sourceEditsRefused();
+      // The page on screen as drawn, for this computer to copy if the
+      // server can't: its refused edits included, as the canvas shows them.
+      final copyHere =
+          activeIndex >= 0 ? _copyOfPageOnScreen(sourcePageId!, pageID) : null;
+      Future<NewPageGaps> turnToCopyHere() async {
+        if (state.strategyId == strategyId) {
+          await ref
+              .read(strategyPageSessionProvider.notifier)
+              .setActivePageAnimated(
+                pageID,
+                direction: PageTransitionDirection.forward,
+              );
+        }
+        return none;
+      }
+
+      final queue = ref.read(strategyOpQueueProvider.notifier);
+      if (copyHere != null &&
+          (_cloudCannotAnswer() || pages[sourceIndex].revision == null)) {
+        // Offline, or the page on screen isn't on the server for it to copy.
+        final queued = await queue.enqueuePageCopy(
+          PageAddOp(
+            opId: const Uuid().v4(),
+            pagePublicId: pageID,
+            payload: {
+              'name': name ?? 'Page ${nextIndex + 1}',
+              'isAutoNamed': isAutoNamed,
+              'isAttack': ref.read(mapProvider).isAttack,
+              'settings': ref.read(strategySettingsProvider).toJson(),
+            },
+            sortIndex: nextIndex,
+            expectedStrategyRevision: _drawnStrategyRevision(snapshot),
+          ),
+          copyHere,
+          strategyPublicId: strategyId,
+        );
+        if (!queued) {
+          return (unsavedEdits: false, waitingForCloud: false, notSaved: true);
+        }
+        _markCloudWorkPending();
+        return turnToCopyHere();
+      }
       final answer = await _sendAndAwaitAnswer(
         PageAddOp(
           opId: const Uuid().v4(),
@@ -1592,24 +1697,43 @@ class StrategyProvider extends Notifier<StrategyState> {
             'settings': ref.read(strategySettingsProvider).toJson(),
           },
           sortIndex: nextIndex,
-          expectedStrategyRevision: snapshot.header.revision,
+          expectedStrategyRevision: _drawnStrategyRevision(snapshot),
           copyContentFromPagePublicId: sourcePageId,
         ),
         cloudPageAddWait,
       );
       if (answer == null) {
-        // Offline, or behind other work: the page lands later.
-        return (unsavedEdits: refusedBefore, waitingForCloud: true);
+        // No answer yet. An add that never left becomes this computer's
+        // copy, to open now; one sent lands later, with the server's copy.
+        if (copyHere != null &&
+            await queue.copyWaitingPageAddHere(
+              pageID,
+              copyHere,
+              strategyPublicId: strategyId,
+            )) {
+          _markCloudWorkPending();
+          return turnToCopyHere();
+        }
+        return (
+          unsavedEdits: refusedBefore,
+          waitingForCloud: true,
+          notSaved: false,
+        );
       }
       // A refusal waits in the sync panel like any other.
       if (!answer.isAck || state.strategyId != strategyId) {
-        return (unsavedEdits: refusedBefore, waitingForCloud: false);
+        return (
+          unsavedEdits: refusedBefore,
+          waitingForCloud: false,
+          notSaved: false,
+        );
       }
       // Edits sent ahead of the add have their answers too by now, and the
       // server may have refused some of them.
       final landed = (
         unsavedEdits: sourceEditsRefused(),
         waitingForCloud: false,
+        notSaved: false,
       );
       await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       if (state.strategyId != strategyId) return landed;
@@ -1663,6 +1787,38 @@ class StrategyProvider extends Notifier<StrategyState> {
     return none;
   }
 
+  /// The ops that put a copy of the cloud page on screen, [pageId], onto
+  /// [newPageId] (see pageCopyContentOps), or null when the canvas does not
+  /// show it.
+  List<StrategyOp>? _copyOfPageOnScreen(String pageId, String newPageId) {
+    final drawn =
+        ref.read(activePageLiveSyncProvider.notifier).drawnRows(pageId);
+    if (drawn == null) return null;
+    return pageCopyContentOps(
+      pageId: newPageId,
+      elements: drawn.elements,
+      lineups: drawn.lineups,
+    );
+  }
+
+  /// Whether the server can't answer now: offline, or the connection down.
+  bool _cloudCannotAnswer() {
+    try {
+      return ref.read(cloudOfflineProvider) ||
+          !ref.read(convexConnectionSnapshotProvider);
+    } catch (_) {
+      // No session or client to ask (tests that never connect).
+      return false;
+    }
+  }
+
+  void _markCloudWorkPending() {
+    ref.read(strategySaveStateProvider.notifier)
+      ..markDirty()
+      ..setPendingCloudSync(true)
+      ..setCloudSyncError(null);
+  }
+
   Future<void> renamePage(String pageId, String newName) async {
     if (!_currentStrategyCanEditPages()) return;
     final trimmed = newName.trim();
@@ -1671,16 +1827,14 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     if (_currentStrategyIsCloud()) {
-      final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      final page = snapshot?.pages
-          .where((candidate) => candidate.publicId == pageId)
-          .firstOrNull;
+      final page = ref.read(drawnCloudPagesProvider)?.byId(pageId);
       if (page == null) return;
       final ack = await _enqueueCloudPageDescriptorOp(PagePatchOp(
         opId: const Uuid().v4(),
         pagePublicId: pageId,
         payload: {'name': trimmed, 'isAutoNamed': false},
-        expectedPageRevision: page.revision,
+        // A page whose add has not landed yet is made at revision 1.
+        expectedPageRevision: page.revision ?? 1,
       ));
       if (ack != null) {
         await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
@@ -1714,18 +1868,20 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (!_currentStrategyCanEditPages()) return false;
     if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      if (snapshot == null || snapshot.pages.length <= 1) {
+      final pages = ref.read(drawnCloudPagesProvider)?.pages;
+      if (snapshot == null || pages == null || pages.length <= 1) {
         return false;
       }
-      final pages = [...snapshot.pages]
-        ..sortBySortIndex((item) => item.sortIndex);
       final activePageId = ref.read(strategyPageSessionProvider).activePageId ??
           pages.first.publicId;
-      final remaining = pages
-          .where((page) => page.publicId != pageId)
-          .toList(growable: false);
-      final nextActivePageId = activePageId == pageId && remaining.isNotEmpty
-          ? remaining.first.publicId
+      // The page on screen goes to the first other page that can open
+      // (DrawnPage.opens).
+      final nextActivePageId = activePageId == pageId
+          ? pages
+                  .where((page) => page.publicId != pageId && page.opens)
+                  .firstOrNull
+                  ?.publicId ??
+              activePageId
           : activePageId;
 
       if (activePageId == pageId) {
@@ -1734,15 +1890,25 @@ class StrategyProvider extends Notifier<StrategyState> {
             );
       }
 
-      final ack = await _enqueueCloudPageDescriptorOp(PageDeleteOp(
-        opId: const Uuid().v4(),
-        pagePublicId: pageId,
-        expectedStrategyRevision: snapshot.header.revision,
-      ));
+      final ack = await _enqueueCloudPageDescriptorOp(
+        PageDeleteOp(
+          opId: const Uuid().v4(),
+          pagePublicId: pageId,
+          expectedStrategyRevision: _drawnStrategyRevision(snapshot),
+        ),
+        seenPage: _seenPage(pageId, snapshot),
+      );
       if (ack?.isAck ?? false) {
         await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       }
-      if ((ack?.isAck ?? false) && nextActivePageId != activePageId) {
+      // A delete still waiting (offline, or behind other work) is gone
+      // from the list already: the canvas leaves the page now, as it does
+      // once a delete lands, so nothing more is made on a page the user
+      // deleted.
+      final waits = ack == null &&
+          ref.read(strategyOpQueueProvider.notifier).isDeletedHere(pageId);
+      if (((ack?.isAck ?? false) || waits) &&
+          nextActivePageId != activePageId) {
         await ref
             .read(strategyPageSessionProvider.notifier)
             .setActivePageAnimated(

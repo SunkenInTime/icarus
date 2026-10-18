@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
@@ -155,6 +157,16 @@ class _Harness {
     await tester.pumpWidget(ProviderScope(
       overrides: [
         remoteEditorSnapshotProvider.overrideWith(() => remote),
+        // The bar draws the outbox's waiting page changes; none wait here.
+        durableStrategyOutboxStoreProvider
+            .overrideWithValue(MemoryDurableStrategyOutboxStore()),
+        strategyOutboxSessionProvider.overrideWithValue(
+          const StrategyOutboxSession(
+            accountId: null,
+            isReady: false,
+            hasAuthIncident: false,
+          ),
+        ),
         strategyProvider.overrideWith(() => strategy),
         strategyPageSessionProvider.overrideWith(() => session),
         appPreferencesProvider.overrideWith(_Preferences.new),

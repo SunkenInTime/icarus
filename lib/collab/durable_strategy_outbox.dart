@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
@@ -15,6 +16,18 @@ const _legacyDurableOutboxRecordVersion = 1;
 /// record alone rather than send its op as a whole write. Every other record
 /// stays at [durableOutboxRecordVersion], readable by those builds.
 const fieldMergeOutboxRecordVersion = 3;
+
+/// The version of a record holding one change in a strategy's ordered list
+/// of page changes (see page_changes.dart), stored under its own
+/// EntitySyncKey.pageChange key with its place in the list. A build from
+/// before the list cannot read it, so it leaves the record alone and says
+/// the outbox holds unreadable saved work, rather than send the change out
+/// of order.
+///
+/// Work for a page whose add is still in that list is stored at this
+/// version too (see [DurableOutboxRecord.waitsForPageAdd]), under its usual
+/// key: a build from before the list would send it before the page exists.
+const pageChangeOutboxRecordVersion = 4;
 const durableOutboxVersionKey = '__outbox_record_version__';
 
 Future<void> prepareDurableStrategyOutbox() async {
@@ -60,6 +73,10 @@ class DurableOutboxRecord {
     this.lastError,
     this.latestServerRevision,
     this.latestServerPayload,
+    this.pageChangeSequence,
+    this.waitsForPageAdd = false,
+    this.pageCopyKeys,
+    this.seenPage,
   });
 
   final String accountId;
@@ -77,6 +94,35 @@ class DurableOutboxRecord {
   /// field collision checks against it, so a teammate's later change still
   /// asks.
   final CloudPayload? latestServerPayload;
+
+  /// This page change's place in its strategy's ordered list of them (lower
+  /// goes first). Set for EntitySyncKey.pageChange records, and only them.
+  final int? pageChangeSequence;
+
+  /// Whether this is work for a page this device added whose add had not
+  /// landed when it was saved, like the copy "+" makes on this computer
+  /// (see page_made_here.dart). It is stored at
+  /// [pageChangeOutboxRecordVersion], so a build from before the ordered
+  /// list leaves it alone instead of sending it before its page exists.
+  /// This build sends it once the add lands (see
+  /// StrategyOpQueueNotifier._selectBatch).
+  final bool waitsForPageAdd;
+
+  /// For the add of a page "+" copied on this computer: the entity key of
+  /// every item and lineup group the copy holds, stored with them in one
+  /// write. The write can be cut short and leave only some of them on
+  /// disk, so the add is only sent while every one it names is still
+  /// there, or was removed by this device on purpose (see
+  /// StrategyOpQueueNotifier._holdIncompletePageCopiesLocked).
+  final List<String>? pageCopyKeys;
+
+  /// For a page delete in the list: the page as this device saw it when the
+  /// user deleted it. Before a delete that was not made and sent within one
+  /// connection goes, the page is read again, and the delete waits for the
+  /// user if it changed (see StrategyOpQueueNotifier). Every rebuild of the
+  /// record keeps it; only the user's Delete anyway clears it. Null: sent
+  /// unread.
+  final SeenPage? seenPage;
 
   String get storageKey => createStorageKey(
         accountId: accountId,
@@ -104,6 +150,10 @@ class DurableOutboxRecord {
     int? latestServerRevision,
     bool clearLatestServerRevision = false,
     CloudPayload? latestServerPayload,
+    bool? waitsForPageAdd,
+    List<String>? pageCopyKeys,
+    SeenPage? seenPage,
+    bool clearSeenPage = false,
   }) {
     return DurableOutboxRecord(
       accountId: accountId,
@@ -123,6 +173,10 @@ class DurableOutboxRecord {
       latestServerPayload: clearLatestServerRevision
           ? null
           : (latestServerPayload ?? this.latestServerPayload),
+      pageChangeSequence: pageChangeSequence,
+      waitsForPageAdd: waitsForPageAdd ?? this.waitsForPageAdd,
+      pageCopyKeys: pageCopyKeys ?? this.pageCopyKeys,
+      seenPage: clearSeenPage ? null : (seenPage ?? this.seenPage),
     );
   }
 
@@ -140,10 +194,14 @@ class DurableOutboxRecord {
             _ => false,
           });
 
+  bool get _isPageChange => entityKey.kind == EntitySyncKeyKind.pageChange;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'outboxVersion': _mergesByField
-            ? fieldMergeOutboxRecordVersion
-            : durableOutboxRecordVersion,
+        'outboxVersion': _isPageChange || waitsForPageAdd
+            ? pageChangeOutboxRecordVersion
+            : _mergesByField
+                ? fieldMergeOutboxRecordVersion
+                : durableOutboxRecordVersion,
         'accountId': accountId,
         'strategyPublicId': strategyPublicId,
         'entityKey': entityKey.toString(),
@@ -163,13 +221,19 @@ class DurableOutboxRecord {
           'latestServerRevision': latestServerRevision,
         if (latestServerPayload != null)
           'latestServerPayload': latestServerPayload,
+        if (_isPageChange)
+          'pageChangeSequence': pageChangeSequence ??
+              (throw StateError('A page change needs its place in the list')),
+        if (_isPageChange && pageCopyKeys != null) 'pageCopyKeys': pageCopyKeys,
+        if (seenPage != null) 'seenPage': seenPage!.toJson(),
       };
 
   factory DurableOutboxRecord.fromJson(Map<String, dynamic> json) {
     final version = (json['outboxVersion'] as num?)?.toInt();
     if (version != _legacyDurableOutboxRecordVersion &&
         version != durableOutboxRecordVersion &&
-        version != fieldMergeOutboxRecordVersion) {
+        version != fieldMergeOutboxRecordVersion &&
+        version != pageChangeOutboxRecordVersion) {
       throw FormatException('Unsupported outbox record version: $version');
     }
     final opJson = _object(json['op'], field: 'op');
@@ -177,7 +241,29 @@ class DurableOutboxRecord {
     if (json['opId'] != op.opId) {
       throw const FormatException('Outbox opId does not match serialized op');
     }
-    final entityKey = EntitySyncKey.forStrategyOp(op);
+    const pageChangePrefix = 'pagechange:';
+    final isPageChange = version == pageChangeOutboxRecordVersion &&
+        json['entityKey'] is String &&
+        (json['entityKey'] as String).startsWith(pageChangePrefix);
+    final pageChangeSequence = (json['pageChangeSequence'] as num?)?.toInt();
+    final EntitySyncKey? entityKey;
+    if (isPageChange) {
+      const prefix = pageChangePrefix;
+      final rawKey = json['entityKey'];
+      if (rawKey is! String ||
+          !rawKey.startsWith(prefix) ||
+          rawKey.length == prefix.length ||
+          !isPageChangeOp(op) ||
+          pageChangeSequence == null ||
+          json['successorPending'] != null) {
+        throw const FormatException('Outbox page change is malformed');
+      }
+      entityKey = EntitySyncKey.pageChange(
+        Uri.decodeComponent(rawKey.substring(prefix.length)),
+      );
+    } else {
+      entityKey = EntitySyncKey.forStrategyOp(op);
+    }
     if (entityKey == null || entityKey.toString() != json['entityKey']) {
       throw const FormatException('Outbox entity key does not match op');
     }
@@ -213,6 +299,18 @@ class DurableOutboxRecord {
       latestServerRevision: (json['latestServerRevision'] as num?)?.toInt(),
       latestServerPayload: json['latestServerPayload'] is Map
           ? Map<String, dynamic>.from(json['latestServerPayload'] as Map)
+          : null,
+      pageChangeSequence: isPageChange ? pageChangeSequence : null,
+      waitsForPageAdd:
+          version == pageChangeOutboxRecordVersion && !isPageChange,
+      pageCopyKeys: isPageChange && json['pageCopyKeys'] is List
+          ? [
+              for (final key in json['pageCopyKeys'] as List)
+                if (key is String) key,
+            ]
+          : null,
+      seenPage: isPageChange && json['seenPage'] != null
+          ? SeenPage.fromJson(json['seenPage'])
           : null,
     );
   }
@@ -282,6 +380,12 @@ class DurableOutboxLoadResult {
 abstract class DurableStrategyOutboxStore {
   DurableOutboxLoadResult load();
   Future<void> put(DurableOutboxRecord record);
+
+  /// Stores [records] in one write. It is not all-or-nothing: a crash or a
+  /// failed write can leave the first records on disk without the rest, so
+  /// a page copy checks its own records on load (see
+  /// DurableOutboxRecord.pageCopyKeys).
+  Future<void> putAll(List<DurableOutboxRecord> records);
   Future<void> remove(String storageKey);
 }
 
@@ -324,6 +428,17 @@ class HiveDurableStrategyOutboxStore implements DurableStrategyOutboxStore {
     );
     return _box.put(record.storageKey, jsonSafe);
   }
+
+  /// One Hive write: every record goes to the file in one buffer. Hive
+  /// checksums each record on its own, so a write cut short leaves the
+  /// records before the cut readable and the rest gone.
+  @override
+  Future<void> putAll(List<DurableOutboxRecord> records) => _box.putAll({
+        for (final record in records)
+          record.storageKey: Map<String, dynamic>.from(
+            jsonDecode(jsonEncode(record.toJson())) as Map,
+          ),
+      });
 
   @override
   Future<void> remove(String storageKey) => _box.delete(storageKey);
@@ -370,6 +485,17 @@ class MemoryDurableStrategyOutboxStore implements DurableStrategyOutboxStore {
   }
 
   @override
+  Future<void> putAll(List<DurableOutboxRecord> records) async {
+    final encoded = {
+      for (final record in records)
+        record.storageKey: Map<String, dynamic>.from(
+          jsonDecode(jsonEncode(record.toJson())) as Map,
+        ),
+    };
+    values.addAll(encoded);
+  }
+
+  @override
   Future<void> remove(String storageKey) async {
     values.remove(storageKey);
   }
@@ -397,6 +523,10 @@ class UnavailableDurableStrategyOutboxStore
 
   @override
   Future<void> put(DurableOutboxRecord record) =>
+      Future.error(CloudUnavailableException(reason));
+
+  @override
+  Future<void> putAll(List<DurableOutboxRecord> records) =>
       Future.error(CloudUnavailableException(reason));
 
   @override

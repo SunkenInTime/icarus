@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
+import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
@@ -34,6 +35,9 @@ final _socketDown = StateProvider<bool>((ref) => false);
 /// Runs as web does: no copy on this computer.
 var _webLike = false;
 
+/// Pages deleted on this device, their deletes still waiting to be sent.
+var _deletedHere = <String>{};
+
 void main() {
   late _Transport transport;
   late MemoryCloudStrategyCopyStore store;
@@ -43,6 +47,7 @@ void main() {
   setUp(() {
     _scope = _beginSession('account-a');
     _webLike = false;
+    _deletedHere = {};
     transport = _Transport();
     store = MemoryCloudStrategyCopyStore();
     container = ProviderContainer(overrides: [
@@ -128,6 +133,23 @@ void main() {
       final shown = container.read(remoteEditorSnapshotProvider).valueOrNull!;
       expect(shown.activePage?.page.publicId, pageId);
     }
+  });
+
+  test(
+      'offline, a strategy opens on the first page still listed, not one '
+      'deleted here whose delete waits to be sent', () async {
+    await openOnline();
+    await remote().setActivePage('b');
+    remote().clear();
+
+    container.read(_offline.notifier).state = true;
+    transport.unanswered = true;
+    _deletedHere = {'a'};
+    await remote().openStrategy('strategy', activePagePublicId: 'a');
+
+    final opened = container.read(remoteEditorSnapshotProvider).valueOrNull!;
+    expect(opened.shell.fromCopy, isTrue);
+    expect(opened.activePage!.page.publicId, 'b');
   });
 
   test('offline, a strategy never kept says it needs a connection', () async {
@@ -483,6 +505,19 @@ class _IdleOpQueue extends StrategyOpQueueNotifier {
     String? strategyPublicId, {
     required String? accountId,
   }) {}
+
+  @override
+  List<StrategyOp> pageChangesToDraw(RemoteEditorSnapshot snapshot) => [
+        for (final pageId in _deletedHere)
+          PageDeleteOp(
+            opId: 'delete-$pageId',
+            pagePublicId: pageId,
+            expectedStrategyRevision: snapshot.header.revision,
+          ),
+      ];
+
+  @override
+  bool isDeletedHere(String pageId) => _deletedHere.contains(pageId);
 }
 
 class _IdleMediaQueue extends CloudMediaUploadQueueNotifier {

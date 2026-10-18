@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/generated/convex_error_codes.dart';
+import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/collab/src/convex_client_types.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 
@@ -24,6 +25,11 @@ String redactSyncDiagnosticText(Object? error) {
 /// needs attention too, for whatever reason.
 const otherWorkNeedsAttentionNote = 'Other saved work needs attention too.';
 
+/// [reason] followed by [otherWorkNeedsAttentionNote], stopped once: some
+/// reasons are whole sentences already (incompletePageCopyMessage).
+String withOtherWorkNeedsAttentionNote(String reason) =>
+    '$reason${reason.endsWith('.') ? '' : '.'} $otherWorkNeedsAttentionNote';
+
 /// Why saved work stopped being sent: the server refused it because this
 /// account can no longer edit the strategy (its owner made them a viewer, or
 /// removed them). The work is kept, paused; Retry sends it again, which
@@ -38,7 +44,8 @@ const editAccessRemovedMessage =
 /// conflict text.
 bool isSpecificAttentionReason(String error) {
   final lower = error.toLowerCase();
-  return lower.contains('too large for cloud sync') ||
+  return pageChangedSinceDelete(error) != null ||
+      lower.contains('too large for cloud sync') ||
       lower.contains(editAccessRemovedMessage.toLowerCase()) ||
       lower.contains(lineupPageMismatchMessage.toLowerCase()) ||
       lower.contains(lineupOverlapMessage.toLowerCase()) ||
@@ -46,8 +53,24 @@ bool isSpecificAttentionReason(String error) {
       lower.contains(teammateDeletedMessage.toLowerCase()) ||
       lower.contains(pageDeletedMessage.toLowerCase()) ||
       lower.contains(undrawableWorkMessage.toLowerCase()) ||
-      lower.contains(pageTooLargeToCopyMessage.toLowerCase());
+      lower.contains(pageTooLargeToCopyMessage.toLowerCase()) ||
+      lower.contains(_incompletePageCopyMark);
 }
+
+/// Why the add of a page "+" copied on this computer waits instead of being
+/// sent: a crash or failed write left only part of the copy on disk (see
+/// DurableOutboxRecord.pageCopyKeys). Its items wait with it. Nothing the
+/// user made is lost, since the copy can be made again from [pageName]'s
+/// source.
+String incompletePageCopyMessage(String pageName) =>
+    'The copy of $pageName $_incompletePageCopyMark, so it was not sent. '
+    'Copy the page again, or choose Use cloud to discard it.';
+
+const _incompletePageCopyMark = "didn't finish saving on this computer";
+
+/// Whether [reason] is an [incompletePageCopyMessage].
+bool isIncompletePageCopyReason(String? reason) =>
+    reason != null && reason.contains(_incompletePageCopyMark);
 
 /// A cloud change whose write to the durable outbox failed, or could not be
 /// confirmed: it may not be on this device, and it was not sent.
@@ -113,7 +136,11 @@ String friendlyCloudSyncError(String raw) {
   if (isClientUpgradeRequiredReason(raw)) {
     return clientUpgradeRequiredMessage();
   }
+  if (pageChangedSinceDelete(raw) case final page?) {
+    return '$page $pageChangedSinceDeleteReason. Review before deleting.';
+  }
   final lower = raw.toLowerCase();
+  if (lower.contains(_incompletePageCopyMark)) return raw;
   if (lower.contains('strategy was deleted')) {
     return 'This strategy was deleted, so its unsent changes cannot be '
         'saved. Discard them from the library.';

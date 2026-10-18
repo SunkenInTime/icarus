@@ -61,6 +61,7 @@ RemotePageSnapshot upgradeRemotePageSnapshot(
     fromCopy: page.fromCopy,
     copiedAt: page.copiedAt,
     serverAnswer: page.serverAnswer,
+    madeHere: page.madeHere,
   );
 }
 

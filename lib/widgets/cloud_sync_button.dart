@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
@@ -192,6 +194,41 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     }
   }
 
+  /// Keep the page: the held deletes the user saw are discarded, and what
+  /// waited behind them is sent.
+  Future<void> _keepHeldPages(
+    Map<EntitySyncKey, ({String page, String opId})> held,
+  ) =>
+      _resolveHeldDeletes(() => ref
+              .read(strategyOpQueueProvider.notifier)
+              .discardRejected(held.keys.toSet(), onlyIf: {
+            for (final entry in held.entries)
+              entry.key: (entry.value.opId, null),
+          }));
+
+  /// Delete anyway: the held deletes the user saw are sent, unread.
+  Future<void> _deleteHeldPagesAnyway(
+    Map<EntitySyncKey, ({String page, String opId})> held,
+  ) =>
+      _resolveHeldDeletes(() =>
+          ref.read(strategyOpQueueProvider.notifier).deleteHeldPagesAnyway({
+            for (final entry in held.entries) entry.key: entry.value.opId,
+          }));
+
+  Future<void> _resolveHeldDeletes(Future<void> Function() resolve) async {
+    if (_isResolving) return;
+    setState(() {
+      _isResolving = true;
+      _resolutionError = null;
+    });
+    _popoverController.hide();
+    try {
+      await resolve();
+    } finally {
+      if (mounted) setState(() => _isResolving = false);
+    }
+  }
+
   Future<void> _keepBoth() async {
     if (_isResolving) return;
     setState(() {
@@ -295,6 +332,8 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     final foreground = status == _SyncStatus.attention
         ? Settings.tacticalVioletTheme.destructive
         : null;
+    final heldDeletes =
+        ref.read(strategyOpQueueProvider.notifier).heldPageDeletes();
 
     return ShadPopover(
       controller: _popoverController,
@@ -308,7 +347,10 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         status: status,
         upgradeRequired: upgradeRequired,
         saveState: saveState,
-        rejectedCount: opQueueState.attentionByEntityKey.length,
+        rejectedCount:
+            opQueueState.attentionByEntityKey.length - heldDeletes.length,
+        heldPages: [for (final held in heldDeletes.values) held.page],
+        hasPausedWork: opQueueState.pausedByEntityKey.isNotEmpty,
         lineupConflicts: ref.watch(lineupConflictsProvider),
         hasOtherStrategyWork: hasOtherStrategyWork,
         hasOtherStrategyAttention: hasOtherStrategyAttention,
@@ -318,6 +360,8 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         onRetry: _retry,
         onUseCloudVersions: _useCloudVersions,
         onKeepBoth: _keepBoth,
+        onKeepHeldPages: () => _keepHeldPages(heldDeletes),
+        onDeleteHeldPagesAnyway: () => _deleteHeldPagesAnyway(heldDeletes),
       ),
       child: EditorToolbarButton(
         key: ValueKey('cloud-sync-button-${status.name}'),
@@ -441,6 +485,8 @@ class _SyncStatusPopover extends StatelessWidget {
     required this.upgradeRequired,
     required this.saveState,
     required this.rejectedCount,
+    required this.heldPages,
+    required this.hasPausedWork,
     required this.lineupConflicts,
     required this.hasOtherStrategyWork,
     required this.hasOtherStrategyAttention,
@@ -450,6 +496,8 @@ class _SyncStatusPopover extends StatelessWidget {
     required this.onRetry,
     required this.onUseCloudVersions,
     required this.onKeepBoth,
+    required this.onKeepHeldPages,
+    required this.onDeleteHeldPagesAnyway,
   });
 
   final _SyncStatus status;
@@ -458,7 +506,19 @@ class _SyncStatusPopover extends StatelessWidget {
   /// popover says so and offers only the reload or update that can.
   final bool upgradeRequired;
   final StrategySaveState saveState;
+
+  /// Refused work waiting for the user, page deletes held for review
+  /// ([heldPages]) aside.
   final int rejectedCount;
+
+  /// The pages whose delete is held because the page changed since the
+  /// user deleted it (see StrategyOpQueueNotifier.heldPageDeletes). They
+  /// get their own explanation and choices, beside any other attention.
+  final List<String> heldPages;
+
+  /// Work paused after failed sends: Retry sync sends it again, whatever
+  /// else waits.
+  final bool hasPausedWork;
 
   /// What each side did to the lineup groups in conflict, when the refused
   /// work is all lineup groups on this page (see lineupConflictsProvider).
@@ -472,6 +532,8 @@ class _SyncStatusPopover extends StatelessWidget {
   final Future<void> Function() onRetry;
   final Future<void> Function() onUseCloudVersions;
   final Future<void> Function() onKeepBoth;
+  final Future<void> Function() onKeepHeldPages;
+  final Future<void> Function() onDeleteHeldPagesAnyway;
 
   bool get hasRejectedWork => rejectedCount > 0;
 
@@ -495,6 +557,23 @@ class _SyncStatusPopover extends StatelessWidget {
           .contains(undrawableWorkMessage.toLowerCase()) ??
       false;
 
+  /// Whether anything but held page deletes needs attention here.
+  bool get _hasOtherAttention {
+    final error = saveState.cloudSyncError;
+    return hasRejectedWork ||
+        hasPausedWork ||
+        saveState.mediaSyncErrorCount > 0 ||
+        (error != null && pageChangedSinceDelete(error) == null);
+  }
+
+  bool get _holdsIncompleteCopy =>
+      isIncompletePageCopyReason(saveState.cloudSyncError);
+
+  String get _heldExplanation => [
+        for (final page in heldPages)
+          '$page $pageChangedSinceDeleteReason. Review before deleting.',
+      ].join(' ');
+
   @override
   Widget build(BuildContext context) {
     if (upgradeRequired) {
@@ -509,43 +588,89 @@ class _SyncStatusPopover extends StatelessWidget {
         ),
       );
     }
+    final acts = status == _SyncStatus.attention &&
+        (!hasOtherStrategyAttention || hasActiveStrategyAttention);
+    final holds = acts && heldPages.isNotEmpty;
+    final others = acts && (heldPages.isEmpty || _hasOtherAttention);
+    final heldActions = Wrap(
+      alignment: WrapAlignment.end,
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        ShadButton.destructive(
+          size: ShadButtonSize.sm,
+          expands: false,
+          onPressed: isResolving ? null : onDeleteHeldPagesAnyway,
+          child: const Text('Delete anyway'),
+        ),
+        ShadButton(
+          size: ShadButtonSize.sm,
+          expands: false,
+          onPressed: isResolving ? null : onKeepHeldPages,
+          child:
+              Text(heldPages.length == 1 ? 'Keep the page' : 'Keep the pages'),
+        ),
+      ],
+    );
     return _layout(
       context,
-      explanation: _explanation,
-      actions: status == _SyncStatus.attention &&
-              (!hasOtherStrategyAttention || hasActiveStrategyAttention)
-          ? Wrap(
-              alignment: WrapAlignment.end,
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (hasRejectedWork)
-                  ShadButton.secondary(
-                    size: ShadButtonSize.sm,
-                    expands: false,
-                    onPressed: isResolving ? null : onUseCloudVersions,
-                    child: const Text('Use cloud'),
-                  ),
-                if (_shownLineupConflicts != null)
-                  ShadButton.secondary(
-                    size: ShadButtonSize.sm,
-                    expands: false,
-                    onPressed: isResolving ? null : onKeepBoth,
-                    child: const Text('Keep both'),
-                  ),
-                ShadButton(
-                  size: ShadButtonSize.sm,
-                  expands: false,
-                  onPressed: isResolving ? null : onRetry,
-                  child: Text(
-                    hasRejectedWork ? 'Keep mine' : 'Retry sync',
-                  ),
-                ),
-              ],
-            )
-          : null,
+      explanation: [
+        if (holds) _heldExplanation,
+        if (!holds || others) _explanation,
+      ].join('\n\n'),
+      actions: holds && !others
+          ? heldActions
+          : holds
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    heldActions,
+                    const SizedBox(height: 8),
+                    _otherActions,
+                  ],
+                )
+              : others
+                  ? _otherActions
+                  : null,
     );
   }
+
+  Widget get _otherActions => Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          if (hasRejectedWork)
+            ShadButton.secondary(
+              size: ShadButtonSize.sm,
+              expands: false,
+              onPressed: isResolving ? null : onUseCloudVersions,
+              child: const Text('Use cloud'),
+            ),
+          if (_shownLineupConflicts != null)
+            ShadButton.secondary(
+              size: ShadButtonSize.sm,
+              expands: false,
+              onPressed: isResolving ? null : onKeepBoth,
+              child: const Text('Keep both'),
+            ),
+          // A copy that didn't finish saving can't be kept: there is
+          // nothing whole to send. Copying the page again, or Use cloud,
+          // are the ways out (see incompletePageCopyMessage). Paused work
+          // beside it can still be retried.
+          if (!_holdsIncompleteCopy || hasPausedWork)
+            ShadButton(
+              size: ShadButtonSize.sm,
+              expands: false,
+              onPressed: isResolving ? null : onRetry,
+              child: Text(
+                hasRejectedWork && !_holdsIncompleteCopy
+                    ? 'Keep mine'
+                    : 'Retry sync',
+              ),
+            ),
+        ],
+      );
 
   Widget _layout(
     BuildContext context, {
@@ -657,7 +782,10 @@ class _SyncStatusPopover extends StatelessWidget {
   String get _attentionExplanation {
     final mediaErrors = saveState.mediaSyncErrorCount;
     final parts = <String>[];
-    final error = saveState.cloudSyncError;
+    final saved = saveState.cloudSyncError;
+    // A held delete's reason is explained apart (see _heldExplanation).
+    final error =
+        saved != null && pageChangedSinceDelete(saved) != null ? null : saved;
     final hasSpecificReason = error != null && isSpecificAttentionReason(error);
     final listsWholeGroups = _shownLineupConflicts != null && _noLongerFits;
     if (listsWholeGroups) {

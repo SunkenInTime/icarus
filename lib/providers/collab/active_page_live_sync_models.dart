@@ -12,7 +12,8 @@ enum EntitySyncKeyKind {
   pageDescriptor,
   pageContent,
   element,
-  lineup
+  lineup,
+  pageChange
 }
 
 class EntitySyncKey {
@@ -55,6 +56,18 @@ class EntitySyncKey {
           kind: EntitySyncKeyKind.strategy,
           pageId: null,
           entityId: null,
+        );
+
+  /// One change in a strategy's ordered list of page changes (an add,
+  /// rename, delete or reorder; see page_changes.dart), named by
+  /// [changeId]. It belongs to the strategy's list of pages, not to a page's
+  /// content, so it has no [pageId]: nothing the canvas reconciles for a
+  /// page touches it.
+  const EntitySyncKey.pageChange(String changeId)
+      : this._(
+          kind: EntitySyncKeyKind.pageChange,
+          pageId: null,
+          entityId: changeId,
         );
 
   static String _encodeEntityKeyPart(String value) =>
@@ -101,6 +114,7 @@ class EntitySyncKey {
       EntitySyncKeyKind.pageContent => ActivePageOverlayEntityType.pageContent,
       EntitySyncKeyKind.element => ActivePageOverlayEntityType.element,
       EntitySyncKeyKind.lineup => ActivePageOverlayEntityType.lineup,
+      EntitySyncKeyKind.pageChange => null,
     };
   }
 
@@ -125,6 +139,7 @@ class EntitySyncKey {
       EntitySyncKeyKind.pageContent => 'page:$encodedPageId:content',
       EntitySyncKeyKind.element => 'element:$encodedPageId:$encodedEntityId',
       EntitySyncKeyKind.lineup => 'lineup:$encodedPageId:$encodedEntityId',
+      EntitySyncKeyKind.pageChange => 'pagechange:$encodedEntityId',
     };
   }
 }

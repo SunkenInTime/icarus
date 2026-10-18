@@ -12,6 +12,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/field_merge.dart';
+import 'package:icarus/collab/page_made_here.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -510,6 +511,35 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     ].any((intents) => intents.keys.any((key) => key.pageId == pageId));
   }
 
+  /// [pageId]'s items and lineup groups as the canvas draws them, in cloud
+  /// form, each with the place it is synced at: what "+" copies when this
+  /// computer makes the copy (see StrategyProvider.addPage). Null unless
+  /// the canvas shows [pageId].
+  ({List<DrawnRow> elements, List<DrawnRow> lineups})? drawnRows(
+    String pageId,
+  ) {
+    if (state.hydratedPageId != pageId) return null;
+    final elements = <DrawnRow>[];
+    final lineups = <DrawnRow>[];
+    DrawnRow row(_NormalizedEntity entity) => (
+          publicId: entity.key.entityId!,
+          payload: Map<String, dynamic>.from(entity.payload as Map),
+          sortIndex: entity.sortIndex ?? 0,
+        );
+    for (final entity in _normalizedLocalEntities(pageId).values) {
+      switch (entity.overlayEntityType) {
+        case ActivePageOverlayEntityType.element:
+          elements.add(row(entity));
+        case ActivePageOverlayEntityType.lineup:
+          lineups.add(row(entity));
+        case ActivePageOverlayEntityType.pageDescriptor:
+        case ActivePageOverlayEntityType.pageContent:
+          break;
+      }
+    }
+    return (elements: elements, lineups: lineups);
+  }
+
   bool hasOverlayForPage(String pageId) {
     return state.overlayByEntityKey.keys.any((key) => key.pageId == pageId);
   }
@@ -527,6 +557,15 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       final revision = intent.ack.appliedRevision;
       final key = intent.entityKey;
       if (revision == null) {
+        continue;
+      }
+      if (key.kind == EntitySyncKeyKind.pageChange) {
+        // Only a rename the server applied moved the page from the revision
+        // before it; a no-change answer carries the page's revision now,
+        // which may be a teammate's.
+        if (intent.ack is AppliedOpAck) {
+          _followOwnRename(intent.op, revision, overlays, remoteRevisions);
+        }
         continue;
       }
       final drawnLayer = _landDrawnWork(
@@ -586,6 +625,32 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       remoteBaseRevisionByEntity: remoteRevisions,
       lastAckBatch: intents,
     );
+  }
+
+  /// [op], a page change of this device's, landed at [revision]. A rename
+  /// moves on the revision of the page row whose side the canvas tracks
+  /// (its descriptor), and nothing the canvas draws. A side the canvas
+  /// holds at the revision just before knows everything in [revision], so
+  /// it follows onto it, as the queue moves its waiting side change on;
+  /// held at any older revision, it stays, so a teammate's side change in
+  /// between is still checked. Other page changes are not the canvas's.
+  void _followOwnRename(
+    StrategyOp op,
+    int revision,
+    Map<EntitySyncKey, ActivePageOverlayEntry> overlays,
+    Map<EntitySyncKey, int> remoteRevisions,
+  ) {
+    if (op is! PagePatchOp) return;
+    final key = EntitySyncKey.pageDescriptor(op.pagePublicId);
+    final base = _hydratedBaseByEntityKey[key];
+    if (base != null && base.revision == revision - 1) {
+      _hydratedBaseByEntityKey[key] = base.copyWith(revision: revision);
+      remoteRevisions[key] = revision;
+    }
+    final overlay = overlays[key];
+    if (overlay != null && overlay.baseRevision == revision - 1) {
+      overlays[key] = overlay.copyWith(baseRevision: revision);
+    }
   }
 
   /// What the canvas drew [key] as once [op], outbox work it drew, lands:
@@ -1929,21 +1994,22 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         overlay.desiredSortIndex == remote.sortIndex;
   }
 
+  /// Whether the canvas, though it matches the server, still has a change
+  /// to write: the newest one waiting for [key] writes something else, and
+  /// would undo it on landing. That includes one waiting behind another
+  /// being sent.
   bool _needsSuccessor({
     required String pageId,
     required EntitySyncKey key,
     required ActivePageOverlayEntry overlay,
     required StrategyOpQueueState queueState,
   }) {
-    if (queueState.successorByEntityKey.containsKey(key)) {
-      return false;
-    }
-
-    final predecessor = queueState.inFlightByEntityKey[key]?.pending.op ??
+    final waiting = queueState.successorByEntityKey[key]?.pending.op ??
+        queueState.inFlightByEntityKey[key]?.pending.op ??
         queueState.queuedByEntityKey[key]?.pending.op;
-    if (predecessor == null) return false;
+    if (waiting == null) return false;
     final desired = _strategyOpFromOverlay(pageId: pageId, overlay: overlay);
-    return desired != null && !_opsEquivalent(predecessor, desired);
+    return desired != null && !_opsEquivalent(waiting, desired);
   }
 
   bool _opsEquivalent(StrategyOp left, StrategyOp right) {

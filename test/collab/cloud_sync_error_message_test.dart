@@ -88,6 +88,15 @@ void main() {
     );
   });
 
+  test('a reason that is a whole sentence is not stopped twice', () {
+    expect(
+      withOtherWorkNeedsAttentionNote(incompletePageCopyMessage('Page 2')),
+      "${incompletePageCopyMessage('Page 2')} $otherWorkNeedsAttentionNote",
+    );
+    expect(withOtherWorkNeedsAttentionNote(lineupOverlapMessage),
+        '$lineupOverlapMessage. $otherWorkNeedsAttentionNote');
+  });
+
   test('explains a page copy too large to make', () {
     final message = friendlyCloudSyncError(pageTooLargeToCopyMessage);
 

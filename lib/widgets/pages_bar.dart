@@ -5,6 +5,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/collab/drawn_cloud_pages_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/trashed_pages_provider.dart';
@@ -562,19 +563,19 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     return _pageBarData(items, activePageId);
   }
 
+  /// The pages as this device draws them: the server's, with this device's
+  /// page changes that have not reached it (or a read) on top.
   _PageBarData? _buildCloudData(String? activePageId) {
-    final snapshot = ref.watch(remoteEditorSnapshotProvider).valueOrNull;
-    if (snapshot == null || snapshot.pages.isEmpty) {
+    final pages = ref.watch(drawnCloudPagesProvider)?.pages;
+    if (pages == null || pages.isEmpty) {
       return null;
     }
-    final pages = [...snapshot.pages]
-      ..sortBySortIndex((item) => item.sortIndex);
     final items = pages
         .map(
           (page) => PageListItemViewModel(
             id: page.publicId,
             name: page.name,
-            isAutoNamed: page.isAutoNamed == true,
+            isAutoNamed: page.isAutoNamed,
           ),
         )
         .toList(growable: false);
