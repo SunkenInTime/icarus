@@ -322,11 +322,20 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     state = state.copyWith(transitionState: PageTransitionState.idle);
     final pageSource = _resolvePageSource(strategyId, source);
     final pageIds = await pageSource.listPageIds();
-    final initialPageId = pageIds.contains(preferredPageId)
-        ? preferredPageId
-        : pageIds.contains(state.activePageId)
-            ? state.activePageId
-            : null;
+    // Drawn from this computer's copy, the page the copy could show is the
+    // only one there is to open (see RemoteEditorSnapshotNotifier).
+    final copiedPage = source == StrategySource.cloud
+        ? ref.read(remoteEditorSnapshotProvider).valueOrNull?.activePage
+        : null;
+    final initialPageId = copiedPage != null &&
+            copiedPage.fromCopy &&
+            pageIds.contains(copiedPage.page.publicId)
+        ? copiedPage.page.publicId
+        : pageIds.contains(preferredPageId)
+            ? preferredPageId
+            : pageIds.contains(state.activePageId)
+                ? state.activePageId
+                : null;
     final selected = initialPageId ??
         (selectFirstPageIfNeeded && pageIds.isNotEmpty ? pageIds.first : null);
 

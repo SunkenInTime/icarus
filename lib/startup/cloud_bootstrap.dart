@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
@@ -67,6 +68,39 @@ Future<void> openCloudOutboxes() async {
   await Hive.openBox<String>(HiveBoxNames.replayCapturesBox);
   if (!deviceHasImageFiles) {
     await Hive.openBox<dynamic>(HiveBoxNames.pendingMediaBytesBox);
+  }
+  await openCloudStrategyCopy();
+}
+
+/// Opens the copy of cloud strategies kept on this computer for reading
+/// offline (see CloudStrategyCopyStore). Never throws: the copy is a cache,
+/// so one that won't open is deleted and started again, and if that fails
+/// too the run goes without one. Web keeps none.
+Future<void> openCloudStrategyCopy() async {
+  if (kIsWeb) return;
+  const name = HiveBoxNames.cloudStrategyCopyBox;
+  try {
+    await Hive.openBox<String>(name);
+    return;
+  } catch (error, stackTrace) {
+    AppErrorReporter.reportWarning(
+      "The offline copy of cloud strategies couldn't be opened; starting it "
+      'again.',
+      source: 'openCloudStrategyCopy',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
+  try {
+    await Hive.deleteBoxFromDisk(name);
+    await Hive.openBox<String>(name);
+  } catch (error, stackTrace) {
+    AppErrorReporter.reportWarning(
+      'Cloud strategies will not be kept for offline use in this run.',
+      source: 'openCloudStrategyCopy',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 }
 

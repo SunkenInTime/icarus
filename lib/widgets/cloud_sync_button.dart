@@ -281,7 +281,10 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
       CloudSyncStatus.attention => _SyncStatus.attention,
     };
 
-    final syncTooltip = _tooltip(status, saveState.lastPersistedAt);
+    final shownCopy = ref.watch(editorShownCopyProvider);
+    final syncTooltip = status == _SyncStatus.offline && shownCopy != null
+        ? _copyTooltip(context, shownCopy.copiedAt)
+        : _tooltip(status, saveState.lastPersistedAt);
     // The editor carries no status chips, so a viewer learns here why their
     // edits do not stick.
     final tooltip = ref.watch(lastKnownCloudRoleProvider) == 'viewer'
@@ -377,6 +380,29 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
           color: color,
         );
     }
+  }
+
+  /// Offline while the editor draws this computer's copy: how old the copy
+  /// is, with the date in front when it isn't from today.
+  static String _copyTooltip(BuildContext context, DateTime? copiedAt) {
+    if (copiedAt == null) {
+      return "Offline. Showing this computer's copy; changes stay on this "
+          'device';
+    }
+    final localizations = MaterialLocalizations.of(context);
+    final local = copiedAt.toLocal();
+    final now = DateTime.now();
+    final time = localizations.formatTimeOfDay(
+      TimeOfDay.fromDateTime(local),
+      alwaysUse24HourFormat: MediaQuery.alwaysUse24HourFormatOf(context),
+    );
+    final sameDay = local.year == now.year &&
+        local.month == now.month &&
+        local.day == now.day;
+    final when =
+        sameDay ? time : '${localizations.formatShortMonthDay(local)}, $time';
+    return "Offline. Showing this computer's copy from $when; changes stay "
+        'on this device';
   }
 
   /// One line, what the glyph means and what a press will do.

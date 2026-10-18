@@ -24,6 +24,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -283,6 +284,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
+  /// A change to the cloud library asked for while the library shows this
+  /// computer's copy: refused at once, with the reason on screen.
+  bool _refuseCloudChangeOffline() =>
+      refuseCloudChangeWhileOffline(ref.read(cloudLibraryShowsCopyProvider));
+
   bool _selectedWorkspaceIsCloud() {
     return ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
   }
@@ -331,7 +337,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     await ref
         .read(remoteEditorSnapshotProvider.notifier)
-        .openStrategy(strategyID);
+        .openStrategy(strategyID, activePagePublicId: pageId);
     final snapshotState = ref.read(remoteEditorSnapshotProvider);
     final snapshot = snapshotState.valueOrNull;
     if (snapshot == null) {
@@ -1839,6 +1845,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final isCloud = !local && _selectedWorkspaceIsCloud();
+    if (isCloud && _refuseCloudChangeOffline()) {
+      throw StateError(cloudNeedsConnectionMessage);
+    }
     if (!isCloud) _requireLocalLibrary('create');
     final existingNames = isCloud
         ? (ref.read(cloudStrategiesProvider).valueOrNull ?? const [])
@@ -1961,6 +1970,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final resolvedSource = source ?? _resolveLibraryMutationSource();
     if (resolvedSource == StrategySource.cloud) {
+      if (_refuseCloudChangeOffline()) return;
       try {
         final shell = state.strategyId == strategyID &&
                 state.source == StrategySource.cloud
@@ -2018,6 +2028,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       // The server copies everything, images included, in one transaction:
       // a copy's images need asset rows of their own, which only the server
       // can create for bytes that are already uploaded.
+      if (_refuseCloudChangeOffline()) return;
       const sourceName = 'strategy:duplicate';
       final reporter = ref.read(cloudLibraryActionReporterProvider);
       final repository = ref.read(convexStrategyRepositoryProvider);
@@ -2111,6 +2122,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final resolvedSource = source ?? _resolveLibraryMutationSource();
     if (resolvedSource == StrategySource.cloud) {
+      if (_refuseCloudChangeOffline()) {
+        return CloudLibraryActionResult.cancelled;
+      }
       const sourceName = 'strategy:delete';
       final result = await ref.read(cloudLibraryActionReporterProvider).run(
             action: () async {
@@ -2476,6 +2490,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final resolvedSource = source ?? _resolveLibraryMutationSource();
     if (resolvedSource == StrategySource.cloud) {
+      if (_refuseCloudChangeOffline()) {
+        return CloudLibraryActionResult.cancelled;
+      }
       const sourceName = 'strategy:move';
       final result = await ref.read(cloudLibraryActionReporterProvider).run(
             action: () async {

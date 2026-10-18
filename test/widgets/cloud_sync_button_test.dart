@@ -279,9 +279,15 @@ ProviderContainer _createContainer({
   CloudMediaUploadQueueState? mediaQueueState,
   StrategySaveState? saveState,
   ActivePageLiveSyncState? liveSyncState,
+  ConvexAuthStatus? sessionStatus,
+  ({DateTime? copiedAt})? shownCopy,
 }) {
   return ProviderContainer(
     overrides: [
+      if (shownCopy != null)
+        editorShownCopyProvider.overrideWithValue(shownCopy),
+      if (sessionStatus != null)
+        authProvider.overrideWith(() => _FixedSessionAuth(sessionStatus)),
       strategyProvider.overrideWith(_CloudStrategyProvider.new),
       if (liveSyncState != null)
         activePageLiveSyncProvider.overrideWith(
@@ -391,6 +397,67 @@ void main() {
     await container.read(convexConnectionProvider.future);
 
     expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
+  });
+
+  test(
+      'nothing is synced until the session is ready, even with the socket '
+      'back', () async {
+    Future<CloudSyncStatus> statusFor(ConvexAuthStatus session) async {
+      final container = _createContainer(sessionStatus: session);
+      addTearDown(container.dispose);
+      await container.read(convexConnectionProvider.future);
+      return container.read(cloudSyncStatusProvider);
+    }
+
+    // Socket connected, queues settled: only the session differs.
+    expect(await statusFor(ConvexAuthStatus.ready), CloudSyncStatus.synced);
+    expect(
+      await statusFor(ConvexAuthStatus.offline),
+      CloudSyncStatus.offline,
+    );
+    expect(
+      await statusFor(ConvexAuthStatus.configuring),
+      CloudSyncStatus.syncing,
+    );
+    expect(
+      await statusFor(ConvexAuthStatus.incident),
+      CloudSyncStatus.attention,
+    );
+  });
+
+  testWidgets(
+      "a page drawn from this computer's copy is never Synced, and says "
+      'how old the copy is', (tester) async {
+    final copiedAt = DateTime.now().subtract(const Duration(minutes: 5));
+    // Connected and ready, queues settled: only the copy differs.
+    final container = _createContainer(
+      sessionStatus: ConvexAuthStatus.ready,
+      shownCopy: (copiedAt: copiedAt),
+    );
+    addTearDown(container.dispose);
+    await container.read(convexConnectionProvider.future);
+    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.offline);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(_syncButton('offline'), findsOneWidget);
+    final time = MaterialLocalizations.of(
+      tester.element(find.byType(CloudSyncButton)),
+    ).formatTimeOfDay(TimeOfDay.fromDateTime(copiedAt));
+    expect(
+      _syncTooltip(tester),
+      "Offline. Showing this computer's copy from $time; changes stay on "
+      'this device',
+    );
   });
 
   testWidgets('an active text draft can never appear synced', (tester) async {
@@ -1791,6 +1858,21 @@ void main() {
       expect(find.text('This page was deleted'), findsOneWidget);
     });
   });
+}
+
+class _FixedSessionAuth extends AuthProvider {
+  _FixedSessionAuth(this.status);
+
+  final ConvexAuthStatus status;
+
+  @override
+  AppAuthState build() => AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: status == ConvexAuthStatus.ready,
+        convexAuthStatus: status,
+        user: null,
+      );
 }
 
 class _ReadyAuthProvider extends AuthProvider {

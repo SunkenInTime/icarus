@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:app_links/app_links.dart';
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
@@ -32,6 +33,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -218,6 +220,12 @@ Future<void> main(List<String> args) async {
         openOutboxes: openCloudOutboxes,
         initializeClients: () => initializeCloudClients(cloudBuildConfig),
       );
+      // The cloud library kept for offline use. Desktop only: the web app
+      // needs the network to load at all.
+      if (!kIsWeb &&
+          appProviderContainer.read(cloudStartupProvider).isAvailable) {
+        await openCloudLibraryCopyBox();
+      }
 
       await AnalyticsService.instance.initialize();
 
@@ -459,6 +467,8 @@ class _MyAppState extends ConsumerState<MyApp> {
     ref.read(moveToCloudProvider);
     // Sends replay captures the app quit before saving.
     ref.read(replayCaptureQueueProvider);
+    // Keeps cloud strategies on this computer for opening offline.
+    ref.read(strategyCopyRefresherProvider);
 
     _discordPresence = DiscordPresenceWorker();
     _discordStrategySub = ref.listenManual(
