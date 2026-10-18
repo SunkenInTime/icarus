@@ -266,10 +266,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
-      # One preview name per PR or branch. The job deletes its preview when it
-      # finishes, so previews never count against the team deployment quota
-      # after the run.
-      CONVEX_PREVIEW_NAME: typed-wrapper-contract-${{ github.event.pull_request.number || github.ref_name }}
+      # One preview name per run. Runs on main are not serialized, and a
+      # cancelled PR run still cleans up, so a name shared by PR or branch let
+      # one run deploy into, or delete, another run's preview. The job deletes
+      # its preview when it finishes, so previews never count against the team
+      # deployment quota after the run.
+      CONVEX_PREVIEW_NAME: typed-wrapper-contract-${{ github.run_id }}
 
     steps:
       - name: Checkout Release Source
