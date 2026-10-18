@@ -308,38 +308,48 @@ void main() {
   });
 
   test(
-      "after an account's copy is deleted, no answer from before can write "
-      'it back, and answers after a new sign-in can', () async {
+      "once an account's session ends, no write of that session lands, and "
+      'a new session of the same account writes as usual', () async {
     const listing = CloudStrategyListing.owned(null);
-    final before = nextCloudLibraryAnswerOrder();
+    final session = CloudCopyScope.begin(
+      deploymentUrl: 'https://prod-1.convex.cloud',
+      accountId: 'user-session-test',
+    );
     await store.writeStrategies(
-      _scope,
+      session,
       listing,
       [_strategy('s1')],
-      answerOrder: before,
+      answerOrder: nextCloudLibraryAnswerOrder(),
       matchedAt: matchedAt,
     );
 
-    await store.deleteAccount(_scope);
-    // A list disposed after the sign-out rewrites its last answer.
+    session.endSessions();
+    await store.deleteAccount(session);
+    // A late answer of the ended session, newer than anything written.
     await store.writeStrategies(
-      _scope,
+      session,
       listing,
-      [_strategy('s1')],
-      answerOrder: before,
+      [_strategy('late')],
+      answerOrder: nextCloudLibraryAnswerOrder(),
       matchedAt: matchedAt,
     );
-    expect(store.values, isEmpty);
+    expect(session.hasEnded, isTrue);
+    expect(store.readStrategies(session, listing), isNull);
 
+    final again = CloudCopyScope.begin(
+      deploymentUrl: 'https://prod-1.convex.cloud',
+      accountId: 'user-session-test',
+    );
     await store.writeStrategies(
-      _scope,
+      again,
       listing,
       [_strategy('s2')],
       answerOrder: nextCloudLibraryAnswerOrder(),
       matchedAt: matchedAt,
     );
+    expect(again.hasEnded, isFalse);
     expect(
-      store.readStrategies(_scope, listing)!.entries.single.strategy.id,
+      store.readStrategies(again, listing)!.entries.single.strategy.id,
       's2',
     );
   });

@@ -1002,6 +1002,9 @@ class AuthProvider extends Notifier<AppAuthState> {
       deploymentUrl: ref.read(cloudCopyDeploymentUrlProvider),
       accountId: accountId,
     );
+    // At once, before anything else runs: an answer the account's live
+    // queries receive after this can no longer write its copy back.
+    scope.endSessions();
     for (final copy in ref.read(cloudAccountCopiesProvider)) {
       try {
         await copy.deleteAccount(scope);

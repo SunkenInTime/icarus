@@ -17,27 +17,67 @@ import 'package:icarus/strategy/strategy_models.dart';
 /// a cache, and the next live answer replaces it.
 const cloudLibraryCopyRecordVersion = 1;
 
-/// Whose copy a record is: one Convex deployment and one account. Dev and
-/// production builds share the sign-in on a computer, so neither may read
-/// the other's copy.
+int _lastCopySession = 0;
+
+/// Per deployment and account (by [CloudCopyScope.storageKeyPrefix]), the
+/// last session that has ended.
+final _endedCopySessions = <String, int>{};
+
+/// Whose copy a record is: one Convex deployment and one account, and the
+/// signed-in session that reads and writes it. Dev and production builds
+/// share the sign-in on a computer, so neither may read the other's copy.
+///
+/// Records are kept per deployment and account, so a later session of the
+/// same account reads what an earlier one kept. The session only decides
+/// whether a write may land: once the account's session has ended (signed
+/// out, or another account signed in), no write carrying that session does,
+/// however late its answer arrives. Read and write with the scope captured
+/// when the read began, never the one current when its answer arrives.
 class CloudCopyScope {
-  const CloudCopyScope({required this.deploymentUrl, required this.accountId});
+  const CloudCopyScope({
+    required this.deploymentUrl,
+    required this.accountId,
+    this.session = 0,
+  });
+
+  /// A new session of [accountId]: what cloudCopyScopeProvider gives each
+  /// time an account signs in.
+  factory CloudCopyScope.begin({
+    required String deploymentUrl,
+    required String accountId,
+  }) =>
+      CloudCopyScope(
+        deploymentUrl: deploymentUrl,
+        accountId: accountId,
+        session: ++_lastCopySession,
+      );
 
   final String deploymentUrl;
   final String accountId;
+  final int session;
 
   /// Every key of this scope's records starts with this.
   String get storageKeyPrefix => '${Uri.encodeComponent(deploymentUrl)}|'
       '${Uri.encodeComponent(accountId)}|';
 
+  /// Whether this scope's session has ended, so a store must refuse its
+  /// writes.
+  bool get hasEnded => session <= (_endedCopySessions[storageKeyPrefix] ?? -1);
+
+  /// Ends every session of this deployment and account begun so far: the
+  /// account signed out, or another account signed in. A session begun
+  /// later (the account signing back in) writes as usual.
+  void endSessions() => _endedCopySessions[storageKeyPrefix] = _lastCopySession;
+
   @override
   bool operator ==(Object other) =>
       other is CloudCopyScope &&
       other.deploymentUrl == deploymentUrl &&
-      other.accountId == accountId;
+      other.accountId == accountId &&
+      other.session == session;
 
   @override
-  int get hashCode => Object.hash(deploymentUrl, accountId);
+  int get hashCode => Object.hash(deploymentUrl, accountId, session);
 }
 
 /// One of the strategy lists the library reads: My Library's own
@@ -104,7 +144,8 @@ abstract class CloudLibraryCopyStore implements CloudAccountCopy {
   /// older answer from replacing a newer one: a write whose answer is older
   /// than the last one written for the record is dropped. Rewriting the
   /// same answer later, with a later [matchedAt], is how a list records
-  /// that it still matched the server then.
+  /// that it still matched the server then. Nothing lands once [scope]'s
+  /// session has ended (see [CloudCopyScope.hasEnded]).
   Future<void> writeFolders(
     CloudCopyScope scope,
     List<CloudFolderEntry> folders, {
@@ -141,13 +182,6 @@ abstract class _KeyedCloudLibraryCopyStore implements CloudLibraryCopyStore {
   /// The order of the last answer written to each record in this run.
   final _writtenAnswerOrder = <String, int>{};
 
-  /// Per scope, the answer order taken when its copy was deleted. Every
-  /// answer that arrived before the deletion is older, so none of them can
-  /// write the signed-out account's library back (a list disposed after the
-  /// sign-out rewrites its last answer); answers after a later sign-in are
-  /// newer and land.
-  final _deletedAtOrder = <String, int>{};
-
   /// The writes still to run, one at a time in the order they were asked
   /// for, so a write's order check, its put and its pruning happen with no
   /// other write in between.
@@ -160,11 +194,11 @@ abstract class _KeyedCloudLibraryCopyStore implements CloudLibraryCopyStore {
   }
 
   /// Whether an answer of [answerOrder] may replace [key]'s record in
-  /// [scope]: never when a newer answer was written there already, or the
-  /// scope's copy was deleted after the answer arrived.
+  /// [scope]: never once the scope's session has ended (whatever it holds
+  /// went with the account), or when a newer answer was written there
+  /// already.
   bool _admits(CloudCopyScope scope, String key, int answerOrder) {
-    final deletedAt = _deletedAtOrder[scope.storageKeyPrefix];
-    if (deletedAt != null && answerOrder < deletedAt) return false;
+    if (scope.hasEnded) return false;
     final written = _writtenAnswerOrder[key];
     if (written != null && answerOrder < written) return false;
     _writtenAnswerOrder[key] = answerOrder;
@@ -259,7 +293,6 @@ abstract class _KeyedCloudLibraryCopyStore implements CloudLibraryCopyStore {
   @override
   Future<void> deleteAccount(CloudCopyScope scope) {
     final prefix = scope.storageKeyPrefix;
-    _deletedAtOrder[prefix] = nextCloudLibraryAnswerOrder();
     return _serially(
       () => _deleteAll([
         for (final key in _keys)

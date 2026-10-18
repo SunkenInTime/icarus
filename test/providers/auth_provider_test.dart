@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
@@ -11,6 +13,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
@@ -1309,78 +1312,12 @@ void main() {
     );
   });
 
-  group('a library list still open when the account ends', () {
-    late MemoryCloudLibraryCopyStore store;
-    late _LibraryRepository repository;
-    late ProviderContainer container;
-
-    setUp(() async {
-      supabaseApi.currentSession = fakeSession();
-      store = MemoryCloudLibraryCopyStore();
-      repository = _LibraryRepository();
-      container = ProviderContainer(overrides: [
-        cloudLibraryCopyStoreProvider.overrideWithValue(store),
-        cloudAccountCopiesProvider.overrideWith((ref) => [store]),
-        cloudCopyDeploymentUrlProvider
-            .overrideWithValue('https://example-1.convex.cloud'),
-        convexStrategyRepositoryProvider.overrideWithValue(repository),
-        convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
-      ]);
-      container.read(authProvider);
-      await pumpMicrotasks();
-      await pumpMicrotasks();
-      await container.read(convexConnectionProvider.future);
-      container.listen(cloudStrategiesProvider, (_, __) {});
-      await pumpMicrotasks();
-      repository.strategies.add([_cloudEntry('s1')]);
-      await pumpMicrotasks();
-      expect(_accountKeys(store, 'user-1'), isNotEmpty);
-    });
-
-    tearDown(() => container.dispose());
-
-    Future<void> settle() async {
-      for (var i = 0; i < 5; i++) {
-        await pumpMicrotasks();
-      }
-    }
-
-    test('does not write it back after Supabase signs it out', () async {
-      supabaseApi.currentSession = null;
-      supabaseApi.emit(AuthChangeEvent.signedOut, null);
-      await settle();
-
-      expect(_accountKeys(store, 'user-1'), isEmpty);
-    });
-
-    test('does not write it back after another account signs in', () async {
-      final other = fakeSession(userId: 'user-2', accessToken: 'other');
-      supabaseApi.currentSession = other;
-      supabaseApi.emit(AuthChangeEvent.signedIn, other);
-      await settle();
-
-      expect(_accountKeys(store, 'user-1'), isEmpty);
-    });
-
-    test('does not write it back after signing out here', () async {
-      await container.read(authProvider.notifier).signOut();
-      await settle();
-
-      expect(_accountKeys(store, 'user-1'), isEmpty);
-    });
-
-    test('keeps the account once it signs back in', () async {
-      await container.read(authProvider.notifier).signOut();
-      await settle();
-      supabaseApi.currentSession = fakeSession(accessToken: 'again');
-      supabaseApi.emit(AuthChangeEvent.signedIn, supabaseApi.currentSession);
-      await settle();
-      repository.strategies.add([_cloudEntry('s2')]);
-      await settle();
-
-      expect(_accountKeys(store, 'user-1'), isNotEmpty);
-    });
-  });
+  for (final onHive in [false, true]) {
+    _libraryListAccountEndGroup(
+      onHive: onHive,
+      supabaseApi: () => supabaseApi,
+    );
+  }
 }
 
 class _RecordingAccountCopy implements CloudAccountCopy {
@@ -1692,4 +1629,140 @@ class _LibraryRepository extends Fake implements ConvexStrategyRepository {
     String scope = 'owned',
   }) =>
       strategies.stream;
+}
+
+/// A library list still live when its account ends (signed out by
+/// Supabase, another account signing in, signed out here) never writes the
+/// ended account's copy back, not even for an answer that arrives after the
+/// account ended; the same account signing back in writes as usual.
+void _libraryListAccountEndGroup({
+  required bool onHive,
+  required FakeSupabaseApi Function() supabaseApi,
+}) {
+  group(
+      'a library list still open when the account ends '
+      '(${onHive ? 'Hive' : 'memory'})', () {
+    late CloudLibraryCopyStore store;
+    late _LibraryRepository repository;
+    late ProviderContainer container;
+    Directory? hiveDir;
+
+    Iterable<String> accountKeys(String id) => onHive
+        ? Hive.box<dynamic>(HiveBoxNames.cloudLibraryCopyBox)
+            .keys
+            .map((key) => '$key')
+            .where((key) => key.contains('|$id|'))
+        : _accountKeys(store as MemoryCloudLibraryCopyStore, id);
+
+    setUp(() async {
+      supabaseApi().currentSession = fakeSession();
+      if (onHive) {
+        hiveDir = await Directory.systemTemp.createTemp('icarus-copy-');
+        Hive.init(hiveDir!.path);
+        await Hive.openBox<dynamic>(HiveBoxNames.cloudLibraryCopyBox);
+        store = HiveCloudLibraryCopyStore();
+      } else {
+        store = MemoryCloudLibraryCopyStore();
+      }
+      repository = _LibraryRepository();
+      container = ProviderContainer(overrides: [
+        cloudLibraryCopyStoreProvider.overrideWithValue(store),
+        cloudAccountCopiesProvider.overrideWith((ref) => [store]),
+        cloudCopyDeploymentUrlProvider
+            .overrideWithValue('https://example-1.convex.cloud'),
+        convexStrategyRepositoryProvider.overrideWithValue(repository),
+        convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
+      ]);
+      container.read(authProvider);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+      await container.read(convexConnectionProvider.future);
+      container.listen(cloudStrategiesProvider, (_, __) {});
+      await pumpMicrotasks();
+      repository.strategies.add([_cloudEntry('s1')]);
+      await settleWrites(onHive);
+      expect(accountKeys('user-1'), isNotEmpty);
+    });
+
+    tearDown(() async {
+      container.dispose();
+      if (onHive) {
+        await Hive.close();
+        await hiveDir!.delete(recursive: true);
+      }
+    });
+
+    /// On Hive, the box is closed and opened again first: what is checked
+    /// is what is on disk.
+    Future<void> expectGoneFromDisk(String id) async {
+      await settleWrites(onHive);
+      if (onHive) {
+        await Hive.box<dynamic>(HiveBoxNames.cloudLibraryCopyBox).close();
+        await Hive.openBox<dynamic>(HiveBoxNames.cloudLibraryCopyBox);
+      }
+      expect(accountKeys(id), isEmpty);
+    }
+
+    test('does not write it back after Supabase signs it out', () async {
+      supabaseApi().currentSession = null;
+      supabaseApi().emit(AuthChangeEvent.signedOut, null);
+      await expectGoneFromDisk('user-1');
+    });
+
+    test('an answer right after Supabase signs it out writes nothing',
+        () async {
+      supabaseApi().currentSession = null;
+      supabaseApi().emit(AuthChangeEvent.signedOut, null);
+      repository.strategies.add([_cloudEntry('late')]);
+      await expectGoneFromDisk('user-1');
+    });
+
+    test('does not write it back after another account signs in', () async {
+      final other = fakeSession(userId: 'user-2', accessToken: 'other');
+      supabaseApi().currentSession = other;
+      supabaseApi().emit(AuthChangeEvent.signedIn, other);
+      await expectGoneFromDisk('user-1');
+    });
+
+    test('an answer right after another account signs in writes nothing',
+        () async {
+      final other = fakeSession(userId: 'user-2', accessToken: 'other');
+      supabaseApi().currentSession = other;
+      supabaseApi().emit(AuthChangeEvent.signedIn, other);
+      repository.strategies.add([_cloudEntry('late')]);
+      await expectGoneFromDisk('user-1');
+    });
+
+    test('does not write it back after signing out here', () async {
+      await container.read(authProvider.notifier).signOut();
+      await expectGoneFromDisk('user-1');
+    });
+
+    test('the same account signing back in writes as usual', () async {
+      await container.read(authProvider.notifier).signOut();
+      await settleWrites(onHive);
+      supabaseApi().currentSession = fakeSession(accessToken: 'again');
+      supabaseApi()
+          .emit(AuthChangeEvent.signedIn, supabaseApi().currentSession);
+      await settleWrites(onHive);
+      repository.strategies.add([_cloudEntry('s2')]);
+      await settleWrites(onHive);
+
+      expect(accountKeys('user-1'), isNotEmpty);
+    });
+  });
+}
+
+/// Lets queued copy writes finish: microtasks in memory, real file writes
+/// on Hive.
+Future<void> settleWrites(bool onHive) async {
+  for (var i = 0; i < 5; i++) {
+    await pumpMicrotasks();
+  }
+  if (onHive) {
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    for (var i = 0; i < 5; i++) {
+      await pumpMicrotasks();
+    }
+  }
 }
