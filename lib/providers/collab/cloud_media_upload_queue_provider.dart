@@ -183,7 +183,7 @@ class CloudMediaUploadQueueNotifier
       if (toast != null) {
         Settings.dismissToast(toast, showRemoveAnimation: false);
       }
-      _uploadProgressToastState?.dispose();
+      // Not disposed: see _resetUploadToastState.
     });
 
     ref.listen<AppAuthState>(authProvider, (previous, next) {
@@ -789,13 +789,15 @@ class CloudMediaUploadQueueNotifier
       );
       if (bytes == null) {
         _logMedia('upload.local_missing ${_describeJob(job)}');
-        if (await _deleteJobWhenReferenceIsGone(job) == true) {
-          return;
-        }
+        if (await _deleteJobWhenReferenceIsGone(job) == true) return;
+        // Null: a newer write replaced this job while the server was asked,
+        // and that job gets its own turn.
+        if (await _deleteJobWhenServerServesPicture(job) != false) return;
         await _markJobFailed(
           job,
           'Local media file is missing.',
           showToast: job.attempts == 0,
+          onlyIfCurrent: true,
         );
         return;
       }
@@ -949,6 +951,37 @@ class CloudMediaUploadQueueNotifier
     return true;
   }
 
+  /// Deletes [job], whose bytes are gone, if the server already serves its
+  /// picture: nothing is left to upload. Web builds before #327 could queue
+  /// an upload of a picture already on the server from bytes only memory
+  /// held, so a refresh left the job with nothing to send. Returns false
+  /// when the server does not serve it (the picture is lost and the job
+  /// must fail where the user sees it), or when that could not be told.
+  /// Returns null when a newer write replaced [job] meanwhile.
+  Future<bool?> _deleteJobWhenServerServesPicture(
+    CloudMediaUploadJob job,
+  ) async {
+    final String? url;
+    try {
+      url = await _repo.getImageAssetUrl(
+        strategyPublicId: job.strategyPublicId,
+        assetPublicId: job.assetPublicId,
+      );
+    } catch (error) {
+      _logMedia(
+        'missing_source.served_check_failed ${_describeJob(job)} error=$error',
+      );
+      return false;
+    }
+    if (url == null || url.isEmpty) return false;
+    // Checked where the removal is serialized, so an enqueue still being
+    // persisted when the answer came is seen too.
+    if (!await _deleteJob(job, onlyIfCurrent: true)) return null;
+    _refreshState();
+    _logMedia('missing_source.served_by_server ${_describeJob(job)}');
+    return true;
+  }
+
   Future<http.Response> _putBytesWithProgress({
     required CloudMediaUploadJob job,
     required MediaBytesSource bytes,
@@ -1077,19 +1110,26 @@ class CloudMediaUploadQueueNotifier
     return true;
   }
 
+  /// [onlyIfCurrent] records nothing once a newer write replaced [job]: that
+  /// newer job gets its own turn.
   Future<void> _markJobFailed(
     CloudMediaUploadJob job,
     String errorMessage, {
     required bool showToast,
+    bool onlyIfCurrent = false,
   }) async {
-    await _putJob(
-      job.copyWith(
-        state: CloudMediaJobState.failed,
-        attempts: job.attempts + 1,
-        lastError: errorMessage,
-        updatedAt: DateTime.now(),
-      ),
+    final failed = job.copyWith(
+      state: CloudMediaJobState.failed,
+      attempts: job.attempts + 1,
+      lastError: errorMessage,
+      updatedAt: DateTime.now(),
     );
+    final written = await _writeJobs(
+      [failed],
+      () => _store.put(failed),
+      replacing: onlyIfCurrent ? job : null,
+    );
+    if (!written) return;
     _refreshState();
     _logMedia(
         'job.failed showToast=$showToast ${_describeJob(_getJob(job.jobId))}');
@@ -1421,14 +1461,16 @@ class CloudMediaUploadQueueNotifier
     return pendingReference ? null : false;
   }
 
-  Future<void> _writeJobs(
+  /// Returns false, writing nothing, when [replacing] is no longer the job
+  /// held for its id.
+  Future<bool> _writeJobs(
     List<CloudMediaUploadJob> jobs,
     Future<void> Function() persist, {
     CloudMediaUploadJob? replacing,
   }) =>
       _serializeWrite(() async {
         if (replacing != null &&
-            !identical(_getJob(replacing.jobId), replacing)) return;
+            !identical(_getJob(replacing.jobId), replacing)) return false;
         final keys = jobs.map(durableCloudMediaOutboxStorageKey).toSet();
         try {
           await persist();
@@ -1441,6 +1483,7 @@ class CloudMediaUploadQueueNotifier
             _unverifiedByStorageKey.remove(key);
           }
           _refreshState();
+          return true;
         } catch (error, stackTrace) {
           for (final key in keys) {
             _unverifiedByStorageKey[key] = _MediaOutboxMutation.write;
@@ -1453,14 +1496,17 @@ class CloudMediaUploadQueueNotifier
   /// Removes [job] from the outbox, then the bytes it was holding, and only
   /// its own: bytes are scoped like the job. [attached] keeps those bytes
   /// painting until the cloud URL arrives.
+  /// [onlyIfCurrent] removes nothing once a newer write replaced [job].
   Future<bool> _deleteJob(
     CloudMediaUploadJob job, {
     bool onlyIfUnreferenced = false,
+    bool onlyIfCurrent = false,
     bool attached = false,
   }) async {
     final deleted = await _removeJobRecord(
       job,
       onlyIfUnreferenced: onlyIfUnreferenced,
+      onlyIfCurrent: onlyIfCurrent,
     );
     if (deleted) {
       await _releaseMediaBytes(_bytesKey(job), attached: attached);
@@ -1471,9 +1517,13 @@ class CloudMediaUploadQueueNotifier
   Future<bool> _removeJobRecord(
     CloudMediaUploadJob job, {
     required bool onlyIfUnreferenced,
+    required bool onlyIfCurrent,
   }) =>
       _serializeWrite(() async {
         final key = durableCloudMediaOutboxStorageKey(job);
+        if (onlyIfCurrent && !identical(_jobsByStorageKey[key], job)) {
+          return false;
+        }
         if (onlyIfUnreferenced &&
             (!_belongsToActiveAccount(job) ||
                 !identical(_jobsByStorageKey[key], job) ||
@@ -1713,7 +1763,9 @@ class CloudMediaUploadQueueNotifier
     _uploadCompletionDismissTimer?.cancel();
     _uploadCompletionDismissTimer = null;
     _uploadProgressToast = null;
-    _uploadProgressToastState?.dispose();
+    // Not disposed: a dismissed toast can still build, or animate out, with
+    // this state after the queue lets go of it. It holds nothing to release,
+    // and the toast's builder removes its own listener.
     _uploadProgressToastState = null;
     _uploadProgressTotalJobs = 0;
     _uploadBytesSentByJob.clear();
