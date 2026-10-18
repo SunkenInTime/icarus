@@ -292,15 +292,29 @@ class FolderContent extends ConsumerWidget {
   /// store.
   Widget _buildLibraryRoot(BuildContext context, WidgetRef ref) {
     final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
+    // Still connecting, or out of reach: the cloud half is this computer's
+    // copy of it, if it kept one.
+    final showsCopy = ref.watch(cloudLibraryShowsCopyProvider);
     final foldersAsync =
-        cloudAvailable ? ref.watch(cloudFoldersProvider) : null;
+        cloudAvailable || showsCopy ? ref.watch(cloudFoldersProvider) : null;
     final strategiesAsync =
-        cloudAvailable ? ref.watch(cloudStrategiesProvider) : null;
+        cloudAvailable || showsCopy ? ref.watch(cloudStrategiesProvider) : null;
     final cloudFailed = (foldersAsync?.hasError ?? false) ||
         (strategiesAsync?.hasError ?? false);
     final bool cloudLoading;
     var cloudUnreachable = false;
-    if (foldersAsync == null || strategiesAsync == null) {
+    var connectingOverCopy = false;
+    DateTime? offlineCopyMatchedAt;
+    if (showsCopy) {
+      final copyMatchedAt = ref.watch(cloudLibraryCopyMatchedAtProvider);
+      final offline = ref.watch(cloudOfflineProvider);
+      // Connecting with no copy waits as it always has; offline with no
+      // copy offers the retry.
+      cloudLoading = !offline && copyMatchedAt == null;
+      cloudUnreachable = offline && copyMatchedAt == null;
+      connectingOverCopy = !offline && copyMatchedAt != null;
+      if (offline) offlineCopyMatchedAt = copyMatchedAt;
+    } else if (foldersAsync == null || strategiesAsync == null) {
       // Signed in, and the session is still connecting to the cloud, or
       // gave up connecting.
       final signedIn = ref.watch(authProvider).isAuthenticated;
@@ -371,11 +385,13 @@ class FolderContent extends ConsumerWidget {
                 acceptsIcaDrops: _acceptsIcaDrops(ref),
                 banner: cloudFailed
                     ? _CloudErrorBanner(onRetry: () => _retryCloud(ref))
-                    : cloudUnreachable
-                        ? const _CloudUnreachableBanner()
-                        : cloudLoading
-                            ? const _CloudLoadingBanner()
-                            : null,
+                    : offlineCopyMatchedAt != null
+                        ? _CloudOfflineBanner(matchedAt: offlineCopyMatchedAt)
+                        : cloudUnreachable
+                            ? const _CloudUnreachableBanner()
+                            : cloudLoading || connectingOverCopy
+                                ? const _CloudLoadingBanner()
+                                : null,
                 emptyStateKey: const ValueKey('library-empty-state'),
                 emptyStateIcon: LucideIcons.folder,
                 emptyStateTitle: 'Your library is empty',
@@ -432,12 +448,29 @@ class FolderContent extends ConsumerWidget {
   /// A cloud folder, or the Shared tab.
   Widget _buildCloudBody(BuildContext context, WidgetRef ref) {
     final cloudSection = ref.watch(cloudLibrarySectionProvider);
-    final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
-    if (!cloudAvailable) {
+    if (!ref.watch(isCloudLibraryBrowsableProvider)) {
       return KeyedSubtree(
         key: const ValueKey('cloud-unavailable'),
         child: _buildCloudUnavailableState(context, ref),
       );
+    }
+    Widget? banner;
+    if (ref.watch(cloudLibraryShowsCopyProvider)) {
+      // Still connecting, or out of reach: this computer's copy, if it kept
+      // this folder.
+      final copyMatchedAt = ref.watch(cloudLibraryCopyMatchedAtProvider);
+      final offline = ref.watch(cloudOfflineProvider);
+      if (copyMatchedAt == null) {
+        return offline
+            ? KeyedSubtree(
+                key: const ValueKey('cloud-not-kept'),
+                child: _buildNotKeptState(context, ref),
+              )
+            : const _LibraryLoadingSkeleton(key: ValueKey('cloud-loading'));
+      }
+      banner = offline
+          ? _CloudOfflineBanner(matchedAt: copyMatchedAt)
+          : const _CloudLoadingBanner();
     }
     final foldersAsync = ref.watch(cloudFoldersProvider);
     final strategiesAsync = ref.watch(cloudStrategiesProvider);
@@ -474,6 +507,7 @@ class FolderContent extends ConsumerWidget {
         folders: _filterFolders(ref, folders),
         strategies: _filterStrategies(ref, strategies),
         acceptsIcaDrops: false,
+        banner: banner,
         emptyStateKey: isSharedWithMe && folder == null
             ? const ValueKey('shared-empty-state')
             : null,
@@ -800,6 +834,28 @@ class FolderContent extends ConsumerWidget {
     );
   }
 
+  /// A cloud folder, or Shared, opened while the cloud is out of reach on a
+  /// computer that never kept a copy of it.
+  Widget _buildNotKeptState(BuildContext context, WidgetRef ref) {
+    final isShared = ref.watch(cloudLibrarySectionProvider) ==
+        CloudLibrarySection.sharedWithMe;
+    return _LibraryMessageState(
+      icon: LucideIcons.cloudOff,
+      iconColor: Settings.tacticalVioletTheme.mutedForeground,
+      title: isShared && folder == null
+          ? "Shared isn't on this computer yet"
+          : "This folder isn't on this computer yet",
+      subtitle: 'Icarus keeps what you open while online. This loads when '
+          "you're back online.",
+      actions: [
+        ShadButton.secondary(
+          onPressed: ref.read(libraryNavigationProvider).showLibrary,
+          child: const Text('Back to My Library'),
+        ),
+      ],
+    );
+  }
+
   /// My Library on a platform that needs the cloud, before the cloud is
   /// reachable. Restoring a session holds the skeleton so the login prompt
   /// never flashes at a returning user; a session that cannot reach the
@@ -909,6 +965,51 @@ class _CloudLoadingBanner extends StatelessWidget {
           'for now.',
     );
   }
+}
+
+/// Shown above the library while the cloud is out of reach and the cloud
+/// half comes from this computer's copy, with when that copy last matched
+/// the server.
+class _CloudOfflineBanner extends StatelessWidget {
+  const _CloudOfflineBanner({required this.matchedAt});
+
+  final DateTime matchedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    return _CloudBanner(
+      key: const ValueKey('cloud-offline-banner'),
+      leading: Icon(
+        LucideIcons.cloudOff,
+        size: 16,
+        color: Settings.tacticalVioletTheme.mutedForeground,
+      ),
+      message: 'Offline. Showing your cloud library as of '
+          '${cloudCopyTimeLabel(context, matchedAt, now: DateTime.now())}. '
+          "Changes sync when you're back online.",
+    );
+  }
+}
+
+/// [matchedAt] as a time of day, with the date in front when it isn't
+/// today.
+@visibleForTesting
+String cloudCopyTimeLabel(
+  BuildContext context,
+  DateTime matchedAt, {
+  required DateTime now,
+}) {
+  final localizations = MaterialLocalizations.of(context);
+  final local = matchedAt.toLocal();
+  final time = localizations.formatTimeOfDay(
+    TimeOfDay.fromDateTime(local),
+    alwaysUse24HourFormat: MediaQuery.alwaysUse24HourFormatOf(context),
+  );
+  final today = now.toLocal();
+  final sameDay = local.year == today.year &&
+      local.month == today.month &&
+      local.day == today.day;
+  return sameDay ? time : '${localizations.formatShortMonthDay(local)}, $time';
 }
 
 /// Shown above the My Library root when the cloud half failed to load. The

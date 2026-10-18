@@ -10,4 +10,5 @@ class HiveBoxNames {
   static const replayCapturesBox = "replay_captures_box";
   static const pendingMediaBytesBox = "pending_media_bytes_box";
   static const pinnedItemsBox = "pinned_items_box";
+  static const cloudLibraryCopyBox = "cloud_library_copy_box";
 }

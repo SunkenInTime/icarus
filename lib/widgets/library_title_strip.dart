@@ -78,7 +78,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
   @override
   Widget build(BuildContext context) {
     final tab = ref.watch(libraryTabProvider);
-    final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
+    final cloudBrowsable = ref.watch(isCloudLibraryBrowsableProvider);
     final isWebBeta = ref.watch(platformPolicyProvider).isWebBeta;
     // Signed out on the web beta, My Library holds only the sign-in action,
     // so there is nothing to search, sort, or create.
@@ -118,7 +118,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             label: 'Shared',
             semanticsLabel: 'Shared library',
             selected: tab == LibraryTab.shared,
-            dimmed: !cloudAvailable,
+            dimmed: !cloudBrowsable,
             onTap: () {
               if (navigation.showShared()) return;
               // Signed in but the cloud is unreachable: My Library carries

@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:developer';
 
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/generated/convex_error_codes.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,8 +27,26 @@ enum ConvexAuthStatus {
   signedOut,
   configuring,
   ready,
+
+  /// Signed in, but the cloud can't be reached (no network, or the server
+  /// is down). The session itself is fine: setup retries by itself, and the
+  /// library shows what this computer kept of the cloud.
+  offline,
   incident,
 }
+
+/// Signed in, and the cloud is out of reach for network reasons. Cloud
+/// reads should go to this computer's copy instead of waiting to time out.
+final cloudOfflineProvider = Provider<bool>((ref) {
+  return ref.watch(
+    authProvider.select(
+      (auth) =>
+          auth.isAuthenticated &&
+          auth.user?.id != null &&
+          auth.convexAuthStatus == ConvexAuthStatus.offline,
+    ),
+  );
+});
 
 const _sensitiveAuthKeys = {
   'access_token',
@@ -289,6 +309,12 @@ abstract class AuthProviderConvexApi {
   Stream<bool> get authState;
   bool get isAuthenticated;
   String? get currentConnectionStateLabel;
+
+  /// Whether the Convex socket is connected right now.
+  bool get isConnected;
+
+  /// Each change of [isConnected].
+  Stream<bool> get connectedChanges;
   Future<void> clearAuth();
   Future<bool> reconnect();
   Future<void> ensureCurrentUser();
@@ -355,6 +381,13 @@ class _DefaultAuthProviderConvexApi implements AuthProviderConvexApi {
   @override
   String? get currentConnectionStateLabel =>
       _client.currentConnectionState.name;
+
+  @override
+  bool get isConnected => _client.isConnected;
+
+  @override
+  Stream<bool> get connectedChanges => _client.connectionState
+      .map((state) => state == WebSocketConnectionState.connected);
 
   @override
   Future<void> clearAuth() => _client.clearAuth();
@@ -503,6 +536,18 @@ class AuthProvider extends Notifier<AppAuthState> {
   @visibleForTesting
   static Duration? debugConvexAuthReadyTimeout;
 
+  @visibleForTesting
+  static Duration? debugReconnectTimeout;
+
+  @visibleForTesting
+  static Duration Function(int attempt)? debugOfflineRetryDelay;
+
+  /// While offline: the next timed retry, how many have run, and the
+  /// connection listener that retries the moment the socket is back.
+  Timer? _offlineRetryTimer;
+  int _offlineRetryAttempts = 0;
+  StreamSubscription<bool>? _offlineConnectionSub;
+
   late final AuthProviderSupabaseApi _supabaseApi;
   late final AuthProviderConvexApi _convexApi;
 
@@ -511,6 +556,17 @@ class AuthProvider extends Notifier<AppAuthState> {
     debugSupabaseApi = null;
     debugConvexApi = null;
     debugConvexAuthReadyTimeout = null;
+    debugReconnectTimeout = null;
+    debugOfflineRetryDelay = null;
+  }
+
+  /// How long an offline session waits before setup tries again: 5 s,
+  /// doubling to a minute.
+  static Duration offlineRetryDelay(int attempt) {
+    final debugDelay = debugOfflineRetryDelay;
+    if (debugDelay != null) return debugDelay(attempt);
+    final seconds = 5 * (1 << attempt.clamp(0, 4));
+    return Duration(seconds: seconds > 60 ? 60 : seconds);
   }
 
   int _advanceAuthGeneration() {
@@ -555,11 +611,19 @@ class AuthProvider extends Notifier<AppAuthState> {
     ref.onDispose(() {
       _supabaseAuthSub?.cancel();
       _convexAuthHandle?.dispose();
+      _stopOfflineRetries();
       // A setup still running, or queued behind it, belongs to a provider
       // that is gone: it must finish without reading or changing anything.
       _disposed = true;
       _queuedConvexSetup = false;
       _advanceAuthGeneration();
+    });
+    // Retries belong to the offline state only; any way out of it (ready,
+    // signed out, an incident) ends them.
+    listenSelf((previous, next) {
+      if (next.convexAuthStatus != ConvexAuthStatus.offline) {
+        _stopOfflineRetries();
+      }
     });
     // The server accepts this build again (a rolled-back deploy): the
     // setup it refused can now succeed.
@@ -828,6 +892,7 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   Future<void> signOut() async {
+    final signedOutAccountId = state.user?.id;
     // Invalidate any setup that is currently awaiting a Convex auth handle
     // before the Supabase auth-state event has a chance to arrive. Otherwise a
     // stale setup can resume during sign-out and surface a false auth incident.
@@ -869,6 +934,10 @@ class AuthProvider extends Notifier<AppAuthState> {
       return;
     }
 
+    if (signedOutAccountId != null) {
+      await _deleteAccountCopies(signedOutAccountId);
+    }
+
     try {
       Settings.showToast(
         message: ref.read(platformPolicyProvider).allowsLocalLibrary
@@ -883,6 +952,30 @@ class AuthProvider extends Notifier<AppAuthState> {
         error: error,
         stackTrace: stackTrace,
       );
+    }
+  }
+
+  /// Removes what this computer kept of [accountId]'s cloud library, so a
+  /// signed-out computer doesn't keep someone's library. Unsent work stays
+  /// in its outboxes, and image files are never touched. A copy that can't
+  /// be deleted is reported, never a reason the sign-out fails.
+  Future<void> _deleteAccountCopies(String accountId) async {
+    final scope = CloudCopyScope(
+      deploymentUrl: ref.read(cloudCopyDeploymentUrlProvider),
+      accountId: accountId,
+    );
+    for (final copy in ref.read(cloudAccountCopiesProvider)) {
+      try {
+        await copy.deleteAccount(scope);
+      } catch (error, stackTrace) {
+        AppErrorReporter.reportWarning(
+          "Signed out, but this computer's copy of the cloud library could "
+          'not be deleted',
+          source: 'auth',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
     }
   }
 
@@ -1022,6 +1115,59 @@ class AuthProvider extends Notifier<AppAuthState> {
     await _configureConvexAuth(trigger: 'reinitialize:$source');
   }
 
+  /// Signed in, but setup failed because the cloud is out of reach. Setup
+  /// tries again when the socket connects, and on a timer that backs off
+  /// from 5 s to a minute.
+  void _enterOffline() {
+    state = state.copyWith(
+      isConvexUserReady: false,
+      convexAuthStatus: ConvexAuthStatus.offline,
+      clearError: true,
+    );
+    _offlineConnectionSub ??= _convexApi.connectedChanges.listen(
+      (connected) {
+        if (connected) _retryOffline('connected');
+      },
+      onError: (Object _) {},
+    );
+    _offlineRetryTimer?.cancel();
+    _offlineRetryTimer = Timer(
+      offlineRetryDelay(_offlineRetryAttempts++),
+      () => _retryOffline('timer'),
+    );
+  }
+
+  void _retryOffline(String reason) {
+    if (_disposed || state.convexAuthStatus != ConvexAuthStatus.offline) {
+      return;
+    }
+    // A setup already running ends ready, or offline with the next timer.
+    if (_inFlightConvexSetup != null) return;
+    _offlineRetryTimer?.cancel();
+    _offlineRetryTimer = null;
+    unawaited(_configureConvexAuth(trigger: 'offline_retry:$reason'));
+  }
+
+  void _stopOfflineRetries() {
+    _offlineRetryTimer?.cancel();
+    _offlineRetryTimer = null;
+    _offlineConnectionSub?.cancel();
+    _offlineConnectionSub = null;
+    _offlineRetryAttempts = 0;
+  }
+
+  /// Whether a setup failure came from the cloud being out of reach, not
+  /// from anything the server said: the socket is down, and the error is
+  /// not a server function's answer.
+  bool _isOfflineFailure(Object error) {
+    if (error is _ConvexUnreachable) return true;
+    if (error is ConvexClientFunctionError ||
+        error is ConvexFunctionException) {
+      return false;
+    }
+    return !_convexApi.isConnected;
+  }
+
   Future<void> reportConvexUnauthenticated({
     required String source,
     Object? error,
@@ -1104,6 +1250,9 @@ class AuthProvider extends Notifier<AppAuthState> {
   Duration get _convexAuthReadyTimeout =>
       debugConvexAuthReadyTimeout ?? const Duration(seconds: 5);
 
+  Duration get _reconnectTimeout =>
+      debugReconnectTimeout ?? const Duration(seconds: 8);
+
   Future<String> _waitForConvexAuthenticated({
     required String trigger,
     required bool? reconnectResult,
@@ -1178,11 +1327,16 @@ class AuthProvider extends Notifier<AppAuthState> {
       return;
     }
 
+    // An automatic retry stays offline on screen until it succeeds, so the
+    // library doesn't flicker to "connecting" every few seconds.
+    final quietRetry = trigger.startsWith('offline_retry:') &&
+        state.convexAuthStatus == ConvexAuthStatus.offline;
     state = state.copyWith(
       isLoading: false,
       isAuthenticated: true,
       isConvexUserReady: false,
-      convexAuthStatus: ConvexAuthStatus.configuring,
+      convexAuthStatus:
+          quietRetry ? ConvexAuthStatus.offline : ConvexAuthStatus.configuring,
       clearError: true,
     );
 
@@ -1206,7 +1360,10 @@ class AuthProvider extends Notifier<AppAuthState> {
           if (_supabaseApi.currentSession == null) {
             return;
           }
-          if (state.convexAuthStatus == ConvexAuthStatus.configuring) {
+          // Still setting up, or out of reach: the server hasn't judged
+          // the session, so this is no incident.
+          if (state.convexAuthStatus == ConvexAuthStatus.configuring ||
+              state.convexAuthStatus == ConvexAuthStatus.offline) {
             return;
           }
 
@@ -1237,7 +1394,12 @@ class AuthProvider extends Notifier<AppAuthState> {
         name: 'auth',
       );
       try {
-        reconnectResult = await _convexApi.reconnect();
+        // Offline, a reconnect waits out the client's whole operation
+        // timeout; this decides sooner, and the retries take over.
+        reconnectResult = await _convexApi.reconnect().timeout(
+              _reconnectTimeout,
+              onTimeout: () => false,
+            );
         log(
           'Convex reconnect attempted [$trigger] (result: $reconnectResult, '
           'isAuthenticatedAfterReconnect: ${_convexApi.isAuthenticated}, '
@@ -1252,6 +1414,9 @@ class AuthProvider extends Notifier<AppAuthState> {
           error: error,
           stackTrace: stackTrace,
         );
+      }
+      if (reconnectResult == false && !_convexApi.isConnected) {
+        throw const _ConvexUnreachable();
       }
       final readinessSource = await _waitForConvexAuthenticated(
         trigger: trigger,
@@ -1301,14 +1466,19 @@ class AuthProvider extends Notifier<AppAuthState> {
         return;
       }
 
-      AppErrorReporter.reportWarning(
-        error is TimeoutException
-            ? 'Convex auth readiness timed out [$trigger]'
-            : 'Convex auth setup failed [$trigger]',
-        source: 'auth',
-        error: redactAuthDiagnosticText(error),
-        stackTrace: StackTrace.fromString(redactAuthDiagnosticText(stackTrace)),
-      );
+      // An automatic retry that is still offline was reported when the
+      // session first went offline.
+      if (state.convexAuthStatus != ConvexAuthStatus.offline) {
+        AppErrorReporter.reportWarning(
+          error is TimeoutException
+              ? 'Convex auth readiness timed out [$trigger]'
+              : 'Convex auth setup failed [$trigger]',
+          source: 'auth',
+          error: redactAuthDiagnosticText(error),
+          stackTrace:
+              StackTrace.fromString(redactAuthDiagnosticText(stackTrace)),
+        );
+      }
 
       if (isConvexUnauthenticatedError(error)) {
         await reportConvexUnauthenticated(
@@ -1321,6 +1491,12 @@ class AuthProvider extends Notifier<AppAuthState> {
 
       final upgradeRequired =
           ref.read(clientUpgradeRequiredProvider.notifier).noteError(error);
+      if (!upgradeRequired &&
+          _supabaseApi.currentSession?.user.id != null &&
+          _isOfflineFailure(error)) {
+        _enterOffline();
+        return;
+      }
       state = state.copyWith(
         isConvexUserReady: false,
         convexAuthStatus: ConvexAuthStatus.incident,
@@ -1424,4 +1600,12 @@ class AuthProvider extends Notifier<AppAuthState> {
       }
     }
   }
+}
+
+/// Setup found the socket down after trying to reconnect.
+class _ConvexUnreachable implements Exception {
+  const _ConvexUnreachable();
+
+  @override
+  String toString() => 'The Convex socket did not connect.';
 }

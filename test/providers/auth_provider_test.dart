@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -820,6 +821,226 @@ void main() {
       ConvexAuthStatus.ready,
     );
   });
+
+  group('offline', () {
+    setUp(() {
+      supabaseApi.currentSession = fakeSession();
+      // Out of reach: the socket never connects.
+      convexApi.connected = false;
+      convexApi.reconnectResult = false;
+      convexApi.autoAuthenticateOnSetAuth = false;
+      AuthProvider.debugOfflineRetryDelay = (_) => const Duration(hours: 1);
+    });
+
+    test(
+        'a setup that cannot reach the cloud is offline, not an incident, '
+        'and says so through cloudOfflineProvider', () async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      container.read(authProvider);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+
+      final state = container.read(authProvider);
+      expect(state.convexAuthStatus, ConvexAuthStatus.offline);
+      expect(state.isAuthenticated, isTrue);
+      expect(state.isConvexUserReady, isFalse);
+      expect(state.activeAuthIncidentId, isNull);
+      expect(state.errorMessage, isNull);
+      expect(container.read(cloudOfflineProvider), isTrue);
+      expect(convexApi.mutationCalls, 0);
+    });
+
+    test('it sets up again by itself the moment the socket connects', () async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(authProvider);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.offline,
+      );
+
+      convexApi.reconnectSocket();
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.ready,
+      );
+      expect(container.read(cloudOfflineProvider), isFalse);
+      expect(convexApi.setAuthCalls, 2);
+    });
+
+    test('it sets up again on a timer when no connect event comes', () async {
+      AuthProvider.debugOfflineRetryDelay =
+          (_) => const Duration(milliseconds: 20);
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(authProvider);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.offline,
+      );
+      final attemptsWhileOffline = convexApi.setAuthCalls;
+
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      // Still out of reach: each timed try ends offline again.
+      expect(convexApi.setAuthCalls, greaterThan(attemptsWhileOffline));
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.offline,
+      );
+
+      convexApi
+        ..connected = true
+        ..reconnectResult = true
+        ..autoAuthenticateOnSetAuth = true;
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.ready,
+      );
+    });
+
+    test('a retry stays offline on screen until it succeeds', () async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(authProvider);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+
+      final setAuth = Completer<AuthProviderAuthHandle>();
+      convexApi.setAuthCompleter = setAuth;
+      convexApi.connectedController.add(true);
+      await pumpMicrotasks();
+
+      expect(convexApi.setAuthCalls, 2);
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.offline,
+      );
+      setAuth.complete(FakeAuthHandle());
+      await pumpMicrotasks();
+    });
+
+    test('backs off from 5 seconds to a minute', () {
+      AuthProvider.debugOfflineRetryDelay = null;
+      expect(
+        [for (var i = 0; i < 7; i++) AuthProvider.offlineRetryDelay(i)],
+        const [
+          Duration(seconds: 5),
+          Duration(seconds: 10),
+          Duration(seconds: 20),
+          Duration(seconds: 40),
+          Duration(seconds: 60),
+          Duration(seconds: 60),
+          Duration(seconds: 60),
+        ],
+      );
+    });
+
+    test('a server that refuses this build is still an incident', () async {
+      convexApi
+        ..reconnectResult = true
+        ..autoAuthenticateOnSetAuth = true
+        ..mutationError = _upgradeRequired;
+      final container = ProviderContainer(overrides: [
+        convexStrategyRepositoryProvider
+            .overrideWithValue(_AcceptingRepository()),
+      ]);
+      addTearDown(container.dispose);
+
+      container.read(authProvider);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.incident,
+      );
+      expect(container.read(clientUpgradeRequiredProvider), isTrue);
+      expect(container.read(cloudOfflineProvider), isFalse);
+    });
+
+    test('a session the server rejects is still an incident', () async {
+      convexApi
+        ..reconnectResult = true
+        ..autoAuthenticateOnSetAuth = true
+        ..mutationError = const ConvexFunctionException(
+          code: ConvexErrorCode.unauthenticated,
+          rawCode: 'UNAUTHENTICATED',
+          message: 'Unauthenticated',
+        );
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      container.read(authProvider);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+
+      final state = container.read(authProvider);
+      expect(state.convexAuthStatus, ConvexAuthStatus.incident);
+      expect(state.activeAuthIncidentId, isNotNull);
+      expect(container.read(cloudOfflineProvider), isFalse);
+    });
+
+    test('a connected socket that never authenticates is still an incident',
+        () async {
+      convexApi
+        ..connected = true
+        ..reconnectResult = true;
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      container.read(authProvider);
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.incident,
+      );
+    });
+  });
+
+  test(
+      "signing out deletes that account's copies for this deployment, and "
+      'nothing else', () async {
+    supabaseApi.currentSession = fakeSession();
+    final copy = _RecordingAccountCopy();
+    final container = ProviderContainer(overrides: [
+      cloudAccountCopiesProvider.overrideWithValue([copy]),
+      cloudCopyDeploymentUrlProvider
+          .overrideWithValue('https://example-1.convex.cloud'),
+    ]);
+    addTearDown(container.dispose);
+    container.read(authProvider);
+    await pumpMicrotasks();
+
+    await container.read(authProvider.notifier).signOut();
+
+    expect(copy.deleted, const [
+      CloudCopyScope(
+        deploymentUrl: 'https://example-1.convex.cloud',
+        accountId: 'user-1',
+      ),
+    ]);
+  });
+}
+
+class _RecordingAccountCopy implements CloudAccountCopy {
+  final deleted = <CloudCopyScope>[];
+
+  @override
+  Future<void> deleteAccount(CloudCopyScope scope) async {
+    deleted.add(scope);
+  }
 }
 
 const _upgradeRequired = ConvexFunctionException(
@@ -893,7 +1114,26 @@ class FakeConvexApi implements AuthProviderConvexApi {
   bool get isAuthenticated => _isAuthenticated;
 
   @override
-  String? get currentConnectionStateLabel => 'connected';
+  String? get currentConnectionStateLabel =>
+      connected ? 'connected' : 'connecting';
+
+  bool connected = true;
+  final StreamController<bool> connectedController =
+      StreamController<bool>.broadcast();
+
+  @override
+  bool get isConnected => connected;
+
+  @override
+  Stream<bool> get connectedChanges => connectedController.stream;
+
+  /// The socket comes back, and the next setup goes through.
+  void reconnectSocket() {
+    connected = true;
+    reconnectResult = true;
+    autoAuthenticateOnSetAuth = true;
+    connectedController.add(true);
+  }
 
   @override
   Future<void> clearAuth() async {
