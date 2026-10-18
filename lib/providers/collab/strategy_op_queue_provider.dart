@@ -1760,6 +1760,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     for (final ack in acks) {
       final sent = byOpId[ack.opId];
       if (sent == null) continue;
+      if (ack case AppliedOpAck(:final revision)
+          when _takesStrategyRevision(sent.pending.op)) {
+        await _advanceOwnStrategyRevision(sent, revision);
+      }
       final current = _recordsByStorageKey[sent.storageKey];
       if (current?.pending.op.opId != ack.opId) continue;
       final successor = current!.successorPending;
@@ -2824,7 +2828,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         // The waiting change was made against its revision, and a strategy
         // patch has no field merge: carried into a newer edit, it keeps
         // that revision, so a teammate's header that landed since is
-        // refused and the user asked, never written over in silence.
+        // refused and the user asked, never written over in silence. (It
+        // moves on past this device's own changes as they land: see
+        // _advanceOwnStrategyRevision.)
         return StrategyPatchOp(
           opId: replacementOpId,
           payload: {...existing.payload, ...desired.payload},
@@ -2952,6 +2958,90 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       successor.merge == null && predecessor.merge != null
           ? original
           : successor;
+
+  /// Whether [op] is checked against the strategy's revision, and moves it
+  /// on when it lands: a strategy patch, or a page added, deleted or
+  /// reordered (see applyStrategyOp and applyPageOp in convex/ops.ts).
+  static bool _takesStrategyRevision(StrategyOp op) =>
+      op is StrategyPatchOp ||
+      op is PageAddOp ||
+      op is PageDeleteOp ||
+      op is PageReorderOp;
+
+  /// [sent], this device's own change to the strategy, landed and moved the
+  /// strategy from [revision] - 1 to [revision]. A waiting change made
+  /// against [revision] - 1 knows everything in [revision] (this device
+  /// made it), so it now waits against [revision]: a map changed while a
+  /// page reorder was being sent is not refused for the reorder. Only an
+  /// answer to this device's own change moves waiting work on. A revision
+  /// read live says nothing about who made it, and one a teammate made
+  /// leaves the work to be refused, so the user is asked. Work being sent,
+  /// or already refused, is left as it is.
+  Future<void> _advanceOwnStrategyRevision(
+    DurableOutboxRecord sent,
+    int revision,
+  ) async {
+    final waiting = _recordsByStorageKey.values
+        .where((record) =>
+            record.accountId == sent.accountId &&
+            record.strategyPublicId == sent.strategyPublicId &&
+            (record.status == DurableOutboxStatus.queued ||
+                record.status == DurableOutboxStatus.paused) &&
+            _takesStrategyRevision(record.pending.op) &&
+            record.pending.op.expectedRevision == revision - 1)
+        .toList(growable: false);
+    for (final record in waiting) {
+      final pending = record.pending;
+      await _putRecord(record.copyWith(
+        pending: PendingOp(
+          op: _atStrategyRevision(pending.op, revision),
+          clientId: pending.clientId,
+          attempts: pending.attempts,
+          lastAttemptAt: pending.lastAttemptAt,
+        ),
+        updatedAt: DateTime.now(),
+      ));
+    }
+  }
+
+  /// [op] (see [_takesStrategyRevision]) made against the strategy at
+  /// [revision]. It keeps its op id: it is the same change.
+  static StrategyOp _atStrategyRevision(StrategyOp op, int revision) =>
+      switch (op) {
+        StrategyPatchOp(:final opId, :final payload) => StrategyPatchOp(
+            opId: opId,
+            payload: payload,
+            expectedStrategyRevision: revision,
+          ),
+        PageAddOp(
+          :final opId,
+          :final pagePublicId,
+          :final payload,
+          :final sortIndex,
+          :final copyContentFromPagePublicId,
+        ) =>
+          PageAddOp(
+            opId: opId,
+            pagePublicId: pagePublicId,
+            payload: payload,
+            sortIndex: sortIndex,
+            expectedStrategyRevision: revision,
+            copyContentFromPagePublicId: copyContentFromPagePublicId,
+          ),
+        PageDeleteOp(:final opId, :final pagePublicId) => PageDeleteOp(
+            opId: opId,
+            pagePublicId: pagePublicId,
+            expectedStrategyRevision: revision,
+          ),
+        PageReorderOp(:final opId, :final pagePublicId, :final sortIndex) =>
+          PageReorderOp(
+            opId: opId,
+            pagePublicId: pagePublicId,
+            sortIndex: sortIndex,
+            expectedStrategyRevision: revision,
+          ),
+        _ => throw ArgumentError.value(op, 'op', 'Takes no strategy revision'),
+      };
 
   /// [op], made to wait behind [predecessor], which is sent first. When the
   /// predecessor is this canvas's own work ([drawn]) and merges by field,

@@ -666,6 +666,10 @@ class _ServerRepository implements ConvexStrategyRepository {
   /// While set, a batch waits for it before it reaches the server.
   Completer<void>? hold;
 
+  /// While set, a batch's answers wait for it once the server has taken
+  /// the batch and the live read can show it: the read arrives first.
+  Completer<void>? holdAnswer;
+
   /// While set, the next batch reaches the server, then this runs and the
   /// answer is lost on its way back: the send fails as if offline.
   void Function()? loseNextAnswer;
@@ -694,6 +698,7 @@ class _ServerRepository implements ConvexStrategyRepository {
   }) async {
     batches.add(ops);
     await hold?.future;
+    server.beginBatch();
     final acks = [
       for (final op in ops) refuse?.call(op) ?? server.apply(op),
     ];
@@ -703,6 +708,7 @@ class _ServerRepository implements ConvexStrategyRepository {
       throw const SocketException('The answer was lost.');
     }
     afterBatch();
+    await holdAnswer?.future;
     return acks;
   }
 
@@ -1019,8 +1025,9 @@ class _FakeServer {
   final Map<String, OpAck> _answers = {};
 
   /// The strategy's map, theme and revision as this server holds them. A
-  /// strategy patch is checked against the revision whole, as the real
-  /// server does (see applyStrategyOp in convex/ops.ts): strategy patches
+  /// strategy patch, and a page added, deleted or reordered, is checked
+  /// against the revision and moves it on, as the real server does (see
+  /// applyStrategyOp and applyPageOp in convex/ops.ts): strategy patches
   /// have no field merge.
   String strategyMap = 'ascent';
   String? strategyThemeProfileId;
@@ -1030,14 +1037,22 @@ class _FakeServer {
   /// Every strategy patch this server answered, in order.
   final List<StrategyPatchOp> strategyPatches = [];
 
-  /// A teammate's map change, landed: the strategy moves to a new revision.
-  void teammateSetsMap(String mapData) {
-    strategyMap = mapData;
-    strategyRevision += 1;
-  }
+  /// The revision the batch being applied was made from, once one of its
+  /// ops landed from it: later ops made from it too land after it, as the
+  /// real server chains them (see applyBatch in convex/ops.ts).
+  int? _batchBase;
 
-  OpAck _applyStrategyPatch(StrategyPatchOp op) {
-    strategyPatches.add(op);
+  /// Starts a batch (see [_batchBase]).
+  void beginBatch() => _batchBase = null;
+
+  /// The answer to [op], which takes the strategy's revision, given what it
+  /// [changes]: refused if made from another revision, else [land] runs and
+  /// the strategy moves on.
+  OpAck _checkStrategyRevision(
+    StrategyOp op, {
+    required bool changes,
+    required void Function() land,
+  }) {
     switch (_answers[op.opId]) {
       case final RejectedOpAck refused:
         return refused;
@@ -1049,21 +1064,13 @@ class _FakeServer {
       case null:
         break;
     }
-    final payload = op.payload;
-    final map = payload['mapData'] as String? ?? strategyMap;
-    final profileId = payload['clearThemeProfileId'] == true
-        ? null
-        : payload['themeProfileId'] as String? ?? strategyThemeProfileId;
-    final palette = payload['clearThemeOverridePalette'] == true
-        ? null
-        : (payload['themeOverridePalette'] as Map?)?.cast<String, dynamic>() ??
-            strategyThemePalette;
+    final expected = op.expectedRevision == _batchBase
+        ? strategyRevision
+        : op.expectedRevision;
     final OpAck answer;
-    if (map == strategyMap &&
-        profileId == strategyThemeProfileId &&
-        _sameJson(palette, strategyThemePalette)) {
+    if (!changes) {
       answer = NoopOpAck(opId: op.opId, currentRevision: strategyRevision);
-    } else if (op.expectedStrategyRevision != strategyRevision) {
+    } else if (expected != strategyRevision) {
       answer = RejectedOpAck(
         opId: op.opId,
         rejectionReason: OpRejectionReason.revisionMismatch,
@@ -1079,14 +1086,45 @@ class _FakeServer {
         ),
       );
     } else {
-      strategyMap = map;
-      strategyThemeProfileId = profileId;
-      strategyThemePalette = palette;
+      if (op.expectedRevision == strategyRevision) {
+        _batchBase ??= op.expectedRevision;
+      }
+      land();
       strategyRevision += 1;
       answer = AppliedOpAck(opId: op.opId, revision: strategyRevision);
     }
     _answers[op.opId] = answer;
     return answer;
+  }
+
+  /// A teammate's map change, landed: the strategy moves to a new revision.
+  void teammateSetsMap(String mapData) {
+    strategyMap = mapData;
+    strategyRevision += 1;
+  }
+
+  OpAck _applyStrategyPatch(StrategyPatchOp op) {
+    strategyPatches.add(op);
+    final payload = op.payload;
+    final map = payload['mapData'] as String? ?? strategyMap;
+    final profileId = payload['clearThemeProfileId'] == true
+        ? null
+        : payload['themeProfileId'] as String? ?? strategyThemeProfileId;
+    final palette = payload['clearThemeOverridePalette'] == true
+        ? null
+        : (payload['themeOverridePalette'] as Map?)?.cast<String, dynamic>() ??
+            strategyThemePalette;
+    return _checkStrategyRevision(
+      op,
+      changes: map != strategyMap ||
+          profileId != strategyThemeProfileId ||
+          !_sameJson(palette, strategyThemePalette),
+      land: () {
+        strategyMap = map;
+        strategyThemeProfileId = profileId;
+        strategyThemePalette = palette;
+      },
+    );
   }
 
   /// Whether a patch that names its fields (FieldMerge) is merged onto the
@@ -1152,6 +1190,9 @@ class _FakeServer {
 
   OpAck apply(StrategyOp op) {
     if (op is StrategyPatchOp) return _applyStrategyPatch(op);
+    if (op is PageAddOp || op is PageDeleteOp || op is PageReorderOp) {
+      return _checkStrategyRevision(op, changes: true, land: () {});
+    }
     final (rows, change) = switch (op) {
       LineupAddOp(:final payload, :final sortIndex) => (
           _lineups,
@@ -8680,6 +8721,155 @@ void main() {
         }
         expect(store.load().records, isEmpty);
         expect(batches, isEmpty);
+      });
+    });
+
+    group("a strategy change and this device's own page changes", () {
+      const valorant = MapThemeProfilesProvider.immutableValorantProfileId;
+
+      /// Opens two pages online, every batch held until [hold] completes.
+      Future<(ProviderContainer, List<List<StrategyOp>>)> openTwoPages(
+        Completer<void> hold,
+      ) async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId);
+        final opened = await openOnRealQueue(page,
+            hold: hold,
+            otherPages: [_page('page-2', 1)],
+            themeProfileId: 'immutable-default-map-theme');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        return opened;
+      }
+
+      Future<void> waitForSend<T extends StrategyOp>(
+        List<List<StrategyOp>> batches,
+      ) =>
+          _until(() => batches.any((batch) => batch.any((op) => op is T)));
+
+      /// Waits until nothing is left to send: landed, or refused.
+      Future<void> settled(ProviderContainer container) async {
+        await _until(() {
+          final queue = container.read(strategyOpQueueProvider);
+          return queue.queuedByEntityKey.isEmpty &&
+              queue.inFlightByEntityKey.isEmpty &&
+              queue.successorByEntityKey.isEmpty;
+        });
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      }
+
+      void expectLandedWithoutConflict(ProviderContainer container) {
+        expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+            isEmpty);
+        expect(container.read(strategyConflictProvider), isEmpty);
+      }
+
+      test(
+          'a map and theme changed while a page reorder is sent land after '
+          'it, its live read arriving before its answer', () async {
+        final hold = Completer<void>();
+        final (container, batches) = await openTwoPages(hold);
+        final answer = repository.holdAnswer = Completer<void>();
+        unawaited(container.read(strategyProvider.notifier).reorderPage(0, 1));
+        await waitForSend<PageReorderOp>(batches);
+        container.read(mapProvider.notifier).updateMap(MapValue.bind);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+
+        hold.complete();
+        await _until(() => server.strategyRevision == 2);
+        showServer();
+        for (var i = 0; i < 5; i++) {
+          await _settle();
+        }
+        container.read(strategyThemeProvider.notifier).setProfile(valorant);
+        for (var i = 0; i < 5; i++) {
+          await _settle();
+        }
+        answer.complete();
+        await settled(container);
+
+        expect(
+          (server.strategyMap, server.strategyThemeProfileId),
+          ('bind', valorant),
+        );
+        expect(server.strategyRevision, 3);
+        expectLandedWithoutConflict(container);
+      });
+
+      for (final (name, change) in [
+        (
+          'reorder',
+          (ProviderContainer container) =>
+              container.read(strategyProvider.notifier).reorderPage(0, 1),
+        ),
+        (
+          'delete',
+          (ProviderContainer container) =>
+              container.read(strategyProvider.notifier).deletePage('page-2'),
+        ),
+        (
+          'add',
+          (ProviderContainer container) =>
+              container.read(strategyProvider.notifier).addPage(),
+        ),
+      ]) {
+        test('a page $name made while a map change is sent lands after it',
+            () async {
+          final hold = Completer<void>();
+          final (container, batches) = await openTwoPages(hold);
+          container.read(mapProvider.notifier).updateMap(MapValue.bind);
+          await waitForSend<StrategyPatchOp>(batches);
+          unawaited(change(container));
+          for (var i = 0; i < 10; i++) {
+            await _settle();
+          }
+          hold.complete();
+          await settled(container);
+
+          expectLandedWithoutConflict(container);
+          expect(server.strategyMap, 'bind');
+          expect(server.strategyRevision, 3);
+        });
+      }
+
+      test(
+          "a teammate's change landing after this device's own still "
+          'refuses the change waiting behind it', () async {
+        final hold = Completer<void>();
+        final (container, batches) = await openTwoPages(hold);
+        final answer = repository.holdAnswer = Completer<void>();
+        unawaited(container.read(strategyProvider.notifier).reorderPage(0, 1));
+        await waitForSend<PageReorderOp>(batches);
+        container.read(mapProvider.notifier).updateMap(MapValue.bind);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+
+        hold.complete();
+        await _until(() => server.strategyRevision == 2);
+        // Before this device hears its reorder landed, a teammate moves
+        // the strategy to Haven.
+        server.teammateSetsMap('haven');
+        answer.complete();
+        await _until(() => container
+            .read(strategyOpQueueProvider)
+            .attentionByEntityKey
+            .containsKey(const EntitySyncKey.strategy()));
+
+        expect((server.strategyMap, server.strategyRevision), ('haven', 3));
+        final refused = sentFor(batches, const EntitySyncKey.strategy());
+        expect(
+          [for (final op in refused) op.expectedRevision],
+          [2],
+        );
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
       });
     });
 
