@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';

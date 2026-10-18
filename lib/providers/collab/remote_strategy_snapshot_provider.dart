@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
+import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_copy_provider.dart';
@@ -432,8 +434,8 @@ class RemoteEditorSnapshotNotifier
 
   /// The copy this reader keeps, or null when there is none to read or
   /// write: signed out, or reading through a share link.
-  StrategyCopyScope? get _copyScope =>
-      _shareToken == null ? ref.read(strategyCopyScopeProvider) : null;
+  CloudCopyScope? get _copyScope =>
+      _shareToken == null ? ref.read(cloudCopyScopeProvider) : null;
 
   CloudStrategyCopyStore get _copy => ref.read(cloudStrategyCopyStoreProvider);
 

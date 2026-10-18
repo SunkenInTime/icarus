@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
@@ -11,31 +12,6 @@ import 'package:icarus/const/hive_boxes.dart';
 /// The version of every entry in the copy. An entry at any other version,
 /// older or newer, is read as absent: the copy is a cache, never a record.
 const cloudStrategyCopyVersion = 1;
-
-/// Whose copy an entry belongs to: one deployment, one account. Dev and
-/// production builds share a sign-in on one computer, so neither reads the
-/// other's copy.
-class StrategyCopyScope {
-  const StrategyCopyScope({
-    required this.deploymentUrl,
-    required this.accountId,
-  });
-
-  final String deploymentUrl;
-  final String accountId;
-
-  String get _keyPrefix => '${Uri.encodeComponent(deploymentUrl)}|'
-      '${Uri.encodeComponent(accountId)}|';
-
-  @override
-  bool operator ==(Object other) =>
-      other is StrategyCopyScope &&
-      other.deploymentUrl == deploymentUrl &&
-      other.accountId == accountId;
-
-  @override
-  int get hashCode => Object.hash(deploymentUrl, accountId);
-}
 
 /// A copy on this computer of the cloud strategies the signed-in account
 /// can open, read when the server can't answer.
@@ -52,7 +28,7 @@ class StrategyCopyScope {
 /// latest answer arrived, so a slow, older answer never removes a row a
 /// newer one brought. A page reads back only whole: if any part of it does
 /// not decode, the page is not kept.
-abstract class CloudStrategyCopyStore {
+abstract class CloudStrategyCopyStore implements CloudAccountCopy {
   const CloudStrategyCopyStore();
 
   String? readEntry(String key);
@@ -62,7 +38,7 @@ abstract class CloudStrategyCopyStore {
 
   /// The strategy's shell as last kept, or null when none is kept or it
   /// does not decode.
-  RemoteStrategyShell? readShell(StrategyCopyScope scope, String strategyId) {
+  RemoteStrategyShell? readShell(CloudCopyScope scope, String strategyId) {
     final answer = _answer(readEntry(_shellKey(scope, strategyId)));
     if (answer == null) return null;
     try {
@@ -76,7 +52,7 @@ abstract class CloudStrategyCopyStore {
   /// The page as last kept, or null when it is not kept or any part of it
   /// does not decode.
   RemotePageSnapshot? readPage(
-    StrategyCopyScope scope,
+    CloudCopyScope scope,
     String strategyId,
     String pageId,
   ) {
@@ -95,7 +71,7 @@ abstract class CloudStrategyCopyStore {
 
   /// Whether the strategy can be opened from the copy: its shell and at
   /// least one of its pages are kept. Pages are only decoded when read.
-  bool keepsStrategy(StrategyCopyScope scope, String strategyId) {
+  bool keepsStrategy(CloudCopyScope scope, String strategyId) {
     final shell = readShell(scope, strategyId);
     if (shell == null) return false;
     return shell.pages.any((page) =>
@@ -104,15 +80,15 @@ abstract class CloudStrategyCopyStore {
 
   /// When the whole strategy was last read into the copy at once (see
   /// [writeFullSnapshot]). Pages kept as the editor read them don't count.
-  DateTime? lastFullRefresh(StrategyCopyScope scope, String strategyId) {
+  DateTime? lastFullRefresh(CloudCopyScope scope, String strategyId) {
     final entry = _entry(readEntry(_refreshKey(scope, strategyId)));
     final at = entry?['fullRefreshAt'];
     return at is num ? DateTime.fromMillisecondsSinceEpoch(at.toInt()) : null;
   }
 
   /// The strategies [scope] keeps anything of.
-  Set<String> keptStrategyIds(StrategyCopyScope scope) {
-    final prefix = scope._keyPrefix;
+  Set<String> keptStrategyIds(CloudCopyScope scope) {
+    final prefix = scope.storageKeyPrefix;
     return {
       for (final key in entryKeys)
         if (key.startsWith(prefix))
@@ -122,7 +98,7 @@ abstract class CloudStrategyCopyStore {
 
   /// Keeps [answer], a strategy:getShell answer asked at [askedAt].
   Future<void> writeShell(
-    StrategyCopyScope scope,
+    CloudCopyScope scope,
     ConvexObject answer, {
     required DateTime askedAt,
     required DateTime arrivedAt,
@@ -135,7 +111,7 @@ abstract class CloudStrategyCopyStore {
   /// Keeps [answer], a page:getSnapshot answer of [strategyId] asked at
   /// [askedAt] (for a live read, when it arrived).
   Future<void> writePage(
-    StrategyCopyScope scope,
+    CloudCopyScope scope,
     String strategyId,
     ConvexObject answer, {
     required DateTime askedAt,
@@ -159,7 +135,7 @@ abstract class CloudStrategyCopyStore {
   /// Keeps every page of [answer], a strategy:getFullSnapshot answer, and
   /// notes when it arrived (see [lastFullRefresh]).
   Future<void> writeFullSnapshot(
-    StrategyCopyScope scope,
+    CloudCopyScope scope,
     ConvexObject answer, {
     required DateTime askedAt,
     required DateTime arrivedAt,
@@ -221,7 +197,7 @@ abstract class CloudStrategyCopyStore {
     await Future.wait(writes);
   }
 
-  Future<void> deleteStrategy(StrategyCopyScope scope, String strategyId) {
+  Future<void> deleteStrategy(CloudCopyScope scope, String strategyId) {
     final prefix = _strategyPrefix(scope, strategyId);
     return deleteEntries(
       entryKeys.where((key) => key.startsWith(prefix)).toList(),
@@ -230,8 +206,9 @@ abstract class CloudStrategyCopyStore {
 
   /// Deletes everything [scope] keeps, as signing out does. Image files are
   /// not touched.
-  Future<void> deleteAccount(StrategyCopyScope scope) {
-    final prefix = scope._keyPrefix;
+  @override
+  Future<void> deleteAccount(CloudCopyScope scope) {
+    final prefix = scope.storageKeyPrefix;
     return deleteEntries(
       entryKeys.where((key) => key.startsWith(prefix)).toList(),
     );
@@ -241,7 +218,7 @@ abstract class CloudStrategyCopyStore {
   // between, so two writes of one entry can never interleave.
 
   Future<void> _mergeShell(
-    StrategyCopyScope scope,
+    CloudCopyScope scope,
     String strategyId,
     Map<String, dynamic> incoming,
   ) {
@@ -275,7 +252,7 @@ abstract class CloudStrategyCopyStore {
   }
 
   Future<void> _mergePage(
-    StrategyCopyScope scope,
+    CloudCopyScope scope,
     String strategyId,
     String pageId,
     Map<String, dynamic> incoming, {
@@ -409,16 +386,16 @@ Map<String, dynamic> _mergedOrIncoming(
   }
 }
 
-String _strategyPrefix(StrategyCopyScope scope, String strategyId) =>
-    '${scope._keyPrefix}${Uri.encodeComponent(strategyId)}|';
+String _strategyPrefix(CloudCopyScope scope, String strategyId) =>
+    '${scope.storageKeyPrefix}${Uri.encodeComponent(strategyId)}|';
 
-String _shellKey(StrategyCopyScope scope, String strategyId) =>
+String _shellKey(CloudCopyScope scope, String strategyId) =>
     '${_strategyPrefix(scope, strategyId)}shell';
 
-String _pageKey(StrategyCopyScope scope, String strategyId, String pageId) =>
+String _pageKey(CloudCopyScope scope, String strategyId, String pageId) =>
     '${_strategyPrefix(scope, strategyId)}page|${Uri.encodeComponent(pageId)}';
 
-String _refreshKey(StrategyCopyScope scope, String strategyId) =>
+String _refreshKey(CloudCopyScope scope, String strategyId) =>
     '${_strategyPrefix(scope, strategyId)}refresh';
 
 String _encodeEntry(Map<String, dynamic> answer, {int? arrivedAt}) =>

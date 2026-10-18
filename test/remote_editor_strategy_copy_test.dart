@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
@@ -16,7 +18,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'collab/strategy_copy_fixtures.dart';
 
-const _scope = StrategyCopyScope(
+const _scope = CloudCopyScope(
   deploymentUrl: 'https://one.convex.cloud',
   accountId: 'account-a',
 );
@@ -44,7 +46,7 @@ void main() {
           .overrideWith((ref) => !ref.watch(_offline)),
       cloudOfflineProvider.overrideWith((ref) => ref.watch(_offline)),
       cloudStrategyCopyStoreProvider.overrideWithValue(store),
-      strategyCopyScopeProvider.overrideWithValue(_scope),
+      cloudCopyScopeProvider.overrideWithValue(_scope),
       strategyCopyRefresherProvider.overrideWith(_RecordingRefresher.new),
     ]);
     refresher = container.read(strategyCopyRefresherProvider.notifier)

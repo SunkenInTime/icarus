@@ -3,42 +3,13 @@ import 'dart:collection';
 import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
-import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
-import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
-import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
-
-// TODO(offline-p1): replace with workstream A's cloudOfflineProvider when
-// t3/offline-state-library lands. Until then: signed in, socket down.
-final cloudOfflineProvider = Provider<bool>((ref) {
-  if (!ref.watch(authProvider).isAuthenticated) return false;
-  try {
-    return !ref.watch(convexConnectionSnapshotProvider);
-  } catch (_) {
-    // No Convex client in this run.
-    return false;
-  }
-});
-
-/// Whose copy of cloud strategies this run reads and writes: the build's
-/// deployment and the signed-in account. Null while signed out, or in a run
-/// without cloud sync.
-final strategyCopyScopeProvider = Provider<StrategyCopyScope?>((ref) {
-  if (!ref.watch(cloudStartupProvider).isAvailable) return null;
-  final accountId = ref.watch(authProvider.select((auth) => auth.user?.id));
-  if (accountId == null || accountId.isEmpty) return null;
-  final String deploymentUrl;
-  try {
-    deploymentUrl = ConvexClient.instance.config.deploymentUrl;
-  } on StateError {
-    return null;
-  }
-  return StrategyCopyScope(deploymentUrl: deploymentUrl, accountId: accountId);
-});
 
 /// Whether [strategyId] can be opened from the copy on this computer. Read
 /// while offline, so the library can mark the strategies that need a
@@ -46,7 +17,7 @@ final strategyCopyScopeProvider = Provider<StrategyCopyScope?>((ref) {
 final strategyKeptOfflineProvider =
     Provider.autoDispose.family<bool, String>((ref, strategyId) {
   ref.watch(cloudOfflineProvider);
-  final scope = ref.watch(strategyCopyScopeProvider);
+  final scope = ref.watch(cloudCopyScopeProvider);
   if (scope == null) return false;
   return ref.watch(cloudStrategyCopyStoreProvider).keepsStrategy(
         scope,
@@ -82,7 +53,7 @@ class StrategyCopyRefresher extends Notifier<void> {
     ref.listen<bool>(_cloudReadyProvider, (previous, next) {
       if (next && previous != true) unawaited(refreshLibrary());
     }, fireImmediately: true);
-    ref.listen<StrategyCopyScope?>(strategyCopyScopeProvider, (previous, next) {
+    ref.listen<CloudCopyScope?>(cloudCopyScopeProvider, (previous, next) {
       if (previous != next) _reset();
     });
     ref.onDispose(_reset);
@@ -103,7 +74,7 @@ class StrategyCopyRefresher extends Notifier<void> {
   /// copy, but only after every list was read.
   Future<void> refreshLibrary() async {
     if (_walking) return;
-    final scope = ref.read(strategyCopyScopeProvider);
+    final scope = ref.read(cloudCopyScopeProvider);
     final store = ref.read(cloudStrategyCopyStoreProvider);
     if (scope == null || !_keepsCopies) return;
     _walking = true;
@@ -179,7 +150,7 @@ class StrategyCopyRefresher extends Notifier<void> {
   /// Reads all of [strategyId] into the copy. False when the server did
   /// not answer.
   Future<bool> _keepStrategy(String strategyId) async {
-    final scope = ref.read(strategyCopyScopeProvider);
+    final scope = ref.read(cloudCopyScopeProvider);
     if (scope == null || ref.read(cloudOfflineProvider)) return false;
     final store = ref.read(cloudStrategyCopyStoreProvider);
     try {
@@ -188,7 +159,7 @@ class StrategyCopyRefresher extends Notifier<void> {
           .read(convexStrategyRepositoryProvider)
           .fetchFullSnapshot(strategyId);
       final answer = snapshot.serverAnswer;
-      if (answer == null || ref.read(strategyCopyScopeProvider) != scope) {
+      if (answer == null || ref.read(cloudCopyScopeProvider) != scope) {
         return true;
       }
       await store.writeFullSnapshot(

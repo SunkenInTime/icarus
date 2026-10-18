@@ -1,11 +1,12 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 
 import 'strategy_copy_fixtures.dart';
 
-const _scope = StrategyCopyScope(
+const _scope = CloudCopyScope(
   deploymentUrl: 'https://one.convex.cloud',
   accountId: 'account-a',
 );
@@ -129,11 +130,11 @@ void main() {
   });
 
   test('each deployment and account keeps its own copy', () async {
-    const otherAccount = StrategyCopyScope(
+    const otherAccount = CloudCopyScope(
       deploymentUrl: 'https://one.convex.cloud',
       accountId: 'account-b',
     );
-    const otherDeployment = StrategyCopyScope(
+    const otherDeployment = CloudCopyScope(
       deploymentUrl: 'https://two.convex.cloud',
       accountId: 'account-a',
     );

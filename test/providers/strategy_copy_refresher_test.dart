@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -11,6 +12,7 @@ import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -18,7 +20,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../collab/strategy_copy_fixtures.dart';
 
-const _scope = StrategyCopyScope(
+const _scope = CloudCopyScope(
   deploymentUrl: 'https://one.convex.cloud',
   accountId: 'account-a',
 );
@@ -34,7 +36,7 @@ void main() {
       authProvider.overrideWith(_ReadyAuthProvider.new),
       cloudOfflineProvider.overrideWithValue(false),
       cloudStrategyCopyStoreProvider.overrideWithValue(store),
-      strategyCopyScopeProvider.overrideWithValue(_scope),
+      cloudCopyScopeProvider.overrideWithValue(_scope),
       cloudMediaCacheProvider.overrideWith(() => media),
     ]);
     addTearDown(container.dispose);

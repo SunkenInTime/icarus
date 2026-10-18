@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
+import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/config/cloud_build_config.dart';
 import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/const/agents.dart';
@@ -482,7 +483,10 @@ final cloudCopyDeploymentUrlProvider = Provider<String>((ref) {
 /// Everything kept on this computer per account, so signing out can remove
 /// all of it. The strategy copy registers here beside the library copy.
 final cloudAccountCopiesProvider = Provider<List<CloudAccountCopy>>((ref) {
-  return [ref.watch(cloudLibraryCopyStoreProvider)];
+  return [
+    ref.watch(cloudLibraryCopyStoreProvider),
+    ref.watch(cloudStrategyCopyStoreProvider),
+  ];
 });
 
 // The entries, in the fields the library list reads (see
