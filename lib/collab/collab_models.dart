@@ -1532,6 +1532,7 @@ class RemotePageSnapshot {
     required this.lineups,
     required this.assetsById,
     this.fromCopy = false,
+    this.copiedAt,
     this.serverAnswer,
   });
 
@@ -1543,6 +1544,10 @@ class RemotePageSnapshot {
 
   /// See [RemoteStrategyShell.fromCopy].
   final bool fromCopy;
+
+  /// When the copy's latest server answer for this page arrived, for a page
+  /// read [fromCopy].
+  final DateTime? copiedAt;
 
   /// See [RemoteStrategyShell.serverAnswer].
   final ConvexObject? serverAnswer;

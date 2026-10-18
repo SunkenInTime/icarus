@@ -1,4 +1,15 @@
+import 'dart:convert';
+import 'dart:ui' show Offset;
+
+import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/placed_classes.dart';
+
+/// [value] as JSON carries it, the way the server sends it.
+Map<String, Object?> _wire(Object value) =>
+    jsonDecode(jsonEncode(value)) as Map<String, Object?>;
 
 /// Server answers shaped as strategy:getShell, page:getSnapshot and
 /// strategy:getFullSnapshot send them, for tests of the offline copy.
@@ -55,7 +66,11 @@ Map<String, Object?> agentRow(
       'payload': {
         'kind': 'agent',
         'payloadVersion': 1,
-        'data': {'id': id, 'x': x},
+        'data': _wire(PlacedAgent(
+          id: id,
+          type: AgentType.jett,
+          position: Offset(x, 10),
+        ).toJson()),
       },
       'sortIndex': 0,
       'revision': revision,
@@ -72,7 +87,14 @@ Map<String, Object?> imageRow(String id, String pageId, String pictureId) => {
       'payload': {
         'kind': 'image',
         'payloadVersion': 1,
-        'data': {'id': id, 'assetId': pictureId},
+        'data': _wire(PlacedImage(
+          id: id,
+          position: const Offset(20, 20),
+          aspectRatio: 1,
+          scale: 1,
+          fileExtension: '.png',
+          assetId: pictureId,
+        ).toJson()),
       },
       'sortIndex': 1,
       'revision': 1,
@@ -85,19 +107,7 @@ Map<String, Object?> lineupRow(String id, String pageId, String imageId) => {
       'publicId': id,
       'strategyPublicId': 'strategy',
       'pagePublicId': pageId,
-      'payload': {
-        'kind': 'lineups',
-        'payloadVersion': 1,
-        'data': {
-          'links': [
-            {
-              'images': [
-                {'id': imageId},
-              ],
-            },
-          ],
-        },
-      },
+      'payload': _wire(_lineupGroupPayload(id, imageId)),
       'sortIndex': 0,
       'revision': 1,
       'deleted': false,
@@ -166,3 +176,43 @@ ConvexObject fullAnswer(
       'lineups': lineups,
       'assets': assets,
     }) as ConvexObject;
+
+/// A real lineup group row's payload: one Sova lineup, [id], showing
+/// [imageId]. Its group takes the lineup's id.
+Map<String, dynamic> _lineupGroupPayload(String id, String imageId) {
+  final graph = LineUpGraph(
+    origins: [
+      LineUpOrigin(
+        id: '$id-origin',
+        agent: PlacedAgent(
+          id: '$id-agent',
+          type: AgentType.sova,
+          position: const Offset(10, 20),
+          lineUpID: '$id-origin',
+        ),
+      ),
+    ],
+    landings: [
+      LineUpLanding(
+        id: '$id-landing',
+        ability: PlacedAbility(
+          id: '$id-ability',
+          data: AgentData.agents[AgentType.sova]!.abilities[2],
+          position: const Offset(30, 40),
+          lineUpID: '$id-landing',
+        ),
+      ),
+    ],
+    links: [
+      LineUpLink(
+        id: id,
+        originId: '$id-origin',
+        landingId: '$id-landing',
+        images: [SimpleImageData(id: imageId, fileExtension: '.png')],
+      ),
+    ],
+  );
+  final row = cloudLineupRows(graph).rows.single;
+  if (row.publicId != id) throw StateError('group id ${row.publicId}');
+  return row.payload;
+}

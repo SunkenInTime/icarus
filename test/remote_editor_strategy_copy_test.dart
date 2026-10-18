@@ -25,6 +25,12 @@ const _scope = CloudCopyScope(
 
 final _offline = StateProvider<bool>((ref) => false);
 
+/// The socket is connecting or reconnecting; the session isn't offline.
+final _socketDown = StateProvider<bool>((ref) => false);
+
+/// Runs as web does: no copy on this computer.
+var _webLike = false;
+
 void main() {
   late _Transport transport;
   late MemoryCloudStrategyCopyStore store;
@@ -32,6 +38,7 @@ void main() {
   late _RecordingRefresher refresher;
 
   setUp(() {
+    _webLike = false;
     transport = _Transport();
     store = MemoryCloudStrategyCopyStore();
     container = ProviderContainer(overrides: [
@@ -42,10 +49,13 @@ void main() {
       strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
       cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
       cloudMediaAccountIdProvider.overrideWithValue(null),
-      convexConnectionSnapshotProvider
-          .overrideWith((ref) => !ref.watch(_offline)),
+      convexConnectionSnapshotProvider.overrideWith(
+        (ref) => !ref.watch(_offline) && !ref.watch(_socketDown),
+      ),
       cloudOfflineProvider.overrideWith((ref) => ref.watch(_offline)),
-      cloudStrategyCopyStoreProvider.overrideWithValue(store),
+      cloudStrategyCopyStoreProvider.overrideWith(
+        (ref) => _webLike ? const UnavailableCloudStrategyCopyStore() : store,
+      ),
       cloudCopyScopeProvider.overrideWith((ref) {
         final accountId = ref.watch(authProvider.select((a) => a.user?.id));
         return accountId == null
@@ -187,6 +197,79 @@ void main() {
     expect(store.entryKeys, isEmpty);
   });
 
+  test('an answer read before an account switch is kept for neither account',
+      () async {
+    await container.read(remoteEditorSnapshotProvider.future);
+    final held = Completer<void>();
+    transport.hold = held;
+    final opening = remote().openStrategy('strategy', activePagePublicId: 'a');
+    await _settle();
+    expect(transport.reads, ['strategy:getShell']);
+
+    auth().switchTo('account-b');
+    await store.deleteAccount(_scope);
+    held.complete();
+    await opening;
+    await _settle();
+
+    expect(store.entryKeys, isEmpty);
+  });
+
+  test('offline, a kept page that cannot be drawn is not opened', () async {
+    await openOnline();
+    remote().clear();
+    // Page a kept with an agent hydration can't read.
+    final broken = agentRow('agent', 'a', revision: 9);
+    final payload = Map.of(broken['payload'] as Map<String, Object?>);
+    payload['data'] = <String, Object?>{'id': 'agent'};
+    await store.writePage(
+      _scope,
+      'strategy',
+      pageAnswer('a', elements: [
+        {...broken, 'payload': payload},
+      ]),
+      askedAt: DateTime.now(),
+      arrivedAt: DateTime.now(),
+    );
+
+    container.read(_offline.notifier).state = true;
+    await remote().openStrategy('strategy', activePagePublicId: 'a');
+
+    // Pages b and c were never read, so nothing of it can open.
+    expect(
+      container.read(remoteEditorSnapshotProvider).error,
+      isA<StrategyNotKeptOffline>(),
+    );
+  });
+
+  test('without a copy (web), a socket still connecting reads the server',
+      () async {
+    _webLike = true;
+    container.read(_socketDown.notifier).state = true;
+    await container.read(remoteEditorSnapshotProvider.future);
+
+    await remote().openStrategy('strategy', activePagePublicId: 'a');
+
+    expect(transport.reads, contains('strategy:getShell'));
+    final opened = container.read(remoteEditorSnapshotProvider).valueOrNull!;
+    expect(opened.shell.fromCopy, isFalse);
+    expect(store.entryKeys, isEmpty);
+  });
+
+  test('without a copy (web), an unanswered read fails as it always has',
+      () async {
+    _webLike = true;
+    transport.unanswered = true;
+    await container.read(remoteEditorSnapshotProvider.future);
+
+    await remote().openStrategy('strategy', activePagePublicId: 'a');
+
+    expect(
+      container.read(remoteEditorSnapshotProvider).error,
+      isA<TimeoutException>(),
+    );
+  });
+
   test('back online, the live answer replaces the copy', () async {
     await openOnline();
     remote().clear();
@@ -226,6 +309,9 @@ final class _Transport implements ConvexTransport {
   bool unanswered = false;
   ConvexTransportError? refusal;
 
+  /// While set, reads wait for it before answering.
+  Completer<void>? hold;
+
   void pushPage(String pageId, List<Map<String, Object?>> elements) {
     pageElements[pageId] = elements;
     _pageStreams[pageId]?.add(_page(pageId));
@@ -245,6 +331,7 @@ final class _Transport implements ConvexTransport {
   @override
   Future<ConvexValue> query(String name, ConvexObject args) async {
     reads.add(name);
+    await hold?.future;
     if (refusal case final error?) throw error;
     if (unanswered) throw TimeoutException('no answer');
     return _answer(name, args);

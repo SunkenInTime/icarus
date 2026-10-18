@@ -1071,10 +1071,16 @@ RemoteStrategyShell strategyShellFromCopy(ConvexValue answer) =>
     );
 
 /// The page in [answer], a page:getSnapshot answer the copy on this computer
-/// kept. Throws when any part of it does not decode.
-RemotePageSnapshot pageSnapshotFromCopy(ConvexValue answer) => _pageSnapshot(
+/// kept, last matched with the server at [copiedAt]. Throws when any part
+/// of it does not decode.
+RemotePageSnapshot pageSnapshotFromCopy(
+  ConvexValue answer, {
+  DateTime? copiedAt,
+}) =>
+    _pageSnapshot(
       PageGetSnapshotResult.decode(answer, 'copy.page:getSnapshot'),
       fromCopy: true,
+      copiedAt: copiedAt,
     );
 
 RemoteStrategyShell _strategyShell(
@@ -1092,6 +1098,7 @@ RemoteStrategyShell _strategyShell(
 RemotePageSnapshot _pageSnapshot(
   PageGetSnapshotResult result, {
   bool fromCopy = false,
+  DateTime? copiedAt,
 }) {
   final assets = result.assets.map(_imageAsset).toList(growable: false);
   return RemotePageSnapshot(
@@ -1101,6 +1108,7 @@ RemotePageSnapshot _pageSnapshot(
     lineups: result.lineups.map(_lineup).toList(growable: false),
     assetsById: {for (final asset in assets) asset.publicId: asset},
     fromCopy: fromCopy,
+    copiedAt: copiedAt,
     serverAnswer: fromCopy ? null : result.encode('pageSnapshot'),
   );
 }

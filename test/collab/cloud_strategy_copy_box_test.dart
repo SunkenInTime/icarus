@@ -129,6 +129,29 @@ void main() {
     expect(store.readPage(_scope, 'strategy', 'a'), isNull);
   });
 
+  test('a strategy whose only kept page is in another format is not kept',
+      () async {
+    await store.writeShell(_scope, shellAnswer(['a']),
+        askedAt: _at(0), arrivedAt: _at(0));
+    await keepPage('a', askedAt: 0);
+    expect(store.keepsStrategy(_scope, 'strategy'), isTrue);
+
+    final key = store.values.keys.singleWhere((key) => key.contains('page|'));
+    final entry = jsonDecode(store.values[key]!) as Map<String, dynamic>;
+    store.values[key] = jsonEncode({...entry, 'copyVersion': 2});
+    expect(store.keepsStrategy(_scope, 'strategy'), isFalse);
+  });
+
+  test('a kept page says when the server last answered for it', () async {
+    await keepPage('a', askedAt: 0, arrivedAt: 3);
+    expect(
+      store.readPage(_scope, 'strategy', 'a')!.copiedAt!.isAtSameMomentAs(
+            _at(3),
+          ),
+      isTrue,
+    );
+  });
+
   test('each deployment and account keeps its own copy', () async {
     const otherAccount = CloudCopyScope(
       deploymentUrl: 'https://one.convex.cloud',

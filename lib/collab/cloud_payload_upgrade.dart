@@ -59,6 +59,7 @@ RemotePageSnapshot upgradeRemotePageSnapshot(
     lineups: page.lineups,
     assetsById: page.assetsById,
     fromCopy: page.fromCopy,
+    copiedAt: page.copiedAt,
     serverAnswer: page.serverAnswer,
   );
 }

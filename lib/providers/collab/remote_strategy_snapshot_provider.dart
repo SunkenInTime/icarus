@@ -16,6 +16,7 @@ import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/strategy/copied_page_check.dart';
 
 final remoteEditorSnapshotProvider =
     AsyncNotifierProvider<RemoteEditorSnapshotNotifier, RemoteEditorSnapshot?>(
@@ -69,11 +70,6 @@ class RemoteEditorSnapshotNotifier
   /// The share link the open strategy is read through, when the reader has
   /// no access of their own (see [shareLinkViewProvider]).
   String? _shareToken;
-
-  /// The account the open strategy was opened as: its answers are kept in
-  /// that account's copy only, and not once it has signed out (see
-  /// [cloudCopyWriteScopeProvider]).
-  CloudCopyScope? _openedAs;
   StreamSubscription<RemoteStrategyShell>? _shellSubscription;
   StreamSubscription<RemotePageSnapshot>? _pageSubscription;
   String? _subscribedPagePublicId;
@@ -118,7 +114,6 @@ class RemoteEditorSnapshotNotifier
     final linkView = ref.read(shareLinkViewProvider);
     _shareToken =
         linkView?.strategyPublicId == strategyPublicId ? linkView!.token : null;
-    _openedAs = _copyScope;
     _lastReconciledAssetsById = null;
     ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(
           strategyPublicId,
@@ -126,7 +121,7 @@ class RemoteEditorSnapshotNotifier
         );
     state = const AsyncLoading();
 
-    if (_serverCannotAnswer) {
+    if (_keepsCopy && _serverCannotAnswer) {
       if (!_showCopy(strategyPublicId)) {
         state = AsyncError(
           StrategyNotKeptOffline(strategyPublicId),
@@ -254,7 +249,6 @@ class RemoteEditorSnapshotNotifier
     _activeStrategyPublicId = null;
     _activePagePublicId = null;
     _shareToken = null;
-    _openedAs = null;
     _lastReconciledAssetsById = null;
     _disposeSubscriptions();
     ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(
@@ -276,13 +270,14 @@ class RemoteEditorSnapshotNotifier
     var shellRead = false;
     try {
       final repository = ref.read(convexStrategyRepositoryProvider);
+      final grant = _grant;
       final shellAskedAt = DateTime.now();
       final shell = await repository.fetchShell(
         strategyPublicId,
         shareToken: _shareToken,
       );
       shellRead = true;
-      _keepShell(shell, askedAt: shellAskedAt);
+      _keepShell(shell, askedAt: shellAskedAt, grant: grant);
       if (epoch != _readEpoch || _holdsNewerShell(shell)) return;
       var pageId = _activePagePublicId;
       if (pageId == null ||
@@ -298,7 +293,7 @@ class RemoteEditorSnapshotNotifier
               pagePublicId: pageId,
               shareToken: _shareToken,
             );
-      if (read != null) _keepPage(read, askedAt: pageAskedAt);
+      if (read != null) _keepPage(read, askedAt: pageAskedAt, grant: grant);
       final page = read == null
           ? null
           : upgradeRemotePageSnapshot(read, shell.header.mapData);
@@ -315,7 +310,8 @@ class RemoteEditorSnapshotNotifier
         state = AsyncError(StrategyAccessLost(strategyPublicId), stackTrace);
         return;
       }
-      if (isConvexReadUnanswered(error) &&
+      if (_keepsCopy &&
+          isConvexReadUnanswered(error) &&
           _activeStrategyPublicId == strategyPublicId) {
         log('Remote editor read failed, reading the copy: $error',
             name: 'remote_editor', error: error, stackTrace: stackTrace);
@@ -360,12 +356,13 @@ class RemoteEditorSnapshotNotifier
 
   Future<void> _startShellSubscription(String strategyPublicId) async {
     await _shellSubscription?.cancel();
+    final grant = _grant;
     _shellSubscription = ref
         .read(convexStrategyRepositoryProvider)
         .watchShell(strategyPublicId, shareToken: _shareToken)
         .listen(
       (shell) {
-        _keepShell(shell, askedAt: DateTime.now());
+        _keepShell(shell, askedAt: DateTime.now(), grant: grant);
         if (_activeStrategyPublicId != strategyPublicId ||
             ref.read(authProvider).hasActiveAuthIncident) return;
         final current = state.valueOrNull;
@@ -403,6 +400,7 @@ class RemoteEditorSnapshotNotifier
       return;
     }
     _subscribedPagePublicId = pagePublicId;
+    final grant = _grant;
     _pageSubscription = ref
         .read(convexStrategyRepositoryProvider)
         .watchPageSnapshot(
@@ -412,7 +410,7 @@ class RemoteEditorSnapshotNotifier
         )
         .listen(
       (page) {
-        _keepPage(page, askedAt: DateTime.now());
+        _keepPage(page, askedAt: DateTime.now(), grant: grant);
         if (epoch != _pageEpoch ||
             _activeStrategyPublicId != strategyPublicId ||
             _activePagePublicId != pagePublicId ||
@@ -446,6 +444,17 @@ class RemoteEditorSnapshotNotifier
 
   CloudStrategyCopyStore get _copy => ref.read(cloudStrategyCopyStoreProvider);
 
+  /// Whether this reader has a copy to fall back on. Where it doesn't (web,
+  /// a share link, a run without cloud), every read goes to the server
+  /// exactly as before the copy existed.
+  bool get _keepsCopy =>
+      _copyScope != null && _copy is! UnavailableCloudStrategyCopyStore;
+
+  /// Leave to keep the answer of a read that starts now (see
+  /// [CloudCopyWriteGrant]).
+  CloudCopyWriteGrant? get _grant =>
+      _shareToken == null ? ref.read(cloudCopyWriteGrantProvider) : null;
+
   /// [pagePublicId] of the open strategy, read live, or from the copy when
   /// the server can't answer. Throws when neither has it.
   Future<RemotePageSnapshot> _readPage(
@@ -453,10 +462,11 @@ class RemoteEditorSnapshotNotifier
     String pagePublicId,
   ) async {
     if (_serverCannotAnswer) {
-      return _keptPage(strategyPublicId, pagePublicId) ??
+      return (_keepsCopy ? _keptPage(strategyPublicId, pagePublicId) : null) ??
           (throw StateError('Offline: page $pagePublicId was not read.'));
     }
     try {
+      final grant = _grant;
       final askedAt = DateTime.now();
       final page =
           await ref.read(convexStrategyRepositoryProvider).fetchPageSnapshot(
@@ -464,10 +474,10 @@ class RemoteEditorSnapshotNotifier
                 pagePublicId: pagePublicId,
                 shareToken: _shareToken,
               );
-      _keepPage(page, askedAt: askedAt);
+      _keepPage(page, askedAt: askedAt, grant: grant);
       return page;
     } catch (error) {
-      if (isConvexReadUnanswered(error)) {
+      if (_keepsCopy && isConvexReadUnanswered(error)) {
         final kept = _keptPage(strategyPublicId, pagePublicId);
         if (kept != null) return kept;
       }
@@ -475,10 +485,13 @@ class RemoteEditorSnapshotNotifier
     }
   }
 
+  /// [pagePublicId] as the copy keeps it, if it keeps all of it in a form
+  /// this build can draw (see [copiedPageIsDrawable]).
   RemotePageSnapshot? _keptPage(String strategyPublicId, String pagePublicId) {
     final scope = _copyScope;
     if (scope == null) return null;
-    return _copy.readPage(scope, strategyPublicId, pagePublicId);
+    final page = _copy.readPage(scope, strategyPublicId, pagePublicId);
+    return page != null && copiedPageIsDrawable(page) ? page : null;
   }
 
   /// Shows [strategyPublicId] from the copy: its shell and the active page,
@@ -492,11 +505,11 @@ class RemoteEditorSnapshotNotifier
     final wanted = _activePagePublicId;
     RemotePageSnapshot? page;
     if (wanted != null && shell.pages.any((page) => page.publicId == wanted)) {
-      page = _copy.readPage(scope, strategyPublicId, wanted);
+      page = _keptPage(strategyPublicId, wanted);
     }
     for (final candidate in shell.pages) {
       if (page != null) break;
-      page = _copy.readPage(scope, strategyPublicId, candidate.publicId);
+      page = _keptPage(strategyPublicId, candidate.publicId);
     }
     if (page == null) return false;
     _activePagePublicId = page.page.publicId;
@@ -506,34 +519,33 @@ class RemoteEditorSnapshotNotifier
     return true;
   }
 
-  /// Where an answer for the open strategy may be kept now: the account it
-  /// was opened as, while that account is still the one signed in and is
-  /// not signing out.
-  CloudCopyScope? get _writeScope {
-    final scope = _openedAs;
-    return scope != null && ref.read(cloudCopyWriteScopeProvider) == scope
-        ? scope
-        : null;
-  }
-
-  void _keepShell(RemoteStrategyShell shell, {required DateTime askedAt}) {
-    final scope = _writeScope;
+  /// Keeps [shell], read under [grant], unless the account it was read for
+  /// has since signed out or been switched away.
+  void _keepShell(
+    RemoteStrategyShell shell, {
+    required DateTime askedAt,
+    required CloudCopyWriteGrant? grant,
+  }) {
     final answer = shell.serverAnswer;
-    if (scope == null || answer == null) return;
+    if (answer == null || !copyWriteGrantHolds(ref, grant)) return;
     _keep(() => _copy.writeShell(
-          scope,
+          grant!.scope,
           answer,
           askedAt: askedAt,
           arrivedAt: DateTime.now(),
         ));
   }
 
-  void _keepPage(RemotePageSnapshot page, {required DateTime askedAt}) {
-    final scope = _writeScope;
+  /// See [_keepShell].
+  void _keepPage(
+    RemotePageSnapshot page, {
+    required DateTime askedAt,
+    required CloudCopyWriteGrant? grant,
+  }) {
     final answer = page.serverAnswer;
-    if (scope == null || answer == null) return;
+    if (answer == null || !copyWriteGrantHolds(ref, grant)) return;
     _keep(() => _copy.writePage(
-          scope,
+          grant!.scope,
           page.page.strategyPublicId,
           answer,
           askedAt: askedAt,
@@ -542,7 +554,7 @@ class RemoteEditorSnapshotNotifier
   }
 
   void _forgetCopy(String strategyPublicId) {
-    final scope = _writeScope;
+    final scope = _grant?.scope;
     if (scope == null) return;
     _keep(() => _copy.deleteStrategy(scope, strategyPublicId));
   }

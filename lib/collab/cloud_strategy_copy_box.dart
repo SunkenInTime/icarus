@@ -56,10 +56,17 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
     String strategyId,
     String pageId,
   ) {
-    final answer = _answer(readEntry(_pageKey(scope, strategyId, pageId)));
+    final raw = readEntry(_pageKey(scope, strategyId, pageId));
+    final answer = _answer(raw);
     if (answer == null) return null;
+    final arrivedAt = _entry(raw)?['arrivedAt'];
     try {
-      final page = pageSnapshotFromCopy(ConvexValue.fromDart(answer));
+      final page = pageSnapshotFromCopy(
+        ConvexValue.fromDart(answer),
+        copiedAt: arrivedAt is num
+            ? DateTime.fromMillisecondsSinceEpoch(arrivedAt.toInt())
+            : null,
+      );
       return page.page.publicId == pageId &&
               page.page.strategyPublicId == strategyId
           ? page
@@ -69,13 +76,14 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
     }
   }
 
-  /// Whether the strategy can be opened from the copy: its shell and at
-  /// least one of its pages are kept. Pages are only decoded when read.
+  /// Whether the strategy can be opened from the copy: its shell reads, and
+  /// at least one of its pages is kept in a format this build reads. Pages
+  /// are only decoded when opened, so one that fails then still says so.
   bool keepsStrategy(CloudCopyScope scope, String strategyId) {
     final shell = readShell(scope, strategyId);
     if (shell == null) return false;
     return shell.pages.any((page) =>
-        readEntry(_pageKey(scope, strategyId, page.publicId)) != null);
+        _answer(readEntry(_pageKey(scope, strategyId, page.publicId))) != null);
   }
 
   /// When the whole strategy was last read into the copy at once (see

@@ -9,18 +9,36 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 
-/// The scope the copy may be written for right now: null from the moment
-/// a sign-out starts. Signing out deletes the account's copy before the
-/// session is gone, so a live answer or a background read that arrives in
-/// between would otherwise write that account's strategies back.
-final cloudCopyWriteScopeProvider = Provider<CloudCopyScope?>((ref) {
+/// Leave to write [scope]'s part of the copy. A read takes the grant that
+/// is current when it starts, and its answer is kept only if that same
+/// grant is still current when it arrives (compared with `identical`).
+class CloudCopyWriteGrant {
+  CloudCopyWriteGrant(this.scope);
+
+  final CloudCopyScope scope;
+}
+
+/// The current [CloudCopyWriteGrant], made afresh whenever the signed-in
+/// account changes, and null from the moment a sign-out starts. Signing
+/// out deletes the account's copy before the session is gone, and an
+/// account switch deletes the old account's, so an answer read before
+/// either must not be kept after it: not for the old account, and not for
+/// whoever is signed in now.
+final cloudCopyWriteGrantProvider = Provider<CloudCopyWriteGrant?>((ref) {
   final signingOut = ref.watch(authProvider.select(
     (auth) => auth.convexAuthStatus == ConvexAuthStatus.signedOut,
   ));
-  return signingOut ? null : ref.watch(cloudCopyScopeProvider);
+  final scope = ref.watch(cloudCopyScopeProvider);
+  return signingOut || scope == null ? null : CloudCopyWriteGrant(scope);
 });
+
+/// Whether [grant], taken when a read started, still allows keeping its
+/// answer.
+bool copyWriteGrantHolds(Ref ref, CloudCopyWriteGrant? grant) =>
+    grant != null && identical(ref.read(cloudCopyWriteGrantProvider), grant);
 
 /// Whether [strategyId] can be opened from the copy on this computer. Read
 /// while offline, so the library can mark the strategies that need a
@@ -161,8 +179,9 @@ class StrategyCopyRefresher extends Notifier<void> {
   /// Reads all of [strategyId] into the copy. False when the server did
   /// not answer.
   Future<bool> _keepStrategy(String strategyId) async {
-    final scope = ref.read(cloudCopyScopeProvider);
-    if (scope == null || ref.read(cloudOfflineProvider)) return false;
+    final grant = ref.read(cloudCopyWriteGrantProvider);
+    if (grant == null || ref.read(cloudOfflineProvider)) return false;
+    final scope = grant.scope;
     final store = ref.read(cloudStrategyCopyStoreProvider);
     try {
       final askedAt = DateTime.now();
@@ -172,9 +191,7 @@ class StrategyCopyRefresher extends Notifier<void> {
       final answer = snapshot.serverAnswer;
       // Signed out or switched accounts while it was read: its copy is
       // gone, and must stay gone.
-      if (answer == null || ref.read(cloudCopyWriteScopeProvider) != scope) {
-        return true;
-      }
+      if (answer == null || !copyWriteGrantHolds(ref, grant)) return true;
       await store.writeFullSnapshot(
         scope,
         answer,
@@ -215,8 +232,20 @@ class StrategyCopyRefresher extends Notifier<void> {
   }
 }
 
-/// Whether the cloud can answer reads for the signed-in account right now.
+/// Whether the cloud can answer reads for the signed-in account right now:
+/// set up, and connected. A dropped socket that comes back makes it true
+/// again, which resumes a walk the drop stopped.
 final _cloudReadyProvider = Provider<bool>((ref) {
   return ref.watch(isCloudWorkspaceAvailableProvider) &&
-      !ref.watch(cloudOfflineProvider);
+      !ref.watch(cloudOfflineProvider) &&
+      ref.watch(_socketConnectedProvider);
+});
+
+final _socketConnectedProvider = Provider<bool>((ref) {
+  try {
+    return ref.watch(convexConnectionSnapshotProvider);
+  } catch (_) {
+    // No Convex client in this run.
+    return true;
+  }
 });

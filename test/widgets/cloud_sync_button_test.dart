@@ -280,9 +280,12 @@ ProviderContainer _createContainer({
   StrategySaveState? saveState,
   ActivePageLiveSyncState? liveSyncState,
   ConvexAuthStatus? sessionStatus,
+  ({DateTime? copiedAt})? shownCopy,
 }) {
   return ProviderContainer(
     overrides: [
+      if (shownCopy != null)
+        editorShownCopyProvider.overrideWithValue(shownCopy),
       if (sessionStatus != null)
         authProvider.overrideWith(() => _FixedSessionAuth(sessionStatus)),
       strategyProvider.overrideWith(_CloudStrategyProvider.new),
@@ -419,6 +422,41 @@ void main() {
     expect(
       await statusFor(ConvexAuthStatus.incident),
       CloudSyncStatus.attention,
+    );
+  });
+
+  testWidgets(
+      "a page drawn from this computer's copy is never Synced, and says "
+      'how old the copy is', (tester) async {
+    final copiedAt = DateTime.now().subtract(const Duration(minutes: 5));
+    // Connected and ready, queues settled: only the copy differs.
+    final container = _createContainer(
+      sessionStatus: ConvexAuthStatus.ready,
+      shownCopy: (copiedAt: copiedAt),
+    );
+    addTearDown(container.dispose);
+    await container.read(convexConnectionProvider.future);
+    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.offline);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(_syncButton('offline'), findsOneWidget);
+    final time = MaterialLocalizations.of(
+      tester.element(find.byType(CloudSyncButton)),
+    ).formatTimeOfDay(TimeOfDay.fromDateTime(copiedAt));
+    expect(
+      _syncTooltip(tester),
+      "Offline. Showing this computer's copy from $time; changes stay on "
+      'this device',
     );
   });
 

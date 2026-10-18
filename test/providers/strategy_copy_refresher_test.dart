@@ -14,6 +14,7 @@ import 'package:icarus/domain/folder.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -25,6 +26,8 @@ const _scope = CloudCopyScope(
   accountId: 'account-a',
 );
 
+final _connected = StateProvider<bool>((ref) => true);
+
 void main() {
   late _Repository repository;
   late MemoryCloudStrategyCopyStore store;
@@ -35,6 +38,8 @@ void main() {
       convexStrategyRepositoryProvider.overrideWithValue(repository),
       authProvider.overrideWith(_ReadyAuthProvider.new),
       cloudOfflineProvider.overrideWithValue(false),
+      convexConnectionSnapshotProvider
+          .overrideWith((ref) => ref.watch(_connected)),
       cloudStrategyCopyStoreProvider.overrideWithValue(store),
       cloudCopyScopeProvider.overrideWith((ref) {
         final accountId = ref.watch(authProvider.select((a) => a.user?.id));
@@ -135,6 +140,24 @@ void main() {
     await _settle();
 
     expect(store.entryKeys, isEmpty);
+  });
+
+  test('a walk stopped by a dropped connection resumes when it reconnects',
+      () async {
+    repository.owned = {'one', 'two'};
+    repository.unanswered = true;
+    final container = start();
+    await _settle();
+    expect(repository.fullReads, ['one']);
+
+    repository.unanswered = false;
+    container.read(_connected.notifier).state = false;
+    await _settle(pause: false);
+    container.read(_connected.notifier).state = true;
+    await _settle();
+    await _settle();
+
+    expect(store.keptStrategyIds(_scope), {'one', 'two'});
   });
 
   test('a strategy opened online goes ahead of the walk', () async {
