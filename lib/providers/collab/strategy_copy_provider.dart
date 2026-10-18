@@ -91,6 +91,7 @@ class StrategyCopyRefresher extends Notifier<void> {
   /// Reads all of [strategyId], just opened online, into the copy ahead of
   /// anything else waiting.
   void keepOpenedStrategy(String strategyId) {
+    if (!_keepsCopies) return;
     _queue.remove(strategyId);
     _queue.addFirst(strategyId);
     _queued.add(strategyId);
@@ -104,7 +105,7 @@ class StrategyCopyRefresher extends Notifier<void> {
     if (_walking) return;
     final scope = ref.read(strategyCopyScopeProvider);
     final store = ref.read(cloudStrategyCopyStoreProvider);
-    if (scope == null || store is UnavailableCloudStrategyCopyStore) return;
+    if (scope == null || !_keepsCopies) return;
     _walking = true;
     final generation = _generation;
     try {
@@ -217,6 +218,11 @@ class StrategyCopyRefresher extends Notifier<void> {
       return !isConvexReadUnanswered(error);
     }
   }
+
+  /// False where nothing is kept (web, or a box that would not open): no
+  /// read is made for a copy that can't be written.
+  bool get _keepsCopies => ref.read(cloudStrategyCopyStoreProvider)
+      is! UnavailableCloudStrategyCopyStore;
 
   void _reset() {
     _generation += 1;
