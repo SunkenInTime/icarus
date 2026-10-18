@@ -12,21 +12,6 @@ import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 
-/// What a read that starts now may write to the copy: the account it is
-/// read for, and its answer's order (see [CloudStrategyCopyStore]).
-typedef CloudCopyTicket = ({CloudCopyScope scope, int order});
-
-/// A [CloudCopyTicket] for a read starting now, or null when nothing may be
-/// kept: signed out, or from the moment a sign-out starts (the account's
-/// copy is deleted before its session is gone).
-CloudCopyTicket? takeCloudCopyTicket(Ref ref) {
-  final auth = ref.read(authProvider);
-  if (auth.convexAuthStatus == ConvexAuthStatus.signedOut) return null;
-  final scope = ref.read(cloudCopyScopeProvider);
-  if (scope == null) return null;
-  return (scope: scope, order: nextCloudLibraryAnswerOrder());
-}
-
 /// Whether [strategyId] can be opened from the copy on this computer. Read
 /// while offline, so the library can mark the strategies that need a
 /// connection the first time.
@@ -166,9 +151,10 @@ class StrategyCopyRefresher extends Notifier<void> {
   /// Reads all of [strategyId] into the copy. False when the server did
   /// not answer.
   Future<bool> _keepStrategy(String strategyId) async {
-    final ticket = takeCloudCopyTicket(ref);
-    if (ticket == null || ref.read(cloudOfflineProvider)) return false;
-    final scope = ticket.scope;
+    // Written with the scope this read is asked under, so it lands only if
+    // that session is still signed in when the answer arrives.
+    final scope = ref.read(cloudCopyScopeProvider);
+    if (scope == null || ref.read(cloudOfflineProvider)) return false;
     final store = ref.read(cloudStrategyCopyStoreProvider);
     try {
       final askedAt = DateTime.now();
@@ -177,12 +163,9 @@ class StrategyCopyRefresher extends Notifier<void> {
           .fetchFullSnapshot(strategyId);
       final answer = snapshot.serverAnswer;
       if (answer == null) return true;
-      // Signed out or switched accounts while it was read: the store drops
-      // it, as the account's copy is gone.
       await store.writeFullSnapshot(
         scope,
         answer,
-        answerOrder: ticket.order,
         askedAt: askedAt,
         arrivedAt: DateTime.now(),
       );

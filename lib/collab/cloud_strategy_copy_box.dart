@@ -29,20 +29,11 @@ const cloudStrategyCopyVersion = 1;
 /// newer one brought. A page reads back only whole: if any part of it does
 /// not decode, the page is not kept.
 ///
-/// Every write carries its answer's order (from
-/// [nextCloudLibraryAnswerOrder], taken when the read was asked), and a
-/// write older than its scope's last [deleteAccount] is dropped, the same
-/// rule the library copy keeps: nothing read before a sign-out or an
-/// account switch can write that account's strategies back.
+/// A write carries the scope its read was asked under, and is refused once
+/// that scope's session has ended ([CloudCopyScope.hasEnded]): nothing read
+/// before a sign-out or an account switch can write that account's
+/// strategies back, however late its answer arrives.
 abstract class CloudStrategyCopyStore implements CloudAccountCopy {
-  /// Per scope, the answer order taken when its copy was deleted.
-  final _deletedAtOrder = <String, int>{};
-
-  bool _admits(CloudCopyScope scope, int answerOrder) {
-    final deletedAt = _deletedAtOrder[scope.storageKeyPrefix];
-    return deletedAt == null || answerOrder > deletedAt;
-  }
-
   String? readEntry(String key);
   Future<void> writeEntry(String key, String value);
   Future<void> deleteEntries(Iterable<String> keys);
@@ -120,11 +111,10 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
   Future<void> writeShell(
     CloudCopyScope scope,
     ConvexObject answer, {
-    required int answerOrder,
     required DateTime askedAt,
     required DateTime arrivedAt,
   }) async {
-    if (!_admits(scope, answerOrder)) return;
+    if (scope.hasEnded) return;
     final incoming = _jsonSafe(answer);
     final strategyId = _string(_map(incoming['header'])['publicId']);
     await _mergeShell(scope, strategyId, incoming);
@@ -136,11 +126,10 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
     CloudCopyScope scope,
     String strategyId,
     ConvexObject answer, {
-    required int answerOrder,
     required DateTime askedAt,
     required DateTime arrivedAt,
   }) async {
-    if (!_admits(scope, answerOrder)) return;
+    if (scope.hasEnded) return;
     final incoming = _jsonSafe(answer);
     final page = _map(incoming['page']);
     if (page['strategyPublicId'] != strategyId) {
@@ -161,11 +150,10 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
   Future<void> writeFullSnapshot(
     CloudCopyScope scope,
     ConvexObject answer, {
-    required int answerOrder,
     required DateTime askedAt,
     required DateTime arrivedAt,
   }) async {
-    if (!_admits(scope, answerOrder)) return;
+    if (scope.hasEnded) return;
     final full = _jsonSafe(answer);
     final header = _map(full['header']);
     final strategyId = _string(header['publicId']);
@@ -235,7 +223,6 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
   @override
   Future<void> deleteAccount(CloudCopyScope scope) {
     final prefix = scope.storageKeyPrefix;
-    _deletedAtOrder[prefix] = nextCloudLibraryAnswerOrder();
     return deleteEntries(
       entryKeys.where((key) => key.startsWith(prefix)).toList(),
     );

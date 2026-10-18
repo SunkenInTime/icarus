@@ -270,14 +270,14 @@ class RemoteEditorSnapshotNotifier
     var shellRead = false;
     try {
       final repository = ref.read(convexStrategyRepositoryProvider);
-      final ticket = _ticket;
+      final scope = _copyScope;
       final shellAskedAt = DateTime.now();
       final shell = await repository.fetchShell(
         strategyPublicId,
         shareToken: _shareToken,
       );
       shellRead = true;
-      _keepShell(shell, askedAt: shellAskedAt, ticket: ticket);
+      _keepShell(shell, askedAt: shellAskedAt, scope: scope);
       if (epoch != _readEpoch || _holdsNewerShell(shell)) return;
       var pageId = _activePagePublicId;
       if (pageId == null ||
@@ -293,7 +293,7 @@ class RemoteEditorSnapshotNotifier
               pagePublicId: pageId,
               shareToken: _shareToken,
             );
-      if (read != null) _keepPage(read, askedAt: pageAskedAt, ticket: ticket);
+      if (read != null) _keepPage(read, askedAt: pageAskedAt, scope: scope);
       final page = read == null
           ? null
           : upgradeRemotePageSnapshot(read, shell.header.mapData);
@@ -356,13 +356,13 @@ class RemoteEditorSnapshotNotifier
 
   Future<void> _startShellSubscription(String strategyPublicId) async {
     await _shellSubscription?.cancel();
-    final ticket = _ticket;
+    final scope = _copyScope;
     _shellSubscription = ref
         .read(convexStrategyRepositoryProvider)
         .watchShell(strategyPublicId, shareToken: _shareToken)
         .listen(
       (shell) {
-        _keepShell(shell, askedAt: DateTime.now(), ticket: ticket);
+        _keepShell(shell, askedAt: DateTime.now(), scope: scope);
         if (_activeStrategyPublicId != strategyPublicId ||
             ref.read(authProvider).hasActiveAuthIncident) return;
         final current = state.valueOrNull;
@@ -400,7 +400,7 @@ class RemoteEditorSnapshotNotifier
       return;
     }
     _subscribedPagePublicId = pagePublicId;
-    final ticket = _ticket;
+    final scope = _copyScope;
     _pageSubscription = ref
         .read(convexStrategyRepositoryProvider)
         .watchPageSnapshot(
@@ -410,7 +410,7 @@ class RemoteEditorSnapshotNotifier
         )
         .listen(
       (page) {
-        _keepPage(page, askedAt: DateTime.now(), ticket: ticket);
+        _keepPage(page, askedAt: DateTime.now(), scope: scope);
         if (epoch != _pageEpoch ||
             _activeStrategyPublicId != strategyPublicId ||
             _activePagePublicId != pagePublicId ||
@@ -450,11 +450,6 @@ class RemoteEditorSnapshotNotifier
   bool get _keepsCopy =>
       _copyScope != null && _copy is! UnavailableCloudStrategyCopyStore;
 
-  /// What the answer of a read that starts now may be kept as (see
-  /// [CloudCopyTicket]).
-  CloudCopyTicket? get _ticket =>
-      _shareToken == null ? takeCloudCopyTicket(ref) : null;
-
   /// [pagePublicId] of the open strategy, read live, or from the copy when
   /// the server can't answer. Throws when neither has it.
   Future<RemotePageSnapshot> _readPage(
@@ -466,7 +461,7 @@ class RemoteEditorSnapshotNotifier
           (throw StateError('Offline: page $pagePublicId was not read.'));
     }
     try {
-      final ticket = _ticket;
+      final scope = _copyScope;
       final askedAt = DateTime.now();
       final page =
           await ref.read(convexStrategyRepositoryProvider).fetchPageSnapshot(
@@ -474,7 +469,7 @@ class RemoteEditorSnapshotNotifier
                 pagePublicId: pagePublicId,
                 shareToken: _shareToken,
               );
-      _keepPage(page, askedAt: askedAt, ticket: ticket);
+      _keepPage(page, askedAt: askedAt, scope: scope);
       return page;
     } catch (error) {
       if (_keepsCopy && isConvexReadUnanswered(error)) {
@@ -519,19 +514,18 @@ class RemoteEditorSnapshotNotifier
     return true;
   }
 
-  /// Keeps [shell], read with [ticket]. The store drops it when the
-  /// account it was read for has since signed out or been switched away.
+  /// Keeps [shell] under [scope], the one its read was asked under (see
+  /// [CloudCopyScope]): the store refuses it once that session has ended.
   void _keepShell(
     RemoteStrategyShell shell, {
     required DateTime askedAt,
-    required CloudCopyTicket? ticket,
+    required CloudCopyScope? scope,
   }) {
     final answer = shell.serverAnswer;
-    if (answer == null || ticket == null) return;
+    if (answer == null || scope == null) return;
     _keep(() => _copy.writeShell(
-          ticket.scope,
+          scope,
           answer,
-          answerOrder: ticket.order,
           askedAt: askedAt,
           arrivedAt: DateTime.now(),
         ));
@@ -541,22 +535,21 @@ class RemoteEditorSnapshotNotifier
   void _keepPage(
     RemotePageSnapshot page, {
     required DateTime askedAt,
-    required CloudCopyTicket? ticket,
+    required CloudCopyScope? scope,
   }) {
     final answer = page.serverAnswer;
-    if (answer == null || ticket == null) return;
+    if (answer == null || scope == null) return;
     _keep(() => _copy.writePage(
-          ticket.scope,
+          scope,
           page.page.strategyPublicId,
           answer,
-          answerOrder: ticket.order,
           askedAt: askedAt,
           arrivedAt: DateTime.now(),
         ));
   }
 
   void _forgetCopy(String strategyPublicId) {
-    final scope = _ticket?.scope;
+    final scope = _copyScope;
     if (scope == null) return;
     _keep(() => _copy.deleteStrategy(scope, strategyPublicId));
   }

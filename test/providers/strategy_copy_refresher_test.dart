@@ -21,10 +21,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../collab/strategy_copy_fixtures.dart';
 
-const _scope = CloudCopyScope(
-  deploymentUrl: 'https://one.convex.cloud',
-  accountId: 'account-a',
-);
+const _deployment = 'https://one.convex.cloud';
+
+/// The scope of [accountId] signing in now: a session of its own.
+CloudCopyScope _beginSession(String accountId) =>
+    CloudCopyScope.begin(deploymentUrl: _deployment, accountId: accountId);
+
+late CloudCopyScope _scope;
 
 final _connected = StateProvider<bool>((ref) => true);
 
@@ -43,12 +46,7 @@ void main() {
       cloudStrategyCopyStoreProvider.overrideWithValue(store),
       cloudCopyScopeProvider.overrideWith((ref) {
         final accountId = ref.watch(authProvider.select((a) => a.user?.id));
-        return accountId == null
-            ? null
-            : CloudCopyScope(
-                deploymentUrl: _scope.deploymentUrl,
-                accountId: accountId,
-              );
+        return accountId == null ? null : _beginSession(accountId);
       }),
       cloudMediaCacheProvider.overrideWith(() => media),
     ]);
@@ -58,6 +56,7 @@ void main() {
   }
 
   setUp(() {
+    _scope = _beginSession('account-a');
     repository = _Repository();
     store = MemoryCloudStrategyCopyStore();
     media = _RecordingMediaCache();
@@ -93,7 +92,6 @@ void main() {
       await store.writeFullSnapshot(
         _scope,
         repository.answerFor(id),
-        answerOrder: nextCloudLibraryAnswerOrder(),
         askedAt: now.subtract(age),
         arrivedAt: now.subtract(age),
       );
@@ -107,7 +105,6 @@ void main() {
     await store.writeFullSnapshot(
       _scope,
       repository.answerFor('gone'),
-      answerOrder: nextCloudLibraryAnswerOrder(),
       askedAt: DateTime.now(),
       arrivedAt: DateTime.now(),
     );
@@ -137,7 +134,8 @@ void main() {
 
     (container.read(authProvider.notifier) as _ReadyAuthProvider)
         .startSigningOut();
-    await store.deleteAccount(_scope);
+    final ended = _beginSession('account-a')..endSessions();
+    await store.deleteAccount(ended);
     gate.complete();
     await _settle();
 

@@ -18,10 +18,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'collab/strategy_copy_fixtures.dart';
 
-const _scope = CloudCopyScope(
-  deploymentUrl: 'https://one.convex.cloud',
-  accountId: 'account-a',
-);
+const _deployment = 'https://one.convex.cloud';
+
+/// The scope of [accountId] signing in now: a session of its own.
+CloudCopyScope _beginSession(String accountId) =>
+    CloudCopyScope.begin(deploymentUrl: _deployment, accountId: accountId);
+
+late CloudCopyScope _scope;
 
 final _offline = StateProvider<bool>((ref) => false);
 
@@ -38,6 +41,7 @@ void main() {
   late _RecordingRefresher refresher;
 
   setUp(() {
+    _scope = _beginSession('account-a');
     _webLike = false;
     transport = _Transport();
     store = MemoryCloudStrategyCopyStore();
@@ -58,12 +62,7 @@ void main() {
       ),
       cloudCopyScopeProvider.overrideWith((ref) {
         final accountId = ref.watch(authProvider.select((a) => a.user?.id));
-        return accountId == null
-            ? null
-            : CloudCopyScope(
-                deploymentUrl: _scope.deploymentUrl,
-                accountId: accountId,
-              );
+        return accountId == null ? null : _beginSession(accountId);
       }),
       strategyCopyRefresherProvider.overrideWith(_RecordingRefresher.new),
     ]);
@@ -170,12 +169,49 @@ void main() {
   _ReadyAuthProvider auth() =>
       container.read(authProvider.notifier) as _ReadyAuthProvider;
 
+  /// What AuthProvider does when [accountId]'s session ends: end its
+  /// sessions, then delete what it kept.
+  Future<void> endAccount(String accountId) async {
+    final ended = _beginSession(accountId)..endSessions();
+    await store.deleteAccount(ended);
+  }
+
+  test('an answer held across Supabase ending the session is kept for no one',
+      () async {
+    await container.read(remoteEditorSnapshotProvider.future);
+    final held = Completer<void>();
+    transport.hold = held;
+    final opening = remote().openStrategy('strategy', activePagePublicId: 'a');
+    await _settle();
+
+    // A revoked refresh token: Supabase signs the account out by itself.
+    auth().signedOutBySupabase();
+    await endAccount('account-a');
+    held.complete();
+    await opening;
+    await _settle();
+
+    expect(store.entryKeys, isEmpty);
+  });
+
+  test('the same account signing back in keeps its answers again', () async {
+    await openOnline();
+    auth().startSigningOut();
+    await endAccount('account-a');
+    remote().clear();
+
+    auth().signBackIn('account-a');
+    await openOnline();
+
+    expect(store.keepsStrategy(_scope, 'strategy'), isTrue);
+  });
+
   test(
       'an answer that arrives while signing out does not bring back the '
       'copy sign-out deleted', () async {
     await openOnline();
     auth().startSigningOut();
-    await store.deleteAccount(_scope);
+    await endAccount('account-a');
 
     transport.pushPage('a', [agentRow('agent', 'a', revision: 5)]);
     await _settle();
@@ -188,7 +224,7 @@ void main() {
       'neither account', () async {
     await openOnline();
     auth().switchTo('account-b');
-    await store.deleteAccount(_scope);
+    await endAccount('account-a');
 
     transport.pushPage('a', [agentRow('agent', 'a', revision: 5)]);
     await _settle();
@@ -207,7 +243,7 @@ void main() {
     expect(transport.reads, ['strategy:getShell']);
 
     auth().switchTo('account-b');
-    await store.deleteAccount(_scope);
+    await endAccount('account-a');
     held.complete();
     await opening;
     await _settle();
@@ -228,7 +264,6 @@ void main() {
       pageAnswer('a', elements: [
         {...broken, 'payload': payload},
       ]),
-      answerOrder: nextCloudLibraryAnswerOrder(),
       askedAt: DateTime.now(),
       arrivedAt: DateTime.now(),
     );
@@ -386,6 +421,21 @@ class _ReadyAuthProvider extends AuthProvider {
   /// the session is gone (see AuthProvider.signOut).
   void startSigningOut() =>
       state = state.copyWith(convexAuthStatus: ConvexAuthStatus.signedOut);
+
+  void signedOutBySupabase() => state = AppAuthState.fromSession(
+        null,
+        convexAuthStatus: ConvexAuthStatus.signedOut,
+      );
+
+  void signBackIn(String accountId) {
+    signedOutBySupabase();
+    switchTo(accountId);
+    state = state.copyWith(
+      isAuthenticated: true,
+      convexAuthStatus: ConvexAuthStatus.ready,
+      isConvexUserReady: true,
+    );
+  }
 
   void switchTo(String accountId) => state = state.copyWith(
         user: User(

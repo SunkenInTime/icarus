@@ -1,15 +1,22 @@
 import 'dart:convert';
 
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 
 import 'strategy_copy_fixtures.dart';
 
-const _scope = CloudCopyScope(
-  deploymentUrl: 'https://one.convex.cloud',
-  accountId: 'account-a',
-);
+const _deployment = 'https://one.convex.cloud';
+
+/// The scope of [accountId] signing in now: a session of its own.
+CloudCopyScope _beginSession(String accountId) =>
+    CloudCopyScope.begin(deploymentUrl: _deployment, accountId: accountId);
+
+late CloudCopyScope _scope;
 
 final _t0 = DateTime.utc(2026, 10, 17, 12);
 DateTime _at(int seconds) => _t0.add(Duration(seconds: seconds));
@@ -17,7 +24,10 @@ DateTime _at(int seconds) => _t0.add(Duration(seconds: seconds));
 void main() {
   late MemoryCloudStrategyCopyStore store;
 
-  setUp(() => store = MemoryCloudStrategyCopyStore());
+  setUp(() {
+    store = MemoryCloudStrategyCopyStore();
+    _scope = _beginSession('account-a');
+  });
 
   Future<void> keepPage(
     String pageId, {
@@ -30,7 +40,6 @@ void main() {
         _scope,
         'strategy',
         pageAnswer(pageId, elements: elements, revision: revision),
-        answerOrder: nextCloudLibraryAnswerOrder(),
         askedAt: _at(askedAt),
         arrivedAt: _at(arrivedAt ?? askedAt),
       );
@@ -39,7 +48,6 @@ void main() {
     await store.writeShell(
       _scope,
       shellAnswer(['a', 'b']),
-      answerOrder: nextCloudLibraryAnswerOrder(),
       askedAt: _at(0),
       arrivedAt: _at(0),
     );
@@ -134,9 +142,7 @@ void main() {
   test('a strategy whose only kept page is in another format is not kept',
       () async {
     await store.writeShell(_scope, shellAnswer(['a']),
-        answerOrder: nextCloudLibraryAnswerOrder(),
-        askedAt: _at(0),
-        arrivedAt: _at(0));
+        askedAt: _at(0), arrivedAt: _at(0));
     await keepPage('a', askedAt: 0);
     expect(store.keepsStrategy(_scope, 'strategy'), isTrue);
 
@@ -156,20 +162,50 @@ void main() {
     );
   });
 
-  test('an answer asked before its account was deleted is dropped', () async {
-    final askedBefore = nextCloudLibraryAnswerOrder();
-    await store.deleteAccount(_scope);
-    await store.writeShell(_scope, shellAnswer(['a']),
-        answerOrder: askedBefore, askedAt: _at(0), arrivedAt: _at(1));
-    expect(store.entryKeys, isEmpty);
+  for (final (name, open)
+      in <(String, Future<CloudStrategyCopyStore> Function())>[
+    ('memory', () async => MemoryCloudStrategyCopyStore()),
+    ('Hive', _openHiveStore),
+  ]) {
+    group('on $name,', () {
+      // The ways a session ends (see AuthProvider): Supabase signs the
+      // account out, another account signs in, or the user signs out. Each
+      // ends the account's sessions, then deletes what it kept.
+      for (final (ending, nextAccount) in [
+        ('Supabase signs it out', null),
+        ('another account signs in', 'account-b'),
+        ('the user signs out', null),
+      ]) {
+        test('an answer held while $ending keeps nothing for the old account',
+            () async {
+          final copy = await open();
+          final asked = _beginSession('account-a');
+          await copy.writeShell(asked, shellAnswer(['a']),
+              askedAt: _at(0), arrivedAt: _at(0));
 
-    // Signed in again: a read asked now lands.
-    await store.writeShell(_scope, shellAnswer(['a']),
-        answerOrder: nextCloudLibraryAnswerOrder(),
-        askedAt: _at(2),
-        arrivedAt: _at(2));
-    expect(store.readShell(_scope, 'strategy'), isNotNull);
-  });
+          asked.endSessions();
+          await copy.deleteAccount(asked);
+          final next = nextAccount == null ? null : _beginSession(nextAccount);
+          // The held answer arrives now.
+          await copy.writeShell(asked, shellAnswer(['a', 'b']),
+              askedAt: _at(1), arrivedAt: _at(2));
+          await copy.writePage(asked, 'strategy', pageAnswer('a'),
+              askedAt: _at(1), arrivedAt: _at(2));
+          await copy.writeFullSnapshot(asked, fullAnswer(['a']),
+              askedAt: _at(1), arrivedAt: _at(2));
+
+          expect(copy.keptStrategyIds(asked), isEmpty);
+          if (next != null) expect(copy.keptStrategyIds(next), isEmpty);
+
+          // The same account signing back in writes as usual.
+          final again = _beginSession('account-a');
+          await copy.writeShell(again, shellAnswer(['a']),
+              askedAt: _at(3), arrivedAt: _at(3));
+          expect(copy.readShell(again, 'strategy'), isNotNull);
+        });
+      }
+    });
+  }
 
   test('each deployment and account keeps its own copy', () async {
     const otherAccount = CloudCopyScope(
@@ -182,9 +218,7 @@ void main() {
     );
     for (final scope in [_scope, otherAccount, otherDeployment]) {
       await store.writeShell(scope, shellAnswer(['a']),
-          answerOrder: nextCloudLibraryAnswerOrder(),
-          askedAt: _at(0),
-          arrivedAt: _at(0));
+          askedAt: _at(0), arrivedAt: _at(0));
     }
 
     await store.deleteAccount(_scope);
@@ -206,7 +240,6 @@ void main() {
         lineups: [lineupRow('lineup', 'c', 'lineup-image')],
         assets: [assetRow('picture'), assetRow('lineup-image')],
       ),
-      answerOrder: nextCloudLibraryAnswerOrder(),
       askedAt: _at(0),
       arrivedAt: _at(1),
     );
@@ -231,27 +264,33 @@ void main() {
   test('a newer shell without a page drops that page; an older one does not',
       () async {
     await store.writeShell(_scope, shellAnswer(['a', 'b'], revision: 2),
-        answerOrder: nextCloudLibraryAnswerOrder(),
-        askedAt: _at(0),
-        arrivedAt: _at(0));
+        askedAt: _at(0), arrivedAt: _at(0));
     await keepPage('a', askedAt: 0);
     await keepPage('b', askedAt: 0);
 
     // From before page b was added.
     await store.writeShell(_scope, shellAnswer(['a'], revision: 1),
-        answerOrder: nextCloudLibraryAnswerOrder(),
-        askedAt: _at(1),
-        arrivedAt: _at(1));
+        askedAt: _at(1), arrivedAt: _at(1));
     expect(store.readShell(_scope, 'strategy')!.pages, hasLength(2));
     expect(store.readPage(_scope, 'strategy', 'b'), isNotNull);
 
     // Page b deleted.
     await store.writeShell(_scope, shellAnswer(['a'], revision: 3),
-        answerOrder: nextCloudLibraryAnswerOrder(),
-        askedAt: _at(2),
-        arrivedAt: _at(2));
+        askedAt: _at(2), arrivedAt: _at(2));
     expect(store.readShell(_scope, 'strategy')!.pages, hasLength(1));
     expect(store.readPage(_scope, 'strategy', 'b'), isNull);
     expect(store.readPage(_scope, 'strategy', 'a'), isNotNull);
   });
+}
+
+Future<CloudStrategyCopyStore> _openHiveStore() async {
+  final dir = await Directory.systemTemp.createTemp('strategy-copy-');
+  Hive.init(dir.path);
+  final box = await Hive.openBox<String>(HiveBoxNames.cloudStrategyCopyBox);
+  addTearDown(() async {
+    await box.deleteFromDisk();
+    await Hive.close();
+    await dir.delete(recursive: true);
+  });
+  return HiveCloudStrategyCopyStore();
 }
