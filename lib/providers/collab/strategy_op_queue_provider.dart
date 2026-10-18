@@ -1028,22 +1028,29 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _scheduleFlush(flushImmediately: flushImmediately);
   }
 
-  /// Holds the waiting work of each of [opIdByKey]'s entities in attention,
-  /// with [undrawableWorkMessage]: drawn over the server's version as it is
-  /// now, the page could not show it. It is neither sent nor dropped until
-  /// the user chooses (Keep mine sends it anyway, Use cloud drops it). Only
-  /// work that is still waiting as the op the page tried to draw
-  /// ([opIdByKey]'s value) and is not being sent is held; refused work keeps
-  /// its own reason.
-  Future<void> holdUndrawableWork(Map<EntitySyncKey, String> opIdByKey) {
+  /// Holds the waiting work of each of [waiting]'s entities in attention,
+  /// with [undrawableWorkMessage]: merged onto the server's version as it
+  /// is now (at revision serverRevision), it can't be read. It is neither
+  /// sent nor dropped until the user chooses: Keep mine saves the user's
+  /// version whole over the server's at that revision, Use cloud drops it.
+  /// Only work still waiting as the op the page tried to draw (opId) and
+  /// not being sent is held; refused work keeps its own reason.
+  Future<void> holdWorkThatNoLongerFits(
+    Map<EntitySyncKey, ({String opId, int? serverRevision})> waiting,
+  ) {
     return _serializeWrite(() async {
       var changed = false;
       try {
-        for (final MapEntry(:key, value: opId) in opIdByKey.entries) {
+        for (final MapEntry(:key, value: (:opId, :serverRevision))
+            in waiting.entries) {
           final record = _recordForActiveKey(key);
           if (record == null ||
               record.pending.op.opId != opId ||
-              record.status == DurableOutboxStatus.attention ||
+              record.lastError == undrawableWorkMessage ||
+              // Refused for a reason of its own (a deleted page, lost edit
+              // access, an older format): that reason stands.
+              (record.status == DurableOutboxStatus.attention &&
+                  !_refusedAsConflict(record.lastError)) ||
               // Being sent now: the server's answer decides.
               (record.status == DurableOutboxStatus.inFlight &&
                   _drainingStrategy ==
@@ -1057,6 +1064,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             status: DurableOutboxStatus.attention,
             updatedAt: DateTime.now(),
             lastError: undrawableWorkMessage,
+            latestServerRevision: serverRevision ?? record.latestServerRevision,
           ));
           changed = true;
         }
@@ -1067,6 +1075,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       if (changed) _refreshActiveQueueView(clearError: true);
     });
   }
+
+  /// Whether [refusal] says the server refused the work because it collided
+  /// with the row as it is now: what Keep mine resolves by sending the
+  /// user's version over it.
+  static bool _refusedAsConflict(String? refusal) => {
+        OpRejectionReason.fieldConflict.wireName,
+        OpRejectionReason.mergeInvalid.wireName,
+        OpRejectionReason.revisionMismatch.wireName,
+        OpRejectionReason.missingExpectedRevision.wireName,
+      }.contains(refusal);
 
   void clearStaleError() {
     if (state.lastError == null ||
@@ -2968,7 +2986,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         base: mergeBaseValues(serverHas, fields, lineup: lineup),
       ));
     }
-    if (refusal == OpRejectionReason.mergeInvalid.wireName) {
+    // Merged onto the server's version it can't stand (or can't be read,
+    // undrawableWorkMessage): the user's version replaces the server's
+    // whole.
+    if (refusal == OpRejectionReason.mergeInvalid.wireName ||
+        refusal == undrawableWorkMessage) {
       return op.withMerge(null);
     }
     return op;

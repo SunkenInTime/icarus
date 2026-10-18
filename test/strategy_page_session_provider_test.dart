@@ -8900,7 +8900,8 @@ void main() {
       for (final refused in [true, false]) {
         test(
             'a ${refused ? 'refused' : 'waiting'} lineup change that no longer '
-            'fits the group leaves the page openable and is kept', () async {
+            'fits the group is drawn whole, kept through an edit on top, and '
+            'Keep mine saves it', () async {
           final page = _page('page-1', 0);
           // Two lineups from one origin. A teammate deleted link-a, and with
           // it the landing only it used.
@@ -8961,36 +8962,123 @@ void main() {
                 refused ? OpRejectionReason.fieldConflict.wireName : null,
           ));
 
-          final hold = Completer<void>();
-          addTearDown(() {
-            if (!hold.isCompleted) hold.complete();
-          });
           final (container, batches) = await openOnRealQueue(page,
-              store: store, hold: hold, themeProfileId: theme);
+              store: store, online: false, themeProfileId: theme);
           for (var i = 0; i < 10; i++) {
             await _settle();
           }
+          LineUpLink onScreen(String id) =>
+              container.read(lineUpProvider).linkById(id)!;
 
-          // The page opened, showing the cloud's version of the group.
+          // The page opened. Merged onto the cloud's group link-a would aim
+          // at a landing that is gone, so the group is drawn as the user
+          // had it, link-a's notes included.
           expect(
             container.read(lineUpProvider).links.map((link) => link.id),
-            ['link-b'],
+            unorderedEquals(['link-a', 'link-b']),
           );
+          expect(onScreen('link-a').notes, 'offline');
           // The change is kept, waiting for the user, and was not sent.
-          final record = store.load().records.single;
+          var record = store.load().records.single;
           expect(record.pending.op.opId, 'notes-edit');
           expect(record.status, DurableOutboxStatus.attention);
-          expect(
-            record.lastError,
-            refused
-                ? OpRejectionReason.fieldConflict.wireName
-                : undrawableWorkMessage,
-          );
-          expect(sentFor(batches, key), isEmpty);
+          expect(record.lastError, undrawableWorkMessage);
+          expect(record.latestServerRevision, 8);
           expect(container.read(cloudSyncStatusProvider),
               CloudSyncStatus.attention);
+
+          // The user edits link-b, in the same group.
+          container
+              .read(lineUpProvider.notifier)
+              .updateLink(onScreen('link-b').copyWith(notes: 'b edited'));
+          await container
+              .read(strategyProvider.notifier)
+              .forceSaveNow('cloud-strategy');
+          for (var i = 0; i < 10; i++) {
+            await _settle();
+          }
+          record = store.load().records.single;
+          expect(record.pending.op.opId, 'notes-edit');
+          expect(record.status, DurableOutboxStatus.attention);
+
+          // Keep mine, once back online: the user's group is saved whole.
+          container.read(_online.notifier).state = true;
+          final queue = container.read(strategyOpQueueProvider.notifier);
+          await queue.retryRejected(flushImmediately: false);
+          await queue.flushNow();
+          await _until(
+              () => container.read(strategyOpQueueProvider).pending.isEmpty);
+          for (var i = 0; i < 10; i++) {
+            await _settle();
+          }
+          expect(sentFor(batches, key), hasLength(1));
+          final saved = lineUpGraphFromRemoteLineups(server.liveRows);
+          expect(
+            {for (final link in saved.links) link.id: link.notes},
+            {'link-a': 'offline', 'link-b': 'b edited'},
+          );
+          expect(saved.landings.map((landing) => landing.id),
+              containsAll(['landing-a', 'landing-b']));
+          expect(store.load().records, isEmpty);
         });
       }
+
+      test(
+          'refused work recovered after a restart survives an edit on top and '
+          'Keep mine', () async {
+        final page = _page('page-1', 0);
+        final b = _textElement(page.publicId, 'b', 'bravo', worldSized: true);
+        server = _FakeServer(page.publicId, elements: [b])
+          ..mergesByField = true;
+        final payload = jsonDecode(jsonEncode(b.payload)) as CloudPayload;
+        (payload['data'] as Map<String, dynamic>)['text'] = 'mine';
+        final store = MemoryDurableStrategyOutboxStore();
+        await store.put(DurableOutboxRecord(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          entityKey: EntitySyncKey.element(page.publicId, 'b'),
+          pending: PendingOp(
+            op: ElementPatchOp(
+              opId: 'refused-text',
+              elementPublicId: 'b',
+              pagePublicId: page.publicId,
+              payload: payload,
+              sortIndex: 0,
+              expectedElementRevision: 1,
+              merge:
+                  const FieldMerge(fields: ['text'], base: {'text': 'bravo'}),
+            ),
+            clientId: 'test-client',
+          ),
+          status: DurableOutboxStatus.attention,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+          lastError: OpRejectionReason.fieldConflict.wireName,
+          latestServerRevision: 1,
+        ));
+        final (container, _) = await openOnRealQueue(page,
+            store: store, themeProfileId: 'immutable-default-map-theme');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(container.read(textProvider).single.text, 'mine');
+        container
+            .read(textProvider.notifier)
+            .updatePosition(const Offset(300, 300), 'b');
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        final queue = container.read(strategyOpQueueProvider.notifier);
+        await queue.retryRejected(flushImmediately: false);
+        await queue.flushNow();
+        await _until(
+            () => container.read(strategyOpQueueProvider).pending.isEmpty);
+        expect(cloudPayloadData(server.element('b').payload)['text'], 'mine');
+        expect(store.load().records, isEmpty);
+      });
 
       test(
           'paused and refused work is drawn and stays as it waits, neither '

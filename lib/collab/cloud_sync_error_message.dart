@@ -174,8 +174,9 @@ String friendlyCloudSyncError(String raw) {
   }
   if (lower.contains(undrawableWorkMessage.toLowerCase())) {
     return 'A saved change no longer fits this page as the cloud has it now, '
-        'so it was not sent and is not shown. It remains on this device. '
-        'Keep mine sends it anyway; Use cloud drops it.';
+        'so it was not sent. It remains on this device, shown as you made '
+        "it. Keep mine saves your version over the cloud's; Use cloud drops "
+        'it.';
   }
   if (lower.contains(pageDeletedMessage.toLowerCase())) {
     return 'The page these changes were on was deleted, so they were not '

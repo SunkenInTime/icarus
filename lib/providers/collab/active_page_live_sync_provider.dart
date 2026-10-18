@@ -1184,7 +1184,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final remote = _normalizedRemoteEntities(snapshot, pageId);
     final mapData = snapshot.header.mapData;
     final work = <EntitySyncKey, _DrawnWork>{};
-    final undrawable = <EntitySyncKey, String>{};
+    final noLongerFits =
+        <EntitySyncKey, ({String opId, int? serverRevision})>{};
     final keys = {
       for (final intents in [
         queue.queuedByEntityKey,
@@ -1228,28 +1229,39 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       }
       if (ops.any(isRetiredCloudLineupOp)) continue;
       final over = remote[key];
-      var onto = over;
-      _NormalizedEntity? base;
-      final layers = <({String opId, _NormalizedEntity entity})>[];
-      for (final op in ops) {
-        final drawn = _drawQueuedOp(key, op, onto, mapData: mapData);
-        if (drawn == null) break;
-        layers.add((opId: op.opId, entity: drawn.entity));
-        base = drawn.base;
-        onto = drawn.entity;
+      _DrawnWork? drawnFrom(Iterable<StrategyOp> ops) {
+        var onto = over;
+        _NormalizedEntity? base;
+        final layers = <({String opId, _NormalizedEntity entity})>[];
+        for (final op in ops) {
+          final drawn = _drawQueuedOp(key, op, onto, mapData: mapData);
+          if (drawn == null) return null;
+          layers.add((opId: op.opId, entity: drawn.entity));
+          base = drawn.base;
+          onto = drawn.entity;
+        }
+        return _DrawnWork(over: over, layers: layers, base: base);
       }
-      if (layers.length != ops.length) continue;
-      // Drawing it must never leave the page unable to open: work that
-      // would draw something hydration can't read is left off the page, and
-      // waits in attention so the user is told.
-      if (!_drawable(layers.last.entity)) {
-        undrawable[key] = head.opId;
+
+      final drawn = drawnFrom(ops);
+      if (drawn == null) continue;
+      if (_drawable(drawn.drawn)) {
+        work[key] = drawn;
         continue;
       }
-      work[key] = _DrawnWork(over: over, layers: layers, base: base);
+      // Merged field by field onto the server's version it can't be read
+      // (a teammate removed what it relies on, say a lineup's landing).
+      // Drawing must never leave the page unable to open, nor hide the
+      // work: it is drawn as the user had it, whole, and waits in
+      // attention, where Keep mine saves that version over the server's
+      // and Use cloud drops it. Edits made on top of it are whole too, so
+      // they keep it. Work that can't be read even so is left off the page.
+      noLongerFits[key] = (opId: head.opId, serverRevision: over?.revision);
+      final whole = drawnFrom([for (final op in ops) op.withMerge(null)]);
+      if (whole != null && _drawable(whole.drawn)) work[key] = whole;
     }
-    if (undrawable.isNotEmpty) {
-      unawaited(queueNotifier.holdUndrawableWork(undrawable));
+    if (noLongerFits.isNotEmpty) {
+      unawaited(queueNotifier.holdWorkThatNoLongerFits(noLongerFits));
     }
     return work;
   }
