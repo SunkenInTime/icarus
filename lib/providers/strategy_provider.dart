@@ -554,10 +554,12 @@ class StrategyProvider extends Notifier<StrategyState> {
         snapshot.header.publicId != strategyId) {
       return false;
     }
+    final waiting =
+        waitingStrategyPatch(ref.read(strategyOpQueueProvider), strategyId);
     final drawn = drawnStrategyHeader(ref, snapshot.header);
     final strategyTheme = ref.read(strategyThemeProvider);
     final mapData = Maps.mapNames[ref.read(mapProvider).currentMap];
-    return !identical(drawn, snapshot.header) &&
+    return waiting != null &&
         mapData != null &&
         drawn.shows(
           mapData: mapData,
@@ -575,25 +577,30 @@ class StrategyProvider extends Notifier<StrategyState> {
       return null;
     }
 
+    // The server's, as this device knows it holds them.
+    final header = knownStrategyHeader(ref, snapshot.header);
     final strategyTheme = ref.read(strategyThemeProvider);
-    final localMapData = Maps.mapNames[ref.read(mapProvider).currentMap] ??
-        snapshot.header.mapData;
+    final localMapData =
+        Maps.mapNames[ref.read(mapProvider).currentMap] ?? header.mapData;
     final localThemeProfileId = strategyTheme.profileId;
     final localThemeOverridePalette = strategyTheme.overridePalette?.toJson();
 
-    final matchesRemote = snapshot.header.mapData == localMapData &&
-        snapshot.header.themeProfileId == localThemeProfileId &&
+    final matchesRemote = header.mapData == localMapData &&
+        header.themeProfileId == localThemeProfileId &&
         cloudJsonEquivalent(
-          snapshot.header.themeOverridePalette,
+          header.themeOverridePalette,
           localThemeOverridePalette,
         );
-    if (matchesRemote) {
+    // A change that may still land would undo the canvas matching the
+    // server, so the canvas's values are written behind it.
+    if (matchesRemote &&
+        !strategyPatchMayLand(ref.read(strategyOpQueueProvider), strategyId)) {
       return null;
     }
 
     return StrategyPatchOp(
       opId: const Uuid().v4(),
-      expectedStrategyRevision: snapshot.header.revision,
+      expectedStrategyRevision: header.revision,
       payload: {
         'mapData': localMapData,
         if (localThemeProfileId != null) 'themeProfileId': localThemeProfileId,

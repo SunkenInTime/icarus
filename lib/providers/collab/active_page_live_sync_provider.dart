@@ -1929,21 +1929,22 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         overlay.desiredSortIndex == remote.sortIndex;
   }
 
+  /// Whether the canvas, though it matches the server, still has a change
+  /// to write: the newest one waiting for [key] writes something else, and
+  /// would undo it on landing. That includes one waiting behind another
+  /// being sent.
   bool _needsSuccessor({
     required String pageId,
     required EntitySyncKey key,
     required ActivePageOverlayEntry overlay,
     required StrategyOpQueueState queueState,
   }) {
-    if (queueState.successorByEntityKey.containsKey(key)) {
-      return false;
-    }
-
-    final predecessor = queueState.inFlightByEntityKey[key]?.pending.op ??
+    final waiting = queueState.successorByEntityKey[key]?.pending.op ??
+        queueState.inFlightByEntityKey[key]?.pending.op ??
         queueState.queuedByEntityKey[key]?.pending.op;
-    if (predecessor == null) return false;
+    if (waiting == null) return false;
     final desired = _strategyOpFromOverlay(pageId: pageId, overlay: overlay);
-    return desired != null && !_opsEquivalent(predecessor, desired);
+    return desired != null && !_opsEquivalent(waiting, desired);
   }
 
   bool _opsEquivalent(StrategyOp left, StrategyOp right) {

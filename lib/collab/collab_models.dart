@@ -1414,8 +1414,9 @@ class RemoteStrategyHeader {
       cloudJsonEquivalent(this.themeOverridePalette, themeOverridePalette);
 
   /// This header once a strategy patch carrying [payload] (see
-  /// StrategyPatchOp) lands: its map and theme as the patch sets them.
-  RemoteStrategyHeader withPatch(CloudPayload payload) {
+  /// StrategyPatchOp) lands: its map and theme as the patch sets them, at
+  /// [revision] if given.
+  RemoteStrategyHeader withPatch(CloudPayload payload, {int? revision}) {
     final mapData = payload['mapData'];
     final themeProfileId = payload['themeProfileId'];
     final palette = payload['themeOverridePalette'];
@@ -1423,7 +1424,7 @@ class RemoteStrategyHeader {
       publicId: publicId,
       name: name,
       mapData: mapData is String ? mapData : this.mapData,
-      revision: revision,
+      revision: revision ?? this.revision,
       createdAt: createdAt,
       updatedAt: updatedAt,
       themeProfileId: payload['clearThemeProfileId'] == true
