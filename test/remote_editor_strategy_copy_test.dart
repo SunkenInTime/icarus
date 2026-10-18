@@ -54,7 +54,7 @@ void main() {
       ),
       cloudOfflineProvider.overrideWith((ref) => ref.watch(_offline)),
       cloudStrategyCopyStoreProvider.overrideWith(
-        (ref) => _webLike ? const UnavailableCloudStrategyCopyStore() : store,
+        (ref) => _webLike ? UnavailableCloudStrategyCopyStore() : store,
       ),
       cloudCopyScopeProvider.overrideWith((ref) {
         final accountId = ref.watch(authProvider.select((a) => a.user?.id));
@@ -228,6 +228,7 @@ void main() {
       pageAnswer('a', elements: [
         {...broken, 'payload': payload},
       ]),
+      answerOrder: nextCloudLibraryAnswerOrder(),
       askedAt: DateTime.now(),
       arrivedAt: DateTime.now(),
     );

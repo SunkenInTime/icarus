@@ -30,6 +30,7 @@ void main() {
         _scope,
         'strategy',
         pageAnswer(pageId, elements: elements, revision: revision),
+        answerOrder: nextCloudLibraryAnswerOrder(),
         askedAt: _at(askedAt),
         arrivedAt: _at(arrivedAt ?? askedAt),
       );
@@ -38,6 +39,7 @@ void main() {
     await store.writeShell(
       _scope,
       shellAnswer(['a', 'b']),
+      answerOrder: nextCloudLibraryAnswerOrder(),
       askedAt: _at(0),
       arrivedAt: _at(0),
     );
@@ -132,7 +134,9 @@ void main() {
   test('a strategy whose only kept page is in another format is not kept',
       () async {
     await store.writeShell(_scope, shellAnswer(['a']),
-        askedAt: _at(0), arrivedAt: _at(0));
+        answerOrder: nextCloudLibraryAnswerOrder(),
+        askedAt: _at(0),
+        arrivedAt: _at(0));
     await keepPage('a', askedAt: 0);
     expect(store.keepsStrategy(_scope, 'strategy'), isTrue);
 
@@ -152,6 +156,21 @@ void main() {
     );
   });
 
+  test('an answer asked before its account was deleted is dropped', () async {
+    final askedBefore = nextCloudLibraryAnswerOrder();
+    await store.deleteAccount(_scope);
+    await store.writeShell(_scope, shellAnswer(['a']),
+        answerOrder: askedBefore, askedAt: _at(0), arrivedAt: _at(1));
+    expect(store.entryKeys, isEmpty);
+
+    // Signed in again: a read asked now lands.
+    await store.writeShell(_scope, shellAnswer(['a']),
+        answerOrder: nextCloudLibraryAnswerOrder(),
+        askedAt: _at(2),
+        arrivedAt: _at(2));
+    expect(store.readShell(_scope, 'strategy'), isNotNull);
+  });
+
   test('each deployment and account keeps its own copy', () async {
     const otherAccount = CloudCopyScope(
       deploymentUrl: 'https://one.convex.cloud',
@@ -163,7 +182,9 @@ void main() {
     );
     for (final scope in [_scope, otherAccount, otherDeployment]) {
       await store.writeShell(scope, shellAnswer(['a']),
-          askedAt: _at(0), arrivedAt: _at(0));
+          answerOrder: nextCloudLibraryAnswerOrder(),
+          askedAt: _at(0),
+          arrivedAt: _at(0));
     }
 
     await store.deleteAccount(_scope);
@@ -185,6 +206,7 @@ void main() {
         lineups: [lineupRow('lineup', 'c', 'lineup-image')],
         assets: [assetRow('picture'), assetRow('lineup-image')],
       ),
+      answerOrder: nextCloudLibraryAnswerOrder(),
       askedAt: _at(0),
       arrivedAt: _at(1),
     );
@@ -209,19 +231,25 @@ void main() {
   test('a newer shell without a page drops that page; an older one does not',
       () async {
     await store.writeShell(_scope, shellAnswer(['a', 'b'], revision: 2),
-        askedAt: _at(0), arrivedAt: _at(0));
+        answerOrder: nextCloudLibraryAnswerOrder(),
+        askedAt: _at(0),
+        arrivedAt: _at(0));
     await keepPage('a', askedAt: 0);
     await keepPage('b', askedAt: 0);
 
     // From before page b was added.
     await store.writeShell(_scope, shellAnswer(['a'], revision: 1),
-        askedAt: _at(1), arrivedAt: _at(1));
+        answerOrder: nextCloudLibraryAnswerOrder(),
+        askedAt: _at(1),
+        arrivedAt: _at(1));
     expect(store.readShell(_scope, 'strategy')!.pages, hasLength(2));
     expect(store.readPage(_scope, 'strategy', 'b'), isNotNull);
 
     // Page b deleted.
     await store.writeShell(_scope, shellAnswer(['a'], revision: 3),
-        askedAt: _at(2), arrivedAt: _at(2));
+        answerOrder: nextCloudLibraryAnswerOrder(),
+        askedAt: _at(2),
+        arrivedAt: _at(2));
     expect(store.readShell(_scope, 'strategy')!.pages, hasLength(1));
     expect(store.readPage(_scope, 'strategy', 'b'), isNull);
     expect(store.readPage(_scope, 'strategy', 'a'), isNotNull);

@@ -93,6 +93,7 @@ void main() {
       await store.writeFullSnapshot(
         _scope,
         repository.answerFor(id),
+        answerOrder: nextCloudLibraryAnswerOrder(),
         askedAt: now.subtract(age),
         arrivedAt: now.subtract(age),
       );
@@ -106,6 +107,7 @@ void main() {
     await store.writeFullSnapshot(
       _scope,
       repository.answerFor('gone'),
+      answerOrder: nextCloudLibraryAnswerOrder(),
       askedAt: DateTime.now(),
       arrivedAt: DateTime.now(),
     );

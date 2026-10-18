@@ -12,33 +12,20 @@ import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 
-/// Leave to write [scope]'s part of the copy. A read takes the grant that
-/// is current when it starts, and its answer is kept only if that same
-/// grant is still current when it arrives (compared with `identical`).
-class CloudCopyWriteGrant {
-  CloudCopyWriteGrant(this.scope);
+/// What a read that starts now may write to the copy: the account it is
+/// read for, and its answer's order (see [CloudStrategyCopyStore]).
+typedef CloudCopyTicket = ({CloudCopyScope scope, int order});
 
-  final CloudCopyScope scope;
+/// A [CloudCopyTicket] for a read starting now, or null when nothing may be
+/// kept: signed out, or from the moment a sign-out starts (the account's
+/// copy is deleted before its session is gone).
+CloudCopyTicket? takeCloudCopyTicket(Ref ref) {
+  final auth = ref.read(authProvider);
+  if (auth.convexAuthStatus == ConvexAuthStatus.signedOut) return null;
+  final scope = ref.read(cloudCopyScopeProvider);
+  if (scope == null) return null;
+  return (scope: scope, order: nextCloudLibraryAnswerOrder());
 }
-
-/// The current [CloudCopyWriteGrant], made afresh whenever the signed-in
-/// account changes, and null from the moment a sign-out starts. Signing
-/// out deletes the account's copy before the session is gone, and an
-/// account switch deletes the old account's, so an answer read before
-/// either must not be kept after it: not for the old account, and not for
-/// whoever is signed in now.
-final cloudCopyWriteGrantProvider = Provider<CloudCopyWriteGrant?>((ref) {
-  final signingOut = ref.watch(authProvider.select(
-    (auth) => auth.convexAuthStatus == ConvexAuthStatus.signedOut,
-  ));
-  final scope = ref.watch(cloudCopyScopeProvider);
-  return signingOut || scope == null ? null : CloudCopyWriteGrant(scope);
-});
-
-/// Whether [grant], taken when a read started, still allows keeping its
-/// answer.
-bool copyWriteGrantHolds(Ref ref, CloudCopyWriteGrant? grant) =>
-    grant != null && identical(ref.read(cloudCopyWriteGrantProvider), grant);
 
 /// Whether [strategyId] can be opened from the copy on this computer. Read
 /// while offline, so the library can mark the strategies that need a
@@ -179,9 +166,9 @@ class StrategyCopyRefresher extends Notifier<void> {
   /// Reads all of [strategyId] into the copy. False when the server did
   /// not answer.
   Future<bool> _keepStrategy(String strategyId) async {
-    final grant = ref.read(cloudCopyWriteGrantProvider);
-    if (grant == null || ref.read(cloudOfflineProvider)) return false;
-    final scope = grant.scope;
+    final ticket = takeCloudCopyTicket(ref);
+    if (ticket == null || ref.read(cloudOfflineProvider)) return false;
+    final scope = ticket.scope;
     final store = ref.read(cloudStrategyCopyStoreProvider);
     try {
       final askedAt = DateTime.now();
@@ -189,12 +176,13 @@ class StrategyCopyRefresher extends Notifier<void> {
           .read(convexStrategyRepositoryProvider)
           .fetchFullSnapshot(strategyId);
       final answer = snapshot.serverAnswer;
-      // Signed out or switched accounts while it was read: its copy is
-      // gone, and must stay gone.
-      if (answer == null || !copyWriteGrantHolds(ref, grant)) return true;
+      if (answer == null) return true;
+      // Signed out or switched accounts while it was read: the store drops
+      // it, as the account's copy is gone.
       await store.writeFullSnapshot(
         scope,
         answer,
+        answerOrder: ticket.order,
         askedAt: askedAt,
         arrivedAt: DateTime.now(),
       );
