@@ -243,7 +243,9 @@ void main() {
       askedAt: _at(0),
       arrivedAt: _at(1),
     );
-
+    // Its images aren't known to be on disk yet.
+    expect(store.lastFullRefresh(_scope, 'strategy'), isNull);
+    await store.noteFullRefresh(_scope, 'strategy', at: _at(1));
     expect(
       store.lastFullRefresh(_scope, 'strategy')!.isAtSameMomentAs(_at(1)),
       isTrue,

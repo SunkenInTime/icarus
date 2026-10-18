@@ -145,8 +145,9 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
     );
   }
 
-  /// Keeps every page of [answer], a strategy:getFullSnapshot answer, and
-  /// notes when it arrived (see [lastFullRefresh]).
+  /// Keeps every page of [answer], a strategy:getFullSnapshot answer. The
+  /// caller notes the refresh ([noteFullRefresh]) once the strategy's images
+  /// are on disk too.
   Future<void> writeFullSnapshot(
     CloudCopyScope scope,
     ConvexObject answer, {
@@ -201,14 +202,24 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
     writes.add(
       _mergeShell(scope, strategyId, {'header': header, 'pages': descriptors}),
     );
-    writes.add(writeEntry(
+    await Future.wait(writes);
+  }
+
+  /// Notes that all of [strategyId], images included, was read into the copy
+  /// [at] (see [lastFullRefresh]).
+  Future<void> noteFullRefresh(
+    CloudCopyScope scope,
+    String strategyId, {
+    required DateTime at,
+  }) async {
+    if (scope.hasEnded) return;
+    await writeEntry(
       _refreshKey(scope, strategyId),
       jsonEncode({
         'copyVersion': cloudStrategyCopyVersion,
-        'fullRefreshAt': arrivedAt.millisecondsSinceEpoch,
+        'fullRefreshAt': at.millisecondsSinceEpoch,
       }),
-    ));
-    await Future.wait(writes);
+    );
   }
 
   Future<void> deleteStrategy(CloudCopyScope scope, String strategyId) {

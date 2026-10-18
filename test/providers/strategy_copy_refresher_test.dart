@@ -95,6 +95,7 @@ void main() {
         askedAt: now.subtract(age),
         arrivedAt: now.subtract(age),
       );
+      await store.noteFullRefresh(_scope, id, at: now.subtract(age));
     }
     start();
     await _settle();
@@ -160,6 +161,48 @@ void main() {
     expect(store.keptStrategyIds(_scope), {'one', 'two'});
   });
 
+  test('a strategy whose images did not all download is read again', () async {
+    repository.owned = {'one'};
+    media.failing = true;
+    final container = start();
+    await _settle();
+    expect(store.keepsStrategy(_scope, 'one'), isTrue);
+    expect(store.lastFullRefresh(_scope, 'one'), isNull);
+
+    // The next connection walks again, and this time the images come.
+    media.failing = false;
+    container.read(_connected.notifier).state = false;
+    await _settle(pause: false);
+    container.read(_connected.notifier).state = true;
+    await _settle();
+    expect(repository.fullReads, ['one', 'one']);
+    expect(store.lastFullRefresh(_scope, 'one'), isNotNull);
+  });
+
+  test('a reconnect while a read is still out walks again once it fails',
+      () async {
+    repository.owned = {'one'};
+    final gate = Completer<void>();
+    repository.fullReadGate = gate;
+    repository.unansweredReads = 1;
+    final container = start();
+    await _settle(pause: false);
+    expect(repository.fullReads, ['one']);
+
+    // The socket drops and comes back while that read is still out...
+    container.read(_connected.notifier).state = false;
+    await _settle(pause: false);
+    container.read(_connected.notifier).state = true;
+    await _settle(pause: false);
+    // ...then it fails, which used to clear the walk the reconnect wanted.
+    repository.fullReadGate = null;
+    gate.complete();
+    await _settle();
+    await _settle();
+
+    expect(store.keptStrategyIds(_scope), {'one'});
+  });
+
   test('a strategy opened online goes ahead of the walk', () async {
     repository.owned = {'one', 'two'};
     final gate = Completer<void>();
@@ -189,6 +232,9 @@ class _Repository extends ConvexStrategyRepository {
   Set<String> sharedDirectly = {};
   Set<String> inSharedFolders = {};
   bool unanswered = false;
+
+  /// How many of the next full reads go unanswered.
+  int unansweredReads = 0;
   Completer<void>? listGate;
 
   /// While set, a full read waits for it before answering.
@@ -251,6 +297,10 @@ class _Repository extends ConvexStrategyRepository {
     fullReads.add(strategyPublicId);
     await fullReadGate?.future;
     if (unanswered) throw TimeoutException('no answer');
+    if (unansweredReads > 0) {
+      unansweredReads -= 1;
+      throw TimeoutException('no answer');
+    }
     final answer = answerFor(strategyPublicId);
     return RemoteFullStrategySnapshot(
       header: RemoteStrategyHeader(
@@ -309,13 +359,19 @@ CloudFolderEntry _folder() => (
 class _RecordingMediaCache extends CloudMediaCacheNotifier {
   final cached = <String, List<String>>{};
 
+  /// While true, every download fails.
+  bool failing = false;
+
   @override
-  Future<void> ensureAssetsCached({
+  Future<bool> ensureAssetIdsCached({
     required String strategyId,
     required String strategyPublicId,
-    required Iterable<RemoteImageAsset> assets,
+    required Map<String, RemoteImageAsset> assetsById,
+    required Iterable<String> assetIds,
   }) async {
-    cached[strategyId] = [for (final asset in assets) asset.publicId];
+    if (failing) return false;
+    cached[strategyId] = [...assetIds];
+    return true;
   }
 }
 

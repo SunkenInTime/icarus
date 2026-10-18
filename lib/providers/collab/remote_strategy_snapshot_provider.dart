@@ -157,6 +157,11 @@ class RemoteEditorSnapshotNotifier
     if (strategyPublicId == null) {
       throw StateError('No cloud strategy is open.');
     }
+    // Without a copy, as before there was one: no wait for the read to time
+    // out while the connection is down.
+    if (!_keepsCopy && !ref.read(convexConnectionSnapshotProvider)) {
+      throw StateError('Offline: page $pagePublicId was not read.');
+    }
     try {
       return await _readPage(strategyPublicId, pagePublicId);
     } catch (error, stackTrace) {
@@ -451,13 +456,14 @@ class RemoteEditorSnapshotNotifier
       _copyScope != null && _copy is! UnavailableCloudStrategyCopyStore;
 
   /// [pagePublicId] of the open strategy, read live, or from the copy when
-  /// the server can't answer. Throws when neither has it.
+  /// the server can't answer. Throws when neither has it. Without a copy it
+  /// is always read live.
   Future<RemotePageSnapshot> _readPage(
     String strategyPublicId,
     String pagePublicId,
   ) async {
-    if (_serverCannotAnswer) {
-      return (_keepsCopy ? _keptPage(strategyPublicId, pagePublicId) : null) ??
+    if (_keepsCopy && _serverCannotAnswer) {
+      return _keptPage(strategyPublicId, pagePublicId) ??
           (throw StateError('Offline: page $pagePublicId was not read.'));
     }
     try {

@@ -49,10 +49,16 @@ class StrategyCopyRefresher extends Notifier<void> {
   bool _walking = false;
   int _generation = 0;
 
+  /// A connection came (back) while a walk or a read was still running: walk
+  /// again once it ends, however it ends.
+  bool _walkWanted = false;
+
   @override
   void build() {
     ref.listen<bool>(_cloudReadyProvider, (previous, next) {
-      if (next && previous != true) unawaited(refreshLibrary());
+      if (!next || previous == true) return;
+      _walkWanted = true;
+      _walkIfWanted();
     }, fireImmediately: true);
     ref.listen<CloudCopyScope?>(cloudCopyScopeProvider, (previous, next) {
       if (previous != next) _reset();
@@ -102,7 +108,14 @@ class StrategyCopyRefresher extends Notifier<void> {
           name: 'strategy_copy', error: error, stackTrace: stackTrace);
     } finally {
       _walking = false;
+      _walkIfWanted();
     }
+  }
+
+  void _walkIfWanted() {
+    if (!_walkWanted || _walking || _running) return;
+    _walkWanted = false;
+    unawaited(refreshLibrary());
   }
 
   /// Every strategy the signed-in account can open from its library: its
@@ -145,11 +158,14 @@ class StrategyCopyRefresher extends Notifier<void> {
       }
     } finally {
       _running = false;
+      _walkIfWanted();
     }
   }
 
-  /// Reads all of [strategyId] into the copy. False when the server did
-  /// not answer.
+  /// Reads all of [strategyId] into the copy, with its images. It counts as
+  /// refreshed (see [CloudStrategyCopyStore.lastFullRefresh]) only once
+  /// every image is on disk too, so one that failed to download is tried
+  /// again by the next walk. False when the server did not answer.
   Future<bool> _keepStrategy(String strategyId) async {
     // Written with the scope this read is asked under, so it lands only if
     // that session is still signed in when the answer arrives.
@@ -169,14 +185,24 @@ class StrategyCopyRefresher extends Notifier<void> {
         askedAt: askedAt,
         arrivedAt: DateTime.now(),
       );
-      // Image files are only ever added here, never deleted.
-      await ref.read(cloudMediaCacheProvider.notifier).ensureAssetsCached(
-            strategyId: strategyId,
-            strategyPublicId: strategyId,
-            assets: snapshot.assetsById.values.where((asset) =>
-                asset.uploadStatus == 'active' &&
-                (asset.url?.isNotEmpty ?? false)),
-          );
+      // Image files are only ever added here, never deleted. An image
+      // still uploading has nothing to download yet.
+      final images = {
+        for (final asset in snapshot.assetsById.values)
+          if (asset.uploadStatus == 'active' &&
+              (asset.url?.isNotEmpty ?? false))
+            asset.publicId: asset,
+      };
+      final imagesOnDisk =
+          await ref.read(cloudMediaCacheProvider.notifier).ensureAssetIdsCached(
+                strategyId: strategyId,
+                strategyPublicId: strategyId,
+                assetsById: images,
+                assetIds: images.keys,
+              );
+      if (imagesOnDisk) {
+        await store.noteFullRefresh(scope, strategyId, at: DateTime.now());
+      }
       return true;
     } catch (error, stackTrace) {
       log('Keeping strategy $strategyId offline failed: $error',

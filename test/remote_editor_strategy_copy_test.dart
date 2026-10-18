@@ -292,6 +292,23 @@ void main() {
     expect(store.entryKeys, isEmpty);
   });
 
+  test(
+      'without a copy (web), selecting a page reads the server even while '
+      'the socket reconnects, and a page read still refuses at once', () async {
+    _webLike = true;
+    await openOnline();
+    transport.reads.clear();
+    container.read(_socketDown.notifier).state = true;
+
+    await expectLater(remote().fetchPage('b'), throwsStateError);
+    expect(transport.reads, isEmpty);
+
+    final b = await remote().setActivePage('b');
+    expect(transport.reads, ['page:getSnapshot']);
+    expect(b?.page.publicId, 'b');
+    expect(b?.fromCopy, isFalse);
+  });
+
   test('without a copy (web), an unanswered read fails as it always has',
       () async {
     _webLike = true;
