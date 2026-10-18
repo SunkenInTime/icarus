@@ -205,10 +205,15 @@ class ActivePageProjectedState {
     required this.settingsPayload,
     required this.elements,
     required this.lineups,
+    this.drawsQueuedWork = false,
   });
 
   final String pageId;
   final String pageName;
+
+  /// Whether this draws work waiting in the outbox over the server's
+  /// version of the page.
+  final bool drawsQueuedWork;
   final bool isAttack;
   final CloudPayload? settingsPayload;
   final List<ProjectedPageElement> elements;

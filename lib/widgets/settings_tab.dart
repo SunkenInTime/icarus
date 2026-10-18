@@ -1141,6 +1141,11 @@ class _SignedInAccountRow extends ConsumerWidget {
                     LucideIcons.refreshCw,
                     theme.mutedForeground,
                   ),
+                ConvexAuthStatus.offline => (
+                    "Offline. Cloud sync resumes when you're back online",
+                    LucideIcons.cloudOff,
+                    theme.mutedForeground,
+                  ),
                 ConvexAuthStatus.incident => (
                     'Cloud connection needs attention',
                     LucideIcons.circleAlert,

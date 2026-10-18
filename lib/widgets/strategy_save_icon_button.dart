@@ -111,7 +111,8 @@ Future<void> saveStrategyNow(BuildContext context, WidgetRef ref) async {
     CloudSyncStatus.syncing => saveState.hasPendingMediaSync
         ? 'Saved on this device. Media still syncing.'
         : 'Saved on this device. Syncing…',
-    CloudSyncStatus.offline => 'Offline, changes stay on this device',
+    CloudSyncStatus.offline =>
+      offlineSyncLabel(ref.read(openStrategyUnsentChangesProvider)),
     CloudSyncStatus.attention => saveState.mediaSyncErrorCount > 0
         ? 'Saved on this device. Media sync needs retry.'
         : 'Saved on this device. Sync needs attention.',

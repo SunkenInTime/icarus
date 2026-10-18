@@ -279,9 +279,15 @@ ProviderContainer _createContainer({
   CloudMediaUploadQueueState? mediaQueueState,
   StrategySaveState? saveState,
   ActivePageLiveSyncState? liveSyncState,
+  ConvexAuthStatus? sessionStatus,
+  ({DateTime? copiedAt})? shownCopy,
 }) {
   return ProviderContainer(
     overrides: [
+      if (shownCopy != null)
+        editorShownCopyProvider.overrideWithValue(shownCopy),
+      if (sessionStatus != null)
+        authProvider.overrideWith(() => _FixedSessionAuth(sessionStatus)),
       strategyProvider.overrideWith(_CloudStrategyProvider.new),
       if (liveSyncState != null)
         activePageLiveSyncProvider.overrideWith(
@@ -391,6 +397,118 @@ void main() {
     await container.read(convexConnectionProvider.future);
 
     expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
+  });
+
+  test(
+      'nothing is synced until the session is ready, even with the socket '
+      'back', () async {
+    Future<CloudSyncStatus> statusFor(ConvexAuthStatus session) async {
+      final container = _createContainer(sessionStatus: session);
+      addTearDown(container.dispose);
+      await container.read(convexConnectionProvider.future);
+      return container.read(cloudSyncStatusProvider);
+    }
+
+    // Socket connected, queues settled: only the session differs.
+    expect(await statusFor(ConvexAuthStatus.ready), CloudSyncStatus.synced);
+    expect(
+      await statusFor(ConvexAuthStatus.offline),
+      CloudSyncStatus.offline,
+    );
+    expect(
+      await statusFor(ConvexAuthStatus.configuring),
+      CloudSyncStatus.syncing,
+    );
+    expect(
+      await statusFor(ConvexAuthStatus.incident),
+      CloudSyncStatus.attention,
+    );
+  });
+
+  testWidgets(
+      "a page drawn from this computer's copy is never Synced, and says "
+      'how old the copy is', (tester) async {
+    final copiedAt = DateTime.now().subtract(const Duration(minutes: 5));
+    // Connected and ready, queues settled: only the copy differs.
+    final container = _createContainer(
+      sessionStatus: ConvexAuthStatus.ready,
+      shownCopy: (copiedAt: copiedAt),
+    );
+    addTearDown(container.dispose);
+    await container.read(convexConnectionProvider.future);
+    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.offline);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(_syncButton('offline'), findsOneWidget);
+    final time = MaterialLocalizations.of(
+      tester.element(find.byType(CloudSyncButton)),
+    ).formatTimeOfDay(TimeOfDay.fromDateTime(copiedAt));
+    expect(
+      _syncTooltip(tester),
+      "Offline. Showing this computer's copy from $time; changes stay on "
+      'this device',
+    );
+  });
+
+  testWidgets("the copy's tooltip counts the changes saved on this computer",
+      (tester) async {
+    final copiedAt = DateTime.now().subtract(const Duration(minutes: 5));
+    final container = _createContainer(
+      connected: false,
+      shownCopy: (copiedAt: copiedAt),
+      opQueueState: const StrategyOpQueueState(
+        accountId: 'account-a',
+        strategyPublicId: 'cloud-strategy',
+        clientId: 'client-a',
+        durableLoaded: true,
+        accountOutbox: AccountStrategyOutboxSummary(
+          accountId: 'account-a',
+          strategies: {
+            'cloud-strategy': StrategyOutboxSummary(
+              strategyPublicId: 'cloud-strategy',
+              queuedCount: 1,
+              inFlightCount: 0,
+              pausedCount: 0,
+              attentionCount: 0,
+              successorCount: 0,
+            ),
+          },
+        ),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(_syncButton('offline'), findsOneWidget);
+    final time = MaterialLocalizations.of(
+      tester.element(find.byType(CloudSyncButton)),
+    ).formatTimeOfDay(TimeOfDay.fromDateTime(copiedAt));
+    expect(
+      _syncTooltip(tester),
+      "Offline. Showing this computer's copy from $time · 1 change saved on "
+      'this computer',
+    );
   });
 
   testWidgets('an active text draft can never appear synced', (tester) async {
@@ -623,6 +741,62 @@ void main() {
 
     expect(_syncButton('offline'), findsOneWidget);
     expect(_syncButton('attention'), findsNothing);
+  });
+
+  testWidgets('offline, it counts the changes saved on this computer',
+      (tester) async {
+    StrategyOpQueueState waiting(int queued, {int inFlight = 0}) =>
+        StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'client-a',
+          durableLoaded: true,
+          accountOutbox: AccountStrategyOutboxSummary(
+            accountId: 'account-a',
+            strategies: {
+              'cloud-strategy': StrategyOutboxSummary(
+                strategyPublicId: 'cloud-strategy',
+                queuedCount: queued,
+                inFlightCount: inFlight,
+                pausedCount: 0,
+                attentionCount: 0,
+                // A newer change behind one being sent is the same item.
+                successorCount: inFlight,
+              ),
+              // Another strategy's changes are not this one's.
+              'other-strategy': const StrategyOutboxSummary(
+                strategyPublicId: 'other-strategy',
+                queuedCount: 4,
+                inFlightCount: 0,
+                pausedCount: 0,
+                attentionCount: 0,
+                successorCount: 0,
+              ),
+            },
+          ),
+        );
+    for (final (state, label) in [
+      (waiting(5, inFlight: 1), 'Offline · 6 changes saved on this computer'),
+      (waiting(1), 'Offline · 1 change saved on this computer'),
+      (waiting(0), 'Offline, changes stay on this device'),
+    ]) {
+      final container = _createContainer(connected: false, opQueueState: state);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ShadApp(
+            home: Scaffold(
+                body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(_syncButton('offline'), findsOneWidget);
+      expect(_syncTooltip(tester), label);
+      await tester.pumpWidget(const SizedBox());
+      container.dispose();
+    }
   });
 
   testWidgets('durability uncertainty never appears synced or reliable',
@@ -1058,6 +1232,69 @@ void main() {
       expect(session.useCloudCount, 0);
       expect(queue.retryRejectedCount, 0);
       expect(queue.flushNowCount, 0);
+    });
+
+    testWidgets(
+        'a change that no longer fits lists what the teammate changed and '
+        'says Keep mine replaces all of it', (tester) async {
+      final queue = _AttentionOpQueue(1);
+      final session = _ConflictSession();
+      // The user edited Heaven's notes offline; a teammate deleted Heaven
+      // and edited Mid's notes. The page shows the user's whole group.
+      final container = _createConflictContainer(
+        queue: queue,
+        session: session,
+        lineupConflicts: [
+          LineupGroupConflict(
+            key: const EntitySyncKey.lineup('page-1', 'link-a'),
+            yours: [change('Heaven', 'notes edited')],
+            cloud: [
+              change('Mid', 'notes edited'),
+              change('Heaven', 'deleted'),
+            ],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container
+          .read(strategySaveStateProvider.notifier)
+          .setCloudSyncError(undrawableWorkMessage);
+      await openPopover(tester, container);
+
+      expect(
+        find.textContaining(
+          'so your change was not sent. The page shows your version, still '
+          'saved on this device.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'Keep mine saves these lineups exactly as shown, replacing all of '
+          'their changes, even to lineups you did not edit.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Your changes'), findsOneWidget);
+      expect(line('Heaven · notes edited'), findsOneWidget);
+      expect(find.text('Cloud changes'), findsOneWidget);
+      expect(line('Mid · notes edited'), findsOneWidget);
+      expect(line('Heaven · deleted'), findsOneWidget);
+      expect(find.text('No lineup changes'), findsNothing);
+      // The field-by-field wording, and the reason told twice, are not.
+      expect(find.textContaining('Keep mine replaces their changes'),
+          findsNothing);
+      expect(
+          find.textContaining('A saved change no longer fits'), findsNothing);
+      expect(find.text('Use cloud'), findsOneWidget);
+      expect(find.text('Keep both'), findsOneWidget);
+
+      // Nothing is replaced until the user chooses Keep mine.
+      expect(queue.retryRejectedCount, 0);
+      await tester.tap(find.text('Keep mine'));
+      await tester.pumpAndSettle();
+      expect(queue.retryRejectedCount, 1);
+      expect(session.useCloudCount, 0);
     });
 
     testWidgets('a Keep both that cannot load the cloud version says so',
@@ -1791,6 +2028,21 @@ void main() {
       expect(find.text('This page was deleted'), findsOneWidget);
     });
   });
+}
+
+class _FixedSessionAuth extends AuthProvider {
+  _FixedSessionAuth(this.status);
+
+  final ConvexAuthStatus status;
+
+  @override
+  AppAuthState build() => AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: status == ConvexAuthStatus.ready,
+        convexAuthStatus: status,
+        user: null,
+      );
 }
 
 class _ReadyAuthProvider extends AuthProvider {

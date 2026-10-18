@@ -58,6 +58,9 @@ RemotePageSnapshot upgradeRemotePageSnapshot(
     elements: [for (final e in page.elements) _upgradeElement(e, map)],
     lineups: page.lineups,
     assetsById: page.assetsById,
+    fromCopy: page.fromCopy,
+    copiedAt: page.copiedAt,
+    serverAnswer: page.serverAnswer,
   );
 }
 
@@ -76,6 +79,7 @@ RemoteFullStrategySnapshot upgradeRemoteFullSnapshot(
     },
     lineupsByPage: snapshot.lineupsByPage,
     assetsById: snapshot.assetsById,
+    serverAnswer: snapshot.serverAnswer,
   );
 }
 

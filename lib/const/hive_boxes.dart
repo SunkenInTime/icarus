@@ -9,5 +9,7 @@ class HiveBoxNames {
   static const cloudMovesBox = "cloud_moves_box";
   static const replayCapturesBox = "replay_captures_box";
   static const pendingMediaBytesBox = "pending_media_bytes_box";
+  static const cloudStrategyCopyBox = "cloud_strategy_copy_box";
   static const pinnedItemsBox = "pinned_items_box";
+  static const cloudLibraryCopyBox = "cloud_library_copy_box";
 }

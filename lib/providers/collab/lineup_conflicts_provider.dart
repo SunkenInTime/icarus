@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/field_merge.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
@@ -40,7 +41,9 @@ class LineupGroupConflict {
 /// changes apart only while it is the one the refused change was made
 /// against; once the page is drawn again it is the cloud's, so every
 /// conflict then lists only how the user's version differs from the
-/// cloud's. When a version cannot be read, there is nothing trustworthy to
+/// cloud's. Work the page drew from the outbox (after a restart) was made
+/// against a version the page never drew, so it is read from the change
+/// itself. When a version cannot be read, there is nothing trustworthy to
 /// show, so this is null too.
 final lineupConflictsProvider = Provider<List<LineupGroupConflict>?>((ref) {
   final queue = ref.watch(strategyOpQueueProvider);
@@ -72,7 +75,27 @@ final lineupConflictsProvider = Provider<List<LineupGroupConflict>?>((ref) {
       LineupReorderOp(:final expectedLineupRevision) => expectedLineupRevision,
       _ => null,
     };
-    if (base?.revision != madeAgainst) basesHold = false;
+    // The version the refused change was made from. The canvas's base is
+    // that version while the canvas drew it from the server: drawn from the
+    // outbox, the base is rebuilt over the cloud's version as it is now, so
+    // the change's own record says instead, when it can. An add was made
+    // from nothing; a merge names the lineups it changed and how they were
+    // before.
+    final ({Object? payload})? madeFrom = liveSync.drewFromOutbox(key)
+        ? switch (refusedOp) {
+            LineupAddOp() => (payload: null),
+            LineupPatchOp(:final payload?, :final merge?)
+                when merge.base != null =>
+              switch (payloadAtMergeBase(payload, merge, lineup: true)) {
+                final before? => (payload: before),
+                null => null,
+              },
+            _ => null,
+          }
+        : base?.revision == madeAgainst
+            ? (payload: base?.payload)
+            : null;
+    if (madeFrom == null) basesHold = false;
     final newest = (queue.successorByEntityKey[key] ?? refused).pending.op;
     final yoursPayload = switch (newest) {
       LineupAddOp(:final payload) => payload,
@@ -86,8 +109,7 @@ final lineupConflictsProvider = Provider<List<LineupGroupConflict>?>((ref) {
       key,
       cloudRow == null || cloudRow.deleted ? null : cloudRow.payload,
     );
-    final from =
-        base == null ? LineUpGraph.empty : _groupGraph(key, base.payload);
+    final from = _groupGraph(key, madeFrom?.payload);
     if (yours == null || cloud == null || from == null) return null;
     versions.add((key, yours, cloud, from));
   }
