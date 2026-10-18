@@ -19,9 +19,7 @@ const fieldMergeOutboxRecordVersion = 3;
 
 /// The version of a record holding one change in a strategy's ordered list
 /// of page changes (see page_changes.dart), stored under its own
-/// EntitySyncKey.pageChange key with its place in the list. (A side change
-/// waits there too while its page's slot holds page changes an older build
-/// saved.) A build from
+/// EntitySyncKey.pageChange key with its place in the list. A build from
 /// before the list cannot read it, so it leaves the record alone and says
 /// the outbox holds unreadable saved work, rather than send the change out
 /// of order.
@@ -211,7 +209,7 @@ class DurableOutboxRecord {
       if (rawKey is! String ||
           !rawKey.startsWith(prefix) ||
           rawKey.length == prefix.length ||
-          !(isPageChangeOp(op) || op is PagePatchOp) ||
+          !isPageChangeOp(op) ||
           pageChangeSequence == null ||
           json['successorPending'] != null) {
         throw const FormatException('Outbox page change is malformed');

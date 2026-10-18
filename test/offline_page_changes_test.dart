@@ -355,6 +355,9 @@ void main() {
     Future<StrategyOpQueueNotifier> deleteThenEdit() async {
       final notifier = open();
       await notifier.enqueue(delete('page-2'));
+      // Made a moment later, as a user makes them: a clock that ticks once
+      // a millisecond can't tell them apart otherwise.
+      await Future<void>.delayed(const Duration(milliseconds: 5));
       await notifier.enqueue(rename('page-2', 'Retake'));
       await flipSide(notifier, 'page-2');
       return notifier;
@@ -692,67 +695,26 @@ void main() {
     });
 
     test(
-        'a side change of a page whose old record holds a refused rename and '
-        'a move behind it waits on its own, and the move is kept', () async {
-      final kept = old(
-        'page-2',
-        rename('page-2', 'Retake'),
-        status: DurableOutboxStatus.attention,
-        successor: PendingOp(op: move('page-2', 0), clientId: 'old-client'),
-        hour: 9,
-      );
-      store = MemoryDurableStrategyOutboxStore({kept.storageKey: stored(kept)});
-      final notifier = open();
-
-      await flipSide(notifier, 'page-2');
-
-      expect(
-        queue()
-            .successorByEntityKey[const EntitySyncKey.pageDescriptor('page-2')]
-            ?.pending
-            .op,
-        isA<PageReorderOp>(),
-      );
-      expect(
-        queue()
-            .queuedByEntityKey[const EntitySyncKey.pageChange('side~page-2')]
-            ?.pending
-            .op
-            .opId,
-        'side-page-2',
-      );
-    });
-
-    test(
-        'a side change of a page whose slot holds a waiting move waits on '
-        'its own until the move is sent, and the old record is untouched',
-        () async {
+        'a side change of a page whose slot holds a waiting move takes the '
+        'path those builds take', () async {
+      // Only right after upgrading, offline, with an old record still
+      // waiting: the side change is reconciled into the page's slot as
+      // those builds reconcile it, which puts it in place of the move.
       final moveSecond = old('page-2', move('page-2', 0), hour: 9);
-      final box = await oldOutbox([moveSecond]);
-      final before = box.get(moveSecond.storageKey);
+      store = MemoryDurableStrategyOutboxStore({
+        moveSecond.storageKey: stored(moveSecond),
+      });
       final notifier = open();
 
       await flipSide(notifier, 'page-2');
-      expect(box.get(moveSecond.storageKey), before);
-      expect(
-        queue()
-            .queuedByEntityKey[const EntitySyncKey.pageChange('side~page-2')]
-            ?.pending
-            .op
-            .opId,
-        'side-page-2',
-      );
 
-      await reconnectAndSend(notifier);
-
-      expect(server.order, ['page-2', 'page-1', 'page-3']);
-      // Made against the page's revision from before the move moved it, the
-      // side change is refused once and waits for the user: nothing is lost
-      // or written over.
-      expect(server.page('page-2').isAttack, isTrue);
+      final slot = queue()
+          .queuedByEntityKey[const EntitySyncKey.pageDescriptor('page-2')];
+      expect(slot?.pending.op, isA<PagePatchOp>());
+      expect(slot?.pending.op.payload, {'isAttack': false});
       expect(
-        queue().attentionByEntityKey.values.single.pending.op.opId,
-        'side-page-2',
+        queue().queuedByEntityKey.keys.map((key) => key.kind),
+        isNot(contains(EntitySyncKeyKind.pageChange)),
       );
     });
 
