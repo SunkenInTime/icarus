@@ -24,6 +24,11 @@ String redactSyncDiagnosticText(Object? error) {
 /// needs attention too, for whatever reason.
 const otherWorkNeedsAttentionNote = 'Other saved work needs attention too.';
 
+/// [reason] followed by [otherWorkNeedsAttentionNote], stopped once: some
+/// reasons are whole sentences already (incompletePageCopyMessage).
+String withOtherWorkNeedsAttentionNote(String reason) =>
+    '$reason${reason.endsWith('.') ? '' : '.'} $otherWorkNeedsAttentionNote';
+
 /// Why saved work stopped being sent: the server refused it because this
 /// account can no longer edit the strategy (its owner made them a viewer, or
 /// removed them). The work is kept, paused; Retry sends it again, which

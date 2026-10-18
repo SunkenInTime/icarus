@@ -4319,7 +4319,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       }
       if (specificReason != null) {
         return hasOtherWork
-            ? '$specificReason. $otherWorkNeedsAttentionNote'
+            ? withOtherWorkNeedsAttentionNote(specificReason)
             : specificReason;
       }
       return 'Some saved work needs attention.';
