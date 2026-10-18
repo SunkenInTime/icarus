@@ -287,7 +287,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   ({String accountId, String strategyPublicId})? _drainingStrategy;
   bool _isDisposed = false;
   late DurableStrategyOutboxStore _store;
-  late Map<String, DurableOutboxRecord> _recordsByStorageKey;
+  Map<String, DurableOutboxRecord> _recordsByStorageKey = {};
   final Set<EntitySyncKey> _awaitingRemoteAdoption = {};
 
   /// By strategy, this device's newest strategy-level change that the server

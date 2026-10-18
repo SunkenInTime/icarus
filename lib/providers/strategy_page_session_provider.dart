@@ -1772,6 +1772,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         snapshot.pages.any((page) => page.publicId == activePageId)) {
       return activePageId;
     }
+    // The page the snapshot opened on: the first one the pages bar lists
+    // (see RemoteEditorSnapshotNotifier), which a page deleted here is not.
+    final opened = snapshot.activePage?.page.publicId;
+    if (opened != null &&
+        snapshot.pages.any((page) => page.publicId == opened)) {
+      return opened;
+    }
 
     final pages = [...snapshot.pages]
       ..sortBySortIndex((item) => item.sortIndex);

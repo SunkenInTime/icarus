@@ -7,6 +7,7 @@ import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
@@ -277,6 +278,32 @@ class RemoteEditorSnapshotNotifier
     await refresh();
   }
 
+  /// The pages of [shell] that can open, in the order the pages bar lists
+  /// them: this device's page changes drawn over the shell's, without a
+  /// page deleted here whose delete has not landed (it is gone from the
+  /// list, and must not open for editing) or one not on the server yet.
+  List<String> _pagesToOpen(RemoteStrategyShell shell) {
+    final queue = ref.read(strategyOpQueueProvider.notifier);
+    final listed = drawPages(
+      shell.pages,
+      queue.pageChangesToDraw(RemoteEditorSnapshot(shell: shell, activePage: null)),
+    );
+    return [
+      for (final page in listed)
+        if (page.revision != null) page.publicId,
+    ];
+  }
+
+  /// Whether [pageId] of [shell] can open (see [_pagesToOpen]).
+  bool _opens(RemoteStrategyShell shell, String pageId) =>
+      shell.pages.any((page) => page.publicId == pageId) &&
+      !ref.read(strategyOpQueueProvider.notifier).isDeletedHere(pageId);
+
+  /// The page a strategy opens on when the one asked for can't: the first
+  /// the pages bar lists.
+  String? _firstPageToOpen(RemoteStrategyShell shell) =>
+      _pagesToOpen(shell).firstOrNull ?? shell.pages.firstOrNull?.publicId;
+
   void clear() {
     _activeStrategyPublicId = null;
     _activePagePublicId = null;
@@ -312,9 +339,8 @@ class RemoteEditorSnapshotNotifier
       _keepShell(shell, askedAt: shellAskedAt, scope: scope);
       if (epoch != _readEpoch || _holdsNewerShell(shell)) return;
       var pageId = _activePagePublicId;
-      if (pageId == null ||
-          !shell.pages.any((page) => page.publicId == pageId)) {
-        pageId = shell.pages.firstOrNull?.publicId;
+      if (pageId == null || !_opens(shell, pageId)) {
+        pageId = _firstPageToOpen(shell);
         _activePagePublicId = pageId;
       }
       final pageAskedAt = DateTime.now();
@@ -402,9 +428,8 @@ class RemoteEditorSnapshotNotifier
           activePage: current?.activePage,
         ));
         final activePageId = _activePagePublicId;
-        if (activePageId != null &&
-            !shell.pages.any((page) => page.publicId == activePageId)) {
-          unawaited(setActivePage(shell.pages.firstOrNull?.publicId));
+        if (activePageId != null && !_opens(shell, activePageId)) {
+          unawaited(setActivePage(_firstPageToOpen(shell)));
         }
       },
       onError: (Object error, StackTrace stackTrace) =>
@@ -530,12 +555,12 @@ class RemoteEditorSnapshotNotifier
     if (shell == null) return false;
     final wanted = _activePagePublicId;
     RemotePageSnapshot? page;
-    if (wanted != null && shell.pages.any((page) => page.publicId == wanted)) {
+    if (wanted != null && _opens(shell, wanted)) {
       page = _keptPage(strategyPublicId, wanted);
     }
-    for (final candidate in shell.pages) {
+    for (final candidate in _pagesToOpen(shell)) {
       if (page != null) break;
-      page = _keptPage(strategyPublicId, candidate.publicId);
+      page = _keptPage(strategyPublicId, candidate);
     }
     if (page == null) return false;
     _activePagePublicId = page.page.publicId;
