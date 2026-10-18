@@ -353,7 +353,14 @@ void main() {
 
     // The corner is backdrop: painted normally, empty when transparent.
     expect(solid.getPixel(2, 2).a, 255);
-    expect(transparent.getPixel(2, 2).a, 0);
+    // Left of the map is only backdrop and dot grid: none of it is drawn.
+    var drawnBackdrop = 0;
+    for (var y = 0; y < 900; y++) {
+      for (var x = 0; x < 400; x++) {
+        if (transparent.getPixel(x, y).a != 0) drawnBackdrop++;
+      }
+    }
+    expect(drawnBackdrop, 0);
     // The map and what sits on it are as opaque as ever.
     expect(
         transparent.getPixel(transparent.width ~/ 2, transparent.height ~/ 2).a,
