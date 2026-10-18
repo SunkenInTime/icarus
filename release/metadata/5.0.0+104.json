@@ -3,7 +3,7 @@
   "shortVersion": 104,
   "title": "5.0.0: Icarus goes online",
   "description": "Sign in to keep your strategies in your account, share them with your team, and plan together live. Your library stays on this computer until you choose to move it.",
-  "date": "2026-10-13",
+  "date": "2026-10-18",
   "mandatory": false,
   "channels": ["desktop", "stable"],
   "platforms": ["windows"],
@@ -17,6 +17,10 @@
       "type": "feat"
     },
     {
+      "message": "Keep working without a connection. Your cloud strategies stay on this computer, your edits are saved here, and they sync when you're back online. Creating, sharing and moving things in the cloud waits for the connection.",
+      "type": "feat"
+    },
+    {
       "message": "Share a strategy or folder with a link. Choose who can edit, see everyone who has access, and remove people at any time.",
       "type": "feat"
     },
@@ -25,7 +29,11 @@
       "type": "feat"
     },
     {
-      "message": "Watch your VALORANT replays on the map in the new Replays tab, then press Capture to turn any moment into a strategy page. Drop a .vrf file anywhere in Icarus, or open it from Explorer.",
+      "message": "Watch your VALORANT replays on the map in the new Replays tab, then press Capture to turn any moment into a strategy page. Drop a .vrf file anywhere in Icarus, or open it from Explorer. Works with replays from VALORANT 13.08, and from 13.06 and earlier.",
+      "type": "feat"
+    },
+    {
+      "message": "Review a round in the replay: press 1 to 0 to watch one player, see how each round ended and who killed whom with what, filter the killfeed for kills, the spike and abilities, and draw on the paused replay with the editor's pen.",
       "type": "feat"
     },
     {
@@ -46,6 +54,10 @@
     },
     {
       "message": "Turn any placed ability with X.",
+      "type": "feat"
+    },
+    {
+      "message": "Give agents VALORANT's new Warden rifle from the Weapon menu.",
       "type": "feat"
     },
     {
