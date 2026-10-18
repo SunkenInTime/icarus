@@ -75,6 +75,7 @@ class DurableOutboxRecord {
     this.latestServerPayload,
     this.pageChangeSequence,
     this.waitsForPageAdd = false,
+    this.pageCopyKeys,
   });
 
   final String accountId;
@@ -106,6 +107,14 @@ class DurableOutboxRecord {
   /// StrategyOpQueueNotifier._selectBatch).
   final bool waitsForPageAdd;
 
+  /// For the add of a page "+" copied on this computer: the entity key of
+  /// every item and lineup group the copy holds, stored with them in one
+  /// write. The write can be cut short and leave only some of them on
+  /// disk, so the add is only sent while every one it names is still
+  /// there, or was removed by this device on purpose (see
+  /// StrategyOpQueueNotifier._holdIncompletePageCopiesLocked).
+  final List<String>? pageCopyKeys;
+
   String get storageKey => createStorageKey(
         accountId: accountId,
         strategyPublicId: strategyPublicId,
@@ -133,6 +142,7 @@ class DurableOutboxRecord {
     bool clearLatestServerRevision = false,
     CloudPayload? latestServerPayload,
     bool? waitsForPageAdd,
+    List<String>? pageCopyKeys,
   }) {
     return DurableOutboxRecord(
       accountId: accountId,
@@ -154,6 +164,7 @@ class DurableOutboxRecord {
           : (latestServerPayload ?? this.latestServerPayload),
       pageChangeSequence: pageChangeSequence,
       waitsForPageAdd: waitsForPageAdd ?? this.waitsForPageAdd,
+      pageCopyKeys: pageCopyKeys ?? this.pageCopyKeys,
     );
   }
 
@@ -201,6 +212,7 @@ class DurableOutboxRecord {
         if (_isPageChange)
           'pageChangeSequence': pageChangeSequence ??
               (throw StateError('A page change needs its place in the list')),
+        if (_isPageChange && pageCopyKeys != null) 'pageCopyKeys': pageCopyKeys,
       };
 
   factory DurableOutboxRecord.fromJson(Map<String, dynamic> json) {
@@ -278,6 +290,12 @@ class DurableOutboxRecord {
       pageChangeSequence: isPageChange ? pageChangeSequence : null,
       waitsForPageAdd:
           version == pageChangeOutboxRecordVersion && !isPageChange,
+      pageCopyKeys: isPageChange && json['pageCopyKeys'] is List
+          ? [
+              for (final key in json['pageCopyKeys'] as List)
+                if (key is String) key,
+            ]
+          : null,
     );
   }
 

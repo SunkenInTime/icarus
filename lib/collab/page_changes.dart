@@ -34,6 +34,7 @@ class DrawnPage {
     required this.isAutoNamed,
     required this.isAttack,
     required this.revision,
+    this.madeHere = false,
   });
 
   final String publicId;
@@ -45,10 +46,15 @@ class DrawnPage {
   /// add has not landed (the server makes it at revision 1).
   final int? revision;
 
+  /// Whether this device added the page with nothing for the server to
+  /// copy onto it (see page_made_here.dart), and the add has not landed:
+  /// everything on it is in this device's queue.
+  final bool madeHere;
+
   /// Whether the page can open on the canvas: it is on the server, so a
-  /// read of it exists. A page whose add has not landed has nothing to
-  /// open yet.
-  bool get opens => revision != null;
+  /// read of it exists, or it was [madeHere], so the queue holds all of
+  /// it. A page the server is still to copy has nothing to open yet.
+  bool get opens => revision != null || madeHere;
 
   DrawnPage copyWith({String? name, bool? isAutoNamed, bool? isAttack}) =>
       DrawnPage(
@@ -57,6 +63,7 @@ class DrawnPage {
         isAutoNamed: isAutoNamed ?? this.isAutoNamed,
         isAttack: isAttack ?? this.isAttack,
         revision: revision,
+        madeHere: madeHere,
       );
 
   @override
@@ -66,11 +73,12 @@ class DrawnPage {
       other.name == name &&
       other.isAutoNamed == isAutoNamed &&
       other.isAttack == isAttack &&
-      other.revision == revision;
+      other.revision == revision &&
+      other.madeHere == madeHere;
 
   @override
   int get hashCode =>
-      Object.hash(publicId, name, isAutoNamed, isAttack, revision);
+      Object.hash(publicId, name, isAutoNamed, isAttack, revision, madeHere);
 }
 
 /// [serverPages] in order, with [changes] applied the way the server
@@ -110,7 +118,12 @@ List<DrawnPage> drawPages(
 
   for (final change in changes) {
     switch (change) {
-      case PageAddOp(:final pagePublicId, :final payload, :final sortIndex):
+      case PageAddOp(
+          :final pagePublicId,
+          :final payload,
+          :final sortIndex,
+          :final copyContentFromPagePublicId,
+        ):
         if (indexOf(pagePublicId) >= 0) continue;
         pages.insert(
           sortIndex.clamp(0, pages.length),
@@ -120,6 +133,7 @@ List<DrawnPage> drawPages(
             isAutoNamed: payload['isAutoNamed'] == true,
             isAttack: payload['isAttack'] as bool? ?? true,
             revision: null,
+            madeHere: copyContentFromPagePublicId == null,
           ),
         );
         renumber();

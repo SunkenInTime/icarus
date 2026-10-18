@@ -327,10 +327,10 @@ class RemoteEditorSnapshotNotifier
         .whereType<PageAddOp>()
         .where((add) => add.pagePublicId == pageId)
         .lastOrNull;
-    if (add == null || add.copyContentFromPagePublicId != null) return null;
+    if (add == null) return null;
     final drawn = drawPages(shell.pages, changes);
     final index = drawn.indexWhere((page) => page.publicId == pageId);
-    if (index < 0) return null;
+    if (index < 0 || !drawn[index].madeHere) return null;
     return (add: add, drawn: drawn[index], index: index);
   }
 
@@ -655,7 +655,8 @@ class RemoteEditorSnapshotNotifier
     }
     for (final candidate in _pagesToOpen(shell)) {
       if (page != null) break;
-      page = _keptPage(strategyPublicId, candidate);
+      page = _pageMadeHere(strategyPublicId, shell, candidate) ??
+          _keptPage(strategyPublicId, candidate);
     }
     if (page == null) return false;
     _activePagePublicId = page.page.publicId;

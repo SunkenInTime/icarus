@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
@@ -194,6 +195,24 @@ void main() {
     expect(queued.whereType<LineupAddOp>().single.pagePublicId, pageId);
   });
 
+  test('next and previous reach a page made here, as any page', () async {
+    final app = await start(online: true);
+    setOnline(app, false);
+    await app.read(strategyProvider.notifier).addPage();
+    await _settle();
+    final pageId = activePage(app)!;
+    final session = app.read(strategyPageSessionProvider.notifier);
+    await session.setActivePage('p1');
+    await _settle();
+    expect(activePage(app), 'p1');
+
+    await session.switchRelativePage(PageSwitchDirection.next);
+    await _settle();
+
+    expect(activePage(app), pageId);
+    expect(pageCopyRoot(app.read(agentProvider).single.id), 'agent-1');
+  });
+
   test(
       'the page made offline takes an edit, survives a restart, and lands '
       'once, add first, when the connection is back', () async {
@@ -231,11 +250,14 @@ void main() {
 
     await reconnect(app);
 
-    // Landed once each: the page first, then what it holds.
+    // Landed once each: the page first, then what it holds. (Page 1's
+    // rows, rewritten as this build saves them, go ahead of it.)
     expect(server.refused, isEmpty);
-    expect(server.landed.first, isA<PageAddOp>());
+    final forNewPage =
+        server.landed.where((op) => op.pagePublicId == pageId).toList();
+    expect(forNewPage.first, isA<PageAddOp>());
     expect(
-      (server.landed.first as PageAddOp).copyContentFromPagePublicId,
+      (forNewPage.first as PageAddOp).copyContentFromPagePublicId,
       isNull,
     );
     expect(server.landed.whereType<PageAddOp>(), hasLength(1));
@@ -310,7 +332,10 @@ void main() {
     final add = server.landed.whereType<PageAddOp>().single;
     expect(add.copyContentFromPagePublicId, 'p1');
     // No item or lineup is sent for it: the server copies them.
-    expect(server.landed.first, add);
+    expect(
+      server.landed.where((op) => op.pagePublicId == add.pagePublicId),
+      [add],
+    );
     expect(server.landed.whereType<ElementAddOp>(), isEmpty);
     expect(server.landed.whereType<LineupAddOp>(), isEmpty);
     expect(activePage(app), add.pagePublicId);
@@ -394,21 +419,101 @@ void main() {
       expect(write, hasLength(4));
     });
 
-    test('a write cut off before it lands leaves no page and no stray items',
-        () async {
-      var app = await start(online: true);
-      setOnline(app, false);
-      // The app dies while the copy is being written.
-      outbox.holdPutAll = Completer<void>();
-      unawaited(app.read(strategyProvider.notifier).addPage());
-      await _settle();
-      expect(outbox.putAllCalls, isEmpty);
-      app.dispose();
-      outbox.holdPutAll = null;
+    for (final cut in [
+      (name: 'the add alone', keep: 0),
+      (name: 'the add and some of its items', keep: 2),
+    ]) {
+      test(
+          'a write cut short, leaving ${cut.name}, is held and said, never '
+          'sent as a smaller copy', () async {
+        var app = await start(online: true);
+        setOnline(app, false);
+        await app.read(strategyProvider.notifier).addPage();
+        await _settle();
+        final pageId = activePage(app)!;
+        app.dispose();
+        // What reopening reads after the write was cut: each record has its
+        // own checksum, so the ones written before the cut read back whole,
+        // and the rest are simply not there.
+        final content = [
+          for (final key in outbox.values.keys)
+            if (key.contains(':$pageId:')) key,
+        ];
+        expect(content, hasLength(3));
+        for (final key in content.skip(cut.keep)) {
+          outbox.values.remove(key);
+        }
 
-      app = await start(online: false);
-      expect(app.read(drawnCloudPagesProvider)!.pages, hasLength(1));
-      expect(onlyPage1(app), isTrue);
+        app = await start(online: false);
+        final queue = app.read(strategyOpQueueProvider);
+        final held = queue.attentionByEntityKey.values
+            .where((intent) => intent.pending.op.pagePublicId == pageId)
+            .toList();
+        expect(held, hasLength(1 + cut.keep));
+        expect(held.map((intent) => intent.pending.op).whereType<PageAddOp>(),
+            hasLength(1));
+        expect(
+          [
+            ...queue.queuedByEntityKey.values.map((intent) => intent.pending),
+            ...queue.inFlightByEntityKey.values.map((intent) => intent.pending),
+          ].where((pending) => pending.op.pagePublicId == pageId),
+          isEmpty,
+          reason: 'nothing of the copy waits to be sent',
+        );
+        final record = outbox.values.values
+            .whereType<Map>()
+            .firstWhere((json) => (json['op'] as Map)['type'] == 'page.add');
+        expect(record['outboxVersion'], pageChangeOutboxRecordVersion);
+        await reconnect(app);
+        expect(server.pageIds, ['p1'], reason: 'the cut copy is never sent');
+        expect(server.missingPageReads, 0);
+        // Back online, the sync button says why.
+        expect(
+          friendlyCloudSyncError(app.read(strategyOpQueueProvider).lastError!),
+          "The copy of Page 2 didn't finish saving on this computer, so it "
+          'was not sent. Copy the page again, or choose Use cloud to '
+          'discard it.',
+        );
+
+        // Use cloud discards it, and nothing of it is left.
+        await app.read(strategyOpQueueProvider.notifier).discardRejected({
+          for (final intent in held) intent.entityKey,
+        });
+        await _settle();
+        expect(
+          app
+              .read(strategyOpQueueProvider)
+              .attentionByEntityKey
+              .values
+              .where((intent) => intent.pending.op.pagePublicId == pageId),
+          isEmpty,
+        );
+        expect(app.read(drawnCloudPagesProvider)!.pages, hasLength(1));
+      });
+    }
+
+    test('an item of the copy removed on purpose is not read as a cut copy',
+        () async {
+      final app = await start(online: true);
+      setOnline(app, false);
+      await app.read(strategyProvider.notifier).addPage();
+      await _settle();
+      final pageId = activePage(app)!;
+      // The copied agent is deleted before anything was sent.
+      final agentId = app.read(agentProvider).single.id;
+      app.read(agentProvider.notifier).removeAgent(agentId);
+      await app
+          .read(strategyProvider.notifier)
+          .notifyCloudMutation(flushImmediately: true);
+      await _settle();
+
+      await reconnect(app);
+
+      expect(app.read(strategyOpQueueProvider).attentionByEntityKey, isEmpty);
+      expect(server.pageIds, ['p1', pageId]);
+      expect(server.elementsOn(pageId).values.map((r) => r['elementType']),
+          ['image']);
+      expect(server.lineupsOn(pageId), hasLength(1));
     });
 
     test('a strategy switch while the copy is written keeps it in its strategy',

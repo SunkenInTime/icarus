@@ -46,8 +46,24 @@ bool isSpecificAttentionReason(String error) {
       lower.contains(teammateDeletedMessage.toLowerCase()) ||
       lower.contains(pageDeletedMessage.toLowerCase()) ||
       lower.contains(undrawableWorkMessage.toLowerCase()) ||
-      lower.contains(pageTooLargeToCopyMessage.toLowerCase());
+      lower.contains(pageTooLargeToCopyMessage.toLowerCase()) ||
+      lower.contains(_incompletePageCopyMark);
 }
+
+/// Why the add of a page "+" copied on this computer waits instead of being
+/// sent: a crash or failed write left only part of the copy on disk (see
+/// DurableOutboxRecord.pageCopyKeys). Its items wait with it. Nothing the
+/// user made is lost, since the copy can be made again from [pageName]'s
+/// source.
+String incompletePageCopyMessage(String pageName) =>
+    'The copy of $pageName $_incompletePageCopyMark, so it was not sent. '
+    'Copy the page again, or choose Use cloud to discard it.';
+
+const _incompletePageCopyMark = "didn't finish saving on this computer";
+
+/// Whether [reason] is an [incompletePageCopyMessage].
+bool isIncompletePageCopyReason(String? reason) =>
+    reason != null && reason.contains(_incompletePageCopyMark);
 
 /// A cloud change whose write to the durable outbox failed, or could not be
 /// confirmed: it may not be on this device, and it was not sent.
@@ -114,6 +130,7 @@ String friendlyCloudSyncError(String raw) {
     return clientUpgradeRequiredMessage();
   }
   final lower = raw.toLowerCase();
+  if (lower.contains(_incompletePageCopyMark)) return raw;
   if (lower.contains('strategy was deleted')) {
     return 'This strategy was deleted, so its unsent changes cannot be '
         'saved. Discard them from the library.';

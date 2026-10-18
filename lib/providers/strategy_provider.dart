@@ -1024,7 +1024,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     };
     if (targetIndex < 0 || targetIndex >= pages.length) return null;
     final target = pages[targetIndex];
-    return target.opens ? target.publicId : null;
+    // A copy reads its target from the server, so the page must be there.
+    return target.revision != null ? target.publicId : null;
   }
 
   /// [widgetId] on the page on screen as cloud element data, or null when it

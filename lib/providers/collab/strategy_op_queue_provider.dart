@@ -359,10 +359,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _isDisposed = false;
     _store = ref.read(durableStrategyOutboxStoreProvider);
     final loaded = _store.load();
-    _recordsByStorageKey = {
+    _recordsByStorageKey = _holdIncompletePageCopies({
       for (final record in loaded.records)
         record.storageKey: _retiredAsAttention(_resumedAfterUpgrade(record)),
-    };
+    });
     ref.onDispose(() {
       _isDisposed = true;
       _retryTimer?.cancel();
@@ -968,7 +968,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     return _serializeWrite(() async {
       final list = _pageChangeRecords(accountId, strategyPublicId);
-      final now = DateTime.now();
+      final now = _madeAt();
       final oversized = cloudOperationExceedsPolicy(add);
       final addRecord = DurableOutboxRecord(
         accountId: accountId,
@@ -1044,8 +1044,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     });
   }
 
-  /// Stores [addRecord] and a new record for each op of [content], work
-  /// for the new page that waits for its add (see
+  /// Stores [addRecord], naming the copy's items and lineup groups (see
+  /// DurableOutboxRecord.pageCopyKeys), and a new record for each op of
+  /// [content], work for the new page that waits for its add (see
   /// DurableOutboxRecord.waitsForPageAdd), in one write, then holds them.
   /// False, holding none of them, when the write fails.
   Future<bool> _putPageCopyLocked(
@@ -1053,9 +1054,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     List<StrategyOp> content, {
     required String clientId,
   }) async {
-    final now = DateTime.now();
     final records = [
-      addRecord,
+      addRecord.copyWith(pageCopyKeys: [
+        for (final op in content) '${EntitySyncKey.forStrategyOp(op)!}',
+      ]),
       for (final op in content)
         DurableOutboxRecord(
           accountId: addRecord.accountId,
@@ -1065,8 +1067,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           status: cloudOperationExceedsPolicy(op)
               ? DurableOutboxStatus.attention
               : DurableOutboxStatus.queued,
-          createdAt: now,
-          updatedAt: now,
+          createdAt: _madeAt(),
+          updatedAt: DateTime.now(),
           lastError: cloudOperationExceedsPolicy(op)
               ? cloudOperationTooLargeMessage
               : null,
@@ -2256,6 +2258,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     required bool ignoreBackoff,
   }) {
     return _serializeWrite(() async {
+      final held = _holdIncompletePageCopies(_recordsByStorageKey);
+      if (!identical(held, _recordsByStorageKey)) {
+        _recordsByStorageKey = held;
+        _refreshActiveQueueView();
+      }
       final now = DateTime.now();
       final selected = _selectBatch(
         accountId: accountId,
@@ -2991,6 +2998,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           : (successorPending ?? current?.successorPending),
       lastError: lastError,
       pageChangeSequence: current?.pageChangeSequence,
+      waitsForPageAdd: current?.waitsForPageAdd ?? false,
+      pageCopyKeys: current?.pageCopyKeys,
     );
   }
 
@@ -3029,6 +3038,57 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _publishAccountSummary();
   }
 
+  /// [records] with every page copy that did not finish saving held back
+  /// (see DurableOutboxRecord.pageCopyKeys): a write cut short can leave the
+  /// add and only some of its items on disk, each readable. Such an add, and
+  /// the items of it that are there, wait in attention with
+  /// [incompletePageCopyMessage] instead of being sent as a smaller copy.
+  /// [records] itself when nothing is held.
+  Map<String, DurableOutboxRecord> _holdIncompletePageCopies(
+    Map<String, DurableOutboxRecord> records,
+  ) {
+    final keysByStrategy = <(String, String), Set<String>>{};
+    Set<String> keysOf(DurableOutboxRecord record) =>
+        keysByStrategy.putIfAbsent(
+          (record.accountId, record.strategyPublicId),
+          () => {
+            for (final other in records.values)
+              if (other.accountId == record.accountId &&
+                  other.strategyPublicId == record.strategyPublicId)
+                '${other.entityKey}',
+          },
+        );
+    Map<String, DurableOutboxRecord>? held;
+    for (final add in records.values) {
+      final copyKeys = add.pageCopyKeys;
+      if (copyKeys == null ||
+          add.status == DurableOutboxStatus.attention ||
+          add.pending.op is! PageAddOp) {
+        continue;
+      }
+      final present = keysOf(add);
+      if (copyKeys.every(present.contains)) continue;
+      final message = incompletePageCopyMessage(
+        (add.pending.op as PageAddOp).payload['name'] as String? ?? 'a page',
+      );
+      held ??= Map.of(records);
+      for (final record in [
+        add,
+        for (final other in records.values)
+          if (other.accountId == add.accountId &&
+              other.strategyPublicId == add.strategyPublicId &&
+              copyKeys.contains('${other.entityKey}'))
+            other,
+      ]) {
+        held[record.storageKey] = record.copyWith(
+          status: DurableOutboxStatus.attention,
+          lastError: message,
+        );
+      }
+    }
+    return held ?? records;
+  }
+
   /// Whether [record] is work for a page whose add, made on this device,
   /// is still in its strategy's page changes (see
   /// DurableOutboxRecord.waitsForPageAdd).
@@ -3044,6 +3104,29 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   Future<void> _removeRecordByStorageKey(String storageKey) async {
+    // A copy's item removed here on purpose (cancelled before it was sent,
+    // say) leaves its add's list first: missing from it, it would read as
+    // a copy cut short. Done before the removal, a crash between the two
+    // leaves an item the add no longer names, which is still sent.
+    final removed = _recordsByStorageKey[storageKey];
+    if (removed != null) {
+      final key = '${removed.entityKey}';
+      for (final add in _recordsByStorageKey.values.toList()) {
+        final copyKeys = add.pageCopyKeys;
+        if (copyKeys == null ||
+            add.accountId != removed.accountId ||
+            add.strategyPublicId != removed.strategyPublicId ||
+            !copyKeys.contains(key)) {
+          continue;
+        }
+        await _putRecord(add.copyWith(
+          pageCopyKeys: [
+            for (final other in copyKeys)
+              if (other != key) other,
+          ],
+        ));
+      }
+    }
     try {
       await _store.remove(storageKey);
       _recordsByStorageKey.remove(storageKey);
@@ -4222,7 +4305,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             reason == teammateDeletedMessage ||
             reason == retiredLineupOpMessage ||
             reason == undrawableWorkMessage ||
-            reason == pageDeletedMessage) {
+            reason == pageDeletedMessage ||
+            isIncompletePageCopyReason(reason)) {
           // A second, different reason is other work too: one explanation
           // must not stand for both.
           if (specificReason != null && reason != specificReason) {
