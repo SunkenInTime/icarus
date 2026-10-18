@@ -945,44 +945,69 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   /// Queues the copy of a page this computer made for "+" (see
-  /// page_made_here.dart): [add], which copies nothing on the server, at the
-  /// end of the page changes, then [content], what the copy holds, as work
-  /// for its page made off the canvas (see [enqueueOffCanvas]). One write
-  /// queues both, so nothing comes between them, and the content is sent
-  /// once the add lands (see [_selectBatch]). False when the add could not
-  /// be queued.
-  Future<bool> enqueuePageCopy(PageAddOp add, List<StrategyOp> content) {
+  /// page_made_here.dart) for [strategyPublicId], which must be the active
+  /// strategy: [add], which copies nothing on the server, at the end of the
+  /// page changes, then [content], what the copy holds, as work for its page
+  /// made off the canvas (see [enqueueOffCanvas]). The add and its content
+  /// are stored in one write, so the copy is kept whole or not at all, and
+  /// the content is sent once the add lands (see [_selectBatch]). False,
+  /// with nothing queued, when that write fails (the queue reports the
+  /// failure) or another strategy is active.
+  Future<bool> enqueuePageCopy(
+    PageAddOp add,
+    List<StrategyOp> content, {
+    required String strategyPublicId,
+  }) {
     assert(add.copyContentFromPagePublicId == null);
-    final canvasSession = _canvasSession;
-    final madeLive = liveStamp;
+    final accountId = state.accountId;
+    final clientId = state.clientId;
+    if (accountId == null ||
+        clientId == null ||
+        state.strategyPublicId != strategyPublicId) {
+      return Future.value(false);
+    }
     return _serializeWrite(() async {
-      await _appendPageChangeLocked(add, flushImmediately: true);
-      if (!_holdsPageChange(add.opId)) return false;
-      await _queuePageCopyContentLocked(
-        content,
-        canvasSession: canvasSession,
-        madeLive: madeLive,
+      final list = _pageChangeRecords(accountId, strategyPublicId);
+      final now = DateTime.now();
+      final oversized = cloudOperationExceedsPolicy(add);
+      final addRecord = DurableOutboxRecord(
+        accountId: accountId,
+        strategyPublicId: strategyPublicId,
+        entityKey: EntitySyncKey.pageChange(const Uuid().v4()),
+        pending: PendingOp(op: add, clientId: clientId),
+        status: oversized
+            ? DurableOutboxStatus.attention
+            : DurableOutboxStatus.queued,
+        createdAt: now,
+        updatedAt: now,
+        lastError: oversized ? cloudOperationTooLargeMessage : null,
+        pageChangeSequence: list.fold<int>(
+              0,
+              (last, record) => math.max(last, record.pageChangeSequence ?? 0),
+            ) +
+            1,
       );
-      return true;
+      return _putPageCopyLocked(addRecord, content, clientId: clientId);
     });
   }
 
-  /// Turns the add of [pageId] that "+" queued for the server to copy the
-  /// page into one that copies nothing, with [content], the copy this
-  /// computer made, queued behind it (see [enqueuePageCopy]). The add keeps
-  /// its place among the page changes. Only an add that never left this
-  /// device is changed: one sent may have landed, copy and all. False,
-  /// changing nothing, for any other.
+  /// Turns the add of [pageId] in [strategyPublicId] that "+" queued for
+  /// the server to copy the page into one that copies nothing, with
+  /// [content], the copy this computer made, queued behind it, all in one
+  /// write (see [enqueuePageCopy]). The add keeps its place among the page
+  /// changes. Only an add never sent is changed, as enqueuePageChange
+  /// judges it: one sent may have landed, copy and all. False, changing
+  /// nothing, for any other, or when the write fails.
   Future<bool> copyWaitingPageAddHere(
     String pageId,
-    List<StrategyOp> content,
-  ) {
-    final canvasSession = _canvasSession;
-    final madeLive = liveStamp;
+    List<StrategyOp> content, {
+    required String strategyPublicId,
+  }) {
+    final accountId = state.accountId;
+    if (accountId == null || state.strategyPublicId != strategyPublicId) {
+      return Future.value(false);
+    }
     return _serializeWrite(() async {
-      final accountId = state.accountId;
-      final strategyPublicId = state.strategyPublicId;
-      if (accountId == null || strategyPublicId == null) return false;
       final waiting = _pageChangeRecords(accountId, strategyPublicId)
           .where((record) =>
               record.pending.op is PageAddOp &&
@@ -998,53 +1023,69 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           !identical(_recordsByStorageKey[waiting.storageKey], waiting)) {
         return false;
       }
-      try {
-        await _putRecord(waiting.copyWith(
-          pending: PendingOp(
-            op: PageAddOp(
-              opId: const Uuid().v4(),
-              pagePublicId: add.pagePublicId,
-              payload: add.payload,
-              sortIndex: add.sortIndex,
-              expectedStrategyRevision: add.expectedStrategyRevision,
-            ),
-            clientId: waiting.pending.clientId,
+      final addRecord = waiting.copyWith(
+        pending: PendingOp(
+          op: PageAddOp(
+            opId: const Uuid().v4(),
+            pagePublicId: add.pagePublicId,
+            payload: add.payload,
+            sortIndex: add.sortIndex,
+            expectedStrategyRevision: add.expectedStrategyRevision,
           ),
-          updatedAt: DateTime.now(),
-        ));
-      } catch (error, stackTrace) {
-        _recordPersistenceFailure(error, stackTrace);
-        return false;
-      }
-      _refreshActiveQueueView();
-      await _queuePageCopyContentLocked(
-        content,
-        canvasSession: canvasSession,
-        madeLive: madeLive,
+          clientId: waiting.pending.clientId,
+        ),
+        updatedAt: DateTime.now(),
       );
-      return true;
+      return _putPageCopyLocked(
+        addRecord,
+        content,
+        clientId: waiting.pending.clientId,
+      );
     });
   }
 
-  bool _holdsPageChange(String opId) => _recordsByStorageKey.values.any(
-      (record) => _isPageChange(record) && record.pending.op.opId == opId);
-
-  Future<void> _queuePageCopyContentLocked(
+  /// Stores [addRecord] and a new record for each op of [content], work
+  /// for the new page that waits for its add (see
+  /// DurableOutboxRecord.waitsForPageAdd), in one write, then holds them.
+  /// False, holding none of them, when the write fails.
+  Future<bool> _putPageCopyLocked(
+    DurableOutboxRecord addRecord,
     List<StrategyOp> content, {
-    required int canvasSession,
-    required int? madeLive,
-  }) {
-    final desired = <EntitySyncKey, StrategyOp?>{
-      for (final op in content) EntitySyncKey.forStrategyOp(op)!: op,
-    };
-    return _syncDesiredLocked(
-      keys: desired.keys.toSet(),
-      desiredOps: desired,
-      flushImmediately: true,
-      canvasSession: canvasSession,
-      madeLive: madeLive,
-      onCanvas: false,
-    );
+    required String clientId,
+  }) async {
+    final now = DateTime.now();
+    final records = [
+      addRecord,
+      for (final op in content)
+        DurableOutboxRecord(
+          accountId: addRecord.accountId,
+          strategyPublicId: addRecord.strategyPublicId,
+          entityKey: EntitySyncKey.forStrategyOp(op)!,
+          pending: PendingOp(op: op, clientId: clientId),
+          status: cloudOperationExceedsPolicy(op)
+              ? DurableOutboxStatus.attention
+              : DurableOutboxStatus.queued,
+          createdAt: now,
+          updatedAt: now,
+          lastError: cloudOperationExceedsPolicy(op)
+              ? cloudOperationTooLargeMessage
+              : null,
+          waitsForPageAdd: true,
+        ),
+    ];
+    try {
+      await _store.putAll(records);
+    } catch (error, stackTrace) {
+      _recordPersistenceFailure(error, stackTrace);
+      return false;
+    }
+    for (final record in records) {
+      _recordsByStorageKey[record.storageKey] = record;
+    }
+    _publishAccountSummary();
+    _refreshActiveQueueView();
+    _scheduleFlush(flushImmediately: true);
+    return true;
   }
 
   /// Queues [op], work for a page the canvas did not draw it on (an item
@@ -2965,6 +3006,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   Future<void> _putRecord(DurableOutboxRecord record) async {
+    if (!record.waitsForPageAdd && _waitsForPageAdd(record)) {
+      record = record.copyWith(waitsForPageAdd: true);
+    }
     try {
       await _store.put(record);
       _recordsByStorageKey[record.storageKey] = record;
@@ -2983,6 +3027,20 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       rethrow;
     }
     _publishAccountSummary();
+  }
+
+  /// Whether [record] is work for a page whose add, made on this device,
+  /// is still in its strategy's page changes (see
+  /// DurableOutboxRecord.waitsForPageAdd).
+  bool _waitsForPageAdd(DurableOutboxRecord record) {
+    final pageId = record.entityKey.pageId;
+    if (pageId == null || _isPageChange(record)) return false;
+    return _recordsByStorageKey.values.any((other) =>
+        _isPageChange(other) &&
+        other.accountId == record.accountId &&
+        other.strategyPublicId == record.strategyPublicId &&
+        other.pending.op is PageAddOp &&
+        other.pending.op.pagePublicId == pageId);
   }
 
   Future<void> _removeRecordByStorageKey(String storageKey) async {

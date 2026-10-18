@@ -1870,7 +1870,8 @@ void main() {
         container.read(placedImageProvider).images.map((i) => i.pictureId),
         unorderedEquals(['uploaded', 'uploading']),
       );
-      expect(gaps, (unsavedEdits: false, waitingForCloud: false));
+      expect(
+          gaps, (unsavedEdits: false, waitingForCloud: false, notSaved: false));
       await _settle();
     });
 
@@ -1904,7 +1905,8 @@ void main() {
 
       final gaps = await container.read(strategyProvider.notifier).addPage();
 
-      expect(gaps, (unsavedEdits: false, waitingForCloud: true));
+      expect(
+          gaps, (unsavedEdits: false, waitingForCloud: true, notSaved: false));
       expect(
           container.read(strategyPageSessionProvider).activePageId, 'page-1');
       // The add stays queued, to land later.

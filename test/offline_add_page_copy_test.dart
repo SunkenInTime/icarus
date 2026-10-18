@@ -12,9 +12,11 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/page_copy_id.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
@@ -42,7 +44,7 @@ void main() {
   setUpAll(() => CoordinateSystem(playAreaSize: const Size(1920, 1080)));
 
   late _Server server;
-  late MemoryDurableStrategyOutboxStore outbox;
+  late _Outbox outbox;
   late MemoryCloudStrategyCopyStore copies;
 
   setUp(() async {
@@ -57,7 +59,7 @@ void main() {
       await files.delete(recursive: true);
     });
     server = _Server();
-    outbox = MemoryDurableStrategyOutboxStore();
+    outbox = _Outbox();
     copies = MemoryCloudStrategyCopyStore();
   });
 
@@ -131,6 +133,13 @@ void main() {
     await _drain(container);
   }
 
+  /// Whether everything queued is for page 1 (the fixtures' rows are
+  /// rewritten there as this build saves them).
+  bool onlyPage1(ProviderContainer container) => container
+      .read(strategyOpQueueProvider)
+      .pending
+      .every((pending) => pending.op.pagePublicId == 'p1');
+
   String? activePage(ProviderContainer container) =>
       container.read(strategyPageSessionProvider).activePageId;
 
@@ -142,7 +151,8 @@ void main() {
     final gaps = await app.read(strategyProvider.notifier).addPage();
     await _settle();
 
-    expect(gaps, (unsavedEdits: false, waitingForCloud: false));
+    expect(
+        gaps, (unsavedEdits: false, waitingForCloud: false, notSaved: false));
     final pageId = activePage(app)!;
     expect(pageId, isNot('p1'));
     expect(server.pageIds, ['p1'], reason: 'nothing reached the server');
@@ -295,7 +305,8 @@ void main() {
     final gaps = await app.read(strategyProvider.notifier).addPage();
     await _settle();
 
-    expect(gaps, (unsavedEdits: false, waitingForCloud: false));
+    expect(
+        gaps, (unsavedEdits: false, waitingForCloud: false, notSaved: false));
     final add = server.landed.whereType<PageAddOp>().single;
     expect(add.copyContentFromPagePublicId, 'p1');
     // No item or lineup is sent for it: the server copies them.
@@ -347,6 +358,135 @@ void main() {
     expect(add.pagePublicId, pageId);
     expect(add.copyContentFromPagePublicId, isNull);
     expect(server.elementsOn(pageId), hasLength(2));
+  });
+  group('the copy is stored whole', () {
+    test('a write that fails stores nothing, adds no page, and says so',
+        () async {
+      final app = await start(online: true);
+      setOnline(app, false);
+      outbox.failPutAll = true;
+
+      final gaps = await app.read(strategyProvider.notifier).addPage();
+      await _settle();
+
+      expect(gaps.notSaved, isTrue);
+      expect(activePage(app), 'p1');
+      expect(app.read(drawnCloudPagesProvider)!.pages, hasLength(1));
+      expect(onlyPage1(app), isTrue);
+      expect(app.read(strategyOpQueueProvider).hasDurabilityFailure, isTrue);
+      expect(
+        outbox.values.values.whereType<Map>().where(
+            (json) => json['outboxVersion'] == pageChangeOutboxRecordVersion),
+        isEmpty,
+      );
+    });
+
+    test('the add and everything it holds go in one write', () async {
+      final app = await start(online: true);
+      setOnline(app, false);
+
+      await app.read(strategyProvider.notifier).addPage();
+      await _settle();
+
+      final write = outbox.putAllCalls.single;
+      expect(write.map((r) => r.pending.op.runtimeType).toSet(),
+          {PageAddOp, ElementAddOp, LineupAddOp});
+      expect(write, hasLength(4));
+    });
+
+    test('a write cut off before it lands leaves no page and no stray items',
+        () async {
+      var app = await start(online: true);
+      setOnline(app, false);
+      // The app dies while the copy is being written.
+      outbox.holdPutAll = Completer<void>();
+      unawaited(app.read(strategyProvider.notifier).addPage());
+      await _settle();
+      expect(outbox.putAllCalls, isEmpty);
+      app.dispose();
+      outbox.holdPutAll = null;
+
+      app = await start(online: false);
+      expect(app.read(drawnCloudPagesProvider)!.pages, hasLength(1));
+      expect(onlyPage1(app), isTrue);
+    });
+
+    test('a strategy switch while the copy is written keeps it in its strategy',
+        () async {
+      final app = await start(online: true);
+      setOnline(app, false);
+      final held = outbox.holdPutAll = Completer<void>();
+      final adding = app.read(strategyProvider.notifier).addPage();
+      await _settle();
+      app
+          .read(strategyOpQueueProvider.notifier)
+          .setActiveStrategy('another', accountId: 'account-a');
+      outbox.holdPutAll = null;
+      held.complete();
+      await adding;
+
+      final written = outbox.putAllCalls.single;
+      expect(written.map((r) => r.strategyPublicId).toSet(), {'strategy'});
+    });
+
+    test('its items are stored where a build before the list leaves them',
+        () async {
+      final app = await start(online: true);
+      setOnline(app, false);
+      await app.read(strategyProvider.notifier).addPage();
+      await _settle();
+
+      final content = outbox.values.values
+          .whereType<Map>()
+          .where((json) =>
+              '${json['entityKey']}'.startsWith('element:') ||
+              '${json['entityKey']}'.startsWith('lineup:'))
+          .where((json) => '${json['entityKey']}'.contains(activePage(app)!))
+          .toList();
+      expect(content, hasLength(3));
+      expect(content.map((json) => json['outboxVersion']).toSet(),
+          {pageChangeOutboxRecordVersion});
+      // A new item on the page is stored the same way while its add waits.
+      app.read(agentProvider.notifier).addAgent(PlacedAgent(
+            id: 'placed-on-new-page',
+            type: AgentType.sova,
+            position: const Offset(300, 300),
+          ));
+      await app
+          .read(strategyProvider.notifier)
+          .notifyCloudMutation(flushImmediately: true);
+      await _settle();
+      final placed = outbox.values.values.whereType<Map>().singleWhere(
+          (json) => '${json['entityKey']}'.endsWith('placed-on-new-page'));
+      expect(placed['outboxVersion'], pageChangeOutboxRecordVersion);
+    });
+  });
+
+  test('a server copy still on its way does not open as an empty page',
+      () async {
+    final app = await start(online: true);
+    StrategyProvider.cloudPageAddWait = const Duration(milliseconds: 200);
+    addTearDown(
+        () => StrategyProvider.cloudPageAddWait = const Duration(seconds: 5));
+    // The add is sent, and its answer doesn't come.
+    server.hold = Completer<void>();
+
+    final gaps = await app.read(strategyProvider.notifier).addPage();
+    await _settle();
+    expect(gaps.waitingForCloud, isTrue);
+    final pageId = app
+        .read(drawnCloudPagesProvider)!
+        .pages
+        .map((page) => page.publicId)
+        .singleWhere((id) => id != 'p1');
+
+    await expectLater(
+      app.read(remoteEditorSnapshotProvider.notifier).fetchPage(pageId),
+      throwsA(anything),
+    );
+    server.hold!.complete();
+    server.hold = null;
+    await _settle();
   });
 }
 
@@ -698,6 +838,21 @@ class _IdleRefresher extends StrategyCopyRefresher {
 
   @override
   void keepOpenedStrategy(String strategyId) {}
+}
+
+/// The outbox, with the copy's one write observable and breakable.
+class _Outbox extends MemoryDurableStrategyOutboxStore {
+  bool failPutAll = false;
+  Completer<void>? holdPutAll;
+  final putAllCalls = <List<DurableOutboxRecord>>[];
+
+  @override
+  Future<void> putAll(List<DurableOutboxRecord> records) async {
+    await holdPutAll?.future;
+    if (failPutAll) throw const FileSystemException('disk full');
+    putAllCalls.add(records);
+    await super.putAll(records);
+  }
 }
 
 class _IdleMediaQueue extends CloudMediaUploadQueueNotifier {

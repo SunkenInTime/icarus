@@ -87,8 +87,13 @@ enum PageCopyResult {
 
 /// What a new cloud page may lack, and whether it has reached the cloud
 /// yet (see StrategyProvider.addPage): edits to the page it copies that
-/// the server refused, which its copy never had.
-typedef NewPageGaps = ({bool unsavedEdits, bool waitingForCloud});
+/// the server refused, which its copy never had. [notSaved]: the copy this
+/// computer made could not be stored, so no page was added.
+typedef NewPageGaps = ({
+  bool unsavedEdits,
+  bool waitingForCloud,
+  bool notSaved,
+});
 
 class StrategyProvider extends Notifier<StrategyState> {
   @override
@@ -1574,7 +1579,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// the new page opens and takes edits before its add lands (see
   /// page_made_here.dart).
   Future<NewPageGaps> addPage([String? name]) async {
-    const none = (unsavedEdits: false, waitingForCloud: false);
+    const none = (unsavedEdits: false, waitingForCloud: false, notSaved: false);
     if (!_currentStrategyCanEditPages()) return none;
     if (_currentStrategyIsCloud()) {
       final strategyId = state.strategyId;
@@ -1638,9 +1643,11 @@ class StrategyProvider extends Notifier<StrategyState> {
             expectedStrategyRevision: _drawnStrategyRevision(snapshot),
           ),
           copyHere,
+          strategyPublicId: strategyId,
         );
-        // Not queued: the queue's durability failure says so.
-        if (!queued) return none;
+        if (!queued) {
+          return (unsavedEdits: false, waitingForCloud: false, notSaved: true);
+        }
         _markCloudWorkPending();
         return turnToCopyHere();
       }
@@ -1664,21 +1671,34 @@ class StrategyProvider extends Notifier<StrategyState> {
         // No answer yet. An add that never left becomes this computer's
         // copy, to open now; one sent lands later, with the server's copy.
         if (copyHere != null &&
-            await queue.copyWaitingPageAddHere(pageID, copyHere)) {
+            await queue.copyWaitingPageAddHere(
+              pageID,
+              copyHere,
+              strategyPublicId: strategyId,
+            )) {
           _markCloudWorkPending();
           return turnToCopyHere();
         }
-        return (unsavedEdits: refusedBefore, waitingForCloud: true);
+        return (
+          unsavedEdits: refusedBefore,
+          waitingForCloud: true,
+          notSaved: false,
+        );
       }
       // A refusal waits in the sync panel like any other.
       if (!answer.isAck || state.strategyId != strategyId) {
-        return (unsavedEdits: refusedBefore, waitingForCloud: false);
+        return (
+          unsavedEdits: refusedBefore,
+          waitingForCloud: false,
+          notSaved: false,
+        );
       }
       // Edits sent ahead of the add have their answers too by now, and the
       // server may have refused some of them.
       final landed = (
         unsavedEdits: sourceEditsRefused(),
         waitingForCloud: false,
+        notSaved: false,
       );
       await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       if (state.strategyId != strategyId) return landed;

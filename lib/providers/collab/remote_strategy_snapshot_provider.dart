@@ -309,9 +309,11 @@ class RemoteEditorSnapshotNotifier
           _madeHere(shell, pageId) != null) &&
       !ref.read(strategyOpQueueProvider.notifier).isDeletedHere(pageId);
 
-  /// [pageId] when this device added it and [shell] does not list it: its
-  /// add is still waiting, or landed after [shell] was read. With the add,
-  /// the page as the pages bar draws it, and its place there.
+  /// [pageId] when this device added it with nothing for the server to
+  /// copy (see page_made_here.dart) and [shell] does not list it: its add is
+  /// still waiting, or landed after [shell] was read. With the add, the
+  /// page as the pages bar draws it, and its place there. A page the server
+  /// is to copy holds nothing here, so it opens once the server has it.
   ({PageAddOp add, DrawnPage drawn, int index})? _madeHere(
     RemoteStrategyShell shell,
     String pageId,
@@ -325,7 +327,7 @@ class RemoteEditorSnapshotNotifier
         .whereType<PageAddOp>()
         .where((add) => add.pagePublicId == pageId)
         .lastOrNull;
-    if (add == null) return null;
+    if (add == null || add.copyContentFromPagePublicId != null) return null;
     final drawn = drawPages(shell.pages, changes);
     final index = drawn.indexWhere((page) => page.publicId == pageId);
     if (index < 0) return null;
