@@ -8,8 +8,8 @@ import 'package:icarus/hive/hive_adapters.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 
-/// Writes AppPreferences the way builds before transparent screenshots did,
-/// so field 21 is absent on disk.
+/// Writes AppPreferences the way builds before transparent screenshots and
+/// videos did, so fields 21 and 22 are absent on disk.
 class _PreTransparentPreferencesAdapter extends TypeAdapter<AppPreferences> {
   @override
   final typeId = 28;
@@ -47,8 +47,7 @@ void main() {
     }
   });
 
-  test('preferences saved before the option existed take solid screenshots',
-      () async {
+  test('preferences saved before the options existed export solid', () async {
     Hive.registerAdapter(_PreTransparentPreferencesAdapter(), override: true);
     var box =
         await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
@@ -71,6 +70,7 @@ void main() {
     expect(restored.backgroundDotOpacity, 0.4);
     expect(restored.welcomeTourSeen, isTrue);
     expect(restored.transparentScreenshotBackground, isFalse);
+    expect(restored.transparentVideoBackground, isFalse);
 
     // Once turned on, it stays on across a restart.
     var container = ProviderContainer();

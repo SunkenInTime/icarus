@@ -20,6 +20,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_sink.dart';
+import 'package:icarus/services/video_export/quicktime_animation_sink.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:icarus/services/video_export/video_exporter.dart';
 import 'package:icarus/services/video_export/video_frame_sink.dart';
@@ -126,7 +127,10 @@ StrategyPage _page(String id, int sortIndex, Offset imageAt) => StrategyPage(
       settings: StrategySettings(),
     );
 
-VideoExporter _exporter(List<StrategyPage> pages) {
+VideoExporter _exporter(
+  List<StrategyPage> pages, {
+  bool transparent = false,
+}) {
   return VideoExporter(
     strategy: StrategyData(
       id: 'cloud-strategy',
@@ -147,6 +151,7 @@ VideoExporter _exporter(List<StrategyPage> pages) {
     mapState: MapState(currentMap: MapValue.ascent, isAttack: true),
     backgroundDotOpacity: 1,
     geometry: null,
+    transparentBackground: transparent,
     imageSources: {'image-1': ImageBytes(_magentaPng)},
   );
 }
@@ -360,5 +365,53 @@ void main() {
       ),
     );
     // Needs a PATH ffmpeg and ffprobe, as local development has.
+  }, skip: _ffmpeg == null || _ffprobe == null);
+
+  testWidgets('a transparent export keeps its background out, as alpha',
+      (tester) async {
+    CoordinateSystem(playAreaSize: const Size(1600, 900));
+    final pages = [
+      _page('one', 0, const Offset(400, 400)),
+      _page('two', 1, const Offset(700, 600)),
+    ];
+    final outputDir = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('icarus_video_out'),
+    ))!;
+    addTearDown(() => outputDir.deleteSync(recursive: true));
+    final outputPath = '${outputDir.path}${Platform.pathSeparator}out.mov';
+    final firstFrame = '${outputDir.path}${Platform.pathSeparator}first.png';
+
+    final outcome = await _exportWithFrames(
+      tester,
+      _exporter(pages, transparent: true),
+      pages,
+      QuickTimeAnimationSink(fps: 30, outputPath: outputPath),
+    );
+
+    expect(outcome, isNull);
+    final decode = (await tester.runAsync(
+      () => Process.run(_ffmpeg!, [
+        '-v',
+        'error',
+        '-i',
+        outputPath,
+        '-frames:v',
+        '1',
+        '-pix_fmt',
+        'rgba',
+        firstFrame,
+      ]),
+    ))!;
+    expect(decode.exitCode, 0, reason: '${decode.stderr}');
+    final frame = img.decodePng(File(firstFrame).readAsBytesSync())!;
+    expect(frame.width, 1920);
+    expect(frame.height, 1080);
+    // Around the map is see-through; the map itself is solid.
+    expect(frame.getPixel(4, 4).a, 0);
+    expect(frame.getPixel(960, 540).a, 255);
+    expect(
+      _magentaPixels(frame.getBytes(order: img.ChannelOrder.rgba)),
+      greaterThan(500),
+    );
   }, skip: _ffmpeg == null || _ffprobe == null);
 }
