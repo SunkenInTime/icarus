@@ -1085,7 +1085,7 @@ RemoteStrategyShell _strategyShell(
     header: _strategyHeader(result.header),
     pages: result.pages.map(_page).toList(growable: false),
     fromCopy: fromCopy,
-    serverAnswer: fromCopy ? null : result.encode('strategy:getShell'),
+    serverAnswer: fromCopy ? null : result.encode('shell'),
   );
 }
 
@@ -1101,7 +1101,7 @@ RemotePageSnapshot _pageSnapshot(
     lineups: result.lineups.map(_lineup).toList(growable: false),
     assetsById: {for (final asset in assets) asset.publicId: asset},
     fromCopy: fromCopy,
-    serverAnswer: fromCopy ? null : result.encode('page:getSnapshot'),
+    serverAnswer: fromCopy ? null : result.encode('pageSnapshot'),
   );
 }
 
@@ -1136,7 +1136,7 @@ RemoteFullStrategySnapshot _fullSnapshot(StrategyGetFullSnapshotResult result) {
     elementsByPage: RemoteFullStrategySnapshot.groupElementsByPage(elements),
     lineupsByPage: RemoteFullStrategySnapshot.groupLineupsByPage(lineups),
     assetsById: {for (final asset in assets) asset.publicId: asset},
-    serverAnswer: result.encode('strategy:getFullSnapshot'),
+    serverAnswer: result.encode('fullSnapshot'),
   );
 }
 
