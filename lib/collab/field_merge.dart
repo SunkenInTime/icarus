@@ -270,3 +270,123 @@ Map<String, Object?> mergeBaseValues(
       _lineupItems(data, field.substring(0, slash))[field.substring(slash + 1)];
   return (present: item != null, value: item);
 }
+
+/// [merge]'s fields of [desired] written onto [current] (both cloud
+/// payloads), as the server writes them, without its check of the merge's
+/// base: what the row holds once the merge lands. Null when the server
+/// would write [desired] whole instead (another kind or payload version, a
+/// change of what the element is, a lineup field that names no item).
+Map<String, dynamic>? mergedPayload(
+  Object? current,
+  Object? desired,
+  FieldMerge merge, {
+  required bool lineup,
+}) {
+  if (current is! Map || desired is! Map) return null;
+  if (current['kind'] != desired['kind'] ||
+      current['payloadVersion'] != desired['payloadVersion']) {
+    return null;
+  }
+  final currentData = _dataOf(current);
+  final desiredData = _dataOf(desired);
+  if (currentData == null || desiredData == null) return null;
+  final fields = _payloadFields(merge);
+  if (lineup
+      ? !cloudJsonEquivalent(currentData['id'], desiredData['id'])
+      : _elementIdentityKeys.any((key) =>
+          fields.contains(key) || !_sameKey(currentData, desiredData, key))) {
+    return null;
+  }
+  return _withFields(
+    current,
+    fields,
+    (field) => mergeFieldValue(desired, field, lineup: lineup),
+    lineup: lineup,
+  );
+}
+
+/// [payload] with each field [merge] names set back to its value in the
+/// merge's base: the version of those fields the edit was made against.
+/// [payload] as it is when the merge has no base, and null when a field
+/// names no lineup item.
+Map<String, dynamic>? payloadAtMergeBase(
+  Object? payload,
+  FieldMerge merge, {
+  required bool lineup,
+}) {
+  if (payload is! Map) return null;
+  final base = merge.base;
+  if (base == null) return Map<String, dynamic>.from(payload);
+  return _withFields(
+    payload,
+    _payloadFields(merge),
+    (field) => (present: base.containsKey(field), value: base[field]),
+    lineup: lineup,
+  );
+}
+
+List<String> _payloadFields(FieldMerge merge) => [
+      for (final field in merge.fields)
+        if (field != placeMergeField) field,
+    ];
+
+/// [payload] with each of [fields] set to [valueOf] it: a key of an
+/// element's data, or an item of a lineup group's (its spots no lineup
+/// uses then dropped, as the server drops them). Null when the payload has
+/// no data, or a lineup field names no item.
+Map<String, dynamic>? _withFields(
+  Map payload,
+  List<String> fields,
+  ({bool present, Object? value}) Function(String field) valueOf, {
+  required bool lineup,
+}) {
+  final current = _dataOf(payload);
+  if (current == null) return null;
+  final data = Map<String, Object?>.from(current);
+  if (!lineup) {
+    for (final field in fields) {
+      final value = valueOf(field);
+      if (value.present) {
+        data[field] = value.value;
+      } else {
+        data.remove(field);
+      }
+    }
+    return {...Map<String, dynamic>.from(payload), 'data': data};
+  }
+  final lists = {
+    for (final collection in _lineupCollections)
+      collection: [
+        for (final item in current[collection] as List? ?? const [])
+          if (item is Map) Map<String, Object?>.from(item),
+      ],
+  };
+  for (final field in fields) {
+    final slash = field.indexOf('/');
+    final list = slash <= 0 ? null : lists[field.substring(0, slash)];
+    final id = field.substring(slash + 1);
+    if (list == null || id.isEmpty) return null;
+    final index = list.indexWhere((item) => item['id'] == id);
+    final wanted = valueOf(field);
+    final item = wanted.value;
+    if (!wanted.present || item is! Map) {
+      if (index >= 0) list.removeAt(index);
+    } else if (index >= 0) {
+      list[index] = Map<String, Object?>.from(item);
+    } else {
+      list.add(Map<String, Object?>.from(item));
+    }
+  }
+  final links = lists['links']!;
+  data
+    ..['origins'] = [
+      for (final origin in lists['origins']!)
+        if (links.any((link) => link['originId'] == origin['id'])) origin,
+    ]
+    ..['landings'] = [
+      for (final landing in lists['landings']!)
+        if (links.any((link) => link['landingId'] == landing['id'])) landing,
+    ]
+    ..['links'] = links;
+  return {...Map<String, dynamic>.from(payload), 'data': data};
+}
