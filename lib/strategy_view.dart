@@ -211,7 +211,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           message: notKept
               ? strategyNeedsConnectionMessage
               : 'Could not load strategy.',
-          backgroundColor: Settings.tacticalVioletTheme.destructive,
+          backgroundColor: notKept
+              ? Settings.tacticalVioletTheme.secondary
+              : Settings.tacticalVioletTheme.destructive,
         );
         Navigator.maybePop(context);
       }

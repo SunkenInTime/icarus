@@ -548,7 +548,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         !ref.read(strategyKeptOfflineProvider(_strategyId))) {
       Settings.showToast(
         message: strategyNeedsConnectionMessage,
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
+        // Not an error: the neutral surface, as for other offline refusals.
+        backgroundColor: Settings.tacticalVioletTheme.secondary,
       );
       return;
     }
