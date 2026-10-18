@@ -302,6 +302,14 @@ class HiveCloudLibraryCopyStore extends _KeyedCloudLibraryCopyStore {
 
   @override
   Future<void> _deleteAll(Iterable<String> keys) => _box.deleteAll(keys);
+
+  /// Hive only marks deleted records in its file; compacting rewrites the
+  /// file without them, so a signed-out account's library is off the disk.
+  @override
+  Future<void> deleteAccount(CloudCopyScope scope) async {
+    await super.deleteAccount(scope);
+    await _box.compact();
+  }
 }
 
 class MemoryCloudLibraryCopyStore extends _KeyedCloudLibraryCopyStore {
