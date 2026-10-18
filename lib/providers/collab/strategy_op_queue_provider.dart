@@ -944,6 +944,109 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     ].any((op) => op is PageDeleteOp && op.pagePublicId == pageId);
   }
 
+  /// Queues the copy of a page this computer made for "+" (see
+  /// page_made_here.dart): [add], which copies nothing on the server, at the
+  /// end of the page changes, then [content], what the copy holds, as work
+  /// for its page made off the canvas (see [enqueueOffCanvas]). One write
+  /// queues both, so nothing comes between them, and the content is sent
+  /// once the add lands (see [_selectBatch]). False when the add could not
+  /// be queued.
+  Future<bool> enqueuePageCopy(PageAddOp add, List<StrategyOp> content) {
+    assert(add.copyContentFromPagePublicId == null);
+    final canvasSession = _canvasSession;
+    final madeLive = liveStamp;
+    return _serializeWrite(() async {
+      await _appendPageChangeLocked(add, flushImmediately: true);
+      if (!_holdsPageChange(add.opId)) return false;
+      await _queuePageCopyContentLocked(
+        content,
+        canvasSession: canvasSession,
+        madeLive: madeLive,
+      );
+      return true;
+    });
+  }
+
+  /// Turns the add of [pageId] that "+" queued for the server to copy the
+  /// page into one that copies nothing, with [content], the copy this
+  /// computer made, queued behind it (see [enqueuePageCopy]). The add keeps
+  /// its place among the page changes. Only an add that never left this
+  /// device is changed: one sent may have landed, copy and all. False,
+  /// changing nothing, for any other.
+  Future<bool> copyWaitingPageAddHere(
+    String pageId,
+    List<StrategyOp> content,
+  ) {
+    final canvasSession = _canvasSession;
+    final madeLive = liveStamp;
+    return _serializeWrite(() async {
+      final accountId = state.accountId;
+      final strategyPublicId = state.strategyPublicId;
+      if (accountId == null || strategyPublicId == null) return false;
+      final waiting = _pageChangeRecords(accountId, strategyPublicId)
+          .where((record) =>
+              record.pending.op is PageAddOp &&
+              record.pending.op.pagePublicId == pageId)
+          .firstOrNull;
+      final add = waiting?.pending.op;
+      if (waiting == null ||
+          add is! PageAddOp ||
+          add.copyContentFromPagePublicId == null ||
+          waiting.status != DurableOutboxStatus.queued ||
+          waiting.pending.attempts > 0 ||
+          _uncertainDurableRecords.contains(waiting.storageKey) ||
+          !identical(_recordsByStorageKey[waiting.storageKey], waiting)) {
+        return false;
+      }
+      try {
+        await _putRecord(waiting.copyWith(
+          pending: PendingOp(
+            op: PageAddOp(
+              opId: const Uuid().v4(),
+              pagePublicId: add.pagePublicId,
+              payload: add.payload,
+              sortIndex: add.sortIndex,
+              expectedStrategyRevision: add.expectedStrategyRevision,
+            ),
+            clientId: waiting.pending.clientId,
+          ),
+          updatedAt: DateTime.now(),
+        ));
+      } catch (error, stackTrace) {
+        _recordPersistenceFailure(error, stackTrace);
+        return false;
+      }
+      _refreshActiveQueueView();
+      await _queuePageCopyContentLocked(
+        content,
+        canvasSession: canvasSession,
+        madeLive: madeLive,
+      );
+      return true;
+    });
+  }
+
+  bool _holdsPageChange(String opId) => _recordsByStorageKey.values.any(
+      (record) => _isPageChange(record) && record.pending.op.opId == opId);
+
+  Future<void> _queuePageCopyContentLocked(
+    List<StrategyOp> content, {
+    required int canvasSession,
+    required int? madeLive,
+  }) {
+    final desired = <EntitySyncKey, StrategyOp?>{
+      for (final op in content) EntitySyncKey.forStrategyOp(op)!: op,
+    };
+    return _syncDesiredLocked(
+      keys: desired.keys.toSet(),
+      desiredOps: desired,
+      flushImmediately: true,
+      canvasSession: canvasSession,
+      madeLive: madeLive,
+      onCanvas: false,
+    );
+  }
+
   /// Queues [op], work for a page the canvas did not draw it on (an item
   /// copied to another page). Its ack is marked restored: if that page is
   /// on screen by then, it shows the item from the server's copy, like a

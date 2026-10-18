@@ -13,8 +13,9 @@ final drawnCloudPagesProvider = Provider<DrawnPages?>((ref) {
   if (snapshot == null) return null;
   ref.watch(strategyOpQueueProvider);
   final queue = ref.read(strategyOpQueueProvider.notifier);
+  // The shell's pages: a page made here is drawn from its add.
   return DrawnPages(drawPages(
-    snapshot.pages,
+    snapshot.shell.pages,
     queue.pageChangesToDraw(snapshot),
     pageRevisions: queue.landedPageRevisions(snapshot),
   ));

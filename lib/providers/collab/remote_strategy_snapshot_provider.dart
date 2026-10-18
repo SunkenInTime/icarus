@@ -8,6 +8,7 @@ import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/page_changes.dart';
+import 'package:icarus/collab/page_made_here.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
@@ -185,6 +186,11 @@ class RemoteEditorSnapshotNotifier
     if (strategyPublicId == null) {
       throw StateError('No cloud strategy is open.');
     }
+    final shell = _shellOf(strategyPublicId);
+    final madeHere = shell == null
+        ? null
+        : _pageMadeHere(strategyPublicId, shell, pagePublicId);
+    if (madeHere != null) return madeHere;
     // Without a copy, as before there was one: no wait for the read to time
     // out while the connection is down.
     if (!_keepsCopy && !ref.read(convexConnectionSnapshotProvider)) {
@@ -295,10 +301,76 @@ class RemoteEditorSnapshotNotifier
     ];
   }
 
-  /// Whether [pageId] of [shell] can open (see [_pagesToOpen]).
+  /// Whether [pageId] of [shell] can open (see [_pagesToOpen]): a page of
+  /// the shell, or one this computer made that the shell does not list yet
+  /// (see [_madeHere]), unless it was deleted here.
   bool _opens(RemoteStrategyShell shell, String pageId) =>
-      shell.pages.any((page) => page.publicId == pageId) &&
+      (shell.pages.any((page) => page.publicId == pageId) ||
+          _madeHere(shell, pageId) != null) &&
       !ref.read(strategyOpQueueProvider.notifier).isDeletedHere(pageId);
+
+  /// [pageId] when this device added it and [shell] does not list it: its
+  /// add is still waiting, or landed after [shell] was read. With the add,
+  /// the page as the pages bar draws it, and its place there.
+  ({PageAddOp add, DrawnPage drawn, int index})? _madeHere(
+    RemoteStrategyShell shell,
+    String pageId,
+  ) {
+    if (shell.pages.any((page) => page.publicId == pageId)) return null;
+    final queue = ref.read(strategyOpQueueProvider.notifier);
+    final changes = queue.pageChangesToDraw(
+      RemoteEditorSnapshot(shell: shell, activePage: null),
+    );
+    final add = changes
+        .whereType<PageAddOp>()
+        .where((add) => add.pagePublicId == pageId)
+        .lastOrNull;
+    if (add == null) return null;
+    final drawn = drawPages(shell.pages, changes);
+    final index = drawn.indexWhere((page) => page.publicId == pageId);
+    if (index < 0) return null;
+    return (add: add, drawn: drawn[index], index: index);
+  }
+
+  /// [pageId] as this computer shows it while the server does not have it
+  /// (see pageMadeHere), or null when [shell] lists it or it was not made
+  /// here. Its pictures are the ones the strategy's other pages show: a
+  /// copy shows its original's.
+  RemotePageSnapshot? _pageMadeHere(
+    String strategyPublicId,
+    RemoteStrategyShell shell,
+    String pageId,
+  ) {
+    final made = _madeHere(shell, pageId);
+    if (made == null) return null;
+    final assets = <String, RemoteImageAsset>{};
+    final scope = _copyScope;
+    if (scope != null) {
+      for (final page in shell.pages) {
+        final kept = _copy.readPage(scope, strategyPublicId, page.publicId);
+        if (kept != null) assets.addAll(kept.assetsById);
+      }
+    }
+    final shown = state.valueOrNull;
+    if (shown != null && shown.header.publicId == strategyPublicId) {
+      assets.addAll(shown.assetsById);
+    }
+    return pageMadeHere(
+      strategyPublicId: strategyPublicId,
+      add: made.add,
+      drawn: made.drawn,
+      sortIndex: made.index,
+      assetsById: assets,
+    );
+  }
+
+  /// The shell held for [strategyPublicId], if any.
+  RemoteStrategyShell? _shellOf(String strategyPublicId) {
+    final current = state.valueOrNull;
+    return current != null && current.header.publicId == strategyPublicId
+        ? current.shell
+        : null;
+  }
 
   /// The page a strategy opens on when the one asked for can't: the first
   /// the pages bar lists.
@@ -347,11 +419,12 @@ class RemoteEditorSnapshotNotifier
       final pageAskedAt = DateTime.now();
       final read = pageId == null
           ? null
-          : _received(await repository.fetchPageSnapshot(
-              strategyPublicId: strategyPublicId,
-              pagePublicId: pageId,
-              shareToken: _shareToken,
-            ));
+          : _pageMadeHere(strategyPublicId, shell, pageId) ??
+              _received(await repository.fetchPageSnapshot(
+                strategyPublicId: strategyPublicId,
+                pagePublicId: pageId,
+                shareToken: _shareToken,
+              ));
       if (read != null) _keepPage(read, askedAt: pageAskedAt, scope: scope);
       final page = read == null ? null : _upgraded(read, shell.header.mapData);
       if (epoch != _readEpoch || _holdsNewerShell(shell)) return;
@@ -431,6 +504,11 @@ class RemoteEditorSnapshotNotifier
         final activePageId = _activePagePublicId;
         if (activePageId != null && !_opens(shell, activePageId)) {
           unawaited(setActivePage(_firstPageToOpen(shell)));
+        } else if ((current?.activePage?.madeHere ?? false) &&
+            shell.pages.any((page) => page.publicId == activePageId)) {
+          // The add of the page on screen landed: it is read, and watched,
+          // from the server from now on.
+          unawaited(refresh());
         }
       },
       onError: (Object error, StackTrace stackTrace) =>
@@ -446,6 +524,14 @@ class RemoteEditorSnapshotNotifier
     String strategyPublicId,
     String pagePublicId,
   ) async {
+    // A page the server does not have yet has nothing to watch: the shell
+    // listing it reads it (see _startShellSubscription).
+    final shown = state.valueOrNull?.activePage;
+    if (shown != null &&
+        shown.madeHere &&
+        shown.page.publicId == pagePublicId) {
+      return;
+    }
     // Claimed before the await: a start that overlaps this one wins, and
     // this one must not install a second watcher.
     final epoch = ++_pageEpoch;
@@ -513,6 +599,11 @@ class RemoteEditorSnapshotNotifier
     String strategyPublicId,
     String pagePublicId,
   ) async {
+    final shell = _shellOf(strategyPublicId);
+    final madeHere = shell == null
+        ? null
+        : _pageMadeHere(strategyPublicId, shell, pagePublicId);
+    if (madeHere != null) return madeHere;
     if (_keepsCopy && _serverCannotAnswer) {
       return _keptPage(strategyPublicId, pagePublicId) ??
           (throw StateError('Offline: page $pagePublicId was not read.'));
@@ -557,7 +648,8 @@ class RemoteEditorSnapshotNotifier
     final wanted = _activePagePublicId;
     RemotePageSnapshot? page;
     if (wanted != null && _opens(shell, wanted)) {
-      page = _keptPage(strategyPublicId, wanted);
+      page = _pageMadeHere(strategyPublicId, shell, wanted) ??
+          _keptPage(strategyPublicId, wanted);
     }
     for (final candidate in _pagesToOpen(shell)) {
       if (page != null) break;
