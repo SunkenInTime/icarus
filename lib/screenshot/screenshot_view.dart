@@ -48,6 +48,7 @@ class ScreenshotView extends ConsumerWidget {
     required this.themeOverridePalette,
     this.placedWidgetsOverride,
     this.drawingsOpacity = 1.0,
+    this.transparentBackground = false,
   });
   final StrategyState strategyState;
   final MapValue mapValue;
@@ -74,6 +75,10 @@ class ScreenshotView extends ConsumerWidget {
 
   /// Video export fades the drawing layer in early during transitions.
   final double drawingsOpacity;
+
+  /// Leaves out the backdrop (the gradient and the dot grid), so everything
+  /// around the map is transparent.
+  final bool transparentBackground;
 
   /// Loads this frame into the isolated providers used for offscreen capture.
   ///
@@ -127,25 +132,28 @@ class ScreenshotView extends ConsumerWidget {
     final mapLeft = (CoordinateSystem.screenShotSize.width - mapWidth) / 2;
 
     return Container(
-      decoration: BoxDecoration(
-        gradient: RadialGradient(
-          center: Alignment.center,
-          radius: 1.5,
-          colors: [
-            const Color(0xff18181b),
-            Settings.tacticalVioletTheme.background,
-          ],
-        ),
-      ),
+      decoration: transparentBackground
+          ? null
+          : BoxDecoration(
+              gradient: RadialGradient(
+                center: Alignment.center,
+                radius: 1.5,
+                colors: [
+                  const Color(0xff18181b),
+                  Settings.tacticalVioletTheme.background,
+                ],
+              ),
+            ),
       height: CoordinateSystem.screenShotSize.height,
       width: CoordinateSystem.screenShotSize.width,
       child: Stack(
         children: [
-          Positioned.fill(
-              child: Padding(
-            padding: const EdgeInsets.all(4.0),
-            child: DotGrid(isScreenshot: true, opacity: backgroundDotOpacity),
-          )),
+          if (!transparentBackground)
+            Positioned.fill(
+                child: Padding(
+              padding: const EdgeInsets.all(4.0),
+              child: DotGrid(isScreenshot: true, opacity: backgroundDotOpacity),
+            )),
           Positioned(
             left: mapLeft,
             top: 0,

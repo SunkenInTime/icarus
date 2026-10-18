@@ -9,6 +9,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/screenshot/page_screenshot.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -71,6 +72,8 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     // never offers it, even if an editor somehow opens with no cloud strategy.
     final allowsLocalSave =
         ref.watch(platformPolicyProvider).allowsLocalLibrary;
+    final transparentScreenshots = ref.watch(appPreferencesProvider
+        .select((value) => value.transparentScreenshotBackground));
 
     // The strategy view owns the spacing around this card, so it aligns
     // with the map card above it.
@@ -124,7 +127,9 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
               ),
               EditorToolbarButton(
                 style: style,
-                tooltip: 'Screenshot',
+                tooltip: transparentScreenshots
+                    ? 'Screenshot · Transparent background'
+                    : 'Screenshot',
                 onPressed: _captureScreenshot,
                 icon: _isCapturingScreenshot
                     ? SizedBox(

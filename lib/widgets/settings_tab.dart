@@ -469,6 +469,19 @@ class _GlobalSettingsSections extends ConsumerWidget {
                       .setBackgroundDotOpacity(value);
                 },
               ),
+              _SettingsToggleTile(
+                icon: LucideIcons.camera,
+                iconColor: Settings.settingsMapAccent,
+                title: "Transparent screenshots",
+                description:
+                    "Leave the background and dots out of screenshots, so the PNG is see-through around the map.",
+                value: appPreferences.transparentScreenshotBackground,
+                onChanged: (value) {
+                  ref
+                      .read(appPreferencesProvider.notifier)
+                      .setTransparentScreenshotBackground(value);
+                },
+              ),
             ],
           ),
         ),

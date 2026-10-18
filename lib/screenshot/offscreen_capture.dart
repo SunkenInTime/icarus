@@ -67,7 +67,14 @@ Widget wrapForOffscreenCapture(
           debugShowCheckedModeBanner: false,
           home: child,
           builder: (context, child) {
-            return Portal(child: ShadAppBuilder(child: child!));
+            // The captured view paints its own backdrop, or none for a
+            // transparent screenshot, so the shell paints nothing under it.
+            return Portal(
+              child: ShadAppBuilder(
+                backgroundColor: Colors.transparent,
+                child: child!,
+              ),
+            );
           },
         );
       },
