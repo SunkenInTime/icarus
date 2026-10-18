@@ -26,6 +26,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/strategy/cloud_element_decoding.dart';
 import 'package:uuid/uuid.dart';
 
 class ActivePageLiveSyncState {
@@ -526,6 +527,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         key,
         intent.op,
         untouched: !overlays.containsKey(key),
+        revision: revision,
       );
       final normalized = drawnLayer?.copyWith(
             revision: revision,
@@ -544,6 +546,15 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           : normalized.withClaimableRevision(
               _hydratedBaseByEntityKey[key]?.claimableRevision ?? revision - 1,
             );
+      if (_drawnWorkByKey[key] case final landed?
+          when landed.landedAt == revision) {
+        _drawnWorkByKey[key] = _DrawnWork(
+          over: landed.over,
+          layers: landed.layers,
+          base: accepted,
+          landedAt: revision,
+        );
+      }
 
       // The user's newer edit to it, if any, follows the op onto this
       // revision, as the queue's successor does.
@@ -581,6 +592,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     EntitySyncKey key,
     StrategyOp op, {
     required bool untouched,
+    required int revision,
   }) {
     final drawn = _drawnWorkByKey[key];
     if (drawn == null) return null;
@@ -595,8 +607,18 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     }
     final landed = drawn.layers[index].entity;
     final rest = drawn.layers.sublist(index + 1);
-    if (rest.isEmpty) {
+    if (rest.isEmpty && !untouched) {
+      // The canvas's own edit since is in its overlay, which keeps it drawn
+      // until the server's read shows it.
       _drawnWorkByKey.remove(key);
+    } else if (rest.isEmpty) {
+      // Its base is set once the ack's is (see recordAckBatch).
+      _drawnWorkByKey[key] = _DrawnWork(
+        over: landed,
+        layers: [(opId: op.opId, entity: landed)],
+        base: null,
+        landedAt: revision,
+      );
     } else {
       _drawnWorkByKey[key] =
           _DrawnWork(over: landed, layers: rest, base: drawn.base);
@@ -1162,6 +1184,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final remote = _normalizedRemoteEntities(snapshot, pageId);
     final mapData = snapshot.header.mapData;
     final work = <EntitySyncKey, _DrawnWork>{};
+    final undrawable = <EntitySyncKey, String>{};
     final keys = {
       for (final intents in [
         queue.queuedByEntityKey,
@@ -1170,6 +1193,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         queue.attentionByEntityKey,
       ])
         ...intents.keys.where((key) => key.pageId == pageId),
+      for (final MapEntry(:key, :value) in _drawnWorkByKey.entries)
+        if (key.pageId == pageId && value.landedAt != null) key,
     };
     for (final key in keys) {
       if (excluded.contains(key) ||
@@ -1177,11 +1202,22 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           state.overlayByEntityKey.containsKey(key)) {
         continue;
       }
-      final head = (queue.inFlightByEntityKey[key]?.pending ??
-              queue.queuedByEntityKey[key]?.pending ??
-              queue.pausedByEntityKey[key]?.pending ??
-              queue.attentionByEntityKey[key]?.pending)!
-          .op;
+      final waiting = queue.inFlightByEntityKey[key]?.pending ??
+          queue.queuedByEntityKey[key]?.pending ??
+          queue.pausedByEntityKey[key]?.pending ??
+          queue.attentionByEntityKey[key]?.pending;
+      if (waiting == null) {
+        // Work drawn here that has landed stays until a read at or past
+        // the revision it landed at shows it.
+        final landed = _drawnWorkByKey[key]!;
+        final row = remote[key];
+        final shown = landed.drawn.deleted
+            ? row == null || row.revision >= landed.landedAt!
+            : row != null && row.revision >= landed.landedAt!;
+        if (!shown) work[key] = landed;
+        continue;
+      }
+      final head = waiting.op;
       final ops = [
         head,
         if (queue.successorByEntityKey[key]?.pending.op case final next?) next,
@@ -1203,9 +1239,56 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         onto = drawn.entity;
       }
       if (layers.length != ops.length) continue;
+      // Drawing it must never leave the page unable to open: work that
+      // would draw something hydration can't read is left off the page, and
+      // waits in attention so the user is told.
+      if (!_drawable(layers.last.entity)) {
+        undrawable[key] = head.opId;
+        continue;
+      }
       work[key] = _DrawnWork(over: over, layers: layers, base: base);
     }
+    if (undrawable.isNotEmpty) {
+      unawaited(queueNotifier.holdUndrawableWork(undrawable));
+    }
     return work;
+  }
+
+  /// Whether hydration can read [drawn] as the page would draw it: an
+  /// element its kind decodes, a lineup group its row reads as, page
+  /// settings that parse.
+  bool _drawable(_NormalizedEntity drawn) {
+    if (drawn.deleted) return true;
+    try {
+      switch (drawn.overlayEntityType) {
+        case ActivePageOverlayEntityType.pageDescriptor:
+          return true;
+        case ActivePageOverlayEntityType.pageContent:
+          final settings = cloudObjectPayloadOrNull(
+              _decodeObject(drawn.payload)['settings']);
+          if (settings != null && settings.isNotEmpty) {
+            StrategySettings.fromJson(settings);
+          }
+          return true;
+        case ActivePageOverlayEntityType.element:
+          final payload = cloudObjectPayload(drawn.payload);
+          final data = cloudPayloadData(payload);
+          final elementType =
+              data['elementType'] as String? ?? payload['kind'] as String?;
+          return elementType != null &&
+              decodeCloudElement(elementType, data) != null;
+        case ActivePageOverlayEntityType.lineup:
+          lineUpGraphFromCloudRows([
+            CloudLineupRow(
+              publicId: drawn.key.entityId!,
+              payload: cloudObjectPayload(drawn.payload),
+            ),
+          ]);
+          return true;
+      }
+    } catch (_) {
+      return false;
+    }
   }
 
   /// [op] drawn over [onto] (the entity as the server, or the op before it,
@@ -2004,11 +2087,17 @@ class _DrawnWork {
     required this.over,
     required this.layers,
     required this.base,
+    this.landedAt,
   });
 
   final _NormalizedEntity? over;
   final List<({String opId, _NormalizedEntity entity})> layers;
   final _NormalizedEntity? base;
+
+  /// Set once the last of the work has landed: the revision it landed at.
+  /// It stays drawn until a server read at or past that revision shows it,
+  /// so an older answer arriving late can't take it off the page.
+  final int? landedAt;
 
   /// What the canvas shows.
   _NormalizedEntity get drawn => layers.last.entity;

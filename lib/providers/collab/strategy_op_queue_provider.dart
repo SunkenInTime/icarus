@@ -1028,6 +1028,46 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _scheduleFlush(flushImmediately: flushImmediately);
   }
 
+  /// Holds the waiting work of each of [opIdByKey]'s entities in attention,
+  /// with [undrawableWorkMessage]: drawn over the server's version as it is
+  /// now, the page could not show it. It is neither sent nor dropped until
+  /// the user chooses (Keep mine sends it anyway, Use cloud drops it). Only
+  /// work that is still waiting as the op the page tried to draw
+  /// ([opIdByKey]'s value) and is not being sent is held; refused work keeps
+  /// its own reason.
+  Future<void> holdUndrawableWork(Map<EntitySyncKey, String> opIdByKey) {
+    return _serializeWrite(() async {
+      var changed = false;
+      try {
+        for (final MapEntry(:key, value: opId) in opIdByKey.entries) {
+          final record = _recordForActiveKey(key);
+          if (record == null ||
+              record.pending.op.opId != opId ||
+              record.status == DurableOutboxStatus.attention ||
+              // Being sent now: the server's answer decides.
+              (record.status == DurableOutboxStatus.inFlight &&
+                  _drainingStrategy ==
+                      (
+                        accountId: record.accountId,
+                        strategyPublicId: record.strategyPublicId,
+                      ))) {
+            continue;
+          }
+          await _putRecord(record.copyWith(
+            status: DurableOutboxStatus.attention,
+            updatedAt: DateTime.now(),
+            lastError: undrawableWorkMessage,
+          ));
+          changed = true;
+        }
+      } catch (error, stackTrace) {
+        _recordPersistenceFailure(error, stackTrace);
+        return;
+      }
+      if (changed) _refreshActiveQueueView(clearError: true);
+    });
+  }
+
   void clearStaleError() {
     if (state.lastError == null ||
         state.isFlushing ||

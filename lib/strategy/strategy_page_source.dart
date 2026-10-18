@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:hive_ce/hive.dart';
@@ -26,6 +24,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/strategy/cloud_element_decoding.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -249,24 +248,16 @@ class CloudStrategyPageSource implements StrategyPageSource {
       }
       final payload = element.decodedPayload();
       try {
-        switch (element.elementType) {
-          case 'agent':
-            agents.add(PlacedAgentNode.fromJson(payload));
-            break;
-          case 'ability':
-            abilities.add(PlacedAbility.fromJson(payload));
-            break;
-          case 'drawing':
-            final decoded = DrawingProvider.fromJson(jsonEncode([payload]));
-            if (decoded.isNotEmpty) {
-              drawings.add(decoded.first);
-            }
-            break;
-          case 'text':
-            texts.add(PlacedText.fromJson(payload));
-            break;
-          case 'image':
-            final hydrated = PlacedImage.fromJson(payload);
+        switch (decodeCloudElement(element.elementType, payload)) {
+          case final PlacedAgentNode agent:
+            agents.add(agent);
+          case final PlacedAbility ability:
+            abilities.add(ability);
+          case final DrawingElement drawing:
+            drawings.add(drawing);
+          case final PlacedText text:
+            texts.add(text);
+          case final PlacedImage hydrated:
             final remoteAsset = snapshot.assetsById[hydrated.pictureId];
             images.add(hydrated);
             if (remoteAsset != null) {
@@ -276,10 +267,8 @@ class CloudStrategyPageSource implements StrategyPageSource {
                     asset: remoteAsset,
                   );
             }
-            break;
-          case 'utility':
-            utilities.add(PlacedUtility.fromJson(payload));
-            break;
+          case final PlacedUtility utility:
+            utilities.add(utility);
         }
       } catch (_) {
         // Ignore malformed payloads during hydration.
@@ -439,24 +428,16 @@ class CloudStrategyPageSource implements StrategyPageSource {
     for (final element in projected.elements) {
       final payload = cloudPayloadData(element.payload);
       try {
-        switch (element.elementType) {
-          case 'agent':
-            agents.add(PlacedAgentNode.fromJson(payload));
-            break;
-          case 'ability':
-            abilities.add(PlacedAbility.fromJson(payload));
-            break;
-          case 'drawing':
-            final decoded = DrawingProvider.fromJson(jsonEncode([payload]));
-            if (decoded.isNotEmpty) {
-              drawings.add(decoded.first);
-            }
-            break;
-          case 'text':
-            texts.add(PlacedText.fromJson(payload));
-            break;
-          case 'image':
-            final hydrated = PlacedImage.fromJson(payload);
+        switch (decodeCloudElement(element.elementType, payload)) {
+          case final PlacedAgentNode agent:
+            agents.add(agent);
+          case final PlacedAbility ability:
+            abilities.add(ability);
+          case final DrawingElement drawing:
+            drawings.add(drawing);
+          case final PlacedText text:
+            texts.add(text);
+          case final PlacedImage hydrated:
             final remoteAsset = snapshot.assetsById[hydrated.pictureId];
             images.add(hydrated);
             if (remoteAsset != null) {
@@ -466,10 +447,8 @@ class CloudStrategyPageSource implements StrategyPageSource {
                     asset: remoteAsset,
                   );
             }
-            break;
-          case 'utility':
-            utilities.add(PlacedUtility.fromJson(payload));
-            break;
+          case final PlacedUtility utility:
+            utilities.add(utility);
         }
       } catch (_) {
         // Ignore malformed payloads during hydration.

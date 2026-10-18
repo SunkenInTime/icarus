@@ -8833,6 +8833,166 @@ void main() {
       });
 
       test(
+          'a landed change stays drawn when an older answer arrives late, and '
+          'nothing writes the older version back', () async {
+        final page = _page('page-1', 0);
+        final store = await editOffline(page);
+        final hold = Completer<void>();
+        final (container, batches) = await openOnRealQueue(page,
+            store: store, hold: hold, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(textOn(container, 'b').text, 'bravo offline');
+        // The server's rows from before the changes land.
+        final before = server.elements;
+
+        // They land; the read that follows the acks is held on its way.
+        final gate = liveRead.refreshGate = Completer<void>();
+        hold.complete();
+        await _until(
+            () => container.read(strategyOpQueueProvider).pending.isEmpty);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(cloudPayloadData(server.element('b').payload)['text'],
+            'bravo offline');
+
+        // An older answer arrives late: the rows from before, with an
+        // unrelated change to the page's settings.
+        liveRead.setSnapshot(_editorSnapshot(
+          pages: [page],
+          themeProfileId: theme,
+          activePage: _pageSnapshot(
+            page,
+            settings: settingsFor(1),
+            contentRevision: 2,
+            elements: before,
+          ),
+        ));
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(textOn(container, 'b').text, 'bravo offline');
+
+        // Moving b sends its move, never its old text.
+        container
+            .read(textProvider.notifier)
+            .updatePosition(const Offset(320, 320), 'b');
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        await _until(() =>
+            sentFor(batches, EntitySyncKey.element(page.publicId, 'b'))
+                    .length ==
+                2 &&
+            container.read(strategyOpQueueProvider).pending.isEmpty);
+        gate.complete();
+        showServer();
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(cloudPayloadData(server.element('b').payload)['text'],
+            'bravo offline');
+        expect(textOn(container, 'b').text, 'bravo offline');
+      });
+
+      for (final refused in [true, false]) {
+        test(
+            'a ${refused ? 'refused' : 'waiting'} lineup change that no longer '
+            'fits the group leaves the page openable and is kept', () async {
+          final page = _page('page-1', 0);
+          // Two lineups from one origin. A teammate deleted link-a, and with
+          // it the landing only it used.
+          Map<String, dynamic> linkA({String notes = 'remote lineup'}) =>
+              _linkJson('link-a',
+                  originId: 'origin', landingId: 'landing-a', notes: notes);
+          final linkB =
+              _linkJson('link-b', originId: 'origin', landingId: 'landing-b');
+          server = _FakeServer(page.publicId, lineups: [
+            _groupRow(
+              page.publicId,
+              'link-a',
+              origins: [_originJson('origin')],
+              landings: [_landingJson('landing-b', const Offset(60, 60))],
+              links: [linkB],
+              revision: 8,
+            ),
+          ])
+            ..mergesByField = true;
+          // Offline, the user had changed link-a's notes.
+          final edited = _groupRow(
+            page.publicId,
+            'link-a',
+            origins: [_originJson('origin')],
+            landings: [
+              _landingJson('landing-a'),
+              _landingJson('landing-b', const Offset(60, 60)),
+            ],
+            links: [linkA(notes: 'offline'), linkB],
+          ).payload;
+          final key = EntitySyncKey.lineup(page.publicId, 'link-a');
+          final store = MemoryDurableStrategyOutboxStore();
+          await store.put(DurableOutboxRecord(
+            accountId: 'account-a',
+            strategyPublicId: 'cloud-strategy',
+            entityKey: key,
+            pending: PendingOp(
+              op: LineupPatchOp(
+                opId: 'notes-edit',
+                lineupPublicId: 'link-a',
+                pagePublicId: page.publicId,
+                payload: edited,
+                sortIndex: 0,
+                expectedLineupRevision: 7,
+                merge: FieldMerge(
+                  fields: const ['links/link-a'],
+                  base: {'links/link-a': linkA()},
+                ),
+              ),
+              clientId: 'test-client',
+            ),
+            status: refused
+                ? DurableOutboxStatus.attention
+                : DurableOutboxStatus.queued,
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+            lastError:
+                refused ? OpRejectionReason.fieldConflict.wireName : null,
+          ));
+
+          final hold = Completer<void>();
+          addTearDown(() {
+            if (!hold.isCompleted) hold.complete();
+          });
+          final (container, batches) = await openOnRealQueue(page,
+              store: store, hold: hold, themeProfileId: theme);
+          for (var i = 0; i < 10; i++) {
+            await _settle();
+          }
+
+          // The page opened, showing the cloud's version of the group.
+          expect(
+            container.read(lineUpProvider).links.map((link) => link.id),
+            ['link-b'],
+          );
+          // The change is kept, waiting for the user, and was not sent.
+          final record = store.load().records.single;
+          expect(record.pending.op.opId, 'notes-edit');
+          expect(record.status, DurableOutboxStatus.attention);
+          expect(
+            record.lastError,
+            refused
+                ? OpRejectionReason.fieldConflict.wireName
+                : undrawableWorkMessage,
+          );
+          expect(sentFor(batches, key), isEmpty);
+          expect(container.read(cloudSyncStatusProvider),
+              CloudSyncStatus.attention);
+        });
+      }
+
+      test(
           'paused and refused work is drawn and stays as it waits, neither '
           'sent nor dropped', () async {
         final page = _page('page-1', 0);

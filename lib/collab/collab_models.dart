@@ -50,6 +50,14 @@ const teammateDeletedCannotRestoreMessage =
     'A teammate deleted what this change edits, and this change cannot '
     'bring it back';
 
+/// Why saved work waits when the page can't show it: drawn over the
+/// server's version as it is now, it would be an item or lineup group that
+/// can't be read (a teammate removed what it relies on). The page shows the
+/// server's version, and the work is neither sent nor dropped until the
+/// user chooses.
+const undrawableWorkMessage =
+    'This change no longer fits this page as the cloud has it now';
+
 /// The server's message when it refuses a change to a page in its trash
 /// (PAGE_DELETED). Such a change lands if the page is restored and it is
 /// sent again.

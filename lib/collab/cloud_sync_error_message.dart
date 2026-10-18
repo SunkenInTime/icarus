@@ -45,6 +45,7 @@ bool isSpecificAttentionReason(String error) {
       lower.contains(retiredLineupOpMessage.toLowerCase()) ||
       lower.contains(teammateDeletedMessage.toLowerCase()) ||
       lower.contains(pageDeletedMessage.toLowerCase()) ||
+      lower.contains(undrawableWorkMessage.toLowerCase()) ||
       lower.contains(pageTooLargeToCopyMessage.toLowerCase());
 }
 
@@ -170,6 +171,11 @@ String friendlyCloudSyncError(String raw) {
     return 'A lineup change saved by an older version of Icarus cannot be '
         'sent to the cloud, so it is not in this strategy. Redo it, then '
         'choose Use cloud to clear this.';
+  }
+  if (lower.contains(undrawableWorkMessage.toLowerCase())) {
+    return 'A saved change no longer fits this page as the cloud has it now, '
+        'so it was not sent and is not shown. It remains on this device. '
+        'Keep mine sends it anyway; Use cloud drops it.';
   }
   if (lower.contains(pageDeletedMessage.toLowerCase())) {
     return 'The page these changes were on was deleted, so they were not '
