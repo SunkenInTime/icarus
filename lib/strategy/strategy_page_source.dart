@@ -373,7 +373,8 @@ class CloudStrategyPageSource implements StrategyPageSource {
 
     final strategyTheme = ref.read(strategyThemeProvider);
     final desiredThemeOverride = strategyTheme.overridePalette?.toJson();
-    final header = snapshot.header;
+    // The server's, as this device knows it holds them.
+    final header = knownStrategyHeader(ref, snapshot.header);
     bool shows(RemoteStrategyHeader header) => header.shows(
           mapData: currentMapData,
           themeProfileId: strategyTheme.profileId,
@@ -382,14 +383,13 @@ class CloudStrategyPageSource implements StrategyPageSource {
 
     // The canvas shows the strategy-level change still waiting in the
     // outbox, as it was drawn: that change waits as it is.
-    final drawn = drawnStrategyHeader(ref, header);
-    if (!identical(drawn, header) && shows(drawn)) return;
+    final queue = ref.read(strategyOpQueueProvider);
+    final waiting = waitingStrategyPatch(queue, header.publicId);
+    if (waiting != null && shows(header.withPatch(waiting.payload))) return;
 
     // Shown as the server has it: whatever waits can be dropped, unless it
     // may still land and undo that.
-    if (shows(header) &&
-        !strategyPatchMayLand(
-            ref.read(strategyOpQueueProvider), header.publicId)) {
+    if (shows(header) && !strategyPatchMayLand(queue, header.publicId)) {
       await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
             entityKey: const EntitySyncKey.strategy(),
             desiredOp: null,

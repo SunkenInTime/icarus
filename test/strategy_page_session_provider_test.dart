@@ -1058,6 +1058,9 @@ class _FakeServer {
   /// Every strategy patch this server answered, in order.
   final List<StrategyPatchOp> strategyPatches = [];
 
+  /// Every page added through this server, in order.
+  final List<RemotePage> addedPages = [];
+
   /// The revision the batch being applied was made from, once one of its
   /// ops landed from it: later ops made from it too land after it, as the
   /// real server chains them (see applyBatch in convex/ops.ts).
@@ -1212,7 +1215,11 @@ class _FakeServer {
   OpAck apply(StrategyOp op) {
     if (op is StrategyPatchOp) return _applyStrategyPatch(op);
     if (op is PageAddOp || op is PageDeleteOp || op is PageReorderOp) {
-      return _checkStrategyRevision(op, changes: true, land: () {});
+      return _checkStrategyRevision(op, changes: true, land: () {
+        if (op is PageAddOp) {
+          addedPages.add(_page(op.pagePublicId, op.sortIndex));
+        }
+      });
     }
     final (rows, change) = switch (op) {
       LineupAddOp(:final payload, :final sortIndex) => (
@@ -7540,7 +7547,7 @@ void main() {
         server.strategyThemeProfileId = themeProfileId;
       var shown = page.publicId;
       RemoteEditorSnapshot read() => _editorSnapshot(
-            pages: [page, ...otherPages],
+            pages: [page, ...otherPages, ...server.addedPages],
             mapData: server.strategyMap,
             shellRevision: server.strategyRevision,
             themeProfileId: server.strategyThemeProfileId,
@@ -7558,6 +7565,10 @@ void main() {
         ...others,
       });
       void reread() {
+        for (final added in server.addedPages) {
+          remote.pageCatalog[added.publicId] =
+              _pageSnapshot(added, settings: settingsFor(1));
+        }
         final shownBefore = shown;
         shown = page.publicId;
         remote.pageCatalog[page.publicId] = read().activePage!;
@@ -8277,12 +8288,13 @@ void main() {
       Future<(ProviderContainer, List<List<StrategyOp>>)> openMerging(
         RemotePage page, {
         List<RemoteElement> elements = const [],
+        Completer<void>? hold,
       }) {
         server = _FakeServer(page.publicId,
             lineups: [fanIn(page.publicId)], elements: elements)
           ..mergesByField = true;
         return openOnRealQueue(page,
-            themeProfileId: 'immutable-default-map-theme');
+            hold: hold, themeProfileId: 'immutable-default-map-theme');
       }
 
       void editNotes(ProviderContainer container, String link, String notes) {
@@ -8378,6 +8390,57 @@ void main() {
         expect(queueState().attentionByEntityKey, isEmpty);
         expect(
             lineupsIn(server.liveRows), ['Heaven: mine', 'Mid: remote lineup']);
+      });
+
+      test(
+          'a lineup edited twice while sent, then set back offline, lands '
+          'set back over what the first edit wrote', () async {
+        final page = _page('page-1', 0);
+        final hold = Completer<void>();
+        final (container, batches) = await openMerging(page, hold: hold);
+        final key = keyOf(page, 'link-a');
+        StrategyOpQueueState queueState() =>
+            container.read(strategyOpQueueProvider);
+        final original =
+            container.read(lineUpProvider).linkById('link-a')!.notes;
+
+        editNotes(container, 'link-a', 'one');
+        await _until(() => queueState().inFlightByEntityKey.containsKey(key));
+        editNotes(container, 'link-a', 'two');
+        await _until(() => queueState().successorByEntityKey.containsKey(key));
+        // The connection drops, and the user sets the notes back.
+        container.read(_online.notifier).state = false;
+        await _settle();
+        editNotes(container, 'link-a', original);
+        LineupPatchOp waiting() =>
+            queueState().successorByEntityKey[key]!.pending.op as LineupPatchOp;
+        await _until(() =>
+            _entry(cloudPayloadData(waiting().payload!), 'links', 'link-a')[
+                'notes'] ==
+            original);
+        container.read(_online.notifier).state = true;
+        hold.complete();
+        await container.read(strategyOpQueueProvider.notifier).flushNow();
+        await drained(container);
+
+        final sent = [
+          for (final op in sentFor(batches, key)) op as LineupPatchOp
+        ];
+        expect(
+          [
+            for (final op in sent)
+              _entry(cloudPayloadData(op.payload!), 'links', 'link-a')['notes'],
+          ],
+          ['one', original],
+        );
+        // Made offline, it carries its base: what the first edit wrote,
+        // which the server holds once that lands.
+        final setBack = sent.last.merge!;
+        expect(setBack.fields, contains('links/link-a'));
+        expect((setBack.base?['links/link-a'] as Map?)?['notes'], 'one');
+        expect(queueState().attentionByEntityKey, isEmpty);
+        expect(lineupsIn(server.liveRows),
+            ['Heaven: $original', 'Mid: remote lineup']);
       });
 
       test(
@@ -9181,6 +9244,58 @@ void main() {
             isEmpty);
         expect(container.read(strategyConflictProvider), isEmpty);
       }
+
+      /// Adds a page while the map change being sent is held, then lets it
+      /// land: the new page is drawn from a read that may predate it.
+      Future<void> addPageThenLand(
+        ProviderContainer container,
+        Completer<void> hold,
+      ) async {
+        final adding = container.read(strategyProvider.notifier).addPage();
+        await settle();
+        hold.complete();
+        await adding;
+        await settled(container);
+      }
+
+      test(
+          'a page added after the map is changed twice keeps the second '
+          'change', () async {
+        final hold = Completer<void>();
+        final (container, batches) = await open(hold);
+        container.read(mapProvider.notifier).updateMap(MapValue.bind);
+        await waitForStrategySend(batches);
+        container.read(mapProvider.notifier).updateMap(MapValue.haven);
+        await settle();
+        await addPageThenLand(container, hold);
+
+        expect(
+          [for (final op in server.strategyPatches) op.payload['mapData']],
+          ['bind', 'haven'],
+        );
+        expect(server.strategyMap, 'haven');
+        expect(container.read(mapProvider).currentMap, MapValue.haven);
+        expectNothingToAnswer(container);
+      });
+
+      test('a page added after the map is set back keeps it set back',
+          () async {
+        final hold = Completer<void>();
+        final (container, batches) = await open(hold);
+        container.read(mapProvider.notifier).updateMap(MapValue.bind);
+        await waitForStrategySend(batches);
+        container.read(mapProvider.notifier).updateMap(MapValue.ascent);
+        await settle();
+        await addPageThenLand(container, hold);
+
+        expect(
+          [for (final op in server.strategyPatches) op.payload['mapData']],
+          ['bind', 'ascent'],
+        );
+        expect(server.strategyMap, 'ascent');
+        expect(container.read(mapProvider).currentMap, MapValue.ascent);
+        expectNothingToAnswer(container);
+      });
 
       test('with a save after each change, the map set back stays', () async {
         final hold = Completer<void>();

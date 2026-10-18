@@ -238,16 +238,35 @@ bool strategyPatchMayLand(
       queue.successorByEntityKey.containsKey(key);
 }
 
-/// [header] as this device draws the strategy: the server's, with the
-/// strategy-level change still waiting in the outbox on top, so a map or
-/// theme changed offline shows until it lands (see waitingStrategyPatch).
+/// [header], the server's as read, as this device knows the server holds
+/// it: when the read is older than this device's own strategy-level change
+/// that landed since, that change's map and theme at the revision it
+/// landed at. A read at or past that revision shows what the server holds
+/// then, a teammate's later change included.
+RemoteStrategyHeader knownStrategyHeader(
+  Ref ref,
+  RemoteStrategyHeader header,
+) {
+  final landed = ref
+      .read(strategyOpQueueProvider.notifier)
+      .landedStrategyPatch(header.publicId);
+  return landed == null || header.revision >= landed.revision
+      ? header
+      : header.withPatch(landed.payload, revision: landed.revision);
+}
+
+/// [header] as this device draws the strategy: as it knows the server holds
+/// it (see knownStrategyHeader), with the strategy-level change still
+/// waiting in the outbox on top, so a map or theme changed offline shows
+/// until it lands (see waitingStrategyPatch).
 RemoteStrategyHeader drawnStrategyHeader(
   Ref ref,
   RemoteStrategyHeader header,
 ) {
+  final known = knownStrategyHeader(ref, header);
   final waiting =
       waitingStrategyPatch(ref.read(strategyOpQueueProvider), header.publicId);
-  return waiting == null ? header : header.withPatch(waiting.payload);
+  return waiting == null ? known : known.withPatch(waiting.payload);
 }
 
 final pendingStrategyOpsProvider = Provider<List<StrategyOp>>((ref) {
@@ -269,6 +288,19 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   late DurableStrategyOutboxStore _store;
   late Map<String, DurableOutboxRecord> _recordsByStorageKey;
   final Set<EntitySyncKey> _awaitingRemoteAdoption = {};
+
+  /// By strategy, this device's newest strategy-level change that the server
+  /// took: its payload, and the revision the server held it at.
+  final Map<String, ({CloudPayload payload, int revision})>
+      _landedStrategyPatches = {};
+
+  /// This device's newest strategy-level change to [strategyPublicId] that
+  /// the server took, and the revision it held it at (see
+  /// knownStrategyHeader). Null if none landed since the app started.
+  ({CloudPayload payload, int revision})? landedStrategyPatch(
+    String strategyPublicId,
+  ) =>
+      _landedStrategyPatches[strategyPublicId];
 
   /// Op IDs of the work the open canvas wrote: queued from its edits since
   /// it was last drawn fresh, or resent in their place. Any other op's ack
@@ -1866,6 +1898,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       if (ack case AppliedOpAck(:final revision)
           when _takesStrategyRevision(sent.pending.op)) {
         await _advanceOwnStrategyRevision(sent, revision);
+      }
+      if ((sent.pending.op, ack.appliedRevision)
+          case (StrategyPatchOp(:final payload), final revision?)
+          when ack.isAck &&
+              revision >
+                  (_landedStrategyPatches[sent.strategyPublicId]?.revision ??
+                      -1)) {
+        _landedStrategyPatches[sent.strategyPublicId] =
+            (payload: payload, revision: revision);
       }
       final current = _recordsByStorageKey[sent.storageKey];
       if (current?.pending.op.opId != ack.opId) continue;
