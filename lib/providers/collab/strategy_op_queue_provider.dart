@@ -968,7 +968,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     return _serializeWrite(() async {
       final list = _pageChangeRecords(accountId, strategyPublicId);
-      final now = _madeAt();
+      final now = DateTime.now();
       final oversized = cloudOperationExceedsPolicy(add);
       final addRecord = DurableOutboxRecord(
         accountId: accountId,
@@ -1067,8 +1067,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           status: cloudOperationExceedsPolicy(op)
               ? DurableOutboxStatus.attention
               : DurableOutboxStatus.queued,
-          createdAt: _madeAt(),
-          updatedAt: DateTime.now(),
+          createdAt: addRecord.createdAt,
+          updatedAt: addRecord.updatedAt,
           lastError: cloudOperationExceedsPolicy(op)
               ? cloudOperationTooLargeMessage
               : null,

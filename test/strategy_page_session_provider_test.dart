@@ -2127,13 +2127,15 @@ void main() {
       source: StrategySource.cloud,
       selectFirstPageIfNeeded: true,
     );
-    // Offline, a page added second: [page-1, added, page-2].
+    // A page added second for the server to copy, its add not landed:
+    // [page-1, added, page-2]. (One this computer copied would open.)
     await queue.enqueuePageChange(const PageAddOp(
       opId: 'add-x',
       pagePublicId: 'page-x',
       payload: {'name': 'Page 2', 'isAutoNamed': true},
       sortIndex: 1,
       expectedStrategyRevision: 1,
+      copyContentFromPagePublicId: 'page-1',
     ));
 
     await container.read(strategyProvider.notifier).deletePage('page-1');
