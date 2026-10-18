@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/const/agents.dart';
@@ -205,6 +206,7 @@ class _RecordingStrategyOpQueue extends StrategyOpQueueNotifier {
   Future<void> enqueueAll(
     Iterable<StrategyOp> ops, {
     bool flushImmediately = false,
+    SeenPage? seenPage,
   }) async {
     enqueued.addAll(ops);
   }

@@ -163,3 +163,134 @@ List<DrawnPage> drawPages(
   }
   return pages;
 }
+
+/// A page as this device last saw it, kept with its delete: before a delete
+/// made offline goes, a fresh read of the page is compared with this, so a
+/// teammate's work on the page made meanwhile is never trashed unasked.
+///
+/// The page's place is not part of it: the delete is checked against the
+/// strategy's revision, which any add, delete or move moves on.
+class SeenPage {
+  const SeenPage({
+    required this.name,
+    required this.isAttack,
+    required this.content,
+  });
+
+  /// [page]'s name and side as drawn, with [read]'s content if this device
+  /// has read it.
+  factory SeenPage.of(DrawnPage page, RemotePageSnapshot? read) => SeenPage(
+        name: page.name,
+        isAttack: page.isAttack,
+        content: read == null ? null : _contentOf(read),
+      );
+
+  final String name;
+  final bool isAttack;
+
+  /// The revision of everything the page shows: its settings (`content`),
+  /// and each element (`element:<id>`) and lineup (`lineup:<id>`) not
+  /// deleted. Every change to one moves its revision on. Null when this
+  /// device never read the page's content: then the delete always waits
+  /// for the user (see [unchangedIn]).
+  final Map<String, int>? content;
+
+  static Map<String, int> _contentOf(RemotePageSnapshot read) => {
+        'content': read.content.revision,
+        for (final element in read.elements)
+          if (!element.deleted) 'element:${element.publicId}': element.revision,
+        for (final lineup in read.lineups)
+          if (!lineup.deleted) 'lineup:${lineup.publicId}': lineup.revision,
+      };
+
+  /// Whether [now], a fresh read of the page, shows it as seen. Without
+  /// the content as seen, nothing says a teammate did not change it, so it
+  /// never does.
+  bool unchangedIn(RemotePageSnapshot now) {
+    final seen = content;
+    return seen != null &&
+        now.page.name == name &&
+        now.page.isAttack == isAttack &&
+        _sameRevisions(seen, _contentOf(now));
+  }
+
+  static bool _sameRevisions(Map<String, int> left, Map<String, int> right) =>
+      left.length == right.length &&
+      left.entries.every((entry) => right[entry.key] == entry.value);
+
+  /// The page as seen once this device's own [op] to it landed, applied at
+  /// [revision]: the change is not taken for a teammate's. A part some
+  /// other change moved on since it was seen stays as seen, so that one
+  /// still counts.
+  SeenPage after(StrategyOp op, int revision) {
+    if (op is PagePatchOp) {
+      return SeenPage(
+        name: op.payload['name'] as String? ?? name,
+        isAttack: op.payload['isAttack'] as bool? ?? isAttack,
+        content: content,
+      );
+    }
+    final seen = content;
+    final key = switch (op.entityType) {
+      StrategyOpEntityType.pageContent => 'content',
+      StrategyOpEntityType.element => 'element:${op.entityPublicId}',
+      StrategyOpEntityType.lineup => 'lineup:${op.entityPublicId}',
+      _ => null,
+    };
+    if (seen == null || key == null) return this;
+    final before = seen[key];
+    final isNew = before == null && op.kind == StrategyOpKind.add;
+    if (before != revision - 1 && !isNew) return this;
+    return SeenPage(
+      name: name,
+      isAttack: isAttack,
+      content: {
+        for (final entry in seen.entries)
+          if (entry.key != key) entry.key: entry.value,
+        if (op.kind != StrategyOpKind.delete) key: revision,
+      },
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'isAttack': isAttack,
+        if (content != null) 'content': content,
+      };
+
+  /// Throws a FormatException when [json] is not a seen page.
+  factory SeenPage.fromJson(Object? json) {
+    if (json is! Map ||
+        json['name'] is! String ||
+        json['isAttack'] is! bool ||
+        (json['content'] != null && json['content'] is! Map)) {
+      throw const FormatException('Outbox seenPage is malformed');
+    }
+    final content = json['content'] as Map?;
+    return SeenPage(
+      name: json['name'] as String,
+      isAttack: json['isAttack'] as bool,
+      content: content == null
+          ? null
+          : {
+              for (final entry in content.entries)
+                entry.key as String: entry.value is num
+                    ? (entry.value as num).toInt()
+                    : throw const FormatException(
+                        'Outbox seenPage is malformed'),
+            },
+    );
+  }
+}
+
+/// The reason a delete waits for the user when its page changed since this
+/// device saw it (see SeenPage): "<page name> $pageChangedSinceDeleteReason".
+const pageChangedSinceDeleteReason = 'changed since you deleted it';
+
+/// The page name in [reason], when it is a delete held because its page
+/// changed (see pageChangedSinceDeleteReason).
+String? pageChangedSinceDelete(String reason) {
+  const marker = ' $pageChangedSinceDeleteReason';
+  final at = reason.indexOf(marker);
+  return at < 0 ? null : reason.substring(0, at);
+}

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
@@ -515,6 +516,312 @@ void main() {
     expect(server.order, ['page-3', 'page-1', 'page-2']);
   });
 
+  group('a delete made offline is checked before it goes', () {
+    /// The user deletes [pageId], seeing it as the server has it now.
+    Future<void> deleteSeen(StrategyOpQueueNotifier notifier, String pageId) {
+      final read = server.pageSnapshot(pageId);
+      return notifier.enqueuePageChange(
+        delete(pageId),
+        seenPage: SeenPage.of(
+          DrawnPage(
+            publicId: pageId,
+            name: read.page.name,
+            isAutoNamed: read.page.isAutoNamed == true,
+            isAttack: read.page.isAttack,
+            revision: read.page.revision,
+          ),
+          read,
+        ),
+      );
+    }
+
+    setUp(() => server.teammateEdits('page-2', 'element-1'));
+
+    /// Offline: page 2 deleted, then renamed (the rename waits behind the
+    /// delete), and a teammate edits page 2 meanwhile.
+    Future<StrategyOpQueueNotifier> heldByTeammateEdit() async {
+      final notifier = open();
+      await deleteSeen(notifier, 'page-2');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await notifier.enqueue(rename('page-2', 'Retake'));
+      server.teammateEdits('page-2', 'element-1');
+
+      await reconnectAndSend(notifier);
+      return notifier;
+    }
+
+    test("a teammate's edit on the page meanwhile holds it, and says why",
+        () async {
+      await heldByTeammateEdit();
+
+      expect(server.page('page-2').trashed, isFalse);
+      expect(server.calls, isEmpty);
+      final held = queue().attentionByEntityKey.values.single.pending.op;
+      expect(held, isA<PageDeleteOp>());
+      // The rename made after the delete waits with it.
+      expect(queue().queuedByEntityKey, hasLength(1));
+      expect(queue().lastError, 'Page 2 $pageChangedSinceDeleteReason');
+      expect(
+        friendlyCloudSyncError(queue().lastError!),
+        'Page 2 changed since you deleted it. Review before deleting.',
+      );
+    });
+
+    test(
+        'paused work beside it keeps its own explanation, and Retry sends '
+        'that work, not the delete', () async {
+      final at = DateTime.utc(2026, 10, 18);
+      await store.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: _strategyId,
+        entityKey: const EntitySyncKey.element('page-1', 'element-9'),
+        pending: const PendingOp(
+          op: ElementPatchOp(
+            opId: 'paused-edit',
+            elementPublicId: 'element-9',
+            pagePublicId: 'page-1',
+            payload: {'value': 'mine'},
+            expectedElementRevision: 1,
+          ),
+          clientId: 'client',
+          attempts: 8,
+        ),
+        status: DurableOutboxStatus.paused,
+        createdAt: at,
+        updatedAt: at,
+      ));
+      final notifier = await heldByTeammateEdit();
+
+      expect(notifier.heldPageDeletes().values.single.page, 'Page 2');
+      expect(queue().pausedByEntityKey, hasLength(1));
+      expect(queue().lastError, 'Some saved work is paused after retries.');
+
+      await notifier.retryPaused();
+      await _settle();
+
+      final sent = server.calls.expand((ops) => ops).map((op) => op.opId);
+      expect(sent, ['paused-edit']);
+      expect(server.page('page-2').trashed, isFalse);
+      expect(notifier.heldPageDeletes(), hasLength(1));
+    });
+
+    test('Keep mine leaves it held: only Delete anyway sends it', () async {
+      final notifier = await heldByTeammateEdit();
+
+      await notifier.retryRejected();
+      await _settle();
+
+      expect(server.page('page-2').trashed, isFalse);
+      expect(server.calls, isEmpty);
+      expect(notifier.heldPageDeletes().values.single.page, 'Page 2');
+      expect(queue().lastError, 'Page 2 $pageChangedSinceDeleteReason');
+    });
+
+    test('Delete anyway sends it', () async {
+      final notifier = await heldByTeammateEdit();
+
+      await notifier.deleteHeldPagesAnyway({
+        for (final entry in notifier.heldPageDeletes().entries)
+          entry.key: entry.value.opId,
+      });
+      await _settle();
+
+      expect(server.page('page-2').trashed, isTrue);
+      expect(server.reads, 1, reason: 'the user chose: no second read');
+      expect(queue().pending, isEmpty);
+      expect(queue().needsAttention, isFalse);
+    });
+
+    test('Keep the page discards it, and what waited behind it lands',
+        () async {
+      final notifier = await heldByTeammateEdit();
+
+      await notifier.discardRejected(queue().attentionByEntityKey.keys.toSet());
+      await _settle();
+
+      expect(server.order, ['page-1', 'page-2', 'page-3']);
+      expect(server.page('page-2').name, 'Retake');
+      expect(queue().pending, isEmpty);
+      expect(queue().needsAttention, isFalse);
+      final drawn = drawPages(
+        server.snapshot().pages,
+        notifier.pageChangesToDraw(server.snapshot()),
+      ).map((page) => page.name);
+      expect(drawn, ['Page 1', 'Retake', 'Page 3']);
+    });
+
+    test("a teammate's rename of the page meanwhile holds it", () async {
+      final notifier = open();
+      await deleteSeen(notifier, 'page-2');
+      server.teammateRenames('page-2', 'B main');
+
+      await reconnectAndSend(notifier);
+
+      expect(server.page('page-2').trashed, isFalse);
+      expect(queue().lastError, 'Page 2 $pageChangedSinceDeleteReason');
+    });
+
+    test('with no change meanwhile it goes after the read, unasked', () async {
+      final notifier = open();
+      await deleteSeen(notifier, 'page-2');
+
+      await reconnectAndSend(notifier);
+
+      expect(server.reads, 1);
+      expect(server.page('page-2').trashed, isTrue);
+      expect(queue().pending, isEmpty);
+      expect(queue().needsAttention, isFalse);
+    });
+
+    test("this device's own edits to the page do not hold it", () async {
+      final notifier = open();
+      // More edits than one batch takes, so some land before the delete's
+      // batch is read for.
+      await notifier.enqueue(const ElementPatchOp(
+        opId: 'edit',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-2',
+        payload: {'value': 'mine'},
+        expectedElementRevision: 1,
+      ));
+      for (var i = 0; i < 45; i++) {
+        await notifier.enqueue(ElementAddOp(
+          opId: 'add-$i',
+          elementPublicId: 'element-new-$i',
+          pagePublicId: 'page-2',
+          payload: const {'value': 'mine'},
+          sortIndex: i,
+        ));
+      }
+      await deleteSeen(notifier, 'page-2');
+
+      await reconnectAndSend(notifier);
+
+      expect(server.calls.length, greaterThan(1));
+      expect(server.page('page-2').trashed, isTrue);
+      expect(queue().needsAttention, isFalse);
+    });
+
+    test('kept across a restart, it is still checked', () async {
+      await deleteSeen(open(), 'page-2');
+      server.teammateEdits('page-2', 'element-1');
+
+      await reconnectAndSend(open());
+
+      expect(server.page('page-2').trashed, isFalse);
+      expect(queue().lastError, 'Page 2 $pageChangedSinceDeleteReason');
+    });
+
+    test('made online, it goes as it always has: unread', () async {
+      final notifier = open();
+      online.state = true;
+      await _settle();
+      await deleteSeen(notifier, 'page-2');
+      await notifier.flushNow();
+      await _settle();
+
+      expect(server.reads, 0);
+      expect(server.page('page-2').trashed, isTrue);
+      expect(queue().pending, isEmpty);
+    });
+
+    test('without the content as seen, it is held even when nothing changed',
+        () async {
+      final notifier = open();
+      final read = server.pageSnapshot('page-2');
+      await notifier.enqueuePageChange(
+        delete('page-2'),
+        seenPage: SeenPage.of(
+          DrawnPage(
+            publicId: 'page-2',
+            name: read.page.name,
+            isAutoNamed: true,
+            isAttack: read.page.isAttack,
+            revision: read.page.revision,
+          ),
+          null,
+        ),
+      );
+
+      await reconnectAndSend(notifier);
+
+      expect(server.page('page-2').trashed, isFalse);
+      expect(queue().lastError, 'Page 2 $pageChangedSinceDeleteReason');
+    });
+
+    test(
+        'paused after failed reads, Retry still reads it and holds it for a '
+        "teammate's change", () async {
+      final notifier = open();
+      await deleteSeen(notifier, 'page-2');
+      server.dropReads = true;
+      online.state = true;
+      for (var i = 0; i < 12 && queue().pausedByEntityKey.isEmpty; i++) {
+        await notifier.flushNow();
+        await _settle();
+      }
+      expect(queue().pausedByEntityKey, hasLength(1));
+      server
+        ..dropReads = false
+        ..teammateEdits('page-2', 'element-1');
+
+      await notifier.retryPaused();
+      await _settle();
+
+      expect(server.calls, isEmpty);
+      expect(server.page('page-2').trashed, isFalse);
+      expect(queue().lastError, 'Page 2 $pageChangedSinceDeleteReason');
+    });
+
+    test(
+        'when the read fails as the connection drops, it waits and is read '
+        'again, never sent unread', () async {
+      final notifier = open();
+      await deleteSeen(notifier, 'page-2');
+      server.dropReads = true;
+
+      online.state = true;
+      await notifier.flushNow();
+      await _settle();
+
+      expect(server.calls, isEmpty);
+      expect(server.page('page-2').trashed, isFalse);
+      expect(queue().queuedByEntityKey.values.single.pending.op,
+          isA<PageDeleteOp>());
+      expect(queue().needsAttention, isFalse);
+
+      server.dropReads = false;
+      await notifier.flushNow();
+      await _settle();
+
+      expect(server.reads, greaterThan(1));
+      expect(server.page('page-2').trashed, isTrue);
+      expect(queue().pending, isEmpty);
+    });
+
+    test('its record keeps the page as seen through JSON', () {
+      final record = DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: _strategyId,
+        entityKey: const EntitySyncKey.pageChange('change-1'),
+        pending: PendingOp(op: delete('page-2'), clientId: 'client'),
+        status: DurableOutboxStatus.queued,
+        createdAt: DateTime.utc(2026, 10, 18),
+        updatedAt: DateTime.utc(2026, 10, 18),
+        pageChangeSequence: 1,
+        seenPage: const SeenPage(
+          name: 'Page 2',
+          isAttack: true,
+          content: {'content': 1, 'element:element-1': 3},
+        ),
+      );
+      final read = DurableOutboxRecord.fromJson(
+        jsonDecode(jsonEncode(record.toJson())) as Map<String, dynamic>,
+      );
+      expect(read.seenPage!.toJson(), record.seenPage!.toJson());
+    });
+  });
+
   group('connected, one person', () {
     test('a rename, a move and a delete each land as they are made', () async {
       final notifier = open();
@@ -892,6 +1199,73 @@ class _PageServer extends ConvexStrategyRepository {
     revision += 1;
   }
 
+  /// Each page's elements: the revision each is at.
+  final Map<String, Map<String, int>> elements = {};
+
+  void teammateEdits(String pageId, String elementId) {
+    final rows = elements[pageId] ??= {};
+    rows[elementId] = (rows[elementId] ?? 0) + 1;
+  }
+
+  void teammateRenames(String pageId, String name) {
+    page(pageId)
+      ..name = name
+      ..isAutoNamed = false
+      ..revision += 1;
+  }
+
+  /// How many times a page was read, and whether reads fail as the
+  /// connection drops.
+  int reads = 0;
+  bool dropReads = false;
+
+  /// [id] as page:getSnapshot answers it.
+  RemotePageSnapshot pageSnapshot(String id) {
+    final read = page(id);
+    return RemotePageSnapshot(
+      page: RemotePage(
+        publicId: id,
+        strategyPublicId: _strategyId,
+        name: read.name,
+        isAutoNamed: read.isAutoNamed,
+        sortIndex: read.sortIndex,
+        isAttack: read.isAttack,
+        revision: read.revision,
+        createdAt: _at,
+        updatedAt: _at,
+      ),
+      content: RemotePageContent(revision: 1, createdAt: _at, updatedAt: _at),
+      elements: [
+        for (final row in (elements[id] ?? const <String, int>{}).entries)
+          RemoteElement(
+            publicId: row.key,
+            strategyPublicId: _strategyId,
+            pagePublicId: id,
+            elementType: 'text',
+            payload: const {},
+            sortIndex: 0,
+            revision: row.value,
+            deleted: false,
+          ),
+      ],
+      lineups: const [],
+      assetsById: const {},
+    );
+  }
+
+  @override
+  Future<RemotePageSnapshot> fetchPageSnapshot({
+    required String strategyPublicId,
+    required String pagePublicId,
+    String? shareToken,
+  }) async {
+    reads += 1;
+    if (dropReads) {
+      throw StateError('The connection dropped before the page was read.');
+    }
+    return pageSnapshot(pagePublicId);
+  }
+
   /// What each op id was answered, so one sent again is answered as the
   /// server does (applyBatch in convex/ops.ts): an op that landed replays
   /// as no change, at the revision it landed at.
@@ -1044,6 +1418,12 @@ class _PageServer extends ConvexStrategyRepository {
           ..isAttack = isAttack ?? row.isAttack
           ..revision += 1;
         return AppliedOpAck(opId: op.opId, revision: row.revision);
+      case ElementAddOp(:final elementPublicId, :final pagePublicId) ||
+            ElementPatchOp(:final elementPublicId, :final pagePublicId?):
+        final rows = elements[pagePublicId] ??= {};
+        rows[elementPublicId] =
+            (rows[elementPublicId] ?? op.expectedRevision ?? 0) + 1;
+        return AppliedOpAck(opId: op.opId, revision: rows[elementPublicId]!);
       default:
         return AppliedOpAck(opId: op.opId, revision: 2);
     }

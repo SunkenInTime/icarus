@@ -814,19 +814,20 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
     _isResolvingConflicts = true;
     try {
+      // A page delete held for review is the user's own choice to make
+      // (Delete anyway or Keep the page), not a conflict Use cloud settles.
+      final held =
+          ref.read(strategyOpQueueProvider.notifier).heldPageDeletes().keys;
       final conflictKeys = {
         ...ref.read(strategyOpQueueProvider).attentionByEntityKey.keys,
-      };
+      }..removeAll(held);
       final currentPageSource =
           _resolvePageSource(strategyId, StrategySource.cloud);
       await currentPageSource.flushCurrentPage();
       final strategyNotifier = ref.read(strategyProvider.notifier);
       strategyNotifier.consumeScheduledCloudPageSync();
       strategyNotifier.consumeScheduledCloudStrategySync();
-      resolving = waiting ??
-          _waitingWork(
-            ref.read(strategyOpQueueProvider).attentionByEntityKey.keys,
-          );
+      resolving = waiting ?? _waitingWork(conflictKeys);
       if (waitingChanged()) return false;
       final rejected = Map<EntitySyncKey, QueuedEntityIntent>.from(
         ref.read(strategyOpQueueProvider).attentionByEntityKey,

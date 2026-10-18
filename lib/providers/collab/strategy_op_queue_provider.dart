@@ -17,6 +17,7 @@ import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -646,14 +647,20 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     );
   }
 
+  /// Queues [ops]. [seenPage] goes with a page delete among them (see
+  /// [enqueuePageChange]).
   Future<void> enqueueAll(
     Iterable<StrategyOp> ops, {
     bool flushImmediately = false,
+    SeenPage? seenPage,
   }) async {
     final byPage = <String, Map<EntitySyncKey, StrategyOp>>{};
     for (final op in ops) {
       if (isPageChangeOp(op)) {
-        await enqueuePageChange(op);
+        await enqueuePageChange(
+          op,
+          seenPage: op is PageDeleteOp ? seenPage : null,
+        );
         continue;
       }
       final key = EntitySyncKey.forStrategyOp(op);
@@ -683,19 +690,32 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// Anything else waits behind what is already there, a delete included:
   /// a change that was sent may have landed even when its answer never
   /// came, so nothing is taken back on the assumption it did not.
+  ///
+  /// A delete keeps [seenPage], the page as the user saw it, for the check
+  /// it goes through when it was not made and sent within one connection
+  /// (see [_pageChangedSinceDelete]).
   Future<void> enqueuePageChange(
     StrategyOp op, {
     bool flushImmediately = false,
+    SeenPage? seenPage,
   }) {
     assert(isPageChangeOp(op));
+    final madeLive = liveStamp;
     return _serializeWrite(
-      () => _appendPageChangeLocked(op, flushImmediately: flushImmediately),
+      () => _appendPageChangeLocked(
+        op,
+        flushImmediately: flushImmediately,
+        seenPage: seenPage,
+        madeLive: madeLive,
+      ),
     );
   }
 
   Future<void> _appendPageChangeLocked(
     StrategyOp op, {
     required bool flushImmediately,
+    required SeenPage? seenPage,
+    required int? madeLive,
   }) async {
     final accountId = state.accountId;
     final strategyPublicId = state.strategyPublicId;
@@ -777,7 +797,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                     math.max(last, record.pageChangeSequence ?? 0),
               ) +
               1,
+          seenPage: op is PageDeleteOp ? seenPage : null,
         ));
+        // A delete made while connected, and sent with no disconnect
+        // since, goes as it always has: unread (see
+        // [_pageChangedSinceDelete]).
+        if (op is PageDeleteOp) _markLive(op, madeLive: madeLive);
       }
     } catch (error, stackTrace) {
       _recordPersistenceFailure(error, stackTrace);
@@ -1693,6 +1718,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         for (final entry in state.attentionByEntityKey.entries) {
           final record = _recordForActiveKey(entry.key);
           if (only != null && !only(entry.key, record)) continue;
+          // Only Delete anyway sends it (see deleteHeldPagesAnyway).
+          if (_isHeldPageDelete(record)) continue;
+          // A copy cut short has nothing whole to send: copying the page
+          // again, or Use cloud, are the ways out.
+          if (isIncompletePageCopyReason(record?.lastError)) continue;
           final rejected = entry.value.pending;
           final rejectedOp = rejected.op;
           final successor = record?.successorPending;
@@ -1778,10 +1808,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       }
       if (!changed) {
         if (only != null) return;
-        // Old-format lineup changes are skipped on purpose, and keep their
-        // own reason.
-        final onlyRetired = attention.values.every(
-          (intent) => isRetiredCloudLineupOp(intent.pending.op),
+        // Old-format lineup changes, held page deletes and copies cut short
+        // are skipped on purpose, and keep their own reason.
+        final onlyRetired = attention.entries.every(
+          (entry) =>
+              isRetiredCloudLineupOp(entry.value.pending.op) ||
+              _isHeldPageDelete(_recordForActiveKey(entry.key)) ||
+              isIncompletePageCopyReason(
+                _recordForActiveKey(entry.key)?.lastError,
+              ),
         );
         // Changes a teammate's delete refused that hold nothing to bring
         // the item back with.
@@ -2167,21 +2202,29 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       _retryTimer?.cancel();
       _retryTimer = null;
       _offlineRetryCount = 0;
-      final acks = await _repo.applyBatch(
-        strategyPublicId: strategyPublicId,
-        clientId: batchClientId,
-        ops: [
-          for (final record in batch)
-            record.pending.op.forSend(
-              live: _liveOpIds.contains(record.pending.op.opId),
-            ),
-        ],
-        // The transport can deliver this after a later sign-in (it resends
-        // pending requests on reconnect), so the server checks the batch's
-        // own account, not whoever is signed in then.
-        accountSubject: batch.first.accountId,
-      );
-      await _applyAcksForRecords(batch, acks);
+      // A batch's page change goes last (see _selectBatch). A delete whose
+      // page changed since the user saw it stays behind, for the user.
+      if (await _pageChangedSinceDelete(batch.last)) {
+        await _holdChangedPageDelete(batch.last);
+        batch = batch.sublist(0, batch.length - 1);
+      }
+      if (batch.isNotEmpty) {
+        final acks = await _repo.applyBatch(
+          strategyPublicId: strategyPublicId,
+          clientId: batchClientId,
+          ops: [
+            for (final record in batch)
+              record.pending.op.forSend(
+                live: _liveOpIds.contains(record.pending.op.opId),
+              ),
+          ],
+          // The transport can deliver this after a later sign-in (it
+          // resends pending requests on reconnect), so the server checks the
+          // batch's own account, not whoever is signed in then.
+          accountSubject: batch.first.accountId,
+        );
+        await _applyAcksForRecords(batch, acks);
+      }
       batchSucceeded = true;
     } catch (error, stackTrace) {
       // applyBatch raises NOT_FOUND only for the strategy itself (a missing
@@ -2484,6 +2527,141 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     };
   }
 
+  /// Whether [record] is a page delete to hold for the user: its page
+  /// changed since the user saw it ([DurableOutboxRecord.seenPage]), so a
+  /// teammate may have put work there meanwhile.
+  ///
+  /// The page is read again only for a delete that was not made and sent
+  /// within one connection: made offline, kept across a restart, or sent
+  /// before with no answer. A delete made and sent while connected goes
+  /// unread, as it always has. A page the server no longer has gives the
+  /// delete nothing to take, so it goes. When the page can't be read this
+  /// throws, and the delete waits to be tried again, never sent unread.
+  Future<bool> _pageChangedSinceDelete(DurableOutboxRecord record) async {
+    final seen = record.seenPage;
+    final op = record.pending.op;
+    if (seen == null || op is! PageDeleteOp || _liveOpIds.contains(op.opId)) {
+      return false;
+    }
+    final RemotePageSnapshot now;
+    try {
+      now = await _repo.fetchPageSnapshot(
+        strategyPublicId: record.strategyPublicId,
+        pagePublicId: op.pagePublicId,
+      );
+    } catch (error) {
+      if (isTypedConvexNotFoundError(error)) return false;
+      rethrow;
+    }
+    return !seen.unchangedIn(now);
+  }
+
+  /// Holds [delete], whose page changed since the user saw it, in attention
+  /// until the user chooses: Delete anyway sends it (Keep mine, see
+  /// [retryRejected]: the retried delete keeps no seen page, so it goes
+  /// unread), and Keep the page discards it, which sends what waited behind
+  /// it ([discardRejected]).
+  Future<void> _holdChangedPageDelete(DurableOutboxRecord delete) =>
+      _serializeWrite(() async {
+        final current = _recordsByStorageKey[delete.storageKey];
+        if (current == null ||
+            current.pending.op.opId != delete.pending.op.opId) {
+          return;
+        }
+        final reason = '${delete.seenPage!.name} $pageChangedSinceDeleteReason';
+        await _putRecord(current.copyWith(
+          status: DurableOutboxStatus.attention,
+          updatedAt: DateTime.now(),
+          lastError: reason,
+        ));
+        if (_isDisposed) return;
+        _refreshActiveQueueView();
+        if (_isActive(delete.accountId, delete.strategyPublicId)) {
+          ref.read(strategyConflictProvider.notifier).push(ConflictResolution(
+                type: ConflictResolutionType.rebase,
+                opId: delete.pending.op.opId,
+                message: reason,
+              ));
+        }
+      });
+
+  static bool _isHeldPageDelete(DurableOutboxRecord? record) =>
+      record != null &&
+      record.status == DurableOutboxStatus.attention &&
+      record.pending.op is PageDeleteOp &&
+      pageChangedSinceDelete(record.lastError ?? '') != null;
+
+  /// The active strategy's page deletes held because their page changed
+  /// since the user saw it (see [_holdChangedPageDelete]): for each, the
+  /// page's name as the user saw it, and the held op's id.
+  Map<EntitySyncKey, ({String page, String opId})> heldPageDeletes() => {
+        for (final key in state.attentionByEntityKey.keys)
+          if (_recordForActiveKey(key) case final record?
+              when _isHeldPageDelete(record))
+            key: (
+              page: pageChangedSinceDelete(record.lastError!)!,
+              opId: record.pending.op.opId,
+            ),
+      };
+
+  /// Delete anyway: sends the held page deletes in [opIds] (each key with
+  /// the op id the user saw), unread. One that changed since is left.
+  Future<void> deleteHeldPagesAnyway(Map<EntitySyncKey, String> opIds) =>
+      _serializeWrite(() async {
+        try {
+          for (final entry in opIds.entries) {
+            final record = _recordForActiveKey(entry.key);
+            if (!_isHeldPageDelete(record) ||
+                record!.pending.op.opId != entry.value) {
+              continue;
+            }
+            await _putRecord(record.copyWith(
+              // A new op id: the server answers a known one as it did.
+              pending: PendingOp(
+                op: record.pending.op.withOpId(const Uuid().v4()),
+                clientId: record.pending.clientId,
+              ),
+              status: DurableOutboxStatus.queued,
+              updatedAt: DateTime.now(),
+              clearError: true,
+              clearSeenPage: true,
+            ));
+          }
+        } catch (error, stackTrace) {
+          _recordPersistenceFailure(error, stackTrace);
+          return;
+        }
+        _pruneCanvasOpIds();
+        _refreshActiveQueueView(clearError: true);
+        _scheduleFlush(flushImmediately: true);
+      });
+
+  /// This device's own [sent] landed, applied at [revision]: a waiting
+  /// delete of its page sees the page with it (see SeenPage.after), so it is
+  /// not taken for a teammate's change. Deletes in [batch] were checked
+  /// already.
+  Future<void> _advanceSeenPage(
+    DurableOutboxRecord sent,
+    int revision,
+    List<DurableOutboxRecord> batch,
+  ) async {
+    final pageId = sent.entityKey.pageId ?? sent.pending.op.pagePublicId;
+    if (pageId == null || renumbersPages(sent.pending.op)) return;
+    for (final record
+        in _pageChangeRecords(sent.accountId, sent.strategyPublicId)) {
+      final seen = record.seenPage;
+      if (seen == null ||
+          record.pending.op is! PageDeleteOp ||
+          record.pending.op.pagePublicId != pageId ||
+          batch.any((item) => item.storageKey == record.storageKey)) {
+        continue;
+      }
+      final advanced = seen.after(sent.pending.op, revision);
+      if (identical(advanced, seen)) continue;
+      await _putRecord(record.copyWith(seenPage: advanced));
+    }
+  }
+
   Future<void> _applyAcksForRecords(
     List<DurableOutboxRecord> batch,
     List<OpAck> acks,
@@ -2535,6 +2713,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       }
       if (ack.isAck && sent.pending.op is PageDeleteOp) {
         await _dropEditsBehindDelete(sent);
+      }
+      if (ownRevision != null) {
+        await _advanceSeenPage(sent, ownRevision, batch);
       }
       final current = _recordsByStorageKey[sent.storageKey];
       if (current?.pending.op.opId != ack.opId) continue;
@@ -3000,6 +3181,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       pageChangeSequence: current?.pageChangeSequence,
       waitsForPageAdd: current?.waitsForPageAdd ?? false,
       pageCopyKeys: current?.pageCopyKeys,
+      // Only the user's Delete anyway sends a delete unread.
+      seenPage: current?.seenPage,
     );
   }
 
@@ -4291,6 +4474,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       // that reason, so the sync button does not call it a conflict. Other attention beside it is noted so it is not left
       // unexplained.
       String? specificReason;
+      String? heldDelete;
       var hasOtherWork = false;
       for (final entry in attention.entries) {
         final record = recordFor(entry.key);
@@ -4300,6 +4484,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final reason = lastError == OpRejectionReason.deleted.wireName
             ? teammateDeletedMessage
             : lastError;
+        // A delete held for its page is shown apart, with its own choices
+        // (see heldPageDeletes); its reason stands only when nothing else
+        // waits.
+        if (reason != null && pageChangedSinceDelete(reason) != null) {
+          heldDelete ??= reason;
+          continue;
+        }
         if (reason == lineupPageMismatchMessage ||
             reason == lineupOverlapMessage ||
             reason == teammateDeletedMessage ||
@@ -4322,7 +4513,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             ? withOtherWorkNeedsAttentionNote(specificReason)
             : specificReason;
       }
-      return 'Some saved work needs attention.';
+      if (hasOtherWork) return 'Some saved work needs attention.';
+      // Paused work beside a held delete is explained and retried on its
+      // own; the delete shows apart.
+      if (paused.isNotEmpty) return 'Some saved work is paused after retries.';
+      return heldDelete ?? 'Some saved work needs attention.';
     }
     if (paused.isNotEmpty) return 'Some saved work is paused after retries.';
     return null;
