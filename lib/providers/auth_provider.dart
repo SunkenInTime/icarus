@@ -523,6 +523,10 @@ class AuthProvider extends Notifier<AppAuthState> {
   int _incidentCounter = 0;
   int _authGeneration = 0;
 
+  /// Counts sign-ins, so a sign-out still finishing when someone signs in
+  /// again can tell, and leaves the new session alone.
+  int _signIns = 0;
+
   /// The session [build] started Convex setup for.
   String? _buildSessionFingerprint;
 
@@ -638,12 +642,15 @@ class AuthProvider extends Notifier<AppAuthState> {
       if (next.convexAuthStatus == ConvexAuthStatus.ready) {
         _supabaseUnreachable = false;
       }
-      // The account that was signed in is gone: signed out here, signed out
-      // by Supabase (a revoked or expired refresh token), or replaced by
-      // another account. What this computer kept of its library goes too.
+      // The signed-in account changed: signed out here, signed out by
+      // Supabase (a revoked or expired refresh token), another account, or
+      // a sign-in. Whatever the account that ended kept goes, and its late
+      // answers can't write it back.
       final previousAccountId = previous?.user?.id;
-      if (previousAccountId != null && previousAccountId != next.user?.id) {
-        unawaited(_deleteAccountCopies(previousAccountId));
+      // (The first state, with no previous one, is the startup sweep's.)
+      if (previous != null && previousAccountId != next.user?.id) {
+        if (previousAccountId != null) _endCopySessions(previousAccountId);
+        unawaited(_keepOnlyAccountCopies(next.user?.id));
       }
     });
     // The server accepts this build again (a rolled-back deploy): the
@@ -663,6 +670,9 @@ class AuthProvider extends Notifier<AppAuthState> {
         sessionFingerprint: _buildSessionFingerprint,
       );
     });
+    // The account is known from the session Supabase restored from disk,
+    // offline too: finish any deletion a crash interrupted last time.
+    Future<void>.microtask(() => _keepOnlyAccountCopies(session?.user.id));
 
     return AppAuthState.fromSession(
       session,
@@ -698,6 +708,7 @@ class AuthProvider extends Notifier<AppAuthState> {
     if (currentSession == null) {
       _clearAuthIncident();
     }
+    if (event.event == AuthChangeEvent.signedIn) _signIns++;
 
     unawaited(
       _configureConvexAuth(
@@ -930,6 +941,11 @@ class AuthProvider extends Notifier<AppAuthState> {
 
   Future<void> signOut() async {
     final signedOutAccountId = state.user?.id;
+    // Supabase reports the sign-out before its request finishes, and the
+    // user can sign in again meanwhile. Then the rest of this belongs to a
+    // session that is over, and must touch nothing of the new one.
+    final signIns = _signIns;
+    bool signedInAgain() => _signIns != signIns;
     // Invalidate any setup that is currently awaiting a Convex auth handle
     // before the Supabase auth-state event has a chance to arrive. Otherwise a
     // stale setup can resume during sign-out and surface a false auth incident.
@@ -946,14 +962,16 @@ class AuthProvider extends Notifier<AppAuthState> {
 
     try {
       await _supabaseApi.signOut();
+      if (signedInAgain()) return;
       // Signed out of Supabase: the account is gone from this computer even
       // if a later step fails.
-      if (signedOutAccountId != null) {
-        await _deleteAccountCopies(signedOutAccountId);
-      }
+      if (signedOutAccountId != null) _endCopySessions(signedOutAccountId);
+      await _keepOnlyAccountCopies(null);
+      if (signedInAgain()) return;
       _convexAuthHandle?.dispose();
       _convexAuthHandle = null;
       await _convexApi.clearAuth();
+      if (signedInAgain()) return;
       state = AppAuthState.fromSession(
         null,
         isLoading: false,
@@ -967,6 +985,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         error: error,
         stackTrace: stackTrace,
       );
+      if (signedInAgain()) return;
       state = state.copyWith(
         isLoading: false,
         isConvexUserReady: false,
@@ -993,25 +1012,35 @@ class AuthProvider extends Notifier<AppAuthState> {
     }
   }
 
-  /// Removes what this computer kept of [accountId]'s cloud library, so a
-  /// signed-out computer doesn't keep someone's library. Unsent work stays
-  /// in its outboxes, and image files are never touched. A copy that can't
-  /// be deleted is reported, never a reason the sign-out fails.
-  Future<void> _deleteAccountCopies(String accountId) async {
-    final scope = CloudCopyScope(
+  /// Ends [accountId]'s copy sessions, at once and before anything else
+  /// runs: an answer its live queries receive after this can no longer
+  /// write its copy back.
+  void _endCopySessions(String accountId) {
+    CloudCopyScope(
       deploymentUrl: ref.read(cloudCopyDeploymentUrlProvider),
       accountId: accountId,
-    );
-    // At once, before anything else runs: an answer the account's live
-    // queries receive after this can no longer write its copy back.
-    scope.endSessions();
+    ).endSessions();
+  }
+
+  /// Keeps on this computer only [accountId]'s copy of its cloud library,
+  /// or none when signed out (null), so a signed-out computer doesn't keep
+  /// someone's library. Unsent work stays in its outboxes, and image files
+  /// are never touched. A copy that can't be deleted is reported, never a
+  /// reason a sign-out fails.
+  Future<void> _keepOnlyAccountCopies(String? accountId) async {
+    final keep = accountId == null
+        ? null
+        : CloudCopyScope(
+            deploymentUrl: ref.read(cloudCopyDeploymentUrlProvider),
+            accountId: accountId,
+          );
     for (final copy in ref.read(cloudAccountCopiesProvider)) {
       try {
-        await copy.deleteAccount(scope);
+        await copy.deleteAllExcept(keep);
       } catch (error, stackTrace) {
         AppErrorReporter.reportWarning(
-          "Signed out, but this computer's copy of the cloud library could "
-          'not be deleted',
+          "This computer's copy of a cloud library that isn't signed in "
+          "couldn't be deleted",
           source: 'auth',
           error: error,
           stackTrace: stackTrace,

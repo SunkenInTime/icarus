@@ -194,7 +194,7 @@ void main() {
     );
   });
 
-  test("deleteAccount removes that account's records and no one else's",
+  test("deleteAllExcept keeps that account's records and no one else's",
       () async {
     const other = CloudCopyScope(
       deploymentUrl: 'https://prod-1.convex.cloud',
@@ -212,7 +212,7 @@ void main() {
     await store.writeFolders(other, [_folder('g1')],
         answerOrder: nextCloudLibraryAnswerOrder(), matchedAt: matchedAt);
 
-    await store.deleteAccount(_scope);
+    await store.deleteAllExcept(other);
 
     expect(store.readFolders(_scope), isNull);
     expect(
@@ -221,6 +221,10 @@ void main() {
     );
     expect(store.readFolders(other), isNotNull);
     expect(store.values, hasLength(1));
+
+    // Signed out: nothing is kept.
+    await store.deleteAllExcept(null);
+    expect(store.values, isEmpty);
   });
 
   test('a new folder tree drops the lists of folders no longer in it',
@@ -324,7 +328,7 @@ void main() {
     );
 
     session.endSessions();
-    await store.deleteAccount(session);
+    await store.deleteAllExcept(null);
     // A late answer of the ended session, newer than anything written.
     await store.writeStrategies(
       session,

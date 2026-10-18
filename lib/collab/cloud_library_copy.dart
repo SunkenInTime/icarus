@@ -113,10 +113,14 @@ class CloudLibraryCopy<T> {
   final DateTime matchedAt;
 }
 
-/// Something kept on this computer per deployment and account, removed
-/// when that account signs out.
+/// Something kept on this computer per deployment and account. Only the
+/// signed-in account's may stay: AuthProvider asks each one to delete the
+/// rest whenever the account settles (at startup, and whenever it signs out
+/// or changes), so a deletion a crash interrupted is finished next time.
 abstract interface class CloudAccountCopy {
-  Future<void> deleteAccount(CloudCopyScope scope);
+  /// Deletes every record that is not [keep]'s (its deployment and account),
+  /// or every record when [keep] is null (signed out).
+  Future<void> deleteAllExcept(CloudCopyScope? keep);
 }
 
 /// The library list kept on this computer: the folder tree and the
@@ -291,12 +295,11 @@ abstract class _KeyedCloudLibraryCopyStore implements CloudLibraryCopyStore {
       });
 
   @override
-  Future<void> deleteAccount(CloudCopyScope scope) {
-    final prefix = scope.storageKeyPrefix;
+  Future<void> deleteAllExcept(CloudCopyScope? keep) {
     return _serially(
       () => _deleteAll([
         for (final key in _keys)
-          if (key.startsWith(prefix)) key,
+          if (keep == null || !key.startsWith(keep.storageKeyPrefix)) key,
       ]),
     );
   }
@@ -371,8 +374,8 @@ class HiveCloudLibraryCopyStore extends _KeyedCloudLibraryCopyStore {
   /// Hive only marks deleted records in its file; compacting rewrites the
   /// file without them, so a signed-out account's library is off the disk.
   @override
-  Future<void> deleteAccount(CloudCopyScope scope) async {
-    await super.deleteAccount(scope);
+  Future<void> deleteAllExcept(CloudCopyScope? keep) async {
+    await super.deleteAllExcept(keep);
     await _serially(_box.compact);
   }
 }
@@ -439,7 +442,7 @@ class UnavailableCloudLibraryCopyStore implements CloudLibraryCopyStore {
   }) async {}
 
   @override
-  Future<void> deleteAccount(CloudCopyScope scope) async {}
+  Future<void> deleteAllExcept(CloudCopyScope? keep) async {}
 }
 
 /// Opens [HiveBoxNames.cloudLibraryCopyBox] and returns whether it is open.

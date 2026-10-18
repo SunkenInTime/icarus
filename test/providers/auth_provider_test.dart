@@ -1091,15 +1091,19 @@ void main() {
     container.read(authProvider);
     await pumpMicrotasks();
 
-    await container.read(authProvider.notifier).signOut();
-    await pumpMicrotasks();
-
-    expect(copy.deleted.toSet(), {
+    // At startup, the signed-in account's copy is the one kept.
+    expect(copy.kept, [
       const CloudCopyScope(
         deploymentUrl: 'https://example-1.convex.cloud',
         accountId: 'user-1',
       ),
-    });
+    ]);
+
+    await container.read(authProvider.notifier).signOut();
+    await pumpMicrotasks();
+
+    expect(copy.kept.skip(1), everyElement(isNull));
+    expect(copy.kept.length, greaterThan(1));
   });
 
   group('a refresh that cannot reach Supabase', () {
@@ -1215,21 +1219,17 @@ void main() {
       ]);
       container.read(authProvider);
       await pumpMicrotasks();
+      copy.kept.clear();
     });
 
     tearDown(() => container.dispose());
-
-    const user1 = CloudCopyScope(
-      deploymentUrl: 'https://example-1.convex.cloud',
-      accountId: 'user-1',
-    );
 
     test('when Supabase ends the session itself', () async {
       supabaseApi.currentSession = null;
       supabaseApi.emit(AuthChangeEvent.signedOut, null);
       await pumpMicrotasks();
 
-      expect(copy.deleted, contains(user1));
+      expect(copy.kept, contains(isNull));
     });
 
     test('when another account signs in', () async {
@@ -1238,8 +1238,12 @@ void main() {
       supabaseApi.emit(AuthChangeEvent.signedIn, other);
       await pumpMicrotasks();
 
-      expect(copy.deleted, contains(user1));
-      expect(copy.deleted.map((scope) => scope.accountId), isNot('user-2'));
+      expect(copy.kept, [
+        const CloudCopyScope(
+          deploymentUrl: 'https://example-1.convex.cloud',
+          accountId: 'user-2',
+        ),
+      ]);
     });
 
     test('when signing out fails after Supabase signed out', () async {
@@ -1250,7 +1254,7 @@ void main() {
       await container.read(authProvider.notifier).signOut();
 
       expect(convexApi.clearAuthCalls, greaterThan(0));
-      expect(copy.deleted, contains(user1));
+      expect(copy.kept, contains(isNull));
     });
 
     test('not when the session is merely refreshed', () async {
@@ -1259,7 +1263,37 @@ void main() {
       supabaseApi.emit(AuthChangeEvent.tokenRefreshed, refreshed);
       await pumpMicrotasks();
 
-      expect(copy.deleted, isEmpty);
+      expect(copy.kept, isEmpty);
+    });
+
+    test(
+        'a sign-out still finishing when the same account signs in again '
+        'leaves the new session alone', () async {
+      final completion = Completer<void>();
+      supabaseApi.signOutCompletion = completion;
+      final signOut = container.read(authProvider.notifier).signOut();
+      await pumpMicrotasks();
+      expect(container.read(authProvider).user, isNull);
+
+      final again = fakeSession(accessToken: 'again');
+      supabaseApi.currentSession = again;
+      supabaseApi.emit(AuthChangeEvent.signedIn, again);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+      final fresh = CloudCopyScope.begin(
+        deploymentUrl: 'https://example-1.convex.cloud',
+        accountId: 'user-1',
+      );
+      final sweepsBefore = copy.kept.length;
+
+      completion.complete();
+      await signOut;
+      await pumpMicrotasks();
+
+      expect(fresh.hasEnded, isFalse);
+      expect(copy.kept.skip(sweepsBefore), isEmpty);
+      expect(container.read(authProvider).user?.id, 'user-1');
+      expect(container.read(authProvider).isAuthenticated, isTrue);
     });
   });
 
@@ -1318,14 +1352,98 @@ void main() {
       supabaseApi: () => supabaseApi,
     );
   }
+
+  group('at startup, on Hive', () {
+    late Directory dir;
+    const deployment = 'https://example-1.convex.cloud';
+
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('icarus-startup-sweep-');
+      Hive.init(dir.path);
+      await Hive.openBox<dynamic>(HiveBoxNames.cloudLibraryCopyBox);
+      final store = HiveCloudLibraryCopyStore();
+      for (final account in ['user-1', 'someone-else']) {
+        await store.writeStrategies(
+          CloudCopyScope.begin(deploymentUrl: deployment, accountId: account),
+          const CloudStrategyListing.owned(null),
+          [_cloudEntry('kept-by-$account')],
+          answerOrder: nextCloudLibraryAnswerOrder(),
+          matchedAt: DateTime(2026, 10, 17),
+        );
+      }
+      // As if the app exited before a sign-out's deletion reached the disk.
+      await Hive.close();
+      await Hive.openBox<dynamic>(HiveBoxNames.cloudLibraryCopyBox);
+    });
+
+    tearDown(() async {
+      await Hive.close();
+      await dir.delete(recursive: true);
+    });
+
+    Future<List<String>> keysOnDisk() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await Hive.close();
+      await Hive.openBox<dynamic>(HiveBoxNames.cloudLibraryCopyBox);
+      return [
+        for (final key
+            in Hive.box<dynamic>(HiveBoxNames.cloudLibraryCopyBox).keys)
+          '$key',
+      ];
+    }
+
+    ProviderContainer start() {
+      final store = HiveCloudLibraryCopyStore();
+      final container = ProviderContainer(overrides: [
+        cloudLibraryCopyStoreProvider.overrideWithValue(store),
+        cloudAccountCopiesProvider.overrideWith((ref) => [store]),
+        cloudCopyDeploymentUrlProvider.overrideWithValue(deployment),
+      ]);
+      container.read(authProvider);
+      return container;
+    }
+
+    test('signed out, it finishes the deletion a crash interrupted', () async {
+      supabaseApi.currentSession = null;
+      final container = start();
+      addTearDown(container.dispose);
+      await pumpMicrotasks();
+
+      expect(await keysOnDisk(), isEmpty);
+    });
+
+    test(
+        'signed in and offline, it keeps the account\'s copy and drops '
+        'any other', () async {
+      supabaseApi.currentSession = fakeSession();
+      convexApi
+        ..connected = false
+        ..reconnectResult = false
+        ..autoAuthenticateOnSetAuth = false;
+      AuthProvider.debugOfflineRetryDelay = (_) => const Duration(hours: 1);
+      final container = start();
+      addTearDown(container.dispose);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.offline,
+      );
+
+      final keys = await keysOnDisk();
+      expect(keys.where((key) => key.contains('|user-1|')), isNotEmpty);
+      expect(keys.where((key) => key.contains('|someone-else|')), isEmpty);
+    });
+  });
 }
 
 class _RecordingAccountCopy implements CloudAccountCopy {
-  final deleted = <CloudCopyScope>[];
+  /// What each sweep kept: an account's scope, or null for nothing.
+  final kept = <CloudCopyScope?>[];
 
   @override
-  Future<void> deleteAccount(CloudCopyScope scope) async {
-    deleted.add(scope);
+  Future<void> deleteAllExcept(CloudCopyScope? keep) async {
+    kept.add(keep);
   }
 }
 
@@ -1499,6 +1617,7 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   Session? currentSession;
   bool emitInitialSessionOnListen = false;
   bool emitSignedOutOnSignOut = true;
+  Completer<void>? signOutCompletion;
   bool emitSignedInEventOnPasswordSignIn = false;
   Session? sessionFromUrlSession;
   Object? sessionFromUrlError;
@@ -1568,10 +1687,13 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   @override
   Future<void> signOut() async {
     currentSession = null;
-    if (!emitSignedOutOnSignOut) return;
-    for (final controller in _controllers) {
-      controller.add(AuthState(AuthChangeEvent.signedOut, currentSession));
+    if (emitSignedOutOnSignOut) {
+      for (final controller in _controllers) {
+        controller.add(AuthState(AuthChangeEvent.signedOut, currentSession));
+      }
     }
+    // Supabase reports the sign-out before its request finishes.
+    await signOutCompletion?.future;
   }
 
   @override
