@@ -199,6 +199,38 @@ final strategyOpQueueProvider =
   StrategyOpQueueNotifier.new,
 );
 
+/// The strategy-level change (map, theme) to [strategyPublicId] still
+/// waiting in [queue]'s outbox, sent or not, paused or refused: the newest
+/// one, the change queued behind one being sent included. Null when none
+/// waits.
+StrategyPatchOp? waitingStrategyPatch(
+  StrategyOpQueueState queue,
+  String strategyPublicId,
+) {
+  if (queue.strategyPublicId != strategyPublicId) return null;
+  const key = EntitySyncKey.strategy();
+  final op = (queue.successorByEntityKey[key] ??
+          queue.queuedByEntityKey[key] ??
+          queue.pausedByEntityKey[key] ??
+          queue.attentionByEntityKey[key])
+      ?.pending
+      .op;
+  final waiting = op ?? queue.inFlightByEntityKey[key]?.pending.op;
+  return waiting is StrategyPatchOp ? waiting : null;
+}
+
+/// [header] as this device draws the strategy: the server's, with the
+/// strategy-level change still waiting in the outbox on top, so a map or
+/// theme changed offline shows until it lands (see waitingStrategyPatch).
+RemoteStrategyHeader drawnStrategyHeader(
+  Ref ref,
+  RemoteStrategyHeader header,
+) {
+  final waiting =
+      waitingStrategyPatch(ref.read(strategyOpQueueProvider), header.publicId);
+  return waiting == null ? header : header.withPatch(waiting.payload);
+}
+
 final pendingStrategyOpsProvider = Provider<List<StrategyOp>>((ref) {
   return ref.watch(strategyOpQueueProvider).pending.map((op) => op.op).toList();
 });

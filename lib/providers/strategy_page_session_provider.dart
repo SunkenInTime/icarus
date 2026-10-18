@@ -868,9 +868,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           strategyId: strategyId,
           canApply: () => redrawn = unchangedCanvas(),
           loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot!,
+          // Choosing the cloud's map and theme draws the server's, not the
+          // refused change waiting over them (see drawnStrategyHeader).
           preservedMetadata:
               rejected.containsKey(const EntitySyncKey.strategy())
-                  ? null
+                  ? _cloudHeaderMetadata(snapshot.header)
                   : localMetadata,
         );
         if (!redrawn) return false;
@@ -1279,9 +1281,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
   String _resolveThemeProfileId(StrategySource source, String strategyId) {
     if (source == StrategySource.cloud) {
-      final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      return snapshot?.header.themeProfileId ??
-          MapThemeProfilesProvider.immutableDefaultProfileId;
+      final header = ref.read(remoteEditorSnapshotProvider).valueOrNull?.header;
+      return _cloudThemeProfileId(
+        header == null ? null : drawnStrategyHeader(ref, header),
+      );
     }
 
     final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(
@@ -1296,25 +1299,52 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     String strategyId,
   ) {
     if (source == StrategySource.cloud) {
-      final payload = ref
-          .read(remoteEditorSnapshotProvider)
-          .valueOrNull
-          ?.header
-          .themeOverridePalette;
-      if (payload == null || payload.isEmpty) {
-        return null;
-      }
-      try {
-        return MapThemePalette.fromJson(payload);
-      } catch (_) {
-        return null;
-      }
+      final header = ref.read(remoteEditorSnapshotProvider).valueOrNull?.header;
+      return _cloudThemeOverridePalette(
+        header == null ? null : drawnStrategyHeader(ref, header),
+      );
     }
 
     return Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .get(strategyId)
         ?.themeOverridePalette;
   }
+
+  static String _cloudThemeProfileId(RemoteStrategyHeader? header) =>
+      header?.themeProfileId ??
+      MapThemeProfilesProvider.immutableDefaultProfileId;
+
+  static MapThemePalette? _cloudThemeOverridePalette(
+    RemoteStrategyHeader? header,
+  ) {
+    final payload = header?.themeOverridePalette;
+    if (payload == null || payload.isEmpty) {
+      return null;
+    }
+    try {
+      return MapThemePalette.fromJson(payload);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The map and theme [header] (the server's) sets, to draw in place of
+  /// what the canvas has when the user chooses the cloud's version of them.
+  static ({MapValue map, StrategyThemeState theme}) _cloudHeaderMetadata(
+    RemoteStrategyHeader header,
+  ) =>
+      (
+        map: Maps.mapNames.entries
+            .firstWhere(
+              (entry) => entry.value == header.mapData,
+              orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
+            )
+            .key,
+        theme: StrategyThemeState(
+          profileId: _cloudThemeProfileId(header),
+          overridePalette: _cloudThemeOverridePalette(header),
+        ),
+      );
 
   bool _canSafelyReapplyRemotePage() {
     final saveState = ref.read(strategySaveStateProvider);

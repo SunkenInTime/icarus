@@ -472,6 +472,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       ..setPendingCloudSync(true)
       ..setCloudSyncError(null);
 
+    if (_showsWaitingStrategyPatch()) return;
     final desiredOp = _buildDesiredStrategySyncOp();
     ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
           entityKey: const EntitySyncKey.strategy(),
@@ -539,6 +540,29 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     ref.read(strategySaveStateProvider.notifier).markDirty();
     refreshAutosaveScheduling();
+  }
+
+  /// Whether the canvas's map and theme are the strategy-level change still
+  /// waiting in the outbox, as it was drawn (see drawnStrategyHeader): that
+  /// change waits as it is.
+  bool _showsWaitingStrategyPatch() {
+    final strategyId = state.strategyId;
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (strategyId == null ||
+        snapshot == null ||
+        snapshot.header.publicId != strategyId) {
+      return false;
+    }
+    final drawn = drawnStrategyHeader(ref, snapshot.header);
+    final strategyTheme = ref.read(strategyThemeProvider);
+    final mapData = Maps.mapNames[ref.read(mapProvider).currentMap];
+    return !identical(drawn, snapshot.header) &&
+        mapData != null &&
+        drawn.shows(
+          mapData: mapData,
+          themeProfileId: strategyTheme.profileId,
+          themeOverridePalette: strategyTheme.overridePalette?.toJson(),
+        );
   }
 
   StrategyOp? _buildDesiredStrategySyncOp() {

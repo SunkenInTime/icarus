@@ -7198,6 +7198,7 @@ void main() {
       Map<String, List<RemoteElement>> otherElements = const {},
       Map<String, List<RemoteLineup>> otherLineups = const {},
       String? themeProfileId,
+      bool online = true,
     }) async {
       final others = {
         for (final other in otherPages)
@@ -7263,6 +7264,7 @@ void main() {
             .overrideWith(() => _RecordingMediaQueue()),
       ]);
       addTearDown(container.dispose);
+      container.read(_online.notifier).state = online;
       container.listen(strategyPageSessionProvider, (_, __) {});
       await container.read(remoteEditorSnapshotProvider.future);
       container
@@ -8411,6 +8413,91 @@ void main() {
       expect(onScreen.originById('origin-a')!.agent.position, moved);
       expect(store.load().records.single.status, DurableOutboxStatus.attention);
       expect(container.read(strategyConflictProvider), hasLength(1));
+    });
+
+    group('a map change still waiting after a restart', () {
+      const theme = 'immutable-default-map-theme';
+
+      /// The outbox as an offline map change to Bind left it: the strategy
+      /// patch, made against the strategy at revision 1 on Ascent.
+      Future<MemoryDurableStrategyOutboxStore> waitingMapChange() async {
+        final store = MemoryDurableStrategyOutboxStore();
+        await store.put(DurableOutboxRecord(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          entityKey: const EntitySyncKey.strategy(),
+          pending: const PendingOp(
+            op: StrategyPatchOp(
+              opId: 'map-to-bind',
+              payload: {
+                'mapData': 'bind',
+                'themeProfileId': theme,
+                'clearThemeOverridePalette': true,
+              },
+              expectedStrategyRevision: 1,
+            ),
+            clientId: 'test-client',
+          ),
+          status: DurableOutboxStatus.queued,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ));
+        return store;
+      }
+
+      test('is drawn, kept through a save, and sent once online', () async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId);
+        final store = await waitingMapChange();
+        final (container, batches) = await openOnRealQueue(page,
+            store: store, online: false, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(container.read(mapProvider).currentMap, MapValue.bind);
+
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(store.load().records.single.pending.op.opId, 'map-to-bind');
+
+        container.read(_online.notifier).state = true;
+        await container.read(strategyOpQueueProvider.notifier).flushNow();
+        await _until(
+            () => container.read(strategyOpQueueProvider).pending.isEmpty);
+        final sent = [
+          for (final batch in batches) ...batch.whereType<StrategyPatchOp>(),
+        ];
+        expect(sent.single.opId, 'map-to-bind');
+        expect(sent.single.payload['mapData'], 'bind');
+        expect(store.load().records, isEmpty);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      });
+
+      test('set back to the cloud map, nothing is left to send', () async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId);
+        final store = await waitingMapChange();
+        final (container, batches) = await openOnRealQueue(page,
+            store: store, online: false, themeProfileId: theme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        container.read(mapProvider.notifier).updateMap(MapValue.ascent);
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(store.load().records, isEmpty);
+        expect(batches, isEmpty);
+      });
     });
 
     test('offline edits to a group nobody changed land on reconnect', () async {

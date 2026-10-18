@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/collab/canonical_json.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -232,6 +231,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       throw StateError(
           'Remote page snapshot unavailable for ${page.publicId}.');
     }
+    final mapData = drawnStrategyHeader(ref, snapshot.header).mapData;
     final elements = pageSnapshot.elements;
     final lineups = pageSnapshot.lineups;
 
@@ -294,7 +294,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
         .noteLineupGroups(page.publicId, cloudLineups.groupOf);
 
     final mapValue = Maps.mapNames.entries.firstWhere(
-      (entry) => entry.value == snapshot.header.mapData,
+      (entry) => entry.value == mapData,
       orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
     );
 
@@ -380,14 +380,18 @@ class CloudStrategyPageSource implements StrategyPageSource {
     final strategyTheme = ref.read(strategyThemeProvider);
     final desiredThemeOverride = strategyTheme.overridePalette?.toJson();
     final header = snapshot.header;
+    bool shows(RemoteStrategyHeader header) => header.shows(
+          mapData: currentMapData,
+          themeProfileId: strategyTheme.profileId,
+          themeOverridePalette: desiredThemeOverride,
+        );
 
-    final mapMatches = header.mapData == currentMapData;
-    final themeProfileMatches =
-        header.themeProfileId == strategyTheme.profileId;
-    final themeOverrideMatches =
-        cloudJsonEquivalent(header.themeOverridePalette, desiredThemeOverride);
+    // The canvas shows the strategy-level change still waiting in the
+    // outbox, as it was drawn: that change waits as it is.
+    final drawn = drawnStrategyHeader(ref, header);
+    if (!identical(drawn, header) && shows(drawn)) return;
 
-    if (mapMatches && themeProfileMatches && themeOverrideMatches) {
+    if (shows(header)) {
       await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
             entityKey: const EntitySyncKey.strategy(),
             desiredOp: null,
@@ -480,7 +484,8 @@ class CloudStrategyPageSource implements StrategyPageSource {
         .noteLineupGroups(page.publicId, cloudLineups.groupOf);
 
     final mapValue = Maps.mapNames.entries.firstWhere(
-      (entry) => entry.value == snapshot.header.mapData,
+      (entry) =>
+          entry.value == drawnStrategyHeader(ref, snapshot.header).mapData,
       orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
     );
 
