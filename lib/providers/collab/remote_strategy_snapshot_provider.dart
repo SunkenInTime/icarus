@@ -69,6 +69,11 @@ class RemoteEditorSnapshotNotifier
   /// The share link the open strategy is read through, when the reader has
   /// no access of their own (see [shareLinkViewProvider]).
   String? _shareToken;
+
+  /// The account the open strategy was opened as: its answers are kept in
+  /// that account's copy only, and not once it has signed out (see
+  /// [cloudCopyWriteScopeProvider]).
+  CloudCopyScope? _openedAs;
   StreamSubscription<RemoteStrategyShell>? _shellSubscription;
   StreamSubscription<RemotePageSnapshot>? _pageSubscription;
   String? _subscribedPagePublicId;
@@ -113,6 +118,7 @@ class RemoteEditorSnapshotNotifier
     final linkView = ref.read(shareLinkViewProvider);
     _shareToken =
         linkView?.strategyPublicId == strategyPublicId ? linkView!.token : null;
+    _openedAs = _copyScope;
     _lastReconciledAssetsById = null;
     ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(
           strategyPublicId,
@@ -248,6 +254,7 @@ class RemoteEditorSnapshotNotifier
     _activeStrategyPublicId = null;
     _activePagePublicId = null;
     _shareToken = null;
+    _openedAs = null;
     _lastReconciledAssetsById = null;
     _disposeSubscriptions();
     ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(
@@ -499,8 +506,18 @@ class RemoteEditorSnapshotNotifier
     return true;
   }
 
+  /// Where an answer for the open strategy may be kept now: the account it
+  /// was opened as, while that account is still the one signed in and is
+  /// not signing out.
+  CloudCopyScope? get _writeScope {
+    final scope = _openedAs;
+    return scope != null && ref.read(cloudCopyWriteScopeProvider) == scope
+        ? scope
+        : null;
+  }
+
   void _keepShell(RemoteStrategyShell shell, {required DateTime askedAt}) {
-    final scope = _copyScope;
+    final scope = _writeScope;
     final answer = shell.serverAnswer;
     if (scope == null || answer == null) return;
     _keep(() => _copy.writeShell(
@@ -512,7 +529,7 @@ class RemoteEditorSnapshotNotifier
   }
 
   void _keepPage(RemotePageSnapshot page, {required DateTime askedAt}) {
-    final scope = _copyScope;
+    final scope = _writeScope;
     final answer = page.serverAnswer;
     if (scope == null || answer == null) return;
     _keep(() => _copy.writePage(
@@ -525,7 +542,7 @@ class RemoteEditorSnapshotNotifier
   }
 
   void _forgetCopy(String strategyPublicId) {
-    final scope = _copyScope;
+    final scope = _writeScope;
     if (scope == null) return;
     _keep(() => _copy.deleteStrategy(scope, strategyPublicId));
   }

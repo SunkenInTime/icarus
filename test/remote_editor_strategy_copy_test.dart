@@ -46,7 +46,15 @@ void main() {
           .overrideWith((ref) => !ref.watch(_offline)),
       cloudOfflineProvider.overrideWith((ref) => ref.watch(_offline)),
       cloudStrategyCopyStoreProvider.overrideWithValue(store),
-      cloudCopyScopeProvider.overrideWithValue(_scope),
+      cloudCopyScopeProvider.overrideWith((ref) {
+        final accountId = ref.watch(authProvider.select((a) => a.user?.id));
+        return accountId == null
+            ? null
+            : CloudCopyScope(
+                deploymentUrl: _scope.deploymentUrl,
+                accountId: accountId,
+              );
+      }),
       strategyCopyRefresherProvider.overrideWith(_RecordingRefresher.new),
     ]);
     refresher = container.read(strategyCopyRefresherProvider.notifier)
@@ -149,6 +157,36 @@ void main() {
     expect(container.read(remoteEditorSnapshotProvider).valueOrNull, isNull);
   });
 
+  _ReadyAuthProvider auth() =>
+      container.read(authProvider.notifier) as _ReadyAuthProvider;
+
+  test(
+      'an answer that arrives while signing out does not bring back the '
+      'copy sign-out deleted', () async {
+    await openOnline();
+    auth().startSigningOut();
+    await store.deleteAccount(_scope);
+
+    transport.pushPage('a', [agentRow('agent', 'a', revision: 5)]);
+    await _settle();
+
+    expect(store.keptStrategyIds(_scope), isEmpty);
+  });
+
+  test(
+      'after an account switch, the old account\'s answers are kept for '
+      'neither account', () async {
+    await openOnline();
+    auth().switchTo('account-b');
+    await store.deleteAccount(_scope);
+
+    transport.pushPage('a', [agentRow('agent', 'a', revision: 5)]);
+    await _settle();
+
+    expect(store.keptStrategyIds(_scope), isEmpty);
+    expect(store.entryKeys, isEmpty);
+  });
+
   test('back online, the live answer replaces the copy', () async {
     await openOnline();
     remote().clear();
@@ -249,6 +287,21 @@ class _ReadyAuthProvider extends AuthProvider {
         convexAuthStatus: ConvexAuthStatus.ready,
         user: User(
           id: 'account-a',
+          appMetadata: const <String, dynamic>{},
+          userMetadata: const <String, dynamic>{},
+          aud: 'authenticated',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        ),
+      );
+
+  /// Signing out: the status says so at once, and the account stays until
+  /// the session is gone (see AuthProvider.signOut).
+  void startSigningOut() =>
+      state = state.copyWith(convexAuthStatus: ConvexAuthStatus.signedOut);
+
+  void switchTo(String accountId) => state = state.copyWith(
+        user: User(
+          id: accountId,
           appMetadata: const <String, dynamic>{},
           userMetadata: const <String, dynamic>{},
           aud: 'authenticated',

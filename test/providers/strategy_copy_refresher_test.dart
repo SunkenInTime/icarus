@@ -36,7 +36,15 @@ void main() {
       authProvider.overrideWith(_ReadyAuthProvider.new),
       cloudOfflineProvider.overrideWithValue(false),
       cloudStrategyCopyStoreProvider.overrideWithValue(store),
-      cloudCopyScopeProvider.overrideWithValue(_scope),
+      cloudCopyScopeProvider.overrideWith((ref) {
+        final accountId = ref.watch(authProvider.select((a) => a.user?.id));
+        return accountId == null
+            ? null
+            : CloudCopyScope(
+                deploymentUrl: _scope.deploymentUrl,
+                accountId: accountId,
+              );
+      }),
       cloudMediaCacheProvider.overrideWith(() => media),
     ]);
     addTearDown(container.dispose);
@@ -111,6 +119,24 @@ void main() {
     expect(store.keptStrategyIds(_scope), isEmpty);
   });
 
+  test('a full read that answers after sign-out started writes nothing',
+      () async {
+    repository.owned = {'one'};
+    final gate = Completer<void>();
+    repository.fullReadGate = gate;
+    final container = start();
+    await _settle(pause: false);
+    expect(repository.fullReads, ['one']);
+
+    (container.read(authProvider.notifier) as _ReadyAuthProvider)
+        .startSigningOut();
+    await store.deleteAccount(_scope);
+    gate.complete();
+    await _settle();
+
+    expect(store.entryKeys, isEmpty);
+  });
+
   test('a strategy opened online goes ahead of the walk', () async {
     repository.owned = {'one', 'two'};
     final gate = Completer<void>();
@@ -125,12 +151,12 @@ void main() {
   });
 }
 
-Future<void> _settle() async {
+Future<void> _settle({bool pause = true}) async {
   for (var i = 0; i < 20; i += 1) {
     await Future<void>.delayed(const Duration(milliseconds: 1));
   }
   // The pause between background reads.
-  await Future<void>.delayed(const Duration(seconds: 2));
+  if (pause) await Future<void>.delayed(const Duration(seconds: 2));
 }
 
 class _Repository extends ConvexStrategyRepository {
@@ -141,6 +167,9 @@ class _Repository extends ConvexStrategyRepository {
   Set<String> inSharedFolders = {};
   bool unanswered = false;
   Completer<void>? listGate;
+
+  /// While set, a full read waits for it before answering.
+  Completer<void>? fullReadGate;
   final fullReads = <String>[];
 
   ConvexObject answerFor(String id) {
@@ -197,6 +226,7 @@ class _Repository extends ConvexStrategyRepository {
     String? shareToken,
   }) async {
     fullReads.add(strategyPublicId);
+    await fullReadGate?.future;
     if (unanswered) throw TimeoutException('no answer');
     final answer = answerFor(strategyPublicId);
     return RemoteFullStrategySnapshot(
@@ -275,6 +305,21 @@ class _ReadyAuthProvider extends AuthProvider {
         convexAuthStatus: ConvexAuthStatus.ready,
         user: User(
           id: 'account-a',
+          appMetadata: const <String, dynamic>{},
+          userMetadata: const <String, dynamic>{},
+          aud: 'authenticated',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        ),
+      );
+
+  /// Signing out: the status says so at once, and the account stays until
+  /// the session is gone (see AuthProvider.signOut).
+  void startSigningOut() =>
+      state = state.copyWith(convexAuthStatus: ConvexAuthStatus.signedOut);
+
+  void switchTo(String accountId) => state = state.copyWith(
+        user: User(
+          id: accountId,
           appMetadata: const <String, dynamic>{},
           userMetadata: const <String, dynamic>{},
           aud: 'authenticated',

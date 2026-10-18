@@ -11,6 +11,17 @@ import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 
+/// The scope the copy may be written for right now: null from the moment
+/// a sign-out starts. Signing out deletes the account's copy before the
+/// session is gone, so a live answer or a background read that arrives in
+/// between would otherwise write that account's strategies back.
+final cloudCopyWriteScopeProvider = Provider<CloudCopyScope?>((ref) {
+  final signingOut = ref.watch(authProvider.select(
+    (auth) => auth.convexAuthStatus == ConvexAuthStatus.signedOut,
+  ));
+  return signingOut ? null : ref.watch(cloudCopyScopeProvider);
+});
+
 /// Whether [strategyId] can be opened from the copy on this computer. Read
 /// while offline, so the library can mark the strategies that need a
 /// connection the first time.
@@ -159,7 +170,9 @@ class StrategyCopyRefresher extends Notifier<void> {
           .read(convexStrategyRepositoryProvider)
           .fetchFullSnapshot(strategyId);
       final answer = snapshot.serverAnswer;
-      if (answer == null || ref.read(cloudCopyScopeProvider) != scope) {
+      // Signed out or switched accounts while it was read: its copy is
+      // gone, and must stay gone.
+      if (answer == null || ref.read(cloudCopyWriteScopeProvider) != scope) {
         return true;
       }
       await store.writeFullSnapshot(
