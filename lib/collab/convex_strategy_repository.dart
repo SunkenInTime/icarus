@@ -137,6 +137,12 @@ class ConvexStrategyRepository {
     return strategies.map(_strategyEntry).toList(growable: false);
   }
 
+  /// The strategies shared with the signed-in user directly, read once.
+  Future<List<CloudStrategyEntry>> fetchSharedStrategies() async {
+    final strategies = await _api.strategies.listSharedWithMe().fetch();
+    return strategies.map(_strategyEntry).toList(growable: false);
+  }
+
   Stream<List<CloudStrategyEntry>> watchSharedStrategies() {
     return _api.strategies.listSharedWithMe().watch().map(
           (strategies) =>
@@ -923,6 +929,14 @@ enum AbandonedMove { deleted, finished, missing }
 bool isConvexFunctionError(Object error) =>
     error is ConvexFunctionException || error is ConvexClientFunctionError;
 
+/// Whether a read failed without any answer from the server: offline, a
+/// timeout, a dropped connection. A refusal or an answer this build can't
+/// decode is an answer.
+bool isConvexReadUnanswered(Object error) =>
+    !isConvexFunctionError(error) &&
+    error is! FormatException &&
+    error is! ConvexNormalizationError;
+
 bool isTypedConvexUnauthenticatedError(Object error) {
   return (error is ConvexFunctionException &&
           error.code == ConvexErrorCode.unauthenticated) ||
@@ -1048,14 +1062,44 @@ MapThemePalette? _mapThemePalette(
   return value == null ? null : MapThemePalette.fromJson(value);
 }
 
-RemoteStrategyShell _strategyShell(StrategyGetShellResult result) {
+/// The shell in [answer], a strategy:getShell answer the copy on this
+/// computer kept. Throws when it does not decode.
+RemoteStrategyShell strategyShellFromCopy(ConvexValue answer) =>
+    _strategyShell(
+      StrategyGetShellResult.decode(answer, 'copy.strategy:getShell'),
+      fromCopy: true,
+    );
+
+/// The page in [answer], a page:getSnapshot answer the copy on this computer
+/// kept, last matched with the server at [copiedAt]. Throws when any part
+/// of it does not decode.
+RemotePageSnapshot pageSnapshotFromCopy(
+  ConvexValue answer, {
+  DateTime? copiedAt,
+}) =>
+    _pageSnapshot(
+      PageGetSnapshotResult.decode(answer, 'copy.page:getSnapshot'),
+      fromCopy: true,
+      copiedAt: copiedAt,
+    );
+
+RemoteStrategyShell _strategyShell(
+  StrategyGetShellResult result, {
+  bool fromCopy = false,
+}) {
   return RemoteStrategyShell(
     header: _strategyHeader(result.header),
     pages: result.pages.map(_page).toList(growable: false),
+    fromCopy: fromCopy,
+    serverAnswer: fromCopy ? null : result.encode('shell'),
   );
 }
 
-RemotePageSnapshot _pageSnapshot(PageGetSnapshotResult result) {
+RemotePageSnapshot _pageSnapshot(
+  PageGetSnapshotResult result, {
+  bool fromCopy = false,
+  DateTime? copiedAt,
+}) {
   final assets = result.assets.map(_imageAsset).toList(growable: false);
   return RemotePageSnapshot(
     page: _page(result.page),
@@ -1063,6 +1107,9 @@ RemotePageSnapshot _pageSnapshot(PageGetSnapshotResult result) {
     elements: result.elements.map(_element).toList(growable: false),
     lineups: result.lineups.map(_lineup).toList(growable: false),
     assetsById: {for (final asset in assets) asset.publicId: asset},
+    fromCopy: fromCopy,
+    copiedAt: copiedAt,
+    serverAnswer: fromCopy ? null : result.encode('pageSnapshot'),
   );
 }
 
@@ -1097,6 +1144,7 @@ RemoteFullStrategySnapshot _fullSnapshot(StrategyGetFullSnapshotResult result) {
     elementsByPage: RemoteFullStrategySnapshot.groupElementsByPage(elements),
     lineupsByPage: RemoteFullStrategySnapshot.groupLineupsByPage(lineups),
     assetsById: {for (final asset in assets) asset.publicId: asset},
+    serverAnswer: result.encode('fullSnapshot'),
   );
 }
 

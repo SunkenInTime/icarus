@@ -94,6 +94,21 @@ class DeviceOnlyBadge extends StatelessWidget {
   }
 }
 
+/// A cloud strategy that can't be opened while offline: this computer keeps
+/// no copy of it yet.
+class NeedsConnectionBadge extends StatelessWidget {
+  const NeedsConnectionBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const StrategyBadge(
+      icon: LucideIcons.cloudOff,
+      label: 'Needs a connection',
+      tooltip: 'Needs a connection the first time you open it',
+    );
+  }
+}
+
 /// How opaque a strategy or folder is while it moves to the cloud: still
 /// readable, plainly not available.
 const double movingToCloudOpacity = 0.45;

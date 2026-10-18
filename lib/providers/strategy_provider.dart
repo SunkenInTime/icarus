@@ -337,7 +337,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     await ref
         .read(remoteEditorSnapshotProvider.notifier)
-        .openStrategy(strategyID);
+        .openStrategy(strategyID, activePagePublicId: pageId);
     final snapshotState = ref.read(remoteEditorSnapshotProvider);
     final snapshot = snapshotState.valueOrNull;
     if (snapshot == null) {

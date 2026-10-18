@@ -60,6 +60,7 @@ import 'package:icarus/providers/transition_provider.dart'
     hide PageTransitionState;
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/lineup_group_changes.dart';
+import 'package:icarus/strategy/copied_page_check.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/const/page_copy_id.dart';
@@ -1405,6 +1406,15 @@ RemoteEditorSnapshot _editorSnapshot({
   );
 }
 
+RemotePageSnapshot _fromCopy(RemotePageSnapshot page) => RemotePageSnapshot(
+      page: page.page,
+      content: page.content,
+      elements: page.elements,
+      lineups: page.lineups,
+      assetsById: page.assetsById,
+      fromCopy: true,
+    );
+
 Future<ProviderContainer> _cloudContainer({
   required _FakeRemoteEditorNotifier remote,
   required _FakeStrategyOpQueueNotifier queue,
@@ -1915,6 +1925,173 @@ void main() {
         );
     await _settle();
     expect(queue.livePageRetries.last, contains('page-2'));
+  });
+
+  test('a strategy drawn from the copy opens on the page the copy could show',
+      () async {
+    final first = _page('page-1', 0);
+    final second = _page('page-2', 1);
+    // Offline, page-1 isn't kept on this computer; page-2 is.
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [first, second],
+      activePage: _fromCopy(_pageSnapshot(second, text: 'kept')),
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+          preferredPageId: 'page-1',
+        );
+
+    expect(container.read(strategyPageSessionProvider).activePageId, 'page-2');
+    expect(remote.selectedPageIds, isNot(contains('page-1')));
+    expect(
+      container.read(textProvider).map((text) => text.text),
+      ['kept'],
+    );
+  });
+
+  group('a copied page is drawable exactly when hydration draws it:', () {
+    // One real row of each kind, as the canvas writes it.
+    final rows = <String, Map<String, dynamic>>{
+      'agent': {
+        'kind': 'plain',
+        'id': 'agent',
+        'isDeleted': false,
+        'position': {'dx': 75.0, 'dy': 90.0},
+        'type': 'jett',
+        'isAlly': true,
+        'state': 'none',
+        'lineUpID': null,
+      },
+      'ability': {
+        'id': 'ability',
+        'isDeleted': false,
+        'position': {'dx': 510.0, 'dy': 210.0},
+        'data': {'type': 'breach', 'index': 2},
+        'isAlly': true,
+        'rotation': -0.78,
+        'length': 184.96,
+        'lineUpID': null,
+        'armLengthsMeters': [10.0, 10.0, 10.0, 10.0],
+      },
+      'drawing': {
+        'type': 'lineDrawing',
+        'colorValue': 4294626325,
+        'thickness': 8.0,
+        'isDotted': true,
+        'hasArrow': true,
+        'id': 'drawing',
+        'boundingBox': {
+          'min': {'dx': 80.0, 'dy': 690.0},
+          'max': {'dx': 620.0, 'dy': 840.0},
+        },
+        'lineStart': {'dx': 80.0, 'dy': 840.0},
+        'lineEnd': {'dx': 620.0, 'dy': 690.0},
+      },
+      'text': {
+        'id': 'text',
+        'isDeleted': false,
+        'position': {'dx': 1450.0, 'dy': 90.0},
+        'text': 'Dynamic text',
+        'size': 250.0,
+        'fontSize': 19.0,
+        'sizeVersion': 1,
+      },
+      'image': {
+        'id': 'image',
+        'isDeleted': false,
+        'position': {'dx': 1390.0, 'dy': 400.0},
+        'aspectRatio': 1.77,
+        'fileExtension': '.png',
+        'scale': 280.0,
+        'sizeVersion': 1,
+        'link': '',
+      },
+      'utility': {
+        'id': 'utility',
+        'isDeleted': false,
+        'position': {'dx': 690.0, 'dy': 650.0},
+        'type': 'viewCone40',
+        'rotation': 2.67,
+        'length': 135.0,
+        'angle': 40.0,
+        'isAlly': true,
+      },
+    };
+
+    /// The ids hydration drew from a page holding [data] as one [kind] row.
+    Future<Set<String>> hydrated(String kind, Map<String, dynamic> data) async {
+      final first = _page('page-1', 0);
+      final page = _pageSnapshot(first, elements: [
+        RemoteElement(
+          publicId: kind,
+          strategyPublicId: 'cloud-strategy',
+          pagePublicId: 'page-1',
+          elementType: kind,
+          payload: cloudElementPayload(kind: kind, data: data),
+          sortIndex: 0,
+          revision: 1,
+          deleted: false,
+        ),
+      ]);
+      expect(page.elements.single.payload['payloadVersion'], isNotNull);
+      final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(pages: [first], activePage: page),
+      );
+      final container = await _cloudContainer(
+        remote: remote,
+        queue: _FakeStrategyOpQueueNotifier(),
+      );
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      return {
+        for (final item in container.read(agentProvider)) item.id,
+        for (final item in container.read(abilityProvider)) item.id,
+        for (final item in container.read(drawingProvider).elements) item.id,
+        for (final item in container.read(textProvider)) item.id,
+        for (final item in container.read(placedImageProvider).images) item.id,
+        for (final item in container.read(utilityProvider)) item.id,
+      };
+    }
+
+    bool drawable(String kind, Map<String, dynamic> data) =>
+        copiedPageIsDrawable(_pageSnapshot(_page('page-1', 0), elements: [
+          RemoteElement(
+            publicId: kind,
+            strategyPublicId: 'cloud-strategy',
+            pagePublicId: 'page-1',
+            elementType: kind,
+            payload: cloudElementPayload(kind: kind, data: data),
+            sortIndex: 0,
+            revision: 1,
+            deleted: false,
+          ),
+        ]));
+
+    for (final MapEntry(key: kind, value: data) in rows.entries) {
+      test('a whole $kind', () async {
+        expect(await hydrated(kind, data), {kind});
+        expect(drawable(kind, data), isTrue);
+      });
+      test('a $kind without its position or type', () async {
+        final broken = Map<String, dynamic>.of(data)
+          ..remove('position')
+          ..remove('type');
+        final drawn = (await hydrated(kind, broken)).contains(kind);
+        expect(drawable(kind, broken), drawn);
+      });
+    }
   });
 
   test('"Use cloud" is not overridden when its refresh finds the page back',
