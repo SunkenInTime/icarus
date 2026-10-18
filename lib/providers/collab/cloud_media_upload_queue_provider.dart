@@ -789,7 +789,8 @@ class CloudMediaUploadQueueNotifier
       );
       if (bytes == null) {
         _logMedia('upload.local_missing ${_describeJob(job)}');
-        if (await _deleteJobWhenReferenceIsGone(job) == true) {
+        if (await _deleteJobWhenReferenceIsGone(job) == true ||
+            await _deleteJobWhenServerServesPicture(job)) {
           return;
         }
         await _markJobFailed(
@@ -946,6 +947,40 @@ class CloudMediaUploadQueueNotifier
       'missing_source.removed_unreferenced job=${job.jobId} '
       'strategy=${job.strategyPublicId}',
     );
+    return true;
+  }
+
+  /// Deletes [job], whose bytes are gone, if the server already serves its
+  /// picture: nothing is left to upload. Web builds before #327 could queue
+  /// an upload of a picture already on the server from bytes only memory
+  /// held, so a refresh left the job with nothing to send. Returns false
+  /// when the server does not serve it (the picture is lost and the job
+  /// must fail where the user sees it), or when that could not be told.
+  Future<bool> _deleteJobWhenServerServesPicture(
+    CloudMediaUploadJob job,
+  ) async {
+    final String? url;
+    try {
+      url = await _repo.getImageAssetUrl(
+        strategyPublicId: job.strategyPublicId,
+        assetPublicId: job.assetPublicId,
+      );
+    } catch (error) {
+      _logMedia(
+        'missing_source.served_check_failed ${_describeJob(job)} error=$error',
+      );
+      return false;
+    }
+    final current = _getJob(job.jobId);
+    if (url == null ||
+        url.isEmpty ||
+        current == null ||
+        current.updatedAt != job.updatedAt) {
+      return false;
+    }
+    await _deleteJob(job);
+    _refreshState();
+    _logMedia('missing_source.served_by_server ${_describeJob(job)}');
     return true;
   }
 
