@@ -460,6 +460,57 @@ void main() {
     );
   });
 
+  testWidgets("the copy's tooltip counts the changes saved on this computer",
+      (tester) async {
+    final copiedAt = DateTime.now().subtract(const Duration(minutes: 5));
+    final container = _createContainer(
+      connected: false,
+      shownCopy: (copiedAt: copiedAt),
+      opQueueState: const StrategyOpQueueState(
+        accountId: 'account-a',
+        strategyPublicId: 'cloud-strategy',
+        clientId: 'client-a',
+        durableLoaded: true,
+        accountOutbox: AccountStrategyOutboxSummary(
+          accountId: 'account-a',
+          strategies: {
+            'cloud-strategy': StrategyOutboxSummary(
+              strategyPublicId: 'cloud-strategy',
+              queuedCount: 1,
+              inFlightCount: 0,
+              pausedCount: 0,
+              attentionCount: 0,
+              successorCount: 0,
+            ),
+          },
+        ),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home:
+              Scaffold(body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(_syncButton('offline'), findsOneWidget);
+    final time = MaterialLocalizations.of(
+      tester.element(find.byType(CloudSyncButton)),
+    ).formatTimeOfDay(TimeOfDay.fromDateTime(copiedAt));
+    expect(
+      _syncTooltip(tester),
+      "Offline. Showing this computer's copy from $time · 1 change saved on "
+      'this computer',
+    );
+  });
+
   testWidgets('an active text draft can never appear synced', (tester) async {
     final container = _createContainer();
     addTearDown(container.dispose);
