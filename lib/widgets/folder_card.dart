@@ -860,6 +860,8 @@ class _FolderCardState extends ConsumerState<FolderCard>
           if (!ensureFeatureAvailable(ref, PlatformFeature.exportFiles)) {
             return;
           }
+          // A cloud folder exports what the server holds.
+          if (_refusedOffline()) return;
           try {
             await StrategyImportExportService(ref).exportFolder(
               _folder.id,
