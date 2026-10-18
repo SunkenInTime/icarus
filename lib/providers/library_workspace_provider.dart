@@ -41,6 +41,8 @@ final cloudWorkspaceOutcomeProvider = Provider<bool?>((ref) {
 /// The library shows the cloud as this computer last saw it meanwhile
 /// (see remote_library_provider), and says which of the two it is.
 final cloudLibraryShowsCopyProvider = Provider<bool>((ref) {
+  // No copy is kept on web, so the library there is exactly as it was.
+  if (!ref.watch(cloudLibraryCopyStoreProvider).keepsCopy) return false;
   final mode = ref.watch(cloudCollabModeProvider);
   if (!mode.featureFlagEnabled || mode.forceLocalFallback) return false;
   final auth = ref.watch(authProvider);

@@ -95,31 +95,38 @@ abstract class CloudLibraryCopyStore implements CloudAccountCopy {
     CloudStrategyListing listing,
   );
 
-  /// Replaces the folder tree, and drops the strategy lists of folders that
-  /// are no longer in it.
+  /// Replaces the folder tree with one live answer, and drops the strategy
+  /// lists of folders that are no longer in it.
+  ///
+  /// Replacing the whole record is safe because a record is always one
+  /// query's complete answer, and [answerOrder] (from
+  /// [nextCloudLibraryAnswerOrder], taken when the answer arrived) keeps an
+  /// older answer from replacing a newer one: a write whose answer is older
+  /// than the last one written for the record is dropped. Rewriting the
+  /// same answer later, with a later [matchedAt], is how a list records
+  /// that it still matched the server then.
   Future<void> writeFolders(
     CloudCopyScope scope,
     List<CloudFolderEntry> folders, {
+    required int answerOrder,
     required DateTime matchedAt,
   });
 
+  /// Replaces one strategy list with one live answer; see [writeFolders].
   Future<void> writeStrategies(
     CloudCopyScope scope,
     CloudStrategyListing listing,
     List<CloudStrategyEntry> strategies, {
+    required int answerOrder,
     required DateTime matchedAt,
   });
-
-  /// Records that the kept folder tree still matched the server at [at]
-  /// (the live answer held until then without changing).
-  Future<void> markFoldersMatched(CloudCopyScope scope, DateTime at);
-
-  Future<void> markStrategiesMatched(
-    CloudCopyScope scope,
-    CloudStrategyListing listing,
-    DateTime at,
-  );
 }
+
+int _lastAnswerOrder = 0;
+
+/// The order of a live answer, taken the moment it arrives. Later answers
+/// get larger numbers.
+int nextCloudLibraryAnswerOrder() => ++_lastAnswerOrder;
 
 const _foldersKey = 'folders';
 const _strategiesKey = 'strategies|';
@@ -130,6 +137,18 @@ abstract class _KeyedCloudLibraryCopyStore implements CloudLibraryCopyStore {
   Object? _get(String key);
   Future<void> _put(String key, Map<String, dynamic> value);
   Future<void> _deleteAll(Iterable<String> keys);
+
+  /// The order of the last answer written to each record in this run.
+  final _writtenAnswerOrder = <String, int>{};
+
+  /// Whether an answer of [answerOrder] may replace [key]'s record: never
+  /// when a newer answer was written there already.
+  bool _admits(String key, int answerOrder) {
+    final written = _writtenAnswerOrder[key];
+    if (written != null && answerOrder < written) return false;
+    _writtenAnswerOrder[key] = answerOrder;
+    return true;
+  }
 
   @override
   bool get keepsCopy => true;
@@ -161,10 +180,13 @@ abstract class _KeyedCloudLibraryCopyStore implements CloudLibraryCopyStore {
   Future<void> writeFolders(
     CloudCopyScope scope,
     List<CloudFolderEntry> folders, {
+    required int answerOrder,
     required DateTime matchedAt,
   }) async {
+    final key = scope.storageKeyPrefix + _foldersKey;
+    if (!_admits(key, answerOrder)) return;
     await _put(
-      scope.storageKeyPrefix + _foldersKey,
+      key,
       _record(
         scope,
         kind: 'folders',
@@ -192,10 +214,13 @@ abstract class _KeyedCloudLibraryCopyStore implements CloudLibraryCopyStore {
     CloudCopyScope scope,
     CloudStrategyListing listing,
     List<CloudStrategyEntry> strategies, {
+    required int answerOrder,
     required DateTime matchedAt,
-  }) {
-    return _put(
-      scope.storageKeyPrefix + listing._storageKey,
+  }) async {
+    final key = scope.storageKeyPrefix + listing._storageKey;
+    if (!_admits(key, answerOrder)) return;
+    await _put(
+      key,
       _record(
         scope,
         kind: 'strategies',
@@ -206,18 +231,6 @@ abstract class _KeyedCloudLibraryCopyStore implements CloudLibraryCopyStore {
       ),
     );
   }
-
-  @override
-  Future<void> markFoldersMatched(CloudCopyScope scope, DateTime at) =>
-      _markMatched(scope.storageKeyPrefix + _foldersKey, at);
-
-  @override
-  Future<void> markStrategiesMatched(
-    CloudCopyScope scope,
-    CloudStrategyListing listing,
-    DateTime at,
-  ) =>
-      _markMatched(scope.storageKeyPrefix + listing._storageKey, at);
 
   @override
   Future<void> deleteAccount(CloudCopyScope scope) {
@@ -242,14 +255,6 @@ abstract class _KeyedCloudLibraryCopyStore implements CloudLibraryCopyStore {
         'matchedAt': matchedAt.toUtc().toIso8601String(),
         'entries': entries,
       };
-
-  Future<void> _markMatched(String key, DateTime at) async {
-    final json = _object(_get(key));
-    if (json == null) return;
-    final matchedAt = DateTime.tryParse('${json['matchedAt']}');
-    if (matchedAt != null && !at.isAfter(matchedAt)) return;
-    await _put(key, {...json, 'matchedAt': at.toUtc().toIso8601String()});
-  }
 
   /// Whole or not at all: one entry that doesn't read back makes the record
   /// absent, rather than show a list with something silently missing.
@@ -360,6 +365,7 @@ class UnavailableCloudLibraryCopyStore implements CloudLibraryCopyStore {
   Future<void> writeFolders(
     CloudCopyScope scope,
     List<CloudFolderEntry> folders, {
+    required int answerOrder,
     required DateTime matchedAt,
   }) async {}
 
@@ -368,18 +374,9 @@ class UnavailableCloudLibraryCopyStore implements CloudLibraryCopyStore {
     CloudCopyScope scope,
     CloudStrategyListing listing,
     List<CloudStrategyEntry> strategies, {
+    required int answerOrder,
     required DateTime matchedAt,
   }) async {}
-
-  @override
-  Future<void> markFoldersMatched(CloudCopyScope scope, DateTime at) async {}
-
-  @override
-  Future<void> markStrategiesMatched(
-    CloudCopyScope scope,
-    CloudStrategyListing listing,
-    DateTime at,
-  ) async {}
 
   @override
   Future<void> deleteAccount(CloudCopyScope scope) async {}

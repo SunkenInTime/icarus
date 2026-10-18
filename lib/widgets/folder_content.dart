@@ -15,6 +15,7 @@ import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -525,7 +526,14 @@ class FolderContent extends ConsumerWidget {
             ? (folder == null
                 ? ShadButton(
                     key: const ValueKey('shared-empty-add-item'),
-                    onPressed: () => showAddSharedItemDialog(context),
+                    onPressed: () {
+                      if (refuseCloudChangeWhileOffline(
+                        ref.read(cloudLibraryShowsCopyProvider),
+                      )) {
+                        return;
+                      }
+                      showAddSharedItemDialog(context);
+                    },
                     leading: const Icon(LucideIcons.link),
                     child: const Text('Add by Link or Code'),
                   )

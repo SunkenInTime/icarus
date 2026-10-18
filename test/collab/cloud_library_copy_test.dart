@@ -66,6 +66,7 @@ void main() {
     await store.writeFolders(
       _scope,
       [_folder('f1'), _folder('f2', parentId: 'f1', role: 'viewer')],
+      answerOrder: nextCloudLibraryAnswerOrder(),
       matchedAt: matchedAt,
     );
 
@@ -93,6 +94,7 @@ void main() {
       _scope,
       listing,
       [_strategy('s1', folderId: 'f1')],
+      answerOrder: nextCloudLibraryAnswerOrder(),
       matchedAt: matchedAt,
     );
 
@@ -122,6 +124,7 @@ void main() {
       _scope,
       const CloudStrategyListing.owned(null),
       [_strategy('s1')],
+      answerOrder: nextCloudLibraryAnswerOrder(),
       matchedAt: matchedAt,
     );
     final reloaded = MemoryCloudLibraryCopyStore({
@@ -147,6 +150,7 @@ void main() {
       _scope,
       listing,
       [_strategy('s1'), _strategy('s2')],
+      answerOrder: nextCloudLibraryAnswerOrder(),
       matchedAt: matchedAt,
     );
     final key = store.values.keys.single;
@@ -159,7 +163,8 @@ void main() {
   });
 
   test('a record in another format is absent', () async {
-    await store.writeFolders(_scope, [_folder('f1')], matchedAt: matchedAt);
+    await store.writeFolders(_scope, [_folder('f1')],
+        answerOrder: nextCloudLibraryAnswerOrder(), matchedAt: matchedAt);
     final key = store.values.keys.single;
     store.values[key] = {
       ...store.values[key]! as Map<String, dynamic>,
@@ -170,7 +175,8 @@ void main() {
   });
 
   test('another deployment or account never reads this copy', () async {
-    await store.writeFolders(_scope, [_folder('f1')], matchedAt: matchedAt);
+    await store.writeFolders(_scope, [_folder('f1')],
+        answerOrder: nextCloudLibraryAnswerOrder(), matchedAt: matchedAt);
 
     expect(
       store.readFolders(const CloudCopyScope(
@@ -194,14 +200,17 @@ void main() {
       deploymentUrl: 'https://prod-1.convex.cloud',
       accountId: 'user-b',
     );
-    await store.writeFolders(_scope, [_folder('f1')], matchedAt: matchedAt);
+    await store.writeFolders(_scope, [_folder('f1')],
+        answerOrder: nextCloudLibraryAnswerOrder(), matchedAt: matchedAt);
     await store.writeStrategies(
       _scope,
       const CloudStrategyListing.owned('f1'),
       [_strategy('s1')],
+      answerOrder: nextCloudLibraryAnswerOrder(),
       matchedAt: matchedAt,
     );
-    await store.writeFolders(other, [_folder('g1')], matchedAt: matchedAt);
+    await store.writeFolders(other, [_folder('g1')],
+        answerOrder: nextCloudLibraryAnswerOrder(), matchedAt: matchedAt);
 
     await store.deleteAccount(_scope);
 
@@ -219,6 +228,7 @@ void main() {
     await store.writeFolders(
       _scope,
       [_folder('f1'), _folder('f2')],
+      answerOrder: nextCloudLibraryAnswerOrder(),
       matchedAt: matchedAt,
     );
     for (final listing in const [
@@ -232,11 +242,13 @@ void main() {
         _scope,
         listing,
         [_strategy('s')],
+        answerOrder: nextCloudLibraryAnswerOrder(),
         matchedAt: matchedAt,
       );
     }
 
-    await store.writeFolders(_scope, [_folder('f1')], matchedAt: matchedAt);
+    await store.writeFolders(_scope, [_folder('f1')],
+        answerOrder: nextCloudLibraryAnswerOrder(), matchedAt: matchedAt);
 
     bool kept(CloudStrategyListing listing) =>
         store.readStrategies(_scope, listing) != null;
@@ -247,24 +259,51 @@ void main() {
     expect(kept(const CloudStrategyListing.shared('f2')), isFalse);
   });
 
-  test('marking a record matched moves its time forward only', () async {
-    await store.writeFolders(_scope, [_folder('f1')], matchedAt: matchedAt);
-    final later = matchedAt.add(const Duration(hours: 3));
+  test('an older answer never replaces a newer one', () async {
+    final older = nextCloudLibraryAnswerOrder();
+    final newer = nextCloudLibraryAnswerOrder();
+    const listing = CloudStrategyListing.owned(null);
+    await store.writeStrategies(
+      _scope,
+      listing,
+      [_strategy('new')],
+      answerOrder: newer,
+      matchedAt: matchedAt,
+    );
 
-    await store.markFoldersMatched(_scope, later);
-    expect(store.readFolders(_scope)!.matchedAt, later);
+    // A late write of an earlier answer, e.g. a list disposed after a newer
+    // subscription already answered.
+    await store.writeStrategies(
+      _scope,
+      listing,
+      [_strategy('old')],
+      answerOrder: older,
+      matchedAt: matchedAt.add(const Duration(hours: 1)),
+    );
 
-    await store.markFoldersMatched(_scope, matchedAt);
-    expect(store.readFolders(_scope)!.matchedAt, later);
-    expect(store.readFolders(_scope)!.entries.single.folder.id, 'f1');
+    final copy = store.readStrategies(_scope, listing)!;
+    expect(copy.entries.single.strategy.id, 'new');
+    expect(copy.matchedAt, matchedAt);
   });
 
-  test('marking a record that was never written writes nothing', () async {
-    await store.markStrategiesMatched(
+  test('the same answer written later records that it still matched', () async {
+    final answer = nextCloudLibraryAnswerOrder();
+    await store.writeFolders(
       _scope,
-      const CloudStrategyListing.owned(null),
-      matchedAt,
+      [_folder('f1')],
+      answerOrder: answer,
+      matchedAt: matchedAt,
     );
-    expect(store.values, isEmpty);
+    final later = matchedAt.add(const Duration(hours: 3));
+
+    await store.writeFolders(
+      _scope,
+      [_folder('f1')],
+      answerOrder: answer,
+      matchedAt: later,
+    );
+
+    expect(store.readFolders(_scope)!.matchedAt, later);
+    expect(store.readFolders(_scope)!.entries.single.folder.id, 'f1');
   });
 }

@@ -15,6 +15,7 @@ import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -222,7 +223,13 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     final canCreate =
         tab == LibraryTab.library && !ref.watch(librarySignInRequiredProvider);
 
+    /// Making something in a cloud folder needs the cloud.
+    bool refusedOffline() =>
+        ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud &&
+        refuseCloudChangeWhileOffline(ref.read(cloudLibraryShowsCopyProvider));
+
     Future<void> showCreateFolderDialog() async {
+      if (refusedOffline()) return;
       await showDialog<String>(
         context: context,
         builder: (context) {
@@ -235,6 +242,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     /// on the chosen map at once and loads inside the view; a cloud strategy
     /// is already open once the server has created it.
     void showCreateDialog() async {
+      if (refusedOffline()) return;
       final map = await showDialog<MapValue>(
         context: context,
         builder: (context) => const CreateStrategyDialog(),

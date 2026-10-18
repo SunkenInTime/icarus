@@ -6,6 +6,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/account_avatar.dart';
@@ -175,7 +176,14 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
                 key: const ValueKey('cloud-add-shared-item'),
                 height: _controlHeight,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                onPressed: () => showAddSharedItemDialog(context),
+                onPressed: () {
+                  if (refuseCloudChangeWhileOffline(
+                    ref.read(cloudLibraryShowsCopyProvider),
+                  )) {
+                    return;
+                  }
+                  showAddSharedItemDialog(context);
+                },
                 leading: const Icon(LucideIcons.link, size: 14),
                 child: const Text('Add by Link or Code'),
               )

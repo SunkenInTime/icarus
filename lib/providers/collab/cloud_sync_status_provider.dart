@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
@@ -23,6 +24,17 @@ final cloudWorkDurabilityUncertainProvider = Provider<bool>((ref) {
       mediaQueueState.durabilityError != null;
 });
 
+/// Where the cloud session stands, for the chip: null when there is no
+/// session state to read (a build without auth, as in some tests), which
+/// leaves the chip to the socket and the queues.
+final _sessionStatusForSyncProvider = Provider<ConvexAuthStatus?>((ref) {
+  try {
+    return ref.watch(authProvider.select((auth) => auth.convexAuthStatus));
+  } catch (_) {
+    return null;
+  }
+});
+
 final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   final saveState = ref.watch(strategySaveStateProvider);
   final opQueueState = ref.watch(strategyOpQueueProvider);
@@ -37,6 +49,7 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
     textDraftProvider.select((drafts) => drafts.isNotEmpty),
   );
   final isConnected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
+  final sessionStatus = ref.watch(_sessionStatusForSyncProvider);
 
   if (ref.watch(cloudWorkDurabilityUncertainProvider)) {
     return CloudSyncStatus.attention;
@@ -52,8 +65,14 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
       accountMediaErrorCount > 0) {
     return CloudSyncStatus.attention;
   }
-  if (!isConnected) {
+  // The socket can be back while the session is still offline, waiting on
+  // a retry: nothing syncs until the session is ready again.
+  if (!isConnected || sessionStatus == ConvexAuthStatus.offline) {
     return CloudSyncStatus.offline;
+  }
+  // The session needs the user (expired, or refused by the server).
+  if (sessionStatus == ConvexAuthStatus.incident) {
+    return CloudSyncStatus.attention;
   }
   if (saveState.cloudSyncError != null) {
     return CloudSyncStatus.attention;
@@ -69,6 +88,11 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
       mediaQueueState.jobs.isNotEmpty ||
       !opQueueState.durableLoaded ||
       !mediaQueueState.durableLoaded) {
+    return CloudSyncStatus.syncing;
+  }
+  // Synced is a promise the work is on the server, which only a ready
+  // session can keep.
+  if (sessionStatus != null && sessionStatus != ConvexAuthStatus.ready) {
     return CloudSyncStatus.syncing;
   }
   return CloudSyncStatus.synced;

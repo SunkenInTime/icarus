@@ -15,6 +15,10 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/services/cloud_needs_connection.dart';
+import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
+import 'package:toastification/toastification.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
@@ -90,18 +94,21 @@ void main() {
     await store.writeFolders(
       _scope,
       [_folder('mine'), _folder('theirs', role: 'editor')],
+      answerOrder: nextCloudLibraryAnswerOrder(),
       matchedAt: matchedAt,
     );
     await store.writeStrategies(
       _scope,
       const CloudStrategyListing.owned(null),
       [_cloudStrategy('s1', 'B Split Retake')],
+      answerOrder: nextCloudLibraryAnswerOrder(),
       matchedAt: matchedAt,
     );
     await store.writeStrategies(
       _scope,
       const CloudStrategyListing.shared(null),
       [_cloudStrategy('s2', 'Team Lotus Default')],
+      answerOrder: nextCloudLibraryAnswerOrder(),
       matchedAt: matchedAt,
     );
     return store;
@@ -124,9 +131,11 @@ void main() {
         cloudLibrarySectionProvider.overrideWith(() => _Section(section)),
         folderProvider.overrideWith(() => _OpenFolder(folderId)),
       ],
-      child: ShadApp(
-        home: Scaffold(
-          body: FolderContent(folder: folder, onCreateStrategy: () {}),
+      child: ToastificationWrapper(
+        child: ShadApp(
+          home: Scaffold(
+            body: FolderContent(folder: folder, onCreateStrategy: () {}),
+          ),
         ),
       ),
     );
@@ -255,6 +264,159 @@ void main() {
       'B Split Retake',
     );
   });
+
+  testWidgets('with no copy kept (the web), Shared is exactly as before',
+      (tester) async {
+    await tester.pumpWidget(app(
+      const UnavailableCloudLibraryCopyStore(),
+      _auth(ConvexAuthStatus.offline),
+      workspace: LibraryWorkspace.cloud,
+      section: CloudLibrarySection.sharedWithMe,
+    ));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final container =
+        ProviderScope.containerOf(tester.element(find.byType(FolderContent)));
+    expect(container.read(cloudLibraryShowsCopyProvider), isFalse);
+    expect(container.read(isCloudLibraryBrowsableProvider), isFalse);
+    expect(find.byKey(const ValueKey('cloud-unavailable')), findsOneWidget);
+    expect(find.text("Shared isn't on this computer yet"), findsNothing);
+  });
+
+  testWidgets(
+      'offline, adding a shared link is refused at once, with the reason',
+      (tester) async {
+    final store = await keptLibrary();
+    await store.writeStrategies(
+      _scope,
+      const CloudStrategyListing.shared(null),
+      const [],
+      answerOrder: nextCloudLibraryAnswerOrder(),
+      matchedAt: matchedAt,
+    );
+    await store.writeFolders(
+      _scope,
+      [_folder('mine')],
+      answerOrder: nextCloudLibraryAnswerOrder(),
+      matchedAt: matchedAt,
+    );
+    await tester.pumpWidget(app(
+      store,
+      _auth(ConvexAuthStatus.offline),
+      workspace: LibraryWorkspace.cloud,
+      section: CloudLibrarySection.sharedWithMe,
+    ));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.byKey(const ValueKey('shared-empty-add-item')));
+    for (var i = 0; i < 20; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    expect(find.byType(AddSharedItemDialog), findsNothing);
+    expect(find.text(cloudNeedsConnectionMessage), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets(
+      'offline, cloud folder changes are refused before reaching the server',
+      (tester) async {
+    final store = await keptLibrary();
+    final repository = _LiveRepository();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        authProvider.overrideWith(
+          () => _FixedAuthProvider(_auth(ConvexAuthStatus.offline)),
+        ),
+        cloudLibraryCopyStoreProvider.overrideWithValue(store),
+        cloudCopyDeploymentUrlProvider.overrideWithValue(_deployment),
+        convexStrategyRepositoryProvider.overrideWithValue(repository),
+        libraryWorkspaceProvider
+            .overrideWith(() => _Workspace(LibraryWorkspace.cloud)),
+        folderProvider.overrideWith(() => _OpenFolder('mine')),
+      ],
+      child: const ToastificationWrapper(
+        child: ShadApp(home: Scaffold(body: SizedBox())),
+      ),
+    ));
+    final container =
+        ProviderScope.containerOf(tester.element(find.byType(SizedBox)));
+    final folders = container.read(folderProvider.notifier);
+
+    await expectLater(
+      folders.createFolder(
+        name: 'New',
+        iconId: 1,
+        color: FolderColor.blue,
+        workspace: LibraryWorkspace.cloud,
+      ),
+      throwsStateError,
+    );
+    final deleted = await folders.deleteFolder(
+      'mine',
+      workspace: LibraryWorkspace.cloud,
+    );
+    for (var i = 0; i < 20; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    expect(deleted.didSucceed, isFalse);
+    expect(repository.calls, isEmpty);
+    expect(find.text(cloudNeedsConnectionMessage), findsWidgets);
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  test(
+      'after the socket drops, a list is not marked current again until a '
+      'fresh answer arrives', () async {
+    final store = _RecordingStore();
+    final repository = _LiveRepository();
+    final socket = StreamController<bool>.broadcast();
+    addTearDown(socket.close);
+    final container = ProviderContainer(overrides: [
+      authProvider.overrideWith(
+        () => _FixedAuthProvider(_auth(ConvexAuthStatus.ready)),
+      ),
+      cloudLibraryCopyStoreProvider.overrideWithValue(store),
+      cloudCopyDeploymentUrlProvider.overrideWithValue(_deployment),
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      convexConnectionProvider.overrideWith((ref) async* {
+        yield true;
+        yield* socket.stream;
+      }),
+      folderProvider.overrideWith(() => _OpenFolder(null)),
+    ]);
+    addTearDown(container.dispose);
+    final connection = container.listen(convexConnectionProvider, (_, __) {});
+    addTearDown(connection.close);
+    await container.read(convexConnectionProvider.future);
+    final list = container.listen(cloudStrategiesProvider, (_, __) {});
+    await Future<void>.delayed(Duration.zero);
+
+    repository.strategies.add([_cloudStrategy('s1', 'B Split Retake')]);
+    await Future<void>.delayed(Duration.zero);
+    expect(store.strategyWrites, 1);
+
+    socket.add(false);
+    await Future<void>.delayed(Duration.zero);
+    // Marked as matching up to the drop.
+    expect(store.strategyWrites, 2);
+
+    socket.add(true);
+    await Future<void>.delayed(Duration.zero);
+    list.close();
+    for (var i = 0; i < 3; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    // Disposed while connected, but nothing was answered since the drop.
+    expect(store.strategyWrites, 2);
+  });
 }
 
 class _FixedAuthProvider extends AuthProvider {
@@ -297,7 +459,14 @@ class _OpenFolder extends FolderProvider {
 }
 
 class _LiveRepository extends ConvexStrategyRepository {
-  _LiveRepository() : super(IcarusConvexApi(_NoTransport()));
+  _LiveRepository() : this._(_NoTransport());
+
+  _LiveRepository._(this._transport) : super(IcarusConvexApi(_transport));
+
+  final _NoTransport _transport;
+
+  /// Every server call this repository was asked to make.
+  List<String> get calls => _transport.calls;
 
   final folders = StreamController<List<CloudFolderEntry>>.broadcast();
   final strategies = StreamController<List<CloudStrategyEntry>>.broadcast();
@@ -314,6 +483,33 @@ class _LiveRepository extends ConvexStrategyRepository {
 }
 
 class _NoTransport implements ConvexTransport {
+  final calls = <String>[];
+
   @override
-  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
+  dynamic noSuchMethod(Invocation invocation) {
+    calls.add('${invocation.memberName}');
+    throw UnimplementedError();
+  }
+}
+
+class _RecordingStore extends MemoryCloudLibraryCopyStore {
+  int strategyWrites = 0;
+
+  @override
+  Future<void> writeStrategies(
+    CloudCopyScope scope,
+    CloudStrategyListing listing,
+    List<CloudStrategyEntry> strategies, {
+    required int answerOrder,
+    required DateTime matchedAt,
+  }) {
+    strategyWrites++;
+    return super.writeStrategies(
+      scope,
+      listing,
+      strategies,
+      answerOrder: answerOrder,
+      matchedAt: matchedAt,
+    );
+  }
 }

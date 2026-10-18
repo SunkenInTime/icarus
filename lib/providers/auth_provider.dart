@@ -629,6 +629,13 @@ class AuthProvider extends Notifier<AppAuthState> {
       if (next.convexAuthStatus != ConvexAuthStatus.offline) {
         _stopOfflineRetries();
       }
+      // The account that was signed in is gone: signed out here, signed out
+      // by Supabase (a revoked or expired refresh token), or replaced by
+      // another account. What this computer kept of its library goes too.
+      final previousAccountId = previous?.user?.id;
+      if (previousAccountId != null && previousAccountId != next.user?.id) {
+        unawaited(_deleteAccountCopies(previousAccountId));
+      }
     });
     // The server accepts this build again (a rolled-back deploy): the
     // setup it refused can now succeed.
@@ -698,6 +705,20 @@ class AuthProvider extends Notifier<AppAuthState> {
       error: error,
       stackTrace: stackTrace,
     );
+
+    // The token refresh couldn't reach Supabase (offline, or Supabase is
+    // down): nothing judged the session, and Supabase tries the refresh
+    // again by itself. Setting up is out of reach, so it is offline and
+    // retries; a session already offline stays so; any other state is left
+    // as it is. Only a real refusal is an incident.
+    if (!kIsWeb &&
+        _supabaseApi.currentSession?.user.id != null &&
+        (error is AuthRetryableFetchException || error is TimeoutException)) {
+      if (state.convexAuthStatus == ConvexAuthStatus.configuring) {
+        _enterOffline();
+      }
+      return;
+    }
 
     state = state.copyWith(
       isLoading: false,
@@ -914,6 +935,11 @@ class AuthProvider extends Notifier<AppAuthState> {
 
     try {
       await _supabaseApi.signOut();
+      // Signed out of Supabase: the account is gone from this computer even
+      // if a later step fails.
+      if (signedOutAccountId != null) {
+        await _deleteAccountCopies(signedOutAccountId);
+      }
       _convexAuthHandle?.dispose();
       _convexAuthHandle = null;
       await _convexApi.clearAuth();
@@ -937,10 +963,6 @@ class AuthProvider extends Notifier<AppAuthState> {
         errorMessage: 'Sign out failed. Please try again.',
       );
       return;
-    }
-
-    if (signedOutAccountId != null) {
-      await _deleteAccountCopies(signedOutAccountId);
     }
 
     try {
@@ -1473,7 +1495,10 @@ class AuthProvider extends Notifier<AppAuthState> {
         return;
       }
 
-      final offlineFailure = _supabaseApi.currentSession?.user.id != null &&
+      // Desktop only: the web app needs the network to load at all, so a
+      // failed setup there stays the incident it always was.
+      final offlineFailure = !kIsWeb &&
+          _supabaseApi.currentSession?.user.id != null &&
           (_isOfflineFailure(error) ||
               (quietRetry &&
                   error is TimeoutException &&

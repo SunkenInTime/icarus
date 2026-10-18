@@ -889,9 +889,9 @@ void main() {
       );
       final attemptsWhileOffline = convexApi.setAuthCalls;
 
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await waitUntil(() => convexApi.setAuthCalls > attemptsWhileOffline);
+      await pumpMicrotasks();
       // Still out of reach: each timed try ends offline again.
-      expect(convexApi.setAuthCalls, greaterThan(attemptsWhileOffline));
       expect(
         container.read(authProvider).convexAuthStatus,
         ConvexAuthStatus.offline,
@@ -901,11 +901,10 @@ void main() {
         ..connected = true
         ..reconnectResult = true
         ..autoAuthenticateOnSetAuth = true;
-      await Future<void>.delayed(const Duration(milliseconds: 60));
-
-      expect(
-        container.read(authProvider).convexAuthStatus,
-        ConvexAuthStatus.ready,
+      await waitUntil(
+        () =>
+            container.read(authProvider).convexAuthStatus ==
+            ConvexAuthStatus.ready,
       );
     });
 
@@ -926,7 +925,9 @@ void main() {
         ..connected = true
         ..reconnectResult = true;
       convexApi.connectedController.add(true);
-      await Future<void>.delayed(const Duration(milliseconds: 70));
+      // The first try reached the server and ran out of time; the next one
+      // has started.
+      await waitUntil(() => convexApi.setAuthCalls >= 3);
       expect(
         container.read(authProvider).convexAuthStatus,
         ConvexAuthStatus.offline,
@@ -934,10 +935,10 @@ void main() {
       expect(container.read(authProvider).activeAuthIncidentId, isNull);
 
       convexApi.autoAuthenticateOnSetAuth = true;
-      await Future<void>.delayed(const Duration(milliseconds: 150));
-      expect(
-        container.read(authProvider).convexAuthStatus,
-        ConvexAuthStatus.ready,
+      await waitUntil(
+        () =>
+            container.read(authProvider).convexAuthStatus ==
+            ConvexAuthStatus.ready,
       );
     });
 
@@ -956,12 +957,14 @@ void main() {
         ..connected = true
         ..reconnectResult = true;
       convexApi.connectedController.add(true);
-      await Future<void>.delayed(const Duration(milliseconds: 600));
 
-      expect(
-        container.read(authProvider).convexAuthStatus,
-        ConvexAuthStatus.incident,
+      await waitUntil(
+        () =>
+            container.read(authProvider).convexAuthStatus ==
+            ConvexAuthStatus.incident,
       );
+      // Three slow tries, then the fourth gave up.
+      expect(convexApi.setAuthCalls, 5);
     });
 
     test('a retry stays offline on screen until it succeeds', () async {
@@ -1055,12 +1058,14 @@ void main() {
       addTearDown(container.dispose);
 
       container.read(authProvider);
-      await Future<void>.delayed(const Duration(milliseconds: 120));
 
-      expect(
-        container.read(authProvider).convexAuthStatus,
-        ConvexAuthStatus.incident,
+      await waitUntil(
+        () =>
+            container.read(authProvider).convexAuthStatus ==
+            ConvexAuthStatus.incident,
       );
+      // At once, with no offline retries in between.
+      expect(convexApi.setAuthCalls, 1);
     });
   });
 
@@ -1079,13 +1084,175 @@ void main() {
     await pumpMicrotasks();
 
     await container.read(authProvider.notifier).signOut();
+    await pumpMicrotasks();
 
-    expect(copy.deleted, const [
-      CloudCopyScope(
+    expect(copy.deleted.toSet(), {
+      const CloudCopyScope(
         deploymentUrl: 'https://example-1.convex.cloud',
         accountId: 'user-1',
       ),
-    ]);
+    });
+  });
+
+  group('a refresh that cannot reach Supabase', () {
+    setUp(() {
+      supabaseApi.currentSession = fakeSession();
+      convexApi.connected = false;
+      convexApi.reconnectResult = false;
+      convexApi.autoAuthenticateOnSetAuth = false;
+      AuthProvider.debugOfflineRetryDelay = (_) => const Duration(hours: 1);
+    });
+
+    test('keeps an offline session offline, retrying', () async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(authProvider);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.offline,
+      );
+
+      supabaseApi.emitError(AuthRetryableFetchException(message: 'offline'));
+      await pumpMicrotasks();
+
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.offline,
+      );
+      expect(container.read(authProvider).errorMessage, isNull);
+      // Still retrying: the socket coming back sets up again.
+      convexApi.reconnectSocket();
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.ready,
+      );
+    });
+
+    test('takes a session still setting up offline', () async {
+      convexApi.setAuthCompleter = Completer<AuthProviderAuthHandle>();
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(authProvider);
+      await pumpMicrotasks();
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.configuring,
+      );
+
+      supabaseApi.emitError(AuthRetryableFetchException(message: 'offline'));
+      await pumpMicrotasks();
+
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.offline,
+      );
+      convexApi.setAuthCompleter!.complete(FakeAuthHandle());
+      await pumpMicrotasks();
+    });
+
+    test('leaves a ready session ready', () async {
+      convexApi
+        ..connected = true
+        ..reconnectResult = true
+        ..autoAuthenticateOnSetAuth = true;
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(authProvider);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+
+      supabaseApi.emitError(AuthRetryableFetchException(message: 'offline'));
+      await pumpMicrotasks();
+
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.ready,
+      );
+    });
+
+    test('a refresh Supabase refuses is still an incident', () async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(authProvider);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+
+      supabaseApi.emitError(
+        const AuthApiException('Invalid Refresh Token', statusCode: '400'),
+      );
+      await pumpMicrotasks();
+
+      expect(
+        container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.incident,
+      );
+    });
+  });
+
+  group("the account's copies are deleted", () {
+    late _RecordingAccountCopy copy;
+    late ProviderContainer container;
+
+    setUp(() async {
+      supabaseApi.currentSession = fakeSession();
+      copy = _RecordingAccountCopy();
+      container = ProviderContainer(overrides: [
+        cloudAccountCopiesProvider.overrideWithValue([copy]),
+        cloudCopyDeploymentUrlProvider
+            .overrideWithValue('https://example-1.convex.cloud'),
+      ]);
+      container.read(authProvider);
+      await pumpMicrotasks();
+    });
+
+    tearDown(() => container.dispose());
+
+    const user1 = CloudCopyScope(
+      deploymentUrl: 'https://example-1.convex.cloud',
+      accountId: 'user-1',
+    );
+
+    test('when Supabase ends the session itself', () async {
+      supabaseApi.currentSession = null;
+      supabaseApi.emit(AuthChangeEvent.signedOut, null);
+      await pumpMicrotasks();
+
+      expect(copy.deleted, contains(user1));
+    });
+
+    test('when another account signs in', () async {
+      final other = fakeSession(userId: 'user-2', accessToken: 'other');
+      supabaseApi.currentSession = other;
+      supabaseApi.emit(AuthChangeEvent.signedIn, other);
+      await pumpMicrotasks();
+
+      expect(copy.deleted, contains(user1));
+      expect(copy.deleted.map((scope) => scope.accountId), isNot('user-2'));
+    });
+
+    test('when signing out fails after Supabase signed out', () async {
+      // Only this sign-out's own steps: the signedOut event is not here yet.
+      supabaseApi.emitSignedOutOnSignOut = false;
+      convexApi.clearAuthError = StateError('socket closed');
+
+      await container.read(authProvider.notifier).signOut();
+
+      expect(convexApi.clearAuthCalls, greaterThan(0));
+      expect(copy.deleted, contains(user1));
+    });
+
+    test('not when the session is merely refreshed', () async {
+      final refreshed = fakeSession(accessToken: 'refreshed');
+      supabaseApi.currentSession = refreshed;
+      supabaseApi.emit(AuthChangeEvent.tokenRefreshed, refreshed);
+      await pumpMicrotasks();
+
+      expect(copy.deleted, isEmpty);
+    });
   });
 }
 
@@ -1109,18 +1276,36 @@ class _AcceptingRepository extends Fake implements ConvexStrategyRepository {
   Future<bool> serverAcceptsCloudProtocol() async => true;
 }
 
+/// Waits for [condition] on real time, failing after [timeout]: timer-driven
+/// retries take as long as they take on a loaded machine.
+Future<void> waitUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail('Timed out waiting for the condition.');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+}
+
 Future<void> pumpMicrotasks() async {
   await Future<void>.delayed(Duration.zero);
   await Future<void>.delayed(Duration.zero);
 }
 
-Session fakeSession({String accessToken = 'test-token'}) {
+Session fakeSession({
+  String accessToken = 'test-token',
+  String userId = 'user-1',
+}) {
   final session = Session(
     accessToken: accessToken,
     refreshToken: 'refresh-token',
     tokenType: 'bearer',
-    user: const User(
-      id: 'user-1',
+    user: User(
+      id: userId,
       appMetadata: <String, dynamic>{},
       userMetadata: <String, dynamic>{'full_name': 'Test User'},
       aud: 'authenticated',
@@ -1158,6 +1343,7 @@ class FakeConvexApi implements AuthProviderConvexApi {
   bool _isAuthenticated = false;
   Object? mutationError;
   Object? reconnectError;
+  Object? clearAuthError;
   bool reconnectResult = true;
   Completer<AuthProviderAuthHandle>? setAuthCompleter;
   final List<FakeAuthHandle> handles = <FakeAuthHandle>[];
@@ -1193,6 +1379,10 @@ class FakeConvexApi implements AuthProviderConvexApi {
   @override
   Future<void> clearAuth() async {
     clearAuthCalls += 1;
+    if (clearAuthError case final Object error?) {
+      clearAuthError = null;
+      throw error;
+    }
     _isAuthenticated = false;
     _authStateController.add(false);
   }
@@ -1244,6 +1434,7 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   @override
   Session? currentSession;
   bool emitInitialSessionOnListen = false;
+  bool emitSignedOutOnSignOut = true;
   bool emitSignedInEventOnPasswordSignIn = false;
   Session? sessionFromUrlSession;
   Object? sessionFromUrlError;
@@ -1313,6 +1504,7 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   @override
   Future<void> signOut() async {
     currentSession = null;
+    if (!emitSignedOutOnSignOut) return;
     for (final controller in _controllers) {
       controller.add(AuthState(AuthChangeEvent.signedOut, currentSession));
     }
@@ -1332,6 +1524,12 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   void emit(AuthChangeEvent event, Session? session) {
     for (final controller in _controllers) {
       controller.add(AuthState(event, session));
+    }
+  }
+
+  void emitError(Object error) {
+    for (final controller in _controllers) {
+      controller.addError(error);
     }
   }
 

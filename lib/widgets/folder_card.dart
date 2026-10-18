@@ -10,6 +10,7 @@ import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -764,6 +765,12 @@ class _FolderCardState extends ConsumerState<FolderCard>
             FolderItem(:final folder) => folder.id,
           });
 
+  /// A change to this cloud folder while the library shows this computer's
+  /// copy: refused at once, with the reason.
+  bool _refusedOffline() =>
+      _isCloud &&
+      refuseCloudChangeWhileOffline(ref.read(cloudLibraryShowsCopyProvider));
+
   List<ShadContextMenuItem> _buildMenuItems({required bool isPinned}) {
     final id = _folder.id;
     return [
@@ -783,7 +790,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
             ? null
             : () async {
                 _closeMenus();
-                if (widget.isDemo) return;
+                if (widget.isDemo || _refusedOffline()) return;
                 await showDialog<String>(
                   context: context,
                   builder: (context) {
@@ -802,6 +809,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
           child: const Text('Share'),
           onPressed: () async {
             _closeMenus();
+            if (_refusedOffline()) return;
             await showShadDialog<void>(
               context: context,
               builder: (_) => ShareLinksDialog(
@@ -822,6 +830,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
           child: const Text('Leave'),
           onPressed: () {
             _closeMenus();
+            if (_refusedOffline()) return;
             leaveSharedItem(
               context: context,
               ref: ref,
@@ -876,7 +885,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
             ? null
             : () async {
                 _closeMenus();
-                if (widget.isDemo) return;
+                if (widget.isDemo || _refusedOffline()) return;
                 await showShadDialog<void>(
                   context: context,
                   builder: (_) => DeleteFolderAlertDialog(

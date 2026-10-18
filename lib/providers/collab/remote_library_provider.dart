@@ -14,40 +14,53 @@ import 'package:icarus/services/app_error_reporter.dart';
 
 /// Writes every live answer a list provider gets to this computer's copy,
 /// so the list can be shown while the cloud is out of reach. When the socket
-/// drops, or the list stops being watched while connected, the copy is
-/// marked as still matching the server at that moment: the live answer held
-/// until then. Nothing is marked before this list's first live answer.
+/// drops, or the list stops being watched while connected, the last answer
+/// is written again as still matching the server at that moment: it held
+/// until then. A disconnect ends that: after it, nothing is marked until a
+/// fresh answer arrives.
 class _LiveCopyWriter<T> {
   _LiveCopyWriter(
     Ref ref, {
     required this.write,
-    required this.markMatched,
   }) : _connected = ref.read(convexConnectionProvider).valueOrNull ?? false {
     ref.listen<AsyncValue<bool>>(convexConnectionProvider, (_, next) {
       final connected = next.valueOrNull ?? false;
-      if (_connected && !connected) _markMatched();
+      if (_connected && !connected) {
+        _writeLastAnswer();
+        _lastAnswer = null;
+      }
       _connected = connected;
     });
     ref.onDispose(() {
-      if (_connected) _markMatched();
+      if (_connected) _writeLastAnswer();
     });
   }
 
-  final Future<void> Function(List<T> entries, DateTime matchedAt) write;
-  final Future<void> Function(DateTime at) markMatched;
+  final Future<void> Function(
+    List<T> entries, {
+    required int answerOrder,
+    required DateTime matchedAt,
+  }) write;
   bool _connected;
-  bool _answered = false;
+
+  /// The last answer since the socket last connected, with its order.
+  ({List<T> entries, int order})? _lastAnswer;
 
   void answer(List<T> entries) {
-    _answered = true;
-    unawaited(
-      write(entries, DateTime.now()).catchError(_reportCopyWriteFailure),
-    );
+    _lastAnswer = (entries: entries, order: nextCloudLibraryAnswerOrder());
+    _writeLastAnswer();
   }
 
-  void _markMatched() {
-    if (!_answered) return;
-    unawaited(markMatched(DateTime.now()).catchError(_reportCopyWriteFailure));
+  void _writeLastAnswer() {
+    final answer = _lastAnswer;
+    if (answer == null) return;
+    unawaited(
+      write(
+        answer.entries,
+        answerOrder: answer.order,
+        matchedAt: DateTime.now(),
+      ).catchError(_reportCopyWriteFailure),
+    );
   }
 }
 
@@ -81,9 +94,13 @@ final cloudFolderTreeProvider =
       ? null
       : _LiveCopyWriter<CloudFolderEntry>(
           ref,
-          write: (folders, at) =>
-              store.writeFolders(scope, folders, matchedAt: at),
-          markMatched: (at) => store.markFoldersMatched(scope, at),
+          write: (folders, {required answerOrder, required matchedAt}) =>
+              store.writeFolders(
+            scope,
+            folders,
+            answerOrder: answerOrder,
+            matchedAt: matchedAt,
+          ),
         );
   try {
     await for (final folders in repo.watchAllFolders()) {
@@ -176,9 +193,14 @@ final cloudStrategiesProvider =
       ? null
       : _LiveCopyWriter<CloudStrategyEntry>(
           ref,
-          write: (strategies, at) =>
-              store.writeStrategies(scope, listing, strategies, matchedAt: at),
-          markMatched: (at) => store.markStrategiesMatched(scope, listing, at),
+          write: (strategies, {required answerOrder, required matchedAt}) =>
+              store.writeStrategies(
+            scope,
+            listing,
+            strategies,
+            answerOrder: answerOrder,
+            matchedAt: matchedAt,
+          ),
         );
   try {
     final stream = listing.shared

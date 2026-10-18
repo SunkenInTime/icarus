@@ -279,9 +279,12 @@ ProviderContainer _createContainer({
   CloudMediaUploadQueueState? mediaQueueState,
   StrategySaveState? saveState,
   ActivePageLiveSyncState? liveSyncState,
+  ConvexAuthStatus? sessionStatus,
 }) {
   return ProviderContainer(
     overrides: [
+      if (sessionStatus != null)
+        authProvider.overrideWith(() => _FixedSessionAuth(sessionStatus)),
       strategyProvider.overrideWith(_CloudStrategyProvider.new),
       if (liveSyncState != null)
         activePageLiveSyncProvider.overrideWith(
@@ -391,6 +394,32 @@ void main() {
     await container.read(convexConnectionProvider.future);
 
     expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
+  });
+
+  test(
+      'nothing is synced until the session is ready, even with the socket '
+      'back', () async {
+    Future<CloudSyncStatus> statusFor(ConvexAuthStatus session) async {
+      final container = _createContainer(sessionStatus: session);
+      addTearDown(container.dispose);
+      await container.read(convexConnectionProvider.future);
+      return container.read(cloudSyncStatusProvider);
+    }
+
+    // Socket connected, queues settled: only the session differs.
+    expect(await statusFor(ConvexAuthStatus.ready), CloudSyncStatus.synced);
+    expect(
+      await statusFor(ConvexAuthStatus.offline),
+      CloudSyncStatus.offline,
+    );
+    expect(
+      await statusFor(ConvexAuthStatus.configuring),
+      CloudSyncStatus.syncing,
+    );
+    expect(
+      await statusFor(ConvexAuthStatus.incident),
+      CloudSyncStatus.attention,
+    );
   });
 
   testWidgets('an active text draft can never appear synced', (tester) async {
@@ -1791,6 +1820,21 @@ void main() {
       expect(find.text('This page was deleted'), findsOneWidget);
     });
   });
+}
+
+class _FixedSessionAuth extends AuthProvider {
+  _FixedSessionAuth(this.status);
+
+  final ConvexAuthStatus status;
+
+  @override
+  AppAuthState build() => AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: status == ConvexAuthStatus.ready,
+        convexAuthStatus: status,
+        user: null,
+      );
 }
 
 class _ReadyAuthProvider extends AuthProvider {
