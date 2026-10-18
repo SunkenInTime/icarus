@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
@@ -15,6 +16,14 @@ const _legacyDurableOutboxRecordVersion = 1;
 /// record alone rather than send its op as a whole write. Every other record
 /// stays at [durableOutboxRecordVersion], readable by those builds.
 const fieldMergeOutboxRecordVersion = 3;
+
+/// The version of a record holding one change in a strategy's ordered list
+/// of page changes (see page_changes.dart), stored under its own
+/// EntitySyncKey.pageChange key with its place in the list. A build from
+/// before the list cannot read it, so it leaves the record alone and says
+/// the outbox holds unreadable saved work, rather than send the change out
+/// of order.
+const pageChangeOutboxRecordVersion = 4;
 const durableOutboxVersionKey = '__outbox_record_version__';
 
 Future<void> prepareDurableStrategyOutbox() async {
@@ -60,6 +69,7 @@ class DurableOutboxRecord {
     this.lastError,
     this.latestServerRevision,
     this.latestServerPayload,
+    this.pageChangeSequence,
   });
 
   final String accountId;
@@ -77,6 +87,10 @@ class DurableOutboxRecord {
   /// field collision checks against it, so a teammate's later change still
   /// asks.
   final CloudPayload? latestServerPayload;
+
+  /// This page change's place in its strategy's ordered list of them (lower
+  /// goes first). Set for EntitySyncKey.pageChange records, and only them.
+  final int? pageChangeSequence;
 
   String get storageKey => createStorageKey(
         accountId: accountId,
@@ -123,6 +137,7 @@ class DurableOutboxRecord {
       latestServerPayload: clearLatestServerRevision
           ? null
           : (latestServerPayload ?? this.latestServerPayload),
+      pageChangeSequence: pageChangeSequence,
     );
   }
 
@@ -140,10 +155,14 @@ class DurableOutboxRecord {
             _ => false,
           });
 
+  bool get _isPageChange => entityKey.kind == EntitySyncKeyKind.pageChange;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'outboxVersion': _mergesByField
-            ? fieldMergeOutboxRecordVersion
-            : durableOutboxRecordVersion,
+        'outboxVersion': _isPageChange
+            ? pageChangeOutboxRecordVersion
+            : _mergesByField
+                ? fieldMergeOutboxRecordVersion
+                : durableOutboxRecordVersion,
         'accountId': accountId,
         'strategyPublicId': strategyPublicId,
         'entityKey': entityKey.toString(),
@@ -163,13 +182,17 @@ class DurableOutboxRecord {
           'latestServerRevision': latestServerRevision,
         if (latestServerPayload != null)
           'latestServerPayload': latestServerPayload,
+        if (_isPageChange)
+          'pageChangeSequence': pageChangeSequence ??
+              (throw StateError('A page change needs its place in the list')),
       };
 
   factory DurableOutboxRecord.fromJson(Map<String, dynamic> json) {
     final version = (json['outboxVersion'] as num?)?.toInt();
     if (version != _legacyDurableOutboxRecordVersion &&
         version != durableOutboxRecordVersion &&
-        version != fieldMergeOutboxRecordVersion) {
+        version != fieldMergeOutboxRecordVersion &&
+        version != pageChangeOutboxRecordVersion) {
       throw FormatException('Unsupported outbox record version: $version');
     }
     final opJson = _object(json['op'], field: 'op');
@@ -177,7 +200,26 @@ class DurableOutboxRecord {
     if (json['opId'] != op.opId) {
       throw const FormatException('Outbox opId does not match serialized op');
     }
-    final entityKey = EntitySyncKey.forStrategyOp(op);
+    final isPageChange = version == pageChangeOutboxRecordVersion;
+    final pageChangeSequence = (json['pageChangeSequence'] as num?)?.toInt();
+    final EntitySyncKey? entityKey;
+    if (isPageChange) {
+      const prefix = 'pagechange:';
+      final rawKey = json['entityKey'];
+      if (rawKey is! String ||
+          !rawKey.startsWith(prefix) ||
+          rawKey.length == prefix.length ||
+          !isPageChangeOp(op) ||
+          pageChangeSequence == null ||
+          json['successorPending'] != null) {
+        throw const FormatException('Outbox page change is malformed');
+      }
+      entityKey = EntitySyncKey.pageChange(
+        Uri.decodeComponent(rawKey.substring(prefix.length)),
+      );
+    } else {
+      entityKey = EntitySyncKey.forStrategyOp(op);
+    }
     if (entityKey == null || entityKey.toString() != json['entityKey']) {
       throw const FormatException('Outbox entity key does not match op');
     }
@@ -214,6 +256,7 @@ class DurableOutboxRecord {
       latestServerPayload: json['latestServerPayload'] is Map
           ? Map<String, dynamic>.from(json['latestServerPayload'] as Map)
           : null,
+      pageChangeSequence: isPageChange ? pageChangeSequence : null,
     );
   }
 

@@ -11,6 +11,7 @@ import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/collab/field_merge.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
@@ -318,6 +319,39 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
       pending: PendingOp(op: desired, clientId: 'test-client'),
     );
   }
+
+  /// Like the real queue, keeps each page change apart, in the order made.
+  @override
+  Future<void> enqueuePageChange(
+    StrategyOp op, {
+    bool flushImmediately = false,
+  }) async {
+    final gate = writeGate;
+    if (gate != null) await gate.future;
+    final key = EntitySyncKey.pageChange(op.opId);
+    state = state.copyWith(queuedByEntityKey: {
+      ...state.queuedByEntityKey,
+      key: QueuedEntityIntent(
+        entityKey: key,
+        pending: PendingOp(op: op, clientId: 'test-client'),
+      ),
+    });
+  }
+
+  /// The page changes this fake holds, wherever a test put them.
+  @override
+  List<StrategyOp> pageChangesToDraw(RemoteEditorSnapshot snapshot) => [
+        for (final pending in state.pending)
+          if (isPageChangeOp(pending.op)) pending.op,
+      ];
+
+  @override
+  bool isDeletedHere(String pageId) => state.pending.any((pending) =>
+      pending.op is PageDeleteOp && pending.op.pagePublicId == pageId);
+
+  @override
+  int drawnStrategyRevision(RemoteEditorSnapshot snapshot) =>
+      snapshot.header.revision;
 
   /// While set, work that only the queue would keep cannot be stored.
   bool offCanvasStoreFails = false;
@@ -1670,7 +1704,7 @@ void main() {
     expect(pending.op.entityPublicId, 'page-1');
     expect(pending.op.sortIndex, 1);
     expect(pending.op.expectedRevision, 17);
-    expect(intent.key, const EntitySyncKey.pageDescriptor('page-1'));
+    expect(intent.key.kind, EntitySyncKeyKind.pageChange);
     expect(queue.flushNowCount, 1);
   });
 
@@ -1709,10 +1743,7 @@ void main() {
       'isAttack': true,
       'settings': container.read(strategySettingsProvider).toJson(),
     });
-    expect(
-      intent.key,
-      EntitySyncKey.pageDescriptor(pending.op.entityPublicId!),
-    );
+    expect(intent.key.kind, EntitySyncKeyKind.pageChange);
     // The server copies the page on screen onto it.
     expect((pending.op as PageAddOp).copyContentFromPagePublicId, 'page-1');
     expect(queue.flushNowCount, 1);
@@ -1987,7 +2018,7 @@ void main() {
       'isAutoNamed': false,
     });
     expect(pending.op.expectedRevision, 6);
-    expect(intent.key, const EntitySyncKey.pageDescriptor('page-1'));
+    expect(intent.key.kind, EntitySyncKeyKind.pageChange);
     expect(queue.flushNowCount, 1);
   });
 
@@ -2028,6 +2059,84 @@ void main() {
       await alreadyGone.read(strategyProvider.notifier).deletePage('page-2'),
       isFalse,
     );
+  });
+
+  test(
+      'deleting the page on screen while the delete waits to be sent moves '
+      'to another page, as a delete that lands does', () async {
+    final first = _page('page-1', 0);
+    final second = _page('page-2', 1);
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(
+      remote: _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [first, second],
+          activePage: _pageSnapshot(first),
+        ),
+        pageCatalog: {
+          'page-1': _pageSnapshot(first),
+          'page-2': _pageSnapshot(second),
+        },
+      ),
+      queue: queue,
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    expect(container.read(strategyPageSessionProvider).activePageId, 'page-1');
+
+    // Offline: the server never answers.
+    final deleted =
+        await container.read(strategyProvider.notifier).deletePage('page-1');
+
+    expect(deleted, isFalse);
+    expect(
+      queue.state.pending.map((pending) => pending.op),
+      contains(isA<PageDeleteOp>()),
+    );
+    expect(container.read(strategyPageSessionProvider).activePageId, 'page-2');
+  });
+
+  test(
+      'deleting the page on screen while the delete waits moves past a page '
+      'whose add has not landed to one that can open', () async {
+    final first = _page('page-1', 0);
+    final second = _page('page-2', 1);
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(
+      remote: _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [first, second],
+          activePage: _pageSnapshot(first),
+        ),
+        pageCatalog: {
+          'page-1': _pageSnapshot(first),
+          'page-2': _pageSnapshot(second),
+        },
+      ),
+      queue: queue,
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    // Offline, a page added second: [page-1, added, page-2].
+    await queue.enqueuePageChange(const PageAddOp(
+      opId: 'add-x',
+      pagePublicId: 'page-x',
+      payload: {'name': 'Page 2', 'isAutoNamed': true},
+      sortIndex: 1,
+      expectedStrategyRevision: 1,
+    ));
+
+    await container.read(strategyProvider.notifier).deletePage('page-1');
+
+    expect(container.read(strategyPageSessionProvider).activePageId, 'page-2');
   });
 
   QueuedEntityIntent refusedOnPage2() => const QueuedEntityIntent(
@@ -2340,7 +2449,7 @@ void main() {
     expect(pending.op.kind, StrategyOpKind.delete);
     expect(pending.op.entityPublicId, 'page-2');
     expect(pending.op.expectedRevision, 12);
-    expect(intent.key, const EntitySyncKey.pageDescriptor('page-2'));
+    expect(intent.key.kind, EntitySyncKeyKind.pageChange);
     expect(queue.flushNowCount, 1);
   });
 
@@ -5721,6 +5830,59 @@ void main() {
             .isAttack,
         isFalse);
   });
+
+  for (final (label, ack, base) in [
+    (
+      'an applied rename moves the side base on with it',
+      const AppliedOpAck(opId: 'rename', revision: 2) as OpAck,
+      2,
+    ),
+    (
+      'a rename answered with no change leaves the side base where it was',
+      const NoopOpAck(opId: 'rename', currentRevision: 2) as OpAck,
+      1,
+    ),
+  ]) {
+    test(label, () async {
+      final page = _page('page-1', 0);
+      final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page),
+      ));
+      final container = await _syncContainer(
+        remote: remote,
+        queue: _FakeStrategyOpQueueNotifier(),
+      );
+      final sync = container.read(activePageLiveSyncProvider.notifier);
+      container.read(mapProvider.notifier).fromHive(MapValue.ascent, true);
+      sync.markPageHydrated(
+          strategyPublicId: 'cloud-strategy',
+          pageId: 'page-1',
+          snapshot: remote.initialSnapshot);
+      // This device's rename, from the list of page changes. A no-change
+      // answer carries the page's revision now, which may be a teammate's
+      // side change the canvas has not read.
+      sync.recordAckBatch([
+        AckedEntityIntent(
+          entityKey: const EntitySyncKey.pageChange('change-1'),
+          op: const PagePatchOp(
+              opId: 'rename',
+              pagePublicId: 'page-1',
+              payload: {'name': 'Renamed', 'isAutoNamed': false},
+              expectedPageRevision: 1),
+          ack: ack,
+        )
+      ]);
+
+      container.read(mapProvider.notifier).fromHive(MapValue.ascent, false);
+      final side = sync.syncLocalPage(
+        strategyPublicId: 'cloud-strategy',
+        pageId: 'page-1',
+      )![const EntitySyncKey.pageDescriptor('page-1')]!;
+
+      expect(side.expectedRevision, base);
+    });
+  }
 
   test('a final delete is emitted behind an in-flight local add', () async {
     final page = _page('page-1', 0);

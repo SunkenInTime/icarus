@@ -29,6 +29,7 @@ import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/drawn_cloud_pages_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -563,22 +564,32 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     });
   }
 
+  /// The pages in order, as the pages bar lists them: a cloud strategy's
+  /// with this device's page changes that have not landed on top.
+  List<String> get _pageOrder {
+    if (ref.read(strategyProvider).source == StrategySource.cloud) {
+      final drawn = ref.read(drawnCloudPagesProvider)?.pages;
+      if (drawn != null) return [for (final page in drawn) page.publicId];
+    }
+    return state.availablePageIds;
+  }
+
   Future<void> switchRelativePage(PageSwitchDirection direction) async {
-    if (state.availablePageIds.isEmpty) {
+    final pageIds = _pageOrder;
+    if (pageIds.isEmpty) {
       return;
     }
 
-    final active = state.activePageId ?? state.availablePageIds.first;
-    final currentIndex = state.availablePageIds.indexOf(active);
+    final active = state.activePageId ?? pageIds.first;
+    final currentIndex = pageIds.indexOf(active);
     if (currentIndex < 0) {
       return;
     }
 
     final nextIndex = direction == PageSwitchDirection.next
-        ? (currentIndex + 1) % state.availablePageIds.length
-        : (currentIndex - 1 + state.availablePageIds.length) %
-            state.availablePageIds.length;
-    final nextPageId = state.availablePageIds[nextIndex];
+        ? (currentIndex + 1) % pageIds.length
+        : (currentIndex - 1 + pageIds.length) % pageIds.length;
+    final nextPageId = pageIds[nextIndex];
     await setActivePageAnimated(
       nextPageId,
       direction: direction == PageSwitchDirection.next
@@ -1414,12 +1425,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final queue = ref.read(strategyOpQueueProvider);
     _notePagesDeletedHere(queue);
     if (_deletedHere(pageId)) return false;
-    final descriptor = EntitySyncKey.pageDescriptor(pageId);
-    if ([
-      queue.queuedByEntityKey[descriptor]?.pending.op,
-      queue.inFlightByEntityKey[descriptor]?.pending.op,
-      queue.successorByEntityKey[descriptor]?.pending.op,
-    ].any((op) => op is PageDeleteOp)) {
+    if (ref.read(strategyOpQueueProvider.notifier).isDeletedHere(pageId)) {
       return false;
     }
     if (!ref.read(activePageLiveSyncProvider.notifier).hasUnsentWork(pageId)) {
@@ -1765,6 +1771,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (activePageId != null &&
         snapshot.pages.any((page) => page.publicId == activePageId)) {
       return activePageId;
+    }
+    // The page the snapshot opened on: the first one the pages bar lists
+    // (see RemoteEditorSnapshotNotifier), which a page deleted here is not.
+    final opened = snapshot.activePage?.page.publicId;
+    if (opened != null &&
+        snapshot.pages.any((page) => page.publicId == opened)) {
+      return opened;
     }
 
     final pages = [...snapshot.pages]

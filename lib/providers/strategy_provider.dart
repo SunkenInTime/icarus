@@ -47,6 +47,7 @@ import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/drawn_cloud_pages_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
@@ -434,6 +435,13 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
   }
 
+  /// The strategy revision the pages bar shows: the read's, or the one this
+  /// device's own page change landed at since (see
+  /// StrategyOpQueueNotifier.drawnStrategyRevision).
+  int _drawnStrategyRevision(RemoteEditorSnapshot snapshot) => ref
+      .read(strategyOpQueueProvider.notifier)
+      .drawnStrategyRevision(snapshot);
+
   Future<OpAck?> _enqueueCloudPageDescriptorOp(StrategyOp op) async {
     await enqueueOps([op]);
     final queue = ref.read(strategyOpQueueProvider.notifier);
@@ -752,9 +760,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      if (snapshot == null || snapshot.pages.isEmpty) return;
-      final ordered = [...snapshot.pages]
-        ..sortBySortIndex((item) => item.sortIndex);
+      final drawn = ref.read(drawnCloudPagesProvider)?.pages;
+      if (snapshot == null || drawn == null || drawn.isEmpty) return;
+      final ordered = [...drawn];
       if (oldIndex < 0 ||
           oldIndex >= ordered.length ||
           newIndex < 0 ||
@@ -770,7 +778,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         opId: const Uuid().v4(),
         pagePublicId: moved.publicId,
         sortIndex: targetIndex,
-        expectedStrategyRevision: snapshot.header.revision,
+        expectedStrategyRevision: _drawnStrategyRevision(snapshot),
       ));
       if (ack != null) {
         await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
@@ -990,12 +998,13 @@ class StrategyProvider extends Notifier<StrategyState> {
             255;
   }
 
+  /// The page next to the one on screen, as the pages bar lists them. None
+  /// when that page is not in the cloud yet (its add is still waiting).
   String? _adjacentCloudPageId(
     RemoteEditorSnapshot snapshot,
     PageTransitionDirection direction,
   ) {
-    final pages = [...snapshot.pages]
-      ..sortBySortIndex((item) => item.sortIndex);
+    final pages = ref.read(drawnCloudPagesProvider)?.pages ?? const [];
     final currentIndex = pages.indexWhere(
       (page) =>
           page.publicId == ref.read(strategyPageSessionProvider).activePageId,
@@ -1006,7 +1015,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       PageTransitionDirection.forward => currentIndex + 1,
     };
     if (targetIndex < 0 || targetIndex >= pages.length) return null;
-    return pages[targetIndex].publicId;
+    final target = pages[targetIndex];
+    return target.opens ? target.publicId : null;
   }
 
   /// [widgetId] on the page on screen as cloud element data, or null when it
@@ -1562,9 +1572,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (_currentStrategyIsCloud()) {
       final strategyId = state.strategyId;
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      if (strategyId == null || snapshot == null) return none;
-      final pages = [...snapshot.pages]
-        ..sortBySortIndex((item) => item.sortIndex);
+      final pages = ref.read(drawnCloudPagesProvider)?.pages;
+      if (strategyId == null || snapshot == null || pages == null) return none;
       final pageID = const Uuid().v4();
       final activePageId = ref.read(strategyPageSessionProvider).activePageId;
       final activeIndex = pages.indexWhere(
@@ -1599,7 +1608,7 @@ class StrategyProvider extends Notifier<StrategyState> {
             'settings': ref.read(strategySettingsProvider).toJson(),
           },
           sortIndex: nextIndex,
-          expectedStrategyRevision: snapshot.header.revision,
+          expectedStrategyRevision: _drawnStrategyRevision(snapshot),
           copyContentFromPagePublicId: sourcePageId,
         ),
         cloudPageAddWait,
@@ -1678,16 +1687,14 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     if (_currentStrategyIsCloud()) {
-      final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      final page = snapshot?.pages
-          .where((candidate) => candidate.publicId == pageId)
-          .firstOrNull;
+      final page = ref.read(drawnCloudPagesProvider)?.byId(pageId);
       if (page == null) return;
       final ack = await _enqueueCloudPageDescriptorOp(PagePatchOp(
         opId: const Uuid().v4(),
         pagePublicId: pageId,
         payload: {'name': trimmed, 'isAutoNamed': false},
-        expectedPageRevision: page.revision,
+        // A page whose add has not landed yet is made at revision 1.
+        expectedPageRevision: page.revision ?? 1,
       ));
       if (ack != null) {
         await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
@@ -1721,18 +1728,20 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (!_currentStrategyCanEditPages()) return false;
     if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-      if (snapshot == null || snapshot.pages.length <= 1) {
+      final pages = ref.read(drawnCloudPagesProvider)?.pages;
+      if (snapshot == null || pages == null || pages.length <= 1) {
         return false;
       }
-      final pages = [...snapshot.pages]
-        ..sortBySortIndex((item) => item.sortIndex);
       final activePageId = ref.read(strategyPageSessionProvider).activePageId ??
           pages.first.publicId;
-      final remaining = pages
-          .where((page) => page.publicId != pageId)
-          .toList(growable: false);
-      final nextActivePageId = activePageId == pageId && remaining.isNotEmpty
-          ? remaining.first.publicId
+      // The page on screen goes to the first other page that can open
+      // (DrawnPage.opens).
+      final nextActivePageId = activePageId == pageId
+          ? pages
+                  .where((page) => page.publicId != pageId && page.opens)
+                  .firstOrNull
+                  ?.publicId ??
+              activePageId
           : activePageId;
 
       if (activePageId == pageId) {
@@ -1744,12 +1753,19 @@ class StrategyProvider extends Notifier<StrategyState> {
       final ack = await _enqueueCloudPageDescriptorOp(PageDeleteOp(
         opId: const Uuid().v4(),
         pagePublicId: pageId,
-        expectedStrategyRevision: snapshot.header.revision,
+        expectedStrategyRevision: _drawnStrategyRevision(snapshot),
       ));
       if (ack?.isAck ?? false) {
         await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       }
-      if ((ack?.isAck ?? false) && nextActivePageId != activePageId) {
+      // A delete still waiting (offline, or behind other work) is gone
+      // from the list already: the canvas leaves the page now, as it does
+      // once a delete lands, so nothing more is made on a page the user
+      // deleted.
+      final waits = ack == null &&
+          ref.read(strategyOpQueueProvider.notifier).isDeletedHere(pageId);
+      if (((ack?.isAck ?? false) || waits) &&
+          nextActivePageId != activePageId) {
         await ref
             .read(strategyPageSessionProvider.notifier)
             .setActivePageAnimated(
