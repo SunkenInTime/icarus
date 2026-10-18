@@ -138,6 +138,10 @@ class AppPreferences extends HiveObject {
   /// tour existed read false, so updating users see it once.
   final bool welcomeTourSeen;
 
+  /// Whether screenshots leave out the backdrop behind the map (the dark
+  /// gradient and the dot grid), so the PNG is transparent around the map.
+  final bool transparentScreenshotBackground;
+
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
     this.autosaveEnabled = true,
@@ -159,6 +163,7 @@ class AppPreferences extends HiveObject {
     this.videoExportStepDurationSeconds = 3.0,
     this.backgroundDotOpacity = 1.0,
     this.welcomeTourSeen = false,
+    this.transparentScreenshotBackground = false,
   })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
         customShortcutBindings =
             Map.unmodifiable(customShortcutBindings ?? const {});
@@ -184,6 +189,7 @@ class AppPreferences extends HiveObject {
     double? videoExportStepDurationSeconds,
     double? backgroundDotOpacity,
     bool? welcomeTourSeen,
+    bool? transparentScreenshotBackground,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
@@ -216,6 +222,8 @@ class AppPreferences extends HiveObject {
           videoExportStepDurationSeconds ?? this.videoExportStepDurationSeconds,
       backgroundDotOpacity: backgroundDotOpacity ?? this.backgroundDotOpacity,
       welcomeTourSeen: welcomeTourSeen ?? this.welcomeTourSeen,
+      transparentScreenshotBackground: transparentScreenshotBackground ??
+          this.transparentScreenshotBackground,
     );
   }
 }
@@ -696,6 +704,14 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
     return _updatePreferences(
       (current) => current.copyWith(
         backgroundDotOpacity: opacity.clamp(0.0, 1.0),
+      ),
+    );
+  }
+
+  Future<void> setTransparentScreenshotBackground(bool transparent) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        transparentScreenshotBackground: transparent,
       ),
     );
   }

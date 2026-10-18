@@ -185,6 +185,16 @@ final _magentaPng = Uint8List.fromList(
   ),
 );
 
+/// Preferences with screenshots set to a transparent background.
+class _TransparentScreenshots extends AppPreferencesNotifier {
+  @override
+  AppPreferences build() => AppPreferences(
+        defaultThemeProfileIdForNewStrategies:
+            MapThemeProfilesProvider.immutableDefaultProfileId,
+        transparentScreenshotBackground: true,
+      );
+}
+
 int _magentaPixels(Uint8List png) {
   final decoded = img.decodePng(png)!;
   var count = 0;
@@ -222,8 +232,11 @@ void main() {
   Future<WidgetRef> openCloudPage(
     WidgetTester tester, {
     required String? imageUrl,
+    bool transparentScreenshots = false,
   }) async {
     final container = ProviderContainer(overrides: [
+      if (transparentScreenshots)
+        appPreferencesProvider.overrideWith(_TransparentScreenshots.new),
       strategyProvider.overrideWith(_CloudStrategy.new),
       remoteEditorSnapshotProvider
           .overrideWith(() => _CloudSnapshot(imageUrl: imageUrl)),
@@ -315,6 +328,44 @@ void main() {
     expect(_magentaPixels(png as Uint8List), greaterThan(500));
     // The capture leaves the editor's coordinate mode as it found it.
     expect(CoordinateSystem.instance.isScreenshot, isFalse);
+  });
+
+  testWidgets('a transparent screenshot is see-through around the map only',
+      (tester) async {
+    Future<img.Image> capture({required bool transparent}) async {
+      final ref = await openCloudPage(
+        tester,
+        imageUrl: _imageUrl,
+        transparentScreenshots: transparent,
+      );
+      final png = await captureWithFrames(
+        tester,
+        () => http.runWithClient(
+          () => captureEditorPage(ref),
+          () => MockClient((_) async => http.Response.bytes(_magentaPng, 200)),
+        ),
+      );
+      return img.decodePng(png! as Uint8List)!;
+    }
+
+    final solid = await capture(transparent: false);
+    final transparent = await capture(transparent: true);
+
+    // The corner is backdrop: painted normally, empty when transparent.
+    expect(solid.getPixel(2, 2).a, 255);
+    // Left of the map is only backdrop and dot grid: none of it is drawn.
+    var drawnBackdrop = 0;
+    for (var y = 0; y < 900; y++) {
+      for (var x = 0; x < 400; x++) {
+        if (transparent.getPixel(x, y).a != 0) drawnBackdrop++;
+      }
+    }
+    expect(drawnBackdrop, 0);
+    // The map and what sits on it are as opaque as ever.
+    expect(
+        transparent.getPixel(transparent.width ~/ 2, transparent.height ~/ 2).a,
+        255);
+    expect(_magentaPixels(img.encodePng(transparent)), greaterThan(500));
   });
 
   testWidgets('a capture never touches the app\'s cloud session',
