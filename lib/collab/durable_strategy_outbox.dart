@@ -365,7 +365,10 @@ abstract class DurableStrategyOutboxStore {
   DurableOutboxLoadResult load();
   Future<void> put(DurableOutboxRecord record);
 
-  /// Stores [records] in one write: all of them, or, if it fails, none.
+  /// Stores [records] in one write. It is not all-or-nothing: a crash or a
+  /// failed write can leave the first records on disk without the rest, so
+  /// a page copy checks its own records on load (see
+  /// DurableOutboxRecord.pageCopyKeys).
   Future<void> putAll(List<DurableOutboxRecord> records);
   Future<void> remove(String storageKey);
 }
@@ -410,8 +413,9 @@ class HiveDurableStrategyOutboxStore implements DurableStrategyOutboxStore {
     return _box.put(record.storageKey, jsonSafe);
   }
 
-  /// One Hive write: every record goes to the file in one buffer, and a
-  /// write that fails leaves the file where it was.
+  /// One Hive write: every record goes to the file in one buffer. Hive
+  /// checksums each record on its own, so a write cut short leaves the
+  /// records before the cut readable and the rest gone.
   @override
   Future<void> putAll(List<DurableOutboxRecord> records) => _box.putAll({
         for (final record in records)

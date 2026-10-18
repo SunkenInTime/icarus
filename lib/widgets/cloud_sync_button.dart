@@ -533,14 +533,18 @@ class _SyncStatusPopover extends StatelessWidget {
                     onPressed: isResolving ? null : onKeepBoth,
                     child: const Text('Keep both'),
                   ),
-                ShadButton(
-                  size: ShadButtonSize.sm,
-                  expands: false,
-                  onPressed: isResolving ? null : onRetry,
-                  child: Text(
-                    hasRejectedWork ? 'Keep mine' : 'Retry sync',
+                // A copy that didn't finish saving can't be kept: there is
+                // nothing whole to send. Copying the page again, or Use
+                // cloud, are the ways out (see incompletePageCopyMessage).
+                if (!isIncompletePageCopyReason(saveState.cloudSyncError))
+                  ShadButton(
+                    size: ShadButtonSize.sm,
+                    expands: false,
+                    onPressed: isResolving ? null : onRetry,
+                    child: Text(
+                      hasRejectedWork ? 'Keep mine' : 'Retry sync',
+                    ),
                   ),
-                ),
               ],
             )
           : null,
