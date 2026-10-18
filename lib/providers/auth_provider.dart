@@ -5,7 +5,6 @@ import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
-import 'package:icarus/collab/generated/convex_error_codes.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1172,10 +1171,7 @@ class AuthProvider extends Notifier<AppAuthState> {
   /// not a server function's answer.
   bool _isOfflineFailure(Object error) {
     if (error is _ConvexUnreachable) return true;
-    if (error is ConvexClientFunctionError ||
-        error is ConvexFunctionException) {
-      return false;
-    }
+    if (isConvexFunctionError(error)) return false;
     return !_convexApi.isConnected;
   }
 
