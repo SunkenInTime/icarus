@@ -530,7 +530,12 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         continue;
       }
       if (key.kind == EntitySyncKeyKind.pageChange) {
-        _followOwnRename(intent.op, revision, overlays, remoteRevisions);
+        // Only a rename the server applied moved the page from the revision
+        // before it; a no-change answer carries the page's revision now,
+        // which may be a teammate's.
+        if (intent.ack is AppliedOpAck) {
+          _followOwnRename(intent.op, revision, overlays, remoteRevisions);
+        }
         continue;
       }
       final drawnLayer = _landDrawnWork(

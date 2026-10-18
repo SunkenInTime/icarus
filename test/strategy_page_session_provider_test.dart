@@ -5792,6 +5792,59 @@ void main() {
         isFalse);
   });
 
+  for (final (label, ack, base) in [
+    (
+      'an applied rename moves the side base on with it',
+      const AppliedOpAck(opId: 'rename', revision: 2) as OpAck,
+      2,
+    ),
+    (
+      'a rename answered with no change leaves the side base where it was',
+      const NoopOpAck(opId: 'rename', currentRevision: 2) as OpAck,
+      1,
+    ),
+  ]) {
+    test(label, () async {
+      final page = _page('page-1', 0);
+      final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page),
+      ));
+      final container = await _syncContainer(
+        remote: remote,
+        queue: _FakeStrategyOpQueueNotifier(),
+      );
+      final sync = container.read(activePageLiveSyncProvider.notifier);
+      container.read(mapProvider.notifier).fromHive(MapValue.ascent, true);
+      sync.markPageHydrated(
+          strategyPublicId: 'cloud-strategy',
+          pageId: 'page-1',
+          snapshot: remote.initialSnapshot);
+      // This device's rename, from the list of page changes. A no-change
+      // answer carries the page's revision now, which may be a teammate's
+      // side change the canvas has not read.
+      sync.recordAckBatch([
+        AckedEntityIntent(
+          entityKey: const EntitySyncKey.pageChange('change-1'),
+          op: const PagePatchOp(
+              opId: 'rename',
+              pagePublicId: 'page-1',
+              payload: {'name': 'Renamed', 'isAutoNamed': false},
+              expectedPageRevision: 1),
+          ack: ack,
+        )
+      ]);
+
+      container.read(mapProvider.notifier).fromHive(MapValue.ascent, false);
+      final side = sync.syncLocalPage(
+        strategyPublicId: 'cloud-strategy',
+        pageId: 'page-1',
+      )![const EntitySyncKey.pageDescriptor('page-1')]!;
+
+      expect(side.expectedRevision, base);
+    });
+  }
+
   test('a final delete is emitted behind an in-flight local add', () async {
     final page = _page('page-1', 0);
     const textId = 'new-local-text';

@@ -2353,12 +2353,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       // The active page's side reaches the server through live page sync.
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
       if (snapshot == null) return;
-      final queue = ref.read(strategyOpQueueProvider.notifier);
       final ops = [
         for (final page in snapshot.pages)
-          if (page.publicId != activeId &&
-              !queue.isDeletedHere(page.publicId) &&
-              _intendedSide(page) != isAttack)
+          if (page.publicId != activeId && _intendedSide(page) != isAttack)
             PagePatchOp(
               opId: const Uuid().v4(),
               pagePublicId: page.publicId,

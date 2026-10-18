@@ -112,9 +112,9 @@ void main() {
         appPreferencesProvider.overrideWith(_Preferences.new),
         currentStrategyCapabilitiesProvider.overrideWithValue(_caps),
       ],
-      child: ToastificationWrapper(
+      child: const ToastificationWrapper(
         child: ShadApp(
-          home: Scaffold(body: Center(child: const PagesBar())),
+          home: Scaffold(body: Center(child: PagesBar())),
         ),
       ),
     ));

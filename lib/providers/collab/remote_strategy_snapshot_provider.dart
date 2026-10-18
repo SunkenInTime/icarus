@@ -286,7 +286,8 @@ class RemoteEditorSnapshotNotifier
     final queue = ref.read(strategyOpQueueProvider.notifier);
     final listed = drawPages(
       shell.pages,
-      queue.pageChangesToDraw(RemoteEditorSnapshot(shell: shell, activePage: null)),
+      queue.pageChangesToDraw(
+          RemoteEditorSnapshot(shell: shell, activePage: null)),
     );
     return [
       for (final page in listed)
