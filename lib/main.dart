@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:app_links/app_links.dart';
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
@@ -218,6 +219,12 @@ Future<void> main(List<String> args) async {
         openOutboxes: openCloudOutboxes,
         initializeClients: () => initializeCloudClients(cloudBuildConfig),
       );
+      // The cloud library kept for offline use. Desktop only: the web app
+      // needs the network to load at all.
+      if (!kIsWeb &&
+          appProviderContainer.read(cloudStartupProvider).isAvailable) {
+        await openCloudLibraryCopyBox();
+      }
 
       await AnalyticsService.instance.initialize();
 

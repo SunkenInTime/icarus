@@ -32,7 +32,7 @@ class LibraryNavigation {
   /// Opens Shared. Returns false, and changes nothing, when the cloud is not
   /// reachable so the caller can ask the user to sign in.
   bool showShared() {
-    if (!_ref.read(isCloudWorkspaceAvailableProvider)) {
+    if (!_ref.read(isCloudLibraryBrowsableProvider)) {
       return false;
     }
     _ref.read(replaysTabOpenProvider.notifier).state = false;
