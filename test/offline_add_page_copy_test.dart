@@ -475,6 +475,19 @@ void main() {
           'discard it.',
         );
 
+        // Keep mine has nothing whole to send, so it sends none of it.
+        await app.read(strategyOpQueueProvider.notifier).retryRejected();
+        await _settle();
+        expect(server.pageIds, ['p1']);
+        expect(
+          app
+              .read(strategyOpQueueProvider)
+              .attentionByEntityKey
+              .values
+              .where((intent) => intent.pending.op.pagePublicId == pageId),
+          hasLength(1 + cut.keep),
+        );
+
         // Use cloud discards it, and nothing of it is left.
         await app.read(strategyOpQueueProvider.notifier).discardRejected({
           for (final intent in held) intent.entityKey,

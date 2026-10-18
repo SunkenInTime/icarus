@@ -566,6 +566,9 @@ class _SyncStatusPopover extends StatelessWidget {
         (error != null && pageChangedSinceDelete(error) == null);
   }
 
+  bool get _holdsIncompleteCopy =>
+      isIncompletePageCopyReason(saveState.cloudSyncError);
+
   String get _heldExplanation => [
         for (final page in heldPages)
           '$page $pageChangedSinceDeleteReason. Review before deleting.',
@@ -653,13 +656,18 @@ class _SyncStatusPopover extends StatelessWidget {
             ),
           // A copy that didn't finish saving can't be kept: there is
           // nothing whole to send. Copying the page again, or Use cloud,
-          // are the ways out (see incompletePageCopyMessage).
-          if (!isIncompletePageCopyReason(saveState.cloudSyncError))
+          // are the ways out (see incompletePageCopyMessage). Paused work
+          // beside it can still be retried.
+          if (!_holdsIncompleteCopy || hasPausedWork)
             ShadButton(
               size: ShadButtonSize.sm,
               expands: false,
               onPressed: isResolving ? null : onRetry,
-              child: Text(hasRejectedWork ? 'Keep mine' : 'Retry sync'),
+              child: Text(
+                hasRejectedWork && !_holdsIncompleteCopy
+                    ? 'Keep mine'
+                    : 'Retry sync',
+              ),
             ),
         ],
       );

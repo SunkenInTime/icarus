@@ -567,6 +567,44 @@ void main() {
       );
     });
 
+    test(
+        'paused work beside it keeps its own explanation, and Retry sends '
+        'that work, not the delete', () async {
+      final at = DateTime.utc(2026, 10, 18);
+      await store.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: _strategyId,
+        entityKey: const EntitySyncKey.element('page-1', 'element-9'),
+        pending: const PendingOp(
+          op: ElementPatchOp(
+            opId: 'paused-edit',
+            elementPublicId: 'element-9',
+            pagePublicId: 'page-1',
+            payload: {'value': 'mine'},
+            expectedElementRevision: 1,
+          ),
+          clientId: 'client',
+          attempts: 8,
+        ),
+        status: DurableOutboxStatus.paused,
+        createdAt: at,
+        updatedAt: at,
+      ));
+      final notifier = await heldByTeammateEdit();
+
+      expect(notifier.heldPageDeletes().values.single.page, 'Page 2');
+      expect(queue().pausedByEntityKey, hasLength(1));
+      expect(queue().lastError, 'Some saved work is paused after retries.');
+
+      await notifier.retryPaused();
+      await _settle();
+
+      final sent = server.calls.expand((ops) => ops).map((op) => op.opId);
+      expect(sent, ['paused-edit']);
+      expect(server.page('page-2').trashed, isFalse);
+      expect(notifier.heldPageDeletes(), hasLength(1));
+    });
+
     test('Keep mine leaves it held: only Delete anyway sends it', () async {
       final notifier = await heldByTeammateEdit();
 

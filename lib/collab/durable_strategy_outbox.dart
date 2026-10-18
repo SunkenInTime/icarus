@@ -115,6 +115,7 @@ class DurableOutboxRecord {
   /// there, or was removed by this device on purpose (see
   /// StrategyOpQueueNotifier._holdIncompletePageCopiesLocked).
   final List<String>? pageCopyKeys;
+
   /// For a page delete in the list: the page as this device saw it when the
   /// user deleted it. Before a delete that was not made and sent within one
   /// connection goes, the page is read again, and the delete waits for the

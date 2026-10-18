@@ -130,7 +130,11 @@ class _AttentionOpQueue extends StrategyOpQueueNotifier {
     this.hasOtherStrategyAttention = false,
     this.lastError,
     this.held = const {},
+    this.paused = false,
   });
+
+  /// Whether an element edit waits paused after failed sends.
+  final bool paused;
 
   final int rejectedCount;
   final bool hasOtherStrategyAttention;
@@ -173,6 +177,23 @@ class _AttentionOpQueue extends StrategyOpQueueNotifier {
                   opId: entry.value.opId,
                   pagePublicId: 'page-2',
                   expectedStrategyRevision: 1,
+                ),
+                clientId: 'client-a',
+              ),
+            ),
+        },
+        pausedByEntityKey: {
+          if (paused)
+            const EntitySyncKey.element('page-1', 'element-paused'):
+                const QueuedEntityIntent(
+              entityKey: EntitySyncKey.element('page-1', 'element-paused'),
+              pending: PendingOp(
+                op: ElementPatchOp(
+                  opId: 'paused-1',
+                  elementPublicId: 'element-paused',
+                  pagePublicId: 'page-1',
+                  payload: {'value': 'mine'},
+                  expectedElementRevision: 1,
                 ),
                 clientId: 'client-a',
               ),
@@ -1447,9 +1468,12 @@ void main() {
       WidgetTester tester, {
       required int otherRejected,
       _ConflictSession? session,
+      bool paused = false,
+      String? savedError,
     }) async {
       final queue = _AttentionOpQueue(
         otherRejected,
+        paused: paused,
         held: {heldKey: (page: 'B main', opId: 'held-1')},
         lastError: otherRejected == 0
             ? 'B main $pageChangedSinceDeleteReason'
@@ -1462,6 +1486,11 @@ void main() {
       addTearDown(container.dispose);
       // An edit since cleared the save state's copy of the reason.
       container.read(strategySaveStateProvider.notifier).markDirty();
+      if (savedError != null) {
+        container
+            .read(strategySaveStateProvider.notifier)
+            .setCloudSyncError(savedError);
+      }
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
@@ -1522,6 +1551,43 @@ void main() {
       expect(queue.discarded, [
         {heldKey},
       ]);
+    });
+
+    testWidgets('leaves Retry sync to paused work beside it', (tester) async {
+      final queue = await open(
+        tester,
+        otherRejected: 0,
+        paused: true,
+      );
+
+      expect(find.textContaining(warning), findsOneWidget);
+      expect(find.textContaining('Retry to send them now.'), findsOneWidget);
+      expect(find.text('Delete anyway'), findsOneWidget);
+      expect(find.text('Keep the page'), findsOneWidget);
+      expect(find.text('Keep mine'), findsNothing);
+
+      await tester.tap(find.text('Retry sync'));
+      await tester.pumpAndSettle();
+      expect(queue.retryRejectedCount, 1);
+      expect(queue.deletedAnyway, isEmpty);
+    });
+
+    testWidgets('shows beside a copy that did not finish saving',
+        (tester) async {
+      await open(
+        tester,
+        otherRejected: 1,
+        savedError: incompletePageCopyMessage('Page 3'),
+      );
+
+      expect(find.textContaining(warning), findsOneWidget);
+      expect(find.textContaining("The copy of Page 3 didn't finish saving"),
+          findsOneWidget);
+      expect(find.text('Delete anyway'), findsOneWidget);
+      expect(find.text('Keep the page'), findsOneWidget);
+      expect(find.text('Use cloud'), findsOneWidget);
+      expect(find.text('Keep mine'), findsNothing);
+      expect(find.text('Retry sync'), findsNothing);
     });
 
     testWidgets('keeps its warning and choices beside other attention',
