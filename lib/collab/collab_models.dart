@@ -1542,7 +1542,8 @@ class RemotePageSnapshot {
   final List<RemoteLineup> lineups;
   final Map<String, RemoteImageAsset> assetsById;
 
-  /// See [RemoteStrategyShell.fromCopy].
+  /// See [RemoteStrategyShell.fromCopy]. Work made on a page drawn from it
+  /// is never sent as the last write (see StrategyOp.forSend).
   final bool fromCopy;
 
   /// When the copy's latest server answer for this page arrived, for a page

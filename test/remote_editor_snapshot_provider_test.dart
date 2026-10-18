@@ -77,6 +77,52 @@ void main() {
     );
   });
 
+  test(
+      'a page answer counts as live only on the connection it came on, and '
+      'never from the copy', () async {
+    final repository = _Repository();
+    final queue = _StampedOpQueue();
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(() => queue),
+      convexConnectionSnapshotProvider.overrideWithValue(true),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+    ]);
+    addTearDown(container.dispose);
+    final remote = container.read(remoteEditorSnapshotProvider.notifier);
+    RemotePageSnapshot? active() =>
+        container.read(remoteEditorSnapshotProvider).valueOrNull?.activePage;
+    await container.read(remoteEditorSnapshotProvider.future);
+    await remote.openStrategy('strategy', activePagePublicId: 'a');
+    expect(remote.answeredOnCurrentConnection(active()), isTrue);
+
+    // The connection drops and comes back: the page held was read before.
+    queue.stamp = null;
+    expect(remote.answeredOnCurrentConnection(active()), isFalse);
+    queue.stamp = 1;
+    expect(remote.answeredOnCurrentConnection(active()), isFalse);
+
+    // A teammate's change comes in on the live read: a fresh answer.
+    repository.pageStreams['a']!.add(_page('a', revision: 2));
+    await _settle();
+    expect(remote.answeredOnCurrentConnection(active()), isTrue);
+
+    // Page b, read before another drop, is shown after it came back.
+    final b = await remote.fetchPage('b');
+    queue.stamp = 2;
+    await remote.setActivePage('b', fetched: b);
+    expect(active()?.page.publicId, 'b');
+    expect(remote.answeredOnCurrentConnection(active()), isFalse);
+
+    // An answer from this computer's copy is never live.
+    repository.pagesFromCopy = true;
+    await remote.refresh();
+    expect(active()?.fromCopy, isTrue);
+    expect(remote.answeredOnCurrentConnection(active()), isFalse);
+  });
+
   test('a restored page is read fresh with the shell and watched again',
       () async {
     final repository = _Repository();
@@ -659,6 +705,9 @@ class _Repository extends ConvexStrategyRepository {
   /// What reads of a page answer; an empty page when it has none.
   final pageSnapshots = <String, RemotePageSnapshot>{};
 
+  /// While set, page reads answer from this computer's copy.
+  bool pagesFromCopy = false;
+
   @override
   Future<RemoteStrategyShell> fetchShell(
     String strategyPublicId, {
@@ -699,7 +748,17 @@ class _Repository extends ConvexStrategyRepository {
     if (failPageReads || failNextRead.remove(pagePublicId)) {
       throw StateError('offline');
     }
-    return pageSnapshots[pagePublicId] ?? _page(pagePublicId);
+    final page = pageSnapshots[pagePublicId] ?? _page(pagePublicId);
+    return pagesFromCopy
+        ? RemotePageSnapshot(
+            page: page.page,
+            content: page.content,
+            elements: page.elements,
+            lineups: page.lineups,
+            assetsById: page.assetsById,
+            fromCopy: true,
+          )
+        : page;
   }
 
   @override
@@ -782,6 +841,15 @@ class _IdleOpQueue extends StrategyOpQueueNotifier {
     String? strategyPublicId, {
     required String? accountId,
   }) {}
+}
+
+/// The queue, its connection stamp set by the test (see
+/// StrategyOpQueueNotifier.liveStamp).
+class _StampedOpQueue extends _IdleOpQueue {
+  int? stamp = 0;
+
+  @override
+  int? get liveStamp => stamp;
 }
 
 class _IdleMediaQueue extends CloudMediaUploadQueueNotifier {

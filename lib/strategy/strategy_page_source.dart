@@ -221,6 +221,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
             );
     if (projected != null &&
         (page.publicId == activePageId() ||
+            projected.drawsQueuedWork ||
             ref
                 .read(activePageLiveSyncProvider.notifier)
                 .hasOverlayForPage(page.publicId))) {
@@ -332,7 +333,12 @@ class CloudStrategyPageSource implements StrategyPageSource {
   Future<bool> flushCurrentPage() async {
     // Whether this work is made live is judged as the canvas hands it over,
     // before it waits on anything (see StrategyOpQueueNotifier.liveStamp).
-    final madeLive = ref.read(strategyOpQueueProvider.notifier).liveStamp;
+    final pageId = activePageId();
+    final madeLive = pageId == null
+        ? null
+        : ref
+            .read(activePageLiveSyncProvider.notifier)
+            .liveStampForEdits(pageId);
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
     if (snapshot == null || snapshot.header.publicId != strategyId) {
       return false;
@@ -342,7 +348,6 @@ class CloudStrategyPageSource implements StrategyPageSource {
         .canEditPages) {
       return true;
     }
-    final pageId = activePageId();
     if (pageId == null) {
       return false;
     }

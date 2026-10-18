@@ -5,6 +5,7 @@ import 'dart:math' show max, min;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
+import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -12,6 +13,7 @@ import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/field_merge.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
@@ -102,6 +104,25 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   /// an undo can bring back a lineup long after its row moved on.
   final Map<String, Map<String, String>> _lineupGroupOfByPage = {};
 
+  /// Work recovered from the outbox that the canvas drew on top of the
+  /// server's version, by entity: work queued before the canvas was drawn
+  /// (after a restart, or a trip to another strategy). See [_drawQueuedWork].
+  final Map<EntitySyncKey, _DrawnWork> _drawnWorkByKey = {};
+
+  /// What the page's last projection drew from the outbox, over the page
+  /// answer [page]: taken as drawn when the canvas is hydrated from it.
+  ({
+    String pageId,
+    RemotePageSnapshot? page,
+    Map<EntitySyncKey, _DrawnWork> work,
+  })? _projectedWork;
+
+  /// Per page, whether the canvas was drawn from a live server answer
+  /// received on the connection that is up now (see
+  /// RemoteEditorSnapshotNotifier.answeredOnCurrentConnection): the
+  /// connection's stamp then, or null.
+  final Map<String, int?> _pageAnsweredOn = {};
+
   /// Records the groups a canvas of [pageId] about to be drawn from cloud
   /// rows uses.
   void noteLineupGroups(String pageId, Map<String, String> groupOf) {
@@ -157,6 +178,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     _remoteAdoptionPending.clear();
     _hydratedPositionByKey.clear();
     _heldDeletedKeys.clear();
+    _drawnWorkByKey.clear();
+    _projectedWork = null;
+    _pageAnsweredOn.clear();
     if (ref.exists(strategyOpQueueProvider)) {
       ref.read(strategyOpQueueProvider.notifier).forgetCanvasWork();
     }
@@ -213,8 +237,16 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
     final matchesPage = snapshot.header.publicId == strategyPublicId &&
         snapshot.activePage?.page.publicId == pageId;
+    final answeredOn = matchesPage &&
+            ref
+                .read(remoteEditorSnapshotProvider.notifier)
+                .answeredOnCurrentConnection(snapshot.activePage)
+        ? ref.read(strategyOpQueueProvider.notifier).liveStamp
+        : null;
+    _pageAnsweredOn[pageId] = answeredOn;
     final remoteEntities = {
-      if (matchesPage) ..._normalizedRemoteEntities(snapshot, pageId),
+      if (matchesPage)
+        ..._normalizedRemoteEntities(snapshot, pageId, receivedOn: answeredOn),
     };
     _heldDeletedKeys
       ..removeWhere((key) => key.pageId == pageId)
@@ -231,14 +263,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       // Its content and revision stay as drawn; its place is where the
       // merge put it on screen, the server's.
       final serverSortIndex = remoteEntities[key]?.sortIndex;
-      remoteEntities[key] = _NormalizedEntity(
-        key: key,
-        overlayEntityType: drawnBase.overlayEntityType,
-        payload: drawnBase.payload,
+      remoteEntities[key] = drawnBase.copyWith(
         sortIndex: serverSortIndex ?? drawnBase.sortIndex,
-        revision: drawnBase.revision,
-        deleted: drawnBase.deleted,
-        claimableRevision: drawnBase.claimableRevision,
       );
     }
     // A base never goes back to an older revision: a page read before this
@@ -254,6 +280,18 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           state.overlayByEntityKey.containsKey(key);
       if (waitingAdd || (remote != null && remote.revision < base.revision)) {
         remoteEntities[key] = base;
+      }
+    }
+    _takeProjectedWork(pageId, snapshot, keepBaseFor: keepBaseFor);
+    // Work drawn from the outbox is checked against what it was made
+    // against, not the server's version it was drawn over.
+    for (final MapEntry(:key, value: drawn) in _drawnWorkByKey.entries) {
+      if (key.pageId != pageId || keepBaseFor.contains(key)) continue;
+      final base = drawn.base;
+      if (base == null) {
+        remoteEntities.remove(key);
+      } else {
+        remoteEntities[key] = base.copyWith(receivedOn: answeredOn);
       }
     }
     _hydratedBaseByEntityKey.removeWhere((key, _) => key.pageId == pageId);
@@ -279,6 +317,55 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     );
   }
 
+  /// Takes what the last projection of [pageId] drew from the outbox as
+  /// what the canvas shows, if it was drawn over [snapshot]'s page: the
+  /// canvas is being hydrated from it. Entities in [keepBaseFor] (held, so
+  /// not taken from it) keep what they were drawn with.
+  void _takeProjectedWork(
+    String pageId,
+    RemoteEditorSnapshot snapshot, {
+    required Set<EntitySyncKey> keepBaseFor,
+  }) {
+    final projected = _projectedWork;
+    if (projected == null ||
+        projected.pageId != pageId ||
+        !identical(projected.page, snapshot.activePage)) {
+      return;
+    }
+    _projectedWork = null;
+    _drawnWorkByKey.removeWhere(
+      (key, _) => key.pageId == pageId && !keepBaseFor.contains(key),
+    );
+    for (final MapEntry(:key, :value) in projected.work.entries) {
+      if (!keepBaseFor.contains(key)) _drawnWorkByKey[key] = value;
+    }
+    ref.read(strategyOpQueueProvider.notifier).noteDrawnWork([
+      for (final MapEntry(:key, :value) in _drawnWorkByKey.entries)
+        if (key.pageId == pageId)
+          for (final layer in value.layers) layer.opId,
+    ]);
+  }
+
+  /// The stamp to queue work made on [pageId] now with (see
+  /// StrategyOpQueueNotifier.liveStamp): null, so it is sent checked, unless
+  /// the connection is up and everything on the page was drawn from a live
+  /// server answer received on it. A page drawn from this computer's copy,
+  /// or before the connection last came back, keeps its conflict checks
+  /// until a fresh answer for it is drawn.
+  int? liveStampForEdits(String pageId) {
+    final stamp = ref.read(strategyOpQueueProvider.notifier).liveStamp;
+    if (stamp == null ||
+        state.hydratedPageId != pageId ||
+        _pageAnsweredOn[pageId] != stamp) {
+      return null;
+    }
+    for (final MapEntry(:key, value: base)
+        in _hydratedBaseByEntityKey.entries) {
+      if (key.pageId == pageId && base.receivedOn != stamp) return null;
+    }
+    return stamp;
+  }
+
   /// Takes [pageId] back as the hydrated page, with the base it was drawn
   /// from and the acks recorded since: the canvas never left it, only the
   /// live read did, as when a teammate deleted it and it was restored. Its
@@ -300,16 +387,34 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     _NormalizedEntity? live(_NormalizedEntity? entity) =>
         entity == null || entity.deleted ? null : entity;
     final remote = _normalizedRemoteEntities(snapshot, pageId);
+    // What the projection of this page draws from the outbox now, against
+    // what the canvas drew from it.
+    final projected = _projectedWork;
+    final projectedWork = projected != null &&
+            projected.pageId == pageId &&
+            identical(projected.page, snapshot.activePage)
+        ? projected.work
+        : null;
     final keys = {
       ...remote.keys,
       ..._hydratedBaseByEntityKey.keys.where((key) => key.pageId == pageId),
+      ..._drawnWorkByKey.keys.where((key) => key.pageId == pageId),
+      ...?projectedWork?.keys,
     };
+    // An entity drawn with outbox work was drawn over the server's version
+    // it then had.
+    _NormalizedEntity? drawnFrom(EntitySyncKey key) =>
+        _drawnWorkByKey.containsKey(key)
+            ? _drawnWorkByKey[key]!.over
+            : _hydratedBaseByEntityKey[key];
     return {
       for (final key in keys)
-        if (!_sameLiveEntity(
-          live(remote[key]),
-          live(_hydratedBaseByEntityKey[key]),
-        ))
+        if (!_sameLiveEntity(live(remote[key]), live(drawnFrom(key))) ||
+            (projectedWork != null &&
+                !_sameLiveEntity(
+                  live(projectedWork[key]?.drawn),
+                  live(_drawnWorkByKey[key]?.drawn),
+                )))
           key,
     };
   }
@@ -409,17 +514,28 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final remoteRevisions = Map<EntitySyncKey, int>.from(
       state.remoteBaseRevisionByEntity,
     );
+    // An ack is a live answer, received on the connection up now.
+    final receivedOn = ref.read(strategyOpQueueProvider.notifier).liveStamp;
     for (final intent in intents) {
       final revision = intent.ack.appliedRevision;
       final key = intent.entityKey;
       if (revision == null) {
         continue;
       }
-      final normalized = _normalizedAcceptedEntity(
-        key: key,
-        op: intent.op,
-        revision: revision,
+      final drawnLayer = _landDrawnWork(
+        key,
+        intent.op,
+        untouched: !overlays.containsKey(key),
       );
+      final normalized = drawnLayer?.copyWith(
+            revision: revision,
+            receivedOn: receivedOn,
+          ) ??
+          _normalizedAcceptedEntity(
+            key: key,
+            op: intent.op,
+            revision: revision,
+          )?.copyWith(receivedOn: receivedOn);
       if (normalized == null) continue;
       // A merge landed onto whatever the row held, which this client may
       // not have drawn: a whole write still claims only the revision before.
@@ -442,8 +558,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       // still shows the version before it. Its landing is a server change
       // like a teammate's: the next merge draws it, and until then an edit
       // to the item is checked against the version on screen, so it
-      // conflicts instead of replacing the recovered work.
-      if (intent.restored) continue;
+      // conflicts instead of replacing the recovered work. Work it drew
+      // from the outbox is on screen, and is no such change.
+      if (intent.restored && drawnLayer == null) continue;
       _hydratedBaseByEntityKey[key] = accepted;
       remoteRevisions[key] = revision;
     }
@@ -452,6 +569,39 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       remoteBaseRevisionByEntity: remoteRevisions,
       lastAckBatch: intents,
     );
+  }
+
+  /// What the canvas drew [key] as once [op], outbox work it drew, lands:
+  /// the server now holds that for it, and the work queued behind [op], if
+  /// any, stays drawn over it. Null when [op] is not work the canvas drew.
+  /// An op the queue sends in place of drawn work ([untouched], the user has
+  /// not edited it since: a newer change promoted behind the one that
+  /// landed, a retry) lands what was drawn last.
+  _NormalizedEntity? _landDrawnWork(
+    EntitySyncKey key,
+    StrategyOp op, {
+    required bool untouched,
+  }) {
+    final drawn = _drawnWorkByKey[key];
+    if (drawn == null) return null;
+    var index = drawn.layers.indexWhere((layer) => layer.opId == op.opId);
+    if (index < 0) {
+      if (!untouched) {
+        // The canvas's own edit replaced the drawn work.
+        _drawnWorkByKey.remove(key);
+        return null;
+      }
+      index = drawn.layers.length - 1;
+    }
+    final landed = drawn.layers[index].entity;
+    final rest = drawn.layers.sublist(index + 1);
+    if (rest.isEmpty) {
+      _drawnWorkByKey.remove(key);
+    } else {
+      _drawnWorkByKey[key] =
+          _DrawnWork(over: landed, layers: rest, base: drawn.base);
+    }
+    return landed;
   }
 
   _NormalizedEntity? _normalizedAcceptedEntity({
@@ -571,6 +721,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     );
     for (final key in entityKeys) {
       overlays.remove(key);
+      _drawnWorkByKey.remove(key);
       if (key.pageId != null && key.pageId != hydratedPageId) {
         _remoteAdoptionPending.add(key);
       } else {
@@ -615,6 +766,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           .where((key) => key.pageId == pageId),
       ...queueState.successorByEntityKey.keys
           .where((key) => key.pageId == pageId),
+      ..._drawnWorkByKey.keys.where((key) => key.pageId == pageId),
       ..._remoteAdoptionPending.where((key) => key.pageId == pageId),
     };
 
@@ -644,12 +796,27 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       final shouldPreserveTouched = hasQueued || hasInFlight || hasSuccessor;
       final matchesRemote = _entitiesEquivalent(local, remote);
       final matchesHydratedBase = _entitiesEquivalent(local, hydratedBase);
-      // A restored queue entry has no in-memory overlay. If the canvas still
-      // matches its hydrated base, the durable op is the only local intent and
-      // must remain desired until it lands or the user changes that entity,
-      // whether it is queued or already sent: the version on screen is older
-      // than it, not a change to send after it.
-      if (existingOverlay == null &&
+      final drawn = _drawnWorkByKey[key];
+      // The canvas shows the outbox's work for it as drawn: that work, as
+      // the queue holds it (sent, paused or refused alike), is the intent.
+      if (drawn != null &&
+          existingOverlay == null &&
+          _entitiesEquivalent(local, drawn.drawn)) {
+        final held = retainedOp ??
+            queueState.pausedByEntityKey[key]?.pending.op ??
+            queueState.attentionByEntityKey[key]?.pending.op;
+        if (held != null) retainedDesiredOps[key] = held;
+        _debugLog('overlay.keep $key reason=drawn_from_outbox');
+        continue;
+      }
+      // A restored queue entry the canvas never drew has no in-memory
+      // overlay. If the canvas still matches its hydrated base, the durable
+      // op is the only local intent and must remain desired until it lands
+      // or the user changes that entity, whether it is queued or already
+      // sent: the version on screen is older than it, not a change to send
+      // after it.
+      if (drawn == null &&
+          existingOverlay == null &&
           retainedOp != null &&
           matchesHydratedBase) {
         retainedDesiredOps[key] = retainedOp;
@@ -846,6 +1013,52 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     var projectedSettingsPayload = snapshot.activePage?.content.settings;
     var projectedIsAttack = page.isAttack;
 
+    final drawnWork = _drawQueuedWork(
+      snapshot,
+      page.publicId,
+      excluded: excludedOverlays,
+    );
+    _projectedWork = (
+      pageId: page.publicId,
+      page: snapshot.activePage,
+      work: drawnWork,
+    );
+    for (final MapEntry(:key, value: work) in drawnWork.entries) {
+      final drawn = work.drawn;
+      switch (drawn.overlayEntityType) {
+        case ActivePageOverlayEntityType.pageDescriptor:
+          final isAttack = _decodeObject(drawn.payload)['isAttack'];
+          if (isAttack is bool) projectedIsAttack = isAttack;
+        case ActivePageOverlayEntityType.pageContent:
+          projectedSettingsPayload = cloudObjectPayloadOrNull(
+              _decodeObject(drawn.payload)['settings']);
+        case ActivePageOverlayEntityType.element:
+          final elementType =
+              cloudPayloadData(drawn.payload)['elementType'] as String? ??
+                  (drawn.payload as Map?)?['kind'] as String?;
+          if (drawn.deleted || elementType == null) {
+            remoteElements.remove(key);
+          } else {
+            remoteElements[key] = ProjectedPageElement(
+              publicId: key.entityId!,
+              elementType: elementType,
+              payload: Map<String, dynamic>.from(drawn.payload as Map),
+              sortIndex: drawn.sortIndex ?? 0,
+            );
+          }
+        case ActivePageOverlayEntityType.lineup:
+          if (drawn.deleted) {
+            remoteLineups.remove(key);
+          } else {
+            remoteLineups[key] = ProjectedPageLineup(
+              publicId: key.entityId!,
+              payload: Map<String, dynamic>.from(drawn.payload as Map),
+              sortIndex: drawn.sortIndex ?? 0,
+            );
+          }
+      }
+    }
+
     final pageOverlays = state.overlayByEntityKey.entries.where(
       (entry) =>
           entry.key.pageId == page.publicId &&
@@ -915,12 +1128,14 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     }
 
     _debugLog(
-      'projected.rehydrate page=${page.publicId} overlays=${pageOverlays.length}',
+      'projected.rehydrate page=${page.publicId} '
+      'overlays=${pageOverlays.length} outbox=${drawnWork.length}',
     );
 
     return ActivePageProjectedState(
       pageId: page.publicId,
       pageName: page.name,
+      drawsQueuedWork: drawnWork.isNotEmpty,
       isAttack: projectedIsAttack,
       settingsPayload: projectedSettingsPayload,
       elements: remoteElements.values.toList(growable: false)
@@ -928,6 +1143,196 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       lineups: remoteLineups.values.toList(growable: false)
         ..sortBySortIndex((item) => item.sortIndex),
     );
+  }
+
+  /// The outbox's work for [pageId] to draw on top of [snapshot]'s version
+  /// of it, by entity: what each entity looks like once its waiting work
+  /// lands, queued, sent, paused or refused alike, its newer change behind
+  /// the one sent included. A patch merged by field draws only the fields it
+  /// names, over the server's version as it is now. Work the canvas already
+  /// holds as its own (in its overlays, or queued from its edits) is left
+  /// to the canvas, as is work the user chose to discard ([excluded]).
+  Map<EntitySyncKey, _DrawnWork> _drawQueuedWork(
+    RemoteEditorSnapshot snapshot,
+    String pageId, {
+    required Set<EntitySyncKey> excluded,
+  }) {
+    final queue = ref.read(strategyOpQueueProvider);
+    final queueNotifier = ref.read(strategyOpQueueProvider.notifier);
+    final remote = _normalizedRemoteEntities(snapshot, pageId);
+    final mapData = snapshot.header.mapData;
+    final work = <EntitySyncKey, _DrawnWork>{};
+    final keys = {
+      for (final intents in [
+        queue.queuedByEntityKey,
+        queue.inFlightByEntityKey,
+        queue.pausedByEntityKey,
+        queue.attentionByEntityKey,
+      ])
+        ...intents.keys.where((key) => key.pageId == pageId),
+    };
+    for (final key in keys) {
+      if (excluded.contains(key) ||
+          _remoteAdoptionPending.contains(key) ||
+          state.overlayByEntityKey.containsKey(key)) {
+        continue;
+      }
+      final head = (queue.inFlightByEntityKey[key]?.pending ??
+              queue.queuedByEntityKey[key]?.pending ??
+              queue.pausedByEntityKey[key]?.pending ??
+              queue.attentionByEntityKey[key]?.pending)!
+          .op;
+      final ops = [
+        head,
+        if (queue.successorByEntityKey[key]?.pending.op case final next?) next,
+      ];
+      if (!_drawnWorkByKey.containsKey(key) &&
+          ops.every((op) => queueNotifier.isCanvasWork(op.opId))) {
+        continue;
+      }
+      if (ops.any(isRetiredCloudLineupOp)) continue;
+      final over = remote[key];
+      var onto = over;
+      _NormalizedEntity? base;
+      final layers = <({String opId, _NormalizedEntity entity})>[];
+      for (final op in ops) {
+        final drawn = _drawQueuedOp(key, op, onto, mapData: mapData);
+        if (drawn == null) break;
+        layers.add((opId: op.opId, entity: drawn.entity));
+        base = drawn.base;
+        onto = drawn.entity;
+      }
+      if (layers.length != ops.length) continue;
+      work[key] = _DrawnWork(over: over, layers: layers, base: base);
+    }
+    return work;
+  }
+
+  /// [op] drawn over [onto] (the entity as the server, or the op before it,
+  /// has it): the entity once [op] lands, and the version [op] was made
+  /// against, which an edit of what is drawn is checked against. Null for
+  /// work that draws nothing on the page. Element payloads it writes are
+  /// read as server rows are, on the strategy's map [mapData] (see
+  /// upgradeCloudPayload): an older build may have queued them.
+  ({_NormalizedEntity entity, _NormalizedEntity? base})? _drawQueuedOp(
+    EntitySyncKey key,
+    StrategyOp op,
+    _NormalizedEntity? onto, {
+    required String mapData,
+  }) {
+    final live = onto == null || onto.deleted ? null : onto;
+    final type = key.overlayType;
+    if (type == null) return null;
+    final map = Maps.mapNames.entries
+        .where((entry) => entry.value == mapData)
+        .firstOrNull
+        ?.key;
+    CloudPayload asRead(CloudPayload payload) =>
+        map == null || key.kind != EntitySyncKeyKind.element
+            ? payload
+            : upgradeCloudPayload(payload, map);
+    _NormalizedEntity entity(Object payload, int? sortIndex) =>
+        _NormalizedEntity(
+          key: key,
+          overlayEntityType: type,
+          payload: payload,
+          sortIndex: sortIndex,
+          revision: onto?.revision ?? 0,
+          deleted: false,
+        );
+    switch (op) {
+      case PagePatchOp(:final payload, :final expectedPageRevision):
+        final isAttack = payload['isAttack'];
+        // A rename: the page name is not drawn from here.
+        if (live == null || isAttack is! bool) return null;
+        return (
+          entity: live.copyWith(payload: <String, dynamic>{
+            ..._decodeObject(live.payload),
+            'isAttack': isAttack,
+          }),
+          base: live.copyWith(revision: expectedPageRevision, mergeable: false),
+        );
+      case PageContentPatchOp(
+          :final settings,
+          :final expectedPageContentRevision
+        ):
+        if (live == null) return null;
+        return (
+          entity: live.copyWith(payload: <String, dynamic>{
+            'settings': settings,
+          }),
+          base: live.copyWith(
+            revision: expectedPageContentRevision,
+            mergeable: false,
+          ),
+        );
+      case ElementAddOp(:final payload, :final sortIndex) ||
+            LineupAddOp(:final payload, :final sortIndex):
+        return (entity: entity(asRead(payload), sortIndex), base: onto);
+      case ElementPatchOp() || LineupPatchOp():
+        final sent = op.payload;
+        final written =
+            sent == null ? live?.payload : asRead(cloudObjectPayload(sent));
+        final expected = op.expectedRevision!;
+        if (written == null) return null;
+        final lineup = op is LineupPatchOp;
+        final merge = op.merge;
+        if (merge != null) {
+          // Over a row the server no longer has (the patch will be refused
+          // as deleted), the user's version as they have it.
+          final merged = live == null
+              ? written
+              : mergedPayload(live.payload, written, merge, lineup: lineup);
+          final drawnOver = live ?? entity(written, op.sortIndex);
+          final baseOfFields =
+              payloadAtMergeBase(drawnOver.payload, merge, lineup: lineup);
+          if (merged != null && baseOfFields != null) {
+            final moves = merge.fields.contains(placeMergeField);
+            final basePlace = merge.base?[placeMergeField];
+            return (
+              entity: drawnOver.copyWith(
+                payload: merged,
+                sortIndex: moves || live == null
+                    ? op.sortIndex ?? drawnOver.sortIndex
+                    : drawnOver.sortIndex,
+              ),
+              base: drawnOver.copyWith(
+                payload: baseOfFields,
+                sortIndex:
+                    moves && basePlace is int ? basePlace : drawnOver.sortIndex,
+                revision: expected,
+                deleted: false,
+              ),
+            );
+          }
+        }
+        // A whole write: the item as the user has it, and every edit of
+        // it after this one whole too, claiming the revision this one did.
+        final whole = entity(written, op.sortIndex ?? live?.sortIndex ?? 0);
+        return (
+          entity: whole,
+          base: (live ?? whole).copyWith(
+            revision: expected,
+            deleted: false,
+            mergeable: false,
+          ),
+        );
+      case ElementReorderOp(:final sortIndex) ||
+            LineupReorderOp(:final sortIndex):
+        if (live == null) return null;
+        return (
+          entity: live.copyWith(sortIndex: sortIndex),
+          base: live.copyWith(revision: op.expectedRevision, mergeable: false),
+        );
+      case ElementDeleteOp() || LineupDeleteOp():
+        if (live == null) return null;
+        return (
+          entity: live.copyWith(deleted: true),
+          base: live.copyWith(revision: op.expectedRevision, mergeable: false),
+        );
+      default:
+        return null;
+    }
   }
 
   Map<String, dynamic> _decodeObject(Object payload) {
@@ -941,10 +1346,13 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     return const <String, dynamic>{};
   }
 
+  /// [receivedOn] is the connection [snapshot]'s page answer was received
+  /// on (see liveStampForEdits).
   Map<EntitySyncKey, _NormalizedEntity> _normalizedRemoteEntities(
     RemoteEditorSnapshot snapshot,
-    String pageId,
-  ) {
+    String pageId, {
+    int? receivedOn,
+  }) {
     final page = _remotePageById(snapshot: snapshot, pageId: pageId);
     if (page == null) {
       return const <EntitySyncKey, _NormalizedEntity>{};
@@ -963,6 +1371,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         sortIndex: null,
         revision: page.revision,
         deleted: false,
+        receivedOn: receivedOn,
       ),
       EntitySyncKey.pageContent(page.publicId): _NormalizedEntity(
         key: EntitySyncKey.pageContent(page.publicId),
@@ -973,6 +1382,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         sortIndex: null,
         revision: pageSnapshot.content.revision,
         deleted: false,
+        receivedOn: receivedOn,
       ),
     };
 
@@ -986,6 +1396,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         sortIndex: element.sortIndex,
         revision: element.revision,
         deleted: element.deleted,
+        receivedOn: receivedOn,
       );
     }
 
@@ -999,6 +1410,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         sortIndex: lineup.sortIndex,
         revision: lineup.revision,
         deleted: lineup.deleted,
+        receivedOn: receivedOn,
       );
     }
 
@@ -1038,6 +1450,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     // teammate editing one of them; the server never renumbers either.
     int? knownSortIndex(EntitySyncKey key) =>
         state.overlayByEntityKey[key]?.desiredSortIndex ??
+        _drawnWorkByKey[key]?.drawn.sortIndex ??
         _hydratedBaseByEntityKey[key]?.sortIndex;
 
     /// Hands out sortIndexes after the page's highest for [kind].
@@ -1049,6 +1462,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
             for (final key in _hydratedBaseByEntityKey.keys)
               if (onPage(key)) knownSortIndex(key) ?? 0,
             for (final key in state.overlayByEntityKey.keys)
+              if (onPage(key)) knownSortIndex(key) ?? 0,
+            for (final key in _drawnWorkByKey.keys)
               if (onPage(key)) knownSortIndex(key) ?? 0,
           ].fold<int>(-1, max);
       return () => next++;
@@ -1107,6 +1522,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         for (final key in [
           ..._hydratedBaseByEntityKey.keys,
           ...state.overlayByEntityKey.keys,
+          ..._drawnWorkByKey.keys,
         ])
           if (key.pageId == pageId && key.kind == EntitySyncKeyKind.lineup)
             key.entityId!,
@@ -1356,14 +1772,16 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     ) build,
   }) {
     final base = _hydratedBaseByEntityKey[overlay.entityKey];
-    final fields =
-        base == null || base.deleted || base.revision != overlay.baseRevision
-            ? null
-            : lineup
-                ? lineupMergeFields(base.payload, payload,
-                    normalize: _withFieldDefaults)
-                : elementMergeFields(base.payload, payload,
-                    normalize: _withFieldDefaults);
+    final fields = base == null ||
+            base.deleted ||
+            !base.mergeable ||
+            base.revision != overlay.baseRevision
+        ? null
+        : lineup
+            ? lineupMergeFields(base.payload, payload,
+                normalize: _withFieldDefaults)
+            : elementMergeFields(base.payload, payload,
+                normalize: _withFieldDefaults);
     if (base == null || fields == null) {
       // A whole write claims no newer revision than the one at which the
       // server held exactly what this client drew.
@@ -1516,6 +1934,8 @@ class _NormalizedEntity {
     required this.revision,
     required this.deleted,
     int? claimableRevision,
+    this.receivedOn,
+    this.mergeable = true,
   }) : _claimableRevision = claimableRevision;
 
   final EntitySyncKey key;
@@ -1525,6 +1945,35 @@ class _NormalizedEntity {
   final int revision;
   final bool deleted;
   final int? _claimableRevision;
+
+  /// As a base: the connection the server answer it came from was received
+  /// on (see StrategyOpQueueNotifier.liveStamp); null when it came from
+  /// anything but a live answer.
+  final int? receivedOn;
+
+  /// As a base: whether an edit of it may be merged by field. False under
+  /// a whole write from the outbox, so the edits after it are whole too.
+  final bool mergeable;
+
+  _NormalizedEntity copyWith({
+    Object? payload,
+    int? sortIndex,
+    int? revision,
+    bool? deleted,
+    int? receivedOn,
+    bool? mergeable,
+  }) =>
+      _NormalizedEntity(
+        key: key,
+        overlayEntityType: overlayEntityType,
+        payload: payload ?? this.payload,
+        sortIndex: sortIndex ?? this.sortIndex,
+        revision: revision ?? this.revision,
+        deleted: deleted ?? this.deleted,
+        claimableRevision: revision == null ? _claimableRevision : null,
+        receivedOn: receivedOn ?? this.receivedOn,
+        mergeable: mergeable ?? this.mergeable,
+      );
 
   /// The revision at which the server held exactly [payload]: what a whole,
   /// revision-checked write from it may claim. Behind [revision] once a
@@ -1540,7 +1989,29 @@ class _NormalizedEntity {
         revision: revision,
         deleted: deleted,
         claimableRevision: claimable,
+        receivedOn: receivedOn,
+        mergeable: mergeable,
       );
+}
+
+/// Outbox work for one entity that the canvas drew over the server's
+/// version of it ([over], null when the server has none): what the entity
+/// looks like once each op lands ([layers], the op sent first, then the one
+/// queued behind it), and [base], the version the newest op was made
+/// against.
+class _DrawnWork {
+  const _DrawnWork({
+    required this.over,
+    required this.layers,
+    required this.base,
+  });
+
+  final _NormalizedEntity? over;
+  final List<({String opId, _NormalizedEntity entity})> layers;
+  final _NormalizedEntity? base;
+
+  /// What the canvas shows.
+  _NormalizedEntity get drawn => layers.last.entity;
 }
 
 class _CollabElementEnvelope {

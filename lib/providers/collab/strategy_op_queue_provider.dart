@@ -67,6 +67,11 @@ class StrategyOutboxSummary {
       successorCount;
   bool get hasRunnableWork => queuedCount > 0 || inFlightCount > 0;
   bool get needsAttention => pausedCount > 0 || attentionCount > 0;
+
+  /// How many outbox records hold changes that have not landed: one per
+  /// item, however many edits to it are waiting.
+  int get unsentRecordCount =>
+      queuedCount + inFlightCount + pausedCount + attentionCount;
 }
 
 class AccountStrategyOutboxSummary {
@@ -522,6 +527,20 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// How many op IDs are remembered as the canvas's work; for tests.
   int get canvasWorkCount => _canvasOpIds.length;
 
+  /// Whether [opId] is work the canvas holds: queued from its edits, or
+  /// drawn on it from the outbox ([noteDrawnWork]).
+  bool isCanvasWork(String opId) => _canvasOpIds.contains(opId);
+
+  /// The canvas now shows [opIds], work recovered from the outbox that it
+  /// drew on load: their acks are the canvas's own from here on, as if it
+  /// had queued them. Ops no longer in the outbox are left out.
+  void noteDrawnWork(Iterable<String> opIds) {
+    final pendingOpIds = {
+      for (final pending in state.pending) pending.op.opId,
+    };
+    _canvasOpIds.addAll(opIds.where(pendingOpIds.contains));
+  }
+
   Future<void> enqueue(
     StrategyOp op, {
     bool flushImmediately = false,
@@ -723,18 +742,30 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final successorIntent = successors[key];
         final pausedIntent = paused[key];
         final attentionIntent = attention[key];
-        // Kept work that has landed or been replaced since is not written
-        // again.
-        if (desired != null &&
-            heldOpIds.contains(desired.opId) &&
-            ![
-              existing?.pending,
-              inFlightIntent?.pending,
-              successorIntent?.pending,
-              pausedIntent?.pending,
-              attentionIntent?.pending,
-            ].any((pending) => pending?.op.opId == desired.opId)) {
-          continue;
+        if (desired != null && heldOpIds.contains(desired.opId)) {
+          // Kept work that has landed or been replaced since is not written
+          // again.
+          if (![
+            existing?.pending,
+            inFlightIntent?.pending,
+            successorIntent?.pending,
+            pausedIntent?.pending,
+            attentionIntent?.pending,
+          ].any((pending) => pending?.op.opId == desired.opId)) {
+            continue;
+          }
+          // Kept paused or refused work stays as it is, unless its record
+          // could not be saved and is written again here.
+          if ((pausedIntent != null || attentionIntent != null) &&
+              !_uncertainDurableRecords.contains(
+                DurableOutboxRecord.createStorageKey(
+                  accountId: accountId,
+                  strategyPublicId: strategyPublicId,
+                  entityKey: key,
+                ),
+              )) {
+            continue;
+          }
         }
 
         // A rejected op remains the durable authority until the user

@@ -282,9 +282,10 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     };
 
     final shownCopy = ref.watch(editorShownCopyProvider);
+    final waiting = ref.watch(openStrategyUnsentChangesProvider);
     final syncTooltip = status == _SyncStatus.offline && shownCopy != null
-        ? _copyTooltip(context, shownCopy.copiedAt)
-        : _tooltip(status, saveState.lastPersistedAt);
+        ? _copyTooltip(context, shownCopy.copiedAt, waiting: waiting)
+        : _tooltip(status, saveState.lastPersistedAt, waiting: waiting);
     // The editor carries no status chips, so a viewer learns here why their
     // edits do not stick.
     final tooltip = ref.watch(lastKnownCloudRoleProvider) == 'viewer'
@@ -383,12 +384,18 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
   }
 
   /// Offline while the editor draws this computer's copy: how old the copy
-  /// is, with the date in front when it isn't from today.
-  static String _copyTooltip(BuildContext context, DateTime? copiedAt) {
-    if (copiedAt == null) {
-      return "Offline. Showing this computer's copy; changes stay on this "
-          'device';
-    }
+  /// is, with the date in front when it isn't from today, and how many
+  /// changes wait to be sent (see offlineSyncLabel).
+  static String _copyTooltip(
+    BuildContext context,
+    DateTime? copiedAt, {
+    required int waiting,
+  }) {
+    final saved = waiting == 0
+        ? '; changes stay on this device'
+        : ' · $waiting ${waiting == 1 ? 'change' : 'changes'} saved on this '
+            'computer';
+    if (copiedAt == null) return "Offline. Showing this computer's copy$saved";
     final localizations = MaterialLocalizations.of(context);
     final local = copiedAt.toLocal();
     final now = DateTime.now();
@@ -401,12 +408,15 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         local.day == now.day;
     final when =
         sameDay ? time : '${localizations.formatShortMonthDay(local)}, $time';
-    return "Offline. Showing this computer's copy from $when; changes stay "
-        'on this device';
+    return "Offline. Showing this computer's copy from $when$saved";
   }
 
   /// One line, what the glyph means and what a press will do.
-  static String _tooltip(_SyncStatus status, DateTime? lastSynced) {
+  static String _tooltip(
+    _SyncStatus status,
+    DateTime? lastSynced, {
+    required int waiting,
+  }) {
     switch (status) {
       case _SyncStatus.synced:
         return lastSynced == null
@@ -417,7 +427,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
       case _SyncStatus.syncing:
         return 'Syncing…';
       case _SyncStatus.offline:
-        return 'Offline, changes stay on this device';
+        return offlineSyncLabel(waiting);
       case _SyncStatus.attention:
         return 'Sync needs attention';
     }

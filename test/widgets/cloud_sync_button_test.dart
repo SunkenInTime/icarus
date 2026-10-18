@@ -692,6 +692,62 @@ void main() {
     expect(_syncButton('attention'), findsNothing);
   });
 
+  testWidgets('offline, it counts the changes saved on this computer',
+      (tester) async {
+    StrategyOpQueueState waiting(int queued, {int inFlight = 0}) =>
+        StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'client-a',
+          durableLoaded: true,
+          accountOutbox: AccountStrategyOutboxSummary(
+            accountId: 'account-a',
+            strategies: {
+              'cloud-strategy': StrategyOutboxSummary(
+                strategyPublicId: 'cloud-strategy',
+                queuedCount: queued,
+                inFlightCount: inFlight,
+                pausedCount: 0,
+                attentionCount: 0,
+                // A newer change behind one being sent is the same item.
+                successorCount: inFlight,
+              ),
+              // Another strategy's changes are not this one's.
+              'other-strategy': const StrategyOutboxSummary(
+                strategyPublicId: 'other-strategy',
+                queuedCount: 4,
+                inFlightCount: 0,
+                pausedCount: 0,
+                attentionCount: 0,
+                successorCount: 0,
+              ),
+            },
+          ),
+        );
+    for (final (state, label) in [
+      (waiting(5, inFlight: 1), 'Offline · 6 changes saved on this computer'),
+      (waiting(1), 'Offline · 1 change saved on this computer'),
+      (waiting(0), 'Offline, changes stay on this device'),
+    ]) {
+      final container = _createContainer(connected: false, opQueueState: state);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ShadApp(
+            home: Scaffold(
+                body: CloudSyncButton(style: kEditorToolbarButtonStyle)),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(_syncButton('offline'), findsOneWidget);
+      expect(_syncTooltip(tester), label);
+      await tester.pumpWidget(const SizedBox());
+      container.dispose();
+    }
+  });
+
   testWidgets('durability uncertainty never appears synced or reliable',
       (tester) async {
     final container = ProviderContainer(
