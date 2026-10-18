@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
@@ -15,10 +16,23 @@ const _legacyDurableOutboxRecordVersion = 1;
 /// record alone rather than send its op as a whole write. Every other record
 /// stays at [durableOutboxRecordVersion], readable by those builds.
 const fieldMergeOutboxRecordVersion = 3;
+
+/// The version of a record holding one change in a strategy's ordered list
+/// of page changes (see page_changes.dart), stored under its own
+/// EntitySyncKey.pageChange key with its place in the list. A build from
+/// before the list cannot read it, so it leaves the record alone and says
+/// the outbox holds unreadable saved work, rather than send the change out
+/// of order.
+const pageChangeOutboxRecordVersion = 4;
 const durableOutboxVersionKey = '__outbox_record_version__';
 
 Future<void> prepareDurableStrategyOutbox() async {
   final box = Hive.box<dynamic>(HiveBoxNames.strategyOutboxBox);
+  await _upgradeRecordVersions(box);
+  await _movePageChangesIntoTheirList(box);
+}
+
+Future<void> _upgradeRecordVersions(Box<dynamic> box) async {
   if (box.get(durableOutboxVersionKey) == durableOutboxRecordVersion) return;
 
   final storageKeys = box.keys
@@ -45,6 +59,145 @@ Future<void> prepareDurableStrategyOutbox() async {
   await box.put(durableOutboxVersionKey, durableOutboxRecordVersion);
 }
 
+/// Moves the page changes an older build left keyed by their page (one
+/// record per page, EntitySyncKey.pageDescriptor) into their strategy's
+/// ordered list (see [planPageChangeMove]). Each new record is written
+/// before the old one goes, under a key taken from its op id, so a move cut
+/// short is made again the same way on the next start.
+Future<void> _movePageChangesIntoTheirList(Box<dynamic> box) async {
+  final plan = planPageChangeMove({
+    for (final key in box.keys)
+      if (key.toString() != durableOutboxVersionKey)
+        key.toString(): box.get(key),
+  });
+  for (final MapEntry(:key, :value) in plan.puts.entries) {
+    await box.put(key, value);
+  }
+  for (final key in plan.removes) {
+    await box.delete(key);
+  }
+}
+
+/// What moving the old page changes in [values] (storage key to stored
+/// record) into their strategies' ordered lists writes and removes.
+///
+/// Builds before the list kept one record per page: its change, and a newer
+/// change waiting behind it (successorPending). Each page change found there
+/// becomes a record of its own at the end of its strategy's list, in the
+/// order the records were made (the old records kept no other order). A
+/// side change waiting behind one stays keyed by its page, which is where
+/// this build keeps side changes. Records this build cannot read are left
+/// as they are.
+({Map<String, Map<String, dynamic>> puts, Set<String> removes})
+    planPageChangeMove(Map<String, Object?> values) {
+  final records = <DurableOutboxRecord>[];
+  for (final MapEntry(:key, :value) in values.entries) {
+    try {
+      final json = value is String ? jsonDecode(value) as Map : value as Map;
+      final record =
+          DurableOutboxRecord.fromJson(Map<String, dynamic>.from(json));
+      if (record.storageKey == key) records.add(record);
+    } catch (_) {
+      continue;
+    }
+  }
+  final lastPlace = <(String, String), int>{};
+  for (final record in records) {
+    final place = record.pageChangeSequence;
+    if (place == null) continue;
+    final strategy = (record.accountId, record.strategyPublicId);
+    if (place > (lastPlace[strategy] ?? 0)) lastPlace[strategy] = place;
+  }
+  final old = records
+      .where((record) =>
+          record.entityKey.kind == EntitySyncKeyKind.pageDescriptor &&
+          (isPageChangeOp(record.pending.op) ||
+              (record.successorPending != null &&
+                  isPageChangeOp(record.successorPending!.op))))
+      .toList()
+    ..sort((left, right) {
+      final made = left.createdAt.compareTo(right.createdAt);
+      return made != 0 ? made : left.storageKey.compareTo(right.storageKey);
+    });
+
+  final puts = <String, Map<String, dynamic>>{};
+  final removes = <String>{};
+  DurableOutboxRecord listed(
+    DurableOutboxRecord from,
+    PendingOp pending, {
+    required DurableOutboxStatus status,
+    required DateTime createdAt,
+    required bool keepsAnswer,
+  }) {
+    final strategy = (from.accountId, from.strategyPublicId);
+    final place = (lastPlace[strategy] ?? 0) + 1;
+    lastPlace[strategy] = place;
+    return DurableOutboxRecord(
+      accountId: from.accountId,
+      strategyPublicId: from.strategyPublicId,
+      entityKey: EntitySyncKey.pageChange(pending.op.opId),
+      pending: pending,
+      status: status,
+      createdAt: createdAt,
+      updatedAt: from.updatedAt,
+      pageChangeSequence: place,
+      lastError: keepsAnswer ? from.lastError : null,
+      latestServerRevision: keepsAnswer ? from.latestServerRevision : null,
+      latestServerPayload: keepsAnswer ? from.latestServerPayload : null,
+    );
+  }
+
+  for (final record in old) {
+    final successor = record.successorPending;
+    DurableOutboxRecord? stays;
+    if (isPageChangeOp(record.pending.op)) {
+      final moved = listed(
+        record,
+        record.pending,
+        status: record.status,
+        createdAt: record.createdAt,
+        keepsAnswer: true,
+      );
+      puts[moved.storageKey] = _jsonSafe(moved.toJson());
+    } else {
+      stays = record.copyWith(clearSuccessorPending: true);
+    }
+    if (successor != null) {
+      if (isPageChangeOp(successor.op)) {
+        final moved = listed(
+          record,
+          successor,
+          status: DurableOutboxStatus.queued,
+          createdAt: record.updatedAt,
+          keepsAnswer: false,
+        );
+        puts[moved.storageKey] = _jsonSafe(moved.toJson());
+      } else {
+        // The side change that waited behind the page change: it goes on
+        // its own, made against the page's revision as it was.
+        stays = DurableOutboxRecord(
+          accountId: record.accountId,
+          strategyPublicId: record.strategyPublicId,
+          entityKey: record.entityKey,
+          pending: successor,
+          status: DurableOutboxStatus.queued,
+          createdAt: record.updatedAt,
+          updatedAt: record.updatedAt,
+        );
+      }
+    }
+    if (stays == null) {
+      removes.add(record.storageKey);
+    } else {
+      puts[stays.storageKey] = _jsonSafe(stays.toJson());
+    }
+  }
+  return (puts: puts, removes: removes);
+}
+
+Map<String, dynamic> _jsonSafe(Map<String, dynamic> json) =>
+    Map<String, dynamic>.from(jsonDecode(jsonEncode(json)) as Map);
+
 enum DurableOutboxStatus { queued, inFlight, paused, attention }
 
 class DurableOutboxRecord {
@@ -60,6 +213,7 @@ class DurableOutboxRecord {
     this.lastError,
     this.latestServerRevision,
     this.latestServerPayload,
+    this.pageChangeSequence,
   });
 
   final String accountId;
@@ -77,6 +231,10 @@ class DurableOutboxRecord {
   /// field collision checks against it, so a teammate's later change still
   /// asks.
   final CloudPayload? latestServerPayload;
+
+  /// This page change's place in its strategy's ordered list of them (lower
+  /// goes first). Set for EntitySyncKey.pageChange records, and only them.
+  final int? pageChangeSequence;
 
   String get storageKey => createStorageKey(
         accountId: accountId,
@@ -123,6 +281,7 @@ class DurableOutboxRecord {
       latestServerPayload: clearLatestServerRevision
           ? null
           : (latestServerPayload ?? this.latestServerPayload),
+      pageChangeSequence: pageChangeSequence,
     );
   }
 
@@ -140,10 +299,14 @@ class DurableOutboxRecord {
             _ => false,
           });
 
+  bool get _isPageChange => entityKey.kind == EntitySyncKeyKind.pageChange;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'outboxVersion': _mergesByField
-            ? fieldMergeOutboxRecordVersion
-            : durableOutboxRecordVersion,
+        'outboxVersion': _isPageChange
+            ? pageChangeOutboxRecordVersion
+            : _mergesByField
+                ? fieldMergeOutboxRecordVersion
+                : durableOutboxRecordVersion,
         'accountId': accountId,
         'strategyPublicId': strategyPublicId,
         'entityKey': entityKey.toString(),
@@ -163,13 +326,17 @@ class DurableOutboxRecord {
           'latestServerRevision': latestServerRevision,
         if (latestServerPayload != null)
           'latestServerPayload': latestServerPayload,
+        if (_isPageChange)
+          'pageChangeSequence': pageChangeSequence ??
+              (throw StateError('A page change needs its place in the list')),
       };
 
   factory DurableOutboxRecord.fromJson(Map<String, dynamic> json) {
     final version = (json['outboxVersion'] as num?)?.toInt();
     if (version != _legacyDurableOutboxRecordVersion &&
         version != durableOutboxRecordVersion &&
-        version != fieldMergeOutboxRecordVersion) {
+        version != fieldMergeOutboxRecordVersion &&
+        version != pageChangeOutboxRecordVersion) {
       throw FormatException('Unsupported outbox record version: $version');
     }
     final opJson = _object(json['op'], field: 'op');
@@ -177,7 +344,26 @@ class DurableOutboxRecord {
     if (json['opId'] != op.opId) {
       throw const FormatException('Outbox opId does not match serialized op');
     }
-    final entityKey = EntitySyncKey.forStrategyOp(op);
+    final isPageChange = version == pageChangeOutboxRecordVersion;
+    final pageChangeSequence = (json['pageChangeSequence'] as num?)?.toInt();
+    final EntitySyncKey? entityKey;
+    if (isPageChange) {
+      const prefix = 'pagechange:';
+      final rawKey = json['entityKey'];
+      if (rawKey is! String ||
+          !rawKey.startsWith(prefix) ||
+          rawKey.length == prefix.length ||
+          !isPageChangeOp(op) ||
+          pageChangeSequence == null ||
+          json['successorPending'] != null) {
+        throw const FormatException('Outbox page change is malformed');
+      }
+      entityKey = EntitySyncKey.pageChange(
+        Uri.decodeComponent(rawKey.substring(prefix.length)),
+      );
+    } else {
+      entityKey = EntitySyncKey.forStrategyOp(op);
+    }
     if (entityKey == null || entityKey.toString() != json['entityKey']) {
       throw const FormatException('Outbox entity key does not match op');
     }
@@ -214,6 +400,7 @@ class DurableOutboxRecord {
       latestServerPayload: json['latestServerPayload'] is Map
           ? Map<String, dynamic>.from(json['latestServerPayload'] as Map)
           : null,
+      pageChangeSequence: isPageChange ? pageChangeSequence : null,
     );
   }
 

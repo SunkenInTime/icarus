@@ -168,7 +168,8 @@ void main() {
       final restored = container!.read(strategyOpQueueProvider);
       expect(restored.pending, hasLength(1));
       final intent = restored.queuedByEntityKey.entries.single;
-      expect(intent.key, const EntitySyncKey.pageDescriptor('page-2'));
+      // A page change waits in the strategy's ordered list of them.
+      expect(intent.key.kind, EntitySyncKeyKind.pageChange);
       expect(intent.value.pending.op.opId, 'add-page');
       expect(intent.value.pending.op.kind, StrategyOpKind.add);
       expect(intent.value.pending.op.expectedRevision, 4);

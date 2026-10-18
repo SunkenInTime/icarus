@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/trashed_pages_provider.dart';
@@ -133,6 +135,16 @@ Future<void> _expandedBar(
   await tester.pumpWidget(ProviderScope(
     overrides: [
       remoteEditorSnapshotProvider.overrideWith(() => remote ?? _Remote()),
+      // The bar draws the outbox's waiting page changes; none wait here.
+      durableStrategyOutboxStoreProvider
+          .overrideWithValue(MemoryDurableStrategyOutboxStore()),
+  strategyOutboxSessionProvider.overrideWithValue(
+    const StrategyOutboxSession(
+      accountId: null,
+      isReady: false,
+      hasAuthIncident: false,
+    ),
+  ),
       strategyProvider.overrideWith(_CloudStrategy.new),
       strategyPageSessionProvider.overrideWith(_Session.new),
       appPreferencesProvider.overrideWith(_Preferences.new),

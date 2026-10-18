@@ -10,6 +10,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/field_merge.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/collab/strategy_capabilities.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
@@ -485,6 +486,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _debounceTimer?.cancel();
     _retryTimer?.cancel();
     _awaitingRemoteAdoption.clear();
+    _landedPageChanges.clear();
     _offlineRetryCount = 0;
     final matching = accountId == null || strategyPublicId == null
         ? const <DurableOutboxRecord>[]
@@ -623,6 +625,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     StrategyOp op, {
     bool flushImmediately = false,
   }) {
+    if (isPageChangeOp(op)) {
+      return enqueuePageChange(op, flushImmediately: flushImmediately);
+    }
     final entityKey = EntitySyncKey.forStrategyOp(op);
     if (entityKey == null) return Future<void>.value();
     final pageId = entityKey.pageId;
@@ -647,6 +652,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }) async {
     final byPage = <String, Map<EntitySyncKey, StrategyOp>>{};
     for (final op in ops) {
+      if (isPageChangeOp(op)) {
+        await enqueuePageChange(op);
+        continue;
+      }
       final key = EntitySyncKey.forStrategyOp(op);
       if (key == null) continue;
       if (key.pageId == null) {
@@ -663,6 +672,230 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       );
     }
     _scheduleFlush(flushImmediately: flushImmediately);
+  }
+
+  /// Adds [op], a page change (see isPageChangeOp), to the end of the
+  /// active strategy's ordered list of them. They are sent one at a time in
+  /// that order (see [_selectBatch]), so no change to a page replaces
+  /// another. A rename merges into the newest change to its page while that
+  /// waits unsent, if it is an add or a rename. A delete of a page whose add
+  /// never left this device takes back the add and everything waiting for
+  /// it. A change to a page already deleted here goes nowhere: the user no
+  /// longer has that page. A page moved twice in a row, with nothing waiting
+  /// in between, waits as one move to where it went last.
+  Future<void> enqueuePageChange(
+    StrategyOp op, {
+    bool flushImmediately = false,
+  }) {
+    assert(isPageChangeOp(op));
+    return _serializeWrite(
+      () => _appendPageChangeLocked(op, flushImmediately: flushImmediately),
+    );
+  }
+
+  Future<void> _appendPageChangeLocked(
+    StrategyOp op, {
+    required bool flushImmediately,
+  }) async {
+    final accountId = state.accountId;
+    final strategyPublicId = state.strategyPublicId;
+    final pageId = op.pagePublicId;
+    if (accountId == null || strategyPublicId == null || pageId == null) {
+      state = state.copyWith(
+        lastError: 'Cloud work could not be queued without an active account.',
+        hasDurabilityFailure: true,
+      );
+      return;
+    }
+    final list = _pageChangeRecords(accountId, strategyPublicId);
+    bool forPage(DurableOutboxRecord record) =>
+        record.pending.op.pagePublicId == pageId;
+    bool unsent(DurableOutboxRecord record) =>
+        record.status == DurableOutboxStatus.queued &&
+        !_uncertainDurableRecords.contains(record.storageKey);
+    if (list.any((record) =>
+        forPage(record) && record.pending.op is PageDeleteOp)) {
+      return;
+    }
+    try {
+      final add = list
+          .where((record) => forPage(record) && record.pending.op is PageAddOp)
+          .firstOrNull;
+      final newest = list.where(forPage).lastOrNull;
+      final last = list.lastOrNull;
+      if (op is PageDeleteOp && add != null && unsent(add)) {
+        // The server never had the page: nothing goes for it.
+        final dropped = [
+          for (final record in _recordsByStorageKey.values)
+            if (record.accountId == accountId &&
+                record.strategyPublicId == strategyPublicId &&
+                unsent(record) &&
+                (record.entityKey.pageId == pageId ||
+                    (_isPageChange(record) && forPage(record))))
+              record.storageKey,
+        ];
+        for (final storageKey in dropped) {
+          await _removeRecordByStorageKey(storageKey);
+        }
+      } else if (op is PageReorderOp &&
+          last != null &&
+          unsent(last) &&
+          last.pending.op is PageReorderOp &&
+          forPage(last)) {
+        // Moved again with nothing made since: the newer place stands.
+        await _putRecord(last.copyWith(
+          pending: PendingOp(
+            op: PageReorderOp(
+              opId: const Uuid().v4(),
+              pagePublicId: pageId,
+              sortIndex: op.sortIndex,
+              expectedStrategyRevision: last.pending.op.expectedRevision!,
+            ),
+            clientId: last.pending.clientId,
+          ),
+          updatedAt: DateTime.now(),
+        ));
+      } else if (op is PagePatchOp &&
+          newest != null &&
+          unsent(newest) &&
+          (newest.pending.op is PageAddOp ||
+              newest.pending.op is PagePatchOp)) {
+        final waiting = newest.pending.op;
+        final merged = waiting is PagePatchOp
+            // Kept at the revision the waiting rename has: it may have
+            // moved past this device's own changes since it was made.
+            ? PagePatchOp(
+                opId: const Uuid().v4(),
+                pagePublicId: pageId,
+                payload: {...waiting.payload, ...op.payload},
+                expectedPageRevision: waiting.expectedPageRevision,
+              )
+            : _mergeQueuedIntent(waiting, op)!;
+        await _putRecord(newest.copyWith(
+          pending: PendingOp(op: merged, clientId: newest.pending.clientId),
+          updatedAt: DateTime.now(),
+        ));
+      } else {
+        final now = DateTime.now();
+        final oversized = cloudOperationExceedsPolicy(op);
+        await _putRecord(DurableOutboxRecord(
+          accountId: accountId,
+          strategyPublicId: strategyPublicId,
+          entityKey: EntitySyncKey.pageChange(const Uuid().v4()),
+          pending: PendingOp(op: op, clientId: state.clientId!),
+          status: oversized
+              ? DurableOutboxStatus.attention
+              : DurableOutboxStatus.queued,
+          createdAt: now,
+          updatedAt: now,
+          lastError: oversized ? cloudOperationTooLargeMessage : null,
+          pageChangeSequence: list.fold<int>(
+                0,
+                (last, record) =>
+                    math.max(last, record.pageChangeSequence ?? 0),
+              ) +
+              1,
+        ));
+      }
+    } catch (error, stackTrace) {
+      _recordPersistenceFailure(error, stackTrace);
+      return;
+    }
+    _pruneCanvasOpIds();
+    _refreshActiveQueueView();
+    _scheduleFlush(flushImmediately: flushImmediately);
+  }
+
+  static bool _isPageChange(DurableOutboxRecord record) =>
+      record.entityKey.kind == EntitySyncKeyKind.pageChange;
+
+  /// [strategyPublicId]'s page changes, in the order they were made: each
+  /// as last saved, or as last asked for when that save failed.
+  List<DurableOutboxRecord> _pageChangeRecords(
+    String accountId,
+    String strategyPublicId,
+  ) {
+    final byStorageKey = <String, DurableOutboxRecord>{
+      for (final record in [
+        ..._recordsByStorageKey.values,
+        ..._uncertainDurableIntents.values,
+      ])
+        if (record.accountId == accountId &&
+            record.strategyPublicId == strategyPublicId &&
+            _isPageChange(record))
+          record.storageKey: record,
+    };
+    return byStorageKey.values.toList()..sort(_inListOrder);
+  }
+
+  static int _inListOrder(DurableOutboxRecord left, DurableOutboxRecord right) {
+    final place = (left.pageChangeSequence ?? 0)
+        .compareTo(right.pageChangeSequence ?? 0);
+    return place != 0 ? place : left.createdAt.compareTo(right.createdAt);
+  }
+
+  /// The active strategy's page changes that landed in this session, each
+  /// with the revision it landed at, oldest first: drawn until a read shows
+  /// them (see [pageChangesToDraw]).
+  final List<({StrategyOp op, int revision, bool applied})>
+      _landedPageChanges = [];
+
+  /// The strategy revision [snapshot]'s pages are drawn at: its read's, or
+  /// the revision this device's own add, delete or reorder was applied at
+  /// since, if later. That one was checked against the revision before it,
+  /// which this device knew, so the pages drawn are exactly the server's at
+  /// it. A change made from them is made against it. (One the server found
+  /// nothing to do for says nothing about who made its revision.)
+  int drawnStrategyRevision(RemoteEditorSnapshot snapshot) {
+    var revision = snapshot.header.revision;
+    if (snapshot.header.publicId != state.strategyPublicId) return revision;
+    for (final landed in _landedPageChanges) {
+      if (landed.applied && renumbersPages(landed.op)) {
+        revision = math.max(revision, landed.revision);
+      }
+    }
+    return revision;
+  }
+
+  /// The page changes to draw over [snapshot]'s list of pages, oldest first
+  /// (see drawPages): the active strategy's that landed but [snapshot]'s
+  /// read does not show yet, then every one still waiting, sent or not,
+  /// paused or refused, as the canvas draws waiting work.
+  List<StrategyOp> pageChangesToDraw(RemoteEditorSnapshot snapshot) {
+    final accountId = state.accountId;
+    final strategyPublicId = state.strategyPublicId;
+    if (accountId == null ||
+        strategyPublicId == null ||
+        snapshot.header.publicId != strategyPublicId) {
+      return const [];
+    }
+    bool shown(({StrategyOp op, int revision, bool applied}) landed) {
+      if (renumbersPages(landed.op)) {
+        return snapshot.header.revision >= landed.revision;
+      }
+      final page = snapshot.pages
+          .where((page) => page.publicId == landed.op.pagePublicId)
+          .firstOrNull;
+      return page == null || page.revision >= landed.revision;
+    }
+
+    return [
+      for (final landed in _landedPageChanges)
+        if (!shown(landed)) landed.op,
+      for (final record in _pageChangeRecords(accountId, strategyPublicId))
+        record.pending.op,
+    ];
+  }
+
+  /// Whether the active strategy's page [pageId] was deleted on this device
+  /// and the delete has not landed yet.
+  bool isDeletedHere(String pageId) {
+    final accountId = state.accountId;
+    final strategyPublicId = state.strategyPublicId;
+    if (accountId == null || strategyPublicId == null) return false;
+    return _pageChangeRecords(accountId, strategyPublicId).any((record) =>
+        record.pending.op is PageDeleteOp &&
+        record.pending.op.pagePublicId == pageId);
   }
 
   /// Queues [op], work for a page the canvas did not draw it on (an item
@@ -813,7 +1046,17 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     try {
       for (final key in keys) {
         if (_awaitingRemoteAdoption.contains(key)) continue;
+        // Page changes wait in their list, which reconciling a page's
+        // content never touches.
+        if (key.kind == EntitySyncKeyKind.pageChange) continue;
         final desired = desiredOps[key];
+        // A new side for a page deleted here goes nowhere.
+        if (desired != null &&
+            key.kind == EntitySyncKeyKind.pageDescriptor &&
+            !heldOpIds.contains(desired.opId) &&
+            isDeletedHere(key.pageId!)) {
+          continue;
+        }
         final existing = queued[key];
         final inFlightIntent = state.inFlightByEntityKey[key];
         final inFlight = inFlightIntent?.pending.op;
@@ -1239,7 +1482,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   Future<void> retryRestoredPages(Set<String> livePageIds) => _retryAttention(
         flushImmediately: true,
         only: (key, record) =>
-            livePageIds.contains(key.pageId) &&
+            livePageIds.contains(key.pageId ?? record?.pending.op.pagePublicId) &&
             record?.lastError == pageDeletedMessage,
       );
 
@@ -1827,31 +2070,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }) {
     return _serializeWrite(() async {
       final now = DateTime.now();
-      final candidates = _recordsByStorageKey.values
-          .where((record) =>
-              record.accountId == accountId &&
-              record.strategyPublicId == strategyPublicId &&
-              (record.status == DurableOutboxStatus.queued ||
-                  record.status == DurableOutboxStatus.inFlight) &&
-              !_uncertainDurableRecords.contains(record.storageKey) &&
-              !cloudOperationExceedsPolicy(record.pending.op) &&
-              (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
-          .toList(growable: false);
-      if (candidates.isEmpty) return const <DurableOutboxRecord>[];
-      final selected = <DurableOutboxRecord>[];
-      final batchClientId = candidates.first.pending.clientId;
-      for (final candidate in candidates) {
-        if (candidate.pending.clientId != batchClientId) continue;
-        if (selected.length >= _maxBatchSize) break;
-        final nextSelection = <DurableOutboxRecord>[...selected, candidate];
-        final byteSize = serializedCloudBatchUtf8Bytes(
-          strategyPublicId: strategyPublicId,
-          clientId: batchClientId,
-          ops: nextSelection.map((record) => record.pending.op),
-        );
-        if (byteSize > maxCloudBatchBytes) break;
-        selected.add(candidate);
-      }
+      final selected = _selectBatch(
+        accountId: accountId,
+        strategyPublicId: strategyPublicId,
+        ignoreBackoff: ignoreBackoff,
+        now: now,
+      );
       final claimed = <DurableOutboxRecord>[];
       for (final record in selected) {
         final current = _recordsByStorageKey[record.storageKey];
@@ -1871,6 +2095,127 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       }
       return claimed;
     });
+  }
+
+  /// Whether [record] could go out now: waiting or interrupted mid-send,
+  /// saved, within the size the server takes, and past its backoff unless
+  /// [ignoreBackoff].
+  bool _sendableNow(
+    DurableOutboxRecord record, {
+    required bool ignoreBackoff,
+    required DateTime now,
+  }) =>
+      (record.status == DurableOutboxStatus.queued ||
+          record.status == DurableOutboxStatus.inFlight) &&
+      !_uncertainDurableRecords.contains(record.storageKey) &&
+      !cloudOperationExceedsPolicy(record.pending.op) &&
+      (ignoreBackoff || !_nextAttemptAt(record).isAfter(now));
+
+  /// The next batch to send for [strategyPublicId], in the order the server
+  /// is to apply it.
+  ///
+  /// It holds at most one page change, so a refused one is answered before
+  /// the next is sent, each checked against the revision it was made on.
+  /// Renames go before adds, deletes and reorders: those renumber pages,
+  /// which moves the revision of every page that moves on, so a rename made
+  /// before one landed would be refused for a change this device made. The
+  /// result is the same either way, since a rename does not depend on where
+  /// the page is. Adds, deletes and reorders go strictly in the order they
+  /// were made, each placed against the ones before it: one refused, paused
+  /// or still backing off holds those after it. Everything else on a page
+  /// whose add has not landed waits for it, and goes after it. A delete
+  /// goes after everything else waiting for its page, so the page's last
+  /// edits are in the trash with it.
+  List<DurableOutboxRecord> _selectBatch({
+    required String accountId,
+    required String strategyPublicId,
+    required bool ignoreBackoff,
+    required DateTime now,
+  }) {
+    bool sendable(DurableOutboxRecord record) =>
+        _sendableNow(record, ignoreBackoff: ignoreBackoff, now: now);
+    bool waiting(DurableOutboxRecord record) =>
+        (record.status == DurableOutboxStatus.queued ||
+            record.status == DurableOutboxStatus.inFlight) &&
+        !cloudOperationExceedsPolicy(record.pending.op);
+    final records = _recordsByStorageKey.values
+        .where((record) =>
+            record.accountId == accountId &&
+            record.strategyPublicId == strategyPublicId)
+        .toList(growable: false);
+    final list = records.where(_isPageChange).toList()..sort(_inListOrder);
+    final unlandedAdds = {
+      for (final record in list)
+        if (record.pending.op is PageAddOp) record.pending.op.pagePublicId,
+    };
+    final renames = list
+        .where((record) =>
+            record.pending.op is PagePatchOp &&
+            !unlandedAdds.contains(record.pending.op.pagePublicId))
+        .toList(growable: false);
+    final renumbering = list
+        .where((record) => renumbersPages(record.pending.op))
+        .firstOrNull;
+    // Side changes, like renames, land before anything that renumbers.
+    final sideChangesWaiting = records.any((record) =>
+        record.entityKey.kind == EntitySyncKeyKind.pageDescriptor &&
+        !unlandedAdds.contains(record.entityKey.pageId) &&
+        waiting(record));
+    final next = renames.where(sendable).firstOrNull ??
+        (renumbering != null &&
+                sendable(renumbering) &&
+                !renames.any(waiting) &&
+                !sideChangesWaiting
+            ? renumbering
+            : null);
+    final nextPage = next?.pending.op.pagePublicId;
+    final others = records
+        .where((record) =>
+            !_isPageChange(record) &&
+            sendable(record) &&
+            !unlandedAdds.contains(record.entityKey.pageId) &&
+            // One change to a page's side or name per batch: the second
+            // waits to be moved onto the revision the first lands at.
+            !(next?.pending.op is PagePatchOp &&
+                record.entityKey ==
+                    EntitySyncKey.pageDescriptor(nextPage!)))
+        .toList(growable: false);
+
+    final first = next?.pending.op is PageAddOp ? next : null;
+    final batchClientId =
+        (first ?? others.firstOrNull ?? next)?.pending.clientId;
+    if (batchClientId == null) return const <DurableOutboxRecord>[];
+    final selected = <DurableOutboxRecord>[if (first != null) first];
+    bool fits(DurableOutboxRecord candidate) =>
+        selected.length < _maxBatchSize &&
+        serializedCloudBatchUtf8Bytes(
+              strategyPublicId: strategyPublicId,
+              clientId: batchClientId,
+              ops: [...selected, candidate].map((record) => record.pending.op),
+            ) <=
+            maxCloudBatchBytes;
+    final last = first == null &&
+            next != null &&
+            next.pending.clientId == batchClientId
+        ? next
+        : null;
+    final room = last == null ? 0 : 1;
+    for (final candidate in others) {
+      if (candidate.pending.clientId != batchClientId) continue;
+      if (selected.length + room >= _maxBatchSize || !fits(candidate)) break;
+      selected.add(candidate);
+    }
+    if (last != null && fits(last)) {
+      final op = last.pending.op;
+      final pageWork = op is PageDeleteOp
+          ? records.where((record) =>
+              !_isPageChange(record) &&
+              record.entityKey.pageId == op.pagePublicId &&
+              waiting(record))
+          : const <DurableOutboxRecord>[];
+      if (pageWork.every(selected.contains)) selected.add(last);
+    }
+    return selected;
   }
 
   Future<void> _applyAcksForRecords(
@@ -1907,6 +2252,19 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                       -1)) {
         _landedStrategyPatches[sent.strategyPublicId] =
             (payload: payload, revision: revision);
+      }
+      if (ack case AppliedOpAck(:final revision)
+          when sent.pending.op is PagePatchOp) {
+        await _advanceOwnPageRevision(sent, revision);
+      }
+      if ((ack.isAck, ack.appliedRevision) case (true, final revision?)
+          when _isPageChange(sent) &&
+              _isActive(sent.accountId, sent.strategyPublicId)) {
+        _landedPageChanges.add((
+          op: sent.pending.op,
+          revision: revision,
+          applied: ack is AppliedOpAck,
+        ));
       }
       final current = _recordsByStorageKey[sent.storageKey];
       if (current?.pending.op.opId != ack.opId) continue;
@@ -2171,7 +2529,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         ])
           if (record.accountId == accountId &&
               record.strategyPublicId == strategyPublicId &&
-              record.entityKey.pageId == pageId &&
+              (record.entityKey.pageId == pageId ||
+                  (_isPageChange(record) &&
+                      record.pending.op.pagePublicId == pageId)) &&
               !(isSending && record.status == DurableOutboxStatus.inFlight))
             record.storageKey,
       };
@@ -2365,6 +2725,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           ? null
           : (successorPending ?? current?.successorPending),
       lastError: lastError,
+      pageChangeSequence: current?.pageChangeSequence,
     );
   }
 
@@ -2816,17 +3177,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _backgroundRetryTimer?.cancel();
     final accountId = state.accountId;
     if (accountId == null) return;
-    final activeStrategyId = state.strategyPublicId;
     final now = DateTime.now();
-    final candidates = _recordsByStorageKey.values
-        .where((record) =>
-            record.accountId == accountId &&
-            record.strategyPublicId != activeStrategyId &&
-            (record.status == DurableOutboxStatus.queued ||
-                record.status == DurableOutboxStatus.inFlight) &&
-            !_uncertainDurableRecords.contains(record.storageKey) &&
-            !cloudOperationExceedsPolicy(record.pending.op))
-        .toList(growable: false);
+    final candidates = _backgroundBatches(
+      accountId,
+      ignoreBackoff: true,
+      now: now,
+    ).expand((batch) => batch).toList(growable: false);
     if (candidates.isEmpty) return;
     final nextAttempt = candidates
         .map(_nextAttemptAt)
@@ -2859,18 +3215,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     if (_isDisposed) return;
     final accountId = state.accountId;
     if (accountId == null) return;
-    final activeStrategyId = state.strategyPublicId;
     final now = DateTime.now();
-    final candidates = _recordsByStorageKey.values
-        .where((record) =>
-            record.accountId == accountId &&
-            record.strategyPublicId != activeStrategyId &&
-            (record.status == DurableOutboxStatus.queued ||
-                record.status == DurableOutboxStatus.inFlight) &&
-            !_uncertainDurableRecords.contains(record.storageKey) &&
-            !cloudOperationExceedsPolicy(record.pending.op) &&
-            (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
-        .toList(growable: false)
+    final candidates = _backgroundBatches(
+      accountId,
+      ignoreBackoff: ignoreBackoff,
+      now: now,
+    ).expand((batch) => batch).toList(growable: false)
       ..sort((left, right) => left.updatedAt.compareTo(right.updatedAt));
     if (candidates.isEmpty) {
       _scheduleBackgroundDrain();
@@ -2882,6 +3232,34 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       isBackground: true,
       ignoreBackoff: ignoreBackoff,
     );
+  }
+
+  /// The batch each strategy other than the active one would send now
+  /// (see [_selectBatch]), for those with one. Work that waits on other
+  /// work, like a page change behind one refused, is not here, so the
+  /// drain does not spin on it.
+  Iterable<List<DurableOutboxRecord>> _backgroundBatches(
+    String accountId, {
+    required bool ignoreBackoff,
+    required DateTime now,
+  }) {
+    final activeStrategyId = state.strategyPublicId;
+    final strategies = {
+      for (final record in _recordsByStorageKey.values)
+        if (record.accountId == accountId &&
+            record.strategyPublicId != activeStrategyId &&
+            _sendableNow(record, ignoreBackoff: ignoreBackoff, now: now))
+          record.strategyPublicId,
+    };
+    return [
+      for (final strategyPublicId in strategies)
+        _selectBatch(
+          accountId: accountId,
+          strategyPublicId: strategyPublicId,
+          ignoreBackoff: ignoreBackoff,
+          now: now,
+        ),
+    ].where((batch) => batch.isNotEmpty);
   }
 
   DateTime _nextAttemptAt(DurableOutboxRecord record) {
@@ -3143,6 +3521,48 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       await _putRecord(record.copyWith(
         pending: PendingOp(
           op: _atStrategyRevision(pending.op, revision),
+          clientId: pending.clientId,
+          attempts: pending.attempts,
+          lastAttemptAt: pending.lastAttemptAt,
+        ),
+        updatedAt: DateTime.now(),
+      ));
+    }
+  }
+
+  /// [sent], this device's own change to a page's name or side, landed and
+  /// moved the page from [revision] - 1 to [revision]. Another such change
+  /// to the page made against [revision] - 1 knows everything in
+  /// [revision], so it now waits against [revision], as
+  /// [_advanceOwnStrategyRevision] does for the strategy: a rename and a
+  /// side change made offline both land.
+  Future<void> _advanceOwnPageRevision(
+    DurableOutboxRecord sent,
+    int revision,
+  ) async {
+    final pageId = sent.pending.op.pagePublicId;
+    final waiting = _recordsByStorageKey.values
+        .where((record) =>
+            record.accountId == sent.accountId &&
+            record.strategyPublicId == sent.strategyPublicId &&
+            record.storageKey != sent.storageKey &&
+            (record.status == DurableOutboxStatus.queued ||
+                record.status == DurableOutboxStatus.paused) &&
+            record.pending.op is PagePatchOp &&
+            record.pending.op.pagePublicId == pageId &&
+            record.pending.op.expectedRevision == revision - 1)
+        .toList(growable: false);
+    for (final record in waiting) {
+      final pending = record.pending;
+      final op = pending.op as PagePatchOp;
+      await _putRecord(record.copyWith(
+        pending: PendingOp(
+          op: PagePatchOp(
+            opId: op.opId,
+            pagePublicId: op.pagePublicId,
+            payload: op.payload,
+            expectedPageRevision: revision,
+          ),
           clientId: pending.clientId,
           attempts: pending.attempts,
           lastAttemptAt: pending.lastAttemptAt,

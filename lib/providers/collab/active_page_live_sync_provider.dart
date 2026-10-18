@@ -529,6 +529,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       if (revision == null) {
         continue;
       }
+      if (key.kind == EntitySyncKeyKind.pageChange) {
+        _followOwnRename(intent.op, revision, overlays, remoteRevisions);
+        continue;
+      }
       final drawnLayer = _landDrawnWork(
         key,
         intent.op,
@@ -586,6 +590,32 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       remoteBaseRevisionByEntity: remoteRevisions,
       lastAckBatch: intents,
     );
+  }
+
+  /// [op], a page change of this device's, landed at [revision]. A rename
+  /// moves on the revision of the page row whose side the canvas tracks
+  /// (its descriptor), and nothing the canvas draws. A side the canvas
+  /// holds at the revision just before knows everything in [revision], so
+  /// it follows onto it, as the queue moves its waiting side change on;
+  /// held at any older revision, it stays, so a teammate's side change in
+  /// between is still checked. Other page changes are not the canvas's.
+  void _followOwnRename(
+    StrategyOp op,
+    int revision,
+    Map<EntitySyncKey, ActivePageOverlayEntry> overlays,
+    Map<EntitySyncKey, int> remoteRevisions,
+  ) {
+    if (op is! PagePatchOp) return;
+    final key = EntitySyncKey.pageDescriptor(op.pagePublicId);
+    final base = _hydratedBaseByEntityKey[key];
+    if (base != null && base.revision == revision - 1) {
+      _hydratedBaseByEntityKey[key] = base.copyWith(revision: revision);
+      remoteRevisions[key] = revision;
+    }
+    final overlay = overlays[key];
+    if (overlay != null && overlay.baseRevision == revision - 1) {
+      overlays[key] = overlay.copyWith(baseRevision: revision);
+    }
   }
 
   /// What the canvas drew [key] as once [op], outbox work it drew, lands:
