@@ -224,6 +224,20 @@ StrategyPatchOp? waitingStrategyPatch(
   return waiting is StrategyPatchOp ? waiting : null;
 }
 
+/// Whether a strategy-level change to [strategyPublicId] that [queue] can
+/// no longer take back may still land: one being sent, or one waiting
+/// behind another. A canvas set back to the server's map and theme then
+/// needs that written too, or the change landing undoes it.
+bool strategyPatchMayLand(
+  StrategyOpQueueState queue,
+  String strategyPublicId,
+) {
+  if (queue.strategyPublicId != strategyPublicId) return false;
+  const key = EntitySyncKey.strategy();
+  return queue.inFlightByEntityKey.containsKey(key) ||
+      queue.successorByEntityKey.containsKey(key);
+}
+
 /// [header] as this device draws the strategy: the server's, with the
 /// strategy-level change still waiting in the outbox on top, so a map or
 /// theme changed offline shows until it lands (see waitingStrategyPatch).

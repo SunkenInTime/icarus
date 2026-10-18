@@ -385,7 +385,11 @@ class CloudStrategyPageSource implements StrategyPageSource {
     final drawn = drawnStrategyHeader(ref, header);
     if (!identical(drawn, header) && shows(drawn)) return;
 
-    if (shows(header)) {
+    // Shown as the server has it: whatever waits can be dropped, unless it
+    // may still land and undo that.
+    if (shows(header) &&
+        !strategyPatchMayLand(
+            ref.read(strategyOpQueueProvider), header.publicId)) {
       await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
             entityKey: const EntitySyncKey.strategy(),
             desiredOp: null,

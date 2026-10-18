@@ -587,7 +587,10 @@ class StrategyProvider extends Notifier<StrategyState> {
           snapshot.header.themeOverridePalette,
           localThemeOverridePalette,
         );
-    if (matchesRemote) {
+    // A change that may still land would undo the canvas matching the
+    // server, so the canvas's values are written behind it.
+    if (matchesRemote &&
+        !strategyPatchMayLand(ref.read(strategyOpQueueProvider), strategyId)) {
       return null;
     }
 

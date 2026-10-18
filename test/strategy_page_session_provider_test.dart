@@ -8197,6 +8197,57 @@ void main() {
       expect(container.read(strategyConflictProvider), hasLength(1));
     });
 
+    test(
+        'a lineup edited twice while the first edit is sent, then set back, '
+        'stays set back', () async {
+      final page = _page('page-1', 0);
+      server =
+          _FakeServer(page.publicId, lineups: [_lineup(page.publicId, 'a')]);
+      final hold = Completer<void>();
+      final (container, batches) = await openOnRealQueue(page, hold: hold);
+      final key = _lineupKey(page.publicId, 'a');
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      LineUpLink onScreen() =>
+          container.read(lineUpProvider).linkById('link-a')!;
+      final original = onScreen().notes;
+
+      container
+          .read(lineUpProvider.notifier)
+          .updateLink(onScreen().copyWith(notes: 'one'));
+      await _until(() => queueState().inFlightByEntityKey.containsKey(key));
+      container
+          .read(lineUpProvider.notifier)
+          .updateLink(onScreen().copyWith(notes: 'two'));
+      await _until(() => queueState().successorByEntityKey.containsKey(key));
+      // Back to what the server has: the edit waiting behind the one being
+      // sent must not land and undo it.
+      container
+          .read(lineUpProvider.notifier)
+          .updateLink(onScreen().copyWith(notes: original));
+      String? waitingNotes() => _onlyLinkIn(
+          (queueState().successorByEntityKey[key]!.pending.op as LineupPatchOp)
+              .payload)['notes'] as String?;
+      await _until(() => waitingNotes() == original);
+      hold.complete();
+      await _until(() => queueState().pending.isEmpty);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      expect(
+        [
+          for (final op in sentFor(batches, key))
+            _onlyLinkIn((op as LineupPatchOp).payload)['notes'],
+        ],
+        ['one', original],
+      );
+      expect(_onlyLinkIn(server.row('link-a').payload)['notes'], original);
+      expect(onScreen().notes, original);
+      expect(queueState().attentionByEntityKey, isEmpty);
+      expect(container.read(strategyConflictProvider), isEmpty);
+    });
+
     /// Every id in [graph]: its lineups, spots, and the agent and ability on
     /// each spot.
     Set<String> idsIn(LineUpGraph graph) => {
@@ -9083,6 +9134,195 @@ void main() {
         for (var i = 0; i < 10; i++) {
           await _settle();
         }
+      });
+    });
+
+    group('a map or theme set back while its change is being sent', () {
+      const defaultTheme = 'immutable-default-map-theme';
+      const valorant = MapThemeProfilesProvider.immutableValorantProfileId;
+
+      /// Opens a page online, every batch held until [hold] completes.
+      Future<(ProviderContainer, List<List<StrategyOp>>)> open(
+        Completer<void> hold,
+      ) async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId);
+        final opened = await openOnRealQueue(page,
+            hold: hold, themeProfileId: defaultTheme);
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        return opened;
+      }
+
+      Future<void> waitForStrategySend(List<List<StrategyOp>> batches) =>
+          _until(() =>
+              batches.any((batch) => batch.any((op) => op is StrategyPatchOp)));
+
+      Future<void> settle() async {
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      }
+
+      /// Waits until nothing is left to send: landed, or refused.
+      Future<void> settled(ProviderContainer container) async {
+        await _until(() {
+          final queue = container.read(strategyOpQueueProvider);
+          return queue.queuedByEntityKey.isEmpty &&
+              queue.inFlightByEntityKey.isEmpty &&
+              queue.successorByEntityKey.isEmpty;
+        });
+        await settle();
+      }
+
+      void expectNothingToAnswer(ProviderContainer container) {
+        expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
+            isEmpty);
+        expect(container.read(strategyConflictProvider), isEmpty);
+      }
+
+      test('with a save after each change, the map set back stays', () async {
+        final hold = Completer<void>();
+        final (container, batches) = await open(hold);
+        container.read(mapProvider.notifier).updateMap(MapValue.bind);
+        unawaited(container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy'));
+        await waitForStrategySend(batches);
+        container.read(mapProvider.notifier).updateMap(MapValue.ascent);
+        await settle();
+        unawaited(container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy'));
+        await settle();
+
+        hold.complete();
+        await settled(container);
+
+        expect(
+          [for (final op in server.strategyPatches) op.payload['mapData']],
+          ['bind', 'ascent'],
+        );
+        expect((server.strategyMap, server.strategyRevision), ('ascent', 3));
+        expect(container.read(mapProvider).currentMap, MapValue.ascent);
+        expectNothingToAnswer(container);
+      });
+
+      for (final through in [
+        <MapValue>[],
+        [MapValue.haven]
+      ]) {
+        test(
+            'changed${through.isEmpty ? '' : ' twice'} and quickly set back, '
+            'the map stays as set back', () async {
+          final hold = Completer<void>();
+          final (container, batches) = await open(hold);
+          container.read(mapProvider.notifier).updateMap(MapValue.bind);
+          await waitForStrategySend(batches);
+          for (final map in through) {
+            container.read(mapProvider.notifier).updateMap(map);
+            await _until(() => container
+                .read(strategyOpQueueProvider)
+                .successorByEntityKey
+                .containsKey(const EntitySyncKey.strategy()));
+          }
+          container.read(mapProvider.notifier).updateMap(MapValue.ascent);
+          await settle();
+
+          hold.complete();
+          await settled(container);
+          showServer();
+          await settle();
+
+          expect(
+            [for (final op in server.strategyPatches) op.payload['mapData']],
+            ['bind', 'ascent'],
+          );
+          expect((server.strategyMap, server.strategyRevision), ('ascent', 3));
+          expect(container.read(mapProvider).currentMap, MapValue.ascent);
+          expectNothingToAnswer(container);
+        });
+      }
+
+      test('changed and quickly set back, the theme stays as set back',
+          () async {
+        final hold = Completer<void>();
+        final (container, batches) = await open(hold);
+        container.read(strategyThemeProvider.notifier).setProfile(valorant);
+        await waitForStrategySend(batches);
+        container.read(strategyThemeProvider.notifier).setProfile(defaultTheme);
+        await settle();
+
+        hold.complete();
+        await settled(container);
+        showServer();
+        await settle();
+
+        expect(
+          (server.strategyThemeProfileId, server.strategyRevision),
+          (defaultTheme, 3),
+        );
+        expect(container.read(strategyThemeProvider).profileId, defaultTheme);
+        expectNothingToAnswer(container);
+      });
+
+      test(
+          "a teammate's map landing first refuses the change being sent, and "
+          'the user is asked', () async {
+        final hold = Completer<void>();
+        final (container, batches) = await open(hold);
+        container.read(mapProvider.notifier).updateMap(MapValue.bind);
+        await waitForStrategySend(batches);
+        container.read(mapProvider.notifier).updateMap(MapValue.ascent);
+        await settle();
+        server.teammateSetsMap('haven');
+
+        hold.complete();
+        await _until(() => container
+            .read(strategyOpQueueProvider)
+            .attentionByEntityKey
+            .containsKey(const EntitySyncKey.strategy()));
+        await settle();
+
+        expect((server.strategyMap, server.strategyRevision), ('haven', 2));
+        expect(
+          [for (final op in server.strategyPatches) op.payload['mapData']],
+          ['bind'],
+        );
+      });
+
+      test(
+          "a teammate's map landing after this device's change refuses the "
+          'one setting it back, and the user is asked', () async {
+        final hold = Completer<void>();
+        final (container, batches) = await open(hold);
+        final answer = repository.holdAnswer = Completer<void>();
+        container.read(mapProvider.notifier).updateMap(MapValue.bind);
+        await waitForStrategySend(batches);
+        container.read(mapProvider.notifier).updateMap(MapValue.ascent);
+        await settle();
+
+        hold.complete();
+        await _until(() => server.strategyRevision == 2);
+        // Before this device hears its change landed, a teammate moves the
+        // strategy to Haven.
+        server.teammateSetsMap('haven');
+        answer.complete();
+        await _until(() => container
+            .read(strategyOpQueueProvider)
+            .attentionByEntityKey
+            .containsKey(const EntitySyncKey.strategy()));
+        await settle();
+
+        expect((server.strategyMap, server.strategyRevision), ('haven', 3));
+        expect(
+          [
+            for (final op in server.strategyPatches)
+              (op.payload['mapData'], op.expectedRevision),
+          ],
+          [('bind', 1), ('ascent', 2)],
+        );
       });
     });
 
