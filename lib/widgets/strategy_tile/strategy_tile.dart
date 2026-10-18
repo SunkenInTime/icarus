@@ -6,6 +6,8 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -197,6 +199,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     // Moving to the cloud, it can't be opened, changed or moved elsewhere.
     final isMoving = !_isCloud &&
         ref.watch(movingToCloudProvider.select((ids) => ids.contains(id)));
+    final needsConnection = _needsConnection;
 
     final tile = DragTarget<GridItem>(
       onWillAcceptWithDetails: (details) {
@@ -327,7 +330,9 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                           borderRadius: strategyTileInnerRadius,
                                           overlay: isMoving
                                               ? const MovingToCloudBadge()
-                                              : widget.showDeviceBadge
+                                              : needsConnection
+                                                  ? const NeedsConnectionBadge()
+                                                  : widget.showDeviceBadge
                                                   ? const DeviceOnlyBadge()
                                                   : viewData.sharedBadge,
                                         ),
@@ -415,7 +420,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     );
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 200),
-      opacity: isMoving ? movingToCloudOpacity : 1,
+      // Dimmed like a move: readable, plainly not available.
+      opacity: isMoving || needsConnection ? movingToCloudOpacity : 1,
       child: tile,
     );
   }
@@ -526,8 +532,23 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     ];
   }
 
+  /// Offline, a cloud strategy this computer keeps no copy of can't open.
+  bool get _needsConnection =>
+      _isCloud &&
+      ref.watch(cloudOfflineProvider) &&
+      !ref.watch(strategyKeptOfflineProvider(_strategyId));
+
   Future<void> _openStrategy(BuildContext context) async {
     if (_isLoading) {
+      return;
+    }
+    if (_isCloud &&
+        ref.read(cloudOfflineProvider) &&
+        !ref.read(strategyKeptOfflineProvider(_strategyId))) {
+      Settings.showToast(
+        message: strategyNeedsConnectionMessage,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
       return;
     }
 

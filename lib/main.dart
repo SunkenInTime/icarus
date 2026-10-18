@@ -33,6 +33,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -466,6 +467,8 @@ class _MyAppState extends ConsumerState<MyApp> {
     ref.read(moveToCloudProvider);
     // Sends replay captures the app quit before saving.
     ref.read(replayCaptureQueueProvider);
+    // Keeps cloud strategies on this computer for opening offline.
+    ref.read(strategyCopyRefresherProvider);
 
     _discordPresence = DiscordPresenceWorker();
     _discordStrategySub = ref.listenManual(

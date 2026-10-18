@@ -204,9 +204,13 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       // Refused: the access-lost dialog says so over the skeleton, and
       // leads out (see StrategyAccessWatcher).
       if (ref.read(strategyAccessLostProvider)) return;
+      final notKept =
+          ref.read(remoteEditorSnapshotProvider).error is StrategyNotKeptOffline;
       if (mounted) {
         Settings.showToast(
-          message: 'Could not load strategy.',
+          message: notKept
+              ? strategyNeedsConnectionMessage
+              : 'Could not load strategy.',
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
         Navigator.maybePop(context);

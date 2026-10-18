@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/collab/field_merge.dart';
+import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/sort_index_order.dart';
 
 const currentCloudProtocolVersion = 5;
@@ -1507,10 +1508,20 @@ class RemoteStrategyShell {
   const RemoteStrategyShell({
     required this.header,
     required this.pages,
+    this.fromCopy = false,
+    this.serverAnswer,
   });
 
   final RemoteStrategyHeader header;
   final List<RemotePage> pages;
+
+  /// Read from the copy on this computer (see CloudStrategyCopyStore)
+  /// because the server could not answer, not from the server.
+  final bool fromCopy;
+
+  /// The server's answer this was read from, in the shape it was sent, for
+  /// the copy on this computer to keep. Null when it is not a server answer.
+  final ConvexObject? serverAnswer;
 }
 
 class RemotePageSnapshot {
@@ -1520,6 +1531,8 @@ class RemotePageSnapshot {
     required this.elements,
     required this.lineups,
     required this.assetsById,
+    this.fromCopy = false,
+    this.serverAnswer,
   });
 
   final RemotePage page;
@@ -1527,6 +1540,12 @@ class RemotePageSnapshot {
   final List<RemoteElement> elements;
   final List<RemoteLineup> lineups;
   final Map<String, RemoteImageAsset> assetsById;
+
+  /// See [RemoteStrategyShell.fromCopy].
+  final bool fromCopy;
+
+  /// See [RemoteStrategyShell.serverAnswer].
+  final ConvexObject? serverAnswer;
 }
 
 /// The bounded live editor state: one strategy shell and at most one page body.
@@ -1581,6 +1600,7 @@ class RemoteFullStrategySnapshot {
     required this.elementsByPage,
     required this.lineupsByPage,
     required this.assetsById,
+    this.serverAnswer,
   });
 
   final RemoteStrategyHeader header;
@@ -1588,6 +1608,9 @@ class RemoteFullStrategySnapshot {
   final Map<String, List<RemoteElement>> elementsByPage;
   final Map<String, List<RemoteLineup>> lineupsByPage;
   final Map<String, RemoteImageAsset> assetsById;
+
+  /// See [RemoteStrategyShell.serverAnswer].
+  final ConvexObject? serverAnswer;
 
   static Map<String, List<RemoteElement>> groupElementsByPage(
     Iterable<RemoteElement> elements,

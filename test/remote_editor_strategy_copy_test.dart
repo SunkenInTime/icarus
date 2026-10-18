@@ -1,0 +1,278 @@
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_strategy_copy_box.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/generated/generated.dart';
+import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_copy_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'collab/strategy_copy_fixtures.dart';
+
+const _scope = StrategyCopyScope(
+  deploymentUrl: 'https://one.convex.cloud',
+  accountId: 'account-a',
+);
+
+final _offline = StateProvider<bool>((ref) => false);
+
+void main() {
+  late _Transport transport;
+  late MemoryCloudStrategyCopyStore store;
+  late ProviderContainer container;
+  late _RecordingRefresher refresher;
+
+  setUp(() {
+    transport = _Transport();
+    store = MemoryCloudStrategyCopyStore();
+    container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(
+        ConvexStrategyRepository(IcarusConvexApi(transport)),
+      ),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+      convexConnectionSnapshotProvider
+          .overrideWith((ref) => !ref.watch(_offline)),
+      cloudOfflineProvider.overrideWith((ref) => ref.watch(_offline)),
+      cloudStrategyCopyStoreProvider.overrideWithValue(store),
+      strategyCopyScopeProvider.overrideWithValue(_scope),
+      strategyCopyRefresherProvider.overrideWith(_RecordingRefresher.new),
+    ]);
+    refresher = container.read(strategyCopyRefresherProvider.notifier)
+        as _RecordingRefresher;
+  });
+  tearDown(() => container.dispose());
+
+  RemoteEditorSnapshotNotifier remote() =>
+      container.read(remoteEditorSnapshotProvider.notifier);
+
+  Future<void> openOnline() async {
+    await container.read(remoteEditorSnapshotProvider.future);
+    await remote().openStrategy('strategy', activePagePublicId: 'a');
+    await _settle();
+  }
+
+  test(
+      'every live answer the editor reads is kept, and a live open reads '
+      'the whole strategy', () async {
+    await openOnline();
+    expect(store.readShell(_scope, 'strategy')?.pages, hasLength(3));
+    expect(store.readPage(_scope, 'strategy', 'a'), isNotNull);
+    expect(refresher.kept, ['strategy']);
+
+    // A teammate's edit to page a arrives live.
+    transport.pushPage('a', [agentRow('agent', 'a', revision: 2, x: 9)]);
+    await _settle();
+    expect(
+      store.readPage(_scope, 'strategy', 'a')!.elements.single.revision,
+      2,
+    );
+
+    // Switching to page b reads it, and keeps it.
+    final b = await remote().fetchPage('b');
+    expect(b.fromCopy, isFalse);
+    await remote().setActivePage('b', fetched: b);
+    expect(store.readPage(_scope, 'strategy', 'b'), isNotNull);
+  });
+
+  test('offline, a kept strategy opens from the copy and switches pages',
+      () async {
+    await openOnline();
+    await remote().setActivePage('b');
+    await remote().setActivePage('c');
+    remote().clear();
+
+    container.read(_offline.notifier).state = true;
+    transport.unanswered = true;
+    await remote().openStrategy('strategy', activePagePublicId: 'a');
+
+    final opened = container.read(remoteEditorSnapshotProvider).valueOrNull!;
+    expect(opened.shell.fromCopy, isTrue);
+    expect(opened.activePage!.fromCopy, isTrue);
+    expect(opened.activePage!.page.publicId, 'a');
+    expect(opened.activePage!.elements.single.publicId, 'agent');
+    expect(refresher.kept, ['strategy'], reason: 'no full read offline');
+
+    for (final pageId in ['b', 'c']) {
+      final page = await remote().fetchPage(pageId);
+      expect(page.fromCopy, isTrue);
+      await remote().setActivePage(pageId, fetched: page);
+      final shown = container.read(remoteEditorSnapshotProvider).valueOrNull!;
+      expect(shown.activePage?.page.publicId, pageId);
+    }
+  });
+
+  test('offline, a strategy never kept says it needs a connection', () async {
+    await container.read(remoteEditorSnapshotProvider.future);
+    container.read(_offline.notifier).state = true;
+    await remote().openStrategy('strategy', activePagePublicId: 'a');
+
+    expect(
+      container.read(remoteEditorSnapshotProvider).error,
+      isA<StrategyNotKeptOffline>(),
+    );
+    expect(transport.reads, isEmpty);
+  });
+
+  test('a read the server never answers falls back to the copy', () async {
+    await openOnline();
+    remote().clear();
+
+    // The socket still says connected, but the read times out.
+    transport.unanswered = true;
+    await remote().openStrategy('strategy', activePagePublicId: 'a');
+    final opened = container.read(remoteEditorSnapshotProvider).valueOrNull!;
+    expect(opened.shell.fromCopy, isTrue);
+    expect(opened.activePage!.fromCopy, isTrue);
+  });
+
+  test('a refusal is not read as offline', () async {
+    await openOnline();
+    remote().clear();
+
+    transport.refusal = const ConvexTransportError(
+      rawCode: 'INTERNAL',
+      message: 'boom',
+    );
+    await remote().openStrategy('strategy', activePagePublicId: 'a');
+    expect(container.read(remoteEditorSnapshotProvider).valueOrNull, isNull);
+  });
+
+  test('back online, the live answer replaces the copy', () async {
+    await openOnline();
+    remote().clear();
+    container.read(_offline.notifier).state = true;
+    transport.unanswered = true;
+    await remote().openStrategy('strategy', activePagePublicId: 'a');
+    expect(
+      container.read(remoteEditorSnapshotProvider).valueOrNull!.shell.fromCopy,
+      isTrue,
+    );
+
+    transport.unanswered = false;
+    transport.pageElements['a'] = [agentRow('agent', 'a', revision: 3)];
+    container.read(_offline.notifier).state = false;
+    await _settle();
+
+    final live = container.read(remoteEditorSnapshotProvider).valueOrNull!;
+    expect(live.shell.fromCopy, isFalse);
+    expect(live.activePage!.fromCopy, isFalse);
+    expect(live.activePage!.elements.single.revision, 3);
+  });
+}
+
+Future<void> _settle() async {
+  for (var i = 0; i < 10; i += 1) {
+    await Future<void>.delayed(Duration.zero);
+  }
+}
+
+/// Answers a three-page strategy; page a holds one agent.
+final class _Transport implements ConvexTransport {
+  final reads = <String>[];
+  final pageElements = <String, List<Map<String, Object?>>>{
+    'a': [agentRow('agent', 'a')],
+  };
+  final _pageStreams = <String, StreamController<ConvexValue>>{};
+  bool unanswered = false;
+  ConvexTransportError? refusal;
+
+  void pushPage(String pageId, List<Map<String, Object?>> elements) {
+    pageElements[pageId] = elements;
+    _pageStreams[pageId]?.add(_page(pageId));
+  }
+
+  ConvexObject _page(String pageId) =>
+      pageAnswer(pageId, elements: pageElements[pageId] ?? const []);
+
+  ConvexValue _answer(String name, ConvexObject args) {
+    if (name == 'strategy:getShell') return shellAnswer(['a', 'b', 'c']);
+    if (name == 'page:getSnapshot') {
+      return _page(args.value['pagePublicId']!.toDart() as String);
+    }
+    throw UnimplementedError(name);
+  }
+
+  @override
+  Future<ConvexValue> query(String name, ConvexObject args) async {
+    reads.add(name);
+    if (refusal case final error?) throw error;
+    if (unanswered) throw TimeoutException('no answer');
+    return _answer(name, args);
+  }
+
+  @override
+  Stream<ConvexValue> subscribe(String name, ConvexObject args) {
+    if (name == 'page:getSnapshot') {
+      final pageId = args.value['pagePublicId']!.toDart() as String;
+      return (_pageStreams[pageId] ??= StreamController.broadcast()).stream;
+    }
+    return const Stream.empty();
+  }
+
+  @override
+  Future<ConvexValue> mutation(String name, ConvexObject args) =>
+      throw UnimplementedError();
+
+  @override
+  Future<ConvexValue> action(String name, ConvexObject args) =>
+      throw UnimplementedError();
+}
+
+class _RecordingRefresher extends StrategyCopyRefresher {
+  final kept = <String>[];
+
+  @override
+  void build() {}
+
+  @override
+  void keepOpenedStrategy(String strategyId) => kept.add(strategyId);
+}
+
+class _ReadyAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: User(
+          id: 'account-a',
+          appMetadata: const <String, dynamic>{},
+          userMetadata: const <String, dynamic>{},
+          aud: 'authenticated',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        ),
+      );
+}
+
+class _IdleOpQueue extends StrategyOpQueueNotifier {
+  @override
+  StrategyOpQueueState build() => const StrategyOpQueueState(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy',
+        clientId: 'client',
+        durableLoaded: true,
+      );
+
+  @override
+  void setActiveStrategy(
+    String? strategyPublicId, {
+    required String? accountId,
+  }) {}
+}
+
+class _IdleMediaQueue extends CloudMediaUploadQueueNotifier {
+  @override
+  CloudMediaUploadQueueState build() =>
+      const CloudMediaUploadQueueState(jobs: [], isProcessing: false);
+}
