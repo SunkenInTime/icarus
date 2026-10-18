@@ -551,6 +551,12 @@ class AuthProvider extends Notifier<AppAuthState> {
   /// [_maxSlowServerRetries] the session is treated as refused, as today.
   int _slowServerRetries = 0;
   static const _maxSlowServerRetries = 3;
+
+  /// Whether Supabase's last token refresh couldn't reach it. Convex can't
+  /// confirm a session whose token can't be refreshed, so a timeout then is
+  /// the outage, not a refusal, however many times it repeats. Any word
+  /// from Supabase (a new session, a refresh) ends it.
+  bool _supabaseUnreachable = false;
   StreamSubscription<bool>? _offlineConnectionSub;
 
   late final AuthProviderSupabaseApi _supabaseApi;
@@ -629,6 +635,9 @@ class AuthProvider extends Notifier<AppAuthState> {
       if (next.convexAuthStatus != ConvexAuthStatus.offline) {
         _stopOfflineRetries();
       }
+      if (next.convexAuthStatus == ConvexAuthStatus.ready) {
+        _supabaseUnreachable = false;
+      }
       // The account that was signed in is gone: signed out here, signed out
       // by Supabase (a revoked or expired refresh token), or replaced by
       // another account. What this computer kept of its library goes too.
@@ -665,6 +674,7 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   void _handleSupabaseAuthStateChange(AuthState event) {
+    _supabaseUnreachable = false;
     final currentSession = event.session;
     // Supabase replays the session it restored at startup to every new
     // listener as `initialSession`. [build] already started Convex setup for
@@ -714,6 +724,7 @@ class AuthProvider extends Notifier<AppAuthState> {
     if (!kIsWeb &&
         _supabaseApi.currentSession?.user.id != null &&
         (error is AuthRetryableFetchException || error is TimeoutException)) {
+      _supabaseUnreachable = true;
       if (state.convexAuthStatus == ConvexAuthStatus.configuring) {
         _enterOffline();
       }
@@ -1497,12 +1508,17 @@ class AuthProvider extends Notifier<AppAuthState> {
 
       // Desktop only: the web app needs the network to load at all, so a
       // failed setup there stays the incident it always was.
+      // Judged by where the session is now, not where it was when this
+      // setup began: the session may have gone offline meanwhile (Supabase
+      // unreachable), and then a timeout is more of the same.
+      final offlineNow = state.convexAuthStatus == ConvexAuthStatus.offline;
       final offlineFailure = !kIsWeb &&
           _supabaseApi.currentSession?.user.id != null &&
           (_isOfflineFailure(error) ||
-              (quietRetry &&
+              (offlineNow &&
                   error is TimeoutException &&
-                  _slowServerRetries++ < _maxSlowServerRetries));
+                  (_supabaseUnreachable ||
+                      _slowServerRetries++ < _maxSlowServerRetries)));
       // An automatic retry that is still offline was reported when the
       // session first went offline.
       if (!offlineFailure ||

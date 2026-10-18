@@ -141,9 +141,30 @@ abstract class _KeyedCloudLibraryCopyStore implements CloudLibraryCopyStore {
   /// The order of the last answer written to each record in this run.
   final _writtenAnswerOrder = <String, int>{};
 
-  /// Whether an answer of [answerOrder] may replace [key]'s record: never
-  /// when a newer answer was written there already.
-  bool _admits(String key, int answerOrder) {
+  /// Per scope, the answer order taken when its copy was deleted. Every
+  /// answer that arrived before the deletion is older, so none of them can
+  /// write the signed-out account's library back (a list disposed after the
+  /// sign-out rewrites its last answer); answers after a later sign-in are
+  /// newer and land.
+  final _deletedAtOrder = <String, int>{};
+
+  /// The writes still to run, one at a time in the order they were asked
+  /// for, so a write's order check, its put and its pruning happen with no
+  /// other write in between.
+  Future<void> _writes = Future<void>.value();
+
+  Future<void> _serially(Future<void> Function() write) {
+    final run = _writes.then((_) => write());
+    _writes = run.then((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  /// Whether an answer of [answerOrder] may replace [key]'s record in
+  /// [scope]: never when a newer answer was written there already, or the
+  /// scope's copy was deleted after the answer arrived.
+  bool _admits(CloudCopyScope scope, String key, int answerOrder) {
+    final deletedAt = _deletedAtOrder[scope.storageKeyPrefix];
+    if (deletedAt != null && answerOrder < deletedAt) return false;
     final written = _writtenAnswerOrder[key];
     if (written != null && answerOrder < written) return false;
     _writtenAnswerOrder[key] = answerOrder;
@@ -182,32 +203,33 @@ abstract class _KeyedCloudLibraryCopyStore implements CloudLibraryCopyStore {
     List<CloudFolderEntry> folders, {
     required int answerOrder,
     required DateTime matchedAt,
-  }) async {
-    final key = scope.storageKeyPrefix + _foldersKey;
-    if (!_admits(key, answerOrder)) return;
-    await _put(
-      key,
-      _record(
-        scope,
-        kind: 'folders',
-        matchedAt: matchedAt,
-        entries: [
-          for (final entry in folders) cloudFolderEntryToCopyJson(entry)
-        ],
-      ),
-    );
-    final folderIds = {
-      for (final entry in folders) Uri.encodeComponent(entry.folder.id),
-    };
-    final listingsPrefix = scope.storageKeyPrefix + _strategiesKey;
-    await _deleteAll([
-      for (final key in _keys)
-        if (key.startsWith(listingsPrefix))
-          if (key.substring(key.lastIndexOf('|') + 1) case final folderId
-              when folderId.isNotEmpty && !folderIds.contains(folderId))
-            key,
-    ]);
-  }
+  }) =>
+      _serially(() async {
+        final key = scope.storageKeyPrefix + _foldersKey;
+        if (!_admits(scope, key, answerOrder)) return;
+        await _put(
+          key,
+          _record(
+            scope,
+            kind: 'folders',
+            matchedAt: matchedAt,
+            entries: [
+              for (final entry in folders) cloudFolderEntryToCopyJson(entry),
+            ],
+          ),
+        );
+        final folderIds = {
+          for (final entry in folders) Uri.encodeComponent(entry.folder.id),
+        };
+        final listingsPrefix = scope.storageKeyPrefix + _strategiesKey;
+        await _deleteAll([
+          for (final key in _keys)
+            if (key.startsWith(listingsPrefix))
+              if (key.substring(key.lastIndexOf('|') + 1) case final folderId
+                  when folderId.isNotEmpty && !folderIds.contains(folderId))
+                key,
+        ]);
+      });
 
   @override
   Future<void> writeStrategies(
@@ -216,29 +238,34 @@ abstract class _KeyedCloudLibraryCopyStore implements CloudLibraryCopyStore {
     List<CloudStrategyEntry> strategies, {
     required int answerOrder,
     required DateTime matchedAt,
-  }) async {
-    final key = scope.storageKeyPrefix + listing._storageKey;
-    if (!_admits(key, answerOrder)) return;
-    await _put(
-      key,
-      _record(
-        scope,
-        kind: 'strategies',
-        matchedAt: matchedAt,
-        entries: [
-          for (final entry in strategies) cloudStrategyEntryToCopyJson(entry),
-        ],
-      ),
-    );
-  }
+  }) =>
+      _serially(() async {
+        final key = scope.storageKeyPrefix + listing._storageKey;
+        if (!_admits(scope, key, answerOrder)) return;
+        await _put(
+          key,
+          _record(
+            scope,
+            kind: 'strategies',
+            matchedAt: matchedAt,
+            entries: [
+              for (final entry in strategies)
+                cloudStrategyEntryToCopyJson(entry),
+            ],
+          ),
+        );
+      });
 
   @override
   Future<void> deleteAccount(CloudCopyScope scope) {
     final prefix = scope.storageKeyPrefix;
-    return _deleteAll([
-      for (final key in _keys)
-        if (key.startsWith(prefix)) key,
-    ]);
+    _deletedAtOrder[prefix] = nextCloudLibraryAnswerOrder();
+    return _serially(
+      () => _deleteAll([
+        for (final key in _keys)
+          if (key.startsWith(prefix)) key,
+      ]),
+    );
   }
 
   Map<String, dynamic> _record(
@@ -313,7 +340,7 @@ class HiveCloudLibraryCopyStore extends _KeyedCloudLibraryCopyStore {
   @override
   Future<void> deleteAccount(CloudCopyScope scope) async {
     await super.deleteAccount(scope);
-    await _box.compact();
+    await _serially(_box.compact);
   }
 }
 
@@ -411,8 +438,9 @@ final cloudLibraryCopyStoreProvider = Provider<CloudLibraryCopyStore>((ref) {
 /// The deployment this build talks to, the first half of every
 /// [CloudCopyScope].
 final cloudCopyDeploymentUrlProvider = Provider<String>((ref) {
-  return CloudBuildConfig.fromEnvironment(isReleaseMode: kReleaseMode)
-      .deploymentUrl;
+  return CloudBuildConfig.fromEnvironment(
+    isReleaseMode: kReleaseMode,
+  ).deploymentUrl;
 });
 
 /// Everything kept on this computer per account, so signing out can remove
@@ -459,8 +487,9 @@ CloudFolderEntry cloudFolderEntryFromCopyJson(Map<String, dynamic> json) {
         fontPackage: null,
       ),
       color: folderColorFromWireName(json['color'] as String?),
-      customColor:
-          folderCustomColorFromCloud((json['customColor'] as num?)?.toInt()),
+      customColor: folderCustomColorFromCloud(
+        (json['customColor'] as num?)?.toInt(),
+      ),
     ),
     role: json['role'] as String,
     strategyCount: (json['strategyCount'] as num).toInt(),

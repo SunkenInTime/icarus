@@ -306,4 +306,85 @@ void main() {
     expect(store.readFolders(_scope)!.matchedAt, later);
     expect(store.readFolders(_scope)!.entries.single.folder.id, 'f1');
   });
+
+  test(
+      "after an account's copy is deleted, no answer from before can write "
+      'it back, and answers after a new sign-in can', () async {
+    const listing = CloudStrategyListing.owned(null);
+    final before = nextCloudLibraryAnswerOrder();
+    await store.writeStrategies(
+      _scope,
+      listing,
+      [_strategy('s1')],
+      answerOrder: before,
+      matchedAt: matchedAt,
+    );
+
+    await store.deleteAccount(_scope);
+    // A list disposed after the sign-out rewrites its last answer.
+    await store.writeStrategies(
+      _scope,
+      listing,
+      [_strategy('s1')],
+      answerOrder: before,
+      matchedAt: matchedAt,
+    );
+    expect(store.values, isEmpty);
+
+    await store.writeStrategies(
+      _scope,
+      listing,
+      [_strategy('s2')],
+      answerOrder: nextCloudLibraryAnswerOrder(),
+      matchedAt: matchedAt,
+    );
+    expect(
+      store.readStrategies(_scope, listing)!.entries.single.strategy.id,
+      's2',
+    );
+  });
+
+  test(
+      'an older folder tree finishing late does not prune a newer folder '
+      'list', () async {
+    // The memory store yields at every put, so unserialized writes asked
+    // for together would interleave.
+    final slow = MemoryCloudLibraryCopyStore();
+    final older = nextCloudLibraryAnswerOrder();
+    final newer = nextCloudLibraryAnswerOrder();
+    final listing = nextCloudLibraryAnswerOrder();
+    // Asked for in this order, none awaited: the older tree (without f2),
+    // the newer tree (with f2), then f2's strategy list.
+    final writes = [
+      slow.writeFolders(
+        _scope,
+        [_folder('f1')],
+        answerOrder: older,
+        matchedAt: matchedAt,
+      ),
+      slow.writeFolders(
+        _scope,
+        [_folder('f1'), _folder('f2')],
+        answerOrder: newer,
+        matchedAt: matchedAt,
+      ),
+      slow.writeStrategies(
+        _scope,
+        const CloudStrategyListing.owned('f2'),
+        [_strategy('s')],
+        answerOrder: listing,
+        matchedAt: matchedAt,
+      ),
+    ];
+    await Future.wait(writes);
+
+    expect(
+      slow.readFolders(_scope)!.entries.map((entry) => entry.folder.id),
+      ['f1', 'f2'],
+    );
+    expect(
+      slow.readStrategies(_scope, const CloudStrategyListing.owned('f2')),
+      isNotNull,
+    );
+  });
 }

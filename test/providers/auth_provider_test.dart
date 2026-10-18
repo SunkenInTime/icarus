@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
+import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -11,10 +12,14 @@ import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -1254,6 +1259,128 @@ void main() {
       expect(copy.deleted, isEmpty);
     });
   });
+
+  test(
+      'a setup already waiting when Supabase turns out unreachable keeps '
+      'retrying offline instead of ending in an incident', () async {
+    // Convex is reachable but can't confirm the session: Supabase can't
+    // refresh its token.
+    supabaseApi.currentSession = fakeSession();
+    convexApi
+      ..connected = true
+      ..reconnectResult = true
+      ..autoAuthenticateOnSetAuth = false;
+    AuthProvider.debugOfflineRetryDelay =
+        (_) => const Duration(milliseconds: 20);
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(authProvider);
+    await pumpMicrotasks();
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.configuring,
+    );
+
+    supabaseApi.emitError(AuthRetryableFetchException(message: 'offline'));
+    await pumpMicrotasks();
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.offline,
+    );
+
+    // The first setup's wait runs out, then more than the slow-server
+    // allowance of tries: still offline, never an incident.
+    await waitUntil(() => convexApi.setAuthCalls >= 7);
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.offline,
+    );
+    expect(container.read(authProvider).activeAuthIncidentId, isNull);
+
+    // Supabase answers again and Convex confirms: ready.
+    final refreshed = fakeSession(accessToken: 'refreshed');
+    supabaseApi.currentSession = refreshed;
+    convexApi.autoAuthenticateOnSetAuth = true;
+    supabaseApi.emit(AuthChangeEvent.tokenRefreshed, refreshed);
+    await waitUntil(
+      () =>
+          container.read(authProvider).convexAuthStatus ==
+          ConvexAuthStatus.ready,
+    );
+  });
+
+  group('a library list still open when the account ends', () {
+    late MemoryCloudLibraryCopyStore store;
+    late _LibraryRepository repository;
+    late ProviderContainer container;
+
+    setUp(() async {
+      supabaseApi.currentSession = fakeSession();
+      store = MemoryCloudLibraryCopyStore();
+      repository = _LibraryRepository();
+      container = ProviderContainer(overrides: [
+        cloudLibraryCopyStoreProvider.overrideWithValue(store),
+        cloudAccountCopiesProvider.overrideWith((ref) => [store]),
+        cloudCopyDeploymentUrlProvider
+            .overrideWithValue('https://example-1.convex.cloud'),
+        convexStrategyRepositoryProvider.overrideWithValue(repository),
+        convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
+      ]);
+      container.read(authProvider);
+      await pumpMicrotasks();
+      await pumpMicrotasks();
+      await container.read(convexConnectionProvider.future);
+      container.listen(cloudStrategiesProvider, (_, __) {});
+      await pumpMicrotasks();
+      repository.strategies.add([_cloudEntry('s1')]);
+      await pumpMicrotasks();
+      expect(_accountKeys(store, 'user-1'), isNotEmpty);
+    });
+
+    tearDown(() => container.dispose());
+
+    Future<void> settle() async {
+      for (var i = 0; i < 5; i++) {
+        await pumpMicrotasks();
+      }
+    }
+
+    test('does not write it back after Supabase signs it out', () async {
+      supabaseApi.currentSession = null;
+      supabaseApi.emit(AuthChangeEvent.signedOut, null);
+      await settle();
+
+      expect(_accountKeys(store, 'user-1'), isEmpty);
+    });
+
+    test('does not write it back after another account signs in', () async {
+      final other = fakeSession(userId: 'user-2', accessToken: 'other');
+      supabaseApi.currentSession = other;
+      supabaseApi.emit(AuthChangeEvent.signedIn, other);
+      await settle();
+
+      expect(_accountKeys(store, 'user-1'), isEmpty);
+    });
+
+    test('does not write it back after signing out here', () async {
+      await container.read(authProvider.notifier).signOut();
+      await settle();
+
+      expect(_accountKeys(store, 'user-1'), isEmpty);
+    });
+
+    test('keeps the account once it signs back in', () async {
+      await container.read(authProvider.notifier).signOut();
+      await settle();
+      supabaseApi.currentSession = fakeSession(accessToken: 'again');
+      supabaseApi.emit(AuthChangeEvent.signedIn, supabaseApi.currentSession);
+      await settle();
+      repository.strategies.add([_cloudEntry('s2')]);
+      await settle();
+
+      expect(_accountKeys(store, 'user-1'), isNotEmpty);
+    });
+  });
 }
 
 class _RecordingAccountCopy implements CloudAccountCopy {
@@ -1534,4 +1661,35 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   }
 
   Future<void> dispose() async {}
+}
+
+Iterable<String> _accountKeys(MemoryCloudLibraryCopyStore store, String id) =>
+    store.values.keys.where((key) => key.contains('|$id|'));
+
+CloudStrategyEntry _cloudEntry(String id) => (
+      strategy: StrategyData(
+        id: id,
+        name: 'Strategy $id',
+        mapData: MapValue.ascent,
+        versionNumber: 1,
+        lastEdited: DateTime(2026, 10, 1),
+        folderID: null,
+      ),
+      revision: 1,
+      role: 'owner',
+      attackLabel: 'Attack',
+    );
+
+class _LibraryRepository extends Fake implements ConvexStrategyRepository {
+  final strategies = StreamController<List<CloudStrategyEntry>>.broadcast();
+
+  @override
+  Stream<List<CloudFolderEntry>> watchAllFolders() => const Stream.empty();
+
+  @override
+  Stream<List<CloudStrategyEntry>> watchStrategiesForFolder(
+    String? folderPublicId, {
+    String scope = 'owned',
+  }) =>
+      strategies.stream;
 }
