@@ -225,6 +225,38 @@ void main() {
     expect(server.page('page-2').trashed, isTrue);
   });
 
+  test(
+      'a copy on the server waits for every edit made on its source page '
+      'before "+", even when they take more than one batch', () async {
+    final notifier = open();
+    for (var i = 0; i < 41; i++) {
+      await notifier.enqueue(ElementPatchOp(
+        opId: 'before-$i',
+        elementPublicId: 'element-$i',
+        pagePublicId: 'page-1',
+        payload: const {'value': 'made before +'},
+        expectedElementRevision: 1,
+      ));
+    }
+    await notifier.enqueue(const PageAddOp(
+      opId: 'copy',
+      pagePublicId: 'page-copy',
+      payload: {'name': 'Copy', 'isAutoNamed': false},
+      sortIndex: 3,
+      expectedStrategyRevision: 1,
+      copyContentFromPagePublicId: 'page-1',
+    ));
+
+    await reconnectAndSend(notifier);
+
+    final sent =
+        server.calls.expand((ops) => ops).map((op) => op.opId).toList();
+    expect(server.calls.length, greaterThan(1),
+        reason: 'the edits take more than one batch');
+    expect(sent.last, 'copy');
+    expect(sent.where((id) => id.startsWith('before-')), hasLength(41));
+  });
+
   /// The add the "+" button makes: a new page after the others, made
   /// against the strategy revision the pages bar was drawn at.
   PageAddOp add(String pageId, {required int at, required int revision}) =>

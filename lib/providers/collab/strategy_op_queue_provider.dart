@@ -2255,13 +2255,22 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       selected.add(candidate);
     }
     if (room == 1 && fits(next!)) {
-      final pageWork = nextOp is PageDeleteOp
-          ? records.where((record) =>
+      // A delete takes its page's last edits to the trash, and a copy on the
+      // server takes its source page as it is then: either goes only once
+      // all of that page's waiting work is in this batch ahead of it.
+      final workPage = switch (nextOp) {
+        PageDeleteOp() => nextPage,
+        PageAddOp(:final copyContentFromPagePublicId) =>
+          copyContentFromPagePublicId,
+        _ => null,
+      };
+      final pageWork = workPage == null
+          ? const <DurableOutboxRecord>[]
+          : records.where((record) =>
               !_isPageChange(record) &&
-              record.entityKey.pageId == nextPage &&
+              record.entityKey.pageId == workPage &&
               !behindDelete(record) &&
-              waiting(record))
-          : const <DurableOutboxRecord>[];
+              waiting(record));
       if (pageWork.every(selected.contains)) selected.add(next);
     }
     return selected;
