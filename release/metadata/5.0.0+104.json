@@ -65,6 +65,10 @@
       "type": "feat"
     },
     {
+      "message": "Save screenshots with a transparent background, to lay a plan over your own graphics. Turn on Transparent screenshots in Settings > Map layers.",
+      "type": "feat"
+    },
+    {
       "message": "Export Library and folder export now include your cloud strategies.",
       "type": "feat"
     },
