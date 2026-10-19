@@ -7,6 +7,13 @@ import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 /// How long after a failed read the trash is read again.
 const trashRecheckDelay = Duration(seconds: 15);
 
+/// The longest the trash waits for a page's 30 days to run out before it is
+/// read again. Browsers fire a timer longer than about 24.8 days (2^31 ms)
+/// at once, which made the web app read the trash over and over while a
+/// fresh deletion sat in it; a farther deadline is waited for a day at a
+/// time.
+const trashExpiryWaitLimit = Duration(days: 1);
+
 /// Whether the open cloud strategy has pages in its trash, so Recently
 /// deleted is worth offering. Read again whenever the strategy's revision
 /// moves: deleting and restoring a page both move it, element edits do not.
@@ -36,7 +43,11 @@ final hasTrashedPagesProvider = FutureProvider.autoDispose<bool>((ref) async {
     // A deadline already past here may not be on the server's clock yet:
     // wait the usual delay rather than read again at once, over and over.
     final expire = Timer(
-      untilExpiry.isNegative ? trashRecheckDelay : untilExpiry,
+      untilExpiry.isNegative
+          ? trashRecheckDelay
+          : untilExpiry > trashExpiryWaitLimit
+              ? trashExpiryWaitLimit
+              : untilExpiry,
       ref.invalidateSelf,
     );
     ref.onDispose(expire.cancel);
