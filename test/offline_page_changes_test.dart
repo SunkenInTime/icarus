@@ -725,8 +725,8 @@ void main() {
       expect(queue().pending, isEmpty);
     });
 
-    test('without the content as seen, it is held even when nothing changed',
-        () async {
+    /// Offline: page 2 deleted by a device that never had its content.
+    Future<StrategyOpQueueNotifier> heldUnchecked() async {
       final notifier = open();
       final read = server.pageSnapshot('page-2');
       await notifier.enqueuePageChange(
@@ -744,9 +744,83 @@ void main() {
       );
 
       await reconnectAndSend(notifier);
+      return notifier;
+    }
+
+    test(
+        'without the content as seen, it is held even when nothing changed, '
+        'and says it could not be checked, not that it changed', () async {
+      final notifier = await heldUnchecked();
 
       expect(server.page('page-2').trashed, isFalse);
-      expect(queue().lastError, 'Page 2 $pageChangedSinceDeleteReason');
+      expect(queue().lastError, 'Page 2 $pageUncheckedBeforeDeleteReason');
+      expect(
+        friendlyCloudSyncError(queue().lastError!),
+        "Icarus couldn't check Page 2 for a teammate's changes. Review it "
+        'before deleting.',
+      );
+      final held = notifier.heldPageDeletes().values.single;
+      expect((held.page, held.checked), ('Page 2', false));
+    });
+
+    test('without the content as seen, Delete anyway sends it', () async {
+      final notifier = await heldUnchecked();
+
+      await notifier.deleteHeldPagesAnyway({
+        for (final entry in notifier.heldPageDeletes().entries)
+          entry.key: entry.value.opId,
+      });
+      await _settle();
+
+      expect(server.page('page-2').trashed, isTrue);
+      expect(queue().pending, isEmpty);
+      expect(queue().needsAttention, isFalse);
+    });
+
+    test('without the content as seen, Keep the page discards it', () async {
+      final notifier = await heldUnchecked();
+
+      await notifier.discardRejected(queue().attentionByEntityKey.keys.toSet());
+      await _settle();
+
+      expect(server.page('page-2').trashed, isFalse);
+      expect(queue().pending, isEmpty);
+      expect(queue().needsAttention, isFalse);
+      expect(notifier.heldPageDeletes(), isEmpty);
+    });
+
+    test(
+        'held by an earlier build with the "changed" reason, it is still '
+        'held, and Delete anyway sends it', () async {
+      final at = DateTime.utc(2026, 10, 18);
+      await store.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: _strategyId,
+        entityKey: const EntitySyncKey.pageChange('change-1'),
+        pending: PendingOp(op: delete('page-2'), clientId: 'client'),
+        status: DurableOutboxStatus.attention,
+        createdAt: at,
+        updatedAt: at,
+        lastError: 'Page 2 changed since you deleted it',
+        pageChangeSequence: 1,
+        seenPage: const SeenPage(name: 'Page 2', isAttack: true, content: null),
+      ));
+      final notifier = open();
+      await _settle();
+
+      final held = notifier.heldPageDeletes().values.single;
+      expect((held.page, held.checked), ('Page 2', true));
+
+      await notifier.deleteHeldPagesAnyway({
+        for (final entry in notifier.heldPageDeletes().entries)
+          entry.key: entry.value.opId,
+      });
+      online.state = true;
+      await notifier.flushNow();
+      await _settle();
+
+      expect(server.page('page-2').trashed, isTrue);
+      expect(queue().pending, isEmpty);
     });
 
     test(

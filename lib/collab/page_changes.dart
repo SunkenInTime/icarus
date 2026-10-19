@@ -287,10 +287,29 @@ class SeenPage {
 /// device saw it (see SeenPage): "<page name> $pageChangedSinceDeleteReason".
 const pageChangedSinceDeleteReason = 'changed since you deleted it';
 
-/// The page name in [reason], when it is a delete held because its page
-/// changed (see pageChangedSinceDeleteReason).
-String? pageChangedSinceDelete(String reason) {
-  const marker = ' $pageChangedSinceDeleteReason';
-  final at = reason.indexOf(marker);
-  return at < 0 ? null : reason.substring(0, at);
+/// The reason a delete waits for the user when this device never had the
+/// page's content to compare a fresh read with (SeenPage.content is null):
+/// "<page name> $pageUncheckedBeforeDeleteReason".
+const pageUncheckedBeforeDeleteReason =
+    "couldn't be checked for a teammate's changes";
+
+/// The reason a delete of the page seen as [seen] waits for the user, once
+/// a fresh read of the page did not show it as seen (SeenPage.unchangedIn).
+String heldPageDeleteReason(SeenPage seen) => seen.content == null
+    ? '${seen.name} $pageUncheckedBeforeDeleteReason'
+    : '${seen.name} $pageChangedSinceDeleteReason';
+
+/// The page name in [reason], when it is the reason a page delete is held
+/// for the user (see heldPageDeleteReason), and whether this device could
+/// check the page at all. Reasons saved by older builds read too: they are
+/// all the "changed" kind.
+({String page, bool checked})? heldPageDelete(String reason) {
+  for (final (marker, checked) in const [
+    (' $pageChangedSinceDeleteReason', true),
+    (' $pageUncheckedBeforeDeleteReason', false),
+  ]) {
+    final at = reason.indexOf(marker);
+    if (at >= 0) return (page: reason.substring(0, at), checked: checked);
+  }
+  return null;
 }
