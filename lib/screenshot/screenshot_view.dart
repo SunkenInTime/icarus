@@ -169,29 +169,15 @@ class ScreenshotView extends ConsumerWidget {
         CoordinateSystem.instance.mapAspectRatio;
     final mapLeft = (CoordinateSystem.screenShotSize.width - mapWidth) / 2;
 
-    return Container(
-      decoration: transparentBackground
-          ? null
-          : BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment.center,
-                radius: 1.5,
-                colors: [
-                  const Color(0xff18181b),
-                  Settings.tacticalVioletTheme.background,
-                ],
-              ),
-            ),
+    return SizedBox(
       height: CoordinateSystem.screenShotSize.height,
       width: CoordinateSystem.screenShotSize.width,
       child: Stack(
         children: [
           if (!transparentBackground)
             Positioned.fill(
-                child: Padding(
-              padding: const EdgeInsets.all(4.0),
-              child: DotGrid(isScreenshot: true, opacity: backgroundDotOpacity),
-            )),
+              child: ScreenshotBackdrop(dotOpacity: backgroundDotOpacity),
+            ),
           Positioned(
             left: mapLeft,
             top: 0,
@@ -328,6 +314,34 @@ class ScreenshotView extends ConsumerWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// What a screenshot draws around the map unless its background is left
+/// out: the canvas gradient and its dot grid, at the screenshot's size.
+class ScreenshotBackdrop extends StatelessWidget {
+  const ScreenshotBackdrop({super.key, required this.dotOpacity});
+
+  final double dotOpacity;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment.center,
+          radius: 1.5,
+          colors: [
+            const Color(0xff18181b),
+            Settings.tacticalVioletTheme.background,
+          ],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(4.0),
+        child: DotGrid(isScreenshot: true, opacity: dotOpacity),
       ),
     );
   }

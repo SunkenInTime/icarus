@@ -89,11 +89,35 @@ class PersistentOffscreenRenderer {
     await _flushPendingFrames();
   }
 
+  /// Updates the persistent tree and waits until it has stopped loading: no
+  /// image anywhere still on its way, and no rebuild pending, for two frames
+  /// running. Faster than a fixed [prepare] delay when the frame's assets
+  /// are already warm, and as patient when they are not, up to [timeout].
+  Future<void> prepareUntilQuiet(
+    Widget widget, {
+    Duration timeout = const Duration(milliseconds: 800),
+  }) async {
+    _checkNotDisposed();
+    _updateWidget(widget);
+    final waited = Stopwatch()..start();
+    var quietFrames = 0;
+    while (waited.elapsed < timeout) {
+      await _flushPendingFrames();
+      final loading =
+          PaintingBinding.instance.imageCache.pendingImageCount > 0 ||
+              _buildScheduled ||
+              _visualUpdateScheduled;
+      quietFrames = loading ? 0 : quietFrames + 1;
+      if (quietFrames >= 2) return;
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+    }
+  }
+
   /// Updates the persistent tree and captures it as a PNG without a fixed
   /// settling delay. Any work that was synchronously or microtask-scheduled
   /// by the update is flushed before capture.
   Future<Uint8List> capture(Widget widget) async {
-    final image = await _captureImage(widget);
+    final image = await captureImage(widget);
     try {
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) {
@@ -119,7 +143,7 @@ class PersistentOffscreenRenderer {
     Widget widget, {
     bool straightAlpha = false,
   }) async {
-    final image = await _captureImage(widget);
+    final image = await captureImage(widget);
     try {
       final byteData = await image.toByteData(
         format: straightAlpha
@@ -138,7 +162,9 @@ class PersistentOffscreenRenderer {
     }
   }
 
-  Future<ui.Image> _captureImage(Widget widget) async {
+  /// Updates the persistent tree and captures it as an image, for a caller
+  /// that draws it rather than saves it. The caller disposes the image.
+  Future<ui.Image> captureImage(Widget widget) async {
     _checkNotDisposed();
     _updateWidget(widget);
     await _flushPendingFrames();

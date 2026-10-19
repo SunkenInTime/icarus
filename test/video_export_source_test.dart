@@ -303,6 +303,31 @@ void main() {
       expect(source.images.sources['image-a'], isA<ImageBytes>());
     });
 
+    testWidgets('a preview reads without sending or waiting on queued work',
+        (tester) async {
+      final queue = _Queue(const StrategyOpQueueState(
+        durableLoaded: true,
+        isFlushing: true,
+      ))
+        // A connection that never answers: an export would wait on it.
+        ..hangs = true;
+      final repository = _Repository();
+      final ref = await _pumpRef(tester, cloud(queue, repository));
+
+      final read = await tester.runAsync(
+        () => readSavedStrategy(ref, saveFirst: false),
+      );
+
+      expect(queue.flushes, 0);
+      expect(repository.fetches, 1);
+      expect(
+        [for (final page in read!.strategy.pages) page.id],
+        containsAll(['a', 'b']),
+      );
+      final saveState = ref.read(strategySaveStateProvider);
+      expect(saveState.hasPendingCloudSync, isFalse);
+    });
+
     testWidgets(
         'with nothing to send, reads at once and leaves the save chip alone',
         (tester) async {
@@ -707,6 +732,48 @@ void main() {
           .drawingData
           .single as FreeDrawing;
       expect(library.path.getBounds(), editorBounds);
+    });
+
+    testWidgets('a preview reads the library without saving', (tester) async {
+      await tester.runAsync(
+        () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+          _strategyId,
+          StrategyData(
+            id: _strategyId,
+            name: 'Strategy',
+            mapData: MapValue.bind,
+            versionNumber: 1,
+            lastEdited: DateTime(2026),
+            folderID: null,
+            pages: [
+              StrategyPage(
+                id: 'a',
+                name: 'A',
+                drawingData: const [],
+                agentData: const [],
+                abilityData: const [],
+                textData: const [],
+                imageData: const [],
+                utilityData: const [],
+                sortIndex: 0,
+                isAttack: true,
+                settings: StrategySettings(),
+              ),
+            ],
+          ),
+        ),
+      );
+      final strategy = _OpenStrategy(StrategySource.local);
+      final ref = await _pumpRef(tester, [
+        strategyProvider.overrideWith(() => strategy),
+      ]);
+
+      final read = await tester.runAsync(
+        () => readSavedStrategy(ref, saveFirst: false),
+      );
+
+      expect(strategy.saves, 0);
+      expect(read!.strategy.mapData, MapValue.bind);
     });
 
     testWidgets('is read back from the library with its image files',

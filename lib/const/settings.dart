@@ -280,6 +280,10 @@ class Settings {
   // strip of icons stays quiet, but above mutedForeground, which vanishes at
   // the light stroke weights. Hover still comes up to foreground.
   static const Color toolbarGlyph = Color(0xffd4d4d8); // zinc-300
+  // The checkerboard a see-through screenshot previews on: two zinc steps
+  // close enough to stay behind the map.
+  static const Color transparencyCheckerLight = Color(0xff2e2e33);
+  static const Color transparencyCheckerDark = Color(0xff1c1c20);
 
   // Raised surfaces (a selected tab, a checked tool, a primary command) are
   // lit from above: the fill runs lighter at the top, a bright 1px edge sits

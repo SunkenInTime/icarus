@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
@@ -10,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
@@ -24,6 +26,7 @@ import 'package:icarus/screenshot/page_screenshot.dart';
 import 'package:icarus/screenshot/save_screenshots.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/widgets/dialogs/screenshot_dialog.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
@@ -46,12 +49,44 @@ class _OpenLocalStrategy extends StrategyProvider {
   Future<void> forceSaveNow(String id) async {}
 }
 
+/// [_OpenLocalStrategy] with its image files in [storageDirectory], counting
+/// every save.
+class _RecordingLocalStrategy extends _OpenLocalStrategy {
+  _RecordingLocalStrategy(this.storageDirectory);
+
+  final String storageDirectory;
+  int saves = 0;
+
+  @override
+  StrategyState build() =>
+      super.build().copyWith(storageDirectory: storageDirectory);
+
+  @override
+  Future<void> forceSaveNow(String id) async => saves++;
+}
+
+/// Answers the folder dialog by failing, as a broken platform picker does.
+class _BrokenFolderPicker extends FilePicker {
+  int opened = 0;
+
+  @override
+  Future<String?> getDirectoryPath({
+    String? dialogTitle,
+    bool lockParentWindow = false,
+    String? initialDirectory,
+  }) async {
+    opened++;
+    throw PlatformException(code: 'unavailable');
+  }
+}
+
 /// A page with [agents] Jetts along its top, so pages render differently.
 StrategyPage _page(
   String id,
   String name,
   int sortIndex, {
   int agents = 0,
+  List<PlacedImage> images = const [],
 }) =>
     StrategyPage(
       id: id,
@@ -68,7 +103,7 @@ StrategyPage _page(
       ],
       abilityData: const [],
       textData: const [],
-      imageData: const [],
+      imageData: images,
       utilityData: const [],
       sortIndex: sortIndex,
       isAttack: true,
@@ -96,6 +131,16 @@ class _FolderPicker extends FilePicker {
   }) async =>
       folder;
 }
+
+/// Draws no thumbnails: the real ones render offscreen in real time, which
+/// these tests drive only where they mean to.
+Future<void> _noThumbnails(
+  WidgetRef ref, {
+  required Set<String> pageIds,
+  required void Function(String pageId, ui.Image image) onThumbnail,
+  required void Function(Set<String> pageIds, Object error) onUnavailable,
+  required bool Function() isCancelled,
+}) async {}
 
 PageScreenshot _shot(int number, String name) =>
     (number: number, name: name, png: Uint8List.fromList([number]));
@@ -201,6 +246,181 @@ void main() {
     expect(CoordinateSystem.instance.isScreenshot, isFalse);
   });
 
+  testWidgets('thumbnails show the open page first, small and see-through',
+      (tester) async {
+    CoordinateSystem(playAreaSize: const Size(1600, 900));
+    await tester.runAsync(
+      () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+        _strategyId,
+        StrategyData(
+          id: _strategyId,
+          name: 'Retakes',
+          mapData: MapValue.ascent,
+          versionNumber: 1,
+          lastEdited: DateTime(2026),
+          folderID: null,
+          pages: [
+            _page('a', 'Default', 0),
+            _page('b', 'Fake', 1, agents: 2),
+          ],
+        ),
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [strategyProvider.overrideWith(_OpenLocalStrategy.new)],
+    );
+    addTearDown(container.dispose);
+    container.read(strategyPageSessionProvider.notifier).setStateForTest(
+          container
+              .read(strategyPageSessionProvider)
+              .copyWith(activePageId: 'b'),
+        );
+    late WidgetRef ref;
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: Consumer(builder: (context, widgetRef, _) {
+        ref = widgetRef;
+        return const SizedBox.shrink();
+      }),
+    ));
+
+    final order = <String>[];
+    final images = <ui.Image>[];
+    final unavailable = <String>{};
+    var done = false;
+    await tester.runAsync(() async {
+      unawaited(
+        renderPageThumbnails(
+          ref,
+          pageIds: {'a', 'b'},
+          onThumbnail: (pageId, image) {
+            order.add(pageId);
+            images.add(image);
+          },
+          onUnavailable: (pageIds, _) => unavailable.addAll(pageIds),
+          isCancelled: () => false,
+        ).whenComplete(() => done = true),
+      );
+    });
+    while (!done) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 16)),
+      );
+      await tester.pump();
+    }
+    addTearDown(() {
+      for (final image in images) {
+        image.dispose();
+      }
+    });
+
+    expect(unavailable, isEmpty);
+    expect(order, ['b', 'a']);
+    for (final image in images) {
+      expect(image.width, 384);
+      expect(image.height, 216);
+      // The dialog draws the background under it, or a checkerboard.
+      final pixels = (await tester.runAsync(
+        () => image.toByteData(format: ui.ImageByteFormat.rawRgba),
+      ))!;
+      expect(pixels.getUint8(3), 0);
+    }
+    expect(CoordinateSystem.instance.isScreenshot, isFalse);
+  });
+
+  testWidgets(
+      'thumbnails never save, and a broken image costs only its own page',
+      (tester) async {
+    CoordinateSystem(playAreaSize: const Size(1600, 900));
+    final storage = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('icarus_thumb_images'),
+    ))!;
+    addTearDown(() => storage.deleteSync(recursive: true));
+    await tester.runAsync(() async {
+      // Bytes that are not an image: the page they are on can't be drawn.
+      final broken = File(path.join(storage.path, 'images', 'broken.png'));
+      await broken.parent.create(recursive: true);
+      await broken.writeAsBytes([1, 2, 3]);
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+        _strategyId,
+        StrategyData(
+          id: _strategyId,
+          name: 'Retakes',
+          mapData: MapValue.ascent,
+          versionNumber: 1,
+          lastEdited: DateTime(2026),
+          folderID: null,
+          pages: [
+            _page('a', 'Default', 0),
+            _page('b', 'Fake', 1, images: [
+              PlacedImage(
+                position: const Offset(500, 500),
+                id: 'broken',
+                aspectRatio: 1,
+                scale: 100,
+                fileExtension: '.png',
+              ),
+            ]),
+            _page('c', 'Post plant', 2, agents: 2),
+          ],
+        ),
+      );
+    });
+    final strategy = _RecordingLocalStrategy(storage.path);
+    final container = ProviderContainer(
+      overrides: [strategyProvider.overrideWith(() => strategy)],
+    );
+    addTearDown(container.dispose);
+    container.read(strategyPageSessionProvider.notifier).setStateForTest(
+          container
+              .read(strategyPageSessionProvider)
+              .copyWith(activePageId: 'a'),
+        );
+    late WidgetRef ref;
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: Consumer(builder: (context, widgetRef, _) {
+        ref = widgetRef;
+        return const SizedBox.shrink();
+      }),
+    ));
+
+    final drawn = <String>[];
+    final images = <ui.Image>[];
+    final unavailable = <String>{};
+    var done = false;
+    await tester.runAsync(() async {
+      unawaited(
+        renderPageThumbnails(
+          ref,
+          pageIds: {'a', 'b', 'c'},
+          onThumbnail: (pageId, image) {
+            drawn.add(pageId);
+            images.add(image);
+          },
+          onUnavailable: (pageIds, _) => unavailable.addAll(pageIds),
+          isCancelled: () => false,
+        ).whenComplete(() => done = true),
+      );
+    });
+    while (!done) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 16)),
+      );
+      await tester.pump();
+    }
+    addTearDown(() {
+      for (final image in images) {
+        image.dispose();
+      }
+    });
+
+    expect(drawn, ['a', 'c']);
+    expect(unavailable, {'b'});
+    // Looking is not saving.
+    expect(strategy.saves, 0);
+  });
+
   testWidgets('a cancelled capture stops before the next page', (tester) async {
     CoordinateSystem(playAreaSize: const Size(1600, 900));
     await tester.runAsync(
@@ -260,7 +480,7 @@ void main() {
     expect(CoordinateSystem.instance.isScreenshot, isFalse);
   });
 
-  testWidgets('the camera offers every page, with the open one ticked',
+  testWidgets('the camera shows every page, with the open one ticked',
       (tester) async {
     await tester.runAsync(
       () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
@@ -280,9 +500,10 @@ void main() {
         ),
       ),
     );
-    final container = ProviderContainer(
-      overrides: [strategyProvider.overrideWith(_OpenLocalStrategy.new)],
-    );
+    final container = ProviderContainer(overrides: [
+      strategyProvider.overrideWith(_OpenLocalStrategy.new),
+      pageThumbnailerProvider.overrideWithValue(_noThumbnails),
+    ]);
     addTearDown(container.dispose);
     container.read(strategyPageSessionProvider.notifier).setStateForTest(
           container
@@ -300,8 +521,10 @@ void main() {
 
     bool ticked(String page) => tester
         .widget<ShadCheckbox>(find.descendant(
+          // The tile: its thumbnail, with the checkbox, and its name.
           of: find
-              .ancestor(of: find.text(page), matching: find.byType(Row))
+              .ancestor(
+                  of: find.text(page), matching: find.byType(GestureDetector))
               .first,
           matching: find.byType(ShadCheckbox),
         ))
@@ -387,7 +610,7 @@ void main() {
 
   /// Opens a two-page local strategy in an editor route above the library,
   /// as in the app, and starts capturing both pages into a folder. Returns
-  /// once the progress dialog is up.
+  /// once the dialog says it is saving.
   Future<({Directory folder, GlobalKey<NavigatorState> navigator})>
       startTwoPageCapture(WidgetTester tester) async {
     CoordinateSystem(playAreaSize: const Size(1600, 900));
@@ -410,9 +633,10 @@ void main() {
         ),
       ),
     );
-    final container = ProviderContainer(
-      overrides: [strategyProvider.overrideWith(_OpenLocalStrategy.new)],
-    );
+    final container = ProviderContainer(overrides: [
+      strategyProvider.overrideWith(_OpenLocalStrategy.new),
+      pageThumbnailerProvider.overrideWithValue(_noThumbnails),
+    ]);
     addTearDown(container.dispose);
     container.read(strategyPageSessionProvider.notifier).setStateForTest(
           container
@@ -443,44 +667,46 @@ void main() {
     await tester.runAsync(() => tester.tap(find.text('Save 2 screenshots')));
     // Real time, with frames, until the dialog is up.
     for (var i = 0;
-        i < 200 && find.text('Capturing screenshots').evaluate().isEmpty;
+        i < 200 && find.text('Saving screenshots').evaluate().isEmpty;
         i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 16)),
       );
       await tester.pump();
     }
-    expect(find.text('Capturing screenshots'), findsOneWidget);
+    expect(find.text('Saving screenshots'), findsOneWidget);
     return (folder: folder, navigator: navigatorKey);
   }
 
-  testWidgets('only Cancel stops a capture, and the editor stays open',
+  testWidgets('only Stop ends a capture, and the editor stays open',
       (tester) async {
     final (:folder, navigator: _) = await startTwoPageCapture(tester);
 
-    // Nothing but Cancel closes it: no X, and Escape does nothing.
+    // Nothing but Stop closes it: no X, no Cancel, and Escape does nothing.
     expect(find.byIcon(LucideIcons.x), findsNothing);
+    expect(find.text('Cancel'), findsNothing);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump();
-    expect(find.text('Capturing screenshots'), findsOneWidget);
+    expect(find.text('Saving screenshots'), findsOneWidget);
 
-    await tester.tap(find.text('Cancel'));
+    await tester.tap(find.text('Stop'));
     await tester.pump();
     // It stays up, saying so, until the capture has stopped.
-    expect(find.text('Cancelling…'), findsOneWidget);
+    expect(find.text('Stopping…'), findsOneWidget);
+    // The clock moves too, so the dialog's closing animation plays out.
     for (var i = 0;
-        i < 400 && find.byIcon(LucideIcons.camera200).evaluate().isEmpty;
+        i < 400 && find.text('Saving screenshots').evaluate().isNotEmpty;
         i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 16)),
       );
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
     }
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
 
-    expect(find.text('Capturing screenshots'), findsNothing);
+    expect(find.text('Saving screenshots'), findsNothing);
     expect(find.byType(EditorToolbar), findsOneWidget);
     expect(find.text('Library'), findsNothing);
     expect(folder.listSync(), isEmpty);
@@ -500,7 +726,7 @@ void main() {
     await tester.pump();
 
     for (var i = 0;
-        i < 600 && find.text('Capturing screenshots').evaluate().isNotEmpty;
+        i < 600 && find.text('Saving screenshots').evaluate().isNotEmpty;
         i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 16)),
@@ -511,12 +737,66 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
 
-    expect(find.text('Capturing screenshots'), findsNothing);
+    expect(find.text('Saving screenshots'), findsNothing);
     expect(find.text('Debug log'), findsOneWidget);
     expect(find.byType(EditorToolbar), findsOneWidget);
     expect(folder.listSync(), hasLength(2));
     ignoreTestFontOverflow(tester);
     await tester.pump(const Duration(seconds: 10));
+  });
+
+  testWidgets('a folder picker that fails leaves Save working',
+      (tester) async {
+    final picker = _BrokenFolderPicker();
+    FilePicker.platform = picker;
+    await tester.runAsync(
+      () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+        _strategyId,
+        StrategyData(
+          id: _strategyId,
+          name: 'Retakes',
+          mapData: MapValue.ascent,
+          versionNumber: 1,
+          lastEdited: DateTime(2026),
+          folderID: null,
+          pages: [_page('a', 'Default', 0), _page('b', 'Fake', 1)],
+        ),
+      ),
+    );
+    final container = ProviderContainer(overrides: [
+      strategyProvider.overrideWith(_OpenLocalStrategy.new),
+      pageThumbnailerProvider.overrideWithValue(_noThumbnails),
+    ]);
+    addTearDown(container.dispose);
+    appProviderContainer = container;
+    container.read(strategyPageSessionProvider.notifier).setStateForTest(
+          container
+              .read(strategyPageSessionProvider)
+              .copyWith(activePageId: 'a'),
+        );
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: ToastificationWrapper(
+        child: ShadApp(home: const Scaffold(body: EditorToolbar())),
+      ),
+    ));
+
+    await tester.tap(find.byIcon(LucideIcons.camera200));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Select all'));
+    await tester.pump();
+    ignoreTestFontOverflow(tester);
+    for (var attempt = 1; attempt <= 2; attempt++) {
+      await tester.tap(find.text('Save 2 screenshots'));
+      await tester.pump();
+      ignoreTestFontOverflow(tester);
+      expect(picker.opened, attempt);
+    }
+    // Nothing started: the dialog still asks.
+    expect(find.text('Save screenshots'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 10));
+    ignoreTestFontOverflow(tester);
   });
 
   test('screenshots saved to a folder never replace a file already there',

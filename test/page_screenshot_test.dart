@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -30,6 +31,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/screenshot/page_screenshot.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/widgets/dialogs/screenshot_dialog.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:image/image.dart' as img;
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -195,6 +197,24 @@ class _TransparentScreenshots extends AppPreferencesNotifier {
       );
 }
 
+/// Draws no thumbnails: the real ones render offscreen in real time, which
+/// these tests drive only where they mean to.
+Future<void> _noThumbnails(
+  WidgetRef ref, {
+  required Set<String> pageIds,
+  required void Function(String pageId, ui.Image image) onThumbnail,
+  required void Function(Set<String> pageIds, Object error) onUnavailable,
+  required bool Function() isCancelled,
+}) async {}
+
+/// The test font draws every glyph a full em wide, so labels that fit in the
+/// app overflow here; that is the font, not the dialog. Anything else fails.
+void _ignoreTestFontOverflow(WidgetTester tester) {
+  for (Object? error; (error = tester.takeException()) != null;) {
+    expect('$error', contains('overflowed'));
+  }
+}
+
 int _magentaPixels(Uint8List png) {
   final decoded = img.decodePng(png)!;
   var count = 0;
@@ -246,6 +266,7 @@ void main() {
       cloudMediaAccountIdProvider.overrideWithValue('account-a'),
       cloudMediaUploadQueueProvider.overrideWith(_NoUploads.new),
       strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+      pageThumbnailerProvider.overrideWithValue(_noThumbnails),
     ]);
     addTearDown(container.dispose);
     await tester.runAsync(
@@ -464,7 +485,17 @@ void main() {
     expect(snapshot.name, 'Retake B');
   });
 
-  testWidgets('a second click while the save dialog is open does nothing',
+  Finder saveButton() =>
+      find.widgetWithText(ShadButton, 'Save screenshot');
+
+  Future<void> openCamera(WidgetTester tester) async {
+    await tester.tap(find.byIcon(LucideIcons.camera200));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    _ignoreTestFontOverflow(tester);
+  }
+
+  testWidgets('the dialog stays up until the save panel closes',
       (tester) async {
     final ref = await openCloudPage(tester, imageUrl: _imageUrl);
     final picker = _PendingPicker();
@@ -478,22 +509,16 @@ void main() {
     ));
     expect(ref, isNotNull);
 
-    Future<void> clickCamera() async {
-      await tester.tap(find.byIcon(LucideIcons.camera200));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-    }
-
-    await clickCamera();
+    await openCamera(tester);
     await tester.runAsync(
       () => http.runWithClient(
-        () => tester.tap(find.text('Save screenshot')),
+        () => tester.tap(saveButton()),
         () => MockClient(
           (_) async => http.Response.bytes(_magentaPng, 200),
         ),
       ),
     );
-    // Real time with the app's frames coming, until the dialog opens.
+    // Real time with the app's frames coming, until the save panel opens.
     for (var i = 0; i < 400 && picker.saves.isEmpty; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 16)),
@@ -502,28 +527,20 @@ void main() {
     }
     expect(picker.saves, hasLength(1));
     expect(picker.saves.single, isNotEmpty);
-    // Saving closed the question; let it finish leaving.
-    for (var i = 0; i < 10; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(find.text('Save screenshot'), findsNothing);
-
-    // The spinner is gone while the dialog is open, but the button waits:
-    // it doesn't even ask.
-    expect(find.byIcon(LucideIcons.camera200), findsOneWidget);
-    await clickCamera();
-    expect(find.text('Save screenshot'), findsNothing);
-    for (var i = 0; i < 30; i++) {
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 16)),
-      );
-      await tester.pump();
-    }
-    expect(picker.saves, hasLength(1));
-    expect(find.byIcon(LucideIcons.camera200), findsOneWidget);
+    // The capture is done, but the dialog waits for the panel, and nothing
+    // but the panel closes it.
+    expect(find.text('Saving screenshot'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(find.text('Saving screenshot'), findsOneWidget);
 
     picker.closed.complete(null);
     await tester.pump();
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Saving screenshot'), findsNothing);
+    expect(picker.saves, hasLength(1));
     expect(tester.takeException(), isNull);
   });
 
@@ -537,14 +554,13 @@ void main() {
       container: container,
       child: const ShadApp(home: Scaffold(body: EditorToolbar())),
     ));
-    Future<ShadCheckbox> openCamera() async {
-      await tester.tap(find.byIcon(LucideIcons.camera200));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+    Future<ShadCheckbox> transparentToggle() async {
+      await openCamera(tester);
+      // One page: nothing to tick but the background.
       return tester.widget<ShadCheckbox>(find.byType(ShadCheckbox));
     }
 
-    expect((await openCamera()).value, isFalse);
+    expect((await transparentToggle()).value, isFalse);
     await tester.runAsync(
       () => tester.tap(find.text('Transparent background')),
     );
@@ -555,12 +571,12 @@ void main() {
     );
 
     // Closed without a shot and opened again: still ticked.
-    await tester.tap(find.byIcon(LucideIcons.camera200));
+    await tester.tap(find.widgetWithText(ShadButton, 'Cancel'));
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(find.byType(ShadCheckbox), findsNothing);
-    expect((await openCamera()).value, isTrue);
+    expect((await transparentToggle()).value, isTrue);
 
     await tester.runAsync(
       () => container
@@ -569,7 +585,7 @@ void main() {
     );
   });
 
-  testWidgets('a screenshot that fails while fetching clears the spinner',
+  testWidgets('a screenshot that fails while fetching closes its dialog',
       (tester) async {
     await openCloudPage(tester, imageUrl: _imageUrl);
     final container = ProviderScope.containerOf(
@@ -582,20 +598,22 @@ void main() {
       container: container,
       child: const ShadApp(home: Scaffold(body: EditorToolbar())),
     ));
-    await tester.tap(find.byIcon(LucideIcons.camera200));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await openCamera(tester);
     await http.runWithClient(
-      () => tester.tap(find.text('Save screenshot')),
+      () => tester.tap(saveButton()),
       () => MockClient((_) => response.future),
     );
     await tester.pump();
-    // The camera turns into a spinner while the image is fetched.
-    expect(find.byIcon(LucideIcons.camera200), findsNothing);
+    // The dialog says it is saving while the image is fetched.
+    expect(find.text('Saving screenshot'), findsOneWidget);
     expect(CoordinateSystem.instance.isScreenshot, isFalse);
 
     response.complete(http.Response('down', 500));
     await tester.pump();
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Saving screenshot'), findsNothing);
     expect(find.byIcon(LucideIcons.camera200), findsOneWidget);
     expect(CoordinateSystem.instance.isScreenshot, isFalse);
     expect(tester.takeException(), isNull);

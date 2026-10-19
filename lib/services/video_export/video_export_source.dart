@@ -75,6 +75,13 @@ class VideoExportPagesChanged implements Exception {
 /// decoded. Release [images] once the export is done.
 typedef VideoExportSource = ({StrategyData strategy, CaptureImages images});
 
+/// The open strategy read whole, with what its cloud images are, before any
+/// image is loaded.
+typedef SavedStrategyRead = ({
+  StrategyData strategy,
+  Map<String, RemoteImageAsset> assets,
+});
+
 /// Saves the open strategy and reads it back whole for [pageIds].
 ///
 /// A local strategy is saved and read back from the library. A cloud
@@ -92,6 +99,41 @@ Future<VideoExportSource> loadVideoExportSource(
   required Set<String> pageIds,
   bool Function() isCancelled = _never,
 }) async {
+  final read = await readSavedStrategy(
+    ref,
+    saveFirst: true,
+    isCancelled: isCancelled,
+  );
+  final pages = [
+    for (final page in read.strategy.pages)
+      if (pageIds.contains(page.id)) page,
+  ];
+  if (pages.length != pageIds.length) {
+    throw const VideoExportPagesChanged();
+  }
+  final images = await resolvePageImages(
+    ref,
+    read,
+    pages,
+    isCancelled: isCancelled,
+  );
+  return (strategy: read.strategy, images: images);
+}
+
+/// Reads the open strategy whole: a local one from the library, a cloud one
+/// from the server.
+///
+/// With [saveFirst], this device's work goes first, as an export needs: a
+/// local strategy is saved, and a cloud one sends its edits and waits for
+/// them to land (throwing [VideoExportNotSynced] when they don't). Without
+/// it, nothing is written or sent, so a preview never saves for the user;
+/// the page open in the editor may then be behind what is on screen, while
+/// the others are as this device last left them.
+Future<SavedStrategyRead> readSavedStrategy(
+  WidgetRef ref, {
+  required bool saveFirst,
+  bool Function() isCancelled = _never,
+}) async {
   void checkCancelled() {
     if (isCancelled()) throw VideoExportCancelled();
   }
@@ -106,32 +148,40 @@ Future<VideoExportSource> loadVideoExportSource(
   final shareToken =
       linkView?.strategyPublicId == strategyId ? linkView!.token : null;
 
-  final StrategyData strategy;
-  final Map<String, RemoteImageAsset> assets;
   switch (state.source) {
     case StrategySource.cloud:
       final RemoteFullStrategySnapshot snapshot;
-      try {
-        final sameAccount = await sendCloudWork(
-          ref.read,
-          strategyId: strategyId,
-          checkpoint: checkCancelled,
-        );
-        checkCancelled();
+      if (saveFirst) {
+        try {
+          final sameAccount = await sendCloudWork(
+            ref.read,
+            strategyId: strategyId,
+            checkpoint: checkCancelled,
+          );
+          checkCancelled();
+          snapshot = await ref
+              .read(convexStrategyRepositoryProvider)
+              .fetchFullSnapshot(strategyId, shareToken: shareToken);
+          sameAccount();
+        } on CloudWorkNotSent {
+          throw const VideoExportNotSynced();
+        }
+      } else {
         snapshot = await ref
             .read(convexStrategyRepositoryProvider)
             .fetchFullSnapshot(strategyId, shareToken: shareToken);
-        sameAccount();
-      } on CloudWorkNotSent {
-        throw const VideoExportNotSynced();
       }
       checkCancelled();
-      strategy =
-          StrategyImportExportService.strategyDataFromRemoteSnapshot(snapshot);
-      assets = snapshot.assetsById;
+      return (
+        strategy:
+            StrategyImportExportService.strategyDataFromRemoteSnapshot(snapshot),
+        assets: snapshot.assetsById,
+      );
     case StrategySource.local || null:
-      await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
-      checkCancelled();
+      if (saveFirst) {
+        await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
+        checkCancelled();
+      }
       final saved =
           Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
       if (saved == null) {
@@ -139,20 +189,30 @@ Future<VideoExportSource> loadVideoExportSource(
       }
       // The library's own objects, which the editor loads too: a capture
       // rebuilds drawing paths in its own coordinates, so it gets copies.
-      strategy = saved.copyWith(pages: saved.pages.map(_detached).toList());
-      assets = const {};
+      return (
+        strategy: saved.copyWith(pages: saved.pages.map(_detached).toList()),
+        assets: const <String, RemoteImageAsset>{},
+      );
   }
+}
 
-  final pages = [
-    for (final page in strategy.pages)
-      if (pageIds.contains(page.id)) page,
-  ];
-  if (pages.length != pageIds.length) {
-    throw const VideoExportPagesChanged();
-  }
-
+/// Loads and decodes every image on [pages] of [read], so a capture of them
+/// paints with each one in place. Throws [CaptureImagesUnavailable] when one
+/// cannot be loaded, and [VideoExportCancelled] once [isCancelled] turns
+/// true.
+Future<CaptureImages> resolvePageImages(
+  WidgetRef ref,
+  SavedStrategyRead read,
+  Iterable<StrategyPage> pages, {
+  bool Function() isCancelled = _never,
+}) {
+  final state = ref.read(strategyProvider);
+  final strategyId = state.strategyId!;
+  final linkView = ref.read(shareLinkViewProvider);
+  final shareToken =
+      linkView?.strategyPublicId == strategyId ? linkView!.token : null;
   final isCloud = state.source == StrategySource.cloud;
-  final images = await resolveCaptureImages(
+  return resolveCaptureImages(
     {
       for (final page in pages)
         // By picture, as the captured pages' images look them up.
@@ -164,10 +224,11 @@ Future<VideoExportSource> loadVideoExportSource(
               fileExtension: image.fileExtension,
             ),
             isCloudStrategy: isCloud,
-            // The whole strategy was just read, and this device has
-            // nothing left to upload.
+            // The whole strategy was just read. An export has waited for
+            // this device's uploads to land; a preview shows those that
+            // have.
             assetsLoaded: true,
-            remoteAsset: assets[image.pictureId],
+            remoteAsset: read.assets[image.pictureId],
             uploadMayBeQueuedHere: false,
           ),
     },
@@ -181,9 +242,10 @@ Future<VideoExportSource> loadVideoExportSource(
                 shareToken: shareToken,
               ),
     ),
-    checkpoint: checkCancelled,
+    checkpoint: () {
+      if (isCancelled()) throw VideoExportCancelled();
+    },
   );
-  return (strategy: strategy, images: images);
 }
 
 bool _never() => false;
