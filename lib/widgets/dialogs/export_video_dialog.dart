@@ -24,6 +24,7 @@ import 'package:icarus/services/video_export/video_exporter.dart';
 import 'package:icarus/services/video_export/video_frame_sink.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
+import 'package:icarus/widgets/page_choice_list.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Settings + progress dialog for exporting the strategy's pages as an .mp4,
@@ -563,7 +564,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                _PagesPanel(
+                PageChoiceList(
                   pages: _pages,
                   selectedPageIds: _selectedPageIds,
                   onToggle: _togglePage,
@@ -725,85 +726,6 @@ class _QualityCard extends StatelessWidget {
   }
 }
 
-/// Bordered list of the strategy's pages in playback order; whole rows toggle.
-class _PagesPanel extends StatelessWidget {
-  const _PagesPanel({
-    required this.pages,
-    required this.selectedPageIds,
-    required this.onToggle,
-  });
-
-  final List<VideoExportPageChoice> pages;
-  final Set<String> selectedPageIds;
-  final ValueChanged<String> onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = ShadTheme.of(context).colorScheme;
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: colors.card,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colors.border),
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 236),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final (index, page) in pages.indexed) ...[
-                if (index > 0) Container(height: 1, color: colors.border),
-                InkWell(
-                  mouseCursor: SystemMouseCursors.click,
-                  onTap: () => onToggle(page.id),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 9,
-                    ),
-                    child: Row(
-                      children: [
-                        ShadCheckbox(
-                          value: selectedPageIds.contains(page.id),
-                          onChanged: (_) => onToggle(page.id),
-                        ),
-                        const SizedBox(width: 10),
-                        SizedBox(
-                          width: 18,
-                          child: Text(
-                            '${index + 1}',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: colors.mutedForeground,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            page.name,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Live one-line receipt of what Export will produce.
 class _ExportSummary extends StatelessWidget {
   const _ExportSummary({
@@ -816,7 +738,7 @@ class _ExportSummary extends StatelessWidget {
   final double? estimatedSeconds;
   final int outputHeight;
 
-  /// The file type Export writes: mp4, or webm for a transparent video.
+  /// The file type Export writes: mp4, or mov for a transparent video.
   final String extension;
   final String Function(double) formatSeconds;
 

@@ -1,25 +1,34 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/screenshot/page_screenshot.dart';
+import 'package:icarus/screenshot/save_screenshots.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/cloud_strategy_export.dart';
+import 'package:icarus/services/video_export/video_export_errors.dart';
+import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/cloud_sync_button.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/export_video_dialog.dart';
+import 'package:icarus/widgets/dialogs/screenshot_progress_dialog.dart';
+import 'package:icarus/widgets/page_choice_list.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
-import 'package:icarus/config/platform_policy.dart';
-import 'package:icarus/widgets/platform_feature_toast.dart';
+import 'package:path/path.dart' as p;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Geometry shared by every control in the editor's floating toolbar, so the
@@ -137,9 +146,15 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                   overlayAlignment: Alignment.bottomLeft,
                 ),
                 popover: (context) => _ScreenshotPopover(
-                  onSave: () {
+                  onSave: (pageIds) {
                     _screenshotPopover.hide();
-                    _captureScreenshot();
+                    final current =
+                        ref.read(strategyPageSessionProvider).activePageId;
+                    if (pageIds.length == 1 && pageIds.single == current) {
+                      _captureScreenshot();
+                    } else {
+                      _captureScreenshots(pageIds);
+                    }
                   },
                 ),
                 child: EditorToolbarButton(
@@ -212,6 +227,115 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     _screenshotPopover.toggle();
   }
 
+  /// Captures [pageIds] from the strategy as saved. One page saves like the
+  /// open page's shot does; several go into a folder the user picks
+  /// (desktop) or one .zip download (the browser).
+  Future<void> _captureScreenshots(Set<String> pageIds) async {
+    if (_screenshotInProgress) return;
+    final strategy = ref.read(strategyProvider);
+    if (strategy.strategyId == null) return;
+    final strategyName = strategy.strategyName ?? 'new image';
+    _screenshotInProgress = true;
+    try {
+      // Where several go is settled first, so a dismissed dialog costs
+      // nothing.
+      String? folder;
+      if (pageIds.length > 1 && !kIsWeb) {
+        folder = await FilePicker.platform.getDirectoryPath(
+          dialogTitle: 'Choose a folder for the screenshots',
+        );
+        if (folder == null || !mounted) return;
+      }
+      setState(() => _isCapturingScreenshot = true);
+      final progress = ValueNotifier<ScreenshotProgress?>(null);
+      final done = ValueNotifier<bool>(false);
+      var cancelled = false;
+      // The dialog closes itself once the capture is done.
+      unawaited(showShadDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ScreenshotProgressDialog(
+          progress: progress,
+          done: done,
+          onCancel: () => cancelled = true,
+        ),
+      ));
+      late final List<PageScreenshot> shots;
+      try {
+        shots = await captureStrategyPages(
+          ref,
+          pageIds: pageIds,
+          transparentBackground:
+              ref.read(appPreferencesProvider).transparentScreenshotBackground,
+          onPage: (page, total) => progress.value = (page: page, total: total),
+          isCancelled: () => cancelled,
+        );
+      } finally {
+        done.value = true;
+        if (mounted) setState(() => _isCapturingScreenshot = false);
+      }
+      if (!mounted) return;
+      // A cancel that landed during the last page still wins.
+      if (cancelled) throw VideoExportCancelled();
+      if (shots.length == 1) {
+        await FilePicker.platform.saveFile(
+          type: FileType.custom,
+          dialogTitle: 'Please select an output file:',
+          fileName: pageScreenshotFileName(strategyName, shots.single),
+          allowedExtensions: ['png'],
+          bytes: shots.single.png,
+        );
+      } else if (folder != null) {
+        await writeScreenshotsToFolder(folder, strategyName, shots);
+        Settings.showToast(
+          message: 'Saved ${shots.length} screenshots to '
+              '${p.basename(folder)}.',
+          backgroundColor: Settings.tacticalVioletTheme.primary,
+        );
+      } else {
+        await FilePicker.platform.saveFile(
+          type: FileType.custom,
+          fileName: '${sanitizeStrategyFileName(strategyName)}.zip',
+          allowedExtensions: ['zip'],
+          bytes: zipScreenshots(strategyName, shots),
+        );
+      }
+    } on VideoExportCancelled {
+      Settings.showToast(
+        message: 'Screenshots cancelled.',
+        backgroundColor: Settings.tacticalVioletTheme.primary,
+      );
+    } on VideoExportNotSynced catch (error, stackTrace) {
+      _reportCaptureWarning(error.userMessage, error, stackTrace);
+    } on VideoExportPagesChanged catch (error, stackTrace) {
+      _reportCaptureWarning(error.userMessage, error, stackTrace);
+    } on CaptureImagesUnavailable catch (error, stackTrace) {
+      _reportCaptureWarning(error.userMessage, error, stackTrace);
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Could not export the screenshots. Please try again.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'EditorToolbar.screenshot',
+      );
+    } finally {
+      _screenshotInProgress = false;
+    }
+  }
+
+  void _reportCaptureWarning(
+    String message,
+    Object error,
+    StackTrace stackTrace,
+  ) =>
+      AppErrorReporter.reportWarning(
+        message,
+        error: error,
+        stackTrace: stackTrace,
+        source: 'EditorToolbar.screenshot',
+        promptUser: true,
+      );
+
   Future<void> _captureScreenshot() async {
     if (!ensureFeatureAvailable(ref, PlatformFeature.screenshot)) return;
     if (_screenshotInProgress) return;
@@ -258,32 +382,92 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
   }
 }
 
-/// What the camera asks before a screenshot: whether to leave the
-/// background out. The choice is remembered, so taking the same kind of shot
-/// again is one more click.
-class _ScreenshotPopover extends ConsumerWidget {
+/// What the camera asks before a screenshot: which pages, and whether to
+/// leave the background out. The page on the canvas starts ticked, so the
+/// usual shot is one more click; the background choice is remembered.
+class _ScreenshotPopover extends ConsumerStatefulWidget {
   const _ScreenshotPopover({required this.onSave});
 
-  final VoidCallback onSave;
+  /// Called with the pages to capture, in no particular order.
+  final ValueChanged<Set<String>> onSave;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ScreenshotPopover> createState() => _ScreenshotPopoverState();
+}
+
+class _ScreenshotPopoverState extends ConsumerState<_ScreenshotPopover> {
+  late final List<VideoExportPageChoice> _pages;
+  final Set<String> _selected = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _pages = videoExportPageChoices(ref);
+    final current = ref.read(strategyPageSessionProvider).activePageId;
+    if (current != null) _selected.add(current);
+  }
+
+  void _toggle(String pageId) => setState(() {
+        if (!_selected.remove(pageId)) _selected.add(pageId);
+      });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
     final transparent = ref.watch(appPreferencesProvider
         .select((value) => value.transparentScreenshotBackground));
     void setTransparent(bool value) => ref
         .read(appPreferencesProvider.notifier)
         .setTransparentScreenshotBackground(value);
+    final allSelected = _selected.length == _pages.length;
+    final count = _selected.length;
 
     // Text alignment is inherited from the editor, which centers, so pin it
     // here; the column's own alignment does not reach inside the Texts.
     return DefaultTextStyle.merge(
       textAlign: TextAlign.start,
       child: SizedBox(
-        width: 260,
+        width: 280,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (_pages.length > 1) ...[
+              Row(
+                children: [
+                  Text(
+                    'Pages',
+                    style: theme.textTheme.small.copyWith(
+                      color: theme.colorScheme.foreground,
+                    ),
+                  ),
+                  const Spacer(),
+                  ShadButton.ghost(
+                    size: ShadButtonSize.sm,
+                    onPressed: () => setState(() {
+                      if (allSelected) {
+                        _selected.clear();
+                      } else {
+                        _selected.addAll(_pages.map((page) => page.id));
+                      }
+                    }),
+                    child: Text(allSelected ? 'Clear all' : 'Select all'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              // The list's rows are InkWells; the popover has no Material.
+              Material(
+                color: Colors.transparent,
+                child: PageChoiceList(
+                  pages: _pages,
+                  selectedPageIds: _selected,
+                  onToggle: _toggle,
+                  maxHeight: 180,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             ShadCheckbox(
               value: transparent,
               onChanged: setTransparent,
@@ -299,9 +483,12 @@ class _ScreenshotPopover extends ConsumerWidget {
               child: ShadButton(
                 size: ShadButtonSize.sm,
                 autofocus: true,
-                onPressed: onSave,
+                enabled: count > 0,
+                onPressed: () => widget.onSave({..._selected}),
                 leading: const Icon(LucideIcons.camera, size: 16),
-                child: const Text('Save screenshot'),
+                child: Text(
+                  count > 1 ? 'Save $count screenshots' : 'Save screenshot',
+                ),
               ),
             ),
           ],

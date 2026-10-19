@@ -5,6 +5,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -27,6 +28,8 @@ import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/screenshot/offscreen_capture.dart';
 import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
+import 'package:icarus/services/video_export/video_export_errors.dart';
+import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
 /// Renders the page open in the editor, as it is on screen, to a PNG.
@@ -129,6 +132,102 @@ Future<Uint8List> captureEditorPage(WidgetRef ref) async {
     images.release();
   }
 }
+
+/// One page's screenshot, with what its file is named after.
+typedef PageScreenshot = ({int number, String name, Uint8List png});
+
+/// Renders the open strategy's pages [pageIds] to PNGs, in page order.
+///
+/// Unlike [captureEditorPage], this reads the strategy as saved, because the
+/// other pages exist only there: a local strategy is saved first, and a
+/// cloud one waits for this device's work to land (see
+/// [loadVideoExportSource], whose errors this throws).
+///
+/// [onPage] hears each page as it starts (1-based, of the total). Throws
+/// [VideoExportCancelled] once [isCancelled] turns true.
+Future<List<PageScreenshot>> captureStrategyPages(
+  WidgetRef ref, {
+  required Set<String> pageIds,
+  required bool transparentBackground,
+  void Function(int page, int total)? onPage,
+  bool Function() isCancelled = _never,
+}) async {
+  void checkCancelled() {
+    if (isCancelled()) throw VideoExportCancelled();
+  }
+
+  final source = await loadVideoExportSource(
+    ref,
+    pageIds: pageIds,
+    isCancelled: isCancelled,
+  );
+  final strategy = source.strategy;
+  final mapState = ref.read(mapProvider);
+  final strategyState = ref.read(strategyProvider);
+  final dotOpacity = ref.read(appPreferencesProvider).backgroundDotOpacity;
+  final ordered = [...strategy.pages]
+    ..sortBySortIndex((page) => page.sortIndex);
+  final chosen = [
+    for (final (index, page) in ordered.indexed)
+      if (pageIds.contains(page.id)) (number: index + 1, page: page),
+  ];
+
+  final container = createCaptureContainer(images: source.images.sources);
+  CaptureGeometryLease? geometry;
+  try {
+    geometry = await prepareCaptureGeometry(
+      container,
+      strategy.mapData,
+      [for (final entry in chosen) entry.page],
+    );
+    final waitForFrame = geometry?.waitForFrame;
+    return await CoordinateSystem.runInCapture(() async {
+      final renderer = PersistentOffscreenRenderer(
+        targetSize: CoordinateSystem.screenShotSize,
+        waitForFrameData: waitForFrame,
+        wrapWidget: (child) =>
+            wrapForOffscreenCapture(child, container: container),
+      );
+      try {
+        final shots = <PageScreenshot>[];
+        for (final entry in chosen) {
+          checkCancelled();
+          onPage?.call(shots.length + 1, chosen.length);
+          final view = ScreenshotView.forPage(
+            strategy,
+            entry.page,
+            strategyState: strategyState,
+            mapState: mapState,
+            backgroundDotOpacity: dotOpacity,
+            transparentBackground: transparentBackground,
+          );
+          view.hydrateProviders(container);
+          // The first page loads the map's SVGs; later pages reuse them
+          // and wait only for their own images.
+          await renderer.prepare(
+            view,
+            settleDuration: Duration(milliseconds: shots.isEmpty ? 800 : 300),
+          );
+          shots.add((
+            number: entry.number,
+            name: entry.page.name,
+            png: await renderer.capture(view),
+          ));
+        }
+        checkCancelled();
+        return shots;
+      } finally {
+        await renderer.dispose();
+      }
+    });
+  } finally {
+    geometry?.close();
+    container.dispose();
+    source.images.release();
+  }
+}
+
+bool _never() => false;
 
 /// A copy of the page on the canvas right now. The editor keeps editing
 /// its own objects in place while the capture fetches images, and a capture

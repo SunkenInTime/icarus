@@ -14,6 +14,7 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
+import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -50,6 +51,42 @@ class ScreenshotView extends ConsumerWidget {
     this.drawingsOpacity = 1.0,
     this.transparentBackground = false,
   });
+
+  /// [page] of a saved [strategy] as a capture draws it, with the map layers
+  /// [mapState] has turned on.
+  factory ScreenshotView.forPage(
+    StrategyData strategy,
+    StrategyPage page, {
+    required StrategyState strategyState,
+    required MapState mapState,
+    required double backgroundDotOpacity,
+    bool transparentBackground = false,
+    Widget? placedWidgetsOverride,
+    double drawingsOpacity = 1.0,
+  }) =>
+      ScreenshotView(
+        isAttack: page.isAttack,
+        mapValue: strategy.mapData,
+        showSpawnBarrier: mapState.showSpawnBarrier,
+        showRegionNames: mapState.showRegionNames,
+        showUltOrbs: mapState.showUltOrbs,
+        backgroundDotOpacity: backgroundDotOpacity,
+        agents: page.agentData,
+        abilities: page.abilityData,
+        text: page.textData,
+        images: page.imageData,
+        drawings: page.drawingData,
+        utilities: page.utilityData,
+        strategySettings: page.settings,
+        strategyState: strategyState,
+        pageName: page.name,
+        lineUpGraph: page.lineUpGraph,
+        themeProfileId: strategy.themeProfileId,
+        themeOverridePalette: strategy.themeOverridePalette,
+        placedWidgetsOverride: placedWidgetsOverride,
+        drawingsOpacity: drawingsOpacity,
+        transparentBackground: transparentBackground,
+      );
   final StrategyState strategyState;
   final MapValue mapValue;
   final bool showSpawnBarrier;

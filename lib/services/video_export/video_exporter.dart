@@ -297,29 +297,15 @@ class VideoExporter {
     StrategyPage page, {
     Widget? placedWidgetsOverride,
     double drawingsOpacity = 1.0,
-  }) {
-    return ScreenshotView(
-      isAttack: page.isAttack,
-      mapValue: strategy.mapData,
-      showSpawnBarrier: mapState.showSpawnBarrier,
-      showRegionNames: mapState.showRegionNames,
-      showUltOrbs: mapState.showUltOrbs,
-      backgroundDotOpacity: backgroundDotOpacity,
-      agents: page.agentData,
-      abilities: page.abilityData,
-      text: page.textData,
-      images: page.imageData,
-      drawings: page.drawingData,
-      utilities: page.utilityData,
-      strategySettings: page.settings,
-      strategyState: strategyState,
-      pageName: page.name,
-      lineUpGraph: page.lineUpGraph,
-      themeProfileId: strategy.themeProfileId,
-      themeOverridePalette: strategy.themeOverridePalette,
-      placedWidgetsOverride: placedWidgetsOverride,
-      drawingsOpacity: drawingsOpacity,
-      transparentBackground: transparentBackground,
-    );
-  }
+  }) =>
+      ScreenshotView.forPage(
+        strategy,
+        page,
+        strategyState: strategyState,
+        mapState: mapState,
+        backgroundDotOpacity: backgroundDotOpacity,
+        transparentBackground: transparentBackground,
+        placedWidgetsOverride: placedWidgetsOverride,
+        drawingsOpacity: drawingsOpacity,
+      );
 }
