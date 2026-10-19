@@ -260,8 +260,9 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
           onCancel: () => cancelled = true,
         ),
       );
-      // Closing the dialog any other way (its X, Escape) cancels too, and
-      // leaves nothing for the cleanup below to pop.
+      // Only the cleanup below closes the dialog. Should anything else
+      // close it first, the capture stops and the cleanup leaves the route
+      // underneath, the editor, alone.
       unawaited(dialogClosed.whenComplete(() {
         dialogOpen = false;
         cancelled = true;
@@ -288,6 +289,8 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
         }
       }
       if (!mounted) return;
+      // A cancel that landed during the last page still wins.
+      if (cancelled) throw VideoExportCancelled();
       if (shots.length == 1) {
         await FilePicker.platform.saveFile(
           type: FileType.custom,

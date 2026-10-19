@@ -214,6 +214,7 @@ Future<List<PageScreenshot>> captureStrategyPages(
             png: await renderer.capture(view),
           ));
         }
+        checkCancelled();
         return shots;
       } finally {
         await renderer.dispose();

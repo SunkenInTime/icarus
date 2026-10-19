@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -178,10 +179,17 @@ void main() {
       (1, 'Default'),
       (3, 'Post plant'),
     ]);
-    // Each file holds its own page: the page with agents draws more.
-    int drawn(Uint8List png) =>
-        img.decodePng(png)!.where((pixel) => pixel.a > 0).length;
-    expect(drawn(shots[1].png), greaterThan(drawn(shots[0].png)));
+    // Each file holds its own page. Above the page names (drawn at the
+    // bottom), the empty page and the page with agents must differ.
+    final empty = img.decodePng(shots[0].png)!;
+    final withAgents = img.decodePng(shots[1].png)!;
+    var differing = 0;
+    for (var y = 0; y < 1000; y++) {
+      for (var x = 0; x < empty.width; x++) {
+        if (empty.getPixel(x, y) != withAgents.getPixel(x, y)) differing++;
+      }
+    }
+    expect(differing, greaterThan(500));
     for (final shot in shots) {
       final png = img.decodePng(shot.png)!;
       expect(png.width, CoordinateSystem.screenShotSize.width);
@@ -323,7 +331,61 @@ void main() {
     );
   });
 
-  testWidgets('closing the progress dialog cancels and keeps the editor open',
+  testWidgets('a cancel during the last page still saves nothing',
+      (tester) async {
+    CoordinateSystem(playAreaSize: const Size(1600, 900));
+    await tester.runAsync(
+      () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+        _strategyId,
+        StrategyData(
+          id: _strategyId,
+          name: 'Retakes',
+          mapData: MapValue.ascent,
+          versionNumber: 1,
+          lastEdited: DateTime(2026),
+          folderID: null,
+          pages: [_page('a', 'Default', 0)],
+        ),
+      ),
+    );
+    late WidgetRef ref;
+    await tester.pumpWidget(ProviderScope(
+      overrides: [strategyProvider.overrideWith(_OpenLocalStrategy.new)],
+      child: Consumer(builder: (context, widgetRef, _) {
+        ref = widgetRef;
+        return const SizedBox.shrink();
+      }),
+    ));
+
+    var cancelled = false;
+    Object? outcome;
+    var done = false;
+    await tester.runAsync(() async {
+      unawaited(
+        captureStrategyPages(
+          ref,
+          pageIds: {'a'},
+          transparentBackground: false,
+          // Cancelled while the only page renders.
+          onPage: (page, total) => cancelled = true,
+          isCancelled: () => cancelled,
+        )
+            .then<void>((shots) => outcome = shots,
+                onError: (Object error) => outcome = error)
+            .whenComplete(() => done = true),
+      );
+    });
+    while (!done) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 16)),
+      );
+      await tester.pump();
+    }
+
+    expect(outcome, isA<VideoExportCancelled>());
+  });
+
+  testWidgets('only Cancel stops a capture, and the editor stays open',
       (tester) async {
     CoordinateSystem(playAreaSize: const Size(1600, 900));
     final folder = (await tester.runAsync(
@@ -389,7 +451,16 @@ void main() {
     }
     expect(find.text('Capturing screenshots'), findsOneWidget);
 
-    await tester.tap(find.byIcon(LucideIcons.x));
+    // Nothing but Cancel closes it: no X, and Escape does nothing.
+    expect(find.byIcon(LucideIcons.x), findsNothing);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(find.text('Capturing screenshots'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pump();
+    // It stays up, saying so, until the capture has stopped.
+    expect(find.text('Cancelling…'), findsOneWidget);
     for (var i = 0;
         i < 400 && find.byIcon(LucideIcons.camera200).evaluate().isEmpty;
         i++) {
