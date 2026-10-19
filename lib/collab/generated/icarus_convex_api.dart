@@ -774,7 +774,6 @@ final class _OpsModule implements OpsModule {
 
 abstract interface class PageModule {
   ConvexQuery<PageGetElementSliceResult> getElementSlice({
-    ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     required String fromPublicId,
     required String pagePublicId,
@@ -783,7 +782,6 @@ abstract interface class PageModule {
     ConvexOptional<String> toPublicId = const ConvexOptional.absent(),
   });
   ConvexQuery<PageGetFrameResult> getFrame({
-    ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     required String pagePublicId,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
@@ -803,7 +801,6 @@ final class _PageModule implements PageModule {
   final ConvexTransport _transport;
   @override
   ConvexQuery<PageGetElementSliceResult> getElementSlice({
-    ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     required String fromPublicId,
     required String pagePublicId,
@@ -812,7 +809,6 @@ final class _PageModule implements PageModule {
     ConvexOptional<String> toPublicId = const ConvexOptional.absent(),
   }) {
     final args = encodePageGetElementSliceArgs(
-      acceptsPictureIds: acceptsPictureIds,
       clientProtocolVersion: clientProtocolVersion,
       fromPublicId: fromPublicId,
       pagePublicId: pagePublicId,
@@ -830,14 +826,12 @@ final class _PageModule implements PageModule {
 
   @override
   ConvexQuery<PageGetFrameResult> getFrame({
-    ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     required String pagePublicId,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodePageGetFrameArgs(
-      acceptsPictureIds: acceptsPictureIds,
       clientProtocolVersion: clientProtocolVersion,
       pagePublicId: pagePublicId,
       shareToken: shareToken,

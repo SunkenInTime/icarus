@@ -3371,30 +3371,16 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentStrategyValue {
 
 final class PageGetElementSliceResult {
   const PageGetElementSliceResult({
-    required this.aliases,
     required this.assets,
     required this.elements,
   });
-  final List<ImagesListForStrategyResultItem> aliases;
   final List<ImagesListForStrategyResultItem> assets;
   final List<ElementsListForPageResultItem> elements;
 
   factory PageGetElementSliceResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'aliases', 'assets', 'elements'});
+    _checkObjectFields(object, path, const {'assets', 'elements'});
     return PageGetElementSliceResult(
-      aliases:
-          _decodeArray(
-                object.value['aliases'] ?? _missing(path, 'aliases'),
-                '$path.aliases',
-              ).value.indexed
-              .map(
-                (entry) => ImagesListForStrategyResultItem.decode(
-                  entry.$2,
-                  _indexPath('$path.aliases', entry.$1),
-                ),
-              )
-              .toList(growable: false),
       assets:
           _decodeArray(
                 object.value['assets'] ?? _missing(path, 'assets'),
@@ -3424,13 +3410,6 @@ final class PageGetElementSliceResult {
 
   ConvexObject encode(String path) {
     return ConvexObject({
-      'aliases': ConvexArray(
-        aliases.indexed
-            .map(
-              (entry) => entry.$2.encode(_indexPath('$path.aliases', entry.$1)),
-            )
-            .toList(growable: false),
-      ),
       'assets': ConvexArray(
         assets.indexed
             .map(
@@ -6460,7 +6439,6 @@ OpsApplyBatchResult decodeOpsApplyBatchResult(ConvexValue value) =>
     OpsApplyBatchResult.decode(value, 'ops.js:applyBatch.returns');
 
 ConvexObject encodePageGetElementSliceArgs({
-  ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
   required double clientProtocolVersion,
   required String fromPublicId,
   required String pagePublicId,
@@ -6468,8 +6446,6 @@ ConvexObject encodePageGetElementSliceArgs({
   required String strategyPublicId,
   ConvexOptional<String> toPublicId = const ConvexOptional.absent(),
 }) => ConvexObject({
-  if (acceptsPictureIds.isPresent)
-    'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
     'page.js:getElementSlice.args.clientProtocolVersion',
@@ -6485,14 +6461,11 @@ PageGetElementSliceResult decodePageGetElementSliceResult(ConvexValue value) =>
     PageGetElementSliceResult.decode(value, 'page.js:getElementSlice.returns');
 
 ConvexObject encodePageGetFrameArgs({
-  ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
   required double clientProtocolVersion,
   required String pagePublicId,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
-  if (acceptsPictureIds.isPresent)
-    'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
     'page.js:getFrame.args.clientProtocolVersion',

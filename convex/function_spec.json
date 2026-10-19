@@ -144209,12 +144209,6 @@
       "args": {
         "type": "object",
         "value": {
-          "acceptsPictureIds": {
-            "fieldType": {
-              "type": "boolean"
-            },
-            "optional": true
-          },
           "clientProtocolVersion": {
             "fieldType": {
               "type": "number"
@@ -144258,167 +144252,6 @@
       "returns": {
         "type": "object",
         "value": {
-          "aliases": {
-            "fieldType": {
-              "type": "array",
-              "value": {
-                "type": "object",
-                "value": {
-                  "byteSize": {
-                    "fieldType": {
-                      "type": "union",
-                      "value": [
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "optional": false
-                  },
-                  "fileExtension": {
-                    "fieldType": {
-                      "type": "string"
-                    },
-                    "optional": false
-                  },
-                  "height": {
-                    "fieldType": {
-                      "type": "union",
-                      "value": [
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "optional": false
-                  },
-                  "legacyStoragePath": {
-                    "fieldType": {
-                      "type": "union",
-                      "value": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "optional": false
-                  },
-                  "mimeType": {
-                    "fieldType": {
-                      "type": "union",
-                      "value": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "optional": false
-                  },
-                  "provider": {
-                    "fieldType": {
-                      "type": "union",
-                      "value": [
-                        {
-                          "type": "literal",
-                          "value": "convex"
-                        },
-                        {
-                          "type": "literal",
-                          "value": "r2"
-                        }
-                      ]
-                    },
-                    "optional": false
-                  },
-                  "publicId": {
-                    "fieldType": {
-                      "type": "string"
-                    },
-                    "optional": false
-                  },
-                  "uploadedAt": {
-                    "fieldType": {
-                      "type": "union",
-                      "value": [
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "optional": false
-                  },
-                  "uploadStatus": {
-                    "fieldType": {
-                      "type": "union",
-                      "value": [
-                        {
-                          "type": "literal",
-                          "value": "pending"
-                        },
-                        {
-                          "type": "literal",
-                          "value": "active"
-                        },
-                        {
-                          "type": "literal",
-                          "value": "failed"
-                        },
-                        {
-                          "type": "literal",
-                          "value": "deleted"
-                        }
-                      ]
-                    },
-                    "optional": false
-                  },
-                  "url": {
-                    "fieldType": {
-                      "type": "union",
-                      "value": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "optional": false
-                  },
-                  "width": {
-                    "fieldType": {
-                      "type": "union",
-                      "value": [
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "optional": false
-                  }
-                }
-              }
-            },
-            "optional": false
-          },
           "assets": {
             "fieldType": {
               "type": "array",
@@ -164249,12 +164082,6 @@
       "args": {
         "type": "object",
         "value": {
-          "acceptsPictureIds": {
-            "fieldType": {
-              "type": "boolean"
-            },
-            "optional": true
-          },
           "clientProtocolVersion": {
             "fieldType": {
               "type": "number"

@@ -195,39 +195,46 @@ async function send(owner: Harness, clientId: string, ops: unknown[]) {
   return results;
 }
 
+/// Code-unit order, as Dart's String.compareTo orders ids.
+const byId = (left: string, right: string) =>
+  left < right ? -1 : left > right ? 1 : 0;
+
 const byPlace = (left: Row, right: Row) =>
-  left.sortIndex - right.sortIndex ||
-  left.publicId.localeCompare(right.publicId);
+  left.sortIndex - right.sortIndex || byId(left.publicId, right.publicId);
 
 /// The page as the app puts it together from a frame and slices whose
 /// ranges cover every id: elements and lineups in place order (ties by id,
-/// as the offline copy orders them), each real asset once, then each alias
-/// where no real asset holds its id.
+/// as the offline copy orders them), each asset once.
 function assemble(frame: Row, slices: Row[]) {
   const assets = new Map<string, Row>();
   for (const asset of [...frame.assets, ...slices.flatMap((s) => s.assets)]) {
     assets.set(asset.publicId, asset);
-  }
-  for (const alias of slices.flatMap((s) => s.aliases)) {
-    if (!assets.has(alias.publicId)) assets.set(alias.publicId, alias);
   }
   return {
     page: frame.page,
     content: frame.content,
     elements: slices.flatMap((s) => s.elements).sort(byPlace),
     lineups: [...frame.lineups].sort(byPlace),
-    assets: [...assets.values()].sort((a, b) =>
-      a.publicId.localeCompare(b.publicId),
-    ),
+    assets: [...assets.values()].sort((a, b) => byId(a.publicId, b.publicId)),
   };
 }
 
-/// The whole-page answer in the same order.
+/// The copies, which show the original's picture: the whole-page read also
+/// lists that picture under each copy's own id, for builds without picture
+/// ids. The read in parts serves only builds with them, so it leaves those
+/// aliases out.
+const aliasIds = new Set(ids.filter((id) => id.includes("copy")));
+
+/// The whole-page answer, as a build with picture ids reads it, in the same
+/// order and without the aliases.
 function inPlaceOrder(snapshot: Row) {
   return {
     ...snapshot,
     elements: [...snapshot.elements].sort(byPlace),
     lineups: [...snapshot.lineups].sort(byPlace),
+    assets: snapshot.assets
+      .filter((asset: Row) => !aliasIds.has(asset.publicId))
+      .sort((a: Row, b: Row) => byId(a.publicId, b.publicId)),
   };
 }
 
@@ -252,7 +259,14 @@ async function expectSameAsWholePage(owner: Harness, page: string) {
     ...protocol,
     strategyPublicId: strategy,
     pagePublicId: page,
+    acceptsPictureIds: true,
   })) as Row;
+  // The aliases are there to leave out.
+  if (page === pageA) {
+    expect(whole.assets.map((a: Row) => a.publicId)).toEqual(
+      expect.arrayContaining([...aliasIds]),
+    );
+  }
   for (const bounds of [[""], ["", "8"], ["", "4", "8", "c"], ["", ..."123456789abcdef"]]) {
     const { frame, slices } = await readInParts(owner, page, bounds);
     expect(assemble(frame, slices), `slices from ${bounds.join(",")}`).toEqual(

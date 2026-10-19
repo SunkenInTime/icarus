@@ -7,7 +7,6 @@ import { errorWithCode, internalError } from "./lib/errors";
 import {
   collectReferencedAssetIds,
   getViewerAssetForStrategy,
-  pictureAliases,
   serializeAssetForViewer,
   withPictureAliases,
 } from "./lib/imageAssets";
@@ -32,11 +31,6 @@ const pageArgs = {
   strategyPublicId: v.string(),
   pagePublicId: v.string(),
   shareToken: v.optional(v.string()),
-  // Set by clients that keep an image's picture id (assetId, see
-  // collectAssetIdFromElementPayload). Older clients get image payloads
-  // without it, as they would write them, and find pictures under each
-  // image's own id (withPictureAliases).
-  acceptsPictureIds: v.optional(v.boolean()),
 };
 
 /// The page [args] names, once the caller may read its strategy.
@@ -91,7 +85,14 @@ async function viewerAssets(
 }
 
 export const getSnapshot = query({
-  args: pageArgs,
+  args: {
+    ...pageArgs,
+    // Set by clients that keep an image's picture id (assetId, see
+    // collectAssetIdFromElementPayload). Older clients get image payloads
+    // without it, as they would write them, and find pictures under each
+    // image's own id (withPictureAliases).
+    acceptsPictureIds: v.optional(v.boolean()),
+  },
   returns: pageSnapshotValidator,
   handler: async (ctx, args) => {
     const { strategy, page } = await readablePage(ctx, args);
@@ -106,6 +107,9 @@ export const getSnapshot = query({
         .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
         .collect(),
     ]);
+    // Read before the sorts below reorder elements and lineups, as the
+    // assets' order follows them.
+    const assets = await viewerAssets(ctx, strategy, elements, lineups);
 
     return {
       page: serializePageDescriptor(strategy.publicId, page),
@@ -125,15 +129,13 @@ export const getSnapshot = query({
         .map((lineup) =>
           serializeLineup(strategy.publicId, page.publicId, lineup),
         ),
-      assets: withPictureAliases(
-        await viewerAssets(ctx, strategy, elements, lineups),
-        elements,
-      ).sort((left, right) => left.publicId.localeCompare(right.publicId)),
+      assets: withPictureAliases(assets, elements).sort((left, right) => left.publicId.localeCompare(right.publicId)),
     };
   },
 });
 
-// A live page read in parts. Convex re-runs a live query in full whenever a
+// A live page read in parts, for clients that keep an image's picture id:
+// payloads carry it and no picture aliases are sent (see getSnapshot). Convex re-runs a live query in full whenever a
 // row it read is written, so one query over the whole page re-reads every
 // row after every edit. Read as a frame plus element slices, an edit
 // re-runs only the slice holding the row it touched. Each part is complete
@@ -185,18 +187,16 @@ export const getElementSlice = query({
         return toPublicId === undefined ? from : from.lt("publicId", toPublicId);
       })
       .collect();
-    const assets = await viewerAssets(ctx, strategy, elements, []);
     return {
       elements: elements.map((element) =>
         serializeElement(
           strategy.publicId,
           page.publicId,
           element,
-          args.acceptsPictureIds === true,
+          true,
         ),
       ),
-      assets,
-      aliases: pictureAliases(assets, elements),
+      assets: await viewerAssets(ctx, strategy, elements, []),
     };
   },
 });

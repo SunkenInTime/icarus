@@ -78,16 +78,6 @@ export function withPictureAliases<T extends { publicId: string }>(
   assets: T[],
   elements: Doc<"elements">[],
 ): T[] {
-  return [...assets, ...pictureAliases(assets, elements)];
-}
-
-/// The aliases [withPictureAliases] adds to [assets], alone. A reader that
-/// puts a page together from several answers applies them last, each only
-/// where no answer holds a real asset under that id, as one answer would.
-export function pictureAliases<T extends { publicId: string }>(
-  assets: T[],
-  elements: Doc<"elements">[],
-): T[] {
   const byId = new Map(assets.map((asset) => [asset.publicId, asset]));
   const aliases: T[] = [];
   for (const element of elements) {
@@ -103,7 +93,7 @@ export function pictureAliases<T extends { publicId: string }>(
     byId.set(id, alias);
     aliases.push(alias);
   }
-  return aliases;
+  return [...assets, ...aliases];
 }
 
 /// The images a lineup group shows: links[*].images[*].id, across every
