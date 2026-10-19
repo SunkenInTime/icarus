@@ -217,6 +217,63 @@ test("strategy lists carry each strategy's agents only when asked", async () => 
   }
 });
 
+test("a strategy's agents follow moves, swaps and deletes", async () => {
+  const { owner } = await createHarness();
+  await seedFolder(owner, "root");
+  await seedStrategy(owner, "s", "root", "ascent");
+  await placeAgent(owner, "s", "e1", "jett");
+  await placeAgent(owner, "s", "e2", "sova");
+  const agentsOf = async () => {
+    const listed = (await owner.query(listStrategiesForFolder, {
+      folderPublicId: "root",
+      includeAgentTypes: true,
+    })) as Array<Record<string, unknown>>;
+    return listed[0]?.agentTypes;
+  };
+  const patch = (opId: string, agentType: string, x: number, revision: number) =>
+    owner.mutation(applyBatch, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      strategyPublicId: "s",
+      clientId: "client-a",
+      ops: [
+        {
+          opId,
+          type: "element.patch",
+          elementPublicId: "e1",
+          payload: {
+            kind: "agent",
+            payloadVersion: 1,
+            data: { type: agentType, position: { x, y: 0.5 } },
+          },
+          expectedElementRevision: revision,
+        },
+      ],
+    });
+  expect(await agentsOf()).toEqual(["jett", "sova"]);
+
+  await patch("move", "jett", 0.25, 1);
+  expect(await agentsOf()).toEqual(["jett", "sova"]);
+
+  await patch("swap", "omen", 0.25, 2);
+  expect(await agentsOf()).toEqual(["omen", "sova"]);
+
+  await owner.mutation(applyBatch, {
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+    strategyPublicId: "s",
+    clientId: "client-a",
+    ops: [
+      {
+        opId: "delete",
+        type: "element.delete",
+        elementPublicId: "e2",
+        pagePublicId: "s-page",
+        expectedElementRevision: 1,
+      },
+    ],
+  });
+  expect(await agentsOf()).toEqual(["omen"]);
+});
+
 test("deleting a strategy drops it from the folder summary", async () => {
   const { owner } = await createHarness();
   await seedFolder(owner, "root");

@@ -15,6 +15,18 @@ function agentTypeOf(data: unknown): string | null {
   return typeof type === "string" && type.length > 0 ? type : null;
 }
 
+/// What an element row adds to its strategy's agent summary: the agent it
+/// shows and the page it is on (a page in the trash drops it), or null for
+/// a row that adds nothing. A write that leaves this as it was, like moving
+/// an agent, cannot change the summary.
+export function agentSummaryKeyOf(
+  row: Pick<Doc<"elements">, "deleted" | "elementType" | "payload" | "pageId">,
+): string | null {
+  if (row.deleted || row.elementType !== "agent") return null;
+  const type = agentTypeOf(row.payload.data);
+  return type === null ? null : `${row.pageId}:${type}`;
+}
+
 /// The agents a lineup group starts from: each origin's id and agent type,
 /// skipping an origin whose agent names no type.
 export function lineupAgentsOf(
