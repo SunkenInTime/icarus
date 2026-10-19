@@ -3,8 +3,7 @@ import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// The open strategy's pages as a checklist, numbered in order: which pages
-/// a video export plays or a screenshot captures. Needs a Material ancestor
-/// for its ink.
+/// a video export plays. Needs a Material ancestor for its ink.
 class PageChoiceList extends StatelessWidget {
   const PageChoiceList({
     super.key,
