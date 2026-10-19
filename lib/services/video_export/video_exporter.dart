@@ -47,6 +47,7 @@ class VideoExporter {
     required this.mapState,
     required this.backgroundDotOpacity,
     required this.geometry,
+    this.transparentBackground = false,
     this.imageSources = const {},
     this.navigation,
     this.requireNavigation = false,
@@ -57,6 +58,10 @@ class VideoExporter {
   final MapState mapState;
   final double backgroundDotOpacity;
   final VisionGeometryMap? geometry;
+
+  /// Leaves the backdrop out of every frame (see
+  /// [ScreenshotView.transparentBackground]). The sink must keep alpha.
+  final bool transparentBackground;
 
   /// What each image on the exported pages paints, by image id; see
   /// [captureImageSourcesProvider].
@@ -187,7 +192,10 @@ class VideoExporter {
       ) async {
         if (_cancelled) throw VideoExportCancelled();
         view.hydrateProviders(offscreenContainer);
-        final bytes = await renderer!.captureRawRgba(view);
+        final bytes = await renderer!.captureRawRgba(
+          view,
+          straightAlpha: transparentBackground,
+        );
         await sink.addFrame(bytes, durationSeconds);
         renderedFrames++;
         onProgress?.call(
@@ -322,6 +330,7 @@ class VideoExporter {
       themeOverridePalette: strategy.themeOverridePalette,
       placedWidgetsOverride: placedWidgetsOverride,
       drawingsOpacity: drawingsOpacity,
+      transparentBackground: transparentBackground,
     );
   }
 }
