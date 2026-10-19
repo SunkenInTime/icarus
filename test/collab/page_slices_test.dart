@@ -10,207 +10,297 @@ import 'package:icarus/collab/transport/convex_transport.dart';
 import 'strategy_copy_fixtures.dart';
 
 void main() {
-  group('pageSliceStarts', () {
-    test('about ten elements a slice, from 1 to 16 slices', () {
-      expect(pageSliceStarts(0), ['']);
-      expect(pageSliceStarts(15), ['']);
-      expect(pageSliceStarts(16), ['', '8']);
-      expect(pageSliceStarts(42), ['', '4', '8', 'c']);
-      expect(pageSliceStarts(87), ['', '2', '4', '6', '8', 'a', 'c', 'e']);
-      expect(pageSliceStarts(500), ['', ...'123456789abcdef'.split('')]);
-    });
+  test('slices hold about ten elements each, from 1 to 16 slices', () {
+    expect(pageSliceStarts(0), ['']);
+    expect(pageSliceStarts(15), ['']);
+    expect(pageSliceStarts(16), ['', '8']);
+    expect(pageSliceStarts(42), ['', '4', '8', 'c']);
+    expect(pageSliceStarts(87), ['', '2', '4', '6', '8', 'a', 'c', 'e']);
+    expect(pageSliceStarts(500), ['', ...'123456789abcdef'.split('')]);
   });
 
-  group('a page watched in slices', () {
-    late _SliceServer server;
+  group('a watched page', () {
+    late _Server server;
     late ConvexStrategyRepository repository;
+    late List<RemotePageSnapshot> pages;
+    late List<Object> errors;
+    StreamSubscription<RemotePageSnapshot>? watching;
 
     setUp(() {
-      server = _SliceServer();
+      server = _Server();
       repository = ConvexStrategyRepository(IcarusConvexApi(server));
+      pages = [];
+      errors = [];
     });
+    tearDown(() => watching?.cancel());
 
-    Stream<RemotePageSnapshot> watch(int elementCount) =>
-        repository.watchPageSnapshot(
-          strategyPublicId: 'strategy',
-          pagePublicId: 'page-a',
-          elementCount: elementCount,
-        );
+    Future<void> watch() async {
+      watching = repository
+          .watchPageSnapshot(strategyPublicId: 'strategy', pagePublicId: 'p')
+          .listen(pages.add, onError: errors.add);
+      await pumpEventQueue();
+    }
 
-    test('asks for the frame and slices covering every id', () async {
-      final subscription = watch(42).listen((_) {});
+    /// The page with [count] agents, ids spread over the hexadecimal range;
+    /// [moved] has its revision raised.
+    List<Map<String, Object?>> agents(int count, {String? moved}) => [
+          for (var index = 0; index < count; index++)
+            agentRow(
+              _id(index),
+              'p',
+              revision: _id(index) == moved ? 2 : 1,
+            ),
+        ];
+
+    Future<void> watchSlicedPage(int count) async {
+      await watch();
+      server.publish(agents(count));
+      server.publish(agents(count, moved: _id(1)));
+      await pumpEventQueue();
+    }
+
+    test('is watched whole while it does not change', () async {
+      await watch();
+      server.publish(agents(20));
       await pumpEventQueue();
 
-      expect(server.asked.keys, ['frame', '', '4', '8', 'c']);
-      for (final args in server.asked.values) {
+      expect(server.watched, ['page:getSnapshot']);
+      expect(pages, hasLength(1));
+    });
+
+    test('a small page stays whole when it changes', () async {
+      await watch();
+      server.publish(agents(10));
+      server.publish(agents(10, moved: _id(1)));
+      await pumpEventQueue();
+
+      expect(server.watched, ['page:getSnapshot']);
+      expect(pages, hasLength(2));
+    });
+
+    test('once it changes, is watched in slices covering every id', () async {
+      await watchSlicedPage(20);
+
+      expect(server.watched, [
+        'page:getSnapshot',
+        'page:getFrame',
+        'page:getElementSlice from ""',
+        'page:getElementSlice from "8"',
+      ]);
+      expect(server.slices.map((args) => args.value['toPublicId']?.toDart()),
+          ['8', null]);
+      for (final args in server.watchedArgs) {
         expect(
           args.value['clientProtocolVersion']?.toDart(),
           currentCloudProtocolVersion,
         );
       }
-      expect(
-        [
-          for (final start in ['', '4', '8', 'c'])
-            server.asked[start]!.value['toPublicId']?.toDart(),
-        ],
-        ['4', '8', 'c', null],
-      );
-      await subscription.cancel();
+      // The slices carry it from here on.
+      expect(server.cancelled, ['page:getSnapshot']);
     });
 
-    test('shows the page only once every part answered, as one read would',
+    test('put together from its slices, it is the page one read sends',
         () async {
-      final pages = <RemotePageSnapshot>[];
-      final subscription = watch(16).listen(pages.add);
-      await pumpEventQueue();
+      await watchSlicedPage(20);
 
-      server.answer('frame', frameAnswer());
-      server.answer('', sliceAnswer([agentRow('3-agent', 'page-a')]));
-      await pumpEventQueue();
-      expect(pages, isEmpty);
-
-      server.answer(
-        '8',
-        sliceAnswer(
-          [
-            imageRow('b-copy', 'page-a', 'picture'),
-            agentRow('9-agent', 'page-a'),
-          ],
-          assets: [assetRow('picture')],
-        ),
-      );
-      await pumpEventQueue();
-
-      final whole = pageAnswer(
-        'page-a',
-        elements: [
-          agentRow('3-agent', 'page-a'),
-          agentRow('9-agent', 'page-a'),
-          imageRow('b-copy', 'page-a', 'picture'),
-        ],
-        lineups: [lineupRow('lineup', 'page-a', 'shot')],
-        assets: [assetRow('picture'), assetRow('shot')],
-      );
-      expect(pages, hasLength(1));
+      expect(pages, hasLength(3));
+      // Ties in sortIndex (every agent here) by id, as the offline copy
+      // orders them.
+      final whole = server.page.toDart();
+      final inPlaceOrder = ConvexValue.fromDart({
+        ...whole,
+        'elements': [...whole['elements']! as List<Object?>]..sort(
+            (a, b) => ((a! as Map)['publicId'] as String)
+                .compareTo((b! as Map)['publicId'] as String)),
+      });
       expect(
-        pages.single.serverAnswer?.toDart(),
-        PageGetSnapshotResult.decode(whole, 'whole')
+        pages.last.serverAnswer?.toDart(),
+        PageGetSnapshotResult.decode(inPlaceOrder, 'whole')
             .encode('pageSnapshot')
             .toDart(),
       );
-      await subscription.cancel();
     });
 
-    test('shows the page again when one slice changes', () async {
-      final pages = <RemotePageSnapshot>[];
-      final subscription = watch(16).listen(pages.add);
-      await pumpEventQueue();
-      server.answer('frame', frameAnswer());
-      server.answer('', sliceAnswer([agentRow('3-agent', 'page-a')]));
-      server.answer('8', sliceAnswer([agentRow('9-agent', 'page-a')]));
+    test('one slice changing shows the page again', () async {
+      await watchSlicedPage(20);
+
+      server.publish(agents(20, moved: _id(3)));
       await pumpEventQueue();
 
-      server.answer(
-        '8',
-        sliceAnswer([agentRow('9-agent', 'page-a', revision: 2, x: 40)]),
-      );
-      await pumpEventQueue();
-
-      expect(pages, hasLength(2));
+      expect(pages, hasLength(4));
       expect(
-        pages.last.elements.map((e) => (e.publicId, e.revision)),
-        [('3-agent', 1), ('9-agent', 2)],
+        pages.last.elements.singleWhere((e) => e.publicId == _id(3)).revision,
+        2,
       );
-      await subscription.cancel();
     });
 
-    test('parts answering together show the page once', () async {
-      final pages = <RemotePageSnapshot>[];
-      final subscription = watch(16).listen(pages.add);
-      await pumpEventQueue();
-      server.answer('frame', frameAnswer());
-      server.answer('', sliceAnswer([agentRow('3-agent', 'page-a')]));
-      server.answer('8', sliceAnswer([agentRow('9-agent', 'page-a')]));
+    test('a write touching two slices shows the page once', () async {
+      await watchSlicedPage(20);
+      final before = pages.length;
+
+      // Ids 0 and 9 sit in different slices.
+      server.publish([
+        for (final row in agents(20))
+          row['publicId'] == _id(0) || row['publicId'] == _id(9)
+              ? agentRow(row['publicId']! as String, 'p', revision: 3)
+              : row,
+      ]);
       await pumpEventQueue();
 
-      // One write moved an agent in each slice.
-      server.answer(
-        '',
-        sliceAnswer([agentRow('3-agent', 'page-a', revision: 2)]),
-      );
-      server.answer(
-        '8',
-        sliceAnswer([agentRow('9-agent', 'page-a', revision: 2)]),
-      );
-      await pumpEventQueue();
-
-      expect(pages, hasLength(2));
-      expect(pages.last.elements.map((e) => e.revision), [2, 2]);
-      await subscription.cancel();
+      expect(pages.length - before, 1);
     });
 
-    test('a part that fails fails the page', () async {
-      final errors = <Object>[];
-      final subscription = watch(16).listen((_) {}, onError: errors.add);
-      await pumpEventQueue();
+    test('read once while sliced, it is read through the slices', () async {
+      await watchSlicedPage(20);
+      server.reads.clear();
 
-      server.fail('8', StateError('slice refused'));
+      final read = await repository.fetchPageSnapshot(
+        strategyPublicId: 'strategy',
+        pagePublicId: 'p',
+      );
+
+      expect(server.reads, [
+        'page:getFrame',
+        'page:getElementSlice from ""',
+        'page:getElementSlice from "8"',
+      ]);
+      expect(read.elements, hasLength(20));
+    });
+
+    test('read once while whole, or after watching stops, it is read whole',
+        () async {
+      await watch();
+      await repository.fetchPageSnapshot(
+        strategyPublicId: 'strategy',
+        pagePublicId: 'p',
+      );
+      expect(server.reads, ['page:getSnapshot']);
+
+      server.publish(agents(20));
+      server.publish(agents(20, moved: _id(1)));
+      await pumpEventQueue();
+      await watching!.cancel();
+      watching = null;
+      server.reads.clear();
+      await repository.fetchPageSnapshot(
+        strategyPublicId: 'strategy',
+        pagePublicId: 'p',
+      );
+      expect(server.reads, ['page:getSnapshot']);
+    });
+
+    test('stopping it stops every slice', () async {
+      await watchSlicedPage(20);
+      await watching!.cancel();
+      watching = null;
+
+      expect(
+        server.cancelled,
+        unorderedEquals([
+          'page:getSnapshot',
+          'page:getFrame',
+          'page:getElementSlice from ""',
+          'page:getElementSlice from "8"',
+        ]),
+      );
+    });
+
+    test('a slice that fails fails the page', () async {
+      await watchSlicedPage(20);
+
+      server.fail('page:getElementSlice from "8"', StateError('refused'));
       await pumpEventQueue();
 
       expect(errors.single, isA<StateError>());
-      await subscription.cancel();
-    });
-
-    test('stopping the page stops every part', () async {
-      final subscription = watch(42).listen((_) {});
-      await pumpEventQueue();
-      await subscription.cancel();
-
-      expect(server.cancelled, unorderedEquals(['frame', '', '4', '8', 'c']));
     });
   });
 }
 
-ConvexObject frameAnswer() => ConvexValue.fromDart({
-      'page': pageRow('page-a'),
-      'content': contentRow(),
-      'lineups': [lineupRow('lineup', 'page-a', 'shot')],
-      'assets': [assetRow('shot')],
-    }) as ConvexObject;
+String _id(int index) =>
+    '${'0123456789abcdef'[index % 16]}${index.toString().padLeft(2, '0')}';
 
-ConvexObject sliceAnswer(
-  List<Map<String, Object?>> elements, {
-  List<Map<String, Object?>> assets = const [],
-}) =>
-    ConvexValue.fromDart({'elements': elements, 'assets': assets})
-        as ConvexObject;
-
-/// Answers page:getFrame (keyed 'frame') and page:getElementSlice (keyed by
-/// its start) as a test says.
-final class _SliceServer implements ConvexTransport {
-  final asked = <String, ConvexObject>{};
+/// One page, 'p', answered whole (page:getSnapshot) or in parts
+/// (page:getFrame, page:getElementSlice) from the same rows, live or read
+/// once.
+final class _Server implements ConvexTransport {
+  ConvexObject page = pageAnswer('p');
+  final watched = <String>[];
+  final watchedArgs = <ConvexObject>[];
+  final slices = <ConvexObject>[];
+  final reads = <String>[];
   final cancelled = <String>[];
-  final _streams = <String, StreamController<ConvexValue>>{};
+  final _live = <String, (String, ConvexObject, StreamController<ConvexValue>)>{};
 
-  void answer(String key, ConvexValue value) => _streams[key]!.add(value);
+  void publish(List<Map<String, Object?>> elements) {
+    page = pageAnswer(
+      'p',
+      elements: elements,
+      lineups: [lineupRow('lineup', 'p', 'shot')],
+      assets: [assetRow('shot')],
+    );
+    for (final (name, args, controller) in _live.values) {
+      controller.add(_answer(name, args));
+    }
+  }
 
-  void fail(String key, Object error) => _streams[key]!.addError(error);
+  void fail(String key, Object error) => _live[key]!.$3.addError(error);
+
+  ConvexValue _answer(String name, ConvexObject args) {
+    final whole = page.toDart();
+    switch (name) {
+      case 'page:getSnapshot':
+        return page;
+      case 'page:getFrame':
+        return ConvexValue.fromDart({
+          'page': whole['page'],
+          'content': whole['content'],
+          'lineups': whole['lineups'],
+          'assets': whole['assets'],
+        });
+      case 'page:getElementSlice':
+        final from = args.value['fromPublicId']!.toDart() as String;
+        final to = args.value['toPublicId']?.toDart() as String?;
+        return ConvexValue.fromDart({
+          'elements': [
+            for (final element in whole['elements']! as List<Object?>)
+              if (_inRange((element! as Map)['publicId'] as String, from, to))
+                element,
+          ],
+          'assets': const <Object?>[],
+        });
+    }
+    throw StateError('unexpected $name');
+  }
+
+  String _key(String name, ConvexObject args) => name == 'page:getElementSlice'
+      ? '$name from "${args.value['fromPublicId']!.toDart()}"'
+      : name;
+
+  @override
+  Future<ConvexValue> query(String name, ConvexObject args) async {
+    reads.add(_key(name, args));
+    return _answer(name, args);
+  }
 
   @override
   Stream<ConvexValue> subscribe(String name, ConvexObject args) {
-    final key = switch (name) {
-      'page:getFrame' => 'frame',
-      'page:getElementSlice' => args.value['fromPublicId']!.toDart() as String,
-      _ => throw StateError('unexpected $name'),
-    };
-    asked[key] = args;
+    final key = _key(name, args);
+    watched.add(key);
+    watchedArgs.add(args);
+    if (name == 'page:getElementSlice') slices.add(args);
     final controller = StreamController<ConvexValue>(
       onCancel: () => cancelled.add(key),
     );
-    _streams[key] = controller;
+    _live[key] = (name, args, controller);
+    // A live part answers at once with what the server holds now; the whole
+    // page answers when the test publishes.
+    if (name != 'page:getSnapshot') controller.add(_answer(name, args));
     return controller.stream;
   }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
+
+bool _inRange(String id, String from, String? to) =>
+    id.compareTo(from) >= 0 && (to == null || id.compareTo(to) < 0);

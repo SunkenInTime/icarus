@@ -760,12 +760,9 @@ final class _Server implements ConvexTransport {
     switch (name) {
       case 'strategy:getShell':
         _shellWatchers.add(controller);
-      case 'page:getFrame' || 'page:getElementSlice':
+      case 'page:getSnapshot':
         final pageId = args.value['pagePublicId']!.toDart() as String;
         (_pageWatchers[pageId] ??= []).add(controller);
-        // Watchers get the whole page; each part reads its share.
-        return controller.stream
-            .map((page) => pagePart(name, args, page as ConvexObject));
     }
     return controller.stream;
   }

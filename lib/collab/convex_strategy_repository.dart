@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' show min;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -203,61 +204,167 @@ class ConvexStrategyRepository {
         .map(_strategyShell);
   }
 
+  /// The pages watched in slices right now (see [watchPageSnapshot]) and
+  /// where their slices start, by [_pageKey], with how many watch each.
+  final _slicedPages = <String, (List<String>, int)>{};
+
+  String _pageKey(String strategyPublicId, String pagePublicId, String? token) =>
+      '$strategyPublicId|$pagePublicId|${token ?? ''}';
+
+  /// [pagePublicId], read once. A page watched in slices is read through the
+  /// same slices, which Convex answers from the live ones at no cost, as it
+  /// answers page:getSnapshot from a live page:getSnapshot.
   Future<RemotePageSnapshot> fetchPageSnapshot({
     required String strategyPublicId,
     required String pagePublicId,
     String? shareToken,
   }) async {
+    final starts =
+        _slicedPages[_pageKey(strategyPublicId, pagePublicId, shareToken)]?.$1;
+    if (starts != null) {
+      final (frame, slices) =
+          _pageParts(strategyPublicId, pagePublicId, shareToken, starts);
+      final answers = await Future.wait([
+        frame.fetch(),
+        for (final slice in slices) slice.fetch(),
+      ]);
+      return _pageSnapshot(assemblePage(
+        answers.first as PageGetFrameResult,
+        answers.skip(1).cast<PageGetElementSliceResult>().toList(),
+      ));
+    }
     return _pageSnapshot(
-      await _api.page
-          .getSnapshot(
-            clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
-            strategyPublicId: strategyPublicId,
-            pagePublicId: pagePublicId,
-            shareToken: _optional(shareToken),
-            acceptsPictureIds: const ConvexOptional.present(true),
-          )
-          .fetch(),
+      await _wholePage(strategyPublicId, pagePublicId, shareToken).fetch(),
     );
   }
 
-  /// The whole page, live, read in slices (see page_slices.dart) so an edit
-  /// re-reads only the slice it touched. [elementCount], the page's size
-  /// when last read, picks how many slices.
-  Stream<RemotePageSnapshot> watchPageSnapshot({
-    required String strategyPublicId,
-    required String pagePublicId,
+  ConvexQuery<PageGetSnapshotResult> _wholePage(
+    String strategyPublicId,
+    String pagePublicId,
     String? shareToken,
-    int elementCount = 0,
-  }) {
+  ) =>
+      _api.page.getSnapshot(
+        clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+        strategyPublicId: strategyPublicId,
+        pagePublicId: pagePublicId,
+        shareToken: _optional(shareToken),
+        // This client keeps an image's picture id (PlacedImage.assetId).
+        acceptsPictureIds: const ConvexOptional.present(true),
+      );
+
+  /// The frame and the slices starting at [starts] (see page_slices.dart).
+  (
+    ConvexQuery<PageGetFrameResult>,
+    List<ConvexQuery<PageGetElementSliceResult>>,
+  ) _pageParts(
+    String strategyPublicId,
+    String pagePublicId,
+    String? shareToken,
+    List<String> starts,
+  ) {
     final protocol = currentCloudProtocolVersion.toDouble();
     final token = _optional(shareToken);
-    final starts = pageSliceStarts(elementCount);
-    return watchAssembledPage(
-      _api.page
-          .getFrame(
+    return (
+      _api.page.getFrame(
+        clientProtocolVersion: protocol,
+        strategyPublicId: strategyPublicId,
+        pagePublicId: pagePublicId,
+        shareToken: token,
+      ),
+      [
+        for (final (index, start) in starts.indexed)
+          _api.page.getElementSlice(
             clientProtocolVersion: protocol,
             strategyPublicId: strategyPublicId,
             pagePublicId: pagePublicId,
             shareToken: token,
-          )
-          .watch(),
-      [
-        for (final (index, start) in starts.indexed)
-          _api.page
-              .getElementSlice(
-                clientProtocolVersion: protocol,
-                strategyPublicId: strategyPublicId,
-                pagePublicId: pagePublicId,
-                shareToken: token,
-                fromPublicId: start,
-                toPublicId: index + 1 < starts.length
-                    ? ConvexOptional.present(starts[index + 1])
-                    : const ConvexOptional.absent(),
-              )
-              .watch(),
+            fromPublicId: start,
+            toPublicId: index + 1 < starts.length
+                ? ConvexOptional.present(starts[index + 1])
+                : const ConvexOptional.absent(),
+          ),
       ],
-    ).map(_pageSnapshot);
+    );
+  }
+
+  /// The whole page, live. Watched whole at first, as reading it once just
+  /// before costs nothing more; once it changes while watched (someone is
+  /// editing it), watched in slices instead (see page_slices.dart), so each
+  /// further edit re-reads one slice rather than the whole page. A page too
+  /// small for more than one slice stays whole.
+  Stream<RemotePageSnapshot> watchPageSnapshot({
+    required String strategyPublicId,
+    required String pagePublicId,
+    String? shareToken,
+  }) {
+    final key = _pageKey(strategyPublicId, pagePublicId, shareToken);
+    late final StreamController<PageGetSnapshotResult> controller;
+    StreamSubscription<PageGetSnapshotResult>? whole;
+    StreamSubscription<PageGetSnapshotResult>? sliced;
+    var registered = false;
+    var wholeAnswers = 0;
+
+    void watchSlices(PageGetSnapshotResult page) {
+      final starts = pageSliceStarts(page.elements.length);
+      if (starts.length == 1) return;
+      final (frame, slices) =
+          _pageParts(strategyPublicId, pagePublicId, shareToken, starts);
+      sliced = watchAssembledPage(
+        frame.watch(),
+        [for (final slice in slices) slice.watch()],
+      ).listen(
+        (page) {
+          // The slices answered: they carry the page from here on.
+          if (whole case final stopping?) {
+            whole = null;
+            unawaited(stopping.cancel());
+            final (_, watchers) = _slicedPages[key] ?? (starts, 0);
+            _slicedPages[key] = (starts, watchers + 1);
+            registered = true;
+          }
+          controller.add(page);
+        },
+        onError: controller.addError,
+      );
+    }
+
+    controller = StreamController<PageGetSnapshotResult>(
+      onListen: () {
+        whole = _wholePage(strategyPublicId, pagePublicId, shareToken)
+            .watch()
+            .listen(
+          (page) {
+            controller.add(page);
+            wholeAnswers += 1;
+            if (wholeAnswers == 2 && sliced == null) watchSlices(page);
+          },
+          onError: controller.addError,
+        );
+      },
+      onPause: () {
+        whole?.pause();
+        sliced?.pause();
+      },
+      onResume: () {
+        whole?.resume();
+        sliced?.resume();
+      },
+      onCancel: () async {
+        if (registered) {
+          final (starts, watchers) = _slicedPages[key]!;
+          if (watchers <= 1) {
+            _slicedPages.remove(key);
+          } else {
+            _slicedPages[key] = (starts, watchers - 1);
+          }
+        }
+        await Future.wait([
+          if (whole case final w?) w.cancel(),
+          if (sliced case final s?) s.cancel(),
+        ]);
+      },
+    );
+    return controller.stream.map(_pageSnapshot);
   }
 
   /// Which of [assetPublicIds] the strategy's content shows on the server,

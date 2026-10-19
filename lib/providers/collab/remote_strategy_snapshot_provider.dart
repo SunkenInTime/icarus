@@ -551,10 +551,6 @@ class RemoteEditorSnapshotNotifier
           strategyPublicId: strategyPublicId,
           pagePublicId: pagePublicId,
           shareToken: _shareToken,
-          // How many slices it is read in; any count reads the whole page.
-          elementCount: shown != null && shown.page.publicId == pagePublicId
-              ? shown.elements.length
-              : 0,
         )
         .listen(
       (page) {

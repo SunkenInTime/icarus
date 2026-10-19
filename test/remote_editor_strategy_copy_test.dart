@@ -418,11 +418,9 @@ final class _Transport implements ConvexTransport {
 
   @override
   Stream<ConvexValue> subscribe(String name, ConvexObject args) {
-    if (isPagePart(name)) {
+    if (name == 'page:getSnapshot') {
       final pageId = args.value['pagePublicId']!.toDart() as String;
-      return (_pageStreams[pageId] ??= StreamController.broadcast())
-          .stream
-          .map((page) => pagePart(name, args, page as ConvexObject));
+      return (_pageStreams[pageId] ??= StreamController.broadcast()).stream;
     }
     return const Stream.empty();
   }
