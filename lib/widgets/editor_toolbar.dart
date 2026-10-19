@@ -54,6 +54,14 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
   /// second click meanwhile would capture again and open a second dialog.
   bool _screenshotInProgress = false;
 
+  final ShadPopoverController _screenshotPopover = ShadPopoverController();
+
+  @override
+  void dispose() {
+    _screenshotPopover.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     const style = kEditorToolbarButtonStyle;
@@ -72,8 +80,6 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     // never offers it, even if an editor somehow opens with no cloud strategy.
     final allowsLocalSave =
         ref.watch(platformPolicyProvider).allowsLocalLibrary;
-    final transparentScreenshots = ref.watch(appPreferencesProvider
-        .select((value) => value.transparentScreenshotBackground));
 
     // The strategy view owns the spacing around this card, so it aligns
     // with the map card above it.
@@ -125,24 +131,37 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                 onPressed: _exportVideo,
                 icon: const Icon(LucideIcons.clapperboard200),
               ),
-              EditorToolbarButton(
-                style: style,
-                tooltip: transparentScreenshots
-                    ? 'Screenshot · Transparent background'
-                    : 'Screenshot',
-                onPressed: _captureScreenshot,
-                icon: _isCapturingScreenshot
-                    ? SizedBox(
-                        width: style.iconSize - 2,
-                        height: style.iconSize - 2,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.8,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Settings.tacticalVioletTheme.mutedForeground,
+              ShadPopover(
+                controller: _screenshotPopover,
+                padding: const EdgeInsets.all(14),
+                anchor: const ShadAnchor(
+                  offset: Offset(0, 8),
+                  childAlignment: Alignment.topLeft,
+                  overlayAlignment: Alignment.bottomLeft,
+                ),
+                popover: (context) => _ScreenshotPopover(
+                  onSave: () {
+                    _screenshotPopover.hide();
+                    _captureScreenshot();
+                  },
+                ),
+                child: EditorToolbarButton(
+                  style: style,
+                  tooltip: 'Screenshot',
+                  onPressed: _openScreenshotPopover,
+                  icon: _isCapturingScreenshot
+                      ? SizedBox(
+                          width: style.iconSize - 2,
+                          height: style.iconSize - 2,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.8,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Settings.tacticalVioletTheme.mutedForeground,
+                            ),
                           ),
-                        ),
-                      )
-                    : const Icon(LucideIcons.camera200),
+                        )
+                      : const Icon(LucideIcons.camera200),
+                ),
               ),
               const EditorToolbarDivider(),
               EditorToolbarButton(
@@ -187,6 +206,13 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
       context: context,
       builder: (context) => const ExportVideoDialog(),
     );
+  }
+
+  /// The camera asks how to take the shot, with the last answer ticked.
+  void _openScreenshotPopover() {
+    if (!ensureFeatureAvailable(ref, PlatformFeature.screenshot)) return;
+    if (_screenshotInProgress) return;
+    _screenshotPopover.toggle();
   }
 
   Future<void> _captureScreenshot() async {
@@ -238,6 +264,59 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     } finally {
       _screenshotInProgress = false;
     }
+  }
+}
+
+/// What the camera asks before a screenshot: whether to leave the
+/// background out. The choice is remembered, so taking the same kind of shot
+/// again is one more click.
+class _ScreenshotPopover extends ConsumerWidget {
+  const _ScreenshotPopover({required this.onSave});
+
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final transparent = ref.watch(appPreferencesProvider
+        .select((value) => value.transparentScreenshotBackground));
+    void setTransparent(bool value) => ref
+        .read(appPreferencesProvider.notifier)
+        .setTransparentScreenshotBackground(value);
+
+    // Text alignment is inherited from the editor, which centers, so pin it
+    // here; the column's own alignment does not reach inside the Texts.
+    return DefaultTextStyle.merge(
+      textAlign: TextAlign.start,
+      child: SizedBox(
+        width: 260,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ShadCheckbox(
+              value: transparent,
+              onChanged: setTransparent,
+              label: const Text('Transparent background'),
+              sublabel: const Text(
+                'Leave out the background and dots, so the PNG is '
+                'see-through around the map.',
+              ),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ShadButton(
+                size: ShadButtonSize.sm,
+                autofocus: true,
+                onPressed: onSave,
+                leading: const Icon(LucideIcons.camera, size: 16),
+                child: const Text('Save screenshot'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

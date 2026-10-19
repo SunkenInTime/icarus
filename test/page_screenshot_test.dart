@@ -476,16 +476,21 @@ void main() {
     ));
     expect(ref, isNotNull);
 
-    Future<void> clickCamera() => tester.runAsync(
-          () => http.runWithClient(
-            () => tester.tap(find.byIcon(LucideIcons.camera200)),
-            () => MockClient(
-              (_) async => http.Response.bytes(_magentaPng, 200),
-            ),
-          ),
-        );
+    Future<void> clickCamera() async {
+      await tester.tap(find.byIcon(LucideIcons.camera200));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    }
 
     await clickCamera();
+    await tester.runAsync(
+      () => http.runWithClient(
+        () => tester.tap(find.text('Save screenshot')),
+        () => MockClient(
+          (_) async => http.Response.bytes(_magentaPng, 200),
+        ),
+      ),
+    );
     // Real time with the app's frames coming, until the dialog opens.
     for (var i = 0; i < 400 && picker.saves.isEmpty; i++) {
       await tester.runAsync(
@@ -495,10 +500,17 @@ void main() {
     }
     expect(picker.saves, hasLength(1));
     expect(picker.saves.single, isNotEmpty);
+    // Saving closed the question; let it finish leaving.
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Save screenshot'), findsNothing);
 
-    // The spinner is gone while the dialog is open, but the button waits.
+    // The spinner is gone while the dialog is open, but the button waits:
+    // it doesn't even ask.
     expect(find.byIcon(LucideIcons.camera200), findsOneWidget);
     await clickCamera();
+    expect(find.text('Save screenshot'), findsNothing);
     for (var i = 0; i < 30; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 16)),
@@ -511,6 +523,48 @@ void main() {
     picker.closed.complete(null);
     await tester.pump();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the camera remembers whether the last shot was transparent',
+      (tester) async {
+    await openCloudPage(tester, imageUrl: _imageUrl);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(Consumer)),
+    );
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const ShadApp(home: Scaffold(body: EditorToolbar())),
+    ));
+    Future<ShadCheckbox> openCamera() async {
+      await tester.tap(find.byIcon(LucideIcons.camera200));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      return tester.widget<ShadCheckbox>(find.byType(ShadCheckbox));
+    }
+
+    expect((await openCamera()).value, isFalse);
+    await tester.runAsync(
+      () => tester.tap(find.text('Transparent background')),
+    );
+    await tester.pump();
+    expect(
+      container.read(appPreferencesProvider).transparentScreenshotBackground,
+      isTrue,
+    );
+
+    // Closed without a shot and opened again: still ticked.
+    await tester.tap(find.byIcon(LucideIcons.camera200));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.byType(ShadCheckbox), findsNothing);
+    expect((await openCamera()).value, isTrue);
+
+    await tester.runAsync(
+      () => container
+          .read(appPreferencesProvider.notifier)
+          .setTransparentScreenshotBackground(false),
+    );
   });
 
   testWidgets('a screenshot that fails while fetching clears the spinner',
@@ -526,8 +580,11 @@ void main() {
       container: container,
       child: const ShadApp(home: Scaffold(body: EditorToolbar())),
     ));
+    await tester.tap(find.byIcon(LucideIcons.camera200));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     await http.runWithClient(
-      () => tester.tap(find.byIcon(LucideIcons.camera200)),
+      () => tester.tap(find.text('Save screenshot')),
       () => MockClient((_) => response.future),
     );
     await tester.pump();
