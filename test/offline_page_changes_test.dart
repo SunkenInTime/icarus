@@ -753,7 +753,12 @@ void main() {
       final notifier = await heldUnchecked();
 
       expect(server.page('page-2').trashed, isFalse);
-      expect(queue().lastError, 'Page 2 $pageUncheckedBeforeDeleteReason');
+      // Saved the way every build reads a held delete; the user is told it
+      // could not be checked.
+      expect(
+        store.load().records.single.lastError,
+        'Page 2 $pageChangedSinceDeleteReason',
+      );
       expect(
         friendlyCloudSyncError(queue().lastError!),
         "Icarus couldn't check Page 2 for a teammate's changes. Review it "
@@ -761,6 +766,11 @@ void main() {
       );
       final held = notifier.heldPageDeletes().values.single;
       expect((held.page, held.checked), ('Page 2', false));
+      expect(
+        heldPageDeleteMessage((page: held.page, checked: held.checked)),
+        "Icarus couldn't check Page 2 for a teammate's changes. Review it "
+        'before deleting.',
+      );
     });
 
     test('without the content as seen, Delete anyway sends it', () async {
@@ -790,8 +800,9 @@ void main() {
     });
 
     test(
-        'held by an earlier build with the "changed" reason, it is still '
-        'held, and Delete anyway sends it', () async {
+        'held by an earlier build, it is still held, said to be unchecked '
+        'when its content was never seen, and Delete anyway sends it',
+        () async {
       final at = DateTime.utc(2026, 10, 18);
       await store.put(DurableOutboxRecord(
         accountId: 'account-a',
@@ -809,7 +820,7 @@ void main() {
       await _settle();
 
       final held = notifier.heldPageDeletes().values.single;
-      expect((held.page, held.checked), ('Page 2', true));
+      expect((held.page, held.checked), ('Page 2', false));
 
       await notifier.deleteHeldPagesAnyway({
         for (final entry in notifier.heldPageDeletes().entries)

@@ -2569,11 +2569,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             current.pending.op.opId != delete.pending.op.opId) {
           return;
         }
-        final reason = heldPageDeleteReason(delete.seenPage!);
+        // Saved as every build reads a held delete (see
+        // pageChangedSinceDelete), so one from before the unchecked wording
+        // still offers Keep the page and Delete anyway. What the user is told
+        // comes from the seen page (see heldPageDeleteReason).
+        final seen = delete.seenPage!;
+        final reason = heldPageDeleteReason(seen);
         await _putRecord(current.copyWith(
           status: DurableOutboxStatus.attention,
           updatedAt: DateTime.now(),
-          lastError: reason,
+          lastError: '${seen.name} $pageChangedSinceDeleteReason',
         ));
         if (_isDisposed) return;
         _refreshActiveQueueView();
@@ -2604,7 +2609,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 if (heldPageDelete(record.lastError!) case final held?)
                   key: (
                     page: held.page,
-                    checked: held.checked,
+                    checked: held.checked && record.seenPage?.content != null,
                     opId: record.pending.op.opId,
                   ),
           };
@@ -4493,7 +4498,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         // (see heldPageDeletes); its reason stands only when nothing else
         // waits.
         if (reason != null && heldPageDelete(reason) != null) {
-          heldDelete ??= reason;
+          final seen = record?.seenPage;
+          heldDelete ??= seen == null ? reason : heldPageDeleteReason(seen);
           continue;
         }
         if (reason == lineupPageMismatchMessage ||

@@ -285,24 +285,30 @@ class SeenPage {
 
 /// The reason a delete waits for the user when its page changed since this
 /// device saw it (see SeenPage): "<page name> $pageChangedSinceDeleteReason".
+/// Every held delete is saved with this reason, whatever the user is told
+/// (see heldPageDeleteReason): builds from before the unchecked wording read
+/// only this one as a held delete.
 const pageChangedSinceDeleteReason = 'changed since you deleted it';
 
-/// The reason a delete waits for the user when this device never had the
-/// page's content to compare a fresh read with (SeenPage.content is null):
-/// "<page name> $pageUncheckedBeforeDeleteReason".
+/// What the user is told when a delete waits because this device never had
+/// the page's content to compare a fresh read with (SeenPage.content is
+/// null): "<page name> $pageUncheckedBeforeDeleteReason". Never saved: the
+/// held record keeps pageChangedSinceDeleteReason.
 const pageUncheckedBeforeDeleteReason =
     "couldn't be checked for a teammate's changes";
 
-/// The reason a delete of the page seen as [seen] waits for the user, once
-/// a fresh read of the page did not show it as seen (SeenPage.unchangedIn).
+/// What the user is told about a delete of the page seen as [seen] held
+/// once a fresh read of the page did not show it as seen
+/// (SeenPage.unchangedIn).
 String heldPageDeleteReason(SeenPage seen) => seen.content == null
     ? '${seen.name} $pageUncheckedBeforeDeleteReason'
     : '${seen.name} $pageChangedSinceDeleteReason';
 
 /// The page name in [reason], when it is the reason a page delete is held
 /// for the user (see heldPageDeleteReason), and whether this device could
-/// check the page at all. Reasons saved by older builds read too: they are
-/// all the "changed" kind. The name comes first and may hold either
+/// check the page at all, as far as [reason] says: a saved reason is always
+/// the "changed" kind (see pageChangedSinceDeleteReason), so where the record
+/// is at hand its SeenPage says whether the page could be checked. The name comes first and may hold either
 /// reason's words itself, so the last one found is the reason.
 ({String page, bool checked})? heldPageDelete(String reason) {
   final changed = reason.lastIndexOf(' $pageChangedSinceDeleteReason');
