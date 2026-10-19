@@ -463,7 +463,15 @@ Widget _harness({
         brightness: Brightness.dark,
         colorScheme: Settings.tacticalVioletTheme,
       ),
-      home: Scaffold(body: Center(child: child)),
+      // Unconstrained, as the canvas lays out placed items: a circle's box
+      // is as wide as the largest circle, wider than this test's screen.
+      home: Scaffold(
+        body: OverflowBox(
+          maxWidth: double.infinity,
+          maxHeight: double.infinity,
+          child: child,
+        ),
+      ),
     ),
   );
 }

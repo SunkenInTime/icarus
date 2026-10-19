@@ -9,6 +9,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
+import 'package:icarus/migrations/custom_circle_box_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
 import 'package:icarus/migrations/paranoia_range_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
@@ -48,6 +49,9 @@ Offset _utilityAnchor(PlacedUtility utility, double scale) =>
       rectLengthMeters: utility.customLength,
     ) *
     _virtualToWorld;
+
+Offset _savedUtilityAnchor(PlacedUtility utility, double scale) =>
+    utilityAnchorBeforeVersion104(utility, scale) * _virtualToWorld;
 
 void _expectPoint(Offset actual, Offset expected) {
   expect(actual.dx, closeTo(expected.dx, 1e-7));
@@ -159,7 +163,7 @@ void _expectAnchors(StrategyPage before, StrategyPage after) {
     final next = after.utilityData[i];
     _expectPoint(
       next.position + _utilityAnchor(next, _newScale),
-      old.position + _utilityAnchor(old, _oldScale),
+      old.position + _savedUtilityAnchor(old, _oldScale),
     );
     expect(next.toJson()..remove('position'), old.toJson()..remove('position'));
   }
@@ -171,8 +175,7 @@ void _expectAnchors(StrategyPage before, StrategyPage after) {
   final nextItem = nextGroup.items.single;
   _expectPoint(
     nextItem.ability.position + _abilityAnchor(nextItem.ability, _newScale),
-    oldItem.ability.position +
-        _savedAbilityAnchor(oldItem.ability, _oldScale),
+    oldItem.ability.position + _savedAbilityAnchor(oldItem.ability, _oldScale),
   );
   expect(
     jsonDecode(jsonEncode(nextItem.toJson()..remove('ability'))),

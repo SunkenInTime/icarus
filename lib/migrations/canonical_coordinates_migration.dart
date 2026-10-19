@@ -8,6 +8,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/placed_media_geometry.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/migrations/custom_circle_box_migration.dart';
 import 'package:icarus/migrations/map_scale_history.dart';
 import 'package:icarus/migrations/paranoia_range_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
@@ -100,17 +101,7 @@ abstract final class CanonicalCoordinatesMigration {
     PlacedUtility utility,
     double mapScale,
   ) {
-    final anchor = UtilityData.utilityWidgets[utility.type]!.getAnchorPoint(
-      id: utility.id,
-      length: utility.length,
-      rotation: utility.rotation,
-      mapScale: mapScale,
-      agentSize: Settings.agentSize,
-      abilitySize: Settings.abilitySize,
-      diameterMeters: utility.customDiameter,
-      widthMeters: utility.customWidth,
-      rectLengthMeters: utility.customLength,
-    );
+    final anchor = utilityAnchorBeforeVersion104(utility, mapScale);
     return utility.copyWith(
       position: _reflect(
         utility.position,

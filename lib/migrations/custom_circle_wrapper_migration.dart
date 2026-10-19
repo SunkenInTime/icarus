@@ -1,6 +1,7 @@
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/migrations/custom_circle_box_migration.dart';
 import 'package:icarus/migrations/map_scale_history.dart';
 import 'package:icarus/providers/strategy_page.dart';
 
@@ -56,8 +57,10 @@ class CustomCircleWrapperMigration {
       diameterMeters: diameterMeters,
       mapScale: mapScale,
     );
-    final maxDiameterVirtual =
-        CustomCircleUtility.maxDiameterInVirtual(mapScale);
+    final maxDiameterVirtual = CustomCircleUtility.diameterInVirtual(
+      diameterMeters: customCircleBoxMetersBeforeVersion104,
+      mapScale: mapScale,
+    );
     final inset = (maxDiameterVirtual - actualDiameterVirtual) / 2;
     if (inset == 0) {
       return utility;

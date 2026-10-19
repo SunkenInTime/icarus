@@ -6,7 +6,7 @@ import 'package:icarus/collab/field_merge.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/sort_index_order.dart';
 
-const currentCloudProtocolVersion = 5;
+const currentCloudProtocolVersion = 6;
 const currentCloudPayloadVersion = 1;
 const maxCloudOperationBytes = 900 * 1024;
 const maxCloudBatchBytes = 15 * 1024 * 1024;

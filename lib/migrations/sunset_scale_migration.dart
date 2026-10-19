@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/const/utilities.dart';
+import 'package:icarus/migrations/custom_circle_box_migration.dart';
 import 'package:icarus/migrations/paranoia_range_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
 
@@ -51,18 +51,8 @@ abstract final class SunsetScaleMigration {
   }
 
   static PlacedUtility _utility(PlacedUtility utility) {
-    final data = UtilityData.utilityWidgets[utility.type]!;
-    Offset anchor(double scale) => data.getAnchorPoint(
-          id: utility.id,
-          length: utility.length,
-          rotation: utility.rotation,
-          mapScale: scale,
-          agentSize: Settings.agentSize,
-          abilitySize: Settings.abilitySize,
-          diameterMeters: utility.customDiameter,
-          widthMeters: utility.customWidth,
-          rectLengthMeters: utility.customLength,
-        );
+    Offset anchor(double scale) =>
+        utilityAnchorBeforeVersion104(utility, scale);
     final delta = (anchor(_oldScale) - anchor(_newScale)) * _virtualToWorld;
     if (delta == Offset.zero) return utility;
     return utility.copyWith(position: utility.position + delta);

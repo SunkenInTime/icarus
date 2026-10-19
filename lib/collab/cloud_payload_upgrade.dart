@@ -2,11 +2,14 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/utilities.dart';
+import 'package:icarus/migrations/custom_circle_box_migration.dart';
 import 'package:icarus/migrations/paranoia_range_migration.dart';
 
 /// The payload version of an ability row holding a Paranoia drawn at its
-/// in-game size (data version 104). Every other row stays at
-/// [currentCloudPayloadVersion]: nothing else changed shape.
+/// in-game size (data version 104). Every row other than these and custom
+/// circles stays at [currentCloudPayloadVersion]: nothing else changed
+/// shape.
 ///
 /// A Paranoia ability row below this version was written by a client that
 /// drew the old 25 m Paranoia. It is corrected as it is read, never
@@ -14,35 +17,53 @@ import 'package:icarus/migrations/paranoia_range_migration.dart';
 /// someone edits it.
 ///
 /// Lineup rows are never corrected. The lineup group row (protocol 5) came
-/// after data version 104, so every lineup row holds its Paranoia at the
-/// in-game size already; correcting one would move it twice.
+/// after the Paranoia correction, so every lineup row holds its Paranoia at
+/// the in-game size already; correcting one would move it twice. Lineups
+/// hold no custom circles.
 const paranoiaCloudPayloadVersion = 2;
 
-/// Ability [payload] with its Paranoia, if any, at the in-game size on
-/// [map]. Payloads without a Paranoia, those already corrected, and those of
-/// any other kind come back as they are.
+/// The payload version of a utility row holding a custom circle placed in
+/// the box of the largest circle, 110 m (data version 104). A custom circle
+/// row below this version was placed in the old 40 m box and is corrected as
+/// it is read, as Paranoias are.
+///
+/// Circles around an agent are agent rows saved by the agent's position, so
+/// they never change.
+const customCircleCloudPayloadVersion = 3;
+
+/// The newest payload version this build reads.
+const newestReadableCloudPayloadVersion = customCircleCloudPayloadVersion;
+
+/// Element [payload] as this build draws it on [map]: a Paranoia at its
+/// in-game size, a custom circle in the 110 m box. Payloads already
+/// corrected, and every other row, come back as they are.
 CloudPayload upgradeCloudPayload(CloudPayload payload, MapValue map) {
-  final version = payload['payloadVersion'];
-  if (version is num && version >= paranoiaCloudPayloadVersion) {
-    return payload;
-  }
   final data = payload['data'];
   if (data is! Map<String, dynamic>) return payload;
-  if (payload['kind'] != 'ability') return payload;
-  final upgraded = _upgradeAbilityJson(data, map);
+  final kind = payload['kind'];
+  if (kind is! String) return payload;
+  final correctedVersion = cloudPayloadVersionFor(kind, data);
+  if (correctedVersion == currentCloudPayloadVersion) return payload;
+  final version = payload['payloadVersion'];
+  if (version is num && version >= correctedVersion) return payload;
+  final upgraded = kind == 'ability'
+      ? _upgradeAbilityJson(data, map)
+      : _upgradeCustomCircleJson(data, map);
   if (identical(upgraded, data)) return payload;
   return {
     ...payload,
-    'payloadVersion': paranoiaCloudPayloadVersion,
+    'payloadVersion': correctedVersion,
     'data': upgraded,
   };
 }
 
 /// The version a client writes element [data] of [kind] at.
 int cloudPayloadVersionFor(String kind, Map<String, dynamic> data) {
-  return kind == 'ability' && _isParanoiaJson(data)
-      ? paranoiaCloudPayloadVersion
-      : currentCloudPayloadVersion;
+  return switch (kind) {
+    'ability' when _isParanoiaJson(data) => paranoiaCloudPayloadVersion,
+    'utility' when _isCustomCircleJson(data) => customCircleCloudPayloadVersion,
+    _ => currentCloudPayloadVersion,
+  };
 }
 
 /// [page] of a strategy on the map named [mapData], as this build draws it.
@@ -113,6 +134,27 @@ bool _isParanoiaJson(Map<String, dynamic> ability) {
   return info is Map &&
       info['type'] == AgentType.omen.name &&
       info['index'] == 1;
+}
+
+bool _isCustomCircleJson(Map<String, dynamic> utility) {
+  try {
+    return PlacedUtility.fromJson(utility).type == UtilityType.customCircle;
+  } on Object {
+    return false;
+  }
+}
+
+/// [utility], a custom circle, with only its position moved into the 110 m
+/// box.
+Map<String, dynamic> _upgradeCustomCircleJson(
+  Map<String, dynamic> utility,
+  MapValue map,
+) {
+  final moved = CustomCircleBoxMigration.migrateUtility(
+    PlacedUtility.fromJson(utility),
+    map,
+  );
+  return {...utility, 'position': moved.toJson()['position']};
 }
 
 /// [ability] with only its position moved, or [ability] itself when it is

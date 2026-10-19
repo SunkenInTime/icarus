@@ -124,7 +124,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
               value: _diameterMeters,
               onChanged: (v) => setState(() => _diameterMeters = v),
               min: 1.0,
-              max: 40.0,
+              max: CustomCircleUtility.maxDiameterMeters,
               label: 'D',
               hintText: 'Enter Diameter',
               suffix: 'm',
