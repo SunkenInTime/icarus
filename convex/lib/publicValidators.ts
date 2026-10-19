@@ -199,6 +199,23 @@ export const pageSnapshotValidator = v.object({
   assets: v.array(imageAssetValidator),
 });
 
+/// A page read in parts (page:getFrame plus page:getElementSlice for ranges
+/// covering every id) holds what pageSnapshotValidator does: the frame's
+/// lineups and their images, each slice's elements and theirs. Picture
+/// aliases come apart, to apply after every real asset.
+export const pageFrameValidator = v.object({
+  page: pageDescriptorValidator,
+  content: pageContentValidator,
+  lineups: v.array(lineupValidator),
+  assets: v.array(imageAssetValidator),
+});
+
+export const pageElementSliceValidator = v.object({
+  elements: v.array(elementValidator),
+  assets: v.array(imageAssetValidator),
+  aliases: v.array(imageAssetValidator),
+});
+
 export const fullStrategySnapshotValidator = v.object({
   header: strategyHeaderValidator,
   pages: v.array(fullPageValidator),

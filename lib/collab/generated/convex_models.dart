@@ -3369,30 +3369,32 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentStrategyValue {
   }
 }
 
-final class PageGetSnapshotResult {
-  const PageGetSnapshotResult({
+final class PageGetElementSliceResult {
+  const PageGetElementSliceResult({
+    required this.aliases,
     required this.assets,
-    required this.content,
     required this.elements,
-    required this.lineups,
-    required this.page,
   });
+  final List<ImagesListForStrategyResultItem> aliases;
   final List<ImagesListForStrategyResultItem> assets;
-  final PageGetSnapshotResultContent content;
   final List<ElementsListForPageResultItem> elements;
-  final List<LineupsListForPageResultItem> lineups;
-  final PageGetSnapshotResultPage page;
 
-  factory PageGetSnapshotResult.decode(ConvexValue value, String path) {
+  factory PageGetElementSliceResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'assets',
-      'content',
-      'elements',
-      'lineups',
-      'page',
-    });
-    return PageGetSnapshotResult(
+    _checkObjectFields(object, path, const {'aliases', 'assets', 'elements'});
+    return PageGetElementSliceResult(
+      aliases:
+          _decodeArray(
+                object.value['aliases'] ?? _missing(path, 'aliases'),
+                '$path.aliases',
+              ).value.indexed
+              .map(
+                (entry) => ImagesListForStrategyResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.aliases', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       assets:
           _decodeArray(
                 object.value['assets'] ?? _missing(path, 'assets'),
@@ -3405,10 +3407,6 @@ final class PageGetSnapshotResult {
                 ),
               )
               .toList(growable: false),
-      content: PageGetSnapshotResultContent.decode(
-        object.value['content'] ?? _missing(path, 'content'),
-        '$path.content',
-      ),
       elements:
           _decodeArray(
                 object.value['elements'] ?? _missing(path, 'elements'),
@@ -3421,6 +3419,74 @@ final class PageGetSnapshotResult {
                 ),
               )
               .toList(growable: false),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'aliases': ConvexArray(
+        aliases.indexed
+            .map(
+              (entry) => entry.$2.encode(_indexPath('$path.aliases', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+      'assets': ConvexArray(
+        assets.indexed
+            .map(
+              (entry) => entry.$2.encode(_indexPath('$path.assets', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+      'elements': ConvexArray(
+        elements.indexed
+            .map(
+              (entry) =>
+                  entry.$2.encode(_indexPath('$path.elements', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+    });
+  }
+}
+
+final class PageGetFrameResult {
+  const PageGetFrameResult({
+    required this.assets,
+    required this.content,
+    required this.lineups,
+    required this.page,
+  });
+  final List<ImagesListForStrategyResultItem> assets;
+  final PageGetFrameResultContent content;
+  final List<LineupsListForPageResultItem> lineups;
+  final PageGetFrameResultPage page;
+
+  factory PageGetFrameResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {
+      'assets',
+      'content',
+      'lineups',
+      'page',
+    });
+    return PageGetFrameResult(
+      assets:
+          _decodeArray(
+                object.value['assets'] ?? _missing(path, 'assets'),
+                '$path.assets',
+              ).value.indexed
+              .map(
+                (entry) => ImagesListForStrategyResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.assets', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      content: PageGetFrameResultContent.decode(
+        object.value['content'] ?? _missing(path, 'content'),
+        '$path.content',
+      ),
       lineups:
           _decodeArray(
                 object.value['lineups'] ?? _missing(path, 'lineups'),
@@ -3433,7 +3499,7 @@ final class PageGetSnapshotResult {
                 ),
               )
               .toList(growable: false),
-      page: PageGetSnapshotResultPage.decode(
+      page: PageGetFrameResultPage.decode(
         object.value['page'] ?? _missing(path, 'page'),
         '$path.page',
       ),
@@ -3450,14 +3516,6 @@ final class PageGetSnapshotResult {
             .toList(growable: false),
       ),
       'content': content.encode('$path.content'),
-      'elements': ConvexArray(
-        elements.indexed
-            .map(
-              (entry) =>
-                  entry.$2.encode(_indexPath('$path.elements', entry.$1)),
-            )
-            .toList(growable: false),
-      ),
       'lineups': ConvexArray(
         lineups.indexed
             .map(
@@ -3470,8 +3528,8 @@ final class PageGetSnapshotResult {
   }
 }
 
-final class PageGetSnapshotResultContent {
-  const PageGetSnapshotResultContent({
+final class PageGetFrameResultContent {
+  const PageGetFrameResultContent({
     required this.createdAt,
     required this.revision,
     required this.settings,
@@ -3482,7 +3540,7 @@ final class PageGetSnapshotResultContent {
   final OpsApplyBatchArgsOpsItemPageAddPayloadSettings? settings;
   final double updatedAt;
 
-  factory PageGetSnapshotResultContent.decode(ConvexValue value, String path) {
+  factory PageGetFrameResultContent.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     _checkObjectFields(object, path, const {
       'createdAt',
@@ -3490,7 +3548,7 @@ final class PageGetSnapshotResultContent {
       'settings',
       'updatedAt',
     });
-    return PageGetSnapshotResultContent(
+    return PageGetFrameResultContent(
       createdAt: _decodeNumber(
         object.value['createdAt'] ?? _missing(path, 'createdAt'),
         '$path.createdAt',
@@ -3525,8 +3583,8 @@ final class PageGetSnapshotResultContent {
   }
 }
 
-final class PageGetSnapshotResultPage {
-  const PageGetSnapshotResultPage({
+final class PageGetFrameResultPage {
+  const PageGetFrameResultPage({
     required this.createdAt,
     required this.isAttack,
     required this.name,
@@ -3547,7 +3605,7 @@ final class PageGetSnapshotResultPage {
   final String strategyPublicId;
   final double updatedAt;
 
-  factory PageGetSnapshotResultPage.decode(ConvexValue value, String path) {
+  factory PageGetFrameResultPage.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     _checkObjectFields(object, path, const {
       'createdAt',
@@ -3560,7 +3618,7 @@ final class PageGetSnapshotResultPage {
       'strategyPublicId',
       'updatedAt',
     });
-    return PageGetSnapshotResultPage(
+    return PageGetFrameResultPage(
       createdAt: _decodeNumber(
         object.value['createdAt'] ?? _missing(path, 'createdAt'),
         '$path.createdAt',
@@ -3613,6 +3671,107 @@ final class PageGetSnapshotResultPage {
       'sortIndex': _encodeNumber(sortIndex, '$path.sortIndex'),
       'strategyPublicId': ConvexString(strategyPublicId),
       'updatedAt': _encodeNumber(updatedAt, '$path.updatedAt'),
+    });
+  }
+}
+
+final class PageGetSnapshotResult {
+  const PageGetSnapshotResult({
+    required this.assets,
+    required this.content,
+    required this.elements,
+    required this.lineups,
+    required this.page,
+  });
+  final List<ImagesListForStrategyResultItem> assets;
+  final PageGetFrameResultContent content;
+  final List<ElementsListForPageResultItem> elements;
+  final List<LineupsListForPageResultItem> lineups;
+  final PageGetFrameResultPage page;
+
+  factory PageGetSnapshotResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {
+      'assets',
+      'content',
+      'elements',
+      'lineups',
+      'page',
+    });
+    return PageGetSnapshotResult(
+      assets:
+          _decodeArray(
+                object.value['assets'] ?? _missing(path, 'assets'),
+                '$path.assets',
+              ).value.indexed
+              .map(
+                (entry) => ImagesListForStrategyResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.assets', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      content: PageGetFrameResultContent.decode(
+        object.value['content'] ?? _missing(path, 'content'),
+        '$path.content',
+      ),
+      elements:
+          _decodeArray(
+                object.value['elements'] ?? _missing(path, 'elements'),
+                '$path.elements',
+              ).value.indexed
+              .map(
+                (entry) => ElementsListForPageResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.elements', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      lineups:
+          _decodeArray(
+                object.value['lineups'] ?? _missing(path, 'lineups'),
+                '$path.lineups',
+              ).value.indexed
+              .map(
+                (entry) => LineupsListForPageResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.lineups', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      page: PageGetFrameResultPage.decode(
+        object.value['page'] ?? _missing(path, 'page'),
+        '$path.page',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'assets': ConvexArray(
+        assets.indexed
+            .map(
+              (entry) => entry.$2.encode(_indexPath('$path.assets', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+      'content': content.encode('$path.content'),
+      'elements': ConvexArray(
+        elements.indexed
+            .map(
+              (entry) =>
+                  entry.$2.encode(_indexPath('$path.elements', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+      'lineups': ConvexArray(
+        lineups.indexed
+            .map(
+              (entry) => entry.$2.encode(_indexPath('$path.lineups', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+      'page': page.encode('$path.page'),
     });
   }
 }
@@ -5066,7 +5225,7 @@ final class StrategyGetFullSnapshotResultPagesItem {
 final class StrategyGetShellResult {
   const StrategyGetShellResult({required this.header, required this.pages});
   final StrategiesGetHeaderResult header;
-  final List<PageGetSnapshotResultPage> pages;
+  final List<PageGetFrameResultPage> pages;
 
   factory StrategyGetShellResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
@@ -5082,7 +5241,7 @@ final class StrategyGetShellResult {
                 '$path.pages',
               ).value.indexed
               .map(
-                (entry) => PageGetSnapshotResultPage.decode(
+                (entry) => PageGetFrameResultPage.decode(
                   entry.$2,
                   _indexPath('$path.pages', entry.$1),
                 ),
@@ -6300,6 +6459,52 @@ ConvexObject encodeOpsApplyBatchArgs({
 OpsApplyBatchResult decodeOpsApplyBatchResult(ConvexValue value) =>
     OpsApplyBatchResult.decode(value, 'ops.js:applyBatch.returns');
 
+ConvexObject encodePageGetElementSliceArgs({
+  ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
+  required double clientProtocolVersion,
+  required String fromPublicId,
+  required String pagePublicId,
+  ConvexOptional<String> shareToken = const ConvexOptional.absent(),
+  required String strategyPublicId,
+  ConvexOptional<String> toPublicId = const ConvexOptional.absent(),
+}) => ConvexObject({
+  if (acceptsPictureIds.isPresent)
+    'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'page.js:getElementSlice.args.clientProtocolVersion',
+  ),
+  'fromPublicId': ConvexString(fromPublicId),
+  'pagePublicId': ConvexString(pagePublicId),
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+  if (toPublicId.isPresent) 'toPublicId': ConvexString(toPublicId.value),
+});
+
+PageGetElementSliceResult decodePageGetElementSliceResult(ConvexValue value) =>
+    PageGetElementSliceResult.decode(value, 'page.js:getElementSlice.returns');
+
+ConvexObject encodePageGetFrameArgs({
+  ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
+  required double clientProtocolVersion,
+  required String pagePublicId,
+  ConvexOptional<String> shareToken = const ConvexOptional.absent(),
+  required String strategyPublicId,
+}) => ConvexObject({
+  if (acceptsPictureIds.isPresent)
+    'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'page.js:getFrame.args.clientProtocolVersion',
+  ),
+  'pagePublicId': ConvexString(pagePublicId),
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
+
+PageGetFrameResult decodePageGetFrameResult(ConvexValue value) =>
+    PageGetFrameResult.decode(value, 'page.js:getFrame.returns');
+
 ConvexObject encodePageGetSnapshotArgs({
   ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
   required double clientProtocolVersion,
@@ -6379,11 +6584,11 @@ ConvexObject encodePagesListForStrategyArgs({
   required String strategyPublicId,
 }) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
 
-List<PageGetSnapshotResultPage> decodePagesListForStrategyResult(
+List<PageGetFrameResultPage> decodePagesListForStrategyResult(
   ConvexValue value,
 ) => _decodeArray(value, 'pages.js:listForStrategy.returns').value.indexed
     .map(
-      (entry) => PageGetSnapshotResultPage.decode(
+      (entry) => PageGetFrameResultPage.decode(
         entry.$2,
         _indexPath('pages.js:listForStrategy.returns', entry.$1),
       ),
