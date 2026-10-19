@@ -1152,14 +1152,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     return _PageSwitch.switched;
   }
 
+  /// Says the page the user asked for could not be read, by the name the
+  /// pages bar shows it under: with page changes waiting (a rename, or a
+  /// move that renumbers automatic names), the server's last read names it
+  /// differently.
   void _showPageUnreachable(String pageId) {
-    final name = ref
-        .read(remoteEditorSnapshotProvider)
-        .valueOrNull
-        ?.pages
-        .where((page) => page.publicId == pageId)
-        .firstOrNull
-        ?.name;
+    final name = ref.read(drawnCloudPagesProvider)?.byId(pageId)?.name;
     try {
       Settings.showToast(
         message: "Couldn't open ${name ?? 'that page'}. Check your "
