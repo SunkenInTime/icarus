@@ -251,6 +251,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
       final progress = ValueNotifier<ScreenshotProgress?>(null);
       var cancelled = false;
       final navigator = Navigator.of(context, rootNavigator: true);
+      var dialogOpen = true;
       final dialogClosed = showShadDialog<void>(
         context: context,
         barrierDismissible: false,
@@ -259,6 +260,12 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
           onCancel: () => cancelled = true,
         ),
       );
+      // Closing the dialog any other way (its X, Escape) cancels too, and
+      // leaves nothing for the cleanup below to pop.
+      unawaited(dialogClosed.whenComplete(() {
+        dialogOpen = false;
+        cancelled = true;
+      }));
       late final List<PageScreenshot> shots;
       try {
         shots = await captureStrategyPages(
@@ -270,7 +277,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
           isCancelled: () => cancelled,
         );
       } finally {
-        navigator.pop();
+        if (dialogOpen) navigator.pop();
         unawaited(dialogClosed.whenComplete(progress.dispose));
         if (mounted) {
           ref.read(screenshotProvider.notifier).setIsScreenShot(false);
