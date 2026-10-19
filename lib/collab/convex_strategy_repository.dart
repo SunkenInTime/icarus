@@ -8,6 +8,7 @@ import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/generated/generated.dart';
+import 'package:icarus/collab/page_slices.dart';
 import 'package:icarus/collab/presence/presence_models.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/collab/transport/convex_transport_adapter.dart';
@@ -220,22 +221,47 @@ class ConvexStrategyRepository {
     );
   }
 
+  /// The whole page, live, read in slices (see page_slices.dart) so an edit
+  /// re-reads only the slice it touched. [elementCount], the page's size
+  /// when last read, picks how many slices.
   Stream<RemotePageSnapshot> watchPageSnapshot({
     required String strategyPublicId,
     required String pagePublicId,
     String? shareToken,
+    int elementCount = 0,
   }) {
-    return _api.page
-        .getSnapshot(
-          clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
-          strategyPublicId: strategyPublicId,
-          pagePublicId: pagePublicId,
-          shareToken: _optional(shareToken),
-          // This client keeps an image's picture id (PlacedImage.assetId).
-          acceptsPictureIds: const ConvexOptional.present(true),
-        )
-        .watch()
-        .map(_pageSnapshot);
+    final protocol = currentCloudProtocolVersion.toDouble();
+    final token = _optional(shareToken);
+    // This client keeps an image's picture id (PlacedImage.assetId).
+    const acceptsPictureIds = ConvexOptional.present(true);
+    final starts = pageSliceStarts(elementCount);
+    return watchAssembledPage(
+      _api.page
+          .getFrame(
+            clientProtocolVersion: protocol,
+            strategyPublicId: strategyPublicId,
+            pagePublicId: pagePublicId,
+            shareToken: token,
+            acceptsPictureIds: acceptsPictureIds,
+          )
+          .watch(),
+      [
+        for (final (index, start) in starts.indexed)
+          _api.page
+              .getElementSlice(
+                clientProtocolVersion: protocol,
+                strategyPublicId: strategyPublicId,
+                pagePublicId: pagePublicId,
+                shareToken: token,
+                acceptsPictureIds: acceptsPictureIds,
+                fromPublicId: start,
+                toPublicId: index + 1 < starts.length
+                    ? ConvexOptional.present(starts[index + 1])
+                    : const ConvexOptional.absent(),
+              )
+              .watch(),
+      ],
+    ).map(_pageSnapshot);
   }
 
   /// Which of [assetPublicIds] the strategy's content shows on the server,

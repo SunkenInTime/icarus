@@ -47,14 +47,23 @@ void main() {
     expectProtocolSent('page:getSnapshot');
   });
 
-  test('a page snapshot is watched with the protocol', () async {
+  test('a page is watched with the protocol, in every part', () async {
     await expectLater(
       repository
           .watchPageSnapshot(strategyPublicId: 'strategy', pagePublicId: 'page')
           .first,
       throwsStateError,
     );
-    expectProtocolSent('page:getSnapshot');
+    expect(
+      transport.calls.map((call) => call.$1),
+      ['page:getFrame', 'page:getElementSlice'],
+    );
+    for (final (_, args) in transport.calls) {
+      expect(
+        args.value['clientProtocolVersion']?.toDart(),
+        currentCloudProtocolVersion,
+      );
+    }
   });
 
   test('a full snapshot is read with the protocol', () async {

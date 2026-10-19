@@ -216,3 +216,36 @@ Map<String, dynamic> _lineupGroupPayload(String id, String imageId) {
   if (row.publicId != id) throw StateError('group id ${row.publicId}');
   return row.payload;
 }
+
+/// Whether [name] is one of the reads a live page is watched in.
+bool isPagePart(String name) =>
+    name == 'page:getFrame' || name == 'page:getElementSlice';
+
+/// What page:getFrame or page:getElementSlice, asked with [args], answers
+/// for a page whose page:getSnapshot answer is [page]. Each slice carries
+/// every asset; put together the parts hold what [page] does.
+ConvexValue pagePart(String name, ConvexObject args, ConvexObject page) {
+  final whole = page.toDart() as Map<String, Object?>;
+  if (name == 'page:getFrame') {
+    return ConvexValue.fromDart({
+      'page': whole['page'],
+      'content': whole['content'],
+      'lineups': whole['lineups'],
+      'assets': const <Object?>[],
+    });
+  }
+  final from = args.value['fromPublicId']!.toDart() as String;
+  final to = args.value['toPublicId']?.toDart() as String?;
+  return ConvexValue.fromDart({
+    'elements': [
+      for (final element in whole['elements']! as List<Object?>)
+        if (_inRange((element! as Map)['publicId'] as String, from, to))
+          element,
+    ],
+    'assets': whole['assets'],
+    'aliases': const <Object?>[],
+  });
+}
+
+bool _inRange(String id, String from, String? to) =>
+    id.compareTo(from) >= 0 && (to == null || id.compareTo(to) < 0);

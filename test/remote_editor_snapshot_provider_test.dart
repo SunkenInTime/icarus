@@ -766,6 +766,7 @@ class _Repository extends ConvexStrategyRepository {
     required String strategyPublicId,
     required String pagePublicId,
     String? shareToken,
+    int elementCount = 0,
   }) {
     readTokens.add(shareToken);
     watchedPages.add(pagePublicId);
