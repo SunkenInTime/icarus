@@ -1174,7 +1174,7 @@ RemoteStrategyHeader _strategyHeader(StrategiesGetHeaderResult header) {
   );
 }
 
-RemotePage _page(PageGetSnapshotResultPage page) {
+RemotePage _page(PageGetFrameResultPage page) {
   return RemotePage(
     publicId: page.publicId,
     strategyPublicId: page.strategyPublicId,
@@ -1188,7 +1188,7 @@ RemotePage _page(PageGetSnapshotResultPage page) {
   );
 }
 
-RemotePageContent _pageContent(PageGetSnapshotResultContent content) {
+RemotePageContent _pageContent(PageGetFrameResultContent content) {
   return RemotePageContent(
     settings: _settingsValue(content.settings),
     revision: content.revision.toInt(),
