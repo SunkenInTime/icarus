@@ -11,6 +11,10 @@ import 'package:http/testing.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/screenshot/offscreen_capture.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -635,6 +639,74 @@ void main() {
     tearDownAll(() async {
       await Hive.close();
       await dir.delete(recursive: true);
+    });
+
+    testWidgets('hands a capture copies, never the library\'s own drawings',
+        (tester) async {
+      // The editor draws this stroke from the library's objects at its own
+      // size. A capture rebuilds paths at 1920x1080; on the same objects,
+      // the editor would show the stroke at the capture's scale.
+      CoordinateSystem(playAreaSize: const Size(1600, 900));
+      final stroke = FreeDrawing(
+        id: 'stroke',
+        color: const Color(0xFFFFFFFF),
+        isDotted: false,
+        hasArrow: false,
+        listOfPoints: const [Offset(100, 100), Offset(800, 600)],
+      )..rebuildPath(CoordinateSystem.instance);
+      final editorBounds = stroke.path.getBounds();
+      await tester.runAsync(
+        () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+          _strategyId,
+          StrategyData(
+            id: _strategyId,
+            name: 'Strategy',
+            mapData: MapValue.bind,
+            versionNumber: 1,
+            lastEdited: DateTime(2026),
+            folderID: null,
+            pages: [
+              StrategyPage(
+                id: 'a',
+                name: 'A',
+                drawingData: [stroke],
+                agentData: const [],
+                abilityData: const [],
+                textData: const [],
+                imageData: const [],
+                utilityData: const [],
+                sortIndex: 0,
+                isAttack: true,
+                settings: StrategySettings(),
+              ),
+            ],
+          ),
+        ),
+      );
+      final ref = await _pumpRef(tester, [
+        strategyProvider
+            .overrideWith(() => _OpenStrategy(StrategySource.local)),
+      ]);
+
+      final source = await tester.runAsync(
+        () => loadVideoExportSource(ref, pageIds: {'a'}),
+      );
+      addTearDown(source!.images.release);
+      final capture = createCaptureContainer();
+      addTearDown(capture.dispose);
+      await CoordinateSystem.runInCapture(() async {
+        capture
+            .read(drawingProvider.notifier)
+            .fromHive(source.strategy.pages.single.drawingData);
+      });
+
+      final library = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+          .get(_strategyId)!
+          .pages
+          .single
+          .drawingData
+          .single as FreeDrawing;
+      expect(library.path.getBounds(), editorBounds);
     });
 
     testWidgets('is read back from the library with its image files',
