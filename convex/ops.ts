@@ -3,6 +3,7 @@ import { ConvexError, v, type Infer } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertCallerIsAccount, assertStrategyRole } from "./lib/auth";
 import {
+  agentSummaryKeyOf,
   refreshStrategyAgentSummary,
   syncLineupAgents,
 } from "./lib/strategyAgentSummary";
@@ -1742,8 +1743,27 @@ async function applyLineupOp(
   return { status: "ack", appliedRevision: revision, eventPageId };
 }
 
-function isAgentRow(row: Doc<"elements"> | Doc<"lineups"> | null): boolean {
-  return row !== null && "elementType" in row && row.elementType === "agent";
+/// Whether an accepted element op may have changed the strategy's agent
+/// summary: it added, deleted or restored an agent, changed which agent it
+/// is, or moved it to another page. Rebuilding the summary reads every agent
+/// in the strategy, and most agent ops are moves that change none of that.
+async function elementOpChangedAgents(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  op: StrategyOp,
+  rowBefore: Doc<"elements"> | Doc<"lineups"> | null,
+): Promise<boolean> {
+  const wasAgent =
+    rowBefore !== null &&
+    "elementType" in rowBefore &&
+    rowBefore.elementType === "agent";
+  const sentAgent =
+    (op.payload as { kind?: unknown } | undefined)?.kind === "agent";
+  if (!wasAgent && !sentAgent) return false;
+  const rowAfter = await contentRowForOp(ctx, strategy, op);
+  const keyOf = (row: Doc<"elements"> | Doc<"lineups"> | null) =>
+    row !== null && "elementType" in row ? agentSummaryKeyOf(row) : null;
+  return keyOf(rowBefore) !== keyOf(rowAfter);
 }
 
 /// The element or lineup row an op targets in this strategy, if any.
@@ -1985,9 +2005,7 @@ export const applyBatch = mutation({
             (op.entityType === "page" ||
               op.entityType === "lineup" ||
               (op.entityType === "element" &&
-                (isAgentRow(rowBefore) ||
-                  (op.payload as { kind?: unknown } | undefined)?.kind ===
-                    "agent")))
+                (await elementOpChangedAgents(ctx, strategy, op, rowBefore))))
           ) {
             agentsMayHaveChanged = true;
           }
