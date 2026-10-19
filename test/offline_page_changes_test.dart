@@ -725,8 +725,8 @@ void main() {
       expect(queue().pending, isEmpty);
     });
 
-    test('without the content as seen, it is held even when nothing changed',
-        () async {
+    /// Offline: page 2 deleted by a device that never had its content.
+    Future<StrategyOpQueueNotifier> heldUnchecked() async {
       final notifier = open();
       final read = server.pageSnapshot('page-2');
       await notifier.enqueuePageChange(
@@ -744,9 +744,94 @@ void main() {
       );
 
       await reconnectAndSend(notifier);
+      return notifier;
+    }
+
+    test(
+        'without the content as seen, it is held even when nothing changed, '
+        'and says it could not be checked, not that it changed', () async {
+      final notifier = await heldUnchecked();
 
       expect(server.page('page-2').trashed, isFalse);
-      expect(queue().lastError, 'Page 2 $pageChangedSinceDeleteReason');
+      // Saved the way every build reads a held delete; the user is told it
+      // could not be checked.
+      expect(
+        store.load().records.single.lastError,
+        'Page 2 $pageChangedSinceDeleteReason',
+      );
+      expect(
+        friendlyCloudSyncError(queue().lastError!),
+        "Icarus couldn't check Page 2 for a teammate's changes. Review it "
+        'before deleting.',
+      );
+      final held = notifier.heldPageDeletes().values.single;
+      expect((held.page, held.checked), ('Page 2', false));
+      expect(
+        heldPageDeleteMessage((page: held.page, checked: held.checked)),
+        "Icarus couldn't check Page 2 for a teammate's changes. Review it "
+        'before deleting.',
+      );
+    });
+
+    test('without the content as seen, Delete anyway sends it', () async {
+      final notifier = await heldUnchecked();
+
+      await notifier.deleteHeldPagesAnyway({
+        for (final entry in notifier.heldPageDeletes().entries)
+          entry.key: entry.value.opId,
+      });
+      await _settle();
+
+      expect(server.page('page-2').trashed, isTrue);
+      expect(queue().pending, isEmpty);
+      expect(queue().needsAttention, isFalse);
+    });
+
+    test('without the content as seen, Keep the page discards it', () async {
+      final notifier = await heldUnchecked();
+
+      await notifier.discardRejected(queue().attentionByEntityKey.keys.toSet());
+      await _settle();
+
+      expect(server.page('page-2').trashed, isFalse);
+      expect(queue().pending, isEmpty);
+      expect(queue().needsAttention, isFalse);
+      expect(notifier.heldPageDeletes(), isEmpty);
+    });
+
+    test(
+        'held by an earlier build, it is still held, said to be unchecked '
+        'when its content was never seen, and Delete anyway sends it',
+        () async {
+      final at = DateTime.utc(2026, 10, 18);
+      await store.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: _strategyId,
+        entityKey: const EntitySyncKey.pageChange('change-1'),
+        pending: PendingOp(op: delete('page-2'), clientId: 'client'),
+        status: DurableOutboxStatus.attention,
+        createdAt: at,
+        updatedAt: at,
+        lastError: 'Page 2 changed since you deleted it',
+        pageChangeSequence: 1,
+        seenPage: const SeenPage(name: 'Page 2', isAttack: true, content: null),
+      ));
+      final notifier = open();
+      await _settle();
+
+      final held = notifier.heldPageDeletes().values.single;
+      expect((held.page, held.checked), ('Page 2', false));
+
+      await notifier.deleteHeldPagesAnyway({
+        for (final entry in notifier.heldPageDeletes().entries)
+          entry.key: entry.value.opId,
+      });
+      online.state = true;
+      await notifier.flushNow();
+      await _settle();
+
+      expect(server.page('page-2').trashed, isTrue);
+      expect(queue().pending, isEmpty);
     });
 
     test(
@@ -797,6 +882,18 @@ void main() {
       expect(server.reads, greaterThan(1));
       expect(server.page('page-2').trashed, isTrue);
       expect(queue().pending, isEmpty);
+    });
+
+    test("a page named with a held delete's own words is read whole", () {
+      const name = 'B changed since you deleted it';
+      final unchecked = heldPageDelete(heldPageDeleteReason(
+        const SeenPage(name: name, isAttack: true, content: null),
+      ))!;
+      expect((unchecked.page, unchecked.checked), (name, false));
+      final changed = heldPageDelete(heldPageDeleteReason(
+        const SeenPage(name: name, isAttack: true, content: {'content': 1}),
+      ))!;
+      expect((changed.page, changed.checked), (name, true));
     });
 
     test('its record keeps the page as seen through JSON', () {

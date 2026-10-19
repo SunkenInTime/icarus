@@ -197,7 +197,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
   /// Keep the page: the held deletes the user saw are discarded, and what
   /// waited behind them is sent.
   Future<void> _keepHeldPages(
-    Map<EntitySyncKey, ({String page, String opId})> held,
+    Map<EntitySyncKey, ({String page, bool checked, String opId})> held,
   ) =>
       _resolveHeldDeletes(() => ref
               .read(strategyOpQueueProvider.notifier)
@@ -208,7 +208,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
 
   /// Delete anyway: the held deletes the user saw are sent, unread.
   Future<void> _deleteHeldPagesAnyway(
-    Map<EntitySyncKey, ({String page, String opId})> held,
+    Map<EntitySyncKey, ({String page, bool checked, String opId})> held,
   ) =>
       _resolveHeldDeletes(() =>
           ref.read(strategyOpQueueProvider.notifier).deleteHeldPagesAnyway({
@@ -349,7 +349,10 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         saveState: saveState,
         rejectedCount:
             opQueueState.attentionByEntityKey.length - heldDeletes.length,
-        heldPages: [for (final held in heldDeletes.values) held.page],
+        heldPages: [
+          for (final held in heldDeletes.values)
+            (page: held.page, checked: held.checked),
+        ],
         hasPausedWork: opQueueState.pausedByEntityKey.isNotEmpty,
         lineupConflicts: ref.watch(lineupConflictsProvider),
         hasOtherStrategyWork: hasOtherStrategyWork,
@@ -512,9 +515,10 @@ class _SyncStatusPopover extends StatelessWidget {
   final int rejectedCount;
 
   /// The pages whose delete is held because the page changed since the
-  /// user deleted it (see StrategyOpQueueNotifier.heldPageDeletes). They
-  /// get their own explanation and choices, beside any other attention.
-  final List<String> heldPages;
+  /// user deleted it, or could not be checked (see
+  /// StrategyOpQueueNotifier.heldPageDeletes). They get their own
+  /// explanation and choices, beside any other attention.
+  final List<({String page, bool checked})> heldPages;
 
   /// Work paused after failed sends: Retry sync sends it again, whatever
   /// else waits.
@@ -563,16 +567,14 @@ class _SyncStatusPopover extends StatelessWidget {
     return hasRejectedWork ||
         hasPausedWork ||
         saveState.mediaSyncErrorCount > 0 ||
-        (error != null && pageChangedSinceDelete(error) == null);
+        (error != null && heldPageDelete(error) == null);
   }
 
   bool get _holdsIncompleteCopy =>
       isIncompletePageCopyReason(saveState.cloudSyncError);
 
-  String get _heldExplanation => [
-        for (final page in heldPages)
-          '$page $pageChangedSinceDeleteReason. Review before deleting.',
-      ].join(' ');
+  String get _heldExplanation =>
+      [for (final held in heldPages) heldPageDeleteMessage(held)].join(' ');
 
   @override
   Widget build(BuildContext context) {
@@ -784,8 +786,7 @@ class _SyncStatusPopover extends StatelessWidget {
     final parts = <String>[];
     final saved = saveState.cloudSyncError;
     // A held delete's reason is explained apart (see _heldExplanation).
-    final error =
-        saved != null && pageChangedSinceDelete(saved) != null ? null : saved;
+    final error = saved != null && heldPageDelete(saved) != null ? null : saved;
     final hasSpecificReason = error != null && isSpecificAttentionReason(error);
     final listsWholeGroups = _shownLineupConflicts != null && _noLongerFits;
     if (listsWholeGroups) {

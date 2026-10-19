@@ -2556,8 +2556,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     return !seen.unchangedIn(now);
   }
 
-  /// Holds [delete], whose page changed since the user saw it, in attention
-  /// until the user chooses: Delete anyway sends it (Keep mine, see
+  /// Holds [delete], whose page changed since the user saw it or could not
+  /// be checked (see heldPageDeleteReason), in attention until the user
+  /// chooses: Delete anyway sends it (Keep mine, see
   /// [retryRejected]: the retried delete keeps no seen page, so it goes
   /// unread), and Keep the page discards it, which sends what waited behind
   /// it ([discardRejected]).
@@ -2568,11 +2569,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             current.pending.op.opId != delete.pending.op.opId) {
           return;
         }
-        final reason = '${delete.seenPage!.name} $pageChangedSinceDeleteReason';
+        // Saved as every build reads a held delete (see
+        // pageChangedSinceDelete), so one from before the unchecked wording
+        // still offers Keep the page and Delete anyway. What the user is told
+        // comes from the seen page (see heldPageDeleteReason).
+        final seen = delete.seenPage!;
+        final reason = heldPageDeleteReason(seen);
         await _putRecord(current.copyWith(
           status: DurableOutboxStatus.attention,
           updatedAt: DateTime.now(),
-          lastError: reason,
+          lastError: '${seen.name} $pageChangedSinceDeleteReason',
         ));
         if (_isDisposed) return;
         _refreshActiveQueueView();
@@ -2589,20 +2595,24 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       record != null &&
       record.status == DurableOutboxStatus.attention &&
       record.pending.op is PageDeleteOp &&
-      pageChangedSinceDelete(record.lastError ?? '') != null;
+      heldPageDelete(record.lastError ?? '') != null;
 
   /// The active strategy's page deletes held because their page changed
-  /// since the user saw it (see [_holdChangedPageDelete]): for each, the
-  /// page's name as the user saw it, and the held op's id.
-  Map<EntitySyncKey, ({String page, String opId})> heldPageDeletes() => {
-        for (final key in state.attentionByEntityKey.keys)
-          if (_recordForActiveKey(key) case final record?
-              when _isHeldPageDelete(record))
-            key: (
-              page: pageChangedSinceDelete(record.lastError!)!,
-              opId: record.pending.op.opId,
-            ),
-      };
+  /// since the user saw it, or could not be checked (see
+  /// [_holdChangedPageDelete]): for each, the page's name as the user saw
+  /// it, whether it could be checked, and the held op's id.
+  Map<EntitySyncKey, ({String page, bool checked, String opId})>
+      heldPageDeletes() => {
+            for (final key in state.attentionByEntityKey.keys)
+              if (_recordForActiveKey(key) case final record?
+                  when _isHeldPageDelete(record))
+                if (heldPageDelete(record.lastError!) case final held?)
+                  key: (
+                    page: held.page,
+                    checked: held.checked && record.seenPage?.content != null,
+                    opId: record.pending.op.opId,
+                  ),
+          };
 
   /// Delete anyway: sends the held page deletes in [opIds] (each key with
   /// the op id the user saw), unread. One that changed since is left.
@@ -4487,8 +4497,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         // A delete held for its page is shown apart, with its own choices
         // (see heldPageDeletes); its reason stands only when nothing else
         // waits.
-        if (reason != null && pageChangedSinceDelete(reason) != null) {
-          heldDelete ??= reason;
+        if (reason != null && heldPageDelete(reason) != null) {
+          final seen = record?.seenPage;
+          heldDelete ??= seen == null ? reason : heldPageDeleteReason(seen);
           continue;
         }
         if (reason == lineupPageMismatchMessage ||
