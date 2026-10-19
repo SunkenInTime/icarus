@@ -1080,16 +1080,19 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                           return;
                         }
 
-                        final safeArea = UtilityData
-                            .utilityWidgets[placedUtility.type]!
-                            .getAnchorPoint(
-                          mapScale: mapScale,
-                          diameterMeters: diameterMeters,
-                        );
+                        // The anchor is in drawing units; the circle's box
+                        // is 110 m wide, so add it in world units or a
+                        // circle near an edge reads as off the map.
+                        final centre = virtualOffset +
+                            CoordinateSystem.virtualToWorld(
+                              UtilityData.utilityWidgets[placedUtility.type]!
+                                  .getAnchorPoint(
+                                mapScale: mapScale,
+                                diameterMeters: diameterMeters,
+                              ),
+                            );
 
-                        if (coordinateSystem.isOutOfBounds(
-                          virtualOffset.translate(safeArea.dx, safeArea.dy),
-                        )) {
+                        if (coordinateSystem.isOutOfBounds(centre)) {
                           ref
                               .read(utilityProvider.notifier)
                               .removeUtilityAsAction(placedUtility.id);
