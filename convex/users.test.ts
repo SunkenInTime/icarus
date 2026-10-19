@@ -51,6 +51,22 @@ describe("users:ensureCurrentUser", () => {
     });
   });
 
+  test("leaves the row alone when the profile has not changed", async () => {
+    const t = convexTest(schema, modules);
+    const ana = t.withIdentity({
+      ...base,
+      subject: "same",
+      tokenIdentifier: "users|same",
+      "user_metadata.full_name": "ana_lyst",
+    });
+    await ana.mutation(ensureCurrentUser, protocol);
+    const first = await ana.query(me, {});
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await ana.mutation(ensureCurrentUser, protocol);
+    expect(await ana.query(me, {})).toEqual(first);
+  });
+
   test("names an email sign-in by its address", async () => {
     const t = convexTest(schema, modules);
     const email = t.withIdentity({
