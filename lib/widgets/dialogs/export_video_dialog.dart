@@ -20,6 +20,7 @@ import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/services/video_export/browser_video_sink.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_sink.dart';
+import 'package:icarus/services/video_export/quicktime_animation_sink.dart';
 import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:icarus/services/video_export/video_exporter.dart';
@@ -28,8 +29,9 @@ import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Settings + progress dialog for exporting the strategy's pages as an .mp4
-/// (ADR 0003): checkbox page selection, one global step duration.
+/// Settings + progress dialog for exporting the strategy's pages as an .mp4,
+/// or a .mov with a transparent background (ADRs 0003, 0007): checkbox page
+/// selection, one global step duration.
 class ExportVideoDialog extends ConsumerStatefulWidget {
   const ExportVideoDialog({super.key});
 
@@ -49,6 +51,9 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   final Set<String> _selectedPageIds = {};
   double _stepDurationSeconds = 3.0;
   VideoExportQuality _quality = VideoExportQuality.social;
+
+  /// Starts as the last export left it.
+  bool _transparent = false;
 
   /// Saving, syncing, and loading images, before any frame renders.
   bool _preparing = false;
@@ -79,8 +84,18 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         .read(appPreferencesProvider)
         .videoExportStepDurationSeconds
         .clamp(1.0, 15.0);
+    _transparent = ref.read(appPreferencesProvider).transparentVideoBackground;
     _pages = videoExportPageChoices(ref);
     _selectedPageIds.addAll(_pages.map((p) => p.id));
+  }
+
+  void _setTransparent(bool value) {
+    setState(() => _transparent = value);
+    unawaited(
+      ref
+          .read(appPreferencesProvider.notifier)
+          .setTransparentVideoBackground(value),
+    );
   }
 
   Future<void> _export() async {
@@ -99,7 +114,9 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     // The root container outlives this dialog, so cleanup after a
     // mid-export dismissal can still reach the live providers.
     final container = ProviderScope.containerOf(context, listen: false);
-    final quality = _quality;
+    final transparent = _transparent;
+    final quality = _exportQuality;
+    final extension = transparent ? 'mov' : 'mp4';
     final pageIds = {..._selectedPageIds};
     final stepDuration = Duration(
       milliseconds: (_stepDurationSeconds * 1000).round(),
@@ -110,12 +127,27 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
           .setVideoExportStepDurationSeconds(_stepDurationSeconds),
     );
     final fileName =
-        "${sanitizeStrategyFileName(ref.read(strategyProvider).stratName ?? "new video")}.mp4";
+        "${sanitizeStrategyFileName(ref.read(strategyProvider).stratName ?? "new video")}.$extension";
 
     // Where the video goes is settled first, so a dismissed save dialog or
     // a browser that cannot encode video costs nothing.
     final VideoFrameSink sink;
-    if (kIsWeb) {
+    if (transparent) {
+      // Encoded in Dart, so it needs neither ffmpeg nor the browser's
+      // encoder. The browser downloads the finished file.
+      String? outputPath;
+      if (!kIsWeb) {
+        final selectedOutputPath = await FilePicker.platform.saveFile(
+          type: FileType.custom,
+          dialogTitle: 'Please select an output file:',
+          fileName: fileName,
+          allowedExtensions: [extension],
+        );
+        if (selectedOutputPath == null) return;
+        outputPath = ensureMovExtension(selectedOutputPath);
+      }
+      sink = QuickTimeAnimationSink(fps: quality.fps, outputPath: outputPath);
+    } else if (kIsWeb) {
       final totalSeconds = VideoExporter.plannedDurationSeconds(
         pageCount: pageIds.length,
         stepSeconds: stepDuration.inMilliseconds / 1000,
@@ -147,7 +179,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         type: FileType.custom,
         dialogTitle: 'Please select an output file:',
         fileName: fileName,
-        allowedExtensions: ['mp4'],
+        allowedExtensions: [extension],
       );
       if (selectedOutputPath == null) return;
       sink = FfmpegVideoSink(
@@ -204,6 +236,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         backgroundDotOpacity:
             ref.read(appPreferencesProvider).backgroundDotOpacity,
         geometry: geometry,
+        transparentBackground: transparent,
         imageSources: images.sources,
         navigation: navigation,
         requireNavigation: requireNavigation,
@@ -235,7 +268,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         await FilePicker.platform.saveFile(
           type: FileType.custom,
           fileName: fileName,
-          allowedExtensions: ['mp4'],
+          allowedExtensions: [extension],
           bytes: video,
         );
       }
@@ -246,8 +279,9 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
             'content_type': 'video',
             'page_count': selectedPages.length,
             'step_duration_seconds': _stepDurationSeconds,
-            'quality': quality.name,
+            'quality': transparent ? 'lossless' : quality.name,
             'fps': quality.fps,
+            'transparent': transparent,
           },
         ),
       );
@@ -318,11 +352,16 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     return VideoExporter.plannedDurationSeconds(
       pageCount: _selectedPageIds.length,
       stepSeconds: _stepDurationSeconds,
-      fps: _quality.fps,
+      fps: _exportQuality.fps,
     );
   }
 
   bool get _canExport => _selectedPageIds.isNotEmpty;
+
+  /// The preset the export runs at. A transparent video is lossless, so the
+  /// presets' size targets don't apply; it plays at Social's 30 fps.
+  VideoExportQuality get _exportQuality =>
+      _transparent ? VideoExportQuality.social : _quality;
 
   bool get _allPagesSelected => _selectedPageIds.length == _pages.length;
 
@@ -452,29 +491,59 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                const _SectionLabel(text: 'Quality'),
-                const SizedBox(height: 10),
-                // IntrinsicHeight bounds the stretch so all three cards share
-                // the tallest card's height; without it the scrollable dialog
-                // hands the Row an infinite height to stretch into.
-                IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (final quality in VideoExportQuality.values) ...[
-                        if (quality != VideoExportQuality.values.first)
-                          const SizedBox(width: 8),
-                        Expanded(
-                          child: _QualityCard(
-                            quality: quality,
-                            selected: _quality == quality,
-                            onTap: () => setState(() => _quality = quality),
-                          ),
-                        ),
-                      ],
-                    ],
+                ShadCheckbox(
+                  value: _transparent,
+                  onChanged: _setTransparent,
+                  label: const Text('Transparent background'),
+                  sublabel: const Text(
+                    'Leave out the background and dots. Saves a lossless .mov '
+                    'that keeps the transparency, for video editors.',
                   ),
                 ),
+                const SizedBox(height: 24),
+                const _SectionLabel(text: 'Quality'),
+                const SizedBox(height: 10),
+                // A transparent video is lossless, so the presets sit out:
+                // dimmed, and without a tap they take no clicks or focus.
+                AnimatedOpacity(
+                  opacity: _transparent ? 0.4 : 1,
+                  duration: const Duration(milliseconds: 150),
+                  // IntrinsicHeight bounds the stretch so all three cards
+                  // share the tallest card's height; without it the
+                  // scrollable dialog hands the Row an infinite height to
+                  // stretch into.
+                  child: IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final quality in VideoExportQuality.values) ...[
+                          if (quality != VideoExportQuality.values.first)
+                            const SizedBox(width: 8),
+                          Expanded(
+                            child: _QualityCard(
+                              quality: quality,
+                              selected: _quality == quality,
+                              onTap: _transparent
+                                  ? null
+                                  : () => setState(() => _quality = quality),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                if (_transparent) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'A transparent video is lossless at 30 fps, so these '
+                    "don't apply.",
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: colors.mutedForeground,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 Row(
                   children: [
@@ -521,11 +590,12 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                     Expanded(
                       child: _ExportSummary(
                         estimatedSeconds: estimatedSeconds,
-                        outputHeight: estimatedSeconds == null
+                        outputHeight: estimatedSeconds == null || _transparent
                             ? 1080
                             : _quality.outputHeightForDuration(
                                 estimatedSeconds,
                               ),
+                        extension: _transparent ? 'mov' : 'mp4',
                         formatSeconds: _formatSeconds,
                       ),
                     ),
@@ -602,7 +672,7 @@ class _QualityCard extends StatelessWidget {
 
   final VideoExportQuality quality;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   static const _icons = {
     VideoExportQuality.potato: LucideIcons.feather,
@@ -620,7 +690,8 @@ class _QualityCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = ShadTheme.of(context).colorScheme;
     return InkWell(
-      mouseCursor: SystemMouseCursors.click,
+      mouseCursor:
+          onTap == null ? SystemMouseCursors.basic : SystemMouseCursors.click,
       borderRadius: BorderRadius.circular(8),
       onTap: onTap,
       child: AnimatedContainer(
@@ -750,11 +821,15 @@ class _ExportSummary extends StatelessWidget {
   const _ExportSummary({
     required this.estimatedSeconds,
     required this.outputHeight,
+    required this.extension,
     required this.formatSeconds,
   });
 
   final double? estimatedSeconds;
   final int outputHeight;
+
+  /// The file type Export writes: mp4, or webm for a transparent video.
+  final String extension;
   final String Function(double) formatSeconds;
 
   @override
@@ -780,7 +855,8 @@ class _ExportSummary extends StatelessWidget {
                         ),
                       ),
                       TextSpan(
-                        text: ' · ${outputHeight}p',
+                        text:
+                            ' · ${outputHeight}p · ${extension.toUpperCase()}',
                         style: muted,
                       ),
                     ],

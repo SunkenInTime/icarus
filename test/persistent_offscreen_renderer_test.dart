@@ -152,6 +152,35 @@ void main() {
     expect(counts.disposed, 1);
   });
 
+  testWidgets('raw frames can carry straight alpha for encoders',
+      (tester) async {
+    final renderer = PersistentOffscreenRenderer(
+      targetSize: const Size(8, 8),
+    );
+
+    try {
+      final frames = await tester.runAsync(() async {
+        const halfRed = SizedBox.expand(
+          child: ColoredBox(color: Color(0x80FF0000)),
+        );
+        return (
+          premultiplied: await renderer.captureRawRgba(halfRed),
+          straight: await renderer.captureRawRgba(
+            halfRed,
+            straightAlpha: true,
+          ),
+        );
+      });
+
+      // Premultiplied, half-transparent red reads as half-bright red. An
+      // encoder takes RGBA as straight alpha, so it needs full red.
+      expect(frames!.premultiplied.sublist(0, 4), [128, 0, 0, 128]);
+      expect(frames.straight.sublist(0, 4), [255, 0, 0, 128]);
+    } finally {
+      await _disposeRenderer(tester, renderer);
+    }
+  });
+
   testWidgets('prepare flushes async updates before capture', (tester) async {
     final renderer = PersistentOffscreenRenderer(
       targetSize: const Size(8, 8),

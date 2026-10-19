@@ -141,7 +141,7 @@ class _AttentionOpQueue extends StrategyOpQueueNotifier {
   final String? lastError;
 
   /// Page deletes held for review, waiting beside [rejectedCount] others.
-  final Map<EntitySyncKey, ({String page, String opId})> held;
+  final Map<EntitySyncKey, ({String page, bool checked, String opId})> held;
   final List<Map<EntitySyncKey, String>> deletedAnyway = [];
   final List<Set<EntitySyncKey>> discarded = [];
   int retryRejectedCount = 0;
@@ -226,7 +226,8 @@ class _AttentionOpQueue extends StrategyOpQueueNotifier {
   }
 
   @override
-  Map<EntitySyncKey, ({String page, String opId})> heldPageDeletes() => held;
+  Map<EntitySyncKey, ({String page, bool checked, String opId})>
+      heldPageDeletes() => held;
 
   @override
   Future<void> deleteHeldPagesAnyway(Map<EntitySyncKey, String> opIds) async {
@@ -1470,14 +1471,17 @@ void main() {
       _ConflictSession? session,
       bool paused = false,
       String? savedError,
+      bool checked = true,
     }) async {
       final queue = _AttentionOpQueue(
         otherRejected,
         paused: paused,
-        held: {heldKey: (page: 'B main', opId: 'held-1')},
-        lastError: otherRejected == 0
-            ? 'B main $pageChangedSinceDeleteReason'
-            : 'Some saved work needs attention.',
+        held: {heldKey: (page: 'B main', checked: checked, opId: 'held-1')},
+        lastError: otherRejected > 0
+            ? 'Some saved work needs attention.'
+            : checked
+                ? 'B main $pageChangedSinceDeleteReason'
+                : 'B main $pageUncheckedBeforeDeleteReason',
       );
       final container = _createConflictContainer(
         queue: queue,
@@ -1543,6 +1547,36 @@ void main() {
         {heldKey: 'held-1'},
       ]);
       expect(queue.retryRejectedCount, 0);
+
+      await tester.tap(_syncButton('attention'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Keep the page'));
+      await tester.pumpAndSettle();
+      expect(queue.discarded, [
+        {heldKey},
+      ]);
+    });
+
+    testWidgets(
+        'a page this computer could not check is not said to have changed, '
+        'and keeps both choices', (tester) async {
+      final queue = await open(tester, otherRejected: 0, checked: false);
+
+      expect(
+        find.textContaining(
+          "Icarus couldn't check B main for a teammate's changes. Review it "
+          'before deleting.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('changed since'), findsNothing);
+      expect(find.text('Use cloud'), findsNothing);
+
+      await tester.tap(find.text('Delete anyway'));
+      await tester.pumpAndSettle();
+      expect(queue.deletedAnyway, [
+        {heldKey: 'held-1'},
+      ]);
 
       await tester.tap(_syncButton('attention'));
       await tester.pumpAndSettle();

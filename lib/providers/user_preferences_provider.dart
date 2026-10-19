@@ -142,6 +142,10 @@ class AppPreferences extends HiveObject {
   /// gradient and the dot grid), so the PNG is transparent around the map.
   final bool transparentScreenshotBackground;
 
+  /// The same choice for video export, asked separately: a transparent video
+  /// is a lossless .mov for editing, not an MP4 to share.
+  final bool transparentVideoBackground;
+
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
     this.autosaveEnabled = true,
@@ -164,6 +168,7 @@ class AppPreferences extends HiveObject {
     this.backgroundDotOpacity = 1.0,
     this.welcomeTourSeen = false,
     this.transparentScreenshotBackground = false,
+    this.transparentVideoBackground = false,
   })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
         customShortcutBindings =
             Map.unmodifiable(customShortcutBindings ?? const {});
@@ -190,6 +195,7 @@ class AppPreferences extends HiveObject {
     double? backgroundDotOpacity,
     bool? welcomeTourSeen,
     bool? transparentScreenshotBackground,
+    bool? transparentVideoBackground,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
@@ -224,6 +230,8 @@ class AppPreferences extends HiveObject {
       welcomeTourSeen: welcomeTourSeen ?? this.welcomeTourSeen,
       transparentScreenshotBackground: transparentScreenshotBackground ??
           this.transparentScreenshotBackground,
+      transparentVideoBackground:
+          transparentVideoBackground ?? this.transparentVideoBackground,
     );
   }
 }
@@ -713,6 +721,12 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
       (current) => current.copyWith(
         transparentScreenshotBackground: transparent,
       ),
+    );
+  }
+
+  Future<void> setTransparentVideoBackground(bool transparent) {
+    return _updatePreferences(
+      (current) => current.copyWith(transparentVideoBackground: transparent),
     );
   }
 

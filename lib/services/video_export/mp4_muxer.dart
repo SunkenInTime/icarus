@@ -20,7 +20,9 @@ class Mp4ColorInfo {
   final bool fullRange;
 }
 
-/// Builds an MP4 file holding one H.264 video track, entirely in memory.
+/// Builds a file holding one video track, entirely in memory: the shared
+/// body of [Mp4H264Muxer] and [MovAnimationMuxer], which differ in their
+/// file type, handler boxes and sample description.
 ///
 /// The layout is faststart (ftyp, moov, mdat) so browsers and chat apps can
 /// start playing before the whole file has arrived. All samples live in a
@@ -32,11 +34,11 @@ class Mp4ColorInfo {
 ///
 /// Pure Dart and 64-bit values are written as two 32-bit halves, so this runs
 /// unchanged on the VM and on the web.
-class Mp4H264Muxer {
-  Mp4H264Muxer({
+abstract class _SingleTrackMuxer {
+  _SingleTrackMuxer({
     required this.width,
     required this.height,
-    this.timescale = 90000,
+    required this.timescale,
   }) {
     if (width <= 0 || width > 0xFFFF || height <= 0 || height > 0xFFFF) {
       throw ArgumentError('Video size must be within 1..65535 on each side.');
@@ -58,24 +60,32 @@ class Mp4H264Muxer {
   int _payloadBytes = 0;
   int _totalDuration = 0;
   bool _finished = false;
-  Mp4ColorInfo? _color;
+
+  /// The file's ftyp box.
+  Uint8List get _ftyp;
+
+  /// The track's one sample description (an `stsd` entry).
+  Uint8List _sampleEntry();
+
+  /// QuickTime files name a component type in their handler boxes and carry
+  /// a data handler in minf; ISO files do neither.
+  bool get _quickTime;
 
   int get sampleCount => _samples.length;
 
   /// Total duration of the added samples, in [timescale] ticks.
   int get totalDuration => _totalDuration;
 
-  /// Adds one access unit in AVCC format (length-prefixed NAL units), exactly
-  /// as WebCodecs emits it with `avc: {format: 'avc'}`. [duration] is in
-  /// [timescale] ticks.
+  /// Adds one sample, [duration] [timescale] ticks long, in the order it is
+  /// presented.
   void addSample(
     Uint8List sample, {
     required int duration,
     required bool isKeyFrame,
   }) {
-    if (_finished) throw StateError('The MP4 has already been finished.');
+    if (_finished) throw StateError('The file has already been finished.');
     if (sample.isEmpty) {
-      throw ArgumentError('An H.264 sample cannot be empty.');
+      throw ArgumentError('A video sample cannot be empty.');
     }
     if (duration <= 0 || duration > _maxUint32) {
       throw ArgumentError.value(
@@ -85,7 +95,7 @@ class Mp4H264Muxer {
       );
     }
     if (_samples.isEmpty && !isKeyFrame) {
-      throw StateError('The first H.264 sample must be a keyframe.');
+      throw StateError('The first video sample must be a keyframe.');
     }
     _samples.add(sample);
     _durations.add(duration);
@@ -94,43 +104,22 @@ class Mp4H264Muxer {
     _totalDuration += duration;
   }
 
-  /// Returns the finished file. [avcDecoderConfig] is the
-  /// AVCDecoderConfigurationRecord (the `description` WebCodecs reports in the
-  /// first chunk's `metadata.decoderConfig`); [color] is how its samples map
-  /// to colour, when known.
-  Uint8List finish({
-    required Uint8List avcDecoderConfig,
-    Mp4ColorInfo? color,
-  }) {
-    if (_finished) throw StateError('The MP4 has already been finished.');
+  /// Checks that there is a file to build, then builds it.
+  Uint8List _finish() {
+    if (_finished) throw StateError('The file has already been finished.');
     if (_samples.isEmpty) {
-      throw StateError('Cannot build an MP4 without any video samples.');
-    }
-    if (avcDecoderConfig.isEmpty || avcDecoderConfig[0] != 1) {
-      throw ArgumentError(
-        'avcDecoderConfig must be an AVCDecoderConfigurationRecord '
-        '(configurationVersion 1).',
-      );
+      throw StateError('Cannot build a video file without any samples.');
     }
     _finished = true;
-    _color = color;
-
-    final ftyp = _box('ftyp', [
-      _fourCc('isom'),
-      _u32(0x200),
-      _fourCc('isom'),
-      _fourCc('iso2'),
-      _fourCc('avc1'),
-      _fourCc('mp41'),
-    ]);
+    final ftyp = _ftyp;
 
     // The single chunk offset is known only once moov's size is known, and
     // moov's size does not depend on the offset's value, so build moov twice.
     final largeMdat = _payloadBytes + 8 > _maxUint32;
     final mdatHeaderSize = largeMdat ? 16 : 8;
-    final moovSize = _moov(avcDecoderConfig, chunkOffset: 0).length;
+    final moovSize = _moov(chunkOffset: 0).length;
     final chunkOffset = ftyp.length + moovSize + mdatHeaderSize;
-    final moov = _moov(avcDecoderConfig, chunkOffset: chunkOffset);
+    final moov = _moov(chunkOffset: chunkOffset);
     assert(moov.length == moovSize);
 
     final out = BytesBuilder(copy: false)
@@ -152,7 +141,7 @@ class Mp4H264Muxer {
     return out.takeBytes();
   }
 
-  Uint8List _moov(Uint8List avcC, {required int chunkOffset}) {
+  Uint8List _moov({required int chunkOffset}) {
     // Durations past 32 bits need the version-1 time boxes.
     final longDuration = _totalDuration > _maxUint32;
     return _box('moov', [
@@ -161,26 +150,34 @@ class Mp4H264Muxer {
         _tkhd(longDuration),
         _box('mdia', [
           _mdhd(longDuration),
-          _fullBox('hdlr', 0, 0, [
-            _u32(0), // pre_defined
-            _fourCc('vide'),
-            Uint8List(12), // reserved
-            Uint8List.fromList([...'VideoHandler'.codeUnits, 0]),
-          ]),
+          _hdlr('mhlr', 'vide', 'VideoHandler'),
           _box('minf', [
             _fullBox('vmhd', 0, 1, [Uint8List(8)]), // graphicsmode, opcolor
+            if (_quickTime) _hdlr('dhlr', 'url ', 'DataHandler'),
             _box('dinf', [
               _fullBox('dref', 0, 0, [
                 _u32(1),
                 _fullBox('url ', 0, 1, const []), // media is in this file
               ]),
             ]),
-            _stbl(avcC, chunkOffset),
+            _stbl(chunkOffset),
           ]),
         ]),
       ]),
     ]);
   }
+
+  /// A handler box. ISO files leave the component type zero and end the name
+  /// with a NUL; QuickTime files name the type and count the name's length.
+  Uint8List _hdlr(String componentType, String subtype, String name) =>
+      _fullBox('hdlr', 0, 0, [
+        _quickTime ? _fourCc(componentType) : _u32(0),
+        _fourCc(subtype),
+        Uint8List(12), // reserved
+        _quickTime
+            ? Uint8List.fromList([name.length, ...name.codeUnits])
+            : Uint8List.fromList([...name.codeUnits, 0]),
+      ]);
 
   Uint8List _mvhd(bool longDuration) =>
       _fullBox('mvhd', longDuration ? 1 : 0, 0, [
@@ -228,7 +225,7 @@ class Mp4H264Muxer {
   Uint8List _duration(bool longDuration) =>
       longDuration ? _u64(_totalDuration) : _u32(_totalDuration);
 
-  Uint8List _stbl(Uint8List avcC, int chunkOffset) {
+  Uint8List _stbl(int chunkOffset) {
     // Run-length encode the per-sample durations.
     final sttsEntries = <Uint8List>[];
     var runCount = 0;
@@ -255,7 +252,7 @@ class Mp4H264Muxer {
 
     final allKeyFrames = _keyFrameNumbers.length == _samples.length;
     return _box('stbl', [
-      _fullBox('stsd', 0, 0, [_u32(1), _avc1(avcC)]),
+      _fullBox('stsd', 0, 0, [_u32(1), _sampleEntry()]),
       _fullBox('stts', 0, 0, [_u32(sttsEntries.length ~/ 2), ...sttsEntries]),
       // Without stss every sample is a sync sample.
       if (!allKeyFrames)
@@ -280,6 +277,62 @@ class Mp4H264Muxer {
     ]);
   }
 
+  static Uint8List _identityMatrix() => Uint8List.fromList([
+        ..._u32(0x00010000), ..._u32(0), ..._u32(0), //
+        ..._u32(0), ..._u32(0x00010000), ..._u32(0), //
+        ..._u32(0), ..._u32(0), ..._u32(0x40000000), //
+      ]);
+}
+
+/// Builds an MP4 file holding one H.264 video track, entirely in memory.
+/// See [_SingleTrackMuxer] for the layout. Samples are access units in AVCC
+/// format (length-prefixed NAL units), exactly as WebCodecs emits them with
+/// `avc: {format: 'avc'}`.
+class Mp4H264Muxer extends _SingleTrackMuxer {
+  Mp4H264Muxer({
+    required super.width,
+    required super.height,
+    super.timescale = 90000,
+  });
+
+  Uint8List? _avcC;
+  Mp4ColorInfo? _color;
+
+  /// Returns the finished file. [avcDecoderConfig] is the
+  /// AVCDecoderConfigurationRecord (the `description` WebCodecs reports in the
+  /// first chunk's `metadata.decoderConfig`); [color] is how its samples map
+  /// to colour, when known.
+  Uint8List finish({
+    required Uint8List avcDecoderConfig,
+    Mp4ColorInfo? color,
+  }) {
+    if (avcDecoderConfig.isEmpty || avcDecoderConfig[0] != 1) {
+      throw ArgumentError(
+        'avcDecoderConfig must be an AVCDecoderConfigurationRecord '
+        '(configurationVersion 1).',
+      );
+    }
+    _avcC = avcDecoderConfig;
+    _color = color;
+    return _finish();
+  }
+
+  @override
+  bool get _quickTime => false;
+
+  @override
+  Uint8List get _ftyp => _box('ftyp', [
+        _fourCc('isom'),
+        _u32(0x200),
+        _fourCc('isom'),
+        _fourCc('iso2'),
+        _fourCc('avc1'),
+        _fourCc('mp41'),
+      ]);
+
+  @override
+  Uint8List _sampleEntry() => _avc1(_avcC!);
+
   Uint8List _avc1(Uint8List avcC) => _box('avc1', [
         Uint8List(6), // reserved
         _u16(1), // data_reference_index
@@ -303,12 +356,57 @@ class Mp4H264Muxer {
             Uint8List.fromList([color.fullRange ? 0x80 : 0]),
           ]),
       ]);
+}
 
-  static Uint8List _identityMatrix() => Uint8List.fromList([
-        ..._u32(0x00010000), ..._u32(0), ..._u32(0), //
-        ..._u32(0), ..._u32(0x00010000), ..._u32(0), //
-        ..._u32(0), ..._u32(0), ..._u32(0x40000000), //
+/// Builds a QuickTime .mov holding one QuickTime Animation track (`rle `,
+/// 32-bit ARGB), from the samples `QuickTimeAnimationEncoder` makes. The
+/// boxes match FFmpeg's own .mov for this codec, which DaVinci Resolve and
+/// Clipchamp read with its alpha.
+class MovAnimationMuxer extends _SingleTrackMuxer {
+  MovAnimationMuxer({
+    required super.width,
+    required super.height,
+    required super.timescale,
+  });
+
+  /// Returns the finished file.
+  Uint8List finish() => _finish();
+
+  @override
+  bool get _quickTime => true;
+
+  @override
+  Uint8List get _ftyp => _box('ftyp', [
+        _fourCc('qt  '),
+        _u32(0x200),
+        _fourCc('qt  '),
       ]);
+
+  @override
+  Uint8List _sampleEntry() {
+    const name = 'Animation';
+    return _box('rle ', [
+      Uint8List(6), // reserved
+      _u16(1), // data_reference_index
+      _u16(0), // version
+      _u16(0), // revision level
+      Uint8List(4), // vendor
+      _u32(0), // temporal quality
+      _u32(0x200), // spatial quality: lossless
+      _u16(width),
+      _u16(height),
+      _u32(0x00480000), // 72 dpi
+      _u32(0x00480000),
+      _u32(0), // data size
+      _u16(1), // frame_count
+      // Compressor name: a counted string in 32 bytes.
+      Uint8List(32)
+        ..[0] = name.length
+        ..setRange(1, 1 + name.length, name.codeUnits),
+      _u16(32), // depth: ARGB, with alpha
+      _u16(0xFFFF), // no colour table
+    ]);
+  }
 }
 
 const int _maxUint32 = 0xFFFFFFFF;

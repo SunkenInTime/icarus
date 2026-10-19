@@ -44,7 +44,7 @@ const editAccessRemovedMessage =
 /// conflict text.
 bool isSpecificAttentionReason(String error) {
   final lower = error.toLowerCase();
-  return pageChangedSinceDelete(error) != null ||
+  return heldPageDelete(error) != null ||
       lower.contains('too large for cloud sync') ||
       lower.contains(editAccessRemovedMessage.toLowerCase()) ||
       lower.contains(lineupPageMismatchMessage.toLowerCase()) ||
@@ -132,12 +132,20 @@ String clientUpgradeRequiredMessage({
 /// Whether the update a refused desktop build needs can be installed yet.
 enum ClientUpdateAvailability { available, checking, unavailable }
 
+/// What the user is told about a page delete held for them (see
+/// heldPageDelete). A page this device could not check is never said to
+/// have changed: nothing says it did.
+String heldPageDeleteMessage(({String page, bool checked}) held) => held.checked
+    ? '${held.page} $pageChangedSinceDeleteReason. Review before deleting.'
+    : "Icarus couldn't check ${held.page} for a teammate's changes. "
+        'Review it before deleting.';
+
 String friendlyCloudSyncError(String raw) {
   if (isClientUpgradeRequiredReason(raw)) {
     return clientUpgradeRequiredMessage();
   }
-  if (pageChangedSinceDelete(raw) case final page?) {
-    return '$page $pageChangedSinceDeleteReason. Review before deleting.';
+  if (heldPageDelete(raw) case final held?) {
+    return heldPageDeleteMessage(held);
   }
   final lower = raw.toLowerCase();
   if (lower.contains(_incompletePageCopyMark)) return raw;

@@ -3,7 +3,8 @@ import 'dart:typed_data';
 /// Where [VideoExporter] sends the frames it renders: an encoder that turns
 /// them into an .mp4. Desktop pipes them to the bundled ffmpeg
 /// (`FfmpegVideoSink`); the browser encodes them with WebCodecs
-/// (`createBrowserVideoSink`).
+/// (`createBrowserVideoSink`). A transparent video is a .mov encoded in Dart
+/// on both (`QuickTimeAnimationSink`).
 abstract interface class VideoFrameSink {
   /// Called once, before the first frame. Every frame is [width] x [height];
   /// the video runs [totalSeconds] over [totalFrames] frames.

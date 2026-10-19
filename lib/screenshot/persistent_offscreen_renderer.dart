@@ -112,11 +112,19 @@ class PersistentOffscreenRenderer {
   ///
   /// This avoids Flutter's comparatively expensive per-frame PNG encoding.
   /// The returned bytes are ordered top-to-bottom, four bytes per pixel.
-  Future<Uint8List> captureRawRgba(Widget widget) async {
+  /// They are premultiplied unless [straightAlpha], which a frame with
+  /// see-through pixels needs: encoders read RGBA as straight alpha, and
+  /// premultiplied colour would darken every half-transparent pixel.
+  Future<Uint8List> captureRawRgba(
+    Widget widget, {
+    bool straightAlpha = false,
+  }) async {
     final image = await _captureImage(widget);
     try {
       final byteData = await image.toByteData(
-        format: ui.ImageByteFormat.rawRgba,
+        format: straightAlpha
+            ? ui.ImageByteFormat.rawStraightRgba
+            : ui.ImageByteFormat.rawRgba,
       );
       if (byteData == null) {
         throw StateError('Flutter could not read back the offscreen frame.');
