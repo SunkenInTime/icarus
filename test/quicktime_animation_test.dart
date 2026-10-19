@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/services/video_export/quicktime_animation_sink.dart';
+import 'package:icarus/services/video_export/video_export_errors.dart';
 
 const _width = 300;
 const _height = 24;
@@ -52,12 +53,13 @@ void main() {
         p.setAll(0, [0, 0, 0, 0]);
       }
     });
-    // A few pixels change mid-row, so rows open with and contain skips
-    // longer than one skip code holds.
+    // A few pixels change, so one row skips past 254 pixels mid-row and
+    // another opens with a skip longer than its first skip byte holds.
     final touched = Uint8List.fromList(base);
     for (final x in [2, 270, 271, 299]) {
       touched.setAll((12 * _width + x) * 4, [255, 0, 255, 255]);
     }
+    touched.setAll((14 * _width + 280) * 4, [0, 255, 255, 255]);
     // Noise (literal runs past 127) beside one colour (repeats past 128).
     final busy = _frame((x, y, p) {
       if (x < 150) {
@@ -135,7 +137,14 @@ void main() {
     ]);
     final flags = const LineSplitter().convert('${keyFrames.stdout}');
     expect(flags, hasLength(76));
-    expect(flags.last, startsWith('K'));
+    // Every two seconds (60 frames) and on the last frame, nowhere else.
+    expect(
+      [
+        for (var i = 0; i < flags.length; i++)
+          if (flags[i].startsWith('K')) i,
+      ],
+      [0, 60, 75],
+    );
 
     final actual = Uint8List.fromList(decoded.stdout as List<int>);
     final want = expected.takeBytes();
@@ -149,4 +158,28 @@ void main() {
       );
     }
   }, skip: _ffmpeg == null || _ffprobe == null);
+
+  test('a cancel during the final write leaves an existing video alone',
+      () async {
+    final dir = await Directory.systemTemp.createTemp('icarus_qtrle_cancel');
+    addTearDown(() => dir.delete(recursive: true));
+    final path = '${dir.path}${Platform.pathSeparator}strategy.mov';
+    await File(path).writeAsString('the video already there');
+
+    final sink = QuickTimeAnimationSink(fps: _fps, outputPath: path);
+    await sink.start(
+      width: _width,
+      height: _height,
+      totalFrames: 1,
+      totalSeconds: 1,
+    );
+    await sink.addFrame(Uint8List(_width * _height * 4), 1);
+    // finish() runs up to its file write, then the cancel lands.
+    final finishing = sink.finish();
+    sink.cancel();
+
+    await expectLater(finishing, throwsA(isA<VideoExportCancelled>()));
+    expect(await File(path).readAsString(), 'the video already there');
+    expect(dir.listSync(), hasLength(1));
+  });
 }

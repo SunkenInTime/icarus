@@ -503,33 +503,33 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                 const SizedBox(height: 24),
                 const _SectionLabel(text: 'Quality'),
                 const SizedBox(height: 10),
-                // A transparent video is lossless, so the presets sit out.
-                IgnorePointer(
-                  ignoring: _transparent,
-                  child: AnimatedOpacity(
-                    opacity: _transparent ? 0.4 : 1,
-                    duration: const Duration(milliseconds: 150),
-                    // IntrinsicHeight bounds the stretch so all three cards
-                    // share the tallest card's height; without it the
-                    // scrollable dialog hands the Row an infinite height to
-                    // stretch into.
-                    child: IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          for (final quality in VideoExportQuality.values) ...[
-                            if (quality != VideoExportQuality.values.first)
-                              const SizedBox(width: 8),
-                            Expanded(
-                              child: _QualityCard(
-                                quality: quality,
-                                selected: _quality == quality,
-                                onTap: () => setState(() => _quality = quality),
-                              ),
+                // A transparent video is lossless, so the presets sit out:
+                // dimmed, and without a tap they take no clicks or focus.
+                AnimatedOpacity(
+                  opacity: _transparent ? 0.4 : 1,
+                  duration: const Duration(milliseconds: 150),
+                  // IntrinsicHeight bounds the stretch so all three cards
+                  // share the tallest card's height; without it the
+                  // scrollable dialog hands the Row an infinite height to
+                  // stretch into.
+                  child: IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final quality in VideoExportQuality.values) ...[
+                          if (quality != VideoExportQuality.values.first)
+                            const SizedBox(width: 8),
+                          Expanded(
+                            child: _QualityCard(
+                              quality: quality,
+                              selected: _quality == quality,
+                              onTap: _transparent
+                                  ? null
+                                  : () => setState(() => _quality = quality),
                             ),
-                          ],
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
                 ),
@@ -672,7 +672,7 @@ class _QualityCard extends StatelessWidget {
 
   final VideoExportQuality quality;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   static const _icons = {
     VideoExportQuality.potato: LucideIcons.feather,
@@ -690,7 +690,8 @@ class _QualityCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = ShadTheme.of(context).colorScheme;
     return InkWell(
-      mouseCursor: SystemMouseCursors.click,
+      mouseCursor:
+          onTap == null ? SystemMouseCursors.basic : SystemMouseCursors.click,
       borderRadius: BorderRadius.circular(8),
       onTap: onTap,
       child: AnimatedContainer(

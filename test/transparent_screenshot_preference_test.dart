@@ -72,11 +72,14 @@ void main() {
     expect(restored.transparentScreenshotBackground, isFalse);
     expect(restored.transparentVideoBackground, isFalse);
 
-    // Once turned on, it stays on across a restart.
+    // Once turned on, each stays on across a restart.
     var container = ProviderContainer();
     await container
         .read(appPreferencesProvider.notifier)
         .setTransparentScreenshotBackground(true);
+    await container
+        .read(appPreferencesProvider.notifier)
+        .setTransparentVideoBackground(true);
     container.dispose();
     await Hive.close();
     await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
@@ -84,6 +87,10 @@ void main() {
     addTearDown(container.dispose);
     expect(
       container.read(appPreferencesProvider).transparentScreenshotBackground,
+      isTrue,
+    );
+    expect(
+      container.read(appPreferencesProvider).transparentVideoBackground,
       isTrue,
     );
   });

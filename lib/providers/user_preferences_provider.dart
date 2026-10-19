@@ -143,7 +143,7 @@ class AppPreferences extends HiveObject {
   final bool transparentScreenshotBackground;
 
   /// The same choice for video export, asked separately: a transparent video
-  /// is a WebM for editing, not an MP4 to share.
+  /// is a lossless .mov for editing, not an MP4 to share.
   final bool transparentVideoBackground;
 
   AppPreferences({

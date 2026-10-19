@@ -106,18 +106,36 @@ class QuickTimeAnimationSink implements VideoFrameSink {
       onProgress?.call(1);
       return video;
     }
-    // Written beside the destination and renamed over it, so a failed write
-    // never damages a video already there (as FfmpegVideoEncoder does).
+    // Written beside the destination and renamed over it, so a failed or
+    // cancelled write never damages a video already there (as
+    // FfmpegVideoEncoder does).
     final partial = File('$path.icarus-partial.mov');
-    try {
-      await partial.writeAsBytes(video, flush: true);
-      await partial.rename(path);
-    } on Object catch (error) {
+    Future<void> removePartial() async {
       try {
         if (await partial.exists()) await partial.delete();
       } on Object {
         // Best effort only.
       }
+    }
+
+    try {
+      await partial.writeAsBytes(video, flush: true);
+    } on Object catch (error) {
+      await removePartial();
+      throw VideoExportException(
+        'Could not write the video to the selected location: $error',
+      );
+    }
+    // A cancel that arrived during the write still wins: the rename is the
+    // only step that touches the destination.
+    if (_cancelled) {
+      await removePartial();
+      throw VideoExportCancelled();
+    }
+    try {
+      await partial.rename(path);
+    } on Object catch (error) {
+      await removePartial();
       throw VideoExportException(
         'Could not write the video to the selected location: $error',
       );
