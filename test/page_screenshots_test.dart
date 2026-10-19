@@ -7,9 +7,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
@@ -18,6 +20,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/screenshot/page_screenshot.dart';
 import 'package:icarus/screenshot/save_screenshots.dart';
+import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:image/image.dart' as img;
@@ -40,11 +43,26 @@ class _OpenLocalStrategy extends StrategyProvider {
   Future<void> forceSaveNow(String id) async {}
 }
 
-StrategyPage _page(String id, String name, int sortIndex) => StrategyPage(
+/// A page with [agents] Jetts along its top, so pages render differently.
+StrategyPage _page(
+  String id,
+  String name,
+  int sortIndex, {
+  int agents = 0,
+}) =>
+    StrategyPage(
       id: id,
       name: name,
       drawingData: const [],
-      agentData: const [],
+      agentData: [
+        for (var i = 0; i < agents; i++)
+          PlacedAgent(
+            id: '$id-agent-$i',
+            type: AgentType.jett,
+            position: Offset(300.0 + i * 60, 300),
+            isAlly: true,
+          ),
+      ],
       abilityData: const [],
       textData: const [],
       imageData: const [],
@@ -90,9 +108,9 @@ void main() {
           folderID: null,
           // Stored out of order: numbers come from the page order.
           pages: [
-            _page('c', 'Post plant', 2),
+            _page('c', 'Post plant', 2, agents: 4),
             _page('a', 'Default', 0),
-            _page('b', 'Fake', 1),
+            _page('b', 'Fake', 1, agents: 2),
           ],
         ),
       ),
@@ -136,6 +154,10 @@ void main() {
       (1, 'Default'),
       (3, 'Post plant'),
     ]);
+    // Each file holds its own page: the page with agents draws more.
+    int drawn(Uint8List png) =>
+        img.decodePng(png)!.where((pixel) => pixel.a > 0).length;
+    expect(drawn(shots[1].png), greaterThan(drawn(shots[0].png)));
     for (final shot in shots) {
       final png = img.decodePng(shot.png)!;
       expect(png.width, CoordinateSystem.screenShotSize.width);
@@ -144,6 +166,65 @@ void main() {
       expect(png.getPixel(2, 2).a, 0);
       expect(png.getPixel(png.width ~/ 2, png.height ~/ 2).a, 255);
     }
+    expect(CoordinateSystem.instance.isScreenshot, isFalse);
+  });
+
+  testWidgets('a cancelled capture stops before the next page', (tester) async {
+    CoordinateSystem(playAreaSize: const Size(1600, 900));
+    await tester.runAsync(
+      () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+        _strategyId,
+        StrategyData(
+          id: _strategyId,
+          name: 'Retakes',
+          mapData: MapValue.ascent,
+          versionNumber: 1,
+          lastEdited: DateTime(2026),
+          folderID: null,
+          pages: [_page('a', 'Default', 0), _page('b', 'Fake', 1)],
+        ),
+      ),
+    );
+    late WidgetRef ref;
+    await tester.pumpWidget(ProviderScope(
+      overrides: [strategyProvider.overrideWith(_OpenLocalStrategy.new)],
+      child: Consumer(builder: (context, widgetRef, _) {
+        ref = widgetRef;
+        return const SizedBox.shrink();
+      }),
+    ));
+
+    final started = <int>[];
+    var cancelled = false;
+    Object? outcome;
+    var done = false;
+    await tester.runAsync(() async {
+      unawaited(
+        captureStrategyPages(
+          ref,
+          pageIds: {'a', 'b'},
+          transparentBackground: false,
+          onPage: (page, total) {
+            started.add(page);
+            // The user cancels while the first page renders.
+            cancelled = true;
+          },
+          isCancelled: () => cancelled,
+        )
+            .then<void>((shots) => outcome = shots,
+                onError: (Object error) => outcome = error)
+            .whenComplete(() => done = true),
+      );
+    });
+    while (!done) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 16)),
+      );
+      await tester.pump();
+    }
+
+    expect(outcome, isA<VideoExportCancelled>());
+    expect(started, [1]);
     expect(CoordinateSystem.instance.isScreenshot, isFalse);
   });
 
@@ -196,7 +277,9 @@ void main() {
     // The test font draws every glyph a full em wide, so labels that fit in
     // the app overflow here; that is the font, not the panel.
     void ignoreTestFontOverflow() {
-      while (tester.takeException() != null) {}
+      for (Object? error; (error = tester.takeException()) != null;) {
+        expect('$error', contains('overflowed'));
+      }
     }
 
     ignoreTestFontOverflow();

@@ -28,6 +28,7 @@ import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/screenshot/offscreen_capture.dart';
 import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
+import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
@@ -141,12 +142,25 @@ typedef PageScreenshot = ({int number, String name, Uint8List png});
 /// other pages exist only there: a local strategy is saved first, and a
 /// cloud one waits for this device's work to land (see
 /// [loadVideoExportSource], whose errors this throws).
+///
+/// [onPage] hears each page as it starts (1-based, of the total). Throws
+/// [VideoExportCancelled] once [isCancelled] turns true.
 Future<List<PageScreenshot>> captureStrategyPages(
   WidgetRef ref, {
   required Set<String> pageIds,
   required bool transparentBackground,
+  void Function(int page, int total)? onPage,
+  bool Function() isCancelled = _never,
 }) async {
-  final source = await loadVideoExportSource(ref, pageIds: pageIds);
+  void checkCancelled() {
+    if (isCancelled()) throw VideoExportCancelled();
+  }
+
+  final source = await loadVideoExportSource(
+    ref,
+    pageIds: pageIds,
+    isCancelled: isCancelled,
+  );
   final strategy = source.strategy;
   final mapState = ref.read(mapProvider);
   final strategyState = ref.read(strategyProvider);
@@ -177,6 +191,8 @@ Future<List<PageScreenshot>> captureStrategyPages(
       try {
         final shots = <PageScreenshot>[];
         for (final entry in chosen) {
+          checkCancelled();
+          onPage?.call(shots.length + 1, chosen.length);
           final view = ScreenshotView.forPage(
             strategy,
             entry.page,
@@ -209,6 +225,8 @@ Future<List<PageScreenshot>> captureStrategyPages(
     source.images.release();
   }
 }
+
+bool _never() => false;
 
 /// A copy of the page on the canvas right now. The editor keeps editing
 /// its own objects in place while the capture fetches images, and a capture

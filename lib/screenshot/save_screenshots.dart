@@ -14,8 +14,9 @@ String pageScreenshotFileName(String strategyName, PageScreenshot shot) =>
     '${sanitizeStrategyFileName(shot.name)}.png';
 
 /// Writes [shots] into [folder], each under [pageScreenshotFileName]. A
-/// name already taken gets " (2)", " (3)"…, so nothing there is replaced.
-/// Returns the paths written.
+/// name already taken gets " (2)", " (3)"…, so nothing there is replaced:
+/// each name is claimed by creating the file exclusively, which fails if
+/// anything else got there first. Returns the paths written.
 Future<List<String>> writeScreenshotsToFolder(
   String folder,
   String strategyName,
@@ -25,14 +26,24 @@ Future<List<String>> writeScreenshotsToFolder(
   for (final shot in shots) {
     final name = pageScreenshotFileName(strategyName, shot);
     final stem = p.basenameWithoutExtension(name);
-    var path = p.join(folder, name);
-    for (var copy = 2; await File(path).exists(); copy++) {
-      path = p.join(folder, '$stem ($copy).png');
+    var file = File(p.join(folder, name));
+    for (var copy = 2; !await _claim(file); copy++) {
+      file = File(p.join(folder, '$stem ($copy).png'));
     }
-    await File(path).writeAsBytes(shot.png, flush: true);
-    written.add(path);
+    await file.writeAsBytes(shot.png, flush: true);
+    written.add(file.path);
   }
   return written;
+}
+
+/// Creates [file] if no file is there yet; false when one already is.
+Future<bool> _claim(File file) async {
+  try {
+    await file.create(exclusive: true);
+    return true;
+  } on PathExistsException {
+    return false;
+  }
 }
 
 /// [shots] as one .zip, for a browser to download in one go.

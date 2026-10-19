@@ -1,30 +1,34 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/screenshot/page_screenshot.dart';
-import 'package:path/path.dart' as p;
-import 'package:icarus/providers/strategy_page_session_provider.dart';
-import 'package:icarus/widgets/page_choice_list.dart';
-import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/screenshot/save_screenshots.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/cloud_strategy_export.dart';
+import 'package:icarus/services/video_export/video_export_errors.dart';
+import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/cloud_sync_button.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/export_video_dialog.dart';
+import 'package:icarus/widgets/dialogs/screenshot_progress_dialog.dart';
+import 'package:icarus/widgets/page_choice_list.dart';
+import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
-import 'package:icarus/config/platform_policy.dart';
-import 'package:icarus/widgets/platform_feature_toast.dart';
+import 'package:path/path.dart' as p;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Geometry shared by every control in the editor's floating toolbar, so the
@@ -243,6 +247,18 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
         if (folder == null || !mounted) return;
       }
       setState(() => _isCapturingScreenshot = true);
+      // Modal while it runs: the capture borrows the app's coordinates.
+      final progress = ValueNotifier<ScreenshotProgress?>(null);
+      var cancelled = false;
+      final navigator = Navigator.of(context, rootNavigator: true);
+      final dialogClosed = showShadDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ScreenshotProgressDialog(
+          progress: progress,
+          onCancel: () => cancelled = true,
+        ),
+      );
       late final List<PageScreenshot> shots;
       try {
         shots = await captureStrategyPages(
@@ -250,8 +266,12 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
           pageIds: pageIds,
           transparentBackground:
               ref.read(appPreferencesProvider).transparentScreenshotBackground,
+          onPage: (page, total) => progress.value = (page: page, total: total),
+          isCancelled: () => cancelled,
         );
       } finally {
+        navigator.pop();
+        unawaited(dialogClosed.whenComplete(progress.dispose));
         if (mounted) {
           ref.read(screenshotProvider.notifier).setIsScreenShot(false);
           ref
@@ -284,6 +304,11 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
           bytes: zipScreenshots(strategyName, shots),
         );
       }
+    } on VideoExportCancelled {
+      Settings.showToast(
+        message: 'Screenshots cancelled.',
+        backgroundColor: Settings.tacticalVioletTheme.primary,
+      );
     } on VideoExportNotSynced catch (error, stackTrace) {
       _reportCaptureWarning(error.userMessage, error, stackTrace);
     } on VideoExportPagesChanged catch (error, stackTrace) {
