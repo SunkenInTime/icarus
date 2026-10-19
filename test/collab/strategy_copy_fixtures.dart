@@ -243,7 +243,6 @@ ConvexValue pagePart(String name, ConvexObject args, ConvexObject page) {
           element,
     ],
     'assets': whole['assets'],
-    'aliases': const <Object?>[],
   });
 }
 

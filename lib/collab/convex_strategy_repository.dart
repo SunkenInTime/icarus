@@ -232,8 +232,6 @@ class ConvexStrategyRepository {
   }) {
     final protocol = currentCloudProtocolVersion.toDouble();
     final token = _optional(shareToken);
-    // This client keeps an image's picture id (PlacedImage.assetId).
-    const acceptsPictureIds = ConvexOptional.present(true);
     final starts = pageSliceStarts(elementCount);
     return watchAssembledPage(
       _api.page
@@ -242,7 +240,6 @@ class ConvexStrategyRepository {
             strategyPublicId: strategyPublicId,
             pagePublicId: pagePublicId,
             shareToken: token,
-            acceptsPictureIds: acceptsPictureIds,
           )
           .watch(),
       [
@@ -253,7 +250,6 @@ class ConvexStrategyRepository {
                 strategyPublicId: strategyPublicId,
                 pagePublicId: pagePublicId,
                 shareToken: token,
-                acceptsPictureIds: acceptsPictureIds,
                 fromPublicId: start,
                 toPublicId: index + 1 < starts.length
                     ? ConvexOptional.present(starts[index + 1])

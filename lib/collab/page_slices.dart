@@ -33,10 +33,10 @@ List<String> pageSliceStarts(int elementCount) {
   ];
 }
 
-/// The whole page from its [frame] and every one of its [slices]. Elements
-/// and lineups in place order, ties by id as the offline copy orders them;
-/// each real asset once, then each picture alias where no real asset holds
-/// its id, as page:getSnapshot adds them.
+/// The whole page from its [frame] and every one of its [slices]: elements
+/// and lineups in place order, ties by id as the offline copy orders them,
+/// and each asset once. Like page:getSnapshot read with picture ids, less
+/// the picture aliases only builds without them read.
 PageGetSnapshotResult assemblePage(
   PageGetFrameResult frame,
   List<PageGetElementSliceResult> slices,
@@ -48,11 +48,6 @@ PageGetSnapshotResult assemblePage(
     ])
       asset.publicId: asset,
   };
-  for (final slice in slices) {
-    for (final alias in slice.aliases) {
-      assets.putIfAbsent(alias.publicId, () => alias);
-    }
-  }
   int byPlace(
       double leftSort, String leftId, double rightSort, String rightId) {
     final bySort = leftSort.compareTo(rightSort);

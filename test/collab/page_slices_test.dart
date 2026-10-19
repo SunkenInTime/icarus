@@ -47,7 +47,6 @@ void main() {
           args.value['clientProtocolVersion']?.toDart(),
           currentCloudProtocolVersion,
         );
-        expect(args.value['acceptsPictureIds']?.toDart(), isTrue);
       }
       expect(
         [
@@ -78,7 +77,6 @@ void main() {
             agentRow('9-agent', 'page-a'),
           ],
           assets: [assetRow('picture')],
-          aliases: [assetRow('picture'), 'b-copy'],
         ),
       );
       await pumpEventQueue();
@@ -91,11 +89,7 @@ void main() {
           imageRow('b-copy', 'page-a', 'picture'),
         ],
         lineups: [lineupRow('lineup', 'page-a', 'shot')],
-        assets: [
-          aliasOf(assetRow('picture'), 'b-copy'),
-          assetRow('picture'),
-          assetRow('shot'),
-        ],
+        assets: [assetRow('picture'), assetRow('shot')],
       );
       expect(pages, hasLength(1));
       expect(
@@ -103,30 +97,6 @@ void main() {
         PageGetSnapshotResult.decode(whole, 'whole')
             .encode('pageSnapshot')
             .toDart(),
-      );
-      await subscription.cancel();
-    });
-
-    test('a real asset wins over an alias under the same id', () async {
-      final pages = <RemotePageSnapshot>[];
-      final subscription = watch(0).listen(pages.add);
-      await pumpEventQueue();
-
-      // The lineup in the frame shows an image whose id an alias takes too.
-      server.answer('frame', frameAnswer(lineupImage: 'b-copy'));
-      server.answer(
-        '',
-        sliceAnswer(
-          [imageRow('b-copy', 'page-a', 'picture')],
-          assets: [assetRow('picture')],
-          aliases: [assetRow('picture'), 'b-copy'],
-        ),
-      );
-      await pumpEventQueue();
-
-      expect(
-        pages.single.assetsById['b-copy']?.url,
-        'https://images.example/b-copy.png',
       );
       await subscription.cancel();
     });
@@ -201,35 +171,19 @@ void main() {
   });
 }
 
-ConvexObject frameAnswer({String lineupImage = 'shot'}) =>
-    ConvexValue.fromDart({
+ConvexObject frameAnswer() => ConvexValue.fromDart({
       'page': pageRow('page-a'),
       'content': contentRow(),
-      'lineups': [lineupRow('lineup', 'page-a', lineupImage)],
-      'assets': [assetRow(lineupImage)],
+      'lineups': [lineupRow('lineup', 'page-a', 'shot')],
+      'assets': [assetRow('shot')],
     }) as ConvexObject;
 
-/// [aliases] alternates a picture's asset row and the image id it is shown
-/// under.
 ConvexObject sliceAnswer(
   List<Map<String, Object?>> elements, {
   List<Map<String, Object?>> assets = const [],
-  List<Object> aliases = const [],
 }) =>
-    ConvexValue.fromDart({
-      'elements': elements,
-      'assets': assets,
-      'aliases': [
-        for (var index = 0; index < aliases.length; index += 2)
-          aliasOf(
-            aliases[index] as Map<String, Object?>,
-            aliases[index + 1] as String,
-          ),
-      ],
-    }) as ConvexObject;
-
-Map<String, Object?> aliasOf(Map<String, Object?> asset, String id) =>
-    {...asset, 'publicId': id};
+    ConvexValue.fromDart({'elements': elements, 'assets': assets})
+        as ConvexObject;
 
 /// Answers page:getFrame (keyed 'frame') and page:getElementSlice (keyed by
 /// its start) as a test says.
