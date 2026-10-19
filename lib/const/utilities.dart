@@ -474,7 +474,11 @@ class ViewConeUtility extends Utilities {
 }
 
 class CustomCircleUtility extends Utilities {
-  static const double maxDiameterMeters = 40.0;
+  // Brimstone's and Clove's smokes reach 55 m from them (5500 cm in the game
+  // files), the largest circle a player has a reason to draw. Saved circles
+  // are placed by a box this wide, so changing it needs a migration
+  // (CustomCircleBoxMigration).
+  static const double maxDiameterMeters = 110.0;
 
   static double diameterInVirtual({
     required double diameterMeters,

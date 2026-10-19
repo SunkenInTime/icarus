@@ -6,7 +6,10 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/utilities.dart';
+import 'package:icarus/migrations/custom_circle_box_migration.dart';
 import 'package:icarus/migrations/paranoia_range_migration.dart';
+import 'package:icarus/strategy/copied_page_check.dart';
 
 const _map = MapValue.haven;
 
@@ -18,6 +21,17 @@ PlacedAbility _placed(String id, int index) => PlacedAbility(
       position: const Offset(610, 340),
       rotation: 0.7,
       isAlly: false,
+    );
+
+PlacedUtility _utility(String id, UtilityType type) => PlacedUtility(
+      id: id,
+      type: type,
+      position: const Offset(410, 270),
+      customDiameter: 14,
+      customWidth: 6,
+      customLength: 18,
+      customColorValue: 0xFF22C55E,
+      customOpacityPercent: 30,
     );
 
 /// A payload as a 4.6.3-era client wrote it: version 1, old Paranoia size.
@@ -174,6 +188,70 @@ void main() {
     expect(
       identical(upgradeRemotePageSnapshot(source, 'not-a-map-yet'), source),
       isTrue,
+    );
+  });
+
+  test('a version 1 custom circle moves exactly as the local migration does',
+      () {
+    final circle = _utility('circle', UtilityType.customCircle);
+    final upgraded = upgradeCloudPayload(
+      _v1('utility', circle.toJson()),
+      _map,
+    );
+
+    expect(upgraded['payloadVersion'], customCircleCloudPayloadVersion);
+    final expected = CustomCircleBoxMigration.migrateUtility(circle, _map);
+    expect(PlacedUtility.fromJson(cloudPayloadData(upgraded)).position,
+        expected.position);
+    expect(expected.position, isNot(circle.position));
+  });
+
+  test('a custom circle this build writes reads back unchanged', () {
+    final written = cloudElementPayload(
+      kind: 'utility',
+      data: _utility('circle', UtilityType.customCircle).toJson(),
+    );
+
+    expect(written['payloadVersion'], customCircleCloudPayloadVersion);
+    expect(identical(upgradeCloudPayload(written, _map), written), isTrue);
+  });
+
+  test('other utilities and circles around agents are never moved', () {
+    final rectangle = _v1(
+      'utility',
+      _utility('rectangle', UtilityType.customRectangle).toJson(),
+    );
+    final circleAgent = _v1(
+      'agent',
+      PlacedCircleAgent(
+        id: 'brimstone',
+        type: AgentType.brimstone,
+        position: const Offset(340, 210),
+        diameterMeters: 110,
+      ).toJson(),
+    );
+
+    expect(identical(upgradeCloudPayload(rectangle, _map), rectangle), isTrue);
+    expect(
+        identical(upgradeCloudPayload(circleAgent, _map), circleAgent), isTrue);
+    expect(
+      cloudElementPayload(
+          kind: 'utility', data: cloudPayloadData(rectangle))['payloadVersion'],
+      currentCloudPayloadVersion,
+    );
+  });
+
+  test('a copied page holding a circle at version 3 can be drawn', () {
+    final written = cloudElementPayload(
+      kind: 'utility',
+      data: _utility('circle', UtilityType.customCircle).toJson(),
+    );
+    expect(copiedPageIsDrawable(_page([written], const [])), isTrue);
+    expect(
+      copiedPageIsDrawable(_page([
+        {...written, 'payloadVersion': customCircleCloudPayloadVersion + 1},
+      ], const [])),
+      isFalse,
     );
   });
 }

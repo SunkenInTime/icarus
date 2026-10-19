@@ -1,13 +1,7 @@
-import 'dart:math' show max;
-
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/strategy/cloud_element_decoding.dart';
-
-/// The newest payload version this build reads.
-final _newestReadablePayloadVersion =
-    max(currentCloudPayloadVersion, paranoiaCloudPayloadVersion);
 
 /// Whether every row of [page], read from this computer's copy, can be
 /// drawn: each element decodes with hydration's decoder
@@ -49,5 +43,5 @@ bool copiedPageIsDrawable(RemotePageSnapshot page) {
 
 bool _readableVersion(CloudPayload payload) {
   final version = payload['payloadVersion'];
-  return version is num && version <= _newestReadablePayloadVersion;
+  return version is num && version <= newestReadableCloudPayloadVersion;
 }

@@ -10,6 +10,7 @@ import 'package:icarus/migrations/ability_vision_cone_migration.dart';
 import 'package:icarus/migrations/agent_weapon_migration.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
 import 'package:icarus/migrations/canonical_coordinates_migration.dart';
+import 'package:icarus/migrations/custom_circle_box_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
 import 'package:icarus/migrations/lineup_graph_migration.dart';
 import 'package:icarus/migrations/lineup_group_migration.dart';
@@ -204,7 +205,11 @@ class StrategyMigrator {
       sunsetMigrated,
       force: originalVersion < ParanoiaRangeMigration.version,
     );
-    final migrated = AgentWeaponMigration.migrate(paranoiaMigrated);
+    final circleBoxMigrated = migrateCustomCircleBox(
+      paranoiaMigrated,
+      force: originalVersion < CustomCircleBoxMigration.version,
+    );
+    final migrated = AgentWeaponMigration.migrate(circleBoxMigrated);
     // Releases without a schema change still finish at the current version.
     // Never downgrade a strategy written by a newer release.
     return migrated.versionNumber < Settings.versionNumber
@@ -237,6 +242,25 @@ class StrategyMigrator {
       return strat;
     }
     final pages = ParanoiaRangeMigration.migratePages(
+      pages: strat.pages,
+      map: strat.mapData,
+    );
+    if (identical(pages, strat.pages)) return strat;
+    return strat.copyWith(
+      pages: pages,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData migrateCustomCircleBox(
+    StrategyData strat, {
+    bool force = false,
+  }) {
+    if (!force && strat.versionNumber >= CustomCircleBoxMigration.version) {
+      return strat;
+    }
+    final pages = CustomCircleBoxMigration.migratePages(
       pages: strat.pages,
       map: strat.mapData,
     );
@@ -402,8 +426,10 @@ class StrategyMigrator {
     );
     final sunsetMigrated = migrateSunsetScale(canonicalMigrated,
         force: originalVersion < SunsetScaleMigration.version);
-    return migrateParanoiaRange(sunsetMigrated,
+    final paranoiaMigrated = migrateParanoiaRange(sunsetMigrated,
         force: originalVersion < ParanoiaRangeMigration.version);
+    return migrateCustomCircleBox(paranoiaMigrated,
+        force: originalVersion < CustomCircleBoxMigration.version);
   }
 
   static StrategyData migrateToWorld16x9(StrategyData strat,
