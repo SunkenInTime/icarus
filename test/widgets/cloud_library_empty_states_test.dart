@@ -95,6 +95,7 @@ void main() {
         revision: 1,
         role: 'owner',
         attackLabel: 'Attack',
+        agentTypes: const [],
       ),
     ]);
     await tester.pump();

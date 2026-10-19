@@ -570,6 +570,7 @@ Future<_Library> _pumpLibrary(
               revision: 1,
               role: 'owner',
               attackLabel: 'Attack',
+              agentTypes: const [],
             ),
           ]),
         ),

@@ -91,6 +91,7 @@ class ConvexStrategyRepository {
         .listForFolder(
           folderPublicId: _optional(folderPublicId),
           scope: ConvexOptional.present(_folderScope(scope)),
+          includeAgentTypes: const ConvexOptional.present(true),
         )
         .watch()
         .map(
@@ -132,6 +133,7 @@ class ConvexStrategyRepository {
         .listForFolder(
           folderPublicId: _optional(folderPublicId),
           scope: ConvexOptional.present(_folderScope(scope)),
+          includeAgentTypes: const ConvexOptional.present(true),
         )
         .fetch();
     return strategies.map(_strategyEntry).toList(growable: false);
@@ -139,12 +141,17 @@ class ConvexStrategyRepository {
 
   /// The strategies shared with the signed-in user directly, read once.
   Future<List<CloudStrategyEntry>> fetchSharedStrategies() async {
-    final strategies = await _api.strategies.listSharedWithMe().fetch();
+    final strategies = await _api.strategies
+        .listSharedWithMe(includeAgentTypes: const ConvexOptional.present(true))
+        .fetch();
     return strategies.map(_strategyEntry).toList(growable: false);
   }
 
   Stream<List<CloudStrategyEntry>> watchSharedStrategies() {
-    return _api.strategies.listSharedWithMe().watch().map(
+    return _api.strategies
+        .listSharedWithMe(includeAgentTypes: const ConvexOptional.present(true))
+        .watch()
+        .map(
           (strategies) =>
               strategies.map(_strategyEntry).toList(growable: false),
         );
@@ -1042,6 +1049,11 @@ CloudStrategyEntry _strategyEntry(
     revision: strategy.revision.toInt(),
     role: strategy.role.wireName,
     attackLabel: strategy.attackLabel.wireName,
+    agentTypes: [
+      if (strategy.agentTypes.isPresent)
+        for (final name in strategy.agentTypes.value)
+          if (_agentTypeOrNull(name) case final type?) type,
+    ],
   );
 }
 

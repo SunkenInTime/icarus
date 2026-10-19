@@ -1350,11 +1350,14 @@ abstract interface class StrategiesModule {
   });
   ConvexQuery<List<StrategiesListForFolderResultItem>> listForFolder({
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    ConvexOptional<bool> includeAgentTypes = const ConvexOptional.absent(),
     ConvexOptional<FoldersListTreeArgsScope> scope =
         const ConvexOptional.absent(),
   });
   ConvexQuery<StrategiesListInventoryResult> listInventory();
-  ConvexQuery<List<StrategiesListForFolderResultItem>> listSharedWithMe();
+  ConvexQuery<List<StrategiesListForFolderResultItem>> listSharedWithMe({
+    ConvexOptional<bool> includeAgentTypes = const ConvexOptional.absent(),
+  });
   Future<ConvexValue> move({
     required double clientProtocolVersion,
     required double expectedRevision,
@@ -1542,11 +1545,13 @@ final class _StrategiesModule implements StrategiesModule {
   @override
   ConvexQuery<List<StrategiesListForFolderResultItem>> listForFolder({
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    ConvexOptional<bool> includeAgentTypes = const ConvexOptional.absent(),
     ConvexOptional<FoldersListTreeArgsScope> scope =
         const ConvexOptional.absent(),
   }) {
     final args = encodeStrategiesListForFolderArgs(
       folderPublicId: folderPublicId,
+      includeAgentTypes: includeAgentTypes,
       scope: scope,
     );
     return ConvexQuery(
@@ -1569,8 +1574,12 @@ final class _StrategiesModule implements StrategiesModule {
   }
 
   @override
-  ConvexQuery<List<StrategiesListForFolderResultItem>> listSharedWithMe() {
-    final args = encodeStrategiesListSharedWithMeArgs();
+  ConvexQuery<List<StrategiesListForFolderResultItem>> listSharedWithMe({
+    ConvexOptional<bool> includeAgentTypes = const ConvexOptional.absent(),
+  }) {
+    final args = encodeStrategiesListSharedWithMeArgs(
+      includeAgentTypes: includeAgentTypes,
+    );
     return ConvexQuery(
       transport: _transport,
       name: 'strategies:listSharedWithMe',

@@ -216,6 +216,39 @@ describe("share members", () => {
     await expect(rename(t, b, "s1")).resolves.toMatchObject({ ok: true });
   });
 
+  test("a shared strategy lists its agents for a caller that asks", async () => {
+    const { users } = await createHarness();
+    const { a, b } = users;
+    await seedStrategy(a, "s1");
+    await a.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId: "s1",
+      clientId: "a-client",
+      ops: [
+        {
+          opId: "e1-add",
+          type: "element.add",
+          elementPublicId: "e1",
+          pagePublicId: "s1-page",
+          payload: {
+            kind: "agent",
+            payloadVersion: 1,
+            data: { type: "viper", position: { x: 0.5, y: 0.5 } },
+          },
+          sortIndex: 0,
+        },
+      ],
+    });
+    await share(a, "s1", "view-link", "viewer");
+    await redeem(b, "view-link");
+
+    await expect(
+      b.query(listSharedWithMe, { includeAgentTypes: true }),
+    ).resolves.toMatchObject([{ publicId: "s1", agentTypes: ["viper"] }]);
+    const [unasked] = await b.query(listSharedWithMe, {});
+    expect(unasked).not.toHaveProperty("agentTypes");
+  });
+
   test("a removed person loses the strategy at once and can rejoin only through a live link", async () => {
     const { t, users } = await createHarness();
     const { a, b } = users;

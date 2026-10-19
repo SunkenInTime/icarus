@@ -77,11 +77,16 @@ void main() {
           'themeOverridePalette': null,
           'role': 'owner',
           'attackLabel': 'Attack',
+          'agentTypes': ['sova', 'not-an-agent-yet', 'jett'],
         },
       ]),
     );
 
     final entry = (await firstList).single;
+    expect(transport.lastArgs['strategies:listForFolder']?.toDart(), {
+      'scope': 'owned',
+      'includeAgentTypes': true,
+    });
     expect(entry.strategy.id, 'strategy-1');
     expect(entry.strategy.mapData, MapValue.ascent);
     expect(entry.strategy.folderID, isNull);
@@ -92,6 +97,7 @@ void main() {
     expect(entry.revision, 4);
     expect(entry.role, 'owner');
     expect(entry.attackLabel, 'Attack');
+    expect(entry.agentTypes, [AgentType.sova, AgentType.jett]);
   });
 
   test('folder views share one cached tree subscription', () async {

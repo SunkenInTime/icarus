@@ -342,6 +342,7 @@ CloudStrategyEntry _entry(String id) => (
       revision: 1,
       role: 'viewer',
       attackLabel: 'Attack',
+      agentTypes: const [],
     );
 
 CloudFolderEntry _folder() => (

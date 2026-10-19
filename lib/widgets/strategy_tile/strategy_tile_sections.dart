@@ -55,7 +55,7 @@ class StrategyTileViewData {
       thumbnailAsset:
           'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
       lastEditedLabel: _timeAgo(strategy.lastEdited),
-      agentTypes: const [],
+      agentTypes: _inRoleOrder(entry.agentTypes),
       cloudBadge: cloudBadgeKindForRole(entry.role),
     );
   }
@@ -121,9 +121,13 @@ class StrategyTileViewData {
       }
     }
 
+    return _inRoleOrder(result);
+  }
+
+  static List<AgentType> _inRoleOrder(Iterable<AgentType> agents) {
     return [
       for (final role in _strategyTileRoleOrder)
-        ...result.where((type) => AgentData.agents[type]?.role == role),
+        ...agents.where((type) => AgentData.agents[type]?.role == role),
     ];
   }
 

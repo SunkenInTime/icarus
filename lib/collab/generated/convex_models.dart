@@ -4513,7 +4513,9 @@ final class StrategiesListForFolderResultItem {
     required this.themeOverridePalette,
     required this.themeProfileId,
     required this.updatedAt,
+    this.agentTypes = const ConvexOptional.absent(),
   });
+  final ConvexOptional<List<String>> agentTypes;
   final StrategiesListForFolderResultItemAttackLabel attackLabel;
   final double createdAt;
   final String? folderPublicId;
@@ -4533,6 +4535,7 @@ final class StrategiesListForFolderResultItem {
   ) {
     final object = _decodeObject(value, path);
     _checkObjectFields(object, path, const {
+      'agentTypes',
       'attackLabel',
       'createdAt',
       'folderPublicId',
@@ -4546,6 +4549,20 @@ final class StrategiesListForFolderResultItem {
       'updatedAt',
     });
     return StrategiesListForFolderResultItem(
+      agentTypes: object.value.containsKey('agentTypes')
+          ? ConvexOptional.present(
+              _decodeArray(object.value['agentTypes']!, '$path.agentTypes')
+                  .value
+                  .indexed
+                  .map(
+                    (entry) => _decodeString(
+                      entry.$2,
+                      _indexPath('$path.agentTypes', entry.$1),
+                    ),
+                  )
+                  .toList(growable: false),
+            )
+          : const ConvexOptional.absent(),
       attackLabel: StrategiesListForFolderResultItemAttackLabel.fromWireName(
         _decodeString(
           object.value['attackLabel'] ?? _missing(path, 'attackLabel'),
@@ -4617,6 +4634,12 @@ final class StrategiesListForFolderResultItem {
 
   ConvexObject encode(String path) {
     return ConvexObject({
+      if (agentTypes.isPresent)
+        'agentTypes': ConvexArray(
+          agentTypes.value.indexed
+              .map((entry) => ConvexString(entry.$2))
+              .toList(growable: false),
+        ),
       'attackLabel': ConvexString(attackLabel.wireName),
       'createdAt': _encodeNumber(createdAt, '$path.createdAt'),
       'folderPublicId': folderPublicId == null
@@ -6836,11 +6859,14 @@ StrategiesGetHeaderResult decodeStrategiesGetHeaderResult(ConvexValue value) =>
 
 ConvexObject encodeStrategiesListForFolderArgs({
   ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+  ConvexOptional<bool> includeAgentTypes = const ConvexOptional.absent(),
   ConvexOptional<FoldersListTreeArgsScope> scope =
       const ConvexOptional.absent(),
 }) => ConvexObject({
   if (folderPublicId.isPresent)
     'folderPublicId': ConvexString(folderPublicId.value),
+  if (includeAgentTypes.isPresent)
+    'includeAgentTypes': ConvexBoolean(includeAgentTypes.value),
   if (scope.isPresent) 'scope': ConvexString(scope.value.wireName),
 });
 
@@ -6864,7 +6890,12 @@ StrategiesListInventoryResult decodeStrategiesListInventoryResult(
   'strategies.js:listInventory.returns',
 );
 
-ConvexObject encodeStrategiesListSharedWithMeArgs() => ConvexObject({});
+ConvexObject encodeStrategiesListSharedWithMeArgs({
+  ConvexOptional<bool> includeAgentTypes = const ConvexOptional.absent(),
+}) => ConvexObject({
+  if (includeAgentTypes.isPresent)
+    'includeAgentTypes': ConvexBoolean(includeAgentTypes.value),
+});
 
 List<StrategiesListForFolderResultItem> decodeStrategiesListSharedWithMeResult(
   ConvexValue value,

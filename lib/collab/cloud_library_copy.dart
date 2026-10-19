@@ -558,6 +558,7 @@ Map<String, dynamic> cloudStrategyEntryToCopyJson(CloudStrategyEntry entry) {
     'revision': entry.revision,
     'role': entry.role,
     'attackLabel': entry.attackLabel,
+    'agentTypes': [for (final type in entry.agentTypes) type.name],
   };
 }
 
@@ -583,6 +584,11 @@ CloudStrategyEntry cloudStrategyEntryFromCopyJson(Map<String, dynamic> json) {
     revision: (json['revision'] as num).toInt(),
     role: json['role'] as String,
     attackLabel: json['attackLabel'] as String,
+    // Copies written before strategies kept their agents have none.
+    agentTypes: [
+      for (final name in json['agentTypes'] as List? ?? const [])
+        if (_agentTypeOrNull(name as String) case final type?) type,
+    ],
   );
 }
 
