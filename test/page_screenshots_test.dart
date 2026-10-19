@@ -132,6 +132,25 @@ class _FolderPicker extends FilePicker {
       folder;
 }
 
+/// Answers the save dialog at once, keeping the names it was offered.
+class _NamingPicker extends FilePicker {
+  final names = <String?>[];
+
+  @override
+  Future<String?> saveFile({
+    String? dialogTitle,
+    String? fileName,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Uint8List? bytes,
+    bool lockParentWindow = false,
+  }) async {
+    names.add(fileName);
+    return fileName;
+  }
+}
+
 /// Draws no thumbnails: the real ones render offscreen in real time, which
 /// these tests drive only where they mean to.
 Future<void> _noThumbnails(
@@ -745,8 +764,7 @@ void main() {
     await tester.pump(const Duration(seconds: 10));
   });
 
-  testWidgets('a folder picker that fails leaves Save working',
-      (tester) async {
+  testWidgets('a folder picker that fails leaves Save working', (tester) async {
     final picker = _BrokenFolderPicker();
     FilePicker.platform = picker;
     await tester.runAsync(
@@ -796,6 +814,66 @@ void main() {
     // Nothing started: the dialog still asks.
     expect(find.text('Save screenshots'), findsOneWidget);
     await tester.pump(const Duration(seconds: 10));
+    ignoreTestFontOverflow(tester);
+  });
+
+  testWidgets('a ticked page that has left the canvas is read as saved',
+      (tester) async {
+    CoordinateSystem(playAreaSize: const Size(1600, 900));
+    final picker = _NamingPicker();
+    FilePicker.platform = picker;
+    await tester.runAsync(
+      () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+        _strategyId,
+        StrategyData(
+          id: _strategyId,
+          name: 'Retakes',
+          mapData: MapValue.ascent,
+          versionNumber: 1,
+          lastEdited: DateTime(2026),
+          folderID: null,
+          pages: [_page('a', 'Default', 0), _page('b', 'Fake', 1)],
+        ),
+      ),
+    );
+    final container = ProviderContainer(overrides: [
+      strategyProvider.overrideWith(_OpenLocalStrategy.new),
+      pageThumbnailerProvider.overrideWithValue(_noThumbnails),
+    ]);
+    addTearDown(container.dispose);
+    final session = container.read(strategyPageSessionProvider.notifier);
+    session.setStateForTest(
+      container.read(strategyPageSessionProvider).copyWith(activePageId: 'a'),
+    );
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: ToastificationWrapper(
+        child: ShadApp(home: const Scaffold(body: EditorToolbar())),
+      ),
+    ));
+    await tester.tap(find.byIcon(LucideIcons.camera200));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    ignoreTestFontOverflow(tester);
+
+    // A teammate deletes Default while the dialog is up, and the editor
+    // moves to Fake. Default is still the page ticked.
+    session.setStateForTest(
+      container.read(strategyPageSessionProvider).copyWith(activePageId: 'b'),
+    );
+    await tester.runAsync(() => tester.tap(find.text('Save screenshot')));
+    for (var i = 0; i < 600 && picker.names.isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 16)),
+      );
+      await tester.pump();
+    }
+
+    // Default, read as saved, not the canvas's Fake.
+    expect(picker.names, ['Retakes - 01 Default.png']);
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     ignoreTestFontOverflow(tester);
   });
 

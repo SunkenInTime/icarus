@@ -144,7 +144,10 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     if (strategy.strategyId == null) return;
     final strategyName = strategy.strategyName ?? 'new image';
     final pageIds = {..._selected};
-    final openPageOnly = pageIds.length == 1 && pageIds.single == _openPageId;
+    // The page on the canvas now, which a teammate's delete can change while
+    // the dialog is up: a ticked page that is no longer it is read as saved.
+    final openPageOnly = pageIds.length == 1 &&
+        pageIds.single == ref.read(strategyPageSessionProvider).activePageId;
     _busy = true;
 
     // Where several go is settled first, so a dismissed dialog costs
@@ -296,9 +299,8 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     };
 
     final columns = _pages.length <= 4 ? 2 : 3;
-    final tileWidth = _single
-        ? _singleWidth
-        : (_gridWidth - _gap * (columns - 1)) / columns;
+    final tileWidth =
+        _single ? _singleWidth : (_gridWidth - _gap * (columns - 1)) / columns;
     final tiles = [
       for (final (index, page) in _pages.indexed)
         SizedBox(
@@ -345,14 +347,16 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
         children: [
           Expanded(
             child: ShadProgress(
-              value: _stoppable || _captured == total ? _captured / total : null,
+              value:
+                  _stoppable || _captured == total ? _captured / total : null,
               minHeight: 8,
             ),
           ),
           if (_stoppable && _captured < total) ...[
             const SizedBox(width: 16),
             ShadButton.destructive(
-              onPressed: _stopping ? null : () => setState(() => _stopping = true),
+              onPressed:
+                  _stopping ? null : () => setState(() => _stopping = true),
               child: Text(_stopping ? 'Stopping…' : 'Stop'),
             ),
           ],
@@ -363,7 +367,7 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           transparentToggle,
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           Row(
             children: [
               cancel,
@@ -429,7 +433,7 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
                     ),
                   ),
                 ),
-                SizedBox(height: saving ? 24 : 20),
+                const SizedBox(height: 24),
                 DefaultTextStyle.merge(
                   style: TextStyle(color: theme.colorScheme.foreground),
                   child: footer,
@@ -595,7 +599,8 @@ class _PageTileState extends State<_PageTile> {
                 child: Text(
                   '$number',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                     color: colors.mutedForeground,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
