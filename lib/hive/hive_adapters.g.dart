@@ -1146,13 +1146,15 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       backgroundDotOpacity:
           fields[19] == null ? 1.0 : (fields[19] as num).toDouble(),
       welcomeTourSeen: fields[20] == null ? false : fields[20] as bool,
+      transparentScreenshotBackground:
+          fields[21] == null ? false : fields[21] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(20)
+      ..writeByte(21)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
@@ -1192,7 +1194,9 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       ..writeByte(19)
       ..write(obj.backgroundDotOpacity)
       ..writeByte(20)
-      ..write(obj.welcomeTourSeen);
+      ..write(obj.welcomeTourSeen)
+      ..writeByte(21)
+      ..write(obj.transparentScreenshotBackground);
   }
 
   @override

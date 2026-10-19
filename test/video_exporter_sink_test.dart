@@ -268,6 +268,10 @@ void main() {
     }
     for (final (rgba, _) in sink.frames) {
       expect(rgba.length, 1920 * 1080 * 4);
+      // Every frame paints its own backdrop; the capture shell under it is
+      // transparent, so a frame without one would show through here.
+      const corner = (2 * 1920 + 2) * 4;
+      expect(rgba[corner + 3], 255);
     }
     expect(_magentaPixels(sink.frames.first.$1), greaterThan(500));
     expect(_magentaPixels(sink.frames.last.$1), greaterThan(500));
