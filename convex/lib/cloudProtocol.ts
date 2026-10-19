@@ -13,7 +13,11 @@ import { v } from "convex/values";
 // replacing the origin, landing and link rows of 4. A client on 4 cannot
 // read the new rows and writes rows the server no longer takes, so it is
 // refused until it reloads into 5.
-export const CURRENT_CLOUD_PROTOCOL_VERSION = 5;
+// 6: custom circle rows at payload version 3, placed in the 110 m box of the
+// largest circle (data version 104). A client on 5 draws such a circle 35 m
+// up and left and, on its next edit, would write it back at version 1 to be
+// moved again. Refused until it reloads into 6, as 3 was for Paranoia.
+export const CURRENT_CLOUD_PROTOCOL_VERSION = 6;
 export const MAX_CLOUD_OPERATION_BYTES = 900 * 1024;
 export const MAX_CLOUD_ARRAY_ENTRIES = 8_000;
 export const CLOUD_OPERATION_TOO_LARGE_MESSAGE =
