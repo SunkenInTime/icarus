@@ -30,6 +30,16 @@ export const ensureCurrentUser = mutation({
     const existingUser = await findUserByIdentity(ctx, identity);
 
     if (existingUser !== null) {
+      // Every query reads the caller's row, so writing it re-runs every live
+      // query the user holds. This runs on each app start and sign-in event:
+      // write only when the profile changed.
+      if (
+        existingUser.externalId === externalId &&
+        existingUser.displayName === displayName &&
+        existingUser.avatarUrl === avatarUrl
+      ) {
+        return { ok: true as const };
+      }
       await ctx.db.patch(existingUser._id, {
         externalId,
         displayName,
