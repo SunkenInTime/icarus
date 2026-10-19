@@ -797,6 +797,7 @@ class _CloudRepository extends Fake implements ConvexStrategyRepository {
         revision: 1,
         role: 'owner',
         attackLabel: 'attack',
+        agentTypes: const [],
       );
 
   @override

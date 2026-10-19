@@ -53,6 +53,7 @@ CloudStrategyEntry _strategy(String id, {String? folderId}) {
     revision: 7,
     role: 'editor',
     attackLabel: 'Defense',
+    agentTypes: const [AgentType.sova, AgentType.jett],
   );
 }
 
@@ -117,6 +118,32 @@ void main() {
     expect(entry.revision, 7);
     expect(entry.role, 'editor');
     expect(entry.attackLabel, 'Defense');
+    expect(entry.agentTypes, [AgentType.sova, AgentType.jett]);
+  });
+
+  test('a strategy copied before strategies kept their agents has none',
+      () async {
+    const listing = CloudStrategyListing.owned(null);
+    await store.writeStrategies(
+      _scope,
+      listing,
+      [_strategy('s1')],
+      answerOrder: nextCloudLibraryAnswerOrder(),
+      matchedAt: matchedAt,
+    );
+    final key = store.values.keys.single;
+    final record = Map<String, dynamic>.from(store.values[key]! as Map);
+    final entry = Map<String, dynamic>.from(
+      (record['entries'] as List).single as Map,
+    )..remove('agentTypes');
+    store.values[key] = {
+      ...record,
+      'entries': [entry],
+    };
+
+    final read = store.readStrategies(_scope, listing)!.entries.single;
+    expect(read.strategy.id, 's1');
+    expect(read.agentTypes, isEmpty);
   });
 
   test('records survive a JSON round trip, the way Hive stores them', () async {

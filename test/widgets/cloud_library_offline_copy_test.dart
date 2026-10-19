@@ -10,6 +10,7 @@ import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
@@ -54,7 +55,12 @@ CloudFolderEntry _folder(String id, {String role = 'owner'}) => (
       agentTypes: const [],
     );
 
-CloudStrategyEntry _cloudStrategy(String id, String name) => (
+CloudStrategyEntry _cloudStrategy(
+  String id,
+  String name, {
+  List<AgentType> agentTypes = const [],
+}) =>
+    (
       strategy: StrategyData(
         id: id,
         name: name,
@@ -66,6 +72,7 @@ CloudStrategyEntry _cloudStrategy(String id, String name) => (
       revision: 1,
       role: 'owner',
       attackLabel: 'Attack',
+      agentTypes: agentTypes,
     );
 
 void main() {
@@ -100,7 +107,14 @@ void main() {
     await store.writeStrategies(
       _scope,
       const CloudStrategyListing.owned(null),
-      [_cloudStrategy('s1', 'B Split Retake')],
+      [
+        _cloudStrategy(
+          's1',
+          'B Split Retake',
+          // Most used first, the way the server sends them.
+          agentTypes: const [AgentType.sova, AgentType.jett],
+        ),
+      ],
       answerOrder: nextCloudLibraryAnswerOrder(),
       matchedAt: matchedAt,
     );
@@ -149,6 +163,14 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('B Split Retake'), findsOneWidget);
+    // Its card shows its agents, in the role order a local card uses.
+    final jett =
+        find.image(AssetImage(AgentData.agents[AgentType.jett]!.iconPath));
+    final sova =
+        find.image(AssetImage(AgentData.agents[AgentType.sova]!.iconPath));
+    expect(jett, findsOneWidget);
+    expect(sova, findsOneWidget);
+    expect(tester.getTopLeft(jett).dx, lessThan(tester.getTopLeft(sova).dx));
     expect(find.text('Folder mine'), findsOneWidget);
     // Shared things stay in Shared.
     expect(find.text('Team Lotus Default'), findsNothing);

@@ -1737,6 +1737,7 @@ CloudStrategyEntry _cloudEntry(String id) => (
       revision: 1,
       role: 'owner',
       attackLabel: 'Attack',
+      agentTypes: const [],
     );
 
 class _LibraryRepository extends Fake implements ConvexStrategyRepository {

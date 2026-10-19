@@ -3,6 +3,7 @@ import { getConvexSize, v } from "convex/values";
 import {
   agentTypesOf,
   deleteStrategyAgentSummary,
+  readStrategyAgentTypes,
   refreshStrategyAgentSummary,
   storeStrategyAgentSummary,
 } from "./lib/strategyAgentSummary";
@@ -94,6 +95,7 @@ async function summarizeStrategies(
   ctx: QueryCtx,
   strategies: Doc<"strategies">[],
   userId: Id<"users">,
+  includeAgentTypes: boolean,
 ) {
   const memberships = await ctx.db
     .query("strategyCollaborators")
@@ -156,6 +158,7 @@ async function summarizeStrategies(
     themeOverridePalette:
       | NonNullable<Doc<"strategies">["themeOverridePalette"]>
       | null;
+    agentTypes?: string[];
   }> => {
     const pagesPromise = livePagesQuery(ctx, strategy._id).take(100);
     const folderPromise =
@@ -166,10 +169,14 @@ async function summarizeStrategies(
       strategy.folderId === undefined || strategy.ownerId === userId
         ? Promise.resolve(null)
         : getFolderRole(strategy.folderId);
-    const [pages, folder, folderRole] = await Promise.all([
+    const agentTypesPromise = includeAgentTypes
+      ? readStrategyAgentTypes(ctx, strategy._id)
+      : Promise.resolve(undefined);
+    const [pages, folder, folderRole, agentTypes] = await Promise.all([
       pagesPromise,
       folderPromise,
       folderRolePromise,
+      agentTypesPromise,
     ]);
     let attackLabel: "Unknown" | "Mixed" | "Attack" | "Defend" = "Unknown";
     if (pages.length > 0) {
@@ -199,6 +206,7 @@ async function summarizeStrategies(
         strategy.folderId === undefined ? null : (folder?.publicId ?? null),
       themeProfileId: strategy.themeProfileId ?? null,
       themeOverridePalette: strategy.themeOverridePalette ?? null,
+      ...(agentTypes === undefined ? {} : { agentTypes }),
     };
   }));
 }
@@ -408,6 +416,7 @@ export const listForFolder = query({
   args: {
     folderPublicId: v.optional(v.string()),
     scope: strategyScopeValidator,
+    includeAgentTypes: v.optional(v.boolean()),
   },
   returns: v.array(strategySummaryValidator),
   handler: async (ctx, args) => {
@@ -427,7 +436,12 @@ export const listForFolder = query({
       user._id,
       scope,
     );
-    return await summarizeStrategies(ctx, strategies, user._id);
+    return await summarizeStrategies(
+      ctx,
+      strategies,
+      user._id,
+      args.includeAgentTypes === true,
+    );
   },
 });
 
@@ -485,9 +499,9 @@ export const listInventory = query({
 });
 
 export const listSharedWithMe = query({
-  args: {},
+  args: { includeAgentTypes: v.optional(v.boolean()) },
   returns: v.array(strategySummaryValidator),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     const memberships = await ctx.db
       .query("strategyCollaborators")
@@ -503,7 +517,12 @@ export const listSharedWithMe = query({
         strategy.ownerId !== user._id &&
         strategy.folderId === undefined,
     );
-    return await summarizeStrategies(ctx, strategies, user._id);
+    return await summarizeStrategies(
+      ctx,
+      strategies,
+      user._id,
+      args.includeAgentTypes === true,
+    );
   },
 });
 

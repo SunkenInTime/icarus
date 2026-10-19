@@ -169911,6 +169911,12 @@
             },
             "optional": true
           },
+          "includeAgentTypes": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "scope": {
             "fieldType": {
               "type": "union",
@@ -169940,6 +169946,15 @@
         "value": {
           "type": "object",
           "value": {
+            "agentTypes": {
+              "fieldType": {
+                "type": "array",
+                "value": {
+                  "type": "string"
+                }
+              },
+              "optional": true
+            },
             "attackLabel": {
               "fieldType": {
                 "type": "union",
@@ -170170,7 +170185,14 @@
     {
       "args": {
         "type": "object",
-        "value": {}
+        "value": {
+          "includeAgentTypes": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          }
+        }
       },
       "functionType": "Query",
       "identifier": "strategies.js:listSharedWithMe",
@@ -170179,6 +170201,15 @@
         "value": {
           "type": "object",
           "value": {
+            "agentTypes": {
+              "fieldType": {
+                "type": "array",
+                "value": {
+                  "type": "string"
+                }
+              },
+              "optional": true
+            },
             "attackLabel": {
               "fieldType": {
                 "type": "union",

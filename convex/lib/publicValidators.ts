@@ -63,6 +63,9 @@ export const strategySummaryValidator = v.object({
   folderPublicId: v.union(v.string(), v.null()),
   themeProfileId: v.union(v.string(), v.null()),
   themeOverridePalette: v.union(mapThemePaletteValidator, v.null()),
+  // The agents the strategy uses, most used first. Sent only to callers that
+  // pass includeAgentTypes: builds before it reject fields they don't know.
+  agentTypes: v.optional(v.array(v.string())),
 });
 
 export const folderSummaryValidator = v.object({

@@ -1068,6 +1068,7 @@ class _FakeCloud extends ConvexStrategyRepository {
             revision: strategy.revision,
             role: 'owner',
             attackLabel: 'Attack',
+            agentTypes: const [],
           ),
     ]);
   }

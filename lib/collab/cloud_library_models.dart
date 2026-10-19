@@ -22,9 +22,13 @@ typedef CloudLibraryInventory = ({
   Map<String, String?> strategies,
 });
 
+/// A cloud strategy as the library list draws it. [agentTypes] is what the
+/// server says the strategy uses, most used first; the list never loads a
+/// strategy's pages to find out.
 typedef CloudStrategyEntry = ({
   StrategyData strategy,
   int revision,
   String role,
   String attackLabel,
+  List<AgentType> agentTypes,
 });

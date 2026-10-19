@@ -185,6 +185,38 @@ test("folder tree summarises strategies, maps, and agents across the subtree", a
   });
 });
 
+const listStrategiesForFolder = makeFunctionReference<"query">(
+  "strategies:listForFolder",
+);
+
+test("strategy lists carry each strategy's agents only when asked", async () => {
+  const { owner } = await createHarness();
+  await seedFolder(owner, "root");
+  await seedStrategy(owner, "s-agents", "root", "ascent");
+  await seedStrategy(owner, "s-empty", "root", "haven");
+  await placeAgent(owner, "s-agents", "e1", "jett");
+  await placeAgent(owner, "s-agents", "e2", "sova");
+  await placeAgent(owner, "s-agents", "e3", "sova");
+
+  const asked = (await owner.query(listStrategiesForFolder, {
+    folderPublicId: "root",
+    includeAgentTypes: true,
+  })) as Array<Record<string, unknown>>;
+  const byId = new Map(asked.map((entry) => [entry.publicId, entry]));
+  expect(byId.get("s-agents")?.agentTypes).toEqual(["sova", "jett"]);
+  expect(byId.get("s-empty")?.agentTypes).toEqual([]);
+
+  // Builds that predate the field reject any field they don't know, so a
+  // caller that doesn't ask gets the answer it always got.
+  const unasked = (await owner.query(listStrategiesForFolder, {
+    folderPublicId: "root",
+  })) as Array<Record<string, unknown>>;
+  expect(unasked).toHaveLength(2);
+  for (const entry of unasked) {
+    expect(entry).not.toHaveProperty("agentTypes");
+  }
+});
+
 test("deleting a strategy drops it from the folder summary", async () => {
   const { owner } = await createHarness();
   await seedFolder(owner, "root");

@@ -98,6 +98,7 @@ CloudStrategyEntry _cloudStrategy(String id, String name, {DateTime? created}) {
     revision: 1,
     role: 'owner',
     attackLabel: 'Attack',
+    agentTypes: const [],
   );
 }
 
