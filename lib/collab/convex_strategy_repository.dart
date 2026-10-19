@@ -204,35 +204,26 @@ class ConvexStrategyRepository {
         .map(_strategyShell);
   }
 
-  /// The pages watched in slices right now (see [watchPageSnapshot]) and
-  /// where their slices start, by [_pageKey], with how many watch each.
-  final _slicedPages = <String, (List<String>, int)>{};
+  /// The pages watched in slices right now (see [watchPageSnapshot]), by
+  /// [_pageKey]: the latest page the slices put together, and how many
+  /// watch it.
+  final _slicedPages = <String, (PageGetSnapshotResult, int)>{};
 
   String _pageKey(String strategyPublicId, String pagePublicId, String? token) =>
       '$strategyPublicId|$pagePublicId|${token ?? ''}';
 
-  /// [pagePublicId], read once. A page watched in slices is read through the
-  /// same slices, which Convex answers from the live ones at no cost, as it
-  /// answers page:getSnapshot from a live page:getSnapshot.
+  /// [pagePublicId], read once. A page watched in slices answers with the
+  /// latest page they put together, as the web client answers a read of any
+  /// query it watches from the live answer: the read costs nothing, where
+  /// reading it through every slice would cost a call each.
   Future<RemotePageSnapshot> fetchPageSnapshot({
     required String strategyPublicId,
     required String pagePublicId,
     String? shareToken,
   }) async {
-    final starts =
-        _slicedPages[_pageKey(strategyPublicId, pagePublicId, shareToken)]?.$1;
-    if (starts != null) {
-      final (frame, slices) =
-          _pageParts(strategyPublicId, pagePublicId, shareToken, starts);
-      final answers = await Future.wait([
-        frame.fetch(),
-        for (final slice in slices) slice.fetch(),
-      ]);
-      return _pageSnapshot(assemblePage(
-        answers.first as PageGetFrameResult,
-        answers.skip(1).cast<PageGetElementSliceResult>().toList(),
-      ));
-    }
+    final live =
+        _slicedPages[_pageKey(strategyPublicId, pagePublicId, shareToken)];
+    if (live != null) return _pageSnapshot(live.$1);
     return _pageSnapshot(
       await _wholePage(strategyPublicId, pagePublicId, shareToken).fetch(),
     );
@@ -314,13 +305,15 @@ class ConvexStrategyRepository {
         [for (final slice in slices) slice.watch()],
       ).listen(
         (page) {
+          final (_, watchers) = _slicedPages[key] ?? (page, 0);
           // The slices answered: they carry the page from here on.
           if (whole case final stopping?) {
             whole = null;
             unawaited(stopping.cancel());
-            final (_, watchers) = _slicedPages[key] ?? (starts, 0);
-            _slicedPages[key] = (starts, watchers + 1);
+            _slicedPages[key] = (page, watchers + 1);
             registered = true;
+          } else {
+            _slicedPages[key] = (page, watchers);
           }
           controller.add(page);
         },
@@ -351,11 +344,11 @@ class ConvexStrategyRepository {
       },
       onCancel: () async {
         if (registered) {
-          final (starts, watchers) = _slicedPages[key]!;
+          final (page, watchers) = _slicedPages[key]!;
           if (watchers <= 1) {
             _slicedPages.remove(key);
           } else {
-            _slicedPages[key] = (starts, watchers - 1);
+            _slicedPages[key] = (page, watchers - 1);
           }
         }
         await Future.wait([

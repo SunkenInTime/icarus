@@ -150,8 +150,11 @@ void main() {
       expect(pages.length - before, 1);
     });
 
-    test('read once while sliced, it is read through the slices', () async {
+    test('read once while sliced, it answers with the latest live page',
+        () async {
       await watchSlicedPage(20);
+      server.publish(agents(20, moved: _id(5)));
+      await pumpEventQueue();
       server.reads.clear();
 
       final read = await repository.fetchPageSnapshot(
@@ -159,12 +162,12 @@ void main() {
         pagePublicId: 'p',
       );
 
-      expect(server.reads, [
-        'page:getFrame',
-        'page:getElementSlice from ""',
-        'page:getElementSlice from "8"',
-      ]);
-      expect(read.elements, hasLength(20));
+      expect(server.reads, isEmpty);
+      expect(read.serverAnswer?.toDart(), pages.last.serverAnswer?.toDart());
+      expect(
+        read.elements.singleWhere((e) => e.publicId == _id(5)).revision,
+        2,
+      );
     });
 
     test('read once while whole, or after watching stops, it is read whole',
