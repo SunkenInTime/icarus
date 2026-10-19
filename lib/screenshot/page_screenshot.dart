@@ -105,7 +105,7 @@ Future<Uint8List> captureEditorPage(WidgetRef ref) async {
       [page],
     );
     final waitForFrame = geometry?.waitForFrame;
-    return await withScreenshotCoordinates(() async {
+    return await CoordinateSystem.runInCapture(() async {
       view.hydrateProviders(container);
       final renderer = PersistentOffscreenRenderer(
         targetSize: CoordinateSystem.screenShotSize,

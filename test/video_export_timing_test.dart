@@ -50,32 +50,4 @@ void main() {
       );
     });
   });
-
-  group('VideoExporter screenshot mode cleanup', () {
-    test('restores the previous mode after a successful export operation',
-        () async {
-      CoordinateSystem.instance.setIsScreenshot(false);
-
-      await runPreservingScreenshotMode(() async {
-        CoordinateSystem.instance.setIsScreenshot(true);
-      });
-
-      expect(CoordinateSystem.instance.isScreenshot, isFalse);
-    });
-
-    test('restores the previous mode after a failed export operation',
-        () async {
-      CoordinateSystem.instance.setIsScreenshot(false);
-
-      await expectLater(
-        runPreservingScreenshotMode<void>(() async {
-          CoordinateSystem.instance.setIsScreenshot(true);
-          throw StateError('render failed');
-        }),
-        throwsStateError,
-      );
-
-      expect(CoordinateSystem.instance.isScreenshot, isFalse);
-    });
-  });
 }

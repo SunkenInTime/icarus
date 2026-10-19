@@ -24,19 +24,6 @@ import 'package:icarus/services/video_export/video_frame_sink.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 
-@visibleForTesting
-Future<T> runPreservingScreenshotMode<T>(
-  Future<T> Function() operation,
-) async {
-  final coordinateSystem = CoordinateSystem.instance;
-  final previousMode = coordinateSystem.isScreenshot;
-  try {
-    return await operation();
-  } finally {
-    coordinateSystem.setIsScreenshot(previousMode);
-  }
-}
-
 /// Renders a strategy's selected pages into an .mp4 slideshow: each page is
 /// held for the step duration, with full-fidelity page transitions between
 /// consecutive included pages (ADR 0002).
@@ -129,7 +116,9 @@ class VideoExporter {
       }
     }
 
-    return runPreservingScreenshotMode(
+    // Rendering runs in the capture's own coordinates; the editor keeps
+    // its own, whatever it does meanwhile.
+    return CoordinateSystem.runInCapture(
       () => _export(
         pages: pages,
         stepDuration: stepDuration,

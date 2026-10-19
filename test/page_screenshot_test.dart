@@ -300,6 +300,8 @@ void main() {
         () => Future<void>.delayed(const Duration(milliseconds: 16)),
       );
       await tester.pump();
+      // The editor keeps its own coordinates while the capture runs.
+      expect(CoordinateSystem.instance.isScreenshot, isFalse);
     }
     return outcome;
   }
