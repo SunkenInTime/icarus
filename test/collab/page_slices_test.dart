@@ -68,6 +68,16 @@ void main() {
       expect(pages, hasLength(1));
     });
 
+    test('the same answer again is no change', () async {
+      // The web client hands over its cached answer, then the server's.
+      await watch();
+      server.publish(agents(20));
+      server.publish(agents(20));
+      await pumpEventQueue();
+
+      expect(server.watched, ['page:getSnapshot']);
+    });
+
     test('a small page stays whole when it changes', () async {
       await watch();
       server.publish(agents(10));

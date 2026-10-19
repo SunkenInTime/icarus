@@ -293,7 +293,7 @@ class ConvexStrategyRepository {
     StreamSubscription<PageGetSnapshotResult>? whole;
     StreamSubscription<PageGetSnapshotResult>? sliced;
     var registered = false;
-    var wholeAnswers = 0;
+    String? firstVersion;
 
     void watchSlices(PageGetSnapshotResult page) {
       final starts = pageSliceStarts(page.elements.length);
@@ -328,8 +328,11 @@ class ConvexStrategyRepository {
             .listen(
           (page) {
             controller.add(page);
-            wholeAnswers += 1;
-            if (wholeAnswers == 2 && sliced == null) watchSlices(page);
+            // The web client can hand over its cached answer and then the
+            // same one from the server: only different rows are a change.
+            final version = _pageVersion(page);
+            firstVersion ??= version;
+            if (version != firstVersion && sliced == null) watchSlices(page);
           },
           onError: controller.addError,
         );
@@ -1246,6 +1249,16 @@ RemotePageSnapshot _pageSnapshot(
     serverAnswer: fromCopy ? null : result.encode('pageSnapshot'),
   );
 }
+
+/// What [page] holds, by row and revision: any write to it changes this.
+String _pageVersion(PageGetSnapshotResult page) => [
+      page.page.revision,
+      page.content.revision,
+      for (final element in page.elements)
+        '${element.publicId}:${element.revision}:${element.deleted}',
+      for (final lineup in page.lineups)
+        '${lineup.publicId}:${lineup.revision}:${lineup.deleted}',
+    ].join('|');
 
 RemoteFullStrategySnapshot _fullSnapshot(StrategyGetFullSnapshotResult result) {
   final pages = result.pages.map((page) {
