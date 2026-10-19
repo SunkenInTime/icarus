@@ -247,26 +247,19 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
         if (folder == null || !mounted) return;
       }
       setState(() => _isCapturingScreenshot = true);
-      // Modal while it runs: the capture borrows the app's coordinates.
       final progress = ValueNotifier<ScreenshotProgress?>(null);
+      final done = ValueNotifier<bool>(false);
       var cancelled = false;
-      final navigator = Navigator.of(context, rootNavigator: true);
-      var dialogOpen = true;
-      final dialogClosed = showShadDialog<void>(
+      // The dialog closes itself once the capture is done.
+      unawaited(showShadDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (_) => ScreenshotProgressDialog(
           progress: progress,
+          done: done,
           onCancel: () => cancelled = true,
         ),
-      );
-      // Only the cleanup below closes the dialog. Should anything else
-      // close it first, the capture stops and the cleanup leaves the route
-      // underneath, the editor, alone.
-      unawaited(dialogClosed.whenComplete(() {
-        dialogOpen = false;
-        cancelled = true;
-      }));
+      ));
       late final List<PageScreenshot> shots;
       try {
         shots = await captureStrategyPages(
@@ -278,15 +271,8 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
           isCancelled: () => cancelled,
         );
       } finally {
-        if (dialogOpen) navigator.pop();
-        unawaited(dialogClosed.whenComplete(progress.dispose));
-        if (mounted) {
-          ref.read(screenshotProvider.notifier).setIsScreenShot(false);
-          ref
-              .read(drawingProvider.notifier)
-              .rebuildAllPaths(CoordinateSystem.instance);
-          setState(() => _isCapturingScreenshot = false);
-        }
+        done.value = true;
+        if (mounted) setState(() => _isCapturingScreenshot = false);
       }
       if (!mounted) return;
       // A cancel that landed during the last page still wins.

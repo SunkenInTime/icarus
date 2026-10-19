@@ -8,18 +8,20 @@ typedef ScreenshotProgress = ({int page, int total});
 
 /// Shown while several pages are captured: how far along, and a way to stop.
 ///
-/// It stays up until the capture has stopped, and only the app closes it: a
-/// capture switches the app's coordinates to the screenshot's, so the canvas
-/// must not take a click or a drag until it is done. Cancel asks the capture
-/// to stop and says so; the dialog closes once it has.
+/// It stays up until the capture has stopped, so a cancelled capture never
+/// looks finished while it is still writing. Cancel asks the capture to stop
+/// and says so; when [done] turns true the dialog closes its own route, even
+/// if another dialog has opened above it meanwhile.
 class ScreenshotProgressDialog extends StatefulWidget {
   const ScreenshotProgressDialog({
     super.key,
     required this.progress,
+    required this.done,
     required this.onCancel,
   });
 
   final ValueListenable<ScreenshotProgress?> progress;
+  final ValueListenable<bool> done;
   final VoidCallback onCancel;
 
   @override
@@ -29,6 +31,36 @@ class ScreenshotProgressDialog extends StatefulWidget {
 
 class _ScreenshotProgressDialogState extends State<ScreenshotProgressDialog> {
   bool _cancelling = false;
+  bool _closed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.done.addListener(_closeWhenDone);
+    // The capture may have finished before the dialog first built.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _closeWhenDone());
+  }
+
+  @override
+  void dispose() {
+    widget.done.removeListener(_closeWhenDone);
+    super.dispose();
+  }
+
+  void _closeWhenDone() {
+    if (_closed || !mounted || !widget.done.value) return;
+    final route = ModalRoute.of(context);
+    if (route == null || !route.isActive) return;
+    _closed = true;
+    final navigator = Navigator.of(context);
+    // Pop only when this dialog is on top; under another dialog, take out
+    // just this one.
+    if (route.isCurrent) {
+      navigator.pop();
+    } else {
+      navigator.removeRoute(route);
+    }
+  }
 
   void _cancel() {
     setState(() => _cancelling = true);

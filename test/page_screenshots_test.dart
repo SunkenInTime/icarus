@@ -385,8 +385,11 @@ void main() {
     expect(outcome, isA<VideoExportCancelled>());
   });
 
-  testWidgets('only Cancel stops a capture, and the editor stays open',
-      (tester) async {
+  /// Opens a two-page local strategy in an editor route above the library,
+  /// as in the app, and starts capturing both pages into a folder. Returns
+  /// once the progress dialog is up.
+  Future<({Directory folder, GlobalKey<NavigatorState> navigator})>
+      startTwoPageCapture(WidgetTester tester) async {
     CoordinateSystem(playAreaSize: const Size(1600, 900));
     final folder = (await tester.runAsync(
       () => Directory.systemTemp.createTemp('icarus_shot_cancel'),
@@ -416,8 +419,6 @@ void main() {
               .read(strategyPageSessionProvider)
               .copyWith(activePageId: 'a'),
         );
-    // The editor is a route above the library, as in the app: a stray pop
-    // would close it.
     final navigatorKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(UncontrolledProviderScope(
       container: container,
@@ -450,6 +451,12 @@ void main() {
       await tester.pump();
     }
     expect(find.text('Capturing screenshots'), findsOneWidget);
+    return (folder: folder, navigator: navigatorKey);
+  }
+
+  testWidgets('only Cancel stops a capture, and the editor stays open',
+      (tester) async {
+    final (:folder, navigator: _) = await startTwoPageCapture(tester);
 
     // Nothing but Cancel closes it: no X, and Escape does nothing.
     expect(find.byIcon(LucideIcons.x), findsNothing);
@@ -480,6 +487,35 @@ void main() {
     expect(find.text('Screenshots cancelled.'), findsOneWidget);
     ignoreTestFontOverflow(tester);
     // Let the toast leave.
+    await tester.pump(const Duration(seconds: 10));
+  });
+
+  testWidgets('a finished capture closes only its own dialog', (tester) async {
+    final (:folder, :navigator) = await startTwoPageCapture(tester);
+    // Another dialog opens on top meanwhile, as the debug log (F12) does.
+    unawaited(navigator.currentState!.push(DialogRoute<void>(
+      context: navigator.currentContext!,
+      builder: (_) => const Center(child: Text('Debug log')),
+    )));
+    await tester.pump();
+
+    for (var i = 0;
+        i < 600 && find.text('Capturing screenshots').evaluate().isNotEmpty;
+        i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 16)),
+      );
+      await tester.pump();
+    }
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(find.text('Capturing screenshots'), findsNothing);
+    expect(find.text('Debug log'), findsOneWidget);
+    expect(find.byType(EditorToolbar), findsOneWidget);
+    expect(folder.listSync(), hasLength(2));
+    ignoreTestFontOverflow(tester);
     await tester.pump(const Duration(seconds: 10));
   });
 

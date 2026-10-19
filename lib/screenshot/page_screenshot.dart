@@ -181,7 +181,7 @@ Future<List<PageScreenshot>> captureStrategyPages(
       [for (final entry in chosen) entry.page],
     );
     final waitForFrame = geometry?.waitForFrame;
-    return await withScreenshotCoordinates(() async {
+    return await CoordinateSystem.runInCapture(() async {
       final renderer = PersistentOffscreenRenderer(
         targetSize: CoordinateSystem.screenShotSize,
         waitForFrameData: waitForFrame,
