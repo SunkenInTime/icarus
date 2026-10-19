@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -102,7 +103,36 @@ class CoordinateSystem {
     return _instance!;
   }
 
+  /// The coordinates every capture draws in: 1920×1080, always in screenshot
+  /// mode. A capture gets its own so that nothing the editor does meanwhile
+  /// (a re-layout replacing [instance], a resize, a side switch) can leave
+  /// the editor's coordinates in screenshot mode, or the capture's in the
+  /// editor's.
+  static final CoordinateSystem _capture =
+      CoordinateSystem._(playAreaSize: screenShotSize)..isScreenshot = true;
+
+  static const _captureZoneKey = #icarusCaptureCoordinates;
+
+  static Zone? _lastZone;
+  static bool _lastZoneIsCapture = false;
+
+  /// Runs [capture] in the capture's coordinates: inside it, and in every
+  /// Future and timer it starts, [instance] is the capture's. The editor,
+  /// whose frames run outside it, keeps its own throughout.
+  static Future<T> runInCapture<T>(Future<T> Function() capture) =>
+      runZoned(capture, zoneValues: {_captureZoneKey: _capture});
+
+  /// The coordinates of whatever is drawing: a capture's inside
+  /// [runInCapture], the editor's everywhere else.
   static CoordinateSystem get instance {
+    // Read on every conversion while drawing, so the zone lookup is skipped
+    // for the zone that asked last.
+    final zone = Zone.current;
+    if (!identical(zone, _lastZone)) {
+      _lastZone = zone;
+      _lastZoneIsCapture = zone[_captureZoneKey] is CoordinateSystem;
+    }
+    if (_lastZoneIsCapture) return _capture;
     if (_instance == null) {
       throw StateError(
         "CoordinateSystem must be initialized with playAreaSize first",

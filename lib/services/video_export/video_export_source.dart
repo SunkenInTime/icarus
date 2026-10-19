@@ -6,10 +6,13 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/sort_index_order.dart';
+import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
+import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
+import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/services/cloud_work_sent.dart';
@@ -134,7 +137,9 @@ Future<VideoExportSource> loadVideoExportSource(
       if (saved == null) {
         throw StateError('Strategy $strategyId is not in the library.');
       }
-      strategy = saved;
+      // The library's own objects, which the editor loads too: a capture
+      // rebuilds drawing paths in its own coordinates, so it gets copies.
+      strategy = saved.copyWith(pages: saved.pages.map(_detached).toList());
       assets = const {};
   }
 
@@ -182,3 +187,27 @@ Future<VideoExportSource> loadVideoExportSource(
 }
 
 bool _never() => false;
+
+/// [page] with copies of everything placed on it, so nothing a capture does
+/// to its objects reaches the library's or the editor's.
+StrategyPage _detached(StrategyPage page) {
+  final lineUps = page.lineUpGraph.deepCopy();
+  return StrategyPage(
+    id: page.id,
+    name: page.name,
+    drawingData: DrawingProvider.fromJson(
+      DrawingProvider.objectToJson(page.drawingData),
+    ),
+    agentData: page.agentData.map(clonePlacedAgentNode).toList(),
+    abilityData: page.abilityData.map(clonePlacedAbility).toList(),
+    textData: page.textData.map(clonePlacedText).toList(),
+    imageData: page.imageData.map(clonePlacedImage).toList(),
+    utilityData: page.utilityData.map(clonePlacedUtility).toList(),
+    sortIndex: page.sortIndex,
+    isAttack: page.isAttack,
+    settings: page.settings,
+    lineUpOrigins: lineUps.origins,
+    lineUpLandings: lineUps.landings,
+    lineUpLinks: lineUps.links,
+  );
+}

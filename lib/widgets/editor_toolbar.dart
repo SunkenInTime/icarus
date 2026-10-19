@@ -2,11 +2,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
-import 'package:icarus/providers/drawing_provider.dart';
-import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -227,13 +224,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
       try {
         image = await captureEditorPage(ref);
       } finally {
-        if (mounted) {
-          ref.read(screenshotProvider.notifier).setIsScreenShot(false);
-          ref
-              .read(drawingProvider.notifier)
-              .rebuildAllPaths(CoordinateSystem.instance);
-          setState(() => _isCapturingScreenshot = false);
-        }
+        if (mounted) setState(() => _isCapturingScreenshot = false);
       }
       if (!mounted) return;
       // Desktop asks where to save and writes the bytes there; the browser

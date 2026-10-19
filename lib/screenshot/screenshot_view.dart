@@ -81,12 +81,13 @@ class ScreenshotView extends ConsumerWidget {
   final bool transparentBackground;
 
   /// Loads this frame into the isolated providers used for offscreen capture.
+  /// Call it inside [CoordinateSystem.runInCapture], as the whole capture
+  /// runs, so drawing paths are built in the capture's coordinates.
   ///
   /// Call this before mounting or updating the view. Riverpod intentionally
   /// rejects provider writes from [build], even though release builds do not
   /// surface that assertion.
   void hydrateProviders(ProviderContainer container) {
-    CoordinateSystem.instance.setIsScreenshot(true);
     container.read(agentProvider.notifier).fromHive(agents);
     container.read(screenshotProvider.notifier).setIsScreenShot(true);
     container.read(abilityProvider.notifier).fromHive(abilities);

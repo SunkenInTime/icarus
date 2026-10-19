@@ -13,7 +13,6 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/screenshot/capture_geometry.dart';
-import 'package:icarus/screenshot/offscreen_capture.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 
 StrategyPage _page(
@@ -120,23 +119,37 @@ void main() {
 
   for (final fails in [false, true]) {
     test(
-        'pixel capture restores live coordinates before output selection${fails ? ' even on failure' : ''}',
-        () async {
+        'a capture draws in its own coordinates and never in the editor\'s'
+        '${fails ? ', even when it fails' : ''}', () async {
       CoordinateSystem(playAreaSize: const Size(1600, 900));
-      final capture = withScreenshotCoordinates(() async {
+      final editorMidway = Completer<void>();
+      final capture = CoordinateSystem.runInCapture(() async {
+        expect(CoordinateSystem.instance.effectiveSize,
+            CoordinateSystem.screenShotSize);
+        // Across the capture's own awaits too.
+        await editorMidway.future;
         expect(CoordinateSystem.instance.effectiveSize,
             CoordinateSystem.screenShotSize);
         if (fails) throw StateError('capture failed');
         return 'pixels';
       });
+
+      // Meanwhile the editor is untouched, and re-laying itself out (as a
+      // side switch does) replaces its coordinates without reaching the
+      // capture's.
+      expect(CoordinateSystem.instance.isScreenshot, isFalse);
+      CoordinateSystem(playAreaSize: const Size(1200, 800));
+      editorMidway.complete();
+
       if (fails) {
         await expectLater(capture, throwsStateError);
       } else {
         expect(await capture, 'pixels');
       }
-      expect(CoordinateSystem.instance.effectiveSize, const Size(1600, 900));
+      expect(CoordinateSystem.instance.isScreenshot, isFalse);
+      expect(CoordinateSystem.instance.effectiveSize, const Size(1200, 800));
       expect(
-          CoordinateSystem.instance.screenToCoordinate(const Offset(800, 450)),
+          CoordinateSystem.instance.screenToCoordinate(const Offset(600, 400)),
           Offset(CoordinateSystem.instance.worldNormalizedWidth / 2, 500));
     });
   }

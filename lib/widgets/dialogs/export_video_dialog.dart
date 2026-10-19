@@ -4,12 +4,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
-import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
@@ -111,9 +108,6 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   }
 
   Future<void> _runExport() async {
-    // The root container outlives this dialog, so cleanup after a
-    // mid-export dismissal can still reach the live providers.
-    final container = ProviderScope.containerOf(context, listen: false);
     final transparent = _transparent;
     final quality = _exportQuality;
     final extension = transparent ? 'mov' : 'mp4';
@@ -246,7 +240,6 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         _progressLabel = 'Preparing';
       });
 
-      CoordinateSystem.instance.setIsScreenshot(true);
       final video = await exporter.export(
         pages: selectedPages,
         stepDuration: stepDuration,
@@ -332,11 +325,6 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     } finally {
       await sink.close();
       images?.release();
-      CoordinateSystem.instance.setIsScreenshot(false);
-      container.read(screenshotProvider.notifier).setIsScreenShot(false);
-      container
-          .read(drawingProvider.notifier)
-          .rebuildAllPaths(CoordinateSystem.instance);
       if (mounted) {
         setState(() {
           _preparing = false;
