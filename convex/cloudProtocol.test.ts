@@ -130,6 +130,11 @@ const publicPayloadQueries = [
     { strategyPublicId: "strategy", acceptsTrashedPagesLeftOut: true },
   ],
   ["page:getSnapshot", { strategyPublicId: "strategy", pagePublicId: "page" }],
+  ["page:getFrame", { strategyPublicId: "strategy", pagePublicId: "page" }],
+  [
+    "page:getElementSlice",
+    { strategyPublicId: "strategy", pagePublicId: "page", fromPublicId: "" },
+  ],
   [
     "elements:listForPage",
     { strategyPublicId: "strategy", pagePublicId: "page" },

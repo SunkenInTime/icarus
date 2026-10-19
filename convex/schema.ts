@@ -102,6 +102,8 @@ export default defineSchema({
   })
     .index("by_publicId", ["publicId"])
     .index("by_pageId", ["pageId"])
+    // Reads a page's elements in slices of ids (page:getElementSlice).
+    .index("by_pageId_and_publicId", ["pageId", "publicId"])
     .index("by_strategyId", ["strategyId"])
     // Reads one element type without touching the rest (large text rows).
     .index("by_strategyId_and_elementType", ["strategyId", "elementType"])

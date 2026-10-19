@@ -773,6 +773,20 @@ final class _OpsModule implements OpsModule {
 }
 
 abstract interface class PageModule {
+  ConvexQuery<PageGetElementSliceResult> getElementSlice({
+    required double clientProtocolVersion,
+    required String fromPublicId,
+    required String pagePublicId,
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
+    required String strategyPublicId,
+    ConvexOptional<String> toPublicId = const ConvexOptional.absent(),
+  });
+  ConvexQuery<PageGetFrameResult> getFrame({
+    required double clientProtocolVersion,
+    required String pagePublicId,
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
+    required String strategyPublicId,
+  });
   ConvexQuery<PageGetSnapshotResult> getSnapshot({
     ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     required double clientProtocolVersion,
@@ -785,6 +799,52 @@ abstract interface class PageModule {
 final class _PageModule implements PageModule {
   const _PageModule(this._transport);
   final ConvexTransport _transport;
+  @override
+  ConvexQuery<PageGetElementSliceResult> getElementSlice({
+    required double clientProtocolVersion,
+    required String fromPublicId,
+    required String pagePublicId,
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
+    required String strategyPublicId,
+    ConvexOptional<String> toPublicId = const ConvexOptional.absent(),
+  }) {
+    final args = encodePageGetElementSliceArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      fromPublicId: fromPublicId,
+      pagePublicId: pagePublicId,
+      shareToken: shareToken,
+      strategyPublicId: strategyPublicId,
+      toPublicId: toPublicId,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'page:getElementSlice',
+      args: args,
+      decode: decodePageGetElementSliceResult,
+    );
+  }
+
+  @override
+  ConvexQuery<PageGetFrameResult> getFrame({
+    required double clientProtocolVersion,
+    required String pagePublicId,
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
+    required String strategyPublicId,
+  }) {
+    final args = encodePageGetFrameArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      pagePublicId: pagePublicId,
+      shareToken: shareToken,
+      strategyPublicId: strategyPublicId,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'page:getFrame',
+      args: args,
+      decode: decodePageGetFrameResult,
+    );
+  }
+
   @override
   ConvexQuery<PageGetSnapshotResult> getSnapshot({
     ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
@@ -828,7 +888,7 @@ abstract interface class PagesModule {
     required String pagePublicId,
     required String strategyPublicId,
   });
-  ConvexQuery<List<PageGetSnapshotResultPage>> listForStrategy({
+  ConvexQuery<List<PageGetFrameResultPage>> listForStrategy({
     required String strategyPublicId,
   });
   ConvexQuery<List<PagesListTrashedResultItem>> listTrashed({
@@ -908,7 +968,7 @@ final class _PagesModule implements PagesModule {
   }
 
   @override
-  ConvexQuery<List<PageGetSnapshotResultPage>> listForStrategy({
+  ConvexQuery<List<PageGetFrameResultPage>> listForStrategy({
     required String strategyPublicId,
   }) {
     final args = encodePagesListForStrategyArgs(
