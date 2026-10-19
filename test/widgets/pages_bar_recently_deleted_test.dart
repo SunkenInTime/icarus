@@ -253,6 +253,31 @@ void main() {
     expect(find.byIcon(LucideIcons.archiveRestore), findsOneWidget);
   });
 
+  testWidgets('a fresh deletion is read again a day later, not at once',
+      (tester) async {
+    final now = DateTime.now();
+    final repository = _Trash([
+      TrashedPage(
+        pageId: 'page-3',
+        name: 'Retake B',
+        deletedAt: now,
+        restorableUntil: now.add(const Duration(days: 30)),
+        deletedByName: 'Sam',
+        deletedByYou: false,
+      ),
+    ]);
+    await _expandedBar(tester, canDeletePage: true, repository: repository);
+    expect(repository.listed, ['strategy-a']);
+
+    await tester.pump(const Duration(hours: 23));
+    expect(repository.listed, ['strategy-a']);
+
+    await tester.pump(const Duration(hours: 1, seconds: 1));
+    await tester.pumpAndSettle();
+    expect(repository.listed, ['strategy-a', 'strategy-a']);
+    expect(find.byIcon(LucideIcons.archiveRestore), findsOneWidget);
+  });
+
   testWidgets("the button goes when the last page's 30 days run out",
       (tester) async {
     final soon = DateTime.now().add(const Duration(minutes: 1));
