@@ -873,6 +873,18 @@ void main() {
       expect(queue().pending, isEmpty);
     });
 
+    test("a page named with a held delete's own words is read whole", () {
+      const name = 'B changed since you deleted it';
+      final unchecked = heldPageDelete(heldPageDeleteReason(
+        const SeenPage(name: name, isAttack: true, content: null),
+      ))!;
+      expect((unchecked.page, unchecked.checked), (name, false));
+      final changed = heldPageDelete(heldPageDeleteReason(
+        const SeenPage(name: name, isAttack: true, content: {'content': 1}),
+      ))!;
+      expect((changed.page, changed.checked), (name, true));
+    });
+
     test('its record keeps the page as seen through JSON', () {
       final record = DurableOutboxRecord(
         accountId: 'account-a',

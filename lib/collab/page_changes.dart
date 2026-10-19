@@ -302,14 +302,13 @@ String heldPageDeleteReason(SeenPage seen) => seen.content == null
 /// The page name in [reason], when it is the reason a page delete is held
 /// for the user (see heldPageDeleteReason), and whether this device could
 /// check the page at all. Reasons saved by older builds read too: they are
-/// all the "changed" kind.
+/// all the "changed" kind. The name comes first and may hold either
+/// reason's words itself, so the last one found is the reason.
 ({String page, bool checked})? heldPageDelete(String reason) {
-  for (final (marker, checked) in const [
-    (' $pageChangedSinceDeleteReason', true),
-    (' $pageUncheckedBeforeDeleteReason', false),
-  ]) {
-    final at = reason.indexOf(marker);
-    if (at >= 0) return (page: reason.substring(0, at), checked: checked);
-  }
-  return null;
+  final changed = reason.lastIndexOf(' $pageChangedSinceDeleteReason');
+  final unchecked = reason.lastIndexOf(' $pageUncheckedBeforeDeleteReason');
+  if (changed < 0 && unchecked < 0) return null;
+  return unchecked > changed
+      ? (page: reason.substring(0, unchecked), checked: false)
+      : (page: reason.substring(0, changed), checked: true);
 }
