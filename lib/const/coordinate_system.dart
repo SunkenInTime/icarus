@@ -113,6 +113,9 @@ class CoordinateSystem {
 
   static const _captureZoneKey = #icarusCaptureCoordinates;
 
+  static Zone? _lastZone;
+  static bool _lastZoneIsCapture = false;
+
   /// Runs [capture] in the capture's coordinates: inside it, and in every
   /// Future and timer it starts, [instance] is the capture's. The editor,
   /// whose frames run outside it, keeps its own throughout.
@@ -122,8 +125,14 @@ class CoordinateSystem {
   /// The coordinates of whatever is drawing: a capture's inside
   /// [runInCapture], the editor's everywhere else.
   static CoordinateSystem get instance {
-    final capture = Zone.current[_captureZoneKey];
-    if (capture is CoordinateSystem) return capture;
+    // Read on every conversion while drawing, so the zone lookup is skipped
+    // for the zone that asked last.
+    final zone = Zone.current;
+    if (!identical(zone, _lastZone)) {
+      _lastZone = zone;
+      _lastZoneIsCapture = zone[_captureZoneKey] is CoordinateSystem;
+    }
+    if (_lastZoneIsCapture) return _capture;
     if (_instance == null) {
       throw StateError(
         "CoordinateSystem must be initialized with playAreaSize first",
