@@ -5,6 +5,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// The provider container one offscreen capture renders in, cut off from the
@@ -16,12 +17,19 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 /// the auth down, signing the editor out of sync. The strategy provider
 /// listens to auth, so auth here is an inert signed-out state; nothing a
 /// capture paints needs more.
+///
+/// The strategy provider is inert too. The real one treats every change to
+/// the page's agents, drawings and the rest as an edit, and a capture
+/// changes them each time it loads another page: a local strategy would be
+/// marked unsaved and autosaved, writing the rendered page over the page
+/// open in the editor.
 ProviderContainer createCaptureContainer({
   Map<String, StrategyImageSource> images = const {},
 }) =>
     ProviderContainer(
       overrides: [
         authProvider.overrideWith(_CaptureAuth.new),
+        strategyProvider.overrideWith(_CaptureStrategy.new),
         captureImageSourcesProvider.overrideWithValue(images),
       ],
     );
@@ -29,6 +37,20 @@ ProviderContainer createCaptureContainer({
 class _CaptureAuth extends AuthProvider {
   @override
   AppAuthState build() => AppAuthState.fromSession(null);
+}
+
+/// Holds the strategy a capture renders, without the real provider's edit
+/// tracking (its build registers the listeners that mark the strategy
+/// unsaved), so nothing in a capture can save or sync.
+class _CaptureStrategy extends StrategyProvider {
+  @override
+  StrategyState build() => const StrategyState(
+        strategyId: null,
+        strategyName: null,
+        source: null,
+        storageDirectory: null,
+        isOpen: false,
+      );
 }
 
 /// Keep screenshot coordinates confined to pixel capture. Asset loading and
