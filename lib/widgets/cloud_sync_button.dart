@@ -24,6 +24,7 @@ import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/widgets/dialogs/deleted_page_dialog.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
+import 'package:icarus/services/product_metrics.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const _glyphSwitchDuration = Duration(milliseconds: 150);
@@ -113,6 +114,11 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
 
   void _showConflictToast() {
     _lastConflictToast = DateTime.now();
+    final conflicts = ref.read(strategyConflictProvider);
+    ProductMetrics.instance.conflictShown(
+      count: conflicts.length,
+      reason: syncReason(conflicts.firstOrNull?.message),
+    );
     final specificReason = ref
         .read(strategyConflictProvider)
         .map((conflict) => conflict.message)
@@ -139,6 +145,11 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
 
   Future<void> _retry() async {
     if (_isResolving) return;
+    ProductMetrics.instance.conflictResolved(
+      ref.read(strategyOpQueueProvider).attentionByEntityKey.isNotEmpty
+          ? 'keep_mine'
+          : 'retry',
+    );
     setState(() {
       _isResolving = true;
       _resolutionError = null;
@@ -170,6 +181,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
           .read(strategyPageSessionProvider.notifier)
           .useCloudVersionsForRejected();
       if (resolved) {
+        ProductMetrics.instance.conflictResolved('use_cloud');
         _popoverController.hide();
       } else {
         resolutionError = 'Could not load the cloud version. '
@@ -199,7 +211,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
   Future<void> _keepHeldPages(
     Map<EntitySyncKey, ({String page, bool checked, String opId})> held,
   ) =>
-      _resolveHeldDeletes(() => ref
+      _resolveHeldDeletes('keep_page', () => ref
               .read(strategyOpQueueProvider.notifier)
               .discardRejected(held.keys.toSet(), onlyIf: {
             for (final entry in held.entries)
@@ -210,13 +222,17 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
   Future<void> _deleteHeldPagesAnyway(
     Map<EntitySyncKey, ({String page, bool checked, String opId})> held,
   ) =>
-      _resolveHeldDeletes(() =>
+      _resolveHeldDeletes('delete_anyway', () =>
           ref.read(strategyOpQueueProvider.notifier).deleteHeldPagesAnyway({
             for (final entry in held.entries) entry.key: entry.value.opId,
           }));
 
-  Future<void> _resolveHeldDeletes(Future<void> Function() resolve) async {
+  Future<void> _resolveHeldDeletes(
+    String choice,
+    Future<void> Function() resolve,
+  ) async {
     if (_isResolving) return;
+    ProductMetrics.instance.conflictResolved(choice);
     setState(() {
       _isResolving = true;
       _resolutionError = null;
@@ -241,6 +257,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
           .read(strategyPageSessionProvider.notifier)
           .keepBothForRejected()) {
         case KeepBothOutcome.kept:
+          ProductMetrics.instance.conflictResolved('keep_both');
           _popoverController.hide();
         case KeepBothOutcome.unchanged:
           resolutionError = 'Could not load the cloud version. '

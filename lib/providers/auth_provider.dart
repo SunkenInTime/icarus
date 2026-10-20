@@ -16,6 +16,7 @@ import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
+import 'package:icarus/services/product_metrics.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -784,6 +785,7 @@ class AuthProvider extends Notifier<AppAuthState> {
             ? error.message
             : 'Discord sign-in failed: $error',
       );
+      ProductMetrics.instance.signIn(method: 'discord', succeeded: false);
       return;
     }
 
@@ -815,6 +817,7 @@ class AuthProvider extends Notifier<AppAuthState> {
           convexAuthStatus: ConvexAuthStatus.incident,
           errorMessage: message,
         );
+        ProductMetrics.instance.signIn(method: 'email', succeeded: false);
         return message;
       }
 
@@ -834,6 +837,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         convexAuthStatus: ConvexAuthStatus.incident,
         errorMessage: message,
       );
+      ProductMetrics.instance.signIn(method: 'email', succeeded: false);
       return message;
     }
   }
@@ -916,10 +920,12 @@ class AuthProvider extends Notifier<AppAuthState> {
           convexAuthStatus: ConvexAuthStatus.signedOut,
           errorMessage: message,
         );
+        ProductMetrics.instance.signUp('confirmation_sent');
         return message;
       }
 
       state = state.copyWith(isLoading: false);
+      ProductMetrics.instance.signUp('signed_in');
       return null;
     } catch (error, stackTrace) {
       log(
@@ -935,6 +941,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         convexAuthStatus: ConvexAuthStatus.incident,
         errorMessage: message,
       );
+      ProductMetrics.instance.signUp('failed');
       return message;
     }
   }
@@ -1118,6 +1125,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         convexAuthStatus: ConvexAuthStatus.incident,
         errorMessage: 'Failed to complete login. Please try again.',
       );
+      ProductMetrics.instance.signIn(method: 'discord', succeeded: false);
       return true;
     }
   }
@@ -1530,6 +1538,15 @@ class AuthProvider extends Notifier<AppAuthState> {
         convexAuthStatus: ConvexAuthStatus.ready,
         clearError: true,
       );
+      // A fresh sign-in, by either method, reaches here once ready; a
+      // session restored at start or a reconnect comes by other triggers.
+      if (trigger.contains('signedIn')) {
+        final provider = session.user.appMetadata['provider'];
+        ProductMetrics.instance.signIn(
+          method: provider == 'discord' ? 'discord' : 'email',
+          succeeded: true,
+        );
+      }
     } catch (error, stackTrace) {
       if (!_isAuthContextCurrent(
         generation: generation,

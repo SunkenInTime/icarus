@@ -10,6 +10,7 @@ import 'package:icarus/services/browser_url.dart';
 import 'package:icarus/share/current_share_origin.dart';
 import 'package:icarus/share/pending_share_code_store.dart';
 import 'package:icarus/share/share_link_format.dart';
+import 'package:icarus/services/product_metrics.dart';
 
 /// Where a share code waits for sign-in. Overridden in tests.
 final pendingShareCodeStoreProvider = Provider<PendingShareCodeStore>(
@@ -125,6 +126,8 @@ class ShareLinkController extends Notifier<String?> {
       // Only a link that granted something is news; one for a strategy or
       // folder the user could already open just takes them there.
       if (!response.alreadyHadAccess) {
+        ProductMetrics.instance
+            .shareJoined(role: response.role, target: response.targetType);
         Settings.showToast(
           message: response.targetType == 'folder'
               ? 'Shared folder added to your library.'
