@@ -90,6 +90,8 @@ class ResizableSquareWidget extends ConsumerWidget {
       height: totalHeight,
       width: scaledWidth,
       child: Stack(
+        // A narrow range (Vyse's Shear) is thinner than its icon.
+        clipBehavior: Clip.none,
         children: [
           const Positioned.fill(
             child: IgnorePointer(
