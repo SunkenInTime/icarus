@@ -3,7 +3,7 @@
   "shortVersion": 104,
   "title": "5.0.0: Icarus goes online",
   "description": "Sign in to keep your strategies in your account, share them with your team, and plan together live. Your library stays on this computer until you choose to move it.",
-  "date": "2026-10-18",
+  "date": "2026-10-20",
   "mandatory": false,
   "channels": ["desktop", "stable"],
   "platforms": ["windows"],
@@ -57,6 +57,10 @@
       "type": "feat"
     },
     {
+      "message": "Circles now grow to 110 m, enough for Brimstone's and Clove's smoke range, and Vyse's Shear can be shortened like Cypher's Trapwire.",
+      "type": "feat"
+    },
+    {
       "message": "Give agents VALORANT's new Warden rifle from the Weapon menu.",
       "type": "feat"
     },
@@ -66,6 +70,10 @@
     },
     {
       "message": "Save screenshots and videos with a transparent background, to lay a plan over your own graphics: tick Transparent background when you take the screenshot or export the video.",
+      "type": "feat"
+    },
+    {
+      "message": "Screenshot several pages at once: the camera shows a preview of every page, so tick the ones you want and save them to a folder together.",
       "type": "feat"
     },
     {
