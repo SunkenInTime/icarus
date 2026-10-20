@@ -621,8 +621,13 @@ class _MyAppState extends ConsumerState<MyApp> {
   /// out of reach is the connection being made, not an outage.
   bool _cloudReached = false;
 
-  /// Reports each stretch out of reach once it ends: how long, how it
-  /// ended, and how many changes waited to be sent.
+  /// The shortest stretch out of reach worth reporting: one a person could
+  /// notice. The connection state flickers for a moment at start and on
+  /// reconnects.
+  static const _noticeableOffline = Duration(seconds: 5);
+
+  /// Reports each noticeable stretch out of reach once it ends: how long,
+  /// how it ended, and how many changes waited to be sent.
   void _measureOffline(bool wasOffline, bool isOffline) {
     final signedIn = ref.read(authProvider).isAuthenticated;
     if (!signedIn) _cloudReached = false;
@@ -633,9 +638,11 @@ class _MyAppState extends ConsumerState<MyApp> {
     final since = _offlineSince;
     if (!wasOffline || isOffline || since == null) return;
     _offlineSince = null;
+    final duration = DateTime.now().difference(since);
+    if (duration < _noticeableOffline) return;
     final auth = ref.read(authProvider);
     ProductMetrics.instance.offlineSession(
-      duration: DateTime.now().difference(since),
+      duration: duration,
       ended: !auth.isAuthenticated
           ? 'signed_out'
           : auth.convexAuthStatus == ConvexAuthStatus.incident
