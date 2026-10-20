@@ -19,6 +19,7 @@ import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/strategy/copied_page_check.dart';
+import 'package:icarus/services/cloud_usage_meter.dart';
 
 final remoteEditorSnapshotProvider =
     AsyncNotifierProvider<RemoteEditorSnapshotNotifier, RemoteEditorSnapshot?>(
@@ -544,6 +545,11 @@ class RemoteEditorSnapshotNotifier
       return;
     }
     _subscribedPagePublicId = pagePublicId;
+    CloudUsageMeter.instance.pageWatched(
+      shown != null && shown.page.publicId == pagePublicId
+          ? shown.elements.length + shown.lineups.length
+          : 0,
+    );
     final scope = _copyScope;
     _pageSubscription = ref
         .read(convexStrategyRepositoryProvider)

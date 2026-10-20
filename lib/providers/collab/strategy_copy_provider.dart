@@ -11,6 +11,7 @@ import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/services/cloud_usage_meter.dart';
 
 /// Whether [strategyId] can be opened from the copy on this computer. Read
 /// while offline, so the library can mark the strategies that need a
@@ -89,6 +90,7 @@ class StrategyCopyRefresher extends Notifier<void> {
     try {
       final strategyIds = await _listStrategies();
       if (generation != _generation) return;
+      CloudUsageMeter.instance.copyPass(strategyIds.length);
       final now = DateTime.now();
       for (final id in strategyIds) {
         final refreshed = store.lastFullRefresh(scope, id);
@@ -177,6 +179,12 @@ class StrategyCopyRefresher extends Notifier<void> {
       final snapshot = await ref
           .read(convexStrategyRepositoryProvider)
           .fetchFullSnapshot(strategyId);
+      CloudUsageMeter.instance.copyFullRead(
+        [
+          ...snapshot.elementsByPage.values,
+          ...snapshot.lineupsByPage.values,
+        ].fold(0, (rows, page) => rows + page.length),
+      );
       final answer = snapshot.serverAnswer;
       if (answer == null) return true;
       await store.writeFullSnapshot(

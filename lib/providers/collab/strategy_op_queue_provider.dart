@@ -20,6 +20,7 @@ import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:uuid/uuid.dart';
+import 'package:icarus/services/cloud_usage_meter.dart';
 
 class StrategyOutboxSession {
   const StrategyOutboxSession({
@@ -2209,6 +2210,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         batch = batch.sublist(0, batch.length - 1);
       }
       if (batch.isNotEmpty) {
+        CloudUsageMeter.instance.batchSent(batch.length);
         final acks = await _repo.applyBatch(
           strategyPublicId: strategyPublicId,
           clientId: batchClientId,
