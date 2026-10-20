@@ -17,6 +17,7 @@ import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
+import 'package:icarus/services/product_metrics.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Headline like: Share "My Strategy Name" (`"` in [name] become `'`).
@@ -252,6 +253,8 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         token: token,
         role: _selectedRole,
       );
+      ProductMetrics.instance
+          .shareLinkCreated(role: _selectedRole, target: widget.targetType);
       await Clipboard.setData(ClipboardData(
           text: buildIcarusShareLink(token, origin: currentShareOrigin())));
       Settings.showToast(
@@ -315,6 +318,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         memberId: member.memberId,
         role: role,
       );
+      ProductMetrics.instance.shareMembership('role_changed');
     } catch (_) {
       Settings.showToast(
         message: ShareLinkCopy.roleChangeFailure,
@@ -347,6 +351,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         targetPublicId: widget.targetPublicId,
         memberId: member.memberId,
       );
+      ProductMetrics.instance.shareMembership('removed');
       await _load(showLoading: false);
     } catch (_) {
       Settings.showToast(
@@ -1585,6 +1590,7 @@ Future<void> leaveSharedItem({
           targetType: targetType,
           targetPublicId: targetPublicId,
         );
+    ProductMetrics.instance.shareMembership('left');
   } catch (_) {
     Settings.showToast(
       message: "Couldn't leave it. Check your connection and try again.",

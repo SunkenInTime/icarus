@@ -34,6 +34,7 @@ import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_copy_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -63,6 +64,7 @@ import 'package:icarus/widgets/global_shortcuts.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/widgets/replay/open_replays.dart';
 import 'package:icarus/widgets/settings_tab.dart';
+import 'package:icarus/services/product_metrics.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -138,6 +140,15 @@ void _publishDeepLink(Uri uri, {required String source}) {
   }
   _deepLinkUriController.add(uri);
 }
+
+/// Signed in, and the cloud out of reach: the socket is down or the session
+/// is offline. What the sync status shows as Offline.
+final _cloudOutOfReachProvider = Provider<bool>((ref) {
+  final auth = ref.watch(authProvider);
+  if (!auth.isAuthenticated) return false;
+  final connected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
+  return !connected || auth.convexAuthStatus == ConvexAuthStatus.offline;
+});
 
 Future<void> main(List<String> args) async {
   await runZonedGuarded(
@@ -230,6 +241,12 @@ Future<void> main(List<String> args) async {
 
       await AnalyticsService.instance.initialize();
       unawaited(CloudUsageMeter.instance.reportLeftover());
+      if (PlatformPolicy.current.allowsLocalLibrary) {
+        ProductMetrics.instance.localLibrary(
+          strategies: Hive.box<StrategyData>(HiveBoxNames.strategiesBox).length,
+          folders: Hive.box<Folder>(HiveBoxNames.foldersBox).length,
+        );
+      }
 
       // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
 
@@ -380,6 +397,7 @@ class _MyAppState extends ConsumerState<MyApp> {
   ProviderSubscription<AppPreferences>? _discordPreferencesSub;
   ProviderSubscription<List<PlacedAgentNode>>? _discordAgentSub;
   ProviderSubscription<List<PlacedAbility>>? _discordAbilitySub;
+  ProviderSubscription<bool>? _cloudOutOfReachSub;
   Timer? _discordSyncDebounce;
 
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
@@ -493,6 +511,12 @@ class _MyAppState extends ConsumerState<MyApp> {
       appPreferencesProvider,
       (_, __) => _syncDiscordPresence(),
     );
+    // From the first value, so a cloud already reachable counts as reached.
+    _cloudOutOfReachSub = ref.listenManual(
+      _cloudOutOfReachProvider,
+      (previous, next) => _measureOffline(previous ?? false, next),
+      fireImmediately: true,
+    );
 
     unawaited(_syncDiscordPresence());
 
@@ -555,6 +579,7 @@ class _MyAppState extends ConsumerState<MyApp> {
     _discordMapSub?.close();
     _discordAgentSub?.close();
     _discordAbilitySub?.close();
+    _cloudOutOfReachSub?.close();
     _discordPreferencesSub?.close();
     unawaited(_discordPresence.dispose());
     super.dispose();
@@ -586,6 +611,44 @@ class _MyAppState extends ConsumerState<MyApp> {
         agentCount: ref.read(agentProvider).length,
         abilityCount: ref.read(abilityProvider).length,
       ),
+    );
+  }
+
+  /// When the cloud went out of reach, while it is.
+  DateTime? _offlineSince;
+
+  /// Whether the cloud was reachable since the last sign-in. Until then,
+  /// out of reach is the connection being made, not an outage.
+  bool _cloudReached = false;
+
+  /// The shortest stretch out of reach worth reporting: one a person could
+  /// notice. The connection state flickers for a moment at start and on
+  /// reconnects.
+  static const _noticeableOffline = Duration(seconds: 5);
+
+  /// Reports each noticeable stretch out of reach once it ends: how long,
+  /// how it ended, and how many changes waited to be sent.
+  void _measureOffline(bool wasOffline, bool isOffline) {
+    final signedIn = ref.read(authProvider).isAuthenticated;
+    if (!signedIn) _cloudReached = false;
+    if (signedIn && !isOffline) _cloudReached = true;
+    if (isOffline && !wasOffline && _cloudReached) {
+      _offlineSince = DateTime.now();
+    }
+    final since = _offlineSince;
+    if (!wasOffline || isOffline || since == null) return;
+    _offlineSince = null;
+    final duration = DateTime.now().difference(since);
+    if (duration < _noticeableOffline) return;
+    final auth = ref.read(authProvider);
+    ProductMetrics.instance.offlineSession(
+      duration: duration,
+      ended: !auth.isAuthenticated
+          ? 'signed_out'
+          : auth.convexAuthStatus == ConvexAuthStatus.incident
+              ? 'incident'
+              : 'online',
+      queuedChanges: ref.read(strategyOpQueueProvider).accountOutbox.workCount,
     );
   }
 

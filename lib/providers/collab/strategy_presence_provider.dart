@@ -7,6 +7,7 @@ import 'package:icarus/providers/collab/editing_presence_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/services/product_metrics.dart';
 
 export 'package:icarus/collab/presence/presence_models.dart';
 
@@ -41,10 +42,20 @@ class StrategyPresenceNotifier extends AutoDisposeNotifier<PresenceRoomState> {
       issuePass: () => repository.issueRoomPass(strategyPublicId),
     );
     _room = room;
-    final subscription = room.states.listen((next) => state = next);
+    // Each visit reports the most other people present at once.
+    final visitStarted = DateTime.now();
+    var peakPeople = 0;
+    final subscription = room.states.listen((next) {
+      if (next.people.length > peakPeople) peakPeople = next.people.length;
+      state = next;
+    });
     ref.onDispose(() {
       subscription.cancel();
       room.dispose();
+      ProductMetrics.instance.liveVisit(
+        peakPeople: peakPeople,
+        duration: DateTime.now().difference(visitStarted),
+      );
     });
     room.start();
     // What this user is editing goes out as it changes, and from the start.
