@@ -609,10 +609,19 @@ class _MyAppState extends ConsumerState<MyApp> {
   /// When the cloud went out of reach, while it is.
   DateTime? _offlineSince;
 
+  /// Whether the cloud was reachable since the last sign-in. Until then,
+  /// out of reach is the connection being made, not an outage.
+  bool _cloudReached = false;
+
   /// Reports each stretch out of reach once it ends: how long, how it
   /// ended, and how many changes waited to be sent.
   void _measureOffline(bool wasOffline, bool isOffline) {
-    if (isOffline && !wasOffline) _offlineSince = DateTime.now();
+    final signedIn = ref.read(authProvider).isAuthenticated;
+    if (!signedIn) _cloudReached = false;
+    if (signedIn && !isOffline) _cloudReached = true;
+    if (isOffline && !wasOffline && _cloudReached) {
+      _offlineSince = DateTime.now();
+    }
     final since = _offlineSince;
     if (!wasOffline || isOffline || since == null) return;
     _offlineSince = null;
@@ -633,6 +642,7 @@ class _MyAppState extends ConsumerState<MyApp> {
     ref.listen(
       _cloudOutOfReachProvider,
       (previous, next) => _measureOffline(previous ?? false, next),
+      fireImmediately: true,
     );
     ref.listen(authProvider, (previous, next) {
       bool settledSignedOut(AppAuthState? auth) =>
