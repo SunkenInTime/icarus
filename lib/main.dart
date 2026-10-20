@@ -47,6 +47,7 @@ import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/services/browser_url.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/services/cloud_usage_meter.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/services/cloud_sign_out_coordinator.dart';
 import 'package:icarus/services/discord_presence_service.dart';
@@ -228,6 +229,7 @@ Future<void> main(List<String> args) async {
       }
 
       await AnalyticsService.instance.initialize();
+      unawaited(CloudUsageMeter.instance.reportLeftover());
 
       // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
 
