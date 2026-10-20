@@ -1,7 +1,113 @@
 {
     "appName":  "Icarus",
-    "description":  "Format your strategy notes, organize folders by game mode, and keep view cones aligned at every agent size.",
+    "description":  "Sign in to keep your strategies in your account, share them with your team, and plan together live. Your library stays on this computer until you choose to move it.",
     "items":  [
+                  {
+                      "version":  "5.0.0+104",
+                      "shortVersion":  104,
+                      "changes":  [
+                                      {
+                                          "message":  "Sign in with email or Discord to save strategies to your account. They sync to every computer you use and to the web version of Icarus.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Your existing library stays on this computer. To bring a strategy or folder into your account, right-click it and choose Move to cloud, or drag it onto a cloud folder.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Keep working without a connection. Your cloud strategies stay on this computer: open them, edit them, and add, rename, move or delete pages, and it all syncs when you\u0027re back online. If a teammate changed something you changed offline, Icarus asks before replacing it. Creating, sharing and moving strategies in the cloud waits for the connection.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Share a strategy or folder with a link. Choose who can edit, see everyone who has access, and remove people at any time.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Plan together live: see your teammates\u0027 cursors and names, and an outline around anything they\u0027re changing. Their edits merge with yours item by item.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Watch your VALORANT replays on the map in the new Replays tab, then press Capture to turn any moment into a strategy page. Drop a .vrf file anywhere in Icarus, or open it from Explorer. Works with replays from VALORANT 13.08, and from 13.06 and earlier.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Review a round in the replay: press 1 to 0 to watch one player, see how each round ended and who killed whom with what, filter the killfeed for kills, the spike and abilities, and draw on the paused replay with the editor\u0027s pen.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Replays show who\u0027s flashed: their view cone shrinks away, their icon washes white with a crossed-out eye, and its outline fills as the flash wears off.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Keep replays Valorant might clear with the Keep button, and remove ones you don\u0027t need. Removed replays go to the Recycle Bin.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Deleted pages stay in Recently deleted for 30 days, so you can restore them.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Placed lineups are locked so they can\u0027t be moved by accident. Use Edit placement to adjust them, and copy lineups and images to the next or previous page.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Turn any placed ability with X.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Circles now grow to 110 m, enough for Brimstone\u0027s and Clove\u0027s smoke range, and Vyse\u0027s Shear can be shortened like Cypher\u0027s Trapwire.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Give agents VALORANT\u0027s new Warden rifle from the Weapon menu.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Share map themes as profile codes, try the new built-in Lotus Moss theme, and dim or hide the background dots.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Save screenshots and videos with a transparent background, to lay a plan over your own graphics: tick Transparent background when you take the screenshot or export the video.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Screenshot several pages at once: the camera shows a preview of every page, so tick the ones you want and save them to a folder together.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Export Library and folder export now include your cloud strategies.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "A short welcome tour explains what\u0027s new. Open it again any time from What\u0027s new.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "View cones light up the floor the way VALORANT\u0027s minimap does: overlapping cones no longer stack into haze, they read on every map theme, and they no longer dim the smokes and abilities under them.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "View cones now stop at the same walls VALORANT\u0027s minimap uses, and draw faster on every map.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Corrode matches its new VALORANT 13.08 layout, including view cones and the paths agents take between pages.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Omen\u0027s Paranoia and Vyse\u0027s Steel Garden now match their in-game sizes.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Text and images stay in place when resized on defense, and dragging is smoother with Discord status turned on.",
+                                          "type":  "fix"
+                                      }
+                                  ],
+                      "date":  "2026-10-20",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/5.0.0%2B104-windows",
+                      "platform":  "windows"
+                  },
                   {
                       "version":  "4.6.3+103",
                       "shortVersion":  103,
