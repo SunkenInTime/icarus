@@ -10,20 +10,22 @@ import 'package:icarus/services/analytics_service.dart';
 /// these counts are what it takes to know what a real user costs. Counts
 /// only: no ids, names or content.
 ///
-/// Counts not yet reported are kept on disk, so a session closed before its
-/// report is sent on the next start ([reportLeftover]).
+/// The counts are kept on disk as they change, and sent with the first
+/// count once [reportInterval] has passed since the first one, or on the
+/// next start ([reportLeftover]) when the session ends before that.
 class CloudUsageMeter {
   CloudUsageMeter({
     Future<void> Function(String event, Map<String, Object> properties)? report,
     Map<String, int>? Function()? load,
     Future<void> Function(Map<String, int>? counts)? save,
+    DateTime Function()? now,
     this.reportInterval = const Duration(minutes: 30),
-    this.saveDelay = const Duration(seconds: 5),
   })  : _report = report ??
             ((event, properties) => AnalyticsService.instance
                 .capture(event, properties: properties)),
         _load = load ?? _loadFromDisk,
-        _save = save ?? _saveToDisk;
+        _save = save ?? _saveToDisk,
+        _now = now ?? DateTime.now;
 
   static final CloudUsageMeter instance = CloudUsageMeter();
 
@@ -33,12 +35,11 @@ class CloudUsageMeter {
       _report;
   final Map<String, int>? Function() _load;
   final Future<void> Function(Map<String, int>? counts) _save;
+  final DateTime Function() _now;
   final Duration reportInterval;
-  final Duration saveDelay;
 
-  Timer? _reportTimer;
-  Timer? _saveTimer;
   final _counts = <String, int>{};
+  DateTime? _firstCountAt;
 
   /// A batch of [ops] edits sent to the server (ops:applyBatch).
   void batchSent(int ops) => _count({'batches_sent': 1, 'ops_sent': ops});
@@ -60,11 +61,12 @@ class CloudUsageMeter {
     for (final MapEntry(:key, :value) in by.entries) {
       _counts[key] = (_counts[key] ?? 0) + value;
     }
-    _reportTimer ??= Timer(reportInterval, () => unawaited(report()));
-    _saveTimer ??= Timer(saveDelay, () {
-      _saveTimer = null;
+    final first = _firstCountAt ??= _now();
+    if (_now().difference(first) >= reportInterval) {
+      unawaited(_reportCounted());
+    } else {
       unawaited(_save(Map.of(_counts)));
-    });
+    }
   }
 
   /// Sends the counts a session left unreported, from disk. Call once at
@@ -76,15 +78,10 @@ class CloudUsageMeter {
     await _send(leftover, leftover: true);
   }
 
-  /// Sends what was counted since the last report, if anything.
-  Future<void> report() async {
-    _reportTimer?.cancel();
-    _reportTimer = null;
-    _saveTimer?.cancel();
-    _saveTimer = null;
-    if (_counts.isEmpty) return;
+  Future<void> _reportCounted() async {
     final counts = Map.of(_counts);
     _counts.clear();
+    _firstCountAt = null;
     await _save(null);
     await _send(counts, leftover: false);
   }

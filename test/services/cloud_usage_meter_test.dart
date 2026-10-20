@@ -4,37 +4,34 @@ import 'package:icarus/services/cloud_usage_meter.dart';
 void main() {
   late List<(String, Map<String, Object>)> reported;
   late Map<String, int>? disk;
-  late CloudUsageMeter meter;
+  late DateTime clock;
 
-  CloudUsageMeter makeMeter({Duration interval = const Duration(hours: 1)}) =>
-      CloudUsageMeter(
+  CloudUsageMeter makeMeter() => CloudUsageMeter(
         report: (event, properties) async => reported.add((event, properties)),
         load: () => disk,
         save: (counts) async => disk = counts,
-        reportInterval: interval,
-        saveDelay: const Duration(milliseconds: 10),
+        now: () => clock,
+        reportInterval: const Duration(minutes: 30),
       );
 
   setUp(() {
     reported = [];
     disk = null;
-    meter = makeMeter();
+    clock = DateTime(2026, 10, 19, 12);
   });
 
-  test('reports counts only, summed since the last report', () async {
-    meter
+  test('keeps counts on disk as they change, summed', () async {
+    makeMeter()
       ..batchSent(3)
       ..batchSent(1)
       ..pageWatched(87)
       ..copyPass(4)
       ..copyFullRead(548)
       ..copyFullRead(2);
+    await pumpEventQueue();
 
-    await meter.report();
-
-    final (event, properties) = reported.single;
-    expect(event, 'cloud_usage');
-    expect(properties, {
+    expect(reported, isEmpty);
+    expect(disk, {
       'batches_sent': 2,
       'ops_sent': 4,
       'pages_watched': 1,
@@ -43,51 +40,57 @@ void main() {
       'copy_strategies_listed': 4,
       'copy_full_reads': 2,
       'copy_rows_read': 550,
-      'interval_minutes': 60,
-      'from_last_session': false,
     });
   });
 
-  test('nothing counted, nothing reported', () async {
-    await meter.report();
-    expect(reported, isEmpty);
-  });
-
-  test('reports on its own once the interval passes', () async {
-    meter = makeMeter(interval: const Duration(milliseconds: 30));
+  test('sends with the first count once the interval passed', () async {
+    final meter = makeMeter()..batchSent(1);
+    clock = clock.add(const Duration(minutes: 29));
     meter.batchSent(1);
+    await pumpEventQueue();
+    expect(reported, isEmpty);
 
-    await Future<void>.delayed(const Duration(milliseconds: 80));
+    clock = clock.add(const Duration(minutes: 1));
+    meter.pageWatched(10);
+    await pumpEventQueue();
 
-    expect(reported.single.$2['batches_sent'], 1);
+    expect(reported.single.$1, 'cloud_usage');
+    expect(reported.single.$2, {
+      'batches_sent': 2,
+      'ops_sent': 2,
+      'pages_watched': 1,
+      'page_rows_watched': 10,
+      'interval_minutes': 30,
+      'from_last_session': false,
+    });
+    expect(disk, isNull);
+
+    // The next report counts from here.
+    meter.batchSent(5);
+    await pumpEventQueue();
+    expect(reported, hasLength(1));
+    expect(disk, {'batches_sent': 1, 'ops_sent': 5});
   });
 
-  test('a session closed before its report sends it on the next start',
+  test('a session that ends early sends its counts on the next start',
       () async {
-    meter.batchSent(2);
-    await Future<void>.delayed(const Duration(milliseconds: 40));
-    expect(disk, {'batches_sent': 1, 'ops_sent': 2});
+    makeMeter().batchSent(2);
+    await pumpEventQueue();
 
     // The app closes here; the next start reads what was left.
-    final next = makeMeter();
-    await next.reportLeftover();
+    await makeMeter().reportLeftover();
 
     expect(reported.single.$2, {
       'batches_sent': 1,
       'ops_sent': 2,
-      'interval_minutes': 60,
+      'interval_minutes': 30,
       'from_last_session': true,
     });
     expect(disk, isNull);
   });
 
-  test('a sent report leaves nothing to send again', () async {
-    meter.batchSent(1);
-    await Future<void>.delayed(const Duration(milliseconds: 40));
-    await meter.report();
-
+  test('nothing left, nothing sent at start', () async {
     await makeMeter().reportLeftover();
-
-    expect(reported, hasLength(1));
+    expect(reported, isEmpty);
   });
 }
