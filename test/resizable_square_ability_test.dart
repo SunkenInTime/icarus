@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/abilities.dart';
@@ -6,6 +7,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -301,10 +303,13 @@ void main() {
         .abilityData! as ResizableSquareAbility;
     const mapScale = 1.25;
 
-    Future<({Size box, Rect body, Rect icon})> render(
+    const canvasKey = ValueKey('shear-canvas');
+
+    Future<({Size box, Rect body, Rect icon, List<int> pixels})> render(
       WidgetTester tester,
       Ability ability, {
       double? length,
+      AbilityVisualState? visualState,
     }) async {
       CoordinateSystem(playAreaSize: const Size(1920, 1080));
       final container = _createContainer();
@@ -314,19 +319,30 @@ void main() {
           container: container,
           child: Directionality(
             textDirection: TextDirection.ltr,
-            child: Stack(
-              children: [
-                Positioned(
-                  left: 300,
-                  top: 200,
-                  child: ability.createWidget(
-                    id: 'shear',
-                    isAlly: true,
-                    mapScale: mapScale,
-                    length: length,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: RepaintBoundary(
+                key: canvasKey,
+                child: SizedBox(
+                  width: 200,
+                  height: 300,
+                  child: Stack(
+                    children: [
+                      Positioned(
+                        left: 80,
+                        top: 20,
+                        child: ability.createWidget(
+                          id: 'shear',
+                          isAlly: true,
+                          mapScale: mapScale,
+                          length: length,
+                          visualState: visualState,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -337,6 +353,13 @@ void main() {
             (w) => w is CustomSquareWidget || w is ResizableSquareWidget)),
         body: tester.getRect(find.byKey(const ValueKey('square-range-body'))),
         icon: tester.getRect(find.byType(AbilityWidget)),
+        pixels: (await tester.runAsync(() async {
+          final boundary = tester.renderObject<RenderRepaintBoundary>(
+              find.byKey(canvasKey));
+          final image = await boundary.toImage();
+          final bytes = await image.toByteData();
+          return bytes!.buffer.asUint8List().toList();
+        }))!,
       );
       await tester.pumpWidget(const SizedBox.shrink());
       return result;
@@ -352,13 +375,22 @@ void main() {
           fixedShear.getSize(mapScale: mapScale, abilitySize: abilitySize));
     });
 
-    testWidgets('a saved Shear draws on the same pixels', (tester) async {
-      final before = await render(tester, fixedShear);
-      final after = await render(tester, shear, length: 0);
+    testWidgets('a saved Shear draws the same pixels', (tester) async {
+      // Decode the icon first so both renders draw its glyph.
+      await render(tester, fixedShear);
+      for (final visualState in const [
+        AbilityVisualState(),
+        AbilityVisualState(showRangeFill: false),
+      ]) {
+        final before =
+            await render(tester, fixedShear, visualState: visualState);
+        final after =
+            await render(tester, shear, length: 0, visualState: visualState);
 
-      expect(after.box, before.box);
-      expect(after.body, before.body);
-      expect(after.icon, before.icon);
+        expect(after.box, before.box);
+        expect(after.pixels, before.pixels,
+            reason: 'range shown: ${visualState.showRangeFill}');
+      }
     });
 
     testWidgets('a shortened Shear pulls its far end toward Vyse',
@@ -373,6 +405,21 @@ void main() {
       expect(short.body.bottom, full.body.bottom);
       expect(short.body.height,
           closeTo(5 * AgentData.inGameMeters * mapScale * scale, 0.001));
+    });
+
+    test('a page change tweens from the length a saved Shear draws', () {
+      final info = AgentData.agents[AgentType.vyse]!.abilities.first;
+      PlacedAbility placed(double length) => PlacedAbility(
+          data: info, position: Offset.zero, id: 'shear', length: length);
+      const short = 5 * AgentData.inGameMeters;
+
+      final entry =
+          PageTransitionEntry.move(from: placed(0), to: placed(short));
+
+      expect(entry.startLength, shear.height);
+      expect(entry.endLength, short);
+      expect(PageTransitionEntry.visualsDiffer(placed(0), placed(shear.height)),
+          isFalse);
     });
 
     test('shortens to 1 m like Trapwire', () {
