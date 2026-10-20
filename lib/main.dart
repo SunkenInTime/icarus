@@ -34,6 +34,7 @@ import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_copy_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -139,6 +140,15 @@ void _publishDeepLink(Uri uri, {required String source}) {
   }
   _deepLinkUriController.add(uri);
 }
+
+/// Signed in, and the cloud out of reach: the socket is down or the session
+/// is offline. What the sync status shows as Offline.
+final _cloudOutOfReachProvider = Provider<bool>((ref) {
+  final auth = ref.watch(authProvider);
+  if (!auth.isAuthenticated) return false;
+  final connected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
+  return !connected || auth.convexAuthStatus == ConvexAuthStatus.offline;
+});
 
 Future<void> main(List<String> args) async {
   await runZonedGuarded(
@@ -596,36 +606,35 @@ class _MyAppState extends ConsumerState<MyApp> {
     );
   }
 
-  /// When the cloud went offline, while it is.
+  /// When the cloud went out of reach, while it is.
   DateTime? _offlineSince;
 
-  /// Reports each stretch offline once it ends: how long, how it ended,
-  /// and how many changes waited to be sent.
-  void _measureOffline(AppAuthState? previous, AppAuthState next) {
-    final wasOffline = previous?.convexAuthStatus == ConvexAuthStatus.offline;
-    final isOffline = next.convexAuthStatus == ConvexAuthStatus.offline;
+  /// Reports each stretch out of reach once it ends: how long, how it
+  /// ended, and how many changes waited to be sent.
+  void _measureOffline(bool wasOffline, bool isOffline) {
     if (isOffline && !wasOffline) _offlineSince = DateTime.now();
     final since = _offlineSince;
-    if (wasOffline && !isOffline && since != null) {
-      _offlineSince = null;
-      ProductMetrics.instance.offlineSession(
-        duration: DateTime.now().difference(since),
-        ended: switch (next.convexAuthStatus) {
-          ConvexAuthStatus.ready => 'online',
-          ConvexAuthStatus.signedOut => 'signed_out',
-          ConvexAuthStatus.incident => 'incident',
-          _ => 'other',
-        },
-        queuedChanges:
-            ref.read(strategyOpQueueProvider).accountOutbox.workCount,
-      );
-    }
+    if (!wasOffline || isOffline || since == null) return;
+    _offlineSince = null;
+    final auth = ref.read(authProvider);
+    ProductMetrics.instance.offlineSession(
+      duration: DateTime.now().difference(since),
+      ended: !auth.isAuthenticated
+          ? 'signed_out'
+          : auth.convexAuthStatus == ConvexAuthStatus.incident
+              ? 'incident'
+              : 'online',
+      queuedChanges: ref.read(strategyOpQueueProvider).accountOutbox.workCount,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(
+      _cloudOutOfReachProvider,
+      (previous, next) => _measureOffline(previous ?? false, next),
+    );
     ref.listen(authProvider, (previous, next) {
-      _measureOffline(previous, next);
       bool settledSignedOut(AppAuthState? auth) =>
           auth != null && !auth.isAuthenticated && !auth.isLoading;
       // A held code is redeemed once the cloud is ready, or, once it is
