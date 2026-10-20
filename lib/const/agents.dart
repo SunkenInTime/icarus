@@ -983,11 +983,14 @@ class AgentData implements DraggableData {
         ],
       );
 
-      agent.abilities.first.abilityData = SquareAbility(
+      // Saved Shears have no length and draw at the full 12 m.
+      agent.abilities.first.abilityData = ResizableSquareAbility(
         width: 1 * inGameMeters,
         height: 12 * inGameMeters,
         iconPath: agent.abilities.first.iconPath,
         color: Colors.deepPurple,
+        minLength: inGameMeters * 1,
+        defaultToMaxLength: true,
       );
 
       agent.abilities[1].abilityData = CircleAbility(

@@ -9,6 +9,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/custom_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget.dart';
@@ -286,6 +287,99 @@ void main() {
             );
 
     expect(renderedSize.width, closeTo(modeledSize.dx, 0.0001));
+  });
+
+  group("Vyse's Shear", () {
+    // Shear before it could be resized, a fixed 12 m square.
+    final fixedShear = SquareAbility(
+      width: 1 * AgentData.inGameMeters,
+      height: 12 * AgentData.inGameMeters,
+      iconPath: 'assets/agents/Vyse/1.webp',
+      color: Colors.deepPurple,
+    );
+    final shear = AgentData.agents[AgentType.vyse]!.abilities.first
+        .abilityData! as ResizableSquareAbility;
+    const mapScale = 1.25;
+
+    Future<({Size box, Rect body, Rect icon})> render(
+      WidgetTester tester,
+      Ability ability, {
+      double? length,
+    }) async {
+      CoordinateSystem(playAreaSize: const Size(1920, 1080));
+      final container = _createContainer();
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 300,
+                  top: 200,
+                  child: ability.createWidget(
+                    id: 'shear',
+                    isAlly: true,
+                    mapScale: mapScale,
+                    length: length,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final result = (
+        box: tester.getSize(find.byWidgetPredicate(
+            (w) => w is CustomSquareWidget || w is ResizableSquareWidget)),
+        body: tester.getRect(find.byKey(const ValueKey('square-range-body'))),
+        icon: tester.getRect(find.byType(AbilityWidget)),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      return result;
+    }
+
+    test('keeps the box saved Shears were placed in', () {
+      const abilitySize = 42.0;
+      expect(
+          shear.getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize),
+          fixedShear.getAnchorPoint(
+              mapScale: mapScale, abilitySize: abilitySize));
+      expect(shear.getSize(mapScale: mapScale, abilitySize: abilitySize),
+          fixedShear.getSize(mapScale: mapScale, abilitySize: abilitySize));
+    });
+
+    testWidgets('a saved Shear draws on the same pixels', (tester) async {
+      final before = await render(tester, fixedShear);
+      final after = await render(tester, shear, length: 0);
+
+      expect(after.box, before.box);
+      expect(after.body, before.body);
+      expect(after.icon, before.icon);
+    });
+
+    testWidgets('a shortened Shear pulls its far end toward Vyse',
+        (tester) async {
+      final full = await render(tester, shear, length: 0);
+      final short =
+          await render(tester, shear, length: 5 * AgentData.inGameMeters);
+      final scale = CoordinateSystem.instance.scaleFactor;
+
+      expect(short.box, full.box);
+      expect(short.icon, full.icon);
+      expect(short.body.bottom, full.body.bottom);
+      expect(short.body.height,
+          closeTo(5 * AgentData.inGameMeters * mapScale * scale, 0.001));
+    });
+
+    test('shortens to 1 m like Trapwire', () {
+      expect(shear.defaultToMaxLength, isTrue);
+      expect(shear.minLength, AgentData.inGameMeters);
+      expect(shear.resolveLength(0), shear.height);
+    });
   });
 }
 
