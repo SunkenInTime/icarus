@@ -397,6 +397,7 @@ class _MyAppState extends ConsumerState<MyApp> {
   ProviderSubscription<AppPreferences>? _discordPreferencesSub;
   ProviderSubscription<List<PlacedAgentNode>>? _discordAgentSub;
   ProviderSubscription<List<PlacedAbility>>? _discordAbilitySub;
+  ProviderSubscription<bool>? _cloudOutOfReachSub;
   Timer? _discordSyncDebounce;
 
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
@@ -510,6 +511,12 @@ class _MyAppState extends ConsumerState<MyApp> {
       appPreferencesProvider,
       (_, __) => _syncDiscordPresence(),
     );
+    // From the first value, so a cloud already reachable counts as reached.
+    _cloudOutOfReachSub = ref.listenManual(
+      _cloudOutOfReachProvider,
+      (previous, next) => _measureOffline(previous ?? false, next),
+      fireImmediately: true,
+    );
 
     unawaited(_syncDiscordPresence());
 
@@ -572,6 +579,7 @@ class _MyAppState extends ConsumerState<MyApp> {
     _discordMapSub?.close();
     _discordAgentSub?.close();
     _discordAbilitySub?.close();
+    _cloudOutOfReachSub?.close();
     _discordPreferencesSub?.close();
     unawaited(_discordPresence.dispose());
     super.dispose();
@@ -639,11 +647,6 @@ class _MyAppState extends ConsumerState<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(
-      _cloudOutOfReachProvider,
-      (previous, next) => _measureOffline(previous ?? false, next),
-      fireImmediately: true,
-    );
     ref.listen(authProvider, (previous, next) {
       bool settledSignedOut(AppAuthState? auth) =>
           auth != null && !auth.isAuthenticated && !auth.isLoading;
