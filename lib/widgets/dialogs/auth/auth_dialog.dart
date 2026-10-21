@@ -79,6 +79,8 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
   }
 
   Future<void> _submit() async {
+    // Enter in a field still submits while a request is out.
+    if (_submitting || ref.read(authProvider).isLoading) return;
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     final confirm = _confirmController.text;
@@ -170,7 +172,11 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
     // through the browser. A Discord failure drops the pending state.
     ref.listen(authProvider, (previous, next) {
       if (next.isAuthenticated && previous?.isAuthenticated != true) {
-        Navigator.of(context).pop(true);
+        // Only while this dialog is on top: dismissed and still animating
+        // out, popping would close the route beneath it.
+        if (ModalRoute.of(context)?.isCurrent ?? false) {
+          Navigator.of(context).pop(true);
+        }
         return;
       }
       if (!_waitingForDiscord) {

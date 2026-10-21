@@ -985,6 +985,40 @@ void main() {
     expect(supabaseApi.resetRequests, 2);
   });
 
+  test('a sign-out forgets the sent link, so asking again sends', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final auth = container.read(authProvider.notifier);
+
+    await auth.sendPasswordReset('a@b.co');
+    expect(supabaseApi.resetRequests, 1);
+
+    // Signing out deletes the code the link needed; it is dead.
+    supabaseApi.emit(AuthChangeEvent.signedOut, null);
+    await pumpMicrotasks();
+
+    final again = await auth.sendPasswordReset('a@b.co');
+    expect(supabaseApi.resetRequests, 2);
+    expect(again.message, startsWith('If an account uses this email'));
+  });
+
+  test('a reset asked for again while the first is out sends once', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final auth = container.read(authProvider.notifier);
+
+    supabaseApi.resetCompletion = Completer<void>();
+    final first = auth.sendPasswordReset('a@b.co');
+    final second = auth.sendPasswordReset('a@b.co');
+    await pumpMicrotasks();
+    expect(supabaseApi.resetRequests, 1);
+
+    supabaseApi.resetCompletion!.complete();
+    expect((await first).sent, isTrue);
+    expect((await second).sent, isTrue);
+    expect(supabaseApi.resetRequests, 1);
+  });
+
   test('a reset asked for again within a minute says to wait', () async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -1852,6 +1886,7 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   AuthChangeEvent sessionFromUrlEvent = AuthChangeEvent.signedIn;
   String? resetRedirectTo;
   int resetRequests = 0;
+  Completer<void>? resetCompletion;
   Object? resetError;
   String? updatedPassword;
   Object? updatePasswordError;
@@ -1895,6 +1930,7 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
     required String redirectTo,
   }) async {
     resetRequests += 1;
+    await resetCompletion?.future;
     if (resetError case final Object error?) {
       throw error;
     }

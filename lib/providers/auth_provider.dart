@@ -581,10 +581,16 @@ class AuthProvider extends Notifier<AppAuthState> {
   /// at start), to tell a change of user from a change of session.
   Session? _sessionAtLastEvent;
 
-  /// The last reset link this run asked for, so a repeat within
-  /// [_passwordResetCooldown] doesn't break it (see [sendPasswordReset]).
+  /// The reset link this run asked for that can still be used, so a repeat
+  /// within [_passwordResetCooldown] doesn't break it (see
+  /// [sendPasswordReset]). Any sign-in, sign-out or Discord start uses up or
+  /// replaces the code the link needs, and forgets it.
   ({String email, DateTime at})? _lastPasswordReset;
   static const _passwordResetCooldown = Duration(seconds: 60);
+
+  /// A reset request still waiting on Supabase, and its address.
+  ({String email, Future<({String message, bool sent})> result})?
+      _pendingPasswordReset;
 
   @visibleForTesting
   static AuthProviderSupabaseApi? debugSupabaseApi;
@@ -784,6 +790,12 @@ class AuthProvider extends Notifier<AppAuthState> {
         event.event == AuthChangeEvent.passwordRecovery) {
       _signIns++;
     }
+    // Signing in spends the code a reset link needs; signing out deletes it.
+    if (event.event == AuthChangeEvent.signedIn ||
+        event.event == AuthChangeEvent.passwordRecovery ||
+        event.event == AuthChangeEvent.signedOut) {
+      _lastPasswordReset = null;
+    }
     if (event.event == AuthChangeEvent.passwordRecovery) {
       ref.read(passwordRecoveryProvider.notifier).start();
     }
@@ -829,6 +841,8 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   Future<void> signInWithDiscord() async {
+    // Discord's sign-in replaces the code a pending reset link needs.
+    _lastPasswordReset = null;
     state = state.copyWith(
       isLoading: true,
       isConvexUserReady: false,
@@ -1061,12 +1075,32 @@ class AuthProvider extends Notifier<AppAuthState> {
         sent: true,
       );
     }
+    // The same request again while the first is still out shares its answer
+    // rather than replacing its code.
+    final pending = _pendingPasswordReset;
+    if (pending != null && pending.email == address) return pending.result;
+
+    final result = _requestPasswordReset(email, where: where);
+    _pendingPasswordReset = (email: address, result: result);
+    try {
+      return await result;
+    } finally {
+      if (identical(_pendingPasswordReset?.result, result)) {
+        _pendingPasswordReset = null;
+      }
+    }
+  }
+
+  Future<({String message, bool sent})> _requestPasswordReset(
+    String email, {
+    required String where,
+  }) async {
     try {
       await _supabaseApi.resetPasswordForEmail(
         email,
         redirectTo: currentAuthRedirectUri().toString(),
       );
-      _lastPasswordReset = (email: address, at: DateTime.now());
+      _lastPasswordReset = (email: email.toLowerCase(), at: DateTime.now());
       return (
         message: 'If an account uses this email, a link to set a new '
             'password is on its way. Open it $where.',
