@@ -263,8 +263,12 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
 
       final path = Path();
       final screenPoint = coordinateSystem.coordinateToScreen(listOfPoints[0]);
-      final dotRadius = (coordinateSystem.scale(thickness * 0.25))
-          .clamp(1.0, coordinateSystem.scale(2.0))
+      // A radius of at least a pixel, even on a map so short that the
+      // largest dot's radius is under one.
+      final maxRadius = coordinateSystem.scale(2.0);
+      final dotRadius = coordinateSystem
+          .scale(thickness * 0.25)
+          .clamp(1.0, maxRadius < 1.0 ? 1.0 : maxRadius)
           .toDouble();
 
       path.addOval(Rect.fromCircle(center: screenPoint, radius: dotRadius));
