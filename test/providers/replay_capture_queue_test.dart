@@ -27,6 +27,7 @@ import 'package:icarus/replay/replay_capture.dart';
 import 'package:icarus/replay/replay_frame.dart';
 
 final _online = StateProvider<bool>((ref) => true);
+final _account = StateProvider<String?>((ref) => 'account-1');
 
 ReplayFrame _frame(double x, {int players = 1}) => ReplayFrame(
       timeMs: 1000,
@@ -61,7 +62,7 @@ void main() {
       replayCaptureMessageProvider.overrideWithValue(messages.add),
       convexStrategyRepositoryProvider.overrideWithValue(cloud),
       authProvider.overrideWith(_CloudReadyAuth.new),
-      cloudMediaAccountIdProvider.overrideWithValue('account-1'),
+      cloudMediaAccountIdProvider.overrideWith((ref) => ref.watch(_account)),
       convexConnectionSnapshotProvider
           .overrideWith((ref) => ref.watch(_online)),
       convexConnectionProvider
@@ -450,6 +451,38 @@ void main() {
     expect(await queue().discard([queued().captures.single.id]), isTrue);
   });
 
+  test(
+      "another account signed in mid-send gets none of the first one's captures",
+      () async {
+    void signIn(String accountId) {
+      cloud.signedInAs = accountId;
+      container.read(_account.notifier).state = accountId;
+    }
+
+    setOnline(false);
+    final first = session();
+    await first.capture(_frame(500), pageName: '0:10');
+    await first.capture(_frame(510), pageName: '0:20');
+    await session().capture(_frame(520), pageName: '1:10');
+    // Signed out and in as someone else while a page add is out.
+    cloud.afterPageAdd = (_) {
+      cloud.afterPageAdd = null;
+      signIn('account-2');
+    };
+    setOnline(true);
+    await queue().sendNow();
+
+    expect(cloud.ownerOf.values, everyElement('account-1'));
+    expect(queued().captures.where((c) => c.isFailed), isEmpty);
+    expect(queued().captures, hasLength(2));
+
+    signIn('account-1');
+    await queue().sendNow();
+    expect(queued().captures, isEmpty);
+    expect(cloud.ownerOf, hasLength(2));
+    expect(cloud.ownerOf.values, everyElement('account-1'));
+  });
+
   test('a record this build cannot read is kept and counted', () async {
     final box = Hive.box<String>(HiveBoxNames.replayCapturesBox);
     await box.put('future', jsonEncode({'version': 99}));
@@ -558,6 +591,11 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
   /// Folders new strategies were made in, by strategy id.
   final Map<String, String?> folderOf = {};
 
+  /// The account the server sees signed in. A strategy belongs to the one
+  /// that made it and is not found by any other.
+  String signedInAs = 'account-1';
+  final Map<String, String> ownerOf = {};
+
   /// Runs right after a page add is written, before it is answered.
   void Function(_Strategy strategy)? afterPageAdd;
 
@@ -627,6 +665,7 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
       );
     }
     folderOf.putIfAbsent(publicId, () => folderPublicId);
+    ownerOf.putIfAbsent(publicId, () => signedInAs);
     final strategy =
         strategies.putIfAbsent(publicId, () => _Strategy(name, mapData));
     if (strategy.pages.isEmpty) {
@@ -647,7 +686,9 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
   }) async {
     calls++;
     final strategy = strategies[strategyPublicId];
-    if (strategy == null) throw _notFound;
+    if (strategy == null || ownerOf[strategyPublicId] != signedInAs) {
+      throw _notFound;
+    }
     final now = DateTime.now();
     return RemoteStrategyShell(
       header: RemoteStrategyHeader(
@@ -682,8 +723,18 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
     String? accountSubject,
   }) async {
     _checkBuild();
+    if (accountSubject != null && accountSubject != signedInAs) {
+      calls++;
+      throw const ConvexFunctionException(
+        code: ConvexErrorCode.forbidden,
+        rawCode: 'FORBIDDEN',
+        message: 'Forbidden: these changes belong to a different account',
+      );
+    }
     final strategy = strategies[strategyPublicId];
-    if (strategy == null) throw _notFound;
+    if (strategy == null || ownerOf[strategyPublicId] != signedInAs) {
+      throw _notFound;
+    }
     final acks = <OpAck>[];
     if (ops.every((op) => op is ElementAddOp)) {
       itemBatches

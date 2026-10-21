@@ -114,6 +114,11 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
   /// The capture being sent now: discarded, it may still land.
   String? _sendingId;
 
+  /// The account whose captures are being sent. Once another is signed in,
+  /// none of them goes out, and no answer from then on is taken as about
+  /// them: the server may have read it from the other account's library.
+  String? _sendingFor;
+
   final Set<String> _discardedPageIds = {};
   final Set<String> _lostStrategyIds = {};
   final Map<String, String> _stuck = {};
@@ -264,6 +269,7 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
         _retry?.cancel();
         if (!_canSend()) return;
         final accountId = ref.read(cloudMediaAccountIdProvider);
+        _sendingFor = accountId;
         final byStrategy = <String, List<ReplayCaptureRecord>>{};
         for (final capture in state.forAccount(accountId)) {
           (byStrategy[capture.strategyId] ??= []).add(capture);
@@ -272,7 +278,9 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
         for (final captures in byStrategy.values) {
           captures.sort((a, b) => a.index.compareTo(b.index));
           for (final capture in captures) {
-            if (state.needsUser(capture) || !_canSend()) break;
+            if (state.needsUser(capture) || !_canSend() || _accountChanged) {
+              break;
+            }
             _sendingId = capture.id;
             bool delivered;
             try {
@@ -296,6 +304,13 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     } finally {
       _draining = false;
     }
+  }
+
+  bool get _accountChanged =>
+      ref.read(cloudMediaAccountIdProvider) != _sendingFor;
+
+  void _checkAccount() {
+    if (_accountChanged) throw const _AccountChanged();
   }
 
   ReplayCaptureRecord? _stored(String id) =>
@@ -401,6 +416,8 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
       return true;
     } on _Discarded {
       return false;
+    } on _AccountChanged {
+      return false;
     } on _StorageFailed {
       rethrow;
     } catch (error, stackTrace) {
@@ -414,23 +431,30 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     ConvexStrategyRepository repository,
     ReplayCaptureRecord c,
   ) async {
-    Future<void> create(String? folderId) =>
-        repository.createStrategyWithInitialPage(
-          publicId: c.strategyId,
-          name: c.strategyName,
-          mapData: c.mapData,
-          initialPagePublicId: c.pageId,
-          initialPageName: c.pageName,
-          initialPageIsAutoNamed: false,
-          initialPageIsAttack: c.isAttack,
-          initialPageSettings: c.settings,
-          folderPublicId: folderId,
-          themeProfileId: c.themeProfileId,
-        );
+    // The one call the server doesn't tie to the capture's account: it
+    // makes the strategy for whoever is signed in.
+    Future<void> create(String? folderId) {
+      _checkAccount();
+      return repository.createStrategyWithInitialPage(
+        publicId: c.strategyId,
+        name: c.strategyName,
+        mapData: c.mapData,
+        initialPagePublicId: c.pageId,
+        initialPageName: c.pageName,
+        initialPageIsAutoNamed: false,
+        initialPageIsAttack: c.isAttack,
+        initialPageSettings: c.settings,
+        folderPublicId: folderId,
+        themeProfileId: c.themeProfileId,
+      );
+    }
+
     try {
       await create(c.folderId);
       return c;
     } catch (error) {
+      // With someone else signed in, the refusal may be about them.
+      _checkAccount();
       // Its folder was deleted while it waited, or isn't this account's:
       // it goes to the top level.
       if (c.folderId == null ||
@@ -458,10 +482,13 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     try {
       final shell = await repository.fetchShell(c.strategyId);
       if (shell.header.mapData == c.mapData) return shell;
+      _checkAccount();
       await _failStrategy(c, CaptureFailureKind.mapChanged);
       return null;
     } catch (error) {
       if (!isTypedConvexNotFoundError(error)) rethrow;
+      // With someone else signed in, not found may only mean not theirs.
+      _checkAccount();
       await _failStrategy(c, CaptureFailureKind.deleted);
       return null;
     }
@@ -490,6 +517,10 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     Object error,
     StackTrace stackTrace,
   ) async {
+    // A refusal, or not found, may be about whoever is signed in now: it
+    // says nothing about this capture, which waits for its own account. A
+    // lost answer is still noted below, since the call may have landed.
+    if (_accountChanged && isConvexFunctionError(error)) return false;
     try {
       if (isConvexUnauthenticatedError(error)) {
         await ref.read(authProvider.notifier).reportConvexUnauthenticated(
@@ -600,6 +631,11 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
 
 class _Discarded implements Exception {
   const _Discarded();
+}
+
+/// Another account was signed in while a capture was being sent.
+class _AccountChanged implements Exception {
+  const _AccountChanged();
 }
 
 /// Writing a capture's progress to its box failed.
