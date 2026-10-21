@@ -178,6 +178,12 @@ void main() {
       r'data\\escaped.txt',
       r'data\',
       '',
+      'NUL.txt',
+      r'data\con',
+      'COM1.dll',
+      'lpt¹.txt',
+      'aux .txt',
+      r'CONOUT$',
     ]) {
       test('refuses "$unsafePath"', () {
         expect(
