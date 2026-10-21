@@ -426,7 +426,9 @@ class PlacedImageProvider extends Notifier<ImageState> {
     final target = await getImageFolder(toStrategyID);
     var missing = 0;
     for (final picture in pictures.toSet()) {
-      final name = imageFileName(picture.id, picture.fileExtension);
+      // A picture saved before extensions were recorded has none, and its
+      // file is the bare id, as the importer writes it.
+      final name = imageFileName(picture.id, picture.fileExtension ?? '');
       final file = name == null ? null : File(path.join(source.path, name));
       if (file == null || !await file.exists()) {
         missing++;

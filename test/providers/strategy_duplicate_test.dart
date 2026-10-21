@@ -375,12 +375,16 @@ void main() {
       );
       final folder = await PlacedImageProvider.getImageFolder('local-strategy');
       await File(path.join(folder.path, 'notes.txt')).writeAsString('stray');
-      PlacedImage picture(String id) => PlacedImage(
+      // A picture from before extensions were recorded: no extension, and a
+      // file named by its bare id.
+      await File(path.join(folder.path, 'legacy')).writeAsBytes([9]);
+      PlacedImage picture(String id, {String? fileExtension = '.png'}) =>
+          PlacedImage(
             position: const Offset(100, 100),
             id: id,
             aspectRatio: 1,
             scale: 1,
-            fileExtension: '.png',
+            fileExtension: fileExtension,
           );
       final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
       await box.put(
@@ -401,7 +405,11 @@ void main() {
               abilityData: const [],
               textData: const [],
               // "gone" has no file: an older duplicate already lost it.
-              imageData: [picture('kept'), picture('gone')],
+              imageData: [
+                picture('kept'),
+                picture('gone'),
+                picture('legacy', fileExtension: null),
+              ],
               utilityData: const [],
               sortIndex: 0,
               isAttack: true,
@@ -420,13 +428,13 @@ void main() {
           );
 
       final copy = box.values.singleWhere((s) => s.id != 'local-strategy');
-      expect(copy.pages.single.imageData, hasLength(2));
+      expect(copy.pages.single.imageData, hasLength(3));
       final copyFolder = await PlacedImageProvider.getImageFolder(copy.id);
       final copied = copyFolder
           .listSync()
           .map((entity) => path.basename(entity.path))
           .toList();
-      expect(copied, ['kept.png']);
+      expect(copied..sort(), ['kept.png', 'legacy']);
       expect(messages, [
         'Duplicated. One picture was already missing from the original, so '
             'the copy is missing it too.',
