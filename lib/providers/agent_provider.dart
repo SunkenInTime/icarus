@@ -50,6 +50,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
   void removeAgent(String id) {
     if (!ref.canEditPages) return;
+    // A copy taken away mid-drag (undo while it is held) may never see its
+    // drop: the dragged widget can be gone by then.
+    _draggedCopies.remove(id);
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);

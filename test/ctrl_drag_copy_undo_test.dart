@@ -193,4 +193,30 @@ void main() {
     expect(container.read(abilityProvider).map((a) => a.id), ['src']);
     expect(container.read(actionProvider), isEmpty);
   });
+
+  test('a copy undone mid-drag with no drop after leaves no marker', () {
+    final container = _createContainer();
+    final abilities = container.read(abilityProvider.notifier);
+    final actions = container.read(actionProvider.notifier);
+    abilities.fromHive([
+      PlacedAbility(
+        id: 'src',
+        data: _breachAbility,
+        position: const Offset(900, 500),
+      ),
+    ]);
+
+    final copy = abilities.duplicateAbilityAt(
+        sourceId: 'src', position: const Offset(900, 500))!;
+    // Undo while the drag is held; the dragged widget unmounts, so no drop.
+    actions.undoAction();
+    actions.redoAction();
+
+    abilities.updatePosition(const Offset(700, 400), copy);
+    actions.undoAction();
+    expect(
+      container.read(abilityProvider).firstWhere((a) => a.id == copy).position,
+      const Offset(900, 500),
+    );
+  });
 }
