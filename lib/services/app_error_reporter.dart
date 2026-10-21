@@ -264,7 +264,11 @@ class AppErrorReporter {
       home,
       forward,
       home.replaceAll(r'\', r'\\'),
-      Uri.encodeFull(forward),
+      // As a file URI's path writes it: a space as %20, # as %23. Windows
+      // paths come out as /C:/..., and a file URI puts its own / first.
+      Uri.file(home, windows: windows)
+          .path
+          .replaceFirst(RegExp(r'^/(?=[A-Za-z]:)'), ''),
     };
     var result = text;
     // Longest first, so the JSON form isn't half-replaced by the plain one.

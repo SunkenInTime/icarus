@@ -52,6 +52,17 @@ void main() {
       expect(redact(r'c:\users\alex smith\Documents'), r'~\Documents');
     });
 
+    test('covers a file URI of a home with a # in its name', () {
+      const hashHome = r'C:\Users\Alex#Smith';
+      final uri =
+          Uri.file(r'C:\Users\Alex#Smith\Documents\plan.ica', windows: true)
+              .toString();
+      expect(
+        AppErrorReporter.withHomeAsTilde(uri, home: hashHome, windows: true),
+        'file:///~/Documents/plan.ica',
+      );
+    });
+
     test('leaves a longer folder name that starts with the home', () {
       expect(redact(r'C:\Users\Alex Smithson\x'), r'C:\Users\Alex Smithson\x');
     });
