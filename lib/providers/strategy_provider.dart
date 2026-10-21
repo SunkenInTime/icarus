@@ -2292,6 +2292,33 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final newID = const Uuid().v4();
 
+    // The copy is saved only once it has every picture the original shows.
+    try {
+      await PlacedImageProvider.copyImageFiles(
+        fromStrategyID: strategyID,
+        toStrategyID: newID,
+      );
+    } on FileSystemException catch (error, stackTrace) {
+      log(
+        'Failed to copy the images of $strategyID: $error',
+        name: 'strategy',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      try {
+        final images = await PlacedImageProvider.getImageFolder(newID);
+        await images.parent.delete(recursive: true);
+      } on FileSystemException {
+        // Only disk space; no strategy points at this folder.
+      }
+      Settings.showToast(
+        message: "Couldn't duplicate this strategy: its images could not be "
+            'copied.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+
     final duplicatedStrategy = StrategyData(
       id: newID,
       name: "${originalStrategy.name} (Copy)",

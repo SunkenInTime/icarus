@@ -411,6 +411,23 @@ class PlacedImageProvider extends Notifier<ImageState> {
     return imagesDirectory;
   }
 
+  /// Copies every image file of [fromStrategyID] into [toStrategyID]'s
+  /// folder. Each strategy keeps its own files, so a copy that only pointed
+  /// at the original's would lose them when the original is deleted.
+  static Future<void> copyImageFiles({
+    required String fromStrategyID,
+    required String toStrategyID,
+  }) async {
+    if (kIsWeb) return;
+    final source = await getImageFolder(fromStrategyID);
+    final target = await getImageFolder(toStrategyID);
+    await for (final entity in source.list()) {
+      if (entity is File) {
+        await entity.copy(path.join(target.path, path.basename(entity.path)));
+      }
+    }
+  }
+
   static String buildImageFilePath(
     String imagesDirectoryPath,
     String imageID,
