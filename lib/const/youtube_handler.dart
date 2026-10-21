@@ -1,14 +1,21 @@
 import 'package:http/http.dart' as http;
 
-/// A YouTube video, and where to start it when the link says (`t` or
-/// `start`, in any form YouTube writes: `90`, `90s`, `1m30s`).
-typedef YoutubeVideo = ({String id, String? start});
+/// A YouTube video, and the second to start it at when the link says.
+typedef YoutubeVideo = ({String id, int? startSeconds});
 
 class YoutubeHandler {
   /// The page that plays a video inside the app, kept on its own origin.
   static const embedHost = 'embed.icarus-strats.xyz';
 
   static final RegExp _videoId = RegExp(r'^[A-Za-z0-9_-]+$');
+
+  /// An id with a start time, `<id>&t=42`, as the old parser handed links
+  /// to the embed page.
+  static final RegExp _idWithStart = RegExp(r'^([A-Za-z0-9_-]+)&t=(.*)$');
+
+  /// A start time in a form YouTube writes: `90`, `90s`, `1m30s`, `1h2m3s`.
+  static final RegExp _start = RegExp(r'^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$');
+
   static const _youtubeHosts = {
     'youtube.com',
     'm.youtube.com',
@@ -33,9 +40,16 @@ class YoutubeHandler {
   /// scheme. Null when the link names no video.
   static YoutubeVideo? parse(String youtubeLink) {
     final link = youtubeLink.trim();
-    if (_videoId.hasMatch(link)) return (id: link, start: null);
+    if (_videoId.hasMatch(link)) return (id: link, startSeconds: null);
+    if (_idWithStart.firstMatch(link) case final match?) {
+      return (id: match[1]!, startSeconds: _seconds(match[2]));
+    }
 
-    final uri = Uri.tryParse(link.contains('://') ? link : 'https://$link');
+    final uri = Uri.tryParse(switch (link) {
+      _ when link.contains('://') => link,
+      _ when link.startsWith('//') => 'https:$link',
+      _ => 'https://$link',
+    });
     if (uri == null) return null;
     final host = uri.host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
     final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
@@ -58,14 +72,26 @@ class YoutubeHandler {
     final start = uri.queryParameters['t'] ??
         uri.queryParameters['start'] ??
         fragmentStart;
-    return (id: id, start: start == null || start.isEmpty ? null : start);
+    return (id: id, startSeconds: _seconds(start));
+  }
+
+  /// [start] in whole seconds, or null when it is missing, zero or not a
+  /// time. The embed page reads only plain seconds reliably: it turns
+  /// `90s` into `start=NaN`.
+  static int? _seconds(String? start) {
+    final match = start == null ? null : _start.firstMatch(start);
+    if (match == null) return null;
+    final seconds = int.parse(match[1] ?? '0') * 3600 +
+        int.parse(match[2] ?? '0') * 60 +
+        int.parse(match[3] ?? '0');
+    return seconds > 0 ? seconds : null;
   }
 
   /// The embed page playing [video].
   static Uri embedUri(YoutubeVideo video) {
     return Uri.https(embedHost, '/', {
       'v': video.id,
-      if (video.start != null) 't': video.start!,
+      if (video.startSeconds != null) 't': '${video.startSeconds}',
     });
   }
 }

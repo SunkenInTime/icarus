@@ -51,6 +51,9 @@ class _YoutubeViewState extends State<YoutubeView>
     with AutomaticKeepAliveClientMixin {
   late final Future<void> _webViewWarmupFuture;
 
+  /// Whether the last page to finish loading was the embed.
+  bool _embedShown = false;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -103,6 +106,7 @@ class _YoutubeViewState extends State<YoutubeView>
                 initialUrlRequest: URLRequest(url: embed),
                 onLoadStart: (controller, url) =>
                     _keepOnEmbed(controller, url, embed),
+                onLoadStop: (controller, url) => _embedShown = _isEmbed(url),
               ),
             ),
           ],
@@ -111,12 +115,21 @@ class _YoutubeViewState extends State<YoutubeView>
     );
   }
 
+  static bool _isEmbed(WebUri? url) =>
+      url != null &&
+      url.scheme == 'https' &&
+      url.host == YoutubeHandler.embedHost;
+
   /// The view only ever shows our embed page. The player inside it loads
   /// in its own frame; a page that would replace the embed, like the one
   /// behind the player's YouTube links, opens in the user's browser and
   /// the embed comes back. On Windows the load can't be refused before it
   /// starts: shouldOverrideUrlLoading misses pages YouTube's service
   /// worker serves, so this catches every load as it starts.
+  ///
+  /// Only a page leaving a loaded embed counts. If the embed itself never
+  /// loads, say because its address redirects, sending each redirect to
+  /// the browser and loading the embed again would never end.
   void _keepOnEmbed(
     InAppWebViewController controller,
     WebUri? url,
@@ -124,9 +137,11 @@ class _YoutubeViewState extends State<YoutubeView>
   ) {
     if (url == null ||
         (url.scheme != 'https' && url.scheme != 'http') ||
-        (url.scheme == 'https' && url.host == YoutubeHandler.embedHost)) {
+        _isEmbed(url) ||
+        !_embedShown) {
       return;
     }
+    _embedShown = false;
     unawaited(launchUrl(url, mode: LaunchMode.externalApplication));
     unawaited(controller.loadUrl(urlRequest: URLRequest(url: embed)));
   }
