@@ -228,6 +228,8 @@ class FolderProvider extends Notifier<String?> {
       source: 'folder:delete',
       failureMessage: "Couldn't delete this cloud folder. Try again.",
     );
+    // Refused or offline before anything went: the library is as it was.
+    if (!result.didSucceed && deletedStrategies.isEmpty) return result;
 
     for (final id in deletedStrategies) {
       await ref.read(strategyProvider.notifier).forgetDeletedCloudStrategy(id);

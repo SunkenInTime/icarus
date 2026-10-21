@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
@@ -428,6 +429,11 @@ class _ActionRepository extends ConvexStrategyRepository {
   int deleteStrategyCalls = 0;
   int moveFolderCalls = 0;
   int moveStrategyCalls = 0;
+
+  /// The library holds one empty folder.
+  @override
+  Future<CloudLibraryInventory> fetchInventory() async =>
+      (folders: {'folder-1': null}, strategies: <String, String?>{});
 
   @override
   Future<void> deleteFolder(String folderPublicId) async {
