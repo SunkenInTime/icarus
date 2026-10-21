@@ -294,6 +294,21 @@ class ConvexStrategyRepository {
     var slicing = false;
     var registered = false;
     String? firstVersion;
+    PageGetSnapshotResult? lastWhole;
+
+    /// Until the slices first answer, the whole page is still watched: when
+    /// they fail first, it carries the page again from its latest answer,
+    /// and the slices are tried again once the page changes after that.
+    void giveUpSlices() {
+      final stopping = sliced;
+      sliced = null;
+      slicing = false;
+      if (stopping != null) unawaited(stopping.cancel());
+      if (lastWhole case final page?) {
+        firstVersion = _pageVersion(page);
+        controller.add(_pageSnapshot(page));
+      }
+    }
 
     void watchSlices(PageGetSnapshotResult page) {
       final starts = pageSliceStarts(page.elements.length);
@@ -323,13 +338,18 @@ class ConvexStrategyRepository {
           controller.add(page);
         },
         onError: (Object error, StackTrace stackTrace) {
+          if (!registered) {
+            giveUpSlices();
+            return;
+          }
           // Until the slices answer again, a read goes to the server rather
           // than to a page they no longer stand behind.
-          if (registered) {
-            final (_, watchers) = _slicedPages[key]!;
-            _slicedPages[key] = (null, watchers);
-          }
+          final (_, watchers) = _slicedPages[key]!;
+          _slicedPages[key] = (null, watchers);
           controller.addError(error, stackTrace);
+        },
+        onDone: () {
+          if (!registered) giveUpSlices();
         },
       );
     }
@@ -340,6 +360,7 @@ class ConvexStrategyRepository {
             .watch()
             .listen(
           (page) {
+            lastWhole = page;
             if (slicing) return;
             controller.add(_pageSnapshot(page));
             // The web client can hand over its cached answer and then the

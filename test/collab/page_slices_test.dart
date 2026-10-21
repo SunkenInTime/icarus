@@ -245,6 +245,36 @@ void main() {
       );
     });
 
+    test('slices that fail before they answer leave the whole page live',
+        () async {
+      await watch();
+      server.refuseParts = true;
+      server.publish(agents(20));
+      server.publish(agents(20, moved: _id(1)));
+      await pumpEventQueue();
+      expect(errors, isEmpty);
+
+      // A teammate's edit still shows, through the whole page.
+      server.publish(agents(20, moved: _id(2)));
+      await pumpEventQueue();
+      expect(
+        pages.last.elements.singleWhere((e) => e.publicId == _id(2)).revision,
+        2,
+      );
+
+      // Once the slices can be watched, the next change moves to them.
+      server.refuseParts = false;
+      server.publish(agents(20, moved: _id(3)));
+      await pumpEventQueue();
+      expect(server.watched, contains('page:getFrame'));
+      expect(server.cancelled, contains('page:getSnapshot'));
+      expect(
+        pages.last.elements.singleWhere((e) => e.publicId == _id(3)).revision,
+        2,
+      );
+      expect(errors, isEmpty);
+    });
+
     test('a slice that fails fails the page', () async {
       await watchSlicedPage(20);
 
@@ -311,6 +341,9 @@ final class _Server with SubscribeTogetherFromEach implements ConvexTransport {
 
   /// While set, the parts (frame and slices) don't answer.
   bool holdParts = false;
+
+  /// While set, the parts can't be watched at all.
+  bool refuseParts = false;
 
   void publish(List<Map<String, Object?>> elements) {
     page = pageAnswer(
@@ -381,6 +414,9 @@ final class _Server with SubscribeTogetherFromEach implements ConvexTransport {
   @override
   Stream<ConvexValue> subscribe(String name, ConvexObject args) {
     final key = _key(name, args);
+    if (refuseParts && name != 'page:getSnapshot') {
+      return Stream.error(StateError('could not watch $key'));
+    }
     watched.add(key);
     watchedArgs.add(args);
     if (name == 'page:getElementSlice') slices.add(args);

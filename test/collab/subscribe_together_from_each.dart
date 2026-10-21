@@ -6,7 +6,8 @@ import 'package:icarus/collab/transport/convex_transport.dart';
 /// answer from one state at a time: every value, once each query has one,
 /// whenever any of them answers. Answers that arrive in one go (before a
 /// microtask runs) go out together, as one server answer does. A query that
-/// fails has no value until it answers again.
+/// fails has no value until it answers again; one whose stream ends ends
+/// the group.
 mixin SubscribeTogetherFromEach implements ConvexTransport {
   @override
   Stream<List<ConvexValue>> subscribeTogether(
@@ -39,6 +40,9 @@ mixin SubscribeTogetherFromEach implements ConvexTransport {
               values[index] = null;
               controller.addError(error, stackTrace);
             },
+            // As in the real transport, where a query that can't be watched
+            // ends the group.
+            onDone: controller.close,
           ));
         }
       },
