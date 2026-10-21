@@ -100,6 +100,46 @@ void main() {
     expect(entry.agentTypes, [AgentType.sova, AgentType.jett]);
   });
 
+  test('a strategy on a map this build does not know leaves the list whole',
+      () async {
+    Map<String, Object?> row(String publicId, String mapData) => {
+          'publicId': publicId,
+          'name': publicId,
+          'mapData': mapData,
+          'folderPublicId': null,
+          'revision': 0,
+          'createdAt': 1700000000000,
+          'updatedAt': 1700000001000,
+          'themeProfileId': null,
+          'themeOverridePalette': null,
+          'role': 'editor',
+          'attackLabel': 'Attack',
+          'agentTypes': <String>[],
+        };
+    // A map newer than this build, or any string a peer with edit access
+    // wrote: that strategy is left out, the rest still list.
+    final rows = ConvexValue.fromDart([
+      row('mine', 'ascent'),
+      row('newer-map', 'some-future-map'),
+      row('junk', 'x' * 10000),
+      row('also-mine', 'summit'),
+    ]);
+    final transport = _RecordingTransport();
+    final repository = ConvexStrategyRepository(IcarusConvexApi(transport));
+    final folderList = repository.watchStrategiesForFolder(null).first;
+    final sharedList = repository.watchSharedStrategies().first;
+    await Future<void>.delayed(Duration.zero);
+    transport.emitSubscription('strategies:listForFolder', rows);
+    transport.emitSubscription('strategies:listSharedWithMe', rows);
+
+    for (final list in [await folderList, await sharedList]) {
+      expect(
+        [for (final entry in list) entry.strategy.id],
+        ['mine', 'also-mine'],
+      );
+    }
+  });
+
   test('folder views share one cached tree subscription', () async {
     final repository = _CountingRepository();
     final container = ProviderContainer(
