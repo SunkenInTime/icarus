@@ -11,7 +11,6 @@ import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
-import 'package:icarus/startup/hidden_folder_cleanup.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
 
@@ -108,68 +107,6 @@ void main() {
     }
     expect(hasImages('bind-exec'), isTrue);
     expect(container.read(pinnedItemsProvider), isEmpty);
-  });
-
-  group('folders an earlier delete left hidden', () {
-    /// The library as an earlier delete of "maps" left it: the folder and
-    /// the strategies directly in it went, its subfolders stayed.
-    Future<void> leftByAnEarlierDelete() async {
-      await folder('ascent', parent: 'maps');
-      await folder('retakes', parent: 'ascent');
-      await strategy('a-split', folder: 'ascent');
-      await strategy('b-retake', folder: 'retakes');
-    }
-
-    test('are deleted at startup, with what is in them', () async {
-      await leftByAnEarlierDelete();
-      // Everything the library shows stays.
-      await folder('bind');
-      await folder('sites', parent: 'bind');
-      await strategy('bind-exec', folder: 'sites');
-      await strategy('loose');
-      // The library shows a strategy whose folder is gone at the top level.
-      await strategy('top-level', folder: 'maps');
-
-      await deleteFoldersHiddenByEarlierDeletes(
-        container.read(folderProvider.notifier),
-      );
-
-      expect(folders().keys, unorderedEquals(['bind', 'sites']));
-      expect(
-        strategies().keys,
-        unorderedEquals(['bind-exec', 'loose', 'top-level']),
-      );
-      expect(hasImages('a-split'), isFalse);
-      expect(hasImages('b-retake'), isFalse);
-      expect(hasImages('top-level'), isTrue);
-    });
-
-    test('are deleted once: a folder hidden later stays on disk', () async {
-      await deleteFoldersHiddenByEarlierDeletes(
-        container.read(folderProvider.notifier),
-      );
-      await leftByAnEarlierDelete();
-
-      await deleteFoldersHiddenByEarlierDeletes(
-        container.read(folderProvider.notifier),
-      );
-
-      expect(folders().keys, unorderedEquals(['ascent', 'retakes']));
-      expect(strategies().keys, unorderedEquals(['a-split', 'b-retake']));
-    });
-
-    test('a folder in a parent loop is not one of them', () async {
-      await folder('left', parent: 'right');
-      await folder('right', parent: 'left');
-      await strategy('looped', folder: 'left');
-
-      await deleteFoldersHiddenByEarlierDeletes(
-        container.read(folderProvider.notifier),
-      );
-
-      expect(folders().keys, unorderedEquals(['left', 'right']));
-      expect(strategies().keys, ['looped']);
-    });
   });
 }
 

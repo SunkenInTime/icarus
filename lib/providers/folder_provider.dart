@@ -174,26 +174,6 @@ class FolderProvider extends Notifier<String?> {
     return _deleteLocalFolder(folderID);
   }
 
-  /// Deletes the folders an earlier delete left behind: deleting a folder
-  /// used to delete only the strategies directly in it, so its subfolders
-  /// stayed, inside a folder that no longer exists, where the library never
-  /// shows them. The delete promised to remove them. Says how many folders
-  /// went, and whether all of them did.
-  Future<({int deleted, bool allWent})> deleteHiddenFolders() async {
-    final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
-    final hiddenTops = folders.values
-        .where((f) => f.parentID != null && !folders.containsKey(f.parentID))
-        .map((f) => f.id)
-        .toList();
-    final before = folders.length;
-    var allWent = true;
-    for (final id in hiddenTops) {
-      final result = await _deleteLocalFolder(id);
-      if (!result.didSucceed) allWent = false;
-    }
-    return (deleted: before - folders.length, allWent: allWent);
-  }
-
   /// The server deletes only an empty folder, so the strategies go first,
   /// then the folders, each before its parent. What went stays gone when a
   /// later step fails, and trying again finishes the rest.

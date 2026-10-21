@@ -57,7 +57,6 @@ import 'package:icarus/services/open_cloud_strategy_store.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/startup/cloud_bootstrap.dart';
-import 'package:icarus/startup/hidden_folder_cleanup.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
@@ -490,14 +489,6 @@ class _MyAppState extends ConsumerState<MyApp> {
     ref.read(moveToCloudProvider);
     // Sends replay captures the app quit before saving.
     ref.read(replayCaptureQueueProvider);
-    // Here, not before runApp: the folder provider reads the sign-in state,
-    // which needs the cloud clients up. The library never shows these
-    // folders, so nothing the user does meanwhile can reach them.
-    if (PlatformPolicy.current.allowsLocalLibrary) {
-      unawaited(
-        deleteFoldersHiddenByEarlierDeletes(ref.read(folderProvider.notifier)),
-      );
-    }
     // Keeps cloud strategies on this computer for opening offline.
     ref.read(strategyCopyRefresherProvider);
 
