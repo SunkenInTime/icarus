@@ -127,6 +127,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
   void updatePosition(Offset position, String id) {
     if (!ref.canEditPages) return;
+    // Taken on every drop, so a copy undone mid-drag leaves no marker for a
+    // later move to find.
+    final droppedCopy = _draggedCopies.remove(id);
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);
@@ -136,7 +139,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
     if (coordinateSystem.isOutOfBounds(centerPosition)) {
       removeAgentAsAction(id);
-      _endCopyDrag(id);
+      _joinDroppedCopy(droppedCopy, id);
       return;
     }
     if (index < 0) return;
@@ -157,14 +160,12 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
-    _endCopyDrag(id);
+    _joinDroppedCopy(droppedCopy, id);
   }
 
   /// A dropped Ctrl-drag copy undoes in one step with the drop.
-  void _endCopyDrag(String id) {
-    if (_draggedCopies.remove(id)) {
-      ref.read(actionProvider.notifier).joinToAddition(id);
-    }
+  void _joinDroppedCopy(bool droppedCopy, String id) {
+    if (droppedCopy) ref.read(actionProvider.notifier).joinToAddition(id);
   }
 
   String? duplicateAgentAt({
@@ -528,6 +529,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   void fromHive(List<PlacedAgentNode> hiveAgents) {
     poppedAgents = [];
     _pendingEditBefore.clear();
+    _draggedCopies.clear();
     state = hiveAgents;
   }
 
@@ -568,6 +570,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   void clearAll() {
     poppedAgents = [];
     _pendingEditBefore.clear();
+    _draggedCopies.clear();
     state = [];
   }
 

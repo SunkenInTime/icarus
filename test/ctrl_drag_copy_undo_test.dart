@@ -148,4 +148,49 @@ void main() {
     actions.undoAction();
     expect(container.read(agentProvider).map((a) => a.id), ['src']);
   });
+
+  test('a copy undone mid-drag leaves a later move its own step', () {
+    final container = _createContainer();
+    final agents = container.read(agentProvider.notifier);
+    final actions = container.read(actionProvider.notifier);
+    agents.fromHive([
+      PlacedAgent(
+        id: 'src',
+        type: AgentType.jett,
+        position: const Offset(900, 500),
+      ),
+    ]);
+
+    final copy = agents.duplicateAgentAt(
+        sourceId: 'src', position: const Offset(900, 500))!;
+    // Undo while the drag is still held, then the drop of the copy.
+    actions.undoAction();
+    agents.updatePosition(const Offset(600, 500), copy);
+    actions.redoAction();
+
+    agents.updatePosition(const Offset(700, 400), copy);
+    actions.undoAction();
+    expect(
+      container.read(agentProvider).firstWhere((a) => a.id == copy).position,
+      const Offset(900, 500),
+    );
+  });
+
+  test('an ability copy dropped off the map leaves nothing to undo', () {
+    final container = _createContainer();
+    final abilities = container.read(abilityProvider.notifier);
+    abilities.fromHive([
+      PlacedAbility(
+        id: 'src',
+        data: _breachAbility,
+        position: const Offset(900, 500),
+      ),
+    ]);
+
+    final copy = abilities.duplicateAbilityAt(
+        sourceId: 'src', position: const Offset(900, 500))!;
+    abilities.removeAbilityAsAction(copy);
+    expect(container.read(abilityProvider).map((a) => a.id), ['src']);
+    expect(container.read(actionProvider), isEmpty);
+  });
 }

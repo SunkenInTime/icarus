@@ -55,6 +55,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
   void removeAbilityAsAction(String id) {
     if (!ref.canEditPages) return;
+    final droppedCopy = _draggedCopies.remove(id);
     final index = PlacedWidget.getIndexByID(id, state);
     if (index < 0) return;
 
@@ -69,18 +70,19 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
           ),
         );
     removeAbility(id);
-    _endCopyDrag(id);
+    _joinDroppedCopy(droppedCopy, id);
   }
 
   /// A dropped Ctrl-drag copy undoes in one step with the drop.
-  void _endCopyDrag(String id) {
-    if (_draggedCopies.remove(id)) {
-      ref.read(actionProvider.notifier).joinToAddition(id);
-    }
+  void _joinDroppedCopy(bool droppedCopy, String id) {
+    if (droppedCopy) ref.read(actionProvider.notifier).joinToAddition(id);
   }
 
   void updatePosition(Offset position, String id) {
     if (!ref.canEditPages) return;
+    // Taken on every drop, so a copy undone mid-drag leaves no marker for a
+    // later move to find.
+    final droppedCopy = _draggedCopies.remove(id);
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);
@@ -104,6 +106,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
     if (coordinateSystem.isOutOfBounds(centerPosition)) {
       removeAbilityAsAction(id);
+      _joinDroppedCopy(droppedCopy, id);
       return;
     }
 
@@ -123,7 +126,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
-    _endCopyDrag(id);
+    _joinDroppedCopy(droppedCopy, id);
   }
 
   String? duplicateAbilityAt({
@@ -355,6 +358,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   void fromHive(List<PlacedAbility> hiveAbilities) {
     poppedAbility = [];
     _pendingEditBefore.clear();
+    _draggedCopies.clear();
     state = hiveAbilities;
   }
 
@@ -373,6 +377,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   void clearAll() {
     poppedAbility = [];
     _pendingEditBefore.clear();
+    _draggedCopies.clear();
     state = [];
   }
 
