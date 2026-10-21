@@ -8,8 +8,11 @@ import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { DataModel } from "./_generated/dataModel";
 import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
-import { isSafeFileNameId } from "./lib/fileNameIds";
-import { serializeAssetForViewer } from "./lib/imageAssets";
+import { isSafeFileNameId, isSavableImageFileName } from "./lib/fileNameIds";
+import {
+  serializeAssetForViewer,
+  withPictureAliases,
+} from "./lib/imageAssets";
 import schema from "./schema";
 import { modules } from "./test.setup";
 
@@ -48,6 +51,7 @@ const unsafeIds = [
   ".",
   "",
   "a\u0000b",
+  "a?b",
   "x".repeat(201),
 ];
 
@@ -254,8 +258,10 @@ describe("image file names", () => {
         await ctx.db.insert("imageAssets", row("fine", ".png")),
         await ctx.db.insert("imageAssets", row("script", ".bat")),
         await ctx.db.insert("imageAssets", row("..\\..\\x", ".png")),
-        // Rows from before extensions were recorded have none.
+        // Rows from before extensions were recorded have none; the file is
+        // then the bare id, which must not bring its own extension.
         await ctx.db.insert("imageAssets", row("legacy", undefined)),
+        await ctx.db.insert("imageAssets", row("payload.bat", undefined)),
         // An image whose upload hasn't arrived stays "on its way".
         await ctx.db.insert("imageAssets", {
           publicId: "placeholder",
@@ -282,7 +288,26 @@ describe("image file names", () => {
       { publicId: "script", uploadStatus: "failed", hasUrl: false },
       { publicId: "..\\..\\x", uploadStatus: "failed", hasUrl: false },
       { publicId: "legacy", uploadStatus: "active", hasUrl: true },
+      { publicId: "payload.bat", uploadStatus: "failed", hasUrl: false },
       { publicId: "placeholder", uploadStatus: "pending", hasUrl: false },
     ]);
+  });
+
+  test("an old build's alias for a picture is only made under a name it can save", () => {
+    // Builds from before pictures had their own id find a copy's picture
+    // under the copy's own id, and save it under that id.
+    const picture = { publicId: "picture", fileExtension: ".png" };
+    const image = (id: string) =>
+      ({
+        deleted: false,
+        elementType: "image",
+        payload: { data: { id, assetId: "picture" } },
+      }) as unknown as Parameters<typeof withPictureAliases>[1][number];
+    const served = withPictureAliases(
+      [picture],
+      [image("copy"), image("..\\..\\Startup\\x"), image("a?b")],
+    );
+    expect(served.map((asset) => asset.publicId)).toEqual(["picture", "copy"]);
+    expect(isSavableImageFileName("copy", ".png")).toBe(true);
   });
 });

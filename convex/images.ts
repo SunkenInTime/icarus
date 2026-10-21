@@ -20,7 +20,10 @@ import {
   type Provider,
   type UploadStatus,
 } from "./lib/imageAssets";
-import { assertSafeFileNameId } from "./lib/fileNameIds";
+import {
+  assertSafeFileNameId,
+  isSavableImageFileName,
+} from "./lib/fileNameIds";
 import {
   action,
   internalAction,
@@ -834,7 +837,11 @@ export const getAssetUrl = query({
     if (asset === null) {
       throw notFoundError("Asset", args.assetPublicId);
     }
-    if (!isSavableImageFile(asset)) {
+    // An old build saves the picture under the id it asked by.
+    if (
+      !isSavableImageFile(asset) ||
+      !isSavableImageFileName(args.assetPublicId, inferFileExtension(asset))
+    ) {
       return { url: null };
     }
 
