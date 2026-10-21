@@ -14,8 +14,6 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/services/cloud_library_action.dart';
-import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
 
