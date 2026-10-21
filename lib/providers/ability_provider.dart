@@ -28,6 +28,9 @@ class AbilitySnapshot {
 class AbilityProvider extends Notifier<List<PlacedAbility>> {
   List<PlacedAbility> poppedAbility = [];
   final Map<String, ActionObjectState> _pendingEditBefore = {};
+
+  /// Copies [duplicateAbilityAt] made for a Ctrl-drag that has not dropped.
+  final Set<String> _draggedCopies = {};
   List<AbilitySnapshot> snapshots = [];
   static const _uuid = Uuid();
 
@@ -52,6 +55,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
   void removeAbilityAsAction(String id) {
     if (!ref.canEditPages) return;
+    final droppedCopy = _draggedCopies.remove(id);
     final index = PlacedWidget.getIndexByID(id, state);
     if (index < 0) return;
 
@@ -66,10 +70,19 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
           ),
         );
     removeAbility(id);
+    _joinDroppedCopy(droppedCopy, id);
+  }
+
+  /// A dropped Ctrl-drag copy undoes in one step with the drop.
+  void _joinDroppedCopy(bool droppedCopy, String id) {
+    if (droppedCopy) ref.read(actionProvider.notifier).joinToAddition(id);
   }
 
   void updatePosition(Offset position, String id) {
     if (!ref.canEditPages) return;
+    // Taken on every drop, so a copy undone mid-drag leaves no marker for a
+    // later move to find.
+    final droppedCopy = _draggedCopies.remove(id);
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);
@@ -93,6 +106,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
     if (coordinateSystem.isOutOfBounds(centerPosition)) {
       removeAbilityAsAction(id);
+      _joinDroppedCopy(droppedCopy, id);
       return;
     }
 
@@ -112,6 +126,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
+    _joinDroppedCopy(droppedCopy, id);
   }
 
   String? duplicateAbilityAt({
@@ -140,6 +155,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
       position: position,
     );
     addAbility(duplicatedAbility);
+    _draggedCopies.add(duplicatedAbility.id);
     // The drag that made the copy moves the copy: hold it like the source.
     ref
         .read(editorPointersProvider.notifier)
@@ -327,6 +343,9 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
   void removeAbility(String id) {
     if (!ref.canEditPages) return;
+    // A copy taken away mid-drag (undo while it is held) may never see its
+    // drop: the dragged widget can be gone by then.
+    _draggedCopies.remove(id);
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);
@@ -342,6 +361,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   void fromHive(List<PlacedAbility> hiveAbilities) {
     poppedAbility = [];
     _pendingEditBefore.clear();
+    _draggedCopies.clear();
     state = hiveAbilities;
   }
 
@@ -360,6 +380,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   void clearAll() {
     poppedAbility = [];
     _pendingEditBefore.clear();
+    _draggedCopies.clear();
     state = [];
   }
 

@@ -22,6 +22,9 @@ final agentProvider =
 class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   List<PlacedAgentNode> poppedAgents = [];
   final Map<String, ActionObjectState> _pendingEditBefore = {};
+
+  /// Copies [duplicateAgentAt] made for a Ctrl-drag that has not dropped.
+  final Set<String> _draggedCopies = {};
   static const _uuid = Uuid();
 
   @override
@@ -47,6 +50,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
   void removeAgent(String id) {
     if (!ref.canEditPages) return;
+    // A copy taken away mid-drag (undo while it is held) may never see its
+    // drop: the dragged widget can be gone by then.
+    _draggedCopies.remove(id);
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);
@@ -124,6 +130,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
   void updatePosition(Offset position, String id) {
     if (!ref.canEditPages) return;
+    // Taken on every drop, so a copy undone mid-drag leaves no marker for a
+    // later move to find.
+    final droppedCopy = _draggedCopies.remove(id);
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);
@@ -133,6 +142,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
     if (coordinateSystem.isOutOfBounds(centerPosition)) {
       removeAgentAsAction(id);
+      _joinDroppedCopy(droppedCopy, id);
       return;
     }
     if (index < 0) return;
@@ -153,6 +163,12 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
+    _joinDroppedCopy(droppedCopy, id);
+  }
+
+  /// A dropped Ctrl-drag copy undoes in one step with the drop.
+  void _joinDroppedCopy(bool droppedCopy, String id) {
+    if (droppedCopy) ref.read(actionProvider.notifier).joinToAddition(id);
   }
 
   String? duplicateAgentAt({
@@ -171,6 +187,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     final duplicatedAgent =
         _duplicateNode(sourceAgent, id: _uuid.v4(), position: position);
     addAgent(duplicatedAgent);
+    _draggedCopies.add(duplicatedAgent.id);
     // The drag that made the copy moves the copy: hold it like the source.
     ref
         .read(editorPointersProvider.notifier)
@@ -515,6 +532,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   void fromHive(List<PlacedAgentNode> hiveAgents) {
     poppedAgents = [];
     _pendingEditBefore.clear();
+    _draggedCopies.clear();
     state = hiveAgents;
   }
 
@@ -555,6 +573,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   void clearAll() {
     poppedAgents = [];
     _pendingEditBefore.clear();
+    _draggedCopies.clear();
     state = [];
   }
 
