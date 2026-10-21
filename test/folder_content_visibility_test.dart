@@ -1,9 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -174,22 +175,24 @@ void main() {
 
     expect(
       folderLastUpdated(
-        folder: root,
-        allFolders: [root, child],
-        allStrategies: [
-          strategy(
-            id: 'older',
-            name: 'Older',
-            folderID: root.id,
-            lastEdited: DateTime.utc(2026, 1, 3),
-          ),
-          strategy(
-            id: 'newer',
-            name: 'Newer',
-            folderID: child.id,
-            lastEdited: DateTime.utc(2026, 1, 5),
-          ),
-        ],
+        root,
+        LocalFolderIndex(
+          folders: [root, child],
+          strategies: [
+            strategy(
+              id: 'older',
+              name: 'Older',
+              folderID: root.id,
+              lastEdited: DateTime.utc(2026, 1, 3),
+            ),
+            strategy(
+              id: 'newer',
+              name: 'Newer',
+              folderID: child.id,
+              lastEdited: DateTime.utc(2026, 1, 5),
+            ),
+          ],
+        ).strategiesInTree(root),
       ),
       DateTime.utc(2026, 1, 5),
     );
@@ -219,10 +222,9 @@ void main() {
       dateCreated: DateTime.utc(2026, 1, 4),
     );
 
-    final summaryStrategies = strategiesInFolderTree(
-      folder: root,
-      allFolders: [root, child, grandchild, sibling],
-      allStrategies: [
+    final summaryStrategies = LocalFolderIndex(
+      folders: [root, child, grandchild, sibling],
+      strategies: [
         strategy(
           id: 'direct',
           name: 'Direct',
@@ -248,7 +250,7 @@ void main() {
           lastEdited: DateTime.utc(2026, 1, 8),
         ),
       ],
-    );
+    ).strategiesInTree(root);
 
     final viewData = FolderCardViewData(
       folder: root,
@@ -338,63 +340,74 @@ void main() {
 
     expect(
       folderLastUpdated(
-        folder: empty,
-        allFolders: [empty],
-        allStrategies: const [],
+        empty,
+        LocalFolderIndex(folders: [empty], strategies: const [])
+            .strategiesInTree(empty),
       ),
       DateTime.utc(2026, 1, 4),
     );
   });
 
-  test('folders sort by selected folder fields', () {
-    final alpha = folder(
-      id: 'a',
-      name: 'Alpha',
-      dateCreated: DateTime.utc(2026, 1, 3),
-    );
-    final zeta = folder(
-      id: 'z',
-      name: 'Zeta',
-      dateCreated: DateTime.utc(2026, 1, 1),
-    );
+  test('folder index matches a full scan of the library', () {
+    // A messy library: nesting, orphans whose parent is gone, a parent cycle,
+    // and strategies whose folder is gone. The index must give every folder
+    // the same strategies, in the same order, as scanning everything.
+    final random = math.Random(7);
+    final folders = [
+      for (var i = 0; i < 60; i++)
+        folder(
+          id: 'f$i',
+          name: 'Folder $i',
+          dateCreated: DateTime.utc(2026, 1, 1 + i % 28),
+          parentID: switch (random.nextInt(4)) {
+            0 => null,
+            1 => 'gone-${random.nextInt(3)}',
+            _ => 'f${random.nextInt(60)}',
+          },
+        ),
+    ];
     final strategies = [
-      strategy(
-        id: 'latest',
-        name: 'Latest',
-        folderID: zeta.id,
-        lastEdited: DateTime.utc(2026, 1, 6),
-      ),
+      for (var i = 0; i < 400; i++)
+        strategy(
+          id: 's$i',
+          name: 'Strategy $i',
+          folderID: switch (random.nextInt(8)) {
+            0 => null,
+            1 => 'gone-folder',
+            _ => 'f${random.nextInt(60)}',
+          },
+          lastEdited: DateTime.utc(2026, 2, 1).add(
+            Duration(hours: random.nextInt(2000)),
+          ),
+        ),
     ];
 
-    expect(
-      compareFoldersForSort(
-        a: alpha,
-        b: zeta,
-        sortBy: SortBy.alphabetical,
-        allFolders: [alpha, zeta],
-        allStrategies: strategies,
-      ),
-      lessThan(0),
-    );
-    expect(
-      compareFoldersForSort(
-        a: alpha,
-        b: zeta,
-        sortBy: SortBy.dateCreated,
-        allFolders: [alpha, zeta],
-        allStrategies: strategies,
-      ),
-      greaterThan(0),
-    );
-    expect(
-      compareFoldersForSort(
-        a: alpha,
-        b: zeta,
-        sortBy: SortBy.dateUpdated,
-        allFolders: [alpha, zeta],
-        allStrategies: strategies,
-      ),
-      lessThan(0),
-    );
+    List<String> fullScan(Folder root) {
+      final ids = <String>{};
+      final pending = [root];
+      while (pending.isNotEmpty) {
+        final current = pending.removeLast();
+        if (!ids.add(current.id)) continue;
+        pending.addAll(folders.where((item) => item.parentID == current.id));
+      }
+      return [
+        for (final item in strategies)
+          if (ids.contains(item.folderID)) item.id,
+      ];
+    }
+
+    final index = LocalFolderIndex(folders: folders, strategies: strategies);
+    for (final item in folders) {
+      expect(
+        index.strategiesInTree(item).map((strategy) => strategy.id),
+        fullScan(item),
+        reason: item.id,
+      );
+      expect(
+        index.childFolderCount(item.id),
+        folders.where((child) => child.parentID == item.id).length,
+        reason: item.id,
+      );
+    }
   });
 }

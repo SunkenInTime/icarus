@@ -57,82 +57,62 @@ bool folderBelongsToVisibleParent({
   return folder.parentID == currentFolderId;
 }
 
+/// The local library's folder tree, indexed once per build so each folder
+/// card reads its own subtree instead of rescanning the whole library.
 @visibleForTesting
-DateTime folderLastUpdated({
-  required Folder folder,
-  required Iterable<Folder> allFolders,
-  required Iterable<StrategyData> allStrategies,
-}) {
+class LocalFolderIndex {
+  LocalFolderIndex({
+    required Iterable<Folder> folders,
+    required Iterable<StrategyData> strategies,
+  }) {
+    for (final folder in folders) {
+      final parentID = folder.parentID;
+      if (parentID == null) continue;
+      (_foldersByParent[parentID] ??= []).add(folder);
+    }
+    var order = 0;
+    for (final strategy in strategies) {
+      _libraryOrder[strategy] = order++;
+      final folderID = strategy.folderID;
+      if (folderID == null) continue;
+      (_strategiesByFolder[folderID] ??= []).add(strategy);
+    }
+  }
+
+  final _foldersByParent = <String, List<Folder>>{};
+  final _strategiesByFolder = <String, List<StrategyData>>{};
+  final _libraryOrder = Map<StrategyData, int>.identity();
+
+  int childFolderCount(String folderId) =>
+      _foldersByParent[folderId]?.length ?? 0;
+
+  /// Strategies in [root] and every folder below it, in library order.
+  List<StrategyData> strategiesInTree(Folder root) {
+    final visited = <String>{};
+    final strategies = <StrategyData>[];
+    final pending = <Folder>[root];
+    while (pending.isNotEmpty) {
+      final current = pending.removeLast();
+      if (!visited.add(current.id)) continue;
+      strategies.addAll(_strategiesByFolder[current.id] ?? const []);
+      pending.addAll(_foldersByParent[current.id] ?? const []);
+    }
+    return strategies
+      ..sort((a, b) => _libraryOrder[a]!.compareTo(_libraryOrder[b]!));
+  }
+}
+
+/// The newest edit among [strategies], or the folder's creation date when
+/// none is newer.
+@visibleForTesting
+DateTime folderLastUpdated(Folder folder, List<StrategyData> strategies) {
   var latest = folder.dateCreated;
-  for (final strategy in strategiesInFolderTree(
-    folder: folder,
-    allFolders: allFolders,
-    allStrategies: allStrategies,
-  )) {
+  for (final strategy in strategies) {
     if (strategy.lastEdited.isAfter(latest)) {
       latest = strategy.lastEdited;
     }
   }
   return latest;
-}
-
-@visibleForTesting
-List<StrategyData> strategiesInFolderTree({
-  required Folder folder,
-  required Iterable<Folder> allFolders,
-  required Iterable<StrategyData> allStrategies,
-}) {
-  final folderIds = _folderAndDescendantIds(folder, allFolders);
-  return [
-    for (final strategy in allStrategies)
-      if (strategy.folderID != null && folderIds.contains(strategy.folderID))
-        strategy,
-  ];
-}
-
-@visibleForTesting
-int compareFoldersForSort({
-  required Folder a,
-  required Folder b,
-  required SortBy sortBy,
-  required Iterable<Folder> allFolders,
-  required Iterable<StrategyData> allStrategies,
-}) {
-  final result = switch (sortBy) {
-    SortBy.alphabetical => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-    SortBy.dateCreated => a.dateCreated.compareTo(b.dateCreated),
-    SortBy.dateUpdated => folderLastUpdated(
-        folder: a,
-        allFolders: allFolders,
-        allStrategies: allStrategies,
-      ).compareTo(
-        folderLastUpdated(
-          folder: b,
-          allFolders: allFolders,
-          allStrategies: allStrategies,
-        ),
-      ),
-  };
-  if (result != 0) return result;
-  return a.id.compareTo(b.id);
-}
-
-Set<String> _folderAndDescendantIds(Folder root, Iterable<Folder> allFolders) {
-  final foldersByParent = <String, List<Folder>>{};
-  for (final folder in allFolders) {
-    final parentID = folder.parentID;
-    if (parentID == null) continue;
-    (foldersByParent[parentID] ??= []).add(folder);
-  }
-
-  final ids = <String>{};
-  final pending = <Folder>[root];
-  while (pending.isNotEmpty) {
-    final current = pending.removeLast();
-    if (!ids.add(current.id)) continue;
-    pending.addAll(foldersByParent[current.id] ?? const []);
-  }
-  return ids;
 }
 
 class FolderContent extends ConsumerWidget {
@@ -219,32 +199,17 @@ class FolderContent extends ConsumerWidget {
             final allFolders = folderBox.values.toList();
             final allStrategies = strategyBox.values.toList();
             final existingFolderIds = allFolders.map((item) => item.id).toSet();
+            final index = LocalFolderIndex(
+              folders: allFolders,
+              strategies: allStrategies,
+            );
             final folders = [
               for (final item in allFolders)
                 if (folderBelongsToVisibleParent(
                   folder: item,
                   currentFolderId: folder?.id,
                 ))
-                  LibraryFolderRow(
-                    folder: item,
-                    store: LibraryWorkspace.local,
-                    lastUpdated: folderLastUpdated(
-                      folder: item,
-                      allFolders: allFolders,
-                      allStrategies: allStrategies,
-                    ),
-                    card: FolderCardViewData(
-                      folder: item,
-                      strategies: strategiesInFolderTree(
-                        folder: item,
-                        allFolders: allFolders,
-                        allStrategies: allStrategies,
-                      ),
-                      folderCount: allFolders
-                          .where((folder) => folder.parentID == item.id)
-                          .length,
-                    ),
-                  ),
+                  _localFolderRow(item, index),
             ];
             final strategies = [
               for (final item in allStrategies)
@@ -337,12 +302,12 @@ class FolderContent extends ConsumerWidget {
       );
     }
     // The cloud half lands all at once, so the grid shifts once.
-    final cloudFolders = [
-      if (!cloudLoading)
-        for (final entry
-            in foldersAsync?.valueOrNull ?? const <CloudFolderEntry>[])
-          _cloudFolderRow(ref, entry),
-    ];
+    final cloudFolders = _cloudFolderRows(
+      ref,
+      cloudLoading
+          ? const <CloudFolderEntry>[]
+          : foldersAsync?.valueOrNull ?? const <CloudFolderEntry>[],
+    );
     final cloudStrategies = [
       if (!cloudLoading)
         for (final entry
@@ -422,8 +387,43 @@ class FolderContent extends ConsumerWidget {
         policy.supports(PlatformFeature.importFiles);
   }
 
-  LibraryFolderRow _cloudFolderRow(WidgetRef ref, CloudFolderEntry entry) {
+  LibraryFolderRow _localFolderRow(Folder folder, LocalFolderIndex index) {
+    final strategies = index.strategiesInTree(folder);
+    return LibraryFolderRow(
+      folder: folder,
+      store: LibraryWorkspace.local,
+      lastUpdated: folderLastUpdated(folder, strategies),
+      card: FolderCardViewData(
+        folder: folder,
+        strategies: strategies,
+        folderCount: index.childFolderCount(folder.id),
+      ),
+    );
+  }
+
+  List<LibraryFolderRow> _cloudFolderRows(
+    WidgetRef ref,
+    List<CloudFolderEntry> entries,
+  ) {
+    if (entries.isEmpty) return const [];
+    // Child counts come from the whole tree, counted once rather than once
+    // per card.
     final tree = ref.watch(cloudAllFoldersProvider).valueOrNull ?? const [];
+    final childFolderCounts = <String, int>{};
+    for (final item in tree) {
+      final parentID = item.folder.parentID;
+      if (parentID == null) continue;
+      childFolderCounts[parentID] = (childFolderCounts[parentID] ?? 0) + 1;
+    }
+    return [
+      for (final entry in entries) _cloudFolderRow(entry, childFolderCounts),
+    ];
+  }
+
+  LibraryFolderRow _cloudFolderRow(
+    CloudFolderEntry entry,
+    Map<String, int> childFolderCounts,
+  ) {
     return LibraryFolderRow(
       folder: entry.folder,
       store: LibraryWorkspace.cloud,
@@ -431,9 +431,7 @@ class FolderContent extends ConsumerWidget {
       cloudRole: entry.role,
       card: FolderCardViewData.summary(
         folder: entry.folder,
-        folderCount: tree
-            .where((item) => item.folder.parentID == entry.folder.id)
-            .length,
+        folderCount: childFolderCounts[entry.folder.id] ?? 0,
         strategyCount: entry.strategyCount,
         maps: entry.mapPeeks,
         agentTypes: entry.agentTypes,
@@ -489,11 +487,10 @@ class FolderContent extends ConsumerWidget {
         key: ValueKey('cloud-loading'),
       );
     }
-    final folders = [
-      for (final entry
-          in foldersAsync.valueOrNull ?? const <CloudFolderEntry>[])
-        _cloudFolderRow(ref, entry),
-    ];
+    final folders = _cloudFolderRows(
+      ref,
+      foldersAsync.valueOrNull ?? const <CloudFolderEntry>[],
+    );
     final strategies = [
       for (final entry
           in strategiesAsync.valueOrNull ?? const <CloudStrategyEntry>[])
