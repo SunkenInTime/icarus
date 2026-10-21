@@ -303,6 +303,9 @@ Future<void> main(List<String> args) async {
 
 Future<void> warmUpWebViewEnvironment() {
   if (!isWindowsRuntime) {
+    // Only Windows needs a WebView2 runtime installed. Elsewhere, the web
+    // build included, the platform's own web view is always there.
+    isWebViewInitialized = true;
     isWebViewWarmupComplete = true;
     return Future.value();
   }
