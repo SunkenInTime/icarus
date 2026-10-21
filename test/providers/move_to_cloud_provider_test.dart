@@ -917,7 +917,10 @@ class _FakeCloud extends ConvexStrategyRepository {
   }
 
   @override
-  Future<void> deleteFolder(String folderPublicId) async {
+  Future<void> deleteFolder(
+    String folderPublicId, {
+    String? withinFolderPublicId,
+  }) async {
     if (folders.values.any((f) => f.parentId == folderPublicId) ||
         strategies.values.any((s) => s.folderId == folderPublicId)) {
       throw StateError('Folder is not empty');
@@ -1181,6 +1184,7 @@ class _FakeCloud extends ConvexStrategyRepository {
   Future<void> deleteStrategy({
     required String strategyPublicId,
     required int expectedRevision,
+    String? withinFolderPublicId,
   }) async {
     strategies.remove(strategyPublicId);
     deletedStrategies.add(strategyPublicId);

@@ -177,6 +177,8 @@ class FolderProvider extends Notifier<String?> {
   /// The server deletes only an empty folder, so the strategies go first,
   /// then the folders, each before its parent. What went stays gone when a
   /// later step fails, and trying again finishes the rest.
+  /// Each call names the folder being deleted, so the server refuses
+  /// anything moved out of it since the library was read.
   Future<CloudLibraryActionResult> _deleteCloudFolder(String folderID) async {
     final repository = ref.read(convexStrategyRepositoryProvider);
     final deletedStrategies = <String>[];
@@ -196,12 +198,13 @@ class FolderProvider extends Notifier<String?> {
                 await repository.deleteStrategy(
                   strategyPublicId: strategyId,
                   expectedRevision: shell.header.revision,
+                  withinFolderPublicId: folderID,
                 );
                 deletedStrategies.add(strategyId);
               }(),
         ]);
         for (final id in tree.reversed) {
-          await repository.deleteFolder(id);
+          await repository.deleteFolder(id, withinFolderPublicId: folderID);
         }
         return true;
       },

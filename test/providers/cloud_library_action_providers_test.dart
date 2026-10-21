@@ -436,7 +436,10 @@ class _ActionRepository extends ConvexStrategyRepository {
       (folders: {'folder-1': null}, strategies: <String, String?>{});
 
   @override
-  Future<void> deleteFolder(String folderPublicId) async {
+  Future<void> deleteFolder(
+    String folderPublicId, {
+    String? withinFolderPublicId,
+  }) async {
     deleteFolderCalls += 1;
     if (failDeleteFolder) throw StateError(secret);
   }
@@ -493,6 +496,7 @@ class _ActionRepository extends ConvexStrategyRepository {
   Future<void> deleteStrategy({
     required String strategyPublicId,
     required int expectedRevision,
+    String? withinFolderPublicId,
   }) async {
     deleteStrategyCalls += 1;
     if (failDeleteStrategy) throw StateError(secret);

@@ -87,6 +87,7 @@ void main() {
       expect(repository.folders.keys, ['bind']);
       expect(repository.strategies.keys, ['bind-exec', 'loose']);
       expect(repository.deletedFolders, ['retakes', 'ascent', 'maps']);
+      expect(repository.withinFolders, {'maps'});
       expect(
         ops.discarded,
         unorderedEquals(['maps-notes', 'a-split', 'b-retake']),
@@ -194,6 +195,9 @@ class _DeleteFolderRepository extends ConvexStrategyRepository {
   final Map<String, String?> folders;
   final Map<String, String?> strategies;
   final deletedFolders = <String>[];
+
+  /// The folder each delete said it was inside.
+  final withinFolders = <String?>{};
   final _deleteAttempted = Completer<void>();
 
   Future<void> get deleteAttempted => _deleteAttempted.future;
@@ -223,15 +227,21 @@ class _DeleteFolderRepository extends ConvexStrategyRepository {
   Future<void> deleteStrategy({
     required String strategyPublicId,
     required int expectedRevision,
+    String? withinFolderPublicId,
   }) async {
+    withinFolders.add(withinFolderPublicId);
     if (strategyPublicId == refuseStrategy) throw StateError('refused');
     expect(expectedRevision, 4);
     strategies.remove(strategyPublicId);
   }
 
   @override
-  Future<void> deleteFolder(String folderPublicId) async {
+  Future<void> deleteFolder(
+    String folderPublicId, {
+    String? withinFolderPublicId,
+  }) async {
     if (!_deleteAttempted.isCompleted) _deleteAttempted.complete();
+    withinFolders.add(withinFolderPublicId);
     if (shouldFail) {
       throw StateError('delete rejected');
     }

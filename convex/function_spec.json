@@ -39489,6 +39489,12 @@
               "type": "string"
             },
             "optional": false
+          },
+          "withinFolderPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
           }
         }
       },
@@ -193152,6 +193158,12 @@
               "type": "string"
             },
             "optional": false
+          },
+          "withinFolderPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
           }
         }
       },
