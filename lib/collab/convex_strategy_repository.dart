@@ -291,12 +291,18 @@ class ConvexStrategyRepository {
     late final StreamController<RemotePageSnapshot> controller;
     StreamSubscription<PageGetSnapshotResult>? whole;
     StreamSubscription<PageGetSnapshotResult>? sliced;
+    var slicing = false;
     var registered = false;
     String? firstVersion;
 
     void watchSlices(PageGetSnapshotResult page) {
       final starts = pageSliceStarts(page.elements.length);
       if (starts.length == 1) return;
+      // From here only the slices carry the page. They were asked for after
+      // the whole page's last answer arrived, so their first answer is at
+      // least as new; a later answer of the whole page could arrive after
+      // it, and the page shown would go back.
+      slicing = true;
       final (frame, slices) =
           _pageParts(strategyPublicId, pagePublicId, shareToken, starts);
       sliced = assembledPages(
@@ -334,6 +340,7 @@ class ConvexStrategyRepository {
             .watch()
             .listen(
           (page) {
+            if (slicing) return;
             controller.add(_pageSnapshot(page));
             // The web client can hand over its cached answer and then the
             // same one from the server: only different rows are a change.

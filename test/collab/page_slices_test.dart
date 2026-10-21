@@ -221,6 +221,30 @@ void main() {
       );
     });
 
+    test('once the slices are asked for, the whole page no longer shows',
+        () async {
+      await watch();
+      server.holdParts = true;
+      server.publish(agents(20));
+      server.publish(agents(20, moved: _id(1)));
+      await pumpEventQueue();
+      final shown = pages.length;
+
+      // The whole page answers before the slices do: on desktop the two
+      // arrive apart, and the slices' first answer may be the older one.
+      server.publish(agents(20, moved: _id(2)));
+      await pumpEventQueue();
+      expect(pages.length, shown);
+
+      server.releaseParts();
+      await pumpEventQueue();
+      expect(pages.length, shown + 1);
+      expect(
+        pages.last.elements.singleWhere((e) => e.publicId == _id(2)).revision,
+        2,
+      );
+    });
+
     test('a slice that fails fails the page', () async {
       await watchSlicedPage(20);
 
@@ -285,6 +309,9 @@ final class _Server with SubscribeTogetherFromEach implements ConvexTransport {
   final _live =
       <String, (String, ConvexObject, StreamController<ConvexValue>)>{};
 
+  /// While set, the parts (frame and slices) don't answer.
+  bool holdParts = false;
+
   void publish(List<Map<String, Object?>> elements) {
     page = pageAnswer(
       'p',
@@ -293,7 +320,16 @@ final class _Server with SubscribeTogetherFromEach implements ConvexTransport {
       assets: [assetRow('shot')],
     );
     for (final (name, args, controller) in _live.values) {
+      if (holdParts && name != 'page:getSnapshot') continue;
       controller.add(_answer(name, args));
+    }
+  }
+
+  /// Every part answers with what the server holds now.
+  void releaseParts() {
+    holdParts = false;
+    for (final (name, args, controller) in _live.values) {
+      if (name != 'page:getSnapshot') controller.add(_answer(name, args));
     }
   }
 
@@ -354,7 +390,9 @@ final class _Server with SubscribeTogetherFromEach implements ConvexTransport {
     _live[key] = (name, args, controller);
     // A live part answers at once with what the server holds now; the whole
     // page answers when the test publishes.
-    if (name != 'page:getSnapshot') controller.add(_answer(name, args));
+    if (name != 'page:getSnapshot' && !holdParts) {
+      controller.add(_answer(name, args));
+    }
     return controller.stream;
   }
 
