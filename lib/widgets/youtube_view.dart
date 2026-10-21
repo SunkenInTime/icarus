@@ -88,6 +88,7 @@ class _YoutubeViewState extends State<YoutubeView>
           );
         }
 
+        final embed = WebUri.uri(YoutubeHandler.embedUri(video));
         return Stack(
           children: [
             const Align(
@@ -97,14 +98,11 @@ class _YoutubeViewState extends State<YoutubeView>
             Positioned.fill(
               child: InAppWebView(
                 webViewEnvironment: webViewEnvironment,
-                initialSettings: InAppWebViewSettings(
-                  allowBackgroundAudioPlaying: false,
-                  useShouldOverrideUrlLoading: true,
-                ),
-                initialUrlRequest: URLRequest(
-                  url: WebUri.uri(YoutubeHandler.embedUri(video)),
-                ),
-                shouldOverrideUrlLoading: _keepOnEmbed,
+                initialSettings:
+                    InAppWebViewSettings(allowBackgroundAudioPlaying: false),
+                initialUrlRequest: URLRequest(url: embed),
+                onLoadStart: (controller, url) =>
+                    _keepOnEmbed(controller, url, embed),
               ),
             ),
           ],
@@ -114,22 +112,22 @@ class _YoutubeViewState extends State<YoutubeView>
   }
 
   /// The view only ever shows our embed page. The player inside it loads
-  /// in its own frame; anything that would replace the page itself, like
-  /// the player's YouTube links, opens in the user's browser instead.
-  Future<NavigationActionPolicy> _keepOnEmbed(
+  /// in its own frame; a page that would replace the embed, like the one
+  /// behind the player's YouTube links, opens in the user's browser and
+  /// the embed comes back. On Windows the load can't be refused before it
+  /// starts: shouldOverrideUrlLoading misses pages YouTube's service
+  /// worker serves, so this catches every load as it starts.
+  void _keepOnEmbed(
     InAppWebViewController controller,
-    NavigationAction action,
-  ) async {
-    final url = action.request.url;
-    if (!action.isForMainFrame ||
-        (url != null &&
-            url.scheme == 'https' &&
-            url.host == YoutubeHandler.embedHost)) {
-      return NavigationActionPolicy.ALLOW;
+    WebUri? url,
+    WebUri embed,
+  ) {
+    if (url == null ||
+        (url.scheme != 'https' && url.scheme != 'http') ||
+        (url.scheme == 'https' && url.host == YoutubeHandler.embedHost)) {
+      return;
     }
-    if (url != null && (url.scheme == 'https' || url.scheme == 'http')) {
-      unawaited(launchUrl(url, mode: LaunchMode.externalApplication));
-    }
-    return NavigationActionPolicy.CANCEL;
+    unawaited(launchUrl(url, mode: LaunchMode.externalApplication));
+    unawaited(controller.loadUrl(urlRequest: URLRequest(url: embed)));
   }
 }
