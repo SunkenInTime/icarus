@@ -122,6 +122,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_DartFn_Inputs_bool_Output_unit_AnyhowException(dynamic raw);
 
   @protected
+  FutureOr<void> Function(List<String?>)
+  dco_decode_DartFn_Inputs_list_opt_String_Output_unit_AnyhowException(
+    dynamic raw,
+  );
+
+  @protected
   FutureOr<void> Function(WebSocketConnectionState)
   dco_decode_DartFn_Inputs_web_socket_connection_state_Output_unit_AnyhowException(
     dynamic raw,
@@ -176,10 +182,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ClientError dco_decode_client_error(dynamic raw);
 
   @protected
+  GroupQuery dco_decode_group_query(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
 
   @protected
   PlatformInt64 dco_decode_isize(dynamic raw);
+
+  @protected
+  List<GroupQuery> dco_decode_list_group_query(dynamic raw);
+
+  @protected
+  List<String?> dco_decode_list_opt_String(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
@@ -316,10 +331,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ClientError sse_decode_client_error(SseDeserializer deserializer);
 
   @protected
+  GroupQuery sse_decode_group_query(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
   PlatformInt64 sse_decode_isize(SseDeserializer deserializer);
+
+  @protected
+  List<GroupQuery> sse_decode_list_group_query(SseDeserializer deserializer);
+
+  @protected
+  List<String?> sse_decode_list_opt_String(SseDeserializer deserializer);
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
@@ -452,6 +476,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_DartFn_Inputs_list_opt_String_Output_unit_AnyhowException(
+    FutureOr<void> Function(List<String?>) self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void
   sse_encode_DartFn_Inputs_web_socket_connection_state_Output_unit_AnyhowException(
     FutureOr<void> Function(WebSocketConnectionState) self,
@@ -512,10 +542,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_client_error(ClientError self, SseSerializer serializer);
 
   @protected
+  void sse_encode_group_query(GroupQuery self, SseSerializer serializer);
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_isize(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_group_query(
+    List<GroupQuery> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_opt_String(List<String?> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_prim_u_8_strict(

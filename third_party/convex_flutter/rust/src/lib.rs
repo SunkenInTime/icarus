@@ -16,6 +16,8 @@ use convex::{
     ConvexClient,
     ConvexClientBuilder,
     FunctionResult,
+    SubscribedSet,
+    SubscriberId,
     Value, // Convex client and result types
     WebSocketState as ConvexWebSocketState,
 };
@@ -147,6 +149,73 @@ impl AuthHandle {
     pub fn is_authenticated(&self) -> bool {
         self.is_authenticated.load(Ordering::SeqCst)
     }
+}
+
+/// One query of a group subscribed together (see
+/// [MobileConvexClient::subscribe_group]).
+#[frb]
+pub struct GroupQuery {
+    pub name: String,
+    pub args: HashMap<String, String>,
+}
+
+/// Where a group's queries stand in one set of results.
+#[derive(Debug, PartialEq)]
+enum GroupStep {
+    /// Some query has no result yet.
+    Waiting,
+    /// Some query failed: its message, and its ConvexError data as JSON.
+    Failed(String, Option<String>),
+    /// Every query has a value. Holds the values, and what to send for
+    /// each: its JSON, or None where it is the same as last sent.
+    Answered(Vec<FunctionResult>, Vec<Option<String>>),
+}
+
+/// Where the queries [ids] stand, given each one's result ([result_of]) and
+/// the values last sent ([sent]). A failure anywhere outranks a query still
+/// waiting, so an error shows as soon as it is known.
+fn group_step<'a, K>(
+    ids: &[K],
+    result_of: impl Fn(&K) -> Option<&'a FunctionResult>,
+    sent: Option<&[FunctionResult]>,
+) -> GroupStep {
+    let results: Vec<Option<&FunctionResult>> = ids.iter().map(result_of).collect();
+    for result in results.iter().flatten() {
+        match result {
+            FunctionResult::ErrorMessage(message) => {
+                return GroupStep::Failed(message.clone(), None);
+            }
+            FunctionResult::ConvexError(error) => {
+                return GroupStep::Failed(
+                    error.message.clone(),
+                    Some(
+                        serde_json::to_string(&serde_json::Value::from(error.data.clone()))
+                            .unwrap(),
+                    ),
+                );
+            }
+            FunctionResult::Value(_) => {}
+        }
+    }
+    let Some(values) = results
+        .into_iter()
+        .map(|result| result.cloned())
+        .collect::<Option<Vec<_>>>()
+    else {
+        return GroupStep::Waiting;
+    };
+    let payload = values
+        .iter()
+        .enumerate()
+        .map(|(index, result)| match (sent, result) {
+            (Some(sent), _) if sent[index] == *result => None,
+            (_, FunctionResult::Value(value)) => {
+                Some(serde_json::to_string(&serde_json::Value::from(value.clone())).unwrap())
+            }
+            _ => unreachable!("failures return above"),
+        })
+        .collect();
+    GroupStep::Answered(values, payload)
 }
 
 /// Adapter for Dart functions as subscribers, handling async callbacks.
@@ -333,6 +402,76 @@ impl MobileConvexClient {
         self.internal_subscribe(name, args, subscriber)
             .await
             .map_err(Into::into)
+    }
+
+    /// Subscribes to [queries] together, so their values always come from one
+    /// server state: separate subscriptions can each answer from a different
+    /// one, and a page read in parts would then show a state the server never
+    /// had.
+    ///
+    /// [on_update] gets every query's value at once, first when all of them
+    /// have one, then each time the server answers again. A value is JSON, or
+    /// None where it is the same as in the last update. [on_error] gets the
+    /// failure when any query fails; the next update after it sends every
+    /// value. Updates arrive in order, each after the last one's callback
+    /// returned.
+    #[frb]
+    pub async fn subscribe_group(
+        &self,
+        queries: Vec<GroupQuery>,
+        on_update: impl Fn(Vec<Option<String>>) -> DartFnFuture<()> + Send + Sync + 'static,
+        on_error: impl Fn(String, Option<String>) -> DartFnFuture<()> + Send + Sync + 'static,
+    ) -> Result<SubscriptionHandle, ClientError> {
+        let mut client = self.connected_client().await?;
+        let SubscribedSet {
+            subscriptions,
+            results,
+            mut updates,
+        } = client
+            .subscribe_set(
+                queries
+                    .into_iter()
+                    .map(|query| (query.name, parse_json_args(query.args)))
+                    .collect(),
+            )
+            .await?;
+        let (cancel_sender, cancel_receiver) = oneshot::channel::<()>();
+        self.rt.spawn(async move {
+            let ids: Vec<SubscriberId> = subscriptions.iter().map(|query| *query.id()).collect();
+            let mut sent: Option<Vec<FunctionResult>> = None;
+            let mut latest = Some(results);
+            let cancel_fut = cancel_receiver.fuse();
+            pin_mut!(cancel_fut);
+            loop {
+                if let Some(results) = latest.take() {
+                    match group_step(&ids, |id| results.get(id), sent.as_deref()) {
+                        GroupStep::Waiting => {}
+                        GroupStep::Failed(message, data) => {
+                            sent = None;
+                            on_error(message, data).await;
+                        }
+                        GroupStep::Answered(values, payload) => {
+                            on_update(payload).await;
+                            sent = Some(values);
+                        }
+                    }
+                }
+                select_biased! {
+                    _ = cancel_fut => break,
+                    update = updates.next().fuse() => match update {
+                        Some(results) => latest = Some(results),
+                        None => {
+                            log::warn!("Group subscription stream ended");
+                            break;
+                        }
+                    },
+                }
+            }
+            // Dropping the tokens unsubscribes every query.
+            drop(subscriptions);
+            debug!("Group subscription canceled");
+        });
+        Ok(SubscriptionHandle::new(cancel_sender))
     }
 
     /// Internal method for subscription logic.
@@ -560,5 +699,81 @@ fn handle_direct_function_result(result: FunctionResult) -> Result<String, Clien
             data: serde_json::ser::to_string(&serde_json::Value::from(e.data)).unwrap(),
         }),
         FunctionResult::ErrorMessage(msg) => Err(ClientError::ServerError { msg }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use convex::{ConvexError, FunctionResult, Value};
+
+    use super::{group_step, GroupStep};
+
+    fn value(text: &str) -> FunctionResult {
+        FunctionResult::Value(Value::from(text))
+    }
+
+    fn step(results: &HashMap<u32, FunctionResult>, sent: Option<&[FunctionResult]>) -> GroupStep {
+        group_step(&[1, 2], |id| results.get(id), sent)
+    }
+
+    #[test]
+    fn waits_until_every_query_has_a_value() {
+        let results = HashMap::from([(1, value("a"))]);
+        assert_eq!(step(&results, None), GroupStep::Waiting);
+    }
+
+    #[test]
+    fn first_answer_sends_every_value() {
+        let results = HashMap::from([(1, value("a")), (2, value("b"))]);
+        assert_eq!(
+            step(&results, None),
+            GroupStep::Answered(
+                vec![value("a"), value("b")],
+                vec![Some("\"a\"".to_string()), Some("\"b\"".to_string())],
+            ),
+        );
+    }
+
+    #[test]
+    fn later_answers_send_only_changed_values() {
+        let results = HashMap::from([(1, value("a")), (2, value("c"))]);
+        assert_eq!(
+            step(&results, Some(&[value("a"), value("b")])),
+            GroupStep::Answered(
+                vec![value("a"), value("c")],
+                vec![None, Some("\"c\"".to_string())]
+            ),
+        );
+        // An answer that changes nothing still arrives, as a single
+        // subscription's does.
+        assert_eq!(
+            step(&results, Some(&[value("a"), value("c")])),
+            GroupStep::Answered(vec![value("a"), value("c")], vec![None, None]),
+        );
+    }
+
+    #[test]
+    fn a_failure_outranks_a_query_still_waiting() {
+        let results = HashMap::from([(
+            2,
+            FunctionResult::ConvexError(ConvexError {
+                message: "denied".to_string(),
+                data: Value::from("ACCESS_DENIED"),
+            }),
+        )]);
+        assert_eq!(
+            step(&results, None),
+            GroupStep::Failed("denied".to_string(), Some("\"ACCESS_DENIED\"".to_string())),
+        );
+        let results = HashMap::from([
+            (1, value("a")),
+            (2, FunctionResult::ErrorMessage("boom".to_string())),
+        ]);
+        assert_eq!(
+            step(&results, None),
+            GroupStep::Failed("boom".to_string(), None)
+        );
     }
 }

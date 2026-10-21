@@ -209,6 +209,27 @@ class ConvexClient {
     onError: onError,
   );
 
+  /// Subscribes to [queries] together, so their values always come from one
+  /// server state. Separate subscriptions can each answer from a different
+  /// one.
+  ///
+  /// [onUpdate] gets every query's value at once, as JSON in the order
+  /// given, or null where it is the same as in the last update: first when
+  /// all of them have a value, then each time the server answers again.
+  /// [onError] gets the failure when any query fails; the next update after
+  /// it sends every value.
+  ///
+  /// Returns a handle that cancels every query in the group.
+  Future<SubscriptionHandle> subscribeGroup({
+    required List<({String name, Map<String, dynamic> args})> queries,
+    required void Function(List<String?>) onUpdate,
+    required void Function(String, String?) onError,
+  }) => _impl.subscribeGroup(
+    queries: queries,
+    onUpdate: onUpdate,
+    onError: onError,
+  );
+
   // ============================================================================
   // Authentication API
   // ============================================================================

@@ -628,6 +628,17 @@ class WebConvexClient implements IConvexClient {
     }
   }
 
+  // Icarus's web build reads through lib/collab/src/convex_client_web.dart,
+  // on Convex's own JavaScript client, and never through this one.
+  @override
+  Future<SubscriptionHandle> subscribeGroup({
+    required List<({String name, Map<String, dynamic> args})> queries,
+    required void Function(List<String?>) onUpdate,
+    required void Function(String, String?) onError,
+  }) {
+    throw UnsupportedError('subscribeGroup is native only.');
+  }
+
   /// Unsubscribes from a subscription.
   void _unsubscribe(String queryIdStr) {
     final subscription = _subscriptions.remove(queryIdStr);
