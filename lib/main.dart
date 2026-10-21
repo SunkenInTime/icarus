@@ -228,19 +228,21 @@ Future<void> main(List<String> args) async {
       await StrategyMigrator.migrateLocalLibrary(PlatformPolicy.current);
       if (PlatformPolicy.current.allowsLocalLibrary) {
         try {
-          final shown = await showFoldersWithMissingParent(
+          final moved = await moveOrphansToTopLevel(
             Hive.box<Folder>(HiveBoxNames.foldersBox),
+            Hive.box<StrategyData>(HiveBoxNames.strategiesBox),
           );
-          if (shown > 0) {
+          if (moved.folders > 0 || moved.strategies > 0) {
             AppErrorReporter.reportInfo(
-              'Showed $shown folders whose parent folder was gone',
+              'Moved ${moved.folders} folders and ${moved.strategies} '
+              'strategies whose folder was gone to the top level',
               source: 'main.hiddenFolders',
             );
           }
         } catch (error, stackTrace) {
           // The library opens either way; tried again next launch.
           AppErrorReporter.reportError(
-            "Couldn't show the folders whose parent folder was gone",
+            "Couldn't move the items whose folder was gone to the top level",
             source: 'main.hiddenFolders',
             error: error,
             stackTrace: stackTrace,

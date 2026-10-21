@@ -256,8 +256,9 @@ class FolderProvider extends Notifier<String?> {
       );
     }
 
-    // Strategies first: were only one write to land, what is left still
-    // shows (a strategy whose folder is gone shows at the top level).
+    // The two boxes are written separately. Should only one write land,
+    // what is left still shows, and the next launch moves anything whose
+    // folder is gone to the top level (moveOrphansToTopLevel).
     final removals = [
       strategies.deleteAll(strategyIds),
       folders.deleteAll(folderIds),

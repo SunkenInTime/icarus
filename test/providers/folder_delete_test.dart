@@ -14,7 +14,6 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
 
 const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
@@ -154,7 +153,7 @@ void main() {
     expect(hasImages('later-exec'), isTrue);
   });
 
-  test('folders whose parent is gone show again, and nothing is deleted',
+  test('what lost its folder moves to the top level; nothing is deleted',
       () async {
     // What deleting "maps" used to leave: the folder and the strategies
     // directly in it went, its subfolders stayed.
@@ -169,14 +168,16 @@ void main() {
     await folder('bind');
     await folder('sites', parent: 'bind');
     await strategy('bind-exec', folder: 'sites');
+    // Shown at the top already, but left out of backups; also what a
+    // folder delete that stopped between its two writes can leave.
     await strategy('top-level', folder: 'maps');
     // No delete makes a parent loop; it is left alone.
     await folder('left', parent: 'right');
     await folder('right', parent: 'left');
 
-    final shown = await showFoldersWithMissingParent(folders());
+    final moved = await moveOrphansToTopLevel(folders(), strategies());
 
-    expect(shown, 2);
+    expect(moved, (folders: 2, strategies: 1));
     expect(
       {for (final f in folders().values) f.id: f.parentID},
       {
@@ -195,10 +196,23 @@ void main() {
         ['a-split', 'b-retake', 'imported-exec', 'bind-exec', 'top-level'],
       ),
     );
+    expect(
+      {for (final s in strategies().values) s.id: s.folderID},
+      {
+        'a-split': 'ascent',
+        'b-retake': 'retakes',
+        'imported-exec': 'imported',
+        'bind-exec': 'sites',
+        'top-level': null,
+      },
+    );
     for (final id in strategies().keys) {
       expect(hasImages(id as String), isTrue, reason: id);
     }
-    expect(await showFoldersWithMissingParent(folders()), 0);
+    expect(
+      await moveOrphansToTopLevel(folders(), strategies()),
+      (folders: 0, strategies: 0),
+    );
   });
 }
 
