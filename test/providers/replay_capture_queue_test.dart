@@ -513,6 +513,30 @@ void main() {
     expect(cloud.strategies.values.single.orderedPages, hasLength(2));
   });
 
+  test('captures after one that landed across a switch and back still go',
+      () async {
+    setOnline(false);
+    final replay = session();
+    await replay.capture(_frame(500), pageName: '0:10');
+    await replay.capture(_frame(510), pageName: '0:20');
+    // Someone else signs in and out again while the first capture's items
+    // are out; they land, as the server checks them against account 1.
+    cloud.afterItems = () {
+      cloud.afterItems = null;
+      signIn('account-2');
+      signIn('account-1');
+    };
+    // Only coming back online starts sending: no second start to hide a
+    // drain that stopped and never started again.
+    setOnline(true);
+    for (var i = 0; i < 200 && queued().captures.isNotEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    expect(queued().captures, isEmpty);
+    expect(cloud.strategies.values.single.orderedPages, hasLength(2));
+  });
+
   test('a strategy made just before another account signed in may have landed',
       () async {
     setOnline(false);
@@ -675,6 +699,9 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
   /// Runs right after a page add is written, before it is answered.
   void Function(_Strategy strategy)? afterPageAdd;
 
+  /// Runs right after a batch of items is written, before it is answered.
+  void Function()? afterItems;
+
   /// The element ids of each batch of items sent, in order.
   final List<List<String>> itemBatches = [];
 
@@ -818,7 +845,8 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
     final strategy = strategies[strategyPublicId];
     if (strategy == null) throw _notFound;
     final acks = <OpAck>[];
-    if (ops.every((op) => op is ElementAddOp)) {
+    final isItemBatch = ops.every((op) => op is ElementAddOp);
+    if (isItemBatch) {
       itemBatches
           .add([for (final op in ops.cast<ElementAddOp>()) op.elementPublicId]);
     }
@@ -835,6 +863,7 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
       _answered[key] = ack;
       acks.add(ack);
     }
+    if (isItemBatch) afterItems?.call();
     _answer(
       lost: ops.any((op) => op is PageAddOp) ? losePageAdds : loseItemBatches,
     );

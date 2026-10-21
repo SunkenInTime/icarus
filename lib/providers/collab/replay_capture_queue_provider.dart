@@ -151,10 +151,14 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     );
     // Counted from the sign-in itself, which tells its listeners of each
     // change as it happens. The account id provider derived from it
-    // refreshes later, and misses a change undone before then.
+    // refreshes later, and misses a change undone before then; a drain that
+    // stops for one starts again here.
     ref.listen<String?>(
       authProvider.select((auth) => auth.user?.id),
-      (_, __) => _accountEpoch++,
+      (_, __) {
+        _accountEpoch++;
+        _kick();
+      },
     );
     ref.listen<String?>(cloudMediaAccountIdProvider, (_, __) => _kick());
     ref.onDispose(() => _retry?.cancel());
