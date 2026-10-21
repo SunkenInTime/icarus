@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:icarus/collab/generated/generated.dart';
 
 // A live page read in parts. Convex re-runs a live query in full whenever a
@@ -67,71 +65,15 @@ PageGetSnapshotResult assemblePage(
   );
 }
 
-/// The page whenever any part answers, once every part has. Parts that
-/// answer together (one write touching several slices) are put together
-/// once. An error from any part ends the page.
-Stream<PageGetSnapshotResult> watchAssembledPage(
-  Stream<PageGetFrameResult> frame,
-  List<Stream<PageGetElementSliceResult>> slices,
-) {
-  late final StreamController<PageGetSnapshotResult> controller;
-  final subscriptions = <StreamSubscription<Object?>>[];
-  PageGetFrameResult? latestFrame;
-  final latestSlices = List<PageGetElementSliceResult?>.filled(
-    slices.length,
-    null,
-  );
-  var emitScheduled = false;
-
-  void emitSoon() {
-    if (emitScheduled) return;
-    emitScheduled = true;
-    scheduleMicrotask(() {
-      emitScheduled = false;
-      final frameNow = latestFrame;
-      if (controller.isClosed || frameNow == null) return;
-      if (latestSlices.any((slice) => slice == null)) return;
-      controller.add(
-        assemblePage(frameNow, latestSlices.cast<PageGetElementSliceResult>()),
-      );
-    });
-  }
-
-  controller = StreamController<PageGetSnapshotResult>(
-    onListen: () {
-      subscriptions.add(frame.listen(
-        (value) {
-          latestFrame = value;
-          emitSoon();
-        },
-        onError: controller.addError,
-      ));
-      for (final (index, slice) in slices.indexed) {
-        subscriptions.add(slice.listen(
-          (value) {
-            latestSlices[index] = value;
-            emitSoon();
-          },
-          onError: controller.addError,
-        ));
-      }
-    },
-    onPause: () {
-      for (final subscription in subscriptions) {
-        subscription.pause();
-      }
-    },
-    onResume: () {
-      for (final subscription in subscriptions) {
-        subscription.resume();
-      }
-    },
-    onCancel: () async {
-      await Future.wait(
-        subscriptions.map((subscription) => subscription.cancel()),
-      );
-      subscriptions.clear();
-    },
-  );
-  return controller.stream;
-}
+/// The page each time its parts answer, from [parts]: the frame and then
+/// every slice in order, watched together (ConvexQuery.watchTogether) so
+/// they always come from one server state. Watched one by one, a write that
+/// touches two slices could show in one before the other, and the page put
+/// together in between would be one the server never held.
+Stream<PageGetSnapshotResult> assembledPages(Stream<List<Object?>> parts) =>
+    parts.map(
+      (parts) => assemblePage(
+        parts.first! as PageGetFrameResult,
+        parts.skip(1).cast<PageGetElementSliceResult>().toList(),
+      ),
+    );

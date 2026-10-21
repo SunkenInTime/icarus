@@ -123,6 +123,48 @@ void main() {
     expect(remote.answeredOnCurrentConnection(active()), isFalse);
   });
 
+  test(
+      'a read answered with the page its watch delivered still counts from '
+      'the connection that page came on', () async {
+    final repository = _Repository();
+    final queue = _StampedOpQueue();
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(() => queue),
+      convexConnectionSnapshotProvider.overrideWithValue(true),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+    ]);
+    addTearDown(container.dispose);
+    final remote = container.read(remoteEditorSnapshotProvider.notifier);
+    RemotePageSnapshot? active() =>
+        container.read(remoteEditorSnapshotProvider).valueOrNull?.activePage;
+    await container.read(remoteEditorSnapshotProvider.future);
+    await remote.openStrategy('strategy', activePagePublicId: 'a');
+
+    // The watch delivers page a, and reads of a answer with that very
+    // answer, as they do for a page watched in slices.
+    final delivered = _page('a', revision: 2);
+    repository.pageStreams['a']!.add(delivered);
+    await _settle();
+    repository.pageSnapshots['a'] = delivered;
+    expect(remote.answeredOnCurrentConnection(active()), isTrue);
+
+    // The connection drops and comes back before the watch answers again:
+    // a read then hands back the answer from before the drop.
+    queue.stamp = null;
+    queue.stamp = 1;
+    await remote.refresh();
+    expect(active()?.page.revision, 2);
+    expect(remote.answeredOnCurrentConnection(active()), isFalse);
+
+    // The watch answers on this connection: live again.
+    repository.pageStreams['a']!.add(_page('a', revision: 3));
+    await _settle();
+    expect(remote.answeredOnCurrentConnection(active()), isTrue);
+  });
+
   test('a restored page is read fresh with the shell and watched again',
       () async {
     final repository = _Repository();
@@ -910,5 +952,11 @@ class _UnusedTransport implements ConvexTransport {
 
   @override
   Stream<ConvexValue> subscribe(String name, ConvexObject args) =>
+      throw UnimplementedError();
+
+  @override
+  Stream<List<ConvexValue>> subscribeTogether(
+    List<(String, ConvexObject)> queries,
+  ) =>
       throw UnimplementedError();
 }

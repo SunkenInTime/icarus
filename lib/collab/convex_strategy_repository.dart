@@ -199,25 +199,30 @@ class ConvexStrategyRepository {
   }
 
   /// The pages watched in slices right now (see [watchPageSnapshot]), by
-  /// [_pageKey]: the latest page the slices put together, and how many
-  /// watch it.
-  final _slicedPages = <String, (PageGetSnapshotResult, int)>{};
+  /// [_pageKey]: the page the watch last handed on from its slices, or none
+  /// while they fail, and how many watch it.
+  final _slicedPages = <String, (RemotePageSnapshot?, int)>{};
 
-  String _pageKey(String strategyPublicId, String pagePublicId, String? token) =>
+  String _pageKey(
+          String strategyPublicId, String pagePublicId, String? token) =>
       '$strategyPublicId|$pagePublicId|${token ?? ''}';
 
   /// [pagePublicId], read once. A page watched in slices answers with the
-  /// latest page they put together, as the web client answers a read of any
+  /// page its watch last handed on, as the web client answers a read of any
   /// query it watches from the live answer: the read costs nothing, where
-  /// reading it through every slice would cost a call each.
+  /// reading it through every slice would cost a call each. It is that very
+  /// answer, so a reader that noted the connection it came on (see
+  /// RemoteEditorSnapshotNotifier.answeredOnCurrentConnection) still knows
+  /// when it came from before a reconnect.
   Future<RemotePageSnapshot> fetchPageSnapshot({
     required String strategyPublicId,
     required String pagePublicId,
     String? shareToken,
   }) async {
-    final live =
-        _slicedPages[_pageKey(strategyPublicId, pagePublicId, shareToken)];
-    if (live != null) return _pageSnapshot(live.$1);
+    final (live, _) =
+        _slicedPages[_pageKey(strategyPublicId, pagePublicId, shareToken)] ??
+            (null, 0);
+    if (live != null) return live;
     return _pageSnapshot(
       await _wholePage(strategyPublicId, pagePublicId, shareToken).fetch(),
     );
@@ -283,7 +288,7 @@ class ConvexStrategyRepository {
     String? shareToken,
   }) {
     final key = _pageKey(strategyPublicId, pagePublicId, shareToken);
-    late final StreamController<PageGetSnapshotResult> controller;
+    late final StreamController<RemotePageSnapshot> controller;
     StreamSubscription<PageGetSnapshotResult>? whole;
     StreamSubscription<PageGetSnapshotResult>? sliced;
     var registered = false;
@@ -294,12 +299,12 @@ class ConvexStrategyRepository {
       if (starts.length == 1) return;
       final (frame, slices) =
           _pageParts(strategyPublicId, pagePublicId, shareToken, starts);
-      sliced = watchAssembledPage(
-        frame.watch(),
-        [for (final slice in slices) slice.watch()],
+      sliced = assembledPages(
+        ConvexQuery.watchTogether([frame, ...slices]),
       ).listen(
-        (page) {
-          final (_, watchers) = _slicedPages[key] ?? (page, 0);
+        (assembled) {
+          final page = _pageSnapshot(assembled);
+          final (_, watchers) = _slicedPages[key] ?? (null, 0);
           // The slices answered: they carry the page from here on.
           if (whole case final stopping?) {
             whole = null;
@@ -311,17 +316,25 @@ class ConvexStrategyRepository {
           }
           controller.add(page);
         },
-        onError: controller.addError,
+        onError: (Object error, StackTrace stackTrace) {
+          // Until the slices answer again, a read goes to the server rather
+          // than to a page they no longer stand behind.
+          if (registered) {
+            final (_, watchers) = _slicedPages[key]!;
+            _slicedPages[key] = (null, watchers);
+          }
+          controller.addError(error, stackTrace);
+        },
       );
     }
 
-    controller = StreamController<PageGetSnapshotResult>(
+    controller = StreamController<RemotePageSnapshot>(
       onListen: () {
         whole = _wholePage(strategyPublicId, pagePublicId, shareToken)
             .watch()
             .listen(
           (page) {
-            controller.add(page);
+            controller.add(_pageSnapshot(page));
             // The web client can hand over its cached answer and then the
             // same one from the server: only different rows are a change.
             final version = _pageVersion(page);
@@ -354,7 +367,7 @@ class ConvexStrategyRepository {
         ]);
       },
     );
-    return controller.stream.map(_pageSnapshot);
+    return controller.stream;
   }
 
   /// Which of [assetPublicIds] the strategy's content shows on the server,
@@ -1207,8 +1220,7 @@ MapThemePalette? _mapThemePalette(
 
 /// The shell in [answer], a strategy:getShell answer the copy on this
 /// computer kept. Throws when it does not decode.
-RemoteStrategyShell strategyShellFromCopy(ConvexValue answer) =>
-    _strategyShell(
+RemoteStrategyShell strategyShellFromCopy(ConvexValue answer) => _strategyShell(
       StrategyGetShellResult.decode(answer, 'copy.strategy:getShell'),
       fromCopy: true,
     );

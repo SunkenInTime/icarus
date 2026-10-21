@@ -87,9 +87,12 @@ class RemoteEditorSnapshotNotifier
   ({String pageId, Map<String, RemoteImageAsset> assets})? _lastReconciled;
 
   /// The connection each page answer was received on (see
-  /// StrategyOpQueueNotifier.liveStamp), keyed by the answer itself. None for
-  /// an answer received while disconnected.
+  /// StrategyOpQueueNotifier.liveStamp), keyed by the answer itself:
+  /// [_receivedDisconnected] for one received while disconnected.
   final Expando<int> _receivedOn = Expando('receivedOn');
+
+  /// Never a connection's stamp, which counts disconnects from zero.
+  static const _receivedDisconnected = -1;
 
   /// Whether [page] is a live server answer received on the connection that
   /// is up now: none since its connection dropped, and none from this
@@ -104,10 +107,14 @@ class RemoteEditorSnapshotNotifier
   int? get _connectionStamp =>
       ref.read(strategyOpQueueProvider.notifier).liveStamp;
 
-  /// Records that [page] was received now.
+  /// Records that [page] was received now, or keeps when it was first
+  /// received: a read of a page watched in slices hands back the very answer
+  /// the watch delivered (see ConvexStrategyRepository.fetchPageSnapshot),
+  /// and it came on that delivery's connection, not this read's.
   RemotePageSnapshot _received(RemotePageSnapshot page) {
-    final stamp = _connectionStamp;
-    if (stamp != null && !page.fromCopy) _receivedOn[page] = stamp;
+    if (!page.fromCopy) {
+      _receivedOn[page] ??= _connectionStamp ?? _receivedDisconnected;
+    }
     return page;
   }
 

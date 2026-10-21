@@ -8,6 +8,7 @@ import 'package:icarus/collab/page_slices.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 
 import 'strategy_copy_fixtures.dart';
+import 'subscribe_together_from_each.dart';
 
 void main() {
   test('slices hold about ten elements each, from 1 to 16 slices', () {
@@ -119,8 +120,8 @@ void main() {
       final whole = server.page.toDart();
       final inPlaceOrder = ConvexValue.fromDart({
         ...whole,
-        'elements': [...whole['elements']! as List<Object?>]..sort(
-            (a, b) => ((a! as Map)['publicId'] as String)
+        'elements': [...whole['elements']! as List<Object?>]..sort((a, b) =>
+            ((a! as Map)['publicId'] as String)
                 .compareTo((b! as Map)['publicId'] as String)),
       });
       expect(
@@ -173,7 +174,9 @@ void main() {
       );
 
       expect(server.reads, isEmpty);
-      expect(read.serverAnswer?.toDart(), pages.last.serverAnswer?.toDart());
+      // The very answer the watch handed on, so whoever noted when it came
+      // still knows.
+      expect(read, same(pages.last));
       expect(
         read.elements.singleWhere((e) => e.publicId == _id(5)).revision,
         2,
@@ -226,6 +229,43 @@ void main() {
 
       expect(errors.single, isA<StateError>());
     });
+
+    test(
+        'while a slice fails, no page is put together and reads go to the '
+        'server', () async {
+      await watchSlicedPage(20);
+      server.fail(
+          'page:getElementSlice from "8"',
+          const ConvexTransportError(
+            rawCode: 'TRANSIENT',
+            message: 'refused',
+          ));
+      await pumpEventQueue();
+      final shown = pages.length;
+
+      // The other slice answering alone shows nothing.
+      server.answerAgain('page:getElementSlice from ""');
+      await pumpEventQueue();
+      expect(pages.length, shown);
+      server.reads.clear();
+      await repository.fetchPageSnapshot(
+        strategyPublicId: 'strategy',
+        pagePublicId: 'p',
+      );
+      expect(server.reads, ['page:getSnapshot']);
+
+      // Once every slice answers again, the page is live again.
+      server.publish(agents(20, moved: _id(9)));
+      await pumpEventQueue();
+      expect(pages.length, shown + 1);
+      server.reads.clear();
+      final read = await repository.fetchPageSnapshot(
+        strategyPublicId: 'strategy',
+        pagePublicId: 'p',
+      );
+      expect(server.reads, isEmpty);
+      expect(read, same(pages.last));
+    });
   });
 }
 
@@ -235,14 +275,15 @@ String _id(int index) =>
 /// One page, 'p', answered whole (page:getSnapshot) or in parts
 /// (page:getFrame, page:getElementSlice) from the same rows, live or read
 /// once.
-final class _Server implements ConvexTransport {
+final class _Server with SubscribeTogetherFromEach implements ConvexTransport {
   ConvexObject page = pageAnswer('p');
   final watched = <String>[];
   final watchedArgs = <ConvexObject>[];
   final slices = <ConvexObject>[];
   final reads = <String>[];
   final cancelled = <String>[];
-  final _live = <String, (String, ConvexObject, StreamController<ConvexValue>)>{};
+  final _live =
+      <String, (String, ConvexObject, StreamController<ConvexValue>)>{};
 
   void publish(List<Map<String, Object?>> elements) {
     page = pageAnswer(
@@ -257,6 +298,12 @@ final class _Server implements ConvexTransport {
   }
 
   void fail(String key, Object error) => _live[key]!.$3.addError(error);
+
+  /// The live query [key] answers again with what the server holds now.
+  void answerAgain(String key) {
+    final (name, args, controller) = _live[key]!;
+    controller.add(_answer(name, args));
+  }
 
   ConvexValue _answer(String name, ConvexObject args) {
     final whole = page.toDart();
