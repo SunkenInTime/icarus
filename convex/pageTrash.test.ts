@@ -904,6 +904,63 @@ describe("page trash", () => {
     ).toEqual([]);
   });
 
+  test("a purge run deletes a bounded share of a big lineup group's rows and the next runs finish it", async () => {
+    vi.useFakeTimers();
+    const { t, owner } = await createHarness();
+    await seed(owner);
+    // A group of 300 lineups, each from its own origin: 300 lineupItems
+    // rows for the origins, 300 for the links, 300 lineupAgents rows.
+    const spots = Array.from({ length: 300 }, (_, index) => index);
+    await apply(owner, [
+      {
+        type: "lineup.add",
+        lineupPublicId: "big",
+        pagePublicId: pageB,
+        payload: lineupsPayload("big", {
+          origins: spots.map((index) => ({ id: `big-o${index}` })),
+          landings: [{ id: "big-l" }],
+          links: spots.map((index) => ({
+            id: `big-k${index}`,
+            originId: `big-o${index}`,
+            landingId: "big-l",
+          })),
+        }),
+        sortIndex: 5,
+      },
+    ]);
+    await deleteB(owner);
+    const trashed = await pageRow(t, pageB);
+    // Counted by page, so rows left behind by a lineup already gone count.
+    const sideRows = async () =>
+      await t.run(
+        async (ctx) =>
+          (await ctx.db.query("lineupItems").collect()).filter(
+            (row) => row.pageId === trashed!._id,
+          ).length +
+          (await ctx.db.query("lineupAgents").collect()).filter(
+            (row) => row.pageId === trashed!._id,
+          ).length,
+      );
+    const before = await sideRows();
+    expect(before).toBeGreaterThan(900);
+
+    vi.setSystemTime(Date.now() + PAGE_TRASH_RETENTION_MS + day);
+    await t.mutation(purgeTrashedPages, {});
+    // The first run deletes at most its budget of side rows, and the big
+    // group keeps its row until its side rows are gone.
+    const afterOneRun = await sideRows();
+    expect(before - afterOneRun).toBeLessThanOrEqual(200);
+    expect(
+      (await rowsOnPage(t, trashed!._id)).lineups.map(
+        (row) => row.publicId,
+      ),
+    ).toContain("big");
+
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await pageRow(t, pageB)).toBeNull();
+    expect(await sideRows()).toBe(0);
+  });
+
   test("the orphan purge scheduled by older deletes leaves a page that still has its row alone", async () => {
     const { t, owner } = await createHarness();
     await seed(owner);
