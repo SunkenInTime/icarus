@@ -119,9 +119,9 @@ describe("presence:issueRoomPass", () => {
   test("reads the Discord profile however the claims are nested", async () => {
     const t = convexTest(schema, modules);
     const shapes: Record<string, JSONValue>[] = [
-      { "user_metadata.full_name": "bo_b", "user_metadata.avatar_url": "https://x/b.png" },
-      { "user_metadata.custom_claims": { global_name: "Bo" }, "user_metadata.avatar_url": "https://x/b.png" },
-      { user_metadata: { custom_claims: { global_name: "Bo" }, avatar_url: "https://x/b.png" } },
+      { "user_metadata.full_name": "bo_b", "user_metadata.avatar_url": "https://cdn.discordapp.com/avatars/2/b.png" },
+      { "user_metadata.custom_claims": { global_name: "Bo" }, "user_metadata.avatar_url": "https://cdn.discordapp.com/avatars/2/b.png" },
+      { user_metadata: { custom_claims: { global_name: "Bo" }, avatar_url: "https://cdn.discordapp.com/avatars/2/b.png" } },
     ];
     const names: string[] = [];
     for (const [index, claims] of shapes.entries()) {
@@ -141,10 +141,71 @@ describe("presence:issueRoomPass", () => {
         strategyPublicId: `strat-shape-${index}`,
       });
       const claimsOut = await verifyPass(issued.pass, SECRET, Date.now());
-      expect(claimsOut!.avatar).toBe("https://x/b.png");
+      expect(claimsOut!.avatar).toBe("https://cdn.discordapp.com/avatars/2/b.png");
       names.push(claimsOut!.name);
     }
     expect(names).toEqual(["bo_b", "Bo", "Bo"]);
+  });
+
+  test("signs only a Discord avatar; any other address, which every peer's app would fetch, goes as none", async () => {
+    const t = convexTest(schema, modules);
+    // What Supabase writes for a Discord sign-in, with and without a
+    // picture of one's own.
+    const discord = [
+      "https://cdn.discordapp.com/avatars/80351110224678912/a_1269e74af4df7417b13759eae50c83dc.gif",
+      "https://cdn.discordapp.com/embed/avatars/3.png",
+    ];
+    // user_metadata can be edited by its user, so it can carry anything.
+    const other = [
+      "http://127.0.0.1:8080/router/reboot",
+      "https://tracker.example/pixel.png",
+      "http://cdn.discordapp.com/avatars/1/a.png",
+      "https://cdn.discordapp.com.tracker.example/avatars/1/a.png",
+      "https://someone@cdn.discordapp.com/avatars/1/a.png",
+      "https://cdn.discordapp.com:8443/avatars/1/a.png",
+      "https://cdn.discordapp.com/attachments/1/2/a.png",
+      "https://cdn.discordapp.com/avatars/../attachments/1/2/a.png",
+      "not a url",
+    ];
+    const signed: (string | null)[] = [];
+    for (const [index, avatar] of [...discord, ...other].entries()) {
+      const user = t.withIdentity(
+        identity(`avatar-${index}`, { "user_metadata.avatar_url": avatar }),
+      );
+      await user.mutation(ensureCurrentUser, protocol);
+      await user.mutation(createStrategy, {
+        ...protocol,
+        publicId: `strat-avatar-${index}`,
+        name: "Mine",
+        mapData: "bind",
+        initialPagePublicId: `page-avatar-${index}`,
+        initialPageName: "Page 1",
+        initialPageIsAttack: true,
+      });
+      const issued = await user.mutation(issueRoomPass, {
+        ...protocol,
+        strategyPublicId: `strat-avatar-${index}`,
+      });
+      signed.push((await verifyPass(issued.pass, SECRET, Date.now()))!.avatar);
+    }
+    expect(signed).toEqual([...discord, ...other.map(() => null)]);
+  });
+
+  test("a pass carries no stored avatar off Discord either", async () => {
+    const { viewer } = await harness();
+    // A row written before avatars were checked.
+    await viewer.run(async (ctx) => {
+      const row = await ctx.db
+        .query("users")
+        .withIndex("by_externalId", (q) => q.eq("externalId", "presence|viewer"))
+        .unique();
+      await ctx.db.patch(row!._id, { avatarUrl: "https://tracker.example/v.png" });
+    });
+    const issued = await viewer.mutation(issueRoomPass, {
+      ...protocol,
+      strategyPublicId: "strat-1",
+    });
+    expect((await verifyPass(issued.pass, SECRET, Date.now()))!.avatar).toBeNull();
   });
 
   test("names an email sign-in by its address, never the placeholder", async () => {

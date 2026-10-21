@@ -30,11 +30,43 @@ export function profileFromIdentity(
       // Email sign-ins have no Discord name; the part before the @ is what a
       // teammate would recognize.
       emailName(text("email")),
-    avatar:
+    avatar: discordAvatarUrl(
       text("user_metadata", "avatar_url") ??
-      text("user_metadata", "picture") ??
-      text("pictureUrl"),
+        text("user_metadata", "picture") ??
+        text("pictureUrl"),
+    ),
   };
+}
+
+/**
+ * [url] when it is a Discord avatar, the only kind Supabase writes for a
+ * sign-in (`/avatars/<user>/<hash>`, or `/embed/avatars/<n>` for someone with
+ * no picture of their own), otherwise null.
+ *
+ * A user can edit their own `user_metadata`, and every teammate's app
+ * fetches the avatar it is handed, with no click. Any other address would
+ * let one member make the others' apps request a URL of their choosing,
+ * revealing their IP or poking hosts on their network. Null draws the
+ * initial-letter fallback, which every build already shows.
+ */
+export function discordAvatarUrl(
+  url: string | null | undefined,
+): string | null {
+  if (typeof url !== "string") return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const isDiscordAvatar =
+    parsed.protocol === "https:" &&
+    parsed.host === "cdn.discordapp.com" &&
+    parsed.username === "" &&
+    parsed.password === "" &&
+    (parsed.pathname.startsWith("/avatars/") ||
+      parsed.pathname.startsWith("/embed/avatars/"));
+  return isDiscordAvatar ? parsed.href : null;
 }
 
 /**

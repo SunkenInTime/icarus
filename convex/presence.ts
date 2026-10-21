@@ -7,7 +7,11 @@ import {
   cloudProtocolArgs,
 } from "./lib/cloudProtocol";
 import { getStrategyByPublicId } from "./lib/entities";
-import { profileFromIdentity, UNKNOWN_DISPLAY_NAME } from "./lib/profile";
+import {
+  discordAvatarUrl,
+  profileFromIdentity,
+  UNKNOWN_DISPLAY_NAME,
+} from "./lib/profile";
 
 // Live presence runs outside Convex, in the icarus-presence Worker
 // (presence/). Convex's only part is deciding who may join a strategy's room:
@@ -52,7 +56,7 @@ export const issueRoomPass = mutation({
       profile.name ?? storedName ?? "Teammate",
       MAX_NAME_CHARS,
     );
-    const avatar = profile.avatar ?? user.avatarUrl ?? null;
+    const avatar = profile.avatar ?? discordAvatarUrl(user.avatarUrl);
 
     const expiresAt = Date.now() + ROOM_PASS_TTL_MS;
     const pass = await signPass(
