@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -12,6 +13,9 @@ import 'package:icarus/migrations/hidden_folder_repair.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/cloud_library_action.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
 
@@ -110,6 +114,36 @@ void main() {
     expect(container.read(pinnedItemsProvider), isEmpty);
   });
 
+  test('a subfolder moved out while the delete runs is kept', () async {
+    await folder('maps');
+    await strategy('a-maps-notes', folder: 'maps');
+    await folder('ascent', parent: 'maps');
+    await folder('retakes', parent: 'ascent');
+    await strategy('a-split', folder: 'ascent');
+    await strategy('b-retake', folder: 'retakes');
+    final firstDelete = Completer<void>();
+    final paused = ProviderContainer(overrides: [
+      libraryWorkspaceProvider.overrideWith(_LocalWorkspace.new),
+      strategyProvider.overrideWith(() => _PausedDelete(firstDelete.future)),
+    ]);
+    addTearDown(paused.dispose);
+
+    final deleting = paused
+        .read(folderProvider.notifier)
+        .deleteFolder('maps', workspace: LibraryWorkspace.local);
+    // The first strategy goes; while its files are removed, the dialog can
+    // close and the user drags ascent to the top.
+    final ascent = folders().get('ascent')!..parentID = null;
+    await ascent.save();
+    firstDelete.complete();
+
+    expect((await deleting).didSucceed, isTrue);
+    expect(folders().keys, unorderedEquals(['ascent', 'retakes']));
+    expect(strategies().keys, unorderedEquals(['a-split', 'b-retake']));
+    expect(hasImages('a-maps-notes'), isFalse);
+    expect(hasImages('b-retake'), isTrue);
+  });
+
   test('folders whose parent is gone show again, and nothing is deleted',
       () async {
     // What deleting "maps" used to leave: the folder and the strategies
@@ -156,6 +190,24 @@ void main() {
     }
     expect(await showFoldersWithMissingParent(folders()), 0);
   });
+}
+
+/// Holds after the first strategy delete until [resume] completes, as a
+/// slow removal of its image files would.
+class _PausedDelete extends StrategyProvider {
+  _PausedDelete(this.resume);
+
+  final Future<void> resume;
+
+  @override
+  Future<CloudLibraryActionResult> deleteStrategy(
+    String strategyID, {
+    StrategySource? source,
+  }) async {
+    final result = await super.deleteStrategy(strategyID, source: source);
+    await resume;
+    return result;
+  }
 }
 
 class _LocalWorkspace extends LibraryWorkspaceNotifier {

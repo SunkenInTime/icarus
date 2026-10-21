@@ -127,6 +127,12 @@ test("a strategy moved out of the folder being deleted is kept", async () => {
 
 test("a subfolder moved out keeps itself and what is in it", async () => {
   const { t, owner } = await library();
+  await owner.mutation(createFolder, {
+    ...protocol,
+    publicId: "empty",
+    name: "empty",
+    parentFolderPublicId: "ascent",
+  });
   await owner.mutation(moveFolder, {
     ...protocol,
     folderPublicId: "ascent",
@@ -143,12 +149,6 @@ test("a subfolder moved out keeps itself and what is in it", async () => {
       withinFolderPublicId: "maps",
     }),
   ).rejects.toThrow("Not inside the folder being deleted");
-  await owner.mutation(createFolder, {
-    ...protocol,
-    publicId: "empty",
-    name: "empty",
-    parentFolderPublicId: "bind",
-  });
   await expect(
     owner.mutation(deleteFolder, {
       ...protocol,
@@ -159,6 +159,24 @@ test("a subfolder moved out keeps itself and what is in it", async () => {
 
   expect(await revisionOf(t, "b-retake")).not.toBeNull();
   expect(await folderExists(t, "empty")).toBe(true);
+});
+
+test("an empty folder anywhere below the folder being deleted is deleted", async () => {
+  const { t, owner } = await library();
+  await owner.mutation(createFolder, {
+    ...protocol,
+    publicId: "empty",
+    name: "empty",
+    parentFolderPublicId: "retakes",
+  });
+
+  await owner.mutation(deleteFolder, {
+    ...protocol,
+    folderPublicId: "empty",
+    withinFolderPublicId: "maps",
+  });
+
+  expect(await folderExists(t, "empty")).toBe(false);
 });
 
 test("the folder being deleted is within itself", async () => {

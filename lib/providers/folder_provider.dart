@@ -253,8 +253,19 @@ class FolderProvider extends Notifier<String?> {
       return CloudLibraryActionResult.failed(movingMessage);
     }
 
+    // Asked again right before each removal: the dialog can close while
+    // this runs, and what the user moves out of the folder meanwhile stays.
+    bool inside(String? id) {
+      final seen = <String>{};
+      while (id != null && seen.add(id)) {
+        if (id == folderID) return true;
+        id = folders.get(id)?.parentID;
+      }
+      return false;
+    }
+
     for (final strategy in strategies.values.toList()) {
-      if (!treeIds.contains(strategy.folderID)) continue;
+      if (!inside(strategy.folderID)) continue;
       await ref.read(strategyProvider.notifier).deleteStrategy(
             strategy.id,
             source: StrategySource.local,
@@ -262,13 +273,17 @@ class FolderProvider extends Notifier<String?> {
     }
     // A strategy that started moving to the cloud meanwhile stays, and so
     // do the folders.
-    if (strategies.values.any((s) => treeIds.contains(s.folderID))) {
+    if (strategies.values.any((s) => inside(s.folderID))) {
       return CloudLibraryActionResult.failed(movingMessage);
     }
 
-    for (final id in tree.reversed) {
-      await ref.read(pinnedItemsProvider.notifier).removePin(id);
+    final remaining = folderAndDescendantIds(folderID, {
+      for (final folder in folders.values) folder.id: folder.parentID,
+    });
+    for (final id in remaining.reversed) {
+      if (!inside(id)) continue;
       await folders.delete(id);
+      await ref.read(pinnedItemsProvider.notifier).removePin(id);
     }
     return CloudLibraryActionResult.succeeded;
   }
