@@ -119,10 +119,10 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
   int _accountEpoch = 0;
 
   /// The account whose captures are being sent, and [_accountEpoch] when
-  /// sending began. After any change, no more of them is sent and no refusal
-  /// from then on is taken as about them: the server may have answered for
-  /// another account. Accepted ops stay accepted; the server checks those
-  /// against the capture's account.
+  /// sending began. After any change the drain stops before its next
+  /// capture, sends no create, and takes no refusal from then on as about
+  /// them: the server may have answered for another account. Accepted ops
+  /// stay accepted; the server checks those against the capture's account.
   String? _sendingFor;
   int _sendingEpoch = 0;
 
@@ -149,10 +149,14 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
         if (ready) _kick();
       },
     );
-    ref.listen<String?>(cloudMediaAccountIdProvider, (_, __) {
-      _accountEpoch++;
-      _kick();
-    });
+    // Counted from the sign-in itself, which tells its listeners of each
+    // change as it happens. The account id provider derived from it
+    // refreshes later, and misses a change undone before then.
+    ref.listen<String?>(
+      authProvider.select((auth) => auth.user?.id),
+      (_, __) => _accountEpoch++,
+    );
+    ref.listen<String?>(cloudMediaAccountIdProvider, (_, __) => _kick());
     ref.onDispose(() => _retry?.cancel());
     scheduleMicrotask(_kick);
     return _read();

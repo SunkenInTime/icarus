@@ -25,9 +25,9 @@ import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/replay/replay_capture.dart';
 import 'package:icarus/replay/replay_frame.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 final _online = StateProvider<bool>((ref) => true);
-final _account = StateProvider<String?>((ref) => 'account-1');
 
 ReplayFrame _frame(double x, {int players = 1}) => ReplayFrame(
       timeMs: 1000,
@@ -62,7 +62,6 @@ void main() {
       replayCaptureMessageProvider.overrideWithValue(messages.add),
       convexStrategyRepositoryProvider.overrideWithValue(cloud),
       authProvider.overrideWith(_CloudReadyAuth.new),
-      cloudMediaAccountIdProvider.overrideWith((ref) => ref.watch(_account)),
       convexConnectionSnapshotProvider
           .overrideWith((ref) => ref.watch(_online)),
       convexConnectionProvider
@@ -92,6 +91,13 @@ void main() {
       container.read(replayCaptureQueueProvider);
   void setOnline(bool online) =>
       container.read(_online.notifier).state = online;
+
+  /// Signs [accountId] in, on this device and on the server.
+  void signIn(String accountId) {
+    cloud.signedInAs = accountId;
+    (container.read(authProvider.notifier) as _CloudReadyAuth)
+        .signIn(accountId);
+  }
 
   ReplayCapture session({String? folderId}) => ReplayCapture(
         newStore: () => CloudReplayCaptureStore(
@@ -454,11 +460,6 @@ void main() {
   test(
       "another account signed in mid-send gets none of the first one's captures",
       () async {
-    void signIn(String accountId) {
-      cloud.signedInAs = accountId;
-      container.read(_account.notifier).state = accountId;
-    }
-
     setOnline(false);
     final first = session();
     await first.capture(_frame(500), pageName: '0:10');
@@ -486,20 +487,19 @@ void main() {
   test(
       'a refusal that went out under another account fails nothing, even with the first account back',
       () async {
-    void signIn(String accountId) {
-      cloud.signedInAs = accountId;
-      container.read(_account.notifier).state = accountId;
-    }
-
     setOnline(false);
     final replay = session();
     await replay.capture(_frame(500), pageName: '0:10');
     await replay.capture(_frame(510), pageName: '0:20');
-    // Someone else signs in while the page add is out, and the first
-    // account is back before the next read's refusal arrives.
+    // Once the page has landed, someone else signs in just as the next
+    // read goes out, and the first account is back before its refusal
+    // arrives, all before anything derived from the sign-in refreshes.
     cloud.afterPageAdd = (_) {
       cloud.afterPageAdd = null;
-      signIn('account-2');
+      cloud.beforeShellRead = () {
+        cloud.beforeShellRead = null;
+        signIn('account-2');
+      };
       cloud.afterShellRead = () {
         cloud.afterShellRead = null;
         signIn('account-1');
@@ -521,8 +521,7 @@ void main() {
     // Made, then the answer is lost while someone else signs in.
     cloud.afterCreate = () {
       cloud.afterCreate = null;
-      cloud.signedInAs = 'account-2';
-      container.read(_account.notifier).state = 'account-2';
+      signIn('account-2');
       cloud.loseAnswers = true;
     };
     setOnline(true);
@@ -580,12 +579,23 @@ class _FlakyBox extends Fake implements Box<String> {
 
 class _CloudReadyAuth extends AuthProvider {
   @override
-  AppAuthState build() => const AppAuthState(
+  AppAuthState build() => AppAuthState(
         isLoading: false,
         isAuthenticated: true,
         isConvexUserReady: true,
         convexAuthStatus: ConvexAuthStatus.ready,
-        user: null,
+        user: _user('account-1'),
+      );
+
+  void signIn(String accountId) =>
+      state = state.copyWith(user: _user(accountId));
+
+  static User _user(String id) => User(
+        id: id,
+        appMetadata: const {},
+        userMetadata: const {},
+        aud: 'authenticated',
+        createdAt: '2026-10-21T00:00:00.000Z',
       );
 }
 
@@ -652,7 +662,9 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
   /// Runs right after a strategy is made, before it is answered.
   void Function()? afterCreate;
 
-  /// Runs right after a strategy is read, before it is answered.
+  /// Run right before a strategy is read, and right after it is read but
+  /// before it is answered.
+  void Function()? beforeShellRead;
   void Function()? afterShellRead;
 
   static const _forbidden = ConvexFunctionException(
@@ -759,6 +771,7 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
     String? shareToken,
   }) async {
     calls++;
+    beforeShellRead?.call();
     final strategy = strategies[strategyPublicId];
     final owner = ownerOf[strategyPublicId];
     final refused = owner != null && owner != signedInAs;
