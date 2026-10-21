@@ -143,7 +143,8 @@ jobs:
             # raw would let it write runner commands into the log.
             line=$(grep -m1 -iE '^ci:' <<<"$body" || true)
             if [[ -n "$line" ]]; then
-              read -ra words <<<"$(tr 'A-Z,' 'a-z ' <<<"${line#*:}")"
+              value=$(tr 'A-Z,' 'a-z ' <<<"${line#*:}")
+              read -ra words <<<"$value"
               named=" "
               unknown=0
               for word in "${words[@]}"; do
