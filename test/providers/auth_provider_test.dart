@@ -623,8 +623,8 @@ void main() {
     expect(
         container.read(authProvider).convexAuthStatus, ConvexAuthStatus.ready);
 
-    // The server stops accepting the token while Supabase still holds a
-    // session, and nothing has been edited or read since.
+    // The Convex client reports the session is no longer accepted while
+    // Supabase still holds one, and nothing has been edited or read since.
     convexApi.emitAuthState(false);
     convexApi.lastOnAuthChange!(false);
     await tester.pump();
