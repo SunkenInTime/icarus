@@ -89,6 +89,21 @@ export async function hasTrashedPages(
   return trashed !== null;
 }
 
+/// The ids of the strategy's pages in the trash, restorable or not yet
+/// purged.
+export async function trashedPageIds(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+): Promise<Set<Id<"pages">>> {
+  const trashed = await ctx.db
+    .query("pages")
+    .withIndex("by_strategyId_and_deletedAt", (q) =>
+      q.eq("strategyId", strategyId).gt("deletedAt", undefined),
+    )
+    .collect();
+  return new Set(trashed.map((page) => page._id));
+}
+
 /// The strategy's pages in the trash that can still be restored, most
 /// recently deleted first.
 export async function listRestorablePages(

@@ -5,6 +5,7 @@ import {
   collectAssetIdsFromLineupPayload,
   isUploadPlaceholder,
 } from "./imageAssets";
+import { trashedPageIds } from "./entities";
 
 type AnyCtx = MutationCtx | QueryCtx;
 
@@ -210,12 +211,42 @@ export async function isAssetReferenced(
   return reference !== null;
 }
 
-/// Every image id the strategy's live content shows. Reads reference rows
-/// only (one per image reference), never the content itself.
+/// Whether the strategy's live content shows the image on a page outside
+/// the trash. That is what a viewer may see: a page in the trash is hidden
+/// from everyone who cannot restore it. Like isAssetReferenced, every image
+/// counts until the reference backfill has finished.
+export async function isAssetShownOnLivePage(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+  assetPublicId: string,
+): Promise<boolean> {
+  if (!(await assetReferencesReady(ctx))) return true;
+  const trashed = await trashedPageIds(ctx, strategyId);
+  const references = ctx.db
+    .query("assetReferences")
+    .withIndex("by_strategyId_and_assetPublicId_and_deleted", (q) =>
+      q
+        .eq("strategyId", strategyId)
+        .eq("assetPublicId", assetPublicId)
+        .eq("deleted", false),
+    );
+  for await (const reference of references) {
+    if (!trashed.has(reference.pageId)) return true;
+  }
+  return false;
+}
+
+/// Every image id the strategy's live content shows, on pages in the trash
+/// too with [includeTrashedPages]. Reads reference rows only (one per image
+/// reference), never the content itself.
 export async function collectLiveAssetIds(
   ctx: AnyCtx,
   strategyId: Id<"strategies">,
+  { includeTrashedPages }: { includeTrashedPages: boolean },
 ): Promise<Set<string>> {
+  const skippedPages = includeTrashedPages
+    ? new Set<Id<"pages">>()
+    : await trashedPageIds(ctx, strategyId);
   const assetIds = new Set<string>();
   const references = ctx.db
     .query("assetReferences")
@@ -223,6 +254,7 @@ export async function collectLiveAssetIds(
       q.eq("strategyId", strategyId).eq("deleted", false),
     );
   for await (const reference of references) {
+    if (skippedPages.has(reference.pageId)) continue;
     assetIds.add(reference.assetPublicId);
   }
   return assetIds;

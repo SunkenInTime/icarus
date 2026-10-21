@@ -61,6 +61,8 @@ const purgeDeletedPageOrphans = makeFunctionReference<"mutation">(
 const listReferencedAssetIds = makeFunctionReference<"query">(
   "images:listReferencedAssetIds",
 );
+const getAssetUrl = makeFunctionReference<"query">("images:getAssetUrl");
+const listImages = makeFunctionReference<"query">("images:listForStrategy");
 const createShare = makeFunctionReference<"mutation">("shares:create");
 const redeemShare = makeFunctionReference<"mutation">("shares:redeem");
 
@@ -1260,5 +1262,84 @@ describe("Recently deleted", () => {
       stranger.query(listTrashed, { strategyPublicId }),
       "FORBIDDEN",
     );
+  });
+});
+
+describe("images on a page in the trash", () => {
+  test("a viewer can neither list nor fetch an image shown only on a page in the trash; an editor still can", async () => {
+    process.env.R2_PUBLIC_BASE_URL = "https://media.trash.test";
+    const { t, owner } = await createHarness();
+    await seed(owner);
+    // Page A shows an image page B shows too.
+    await apply(owner, [
+      {
+        type: "element.add",
+        elementPublicId: "a-image",
+        pagePublicId: pageA,
+        payload: imagePayload("b-image"),
+        sortIndex: 1,
+      },
+      {
+        type: "element.add",
+        elementPublicId: "b-only-image",
+        pagePublicId: pageB,
+        payload: imagePayload("b-only"),
+        sortIndex: 3,
+      },
+    ]);
+    await t.run(async (ctx) => {
+      const strategy = await ctx.db
+        .query("strategies")
+        .withIndex("by_publicId", (q) => q.eq("publicId", strategyPublicId))
+        .first();
+      const now = Date.now();
+      for (const publicId of ["b-image", "b-only", "k-shot"]) {
+        await ctx.db.insert("imageAssets", {
+          publicId,
+          strategyId: strategy!._id,
+          provider: "r2",
+          objectKey: `trash/${publicId}.png`,
+          uploadStatus: "active",
+          fileExtension: ".png",
+          mimeType: "image/png",
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+    const viewer = await member(t, owner, "viewer", "viewer");
+    const editor = await member(t, owner, "editor", "editor");
+    const url = async (user: Harness, assetPublicId: string) =>
+      ((await user.query(getAssetUrl, { strategyPublicId, assetPublicId })) as {
+        url: string | null;
+      }).url;
+    const listed = async (user: Harness) =>
+      (
+        (await user.query(listImages, { strategyPublicId })) as Array<{
+          publicId: string;
+        }>
+      )
+        .map((asset) => asset.publicId)
+        .sort();
+
+    expect(await url(viewer, "b-only")).toBe(
+      "https://media.trash.test/trash/b-only.png",
+    );
+    expect(await listed(viewer)).toEqual(["b-image", "b-only", "k-shot"]);
+
+    await deleteB(owner);
+
+    for (const assetPublicId of ["b-only", "k-shot"]) {
+      await expectCode(url(viewer, assetPublicId), "NOT_FOUND");
+    }
+    expect(await listed(viewer)).toEqual(["b-image"]);
+    expect(await url(viewer, "b-image")).toBe(
+      "https://media.trash.test/trash/b-image.png",
+    );
+    // An editor can restore the page, so its images stay theirs to see.
+    expect(await url(editor, "b-only")).toBe(
+      "https://media.trash.test/trash/b-only.png",
+    );
+    expect(await listed(editor)).toEqual(["b-image", "b-only", "k-shot"]);
   });
 });
