@@ -28,6 +28,7 @@ import 'package:icarus/strategy/strategy_cloud_migration.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/services/product_metrics.dart';
+import 'package:icarus/services/image_file_name.dart';
 import 'package:uuid/uuid.dart';
 
 /// The local strategies and folders waiting to move to the cloud or moving
@@ -592,6 +593,7 @@ class MoveToCloudNotifier extends Notifier<void> {
   }) async {
     final copied = <({String assetPublicId, String fileExtension})>[];
     for (final MapEntry(key: localPicture, value: cloud) in pictures.entries) {
+      if (imageFileName(localPicture, cloud.fileExtension) == null) continue;
       final source = await PlacedImageProvider.getImageFile(
         strategyID: localId,
         imageID: localPicture,

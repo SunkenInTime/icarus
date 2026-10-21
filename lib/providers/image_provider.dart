@@ -12,6 +12,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/image_file_name.dart';
 import 'package:image/image.dart' as img;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
@@ -383,6 +384,9 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   static Future<Directory> getImageFolder(String strategyID) async {
+    if (!isSafeFileNameId(strategyID)) {
+      throw UnsafeImageFileNameException(strategyID);
+    }
     // Get the system's application support directory.
     Directory appSupportDir;
     try {
@@ -414,7 +418,11 @@ class PlacedImageProvider extends Notifier<ImageState> {
     String imageID,
     String fileExtension,
   ) {
-    return path.join(imagesDirectoryPath, '$imageID$fileExtension');
+    final name = imageFileName(imageID, fileExtension);
+    if (name == null) {
+      throw UnsafeImageFileNameException('$imageID$fileExtension');
+    }
+    return path.join(imagesDirectoryPath, name);
   }
 
   static Future<File> getImageFile({
@@ -702,27 +710,12 @@ class PlacedImageSerializer {
   /// image's picture id ([PlacedImage.pictureId]) and [fileExtension].
   static Future<String> _computeFilePath(
       PlacedImage image, String strategyID) async {
-    // Get the system's application support directory.
-    final Directory appSupportDir = await getApplicationSupportDirectory();
-
-    // Create the custom directory using the strategy ID.
-    final Directory customDirectory =
-        Directory(path.join(appSupportDir.path, strategyID));
-    if (!await customDirectory.exists()) {
-      await customDirectory.create(recursive: true);
-    }
-
-    // Create the images subfolder.
-    final Directory imagesDirectory =
-        Directory(path.join(customDirectory.path, 'images'));
-    if (!await imagesDirectory.exists()) {
-      await imagesDirectory.create(recursive: true);
-    }
-
-    // The final file path: [pictureId][fileExtension]
-    return path.join(
+    final imagesDirectory =
+        await PlacedImageProvider.getImageFolder(strategyID);
+    return PlacedImageProvider.buildImageFilePath(
       imagesDirectory.path,
-      '${image.pictureId}${image.fileExtension}',
+      image.pictureId,
+      image.fileExtension ?? '',
     );
   }
 

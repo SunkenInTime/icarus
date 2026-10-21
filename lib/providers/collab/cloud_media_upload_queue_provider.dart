@@ -23,6 +23,7 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/services/image_file_name.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
@@ -536,6 +537,10 @@ class CloudMediaUploadQueueNotifier
     final pending = ref.read(pendingMediaBytesProvider.notifier).bytesFor(key);
     if (pending != null) return MemoryMediaBytes(pending);
     if (!ref.read(imageFilesOnDeviceProvider)) return null;
+    if (!isSafeFileNameId(key.strategyPublicId) ||
+        imageFileName(key.assetPublicId, fileExtension) == null) {
+      return null;
+    }
     final file = await PlacedImageProvider.getImageFile(
       strategyID: key.strategyPublicId,
       imageID: key.assetPublicId,
