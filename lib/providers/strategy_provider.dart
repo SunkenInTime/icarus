@@ -2339,15 +2339,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           );
       if (!result.didSucceed) return result;
 
-      // Unsent edits to a strategy the user just deleted can never land.
-      await ref
-          .read(strategyOpQueueProvider.notifier)
-          .discardDeletedStrategy(strategyID);
-      await ref
-          .read(cloudMediaUploadQueueProvider.notifier)
-          .clearJobsForStrategy(strategyID);
-      await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
-      ref.invalidate(cloudStrategiesProvider);
+      await forgetDeletedCloudStrategy(strategyID);
       return result;
     }
 
@@ -2373,6 +2365,20 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     await customDirectory.delete(recursive: true);
     return CloudLibraryActionResult.succeeded;
+  }
+
+  /// Lets go of what this device keeps for a cloud strategy the server has
+  /// deleted.
+  Future<void> forgetDeletedCloudStrategy(String strategyID) async {
+    // Unsent edits to a strategy the user just deleted can never land.
+    await ref
+        .read(strategyOpQueueProvider.notifier)
+        .discardDeletedStrategy(strategyID);
+    await ref
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .clearJobsForStrategy(strategyID);
+    await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
+    ref.invalidate(cloudStrategiesProvider);
   }
 
   Future<void> saveToHive(String id) async {

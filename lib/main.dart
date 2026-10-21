@@ -57,6 +57,7 @@ import 'package:icarus/services/open_cloud_strategy_store.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/startup/cloud_bootstrap.dart';
+import 'package:icarus/startup/hidden_folder_cleanup.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
@@ -224,6 +225,9 @@ Future<void> main(List<String> args) async {
       await MapThemeProfilesProvider.bootstrap();
 
       await StrategyMigrator.migrateLocalLibrary(PlatformPolicy.current);
+      if (PlatformPolicy.current.allowsLocalLibrary) {
+        await deleteFoldersHiddenByEarlierDeletes(appProviderContainer);
+      }
 
       // The cloud comes up degraded rather than not at all: a failure here
       // must never keep anyone from the library on this device.
