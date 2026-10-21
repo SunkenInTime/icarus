@@ -764,7 +764,7 @@ export const listForStrategy = query({
     return await Promise.all(
       assets
         .filter((asset): asset is Doc<"imageAssets"> => asset !== null)
-        .map((asset) => serializeAssetForViewer(ctx, asset)),
+        .map((asset) => serializeAssetForViewer(ctx, strategy, asset)),
     );
   },
 });
@@ -839,7 +839,7 @@ export const getAssetUrl = query({
     }
     // An old build saves the picture under the id it asked by.
     if (
-      !isSavableImageFile(asset) ||
+      !isSavableImageFile(strategy, asset) ||
       !isSavableImageFileName(args.assetPublicId, inferFileExtension(asset))
     ) {
       return { url: null };
@@ -1351,7 +1351,7 @@ export const listPotentiallyStale = internalQuery({
     });
 
     return await Promise.all(
-      candidates.map((asset) => serializeAssetForViewer(ctx, asset)),
+      candidates.map((asset) => serializeAssetForViewer(ctx, strategy, asset)),
     );
   },
 });

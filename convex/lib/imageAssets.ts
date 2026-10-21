@@ -1,6 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { isSavableImageFileName } from "./fileNameIds";
+import { isSafeFileNameId, isSavableImageFileName } from "./fileNameIds";
 import { normalizeImageExtension, publicR2UrlForObjectKey } from "./r2";
 
 type AnyCtx = MutationCtx | QueryCtx;
@@ -386,23 +386,31 @@ export async function getViewerAssetForStrategy(
   return await getActiveAssetForStrategy(ctx, strategyId, assetPublicId);
 }
 
-/// The desktop app saves a downloaded image as `<publicId><extension>`, so a
-/// row that isn't a safe image file name is never handed out to download,
-/// whichever path wrote it.
+/// The desktop app saves a downloaded image as
+/// `<strategy publicId>/images/<publicId><extension>`, so an image whose
+/// folder or file name isn't safe is never handed out to download, whichever
+/// path wrote it.
 export function isSavableImageFile(
+  strategy: Pick<Doc<"strategies">, "publicId">,
   asset: Pick<Doc<"imageAssets">, "publicId" | "fileExtension" | "storagePath">,
 ): boolean {
-  return isSavableImageFileName(asset.publicId, inferFileExtension(asset));
+  return (
+    isSafeFileNameId(strategy.publicId) &&
+    isSavableImageFileName(asset.publicId, inferFileExtension(asset))
+  );
 }
 
 export async function serializeAssetForViewer(
   ctx: QueryCtx,
+  strategy: Pick<Doc<"strategies">, "publicId">,
   asset: Doc<"imageAssets">,
 ): Promise<SerializedAsset> {
   const provider = inferProvider(asset);
   const status = inferUploadStatus(asset);
   const uploadStatus =
-    status === "active" && !isSavableImageFile(asset) ? "failed" : status;
+    status === "active" && !isSavableImageFile(strategy, asset)
+      ? "failed"
+      : status;
   const url =
     provider === "r2"
       ? asset.objectKey === undefined || uploadStatus !== "active"

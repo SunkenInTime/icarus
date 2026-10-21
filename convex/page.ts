@@ -80,7 +80,7 @@ async function viewerAssets(
   return await Promise.all(
     assets
       .filter((asset): asset is Doc<"imageAssets"> => asset !== null)
-      .map((asset) => serializeAssetForViewer(ctx, asset)),
+      .map((asset) => serializeAssetForViewer(ctx, strategy, asset)),
   );
 }
 

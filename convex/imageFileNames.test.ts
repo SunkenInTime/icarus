@@ -52,6 +52,9 @@ const unsafeIds = [
   "",
   "a\u0000b",
   "a?b",
+  // Windows drops a trailing dot or space: the same folder as "x".
+  "x.",
+  "x ",
   "x".repeat(201),
 ];
 
@@ -273,7 +276,7 @@ describe("image file names", () => {
       ];
       return await Promise.all(
         ids.map(async (id) =>
-          serializeAssetForViewer(ctx, (await ctx.db.get(id))!),
+          serializeAssetForViewer(ctx, strategy, (await ctx.db.get(id))!),
         ),
       );
     });
@@ -291,6 +294,35 @@ describe("image file names", () => {
       { publicId: "payload.bat", uploadStatus: "failed", hasUrl: false },
       { publicId: "placeholder", uploadStatus: "pending", hasUrl: false },
     ]);
+  });
+
+  test("a strategy made under a path-like id before ids were checked serves no image to download", async () => {
+    const { t, owner } = await createHarness();
+    await seedStrategy(owner);
+    const served = await t.run(async (ctx) => {
+      const strategy = (await ctx.db
+        .query("strategies")
+        .withIndex("by_publicId", (q) => q.eq("publicId", strategyPublicId))
+        .unique())!;
+      await ctx.db.patch(strategy._id, { publicId: "..\\..\\Startup" });
+      const now = Date.now();
+      const id = await ctx.db.insert("imageAssets", {
+        publicId: "fine",
+        provider: "r2",
+        strategyId: strategy._id,
+        objectKey: "strategies/fine",
+        uploadStatus: "active",
+        fileExtension: ".png",
+        createdAt: now,
+        updatedAt: now,
+      });
+      return serializeAssetForViewer(
+        ctx,
+        (await ctx.db.get(strategy._id))!,
+        (await ctx.db.get(id))!,
+      );
+    });
+    expect(served).toMatchObject({ uploadStatus: "failed", url: null });
   });
 
   test("an old build's alias for a picture is only made under a name it can save", () => {
