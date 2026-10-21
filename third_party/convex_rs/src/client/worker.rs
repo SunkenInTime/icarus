@@ -22,6 +22,10 @@ use crate::{
         SubscriberId,
     },
     client::{
+        subscription::{
+            QuerySetSubscription,
+            SubscribedSet,
+        },
         QueryResults,
         QuerySubscription,
     },
@@ -61,6 +65,11 @@ pub enum ClientRequest {
     Subscribe(
         SubscribeRequest,
         oneshot::Sender<QuerySubscription>,
+        mpsc::UnboundedSender<ClientRequest>,
+    ),
+    SubscribeSet(
+        Vec<SubscribeRequest>,
+        oneshot::Sender<SubscribedSet>,
         mpsc::UnboundedSender<ClientRequest>,
     ),
     Unsubscribe(UnsubscribeRequest),
@@ -233,6 +242,42 @@ async fn _worker_once<T: SyncProtocol>(
                         initial: base_client.latest_results().get(&subscriber_id).cloned(),
                     };
                     let _ = tx.send(subscription);
+                },
+                ClientRequest::SubscribeSet(queries, tx, request_sender) => {
+                    let subscriber_ids: Vec<SubscriberId> = queries
+                        .into_iter()
+                        .map(|SubscribeRequest { udf_path, args }| {
+                            base_client.subscribe(udf_path, args)
+                        })
+                        .collect();
+                    communicate(
+                        base_client,
+                        protocol_response_receiver,
+                        watch_sender,
+                        protocol_manager,
+                        auth_recovery,
+                    )
+                    .await?;
+
+                    // Taken with nothing awaited in between: every update
+                    // the watch yields is newer than these results.
+                    let results = base_client.latest_results().clone();
+                    let updates =
+                        QuerySetSubscription::new(BroadcastStream::new(watch_sender.subscribe()));
+                    let subscriptions = subscriber_ids
+                        .into_iter()
+                        .map(|subscriber_id| QuerySubscription {
+                            subscriber_id,
+                            request_sender: request_sender.clone(),
+                            watch: BroadcastStream::new(watch_sender.subscribe()),
+                            initial: None,
+                        })
+                        .collect();
+                    let _ = tx.send(SubscribedSet {
+                        subscriptions,
+                        results,
+                        updates,
+                    });
                 },
                 ClientRequest::Mutation(mutation, tx) => {
                     let MutationRequest {

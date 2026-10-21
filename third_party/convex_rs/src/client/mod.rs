@@ -37,6 +37,7 @@ use crate::{
         subscription::{
             QuerySetSubscription,
             QuerySubscription,
+            SubscribedSet,
         },
         worker::{
             worker,
@@ -212,6 +213,38 @@ impl ConvexClient {
 
         let res = rx.await?;
         Ok(res)
+    }
+
+    /// Subscribe to several queries together, for a consistent view of them.
+    ///
+    /// Returns a [`SubscribedSet`]: a [`QuerySubscription`] token for each
+    /// query in the order given, every subscribed query's results as of the
+    /// moment these were added, and a [`QuerySetSubscription`] of every later
+    /// change. Unlike separate [`ConvexClient::subscribe`] calls, which can
+    /// each start from a different server state, the results and updates of
+    /// a set always come from one.
+    pub async fn subscribe_set(
+        &mut self,
+        queries: Vec<(String, BTreeMap<String, Value>)>,
+    ) -> anyhow::Result<SubscribedSet> {
+        let (tx, rx) = oneshot::channel();
+        let requests = queries
+            .into_iter()
+            .map(|(name, args)| {
+                Ok(SubscribeRequest {
+                    udf_path: name.parse()?,
+                    args,
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        self.request_sender.send(ClientRequest::SubscribeSet(
+            requests,
+            tx,
+            self.request_sender.clone(),
+        ))?;
+
+        Ok(rx.await?)
     }
 
     /// Make a oneshot request to a query `name` with `args`.
@@ -976,6 +1009,87 @@ pub mod tests {
         //let results = watch.next().await.expect("Watch should have results");
         //assert_eq!(results.len(), 3);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_set_updates_together() -> anyhow::Result<()> {
+        let (mut client, mut test_protocol) = ConvexClient::with_test_protocol().await?;
+        let mut set = client
+            .subscribe_set(vec![
+                ("getValue1".to_string(), btreemap! {}),
+                ("getValue2".to_string(), btreemap! {}),
+            ])
+            .await?;
+        test_protocol.take_sent().await;
+        let [first, second] = &set.subscriptions[..] else {
+            panic!("Expected two subscriptions");
+        };
+        // Not answered yet.
+        assert_eq!(set.results.get(first), None);
+        assert_eq!(set.results.get(second), None);
+
+        test_protocol
+            .fake_server_response(
+                fake_transition(
+                    StateVersion::initial(),
+                    vec![(QueryId::new(0), 10.into()), (QueryId::new(1), 20.into())],
+                )
+                .0,
+            )
+            .await?;
+        let results = set.updates.next().await.expect("Set should have updates");
+        assert_eq!(results.get(first), Some(&FunctionResult::Value(10.into())));
+        assert_eq!(results.get(second), Some(&FunctionResult::Value(20.into())));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_set_starts_from_existing_results() -> anyhow::Result<()> {
+        let (mut client, mut test_protocol) = ConvexClient::with_test_protocol().await?;
+        let mut existing = client.subscribe("getValue1", btreemap! {}).await?;
+        test_protocol.take_sent().await;
+        test_protocol
+            .fake_server_response(
+                fake_transition(StateVersion::initial(), vec![(QueryId::new(0), 10.into())]).0,
+            )
+            .await?;
+        assert_eq!(
+            existing.next().await,
+            Some(FunctionResult::Value(10.into()))
+        );
+
+        // Every query in the set is answered already, so no update will
+        // follow: the set starts from the results it was given.
+        let set = client
+            .subscribe_set(vec![("getValue1".to_string(), btreemap! {})])
+            .await?;
+        assert_eq!(
+            set.results.get(&set.subscriptions[0]),
+            Some(&FunctionResult::Value(10.into()))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_set_unsubscribes_on_drop() -> anyhow::Result<()> {
+        let (mut client, test_protocol) = ConvexClient::with_test_protocol().await?;
+        let set = client
+            .subscribe_set(vec![("getValue1".to_string(), btreemap! {})])
+            .await?;
+        test_protocol.take_sent().await;
+        drop(set);
+        test_protocol.wait_until_n_messages_sent(1).await;
+        assert_eq!(
+            test_protocol.take_sent().await,
+            vec![ClientMessage::ModifyQuerySet {
+                base_version: 1,
+                new_version: 2,
+                modifications: vec![QuerySetModification::Remove {
+                    query_id: QueryId::new(0)
+                }],
+            }]
+        );
         Ok(())
     }
 

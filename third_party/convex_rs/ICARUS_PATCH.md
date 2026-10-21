@@ -38,3 +38,14 @@ and increment `connection_count` after every successful socket open, including
 client-requested reconnects. The published Rust client created a new session ID
 for every socket and did not advance the count on clean reconnects, unlike the
 Convex sync protocol's client-lifetime session and monotonic connection model.
+
+Icarus adds `subscribe_set`, which subscribes to several queries in one worker
+step and returns their tokens, the results of every subscribed query at that
+moment, and a watch of every later change. Upstream offers `watch_all`, but a
+new watch yields nothing until the next server transition, so a set whose
+queries were all answered already would wait for an unrelated change, and
+results read from separate `subscribe` calls can each come from a different
+transition. Taking the results and opening the watch with nothing awaited in
+between means the watch only yields results newer than the snapshot. The
+`convex_flutter` bridge uses it to deliver a page read in parts (its frame and
+slices) as one consistent page.

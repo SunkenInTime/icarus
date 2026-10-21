@@ -54,6 +54,7 @@ pub use client::{
     subscription::{
         QuerySetSubscription,
         QuerySubscription,
+        SubscribedSet,
     },
     ConvexClient,
     ConvexClientBuilder,
