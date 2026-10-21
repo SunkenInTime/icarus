@@ -54,6 +54,8 @@ class Maps {
     return raw[0].toUpperCase() + raw.substring(1);
   }
 
+  /// The server refuses a strategy on a map not in its own copy of this list
+  /// (convex/lib/maps.ts), so a new map ships there first.
   static Map<MapValue, String> mapNames = {
     MapValue.ascent: 'ascent',
     MapValue.breeze: 'breeze',
