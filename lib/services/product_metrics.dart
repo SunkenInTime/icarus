@@ -34,8 +34,8 @@ class ProductMetrics {
         'outcome': succeeded ? 'success' : 'failed',
       });
 
-  /// An email sign-up that finished: `confirmation_sent`, `signed_in` or
-  /// `failed`.
+  /// An email sign-up that finished: `confirmation_sent`, `signed_in`,
+  /// `already_registered` or `failed`.
   void signUp(String outcome) => _send('cloud_sign_up', {'outcome': outcome});
 
   /// A move of local work to cloud that finished. [kind] is `strategy` or

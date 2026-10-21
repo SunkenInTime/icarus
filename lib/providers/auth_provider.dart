@@ -910,6 +910,23 @@ class AuthProvider extends Notifier<AppAuthState> {
         password: password,
       );
 
+      // Supabase answers a sign-up for an email that already has an account
+      // with success, sends no email, and returns a user with no identities,
+      // so strangers can't probe which emails are registered. The account
+      // may have been made with Discord, so name both ways back in.
+      if (response.user?.identities?.isEmpty ?? false) {
+        const message = 'An account with this email already exists. Sign in '
+            'instead, or continue with Discord if you signed up that way.';
+        state = state.copyWith(
+          isLoading: false,
+          isConvexUserReady: false,
+          convexAuthStatus: ConvexAuthStatus.signedOut,
+          errorMessage: message,
+        );
+        ProductMetrics.instance.signUp('already_registered');
+        return message;
+      }
+
       if (response.session == null) {
         const message =
             'Account created! Check your inbox for the confirmation link, '
