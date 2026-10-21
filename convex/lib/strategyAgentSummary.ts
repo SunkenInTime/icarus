@@ -8,11 +8,21 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+/// Agent data is free-form, so a peer can name any string as an agent, and
+/// every folder above a strategy lists its agents. Only a name shaped like
+/// an agent enum name counts, and a list holds at most this many: more than
+/// the roster, so a real library is never cut short.
+export const maxListedAgentTypes = 32;
+
+export function isAgentTypeName(type: string): boolean {
+  return /^[A-Za-z]{1,32}$/.test(type);
+}
+
 /// Reads the agent type the client stores as the enum name under `type`, as
 /// an agent element's data and a lineup origin's agent both do.
 function agentTypeOf(data: unknown): string | null {
   const type = asRecord(data)?.type;
-  return typeof type === "string" && type.length > 0 ? type : null;
+  return typeof type === "string" && isAgentTypeName(type) ? type : null;
 }
 
 /// What an element row adds to its strategy's agent summary: the agent it
@@ -149,7 +159,8 @@ export function agentTypesOf(
 ): string[] {
   const counts = new Map<string, number>();
   const bump = (type: string | null) => {
-    if (type === null) return;
+    // lineupAgents rows written before names were checked can hold any.
+    if (type === null || !isAgentTypeName(type)) return;
     counts.set(type, (counts.get(type) ?? 0) + 1);
   };
   for (const element of elements) {
@@ -165,7 +176,8 @@ export function agentTypesOf(
   }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([type]) => type);
+    .map(([type]) => type)
+    .slice(0, maxListedAgentTypes);
 }
 
 /// Stores [agentTypes] as the strategy's summary, writing only on change.
@@ -214,5 +226,8 @@ export async function readStrategyAgentTypes(
     .query("strategyAgentSummaries")
     .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))
     .unique();
-  return summary?.agentTypes ?? [];
+  // A summary stored before names were checked can hold any.
+  return (summary?.agentTypes ?? [])
+    .filter(isAgentTypeName)
+    .slice(0, maxListedAgentTypes);
 }

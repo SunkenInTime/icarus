@@ -46,6 +46,7 @@ import {
 import { purgeDeletedPageOrphansRef } from "./maintenance";
 import { markDeletedStrategyImageAssetsRef } from "./images";
 import { assertSafeFileNameId } from "./lib/fileNameIds";
+import { assertKnownMapChange } from "./lib/maps";
 import {
   createResultValidator,
   okResultValidator,
@@ -349,6 +350,7 @@ async function createStrategyWithInitialPageRecord(
   initialPage: InitialPageInput,
 ) {
   assertSafeFileNameId("Strategy id", args.publicId);
+  assertKnownMapChange(args.mapData, undefined);
   const now = Date.now();
   const folderId = await resolveOwnedFolderId(ctx, args.folderPublicId, userId);
 
@@ -757,6 +759,7 @@ export const update = mutation({
       patch.name = args.name;
     }
     if (args.mapData !== undefined && args.mapData !== strategy.mapData) {
+      assertKnownMapChange(args.mapData, strategy.mapData);
       patch.mapData = args.mapData;
     }
 

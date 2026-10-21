@@ -27,6 +27,7 @@ import {
   sortByNumberField,
   trashPage,
 } from "./lib/entities";
+import { assertKnownMapChange } from "./lib/maps";
 import {
   applyBatchResultValidator,
   currentOpSnapshotValidator,
@@ -857,6 +858,7 @@ async function applyStrategyOp(
     setIfChanged(patch, "name", strategy.name, payload.name);
   }
   if (payload.mapData !== undefined) {
+    assertKnownMapChange(payload.mapData, strategy.mapData);
     setIfChanged(patch, "mapData", strategy.mapData, payload.mapData);
   }
   if (payload.themeProfileId !== undefined) {

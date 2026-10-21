@@ -294,3 +294,71 @@ test("deleting a strategy drops it from the folder summary", async () => {
     agentTypes: [],
   });
 });
+
+test("summaries keep only agent-shaped names, however a peer wrote them", async () => {
+  const { t, owner } = await createHarness();
+  await seedFolder(owner, "root");
+  await seedFolder(owner, "child", "root");
+  await seedStrategy(owner, "s", "child", "ascent");
+  await placeAgent(owner, "s", "e1", "jett");
+  // An editor can write any data for an agent: these are not agent names.
+  await placeAgent(owner, "s", "e2", "x".repeat(100_000));
+  await placeAgent(owner, "s", "e3", "jett ");
+  await placeAgent(owner, "s", "e4", "a".repeat(33));
+  // A summary stored before names were checked.
+  await seedStrategy(owner, "old", "child", "ascent");
+  await t.run(async (ctx) => {
+    const old = await ctx.db
+      .query("strategies")
+      .withIndex("by_publicId", (q) => q.eq("publicId", "old"))
+      .unique();
+    await ctx.db.insert("strategyAgentSummaries", {
+      strategyId: old!._id,
+      agentTypes: ["y".repeat(100_000), "sova"],
+      updatedAt: 0,
+    });
+  });
+
+  const listed = (await owner.query(listStrategiesForFolder, {
+    folderPublicId: "child",
+    includeAgentTypes: true,
+  })) as Array<Record<string, unknown>>;
+  expect(
+    Object.fromEntries(listed.map((entry) => [entry.publicId, entry.agentTypes])),
+  ).toEqual({ s: ["jett"], old: ["sova"] });
+
+  const tree = (await owner.query(listFolderTree, { scope: "owned" })) as Array<
+    Record<string, unknown>
+  >;
+  for (const folder of tree) {
+    expect(folder.agentTypes).toEqual(["jett", "sova"]);
+  }
+});
+
+test("a folder lists at most 32 agents", async () => {
+  const { owner } = await createHarness();
+  await seedFolder(owner, "root");
+  // Agent-shaped names an editor made up, one strategy at a time.
+  const names = Array.from({ length: 40 }, (_, index) =>
+    `agent${String.fromCharCode(97 + Math.floor(index / 26))}${String.fromCharCode(97 + (index % 26))}`,
+  );
+  await seedStrategy(owner, "s", "root", "ascent");
+  for (const [index, name] of names.entries()) {
+    await placeAgent(owner, "s", `e${index}`, name);
+  }
+  await seedStrategy(owner, "s2", "root", "ascent");
+  await placeAgent(owner, "s2", "jett-1", "jett");
+
+  const tree = (await owner.query(listFolderTree, { scope: "owned" })) as Array<
+    Record<string, unknown>
+  >;
+  const agents = tree[0]!.agentTypes as string[];
+  expect(agents).toHaveLength(32);
+  const listed = (await owner.query(listStrategiesForFolder, {
+    folderPublicId: "root",
+    includeAgentTypes: true,
+  })) as Array<Record<string, unknown>>;
+  for (const entry of listed) {
+    expect((entry.agentTypes as string[]).length).toBeLessThanOrEqual(32);
+  }
+});

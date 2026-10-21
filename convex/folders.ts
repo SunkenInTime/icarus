@@ -8,7 +8,10 @@ import {
   requireCurrentUser,
 } from "./lib/auth";
 import { getFolderByPublicId, isListed } from "./lib/entities";
-import { readStrategyAgentTypes } from "./lib/strategyAgentSummary";
+import {
+  maxListedAgentTypes,
+  readStrategyAgentTypes,
+} from "./lib/strategyAgentSummary";
 
 import {
   assertSupportedCloudProtocol,
@@ -395,7 +398,7 @@ async function summariseFolderTrees(
     merged.set(folder._id, {
       strategyCount: total.strategies,
       mapPeeks: ranked(total.maps).slice(0, 2),
-      agentTypes: ranked(total.agents),
+      agentTypes: ranked(total.agents).slice(0, maxListedAgentTypes),
     });
   }
   return merged;
