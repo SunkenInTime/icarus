@@ -12,4 +12,5 @@ class HiveBoxNames {
   static const cloudStrategyCopyBox = "cloud_strategy_copy_box";
   static const pinnedItemsBox = "pinned_items_box";
   static const cloudLibraryCopyBox = "cloud_library_copy_box";
+  static const libraryCleanupBox = "library_cleanup_box";
 }
