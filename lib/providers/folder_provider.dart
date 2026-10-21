@@ -16,7 +16,6 @@ import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/services/cloud_needs_connection.dart';
-import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:uuid/uuid.dart';
 
 export 'package:icarus/domain/folder.dart' show Folder, FolderColor;
@@ -231,58 +230,45 @@ class FolderProvider extends Notifier<String?> {
     return result;
   }
 
-  /// Deletes the folder, its subfolders and every strategy in them. The
-  /// folders go last, each before its parent, so however far this gets
-  /// before it stops, nothing is left inside a folder that is gone.
+  /// Deletes the folder, its subfolders and every strategy in them. What
+  /// goes is decided and taken off the library in one step, with nothing
+  /// awaited in between: Hive drops the records from the library as each
+  /// delete is called and writes them after. So nothing the user does while
+  /// the delete finishes (the dialog can close) is caught in it. The files
+  /// and pins of what went are removed afterwards.
   Future<CloudLibraryActionResult> _deleteLocalFolder(String folderID) async {
     final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
     final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final tree = folderAndDescendantIds(folderID, {
+    final folderIds = folderAndDescendantIds(folderID, {
       for (final folder in folders.values) folder.id: folder.parentID,
     });
-    final treeIds = tree.toSet();
-    const movingMessage = 'Something in this folder is moving to the cloud. '
-        'Delete it once the move ends.';
+    final strategyIds = [
+      for (final strategy in strategies.values)
+        if (folderIds.contains(strategy.folderID)) strategy.id,
+    ];
 
     // Deleting it would delete a strategy that is moving to the cloud.
     final moving = ref.read(movingToCloudProvider);
-    if (treeIds.any(moving.contains) ||
-        strategies.values.any(
-          (s) => treeIds.contains(s.folderID) && moving.contains(s.id),
-        )) {
-      return CloudLibraryActionResult.failed(movingMessage);
+    if (folderIds.any(moving.contains) || strategyIds.any(moving.contains)) {
+      return CloudLibraryActionResult.failed(
+        'Something in this folder is moving to the cloud. Delete it once '
+        'the move ends.',
+      );
     }
 
-    // Asked again right before each removal: the dialog can close while
-    // this runs, and what the user moves out of the folder meanwhile stays.
-    bool inside(String? id) {
-      final seen = <String>{};
-      while (id != null && seen.add(id)) {
-        if (id == folderID) return true;
-        id = folders.get(id)?.parentID;
-      }
-      return false;
-    }
+    // Strategies first: were only one write to land, what is left still
+    // shows (a strategy whose folder is gone shows at the top level).
+    final removals = [
+      strategies.deleteAll(strategyIds),
+      folders.deleteAll(folderIds),
+    ];
+    await Future.wait(removals);
 
-    for (final strategy in strategies.values.toList()) {
-      if (!inside(strategy.folderID)) continue;
-      await ref.read(strategyProvider.notifier).deleteStrategy(
-            strategy.id,
-            source: StrategySource.local,
-          );
+    final strategyNotifier = ref.read(strategyProvider.notifier);
+    for (final id in strategyIds) {
+      await strategyNotifier.forgetDeletedLocalStrategy(id);
     }
-    // A strategy that started moving to the cloud meanwhile stays, and so
-    // do the folders.
-    if (strategies.values.any((s) => inside(s.folderID))) {
-      return CloudLibraryActionResult.failed(movingMessage);
-    }
-
-    final remaining = folderAndDescendantIds(folderID, {
-      for (final folder in folders.values) folder.id: folder.parentID,
-    });
-    for (final id in remaining.reversed) {
-      if (!inside(id)) continue;
-      await folders.delete(id);
+    for (final id in folderIds) {
       await ref.read(pinnedItemsProvider.notifier).removePin(id);
     }
     return CloudLibraryActionResult.succeeded;

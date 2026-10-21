@@ -114,34 +114,46 @@ void main() {
     expect(container.read(pinnedItemsProvider), isEmpty);
   });
 
-  test('a subfolder moved out while the delete runs is kept', () async {
+  test('what goes is decided at once; changes made meanwhile are kept',
+      () async {
     await folder('maps');
-    await strategy('a-maps-notes', folder: 'maps');
+    await strategy('maps-notes', folder: 'maps');
     await folder('ascent', parent: 'maps');
-    await folder('retakes', parent: 'ascent');
     await strategy('a-split', folder: 'ascent');
-    await strategy('b-retake', folder: 'retakes');
-    final firstDelete = Completer<void>();
+    await folder('bind');
+    await strategy('bind-exec', folder: 'bind');
+    final filesRemoved = Completer<void>();
     final paused = ProviderContainer(overrides: [
       libraryWorkspaceProvider.overrideWith(_LocalWorkspace.new),
-      strategyProvider.overrideWith(() => _PausedDelete(firstDelete.future)),
+      strategyProvider.overrideWith(() => _PausedFiles(filesRemoved.future)),
     ]);
     addTearDown(paused.dispose);
 
     final deleting = paused
         .read(folderProvider.notifier)
         .deleteFolder('maps', workspace: LibraryWorkspace.local);
-    // The first strategy goes; while its files are removed, the dialog can
-    // close and the user drags ascent to the top.
-    final ascent = folders().get('ascent')!..parentID = null;
-    await ascent.save();
-    firstDelete.complete();
+
+    // Off the library before anything was awaited.
+    expect(folders().keys, ['bind']);
+    expect(strategies().keys, ['bind-exec']);
+    // While the files go, the dialog can close and the user carries on.
+    // A save replaces the stored strategy, as autosave does.
+    final bindExec = strategies().get('bind-exec')!;
+    await strategies().put(
+      'bind-exec',
+      bindExec.copyWith(lastEdited: DateTime.utc(2027)),
+    );
+    await folder('later', parent: 'bind');
+    await strategy('later-exec', folder: 'later');
+    filesRemoved.complete();
 
     expect((await deleting).didSucceed, isTrue);
-    expect(folders().keys, unorderedEquals(['ascent', 'retakes']));
-    expect(strategies().keys, unorderedEquals(['a-split', 'b-retake']));
-    expect(hasImages('a-maps-notes'), isFalse);
-    expect(hasImages('b-retake'), isTrue);
+    expect(folders().keys, unorderedEquals(['bind', 'later']));
+    expect(strategies().keys, unorderedEquals(['bind-exec', 'later-exec']));
+    expect(hasImages('maps-notes'), isFalse);
+    expect(hasImages('a-split'), isFalse);
+    expect(hasImages('bind-exec'), isTrue);
+    expect(hasImages('later-exec'), isTrue);
   });
 
   test('folders whose parent is gone show again, and nothing is deleted',
@@ -192,21 +204,17 @@ void main() {
   });
 }
 
-/// Holds after the first strategy delete until [resume] completes, as a
-/// slow removal of its image files would.
-class _PausedDelete extends StrategyProvider {
-  _PausedDelete(this.resume);
+/// Holds the removal of the first deleted strategy's files until [resume]
+/// completes, as a slow disk would.
+class _PausedFiles extends StrategyProvider {
+  _PausedFiles(this.resume);
 
   final Future<void> resume;
 
   @override
-  Future<CloudLibraryActionResult> deleteStrategy(
-    String strategyID, {
-    StrategySource? source,
-  }) async {
-    final result = await super.deleteStrategy(strategyID, source: source);
+  Future<void> forgetDeletedLocalStrategy(String strategyID) async {
     await resume;
-    return result;
+    await super.forgetDeletedLocalStrategy(strategyID);
   }
 }
 

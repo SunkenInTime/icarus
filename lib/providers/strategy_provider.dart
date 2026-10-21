@@ -2397,6 +2397,13 @@ class StrategyProvider extends Notifier<StrategyState> {
       );
     }
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(strategyID);
+    await forgetDeletedLocalStrategy(strategyID);
+    return CloudLibraryActionResult.succeeded;
+  }
+
+  /// Removes what a deleted local strategy kept beside its record: its pin
+  /// and its image files.
+  Future<void> forgetDeletedLocalStrategy(String strategyID) async {
     await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
 
     final directory = await getApplicationSupportDirectory();
@@ -2404,12 +2411,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     final customDirectory =
         Directory(strategyFolderPath(directory.path, strategyID));
 
-    if (!await customDirectory.exists()) {
-      return CloudLibraryActionResult.succeeded;
-    }
+    if (!await customDirectory.exists()) return;
 
     await customDirectory.delete(recursive: true);
-    return CloudLibraryActionResult.succeeded;
   }
 
   /// Lets go of what this device keeps for a cloud strategy the server has
