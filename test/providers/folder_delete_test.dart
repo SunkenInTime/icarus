@@ -8,6 +8,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/migrations/hidden_folder_repair.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
@@ -107,6 +108,53 @@ void main() {
     }
     expect(hasImages('bind-exec'), isTrue);
     expect(container.read(pinnedItemsProvider), isEmpty);
+  });
+
+  test('folders whose parent is gone show again, and nothing is deleted',
+      () async {
+    // What deleting "maps" used to leave: the folder and the strategies
+    // directly in it went, its subfolders stayed.
+    await folder('ascent', parent: 'maps');
+    await folder('retakes', parent: 'ascent');
+    await strategy('a-split', folder: 'ascent');
+    await strategy('b-retake', folder: 'retakes');
+    // An older import's folder, under a cloud parent that never arrived.
+    await folder('imported', parent: 'cloud-folder');
+    await strategy('imported-exec', folder: 'imported');
+    // What the library already shows stays as it is.
+    await folder('bind');
+    await folder('sites', parent: 'bind');
+    await strategy('bind-exec', folder: 'sites');
+    await strategy('top-level', folder: 'maps');
+    // No delete makes a parent loop; it is left alone.
+    await folder('left', parent: 'right');
+    await folder('right', parent: 'left');
+
+    final shown = await showFoldersWithMissingParent(folders());
+
+    expect(shown, 2);
+    expect(
+      {for (final f in folders().values) f.id: f.parentID},
+      {
+        'ascent': null,
+        'retakes': 'ascent',
+        'imported': null,
+        'bind': null,
+        'sites': 'bind',
+        'left': 'right',
+        'right': 'left',
+      },
+    );
+    expect(
+      strategies().keys,
+      unorderedEquals(
+        ['a-split', 'b-retake', 'imported-exec', 'bind-exec', 'top-level'],
+      ),
+    );
+    for (final id in strategies().keys) {
+      expect(hasImages(id as String), isTrue, reason: id);
+    }
+    expect(await showFoldersWithMissingParent(folders()), 0);
   });
 }
 

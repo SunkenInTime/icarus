@@ -37,6 +37,7 @@ import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/migrations/hidden_folder_repair.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -225,6 +226,28 @@ Future<void> main(List<String> args) async {
       await MapThemeProfilesProvider.bootstrap();
 
       await StrategyMigrator.migrateLocalLibrary(PlatformPolicy.current);
+      if (PlatformPolicy.current.allowsLocalLibrary) {
+        try {
+          final shown = await showFoldersWithMissingParent(
+            Hive.box<Folder>(HiveBoxNames.foldersBox),
+          );
+          if (shown > 0) {
+            AppErrorReporter.reportInfo(
+              'Showed $shown folders whose parent folder was gone',
+              source: 'main.hiddenFolders',
+            );
+          }
+        } catch (error, stackTrace) {
+          // The library opens either way; tried again next launch.
+          AppErrorReporter.reportError(
+            "Couldn't show the folders whose parent folder was gone",
+            source: 'main.hiddenFolders',
+            error: error,
+            stackTrace: stackTrace,
+            promptUser: false,
+          );
+        }
+      }
 
       // The cloud comes up degraded rather than not at all: a failure here
       // must never keep anyone from the library on this device.
