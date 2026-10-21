@@ -235,27 +235,46 @@ class AppErrorReporter {
       }
     }
 
-    return _withHomeAsTilde(buffer.toString().trimRight());
+    final text = buffer.toString().trimRight();
+    if (kIsWeb) return text;
+    return withHomeAsTilde(
+      text,
+      home: Platform.environment[Platform.isWindows ? 'USERPROFILE' : 'HOME'],
+      windows: Platform.isWindows,
+    );
   }
 
-  /// [text] with the user's home folder written as `~`, so a pasted report
-  /// doesn't carry the name of their account.
-  static String _withHomeAsTilde(String text) {
-    if (kIsWeb) return text;
-    final home = Platform
-        .environment[Platform.isWindows ? 'USERPROFILE' : 'HOME']
-        ?.replaceFirst(RegExp(r'[\\/]+$'), '');
+  /// [text] with the user's home folder written as `~`, so the account
+  /// name in it doesn't travel with a pasted report. Covers the folder as
+  /// written, with forward slashes, JSON-escaped, and in a file URI; a
+  /// short 8.3 name or another spelling of the same folder isn't caught.
+  @visibleForTesting
+  static String withHomeAsTilde(
+    String text, {
+    required String? home,
+    required bool windows,
+  }) {
+    home = home?.replaceFirst(RegExp(r'[\\/]+$'), '');
     // A home at the root of a drive would turn every path into ~.
     if (home == null || !RegExp(r'[\\/][^\\/]+$').hasMatch(home)) {
       return text;
     }
+    final forward = home.replaceAll(r'\', '/');
+    final forms = {
+      home,
+      forward,
+      home.replaceAll(r'\', r'\\'),
+      Uri.encodeFull(forward),
+    };
     var result = text;
-    for (final form in {home, home.replaceAll(r'\', '/')}) {
+    // Longest first, so the JSON form isn't half-replaced by the plain one.
+    for (final form in forms.toList()
+      ..sort((a, b) => b.length.compareTo(a.length))) {
       // Not inside a longer folder name, like C:\Users\sam beside C:\Users\samuel.
       result = result.replaceAll(
         RegExp(
           '${RegExp.escape(form)}(?![\\w.-])',
-          caseSensitive: !Platform.isWindows,
+          caseSensitive: !windows,
         ),
         '~',
       );

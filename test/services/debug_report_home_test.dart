@@ -13,7 +13,7 @@ DebugLogEntry _entry(String message, {String? error}) => DebugLogEntry(
 
 void main() {
   final home =
-      Platform.environment[Platform.isWindows ? 'USERPROFILE' : 'HOME']!;
+      Platform.environment[Platform.isWindows ? 'USERPROFILE' : 'HOME'];
   final separator = Platform.pathSeparator;
 
   test('the copied report writes the home folder as ~', () {
@@ -25,7 +25,7 @@ void main() {
       _entry(
         'Import failed.',
         error: 'PathNotFoundException: '
-            '${home.replaceAll(r'\', '/')}/Downloads/retake.ica',
+            '${home!.replaceAll(r'\', '/')}/Downloads/retake.ica',
       ),
     ]);
 
@@ -33,11 +33,34 @@ void main() {
     expect(report, contains('~${separator}AppData${separator}icarus'));
     expect(report, contains('~${separator}Documents${separator}B site.ica'));
     expect(report, contains('~/Downloads/retake.ica'));
-  });
+  }, skip: home == null ? 'no home folder in this environment' : false);
 
-  test('a longer folder name that starts with the home is left alone', () {
-    final report = AppErrorReporter.buildClipboardReport(
-        [_entry('${home}2${separator}x')]);
-    expect(report, contains('${home}2${separator}x'));
+  group('withHomeAsTilde', () {
+    const home = r'C:\Users\Alex Smith';
+    String redact(String text) =>
+        AppErrorReporter.withHomeAsTilde(text, home: home, windows: true);
+
+    test('covers the folder in every form a report carries', () {
+      expect(redact(r'C:\Users\Alex Smith\Documents\plan.ica'),
+          r'~\Documents\plan.ica');
+      expect(redact('C:/Users/Alex Smith/Documents/plan.ica'),
+          '~/Documents/plan.ica');
+      expect(redact(r'{"path":"C:\\Users\\Alex Smith\\Documents\\plan.ica"}'),
+          r'{"path":"~\\Documents\\plan.ica"}');
+      expect(redact('file:///C:/Users/Alex%20Smith/Documents/plan.ica'),
+          'file:///~/Documents/plan.ica');
+      expect(redact(r'c:\users\alex smith\Documents'), r'~\Documents');
+    });
+
+    test('leaves a longer folder name that starts with the home', () {
+      expect(redact(r'C:\Users\Alex Smithson\x'), r'C:\Users\Alex Smithson\x');
+    });
+
+    test('changes nothing for a home at the root of a drive', () {
+      expect(
+        AppErrorReporter.withHomeAsTilde(r'C:\x', home: r'C:\', windows: true),
+        r'C:\x',
+      );
+    });
   });
 }
