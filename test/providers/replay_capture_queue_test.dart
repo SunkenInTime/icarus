@@ -483,6 +483,58 @@ void main() {
     expect(cloud.ownerOf.values, everyElement('account-1'));
   });
 
+  test(
+      'a refusal that went out under another account fails nothing, even with the first account back',
+      () async {
+    void signIn(String accountId) {
+      cloud.signedInAs = accountId;
+      container.read(_account.notifier).state = accountId;
+    }
+
+    setOnline(false);
+    final replay = session();
+    await replay.capture(_frame(500), pageName: '0:10');
+    await replay.capture(_frame(510), pageName: '0:20');
+    // Someone else signs in while the page add is out, and the first
+    // account is back before the next read's refusal arrives.
+    cloud.afterPageAdd = (_) {
+      cloud.afterPageAdd = null;
+      signIn('account-2');
+      cloud.afterShellRead = () {
+        cloud.afterShellRead = null;
+        signIn('account-1');
+      };
+    };
+    setOnline(true);
+    await queue().sendNow();
+    expect(queued().captures.where((c) => c.isFailed), isEmpty);
+
+    await queue().sendNow();
+    expect(queued().captures, isEmpty);
+    expect(cloud.strategies.values.single.orderedPages, hasLength(2));
+  });
+
+  test('a strategy made just before another account signed in may have landed',
+      () async {
+    setOnline(false);
+    await session().capture(_frame(500), pageName: '0:10');
+    // Made, then the answer is lost while someone else signs in.
+    cloud.afterCreate = () {
+      cloud.afterCreate = null;
+      cloud.signedInAs = 'account-2';
+      container.read(_account.notifier).state = 'account-2';
+      cloud.loseAnswers = true;
+    };
+    setOnline(true);
+    await queue().sendNow();
+    cloud.loseAnswers = false;
+
+    final capture = queued().captures.single;
+    expect(capture.isFailed, isFalse);
+    expect(capture.mayHaveLanded, isTrue);
+    expect(await queue().discard([capture.id]), isTrue);
+  });
+
   test('a record this build cannot read is kept and counted', () async {
     final box = Hive.box<String>(HiveBoxNames.replayCapturesBox);
     await box.put('future', jsonEncode({'version': 99}));
@@ -592,9 +644,22 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
   final Map<String, String?> folderOf = {};
 
   /// The account the server sees signed in. A strategy belongs to the one
-  /// that made it and is not found by any other.
+  /// that made it; any other is refused it, as the server refuses one with
+  /// no role on it.
   String signedInAs = 'account-1';
   final Map<String, String> ownerOf = {};
+
+  /// Runs right after a strategy is made, before it is answered.
+  void Function()? afterCreate;
+
+  /// Runs right after a strategy is read, before it is answered.
+  void Function()? afterShellRead;
+
+  static const _forbidden = ConvexFunctionException(
+    code: ConvexErrorCode.forbidden,
+    rawCode: 'FORBIDDEN',
+    message: 'Forbidden',
+  );
 
   /// Runs right after a page add is written, before it is answered.
   void Function(_Strategy strategy)? afterPageAdd;
@@ -664,6 +729,14 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
         message: 'Forbidden',
       );
     }
+    if ((ownerOf[publicId] ?? signedInAs) != signedInAs) {
+      calls++;
+      throw const ConvexFunctionException(
+        code: ConvexErrorCode.conflict,
+        rawCode: 'CONFLICT',
+        message: 'Strategy publicId already exists',
+      );
+    }
     folderOf.putIfAbsent(publicId, () => folderPublicId);
     ownerOf.putIfAbsent(publicId, () => signedInAs);
     final strategy =
@@ -676,6 +749,7 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
         initialPageIsAttack,
       ));
     }
+    afterCreate?.call();
     _answer();
   }
 
@@ -686,9 +760,11 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
   }) async {
     calls++;
     final strategy = strategies[strategyPublicId];
-    if (strategy == null || ownerOf[strategyPublicId] != signedInAs) {
-      throw _notFound;
-    }
+    final owner = ownerOf[strategyPublicId];
+    final refused = owner != null && owner != signedInAs;
+    afterShellRead?.call();
+    if (strategy == null) throw _notFound;
+    if (refused) throw _forbidden;
     final now = DateTime.now();
     return RemoteStrategyShell(
       header: RemoteStrategyHeader(
@@ -725,16 +801,10 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
     _checkBuild();
     if (accountSubject != null && accountSubject != signedInAs) {
       calls++;
-      throw const ConvexFunctionException(
-        code: ConvexErrorCode.forbidden,
-        rawCode: 'FORBIDDEN',
-        message: 'Forbidden: these changes belong to a different account',
-      );
+      throw _forbidden;
     }
     final strategy = strategies[strategyPublicId];
-    if (strategy == null || ownerOf[strategyPublicId] != signedInAs) {
-      throw _notFound;
-    }
+    if (strategy == null) throw _notFound;
     final acks = <OpAck>[];
     if (ops.every((op) => op is ElementAddOp)) {
       itemBatches

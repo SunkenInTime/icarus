@@ -114,10 +114,21 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
   /// The capture being sent now: discarded, it may still land.
   String? _sendingId;
 
-  /// The account whose captures are being sent. Once another is signed in,
-  /// none of them goes out, and no answer from then on is taken as about
-  /// them: the server may have read it from the other account's library.
+  /// Counts every change of the signed-in account, so a drain can tell it
+  /// happened even when the same account is back by the time it looks.
+  int _accountEpoch = 0;
+
+  /// The account whose captures are being sent, and [_accountEpoch] when
+  /// sending began. After any change, no more of them is sent and no refusal
+  /// from then on is taken as about them: the server may have answered for
+  /// another account. Accepted ops stay accepted; the server checks those
+  /// against the capture's account.
   String? _sendingFor;
+  int _sendingEpoch = 0;
+
+  /// The capture a write was last sent for: left for its account, it may
+  /// still have landed.
+  String? _wroteFor;
 
   final Set<String> _discardedPageIds = {};
   final Set<String> _lostStrategyIds = {};
@@ -138,7 +149,10 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
         if (ready) _kick();
       },
     );
-    ref.listen<String?>(cloudMediaAccountIdProvider, (_, __) => _kick());
+    ref.listen<String?>(cloudMediaAccountIdProvider, (_, __) {
+      _accountEpoch++;
+      _kick();
+    });
     ref.onDispose(() => _retry?.cancel());
     scheduleMicrotask(_kick);
     return _read();
@@ -270,6 +284,7 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
         if (!_canSend()) return;
         final accountId = ref.read(cloudMediaAccountIdProvider);
         _sendingFor = accountId;
+        _sendingEpoch = _accountEpoch;
         final byStrategy = <String, List<ReplayCaptureRecord>>{};
         for (final capture in state.forAccount(accountId)) {
           (byStrategy[capture.strategyId] ??= []).add(capture);
@@ -307,7 +322,8 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
   }
 
   bool get _accountChanged =>
-      ref.read(cloudMediaAccountIdProvider) != _sendingFor;
+      ref.read(cloudMediaAccountIdProvider) != _sendingFor ||
+      _accountEpoch != _sendingEpoch;
 
   void _checkAccount() {
     if (_accountChanged) throw const _AccountChanged();
@@ -321,6 +337,7 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
   Future<bool> _deliver(ReplayCaptureRecord capture) async {
     final repository = ref.read(convexStrategyRepositoryProvider);
     var c = capture;
+    _wroteFor = null;
     try {
       if (c.createsStrategy && !c.pageLanded) c = await _create(repository, c);
       // Read before anything more is sent, every time: the strategy may
@@ -417,7 +434,7 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     } on _Discarded {
       return false;
     } on _AccountChanged {
-      return false;
+      return _leaveForItsAccount(c);
     } on _StorageFailed {
       rethrow;
     } catch (error, stackTrace) {
@@ -435,6 +452,7 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     // makes the strategy for whoever is signed in.
     Future<void> create(String? folderId) {
       _checkAccount();
+      _wroteFor = c.id;
       return repository.createStrategyWithInitialPage(
         publicId: c.strategyId,
         name: c.strategyName,
@@ -499,6 +517,7 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     ReplayCaptureRecord c,
     List<StrategyOp> ops,
   ) async {
+    _wroteFor = c.id;
     final acks = await repository.applyBatch(
       strategyPublicId: c.strategyId,
       clientId: c.clientId,
@@ -520,7 +539,9 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     // A refusal, or not found, may be about whoever is signed in now: it
     // says nothing about this capture, which waits for its own account. A
     // lost answer is still noted below, since the call may have landed.
-    if (_accountChanged && isConvexFunctionError(error)) return false;
+    if (_accountChanged && isConvexFunctionError(error)) {
+      return _leaveForItsAccount(c);
+    }
     try {
       if (isConvexUnauthenticatedError(error)) {
         await ref.read(authProvider.notifier).reportConvexUnauthenticated(
@@ -562,6 +583,20 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     } on _Discarded {
       return false;
     }
+  }
+
+  /// Leaves [c] to be sent again once its account is back. A write sent for
+  /// it may have landed before the account changed: it is noted, so
+  /// discarding it warns that it may still appear.
+  Future<bool> _leaveForItsAccount(ReplayCaptureRecord c) async {
+    if (_wroteFor == c.id && !c.mayHaveLanded) {
+      try {
+        await _save(c.copyWith(uncertain: true));
+      } on _Discarded {
+        // Discarded meanwhile: nothing to note.
+      }
+    }
+    return false;
   }
 
   Future<void> _failStrategy(
