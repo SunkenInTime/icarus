@@ -233,17 +233,22 @@ export async function isAssetShownOnLivePage(
   assetPublicId: string,
 ): Promise<boolean> {
   if (!(await assetReferencesReady(ctx))) return true;
-  const live = await livePageIds(ctx, strategyId);
-  const references = ctx.db
-    .query("assetReferences")
-    .withIndex("by_strategyId_and_assetPublicId_and_deleted", (q) =>
-      q
-        .eq("strategyId", strategyId)
-        .eq("assetPublicId", assetPublicId)
-        .eq("deleted", false),
-    );
-  for await (const reference of references) {
-    if (live.has(reference.pageId)) return true;
+  // One indexed read per live page: the trash can hold any number of pages
+  // that showed this image, and none of them is read.
+  for (const pageId of await livePageIds(ctx, strategyId)) {
+    const reference = await ctx.db
+      .query("assetReferences")
+      .withIndex(
+        "by_strategyId_and_assetPublicId_and_deleted_and_pageId",
+        (q) =>
+          q
+            .eq("strategyId", strategyId)
+            .eq("assetPublicId", assetPublicId)
+            .eq("deleted", false)
+            .eq("pageId", pageId),
+      )
+      .first();
+    if (reference !== null) return true;
   }
   return false;
 }
