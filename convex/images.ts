@@ -5,6 +5,7 @@ import {
   assetReferencesReady,
   collectLiveAssetIds,
   isAssetReferenced,
+  isAssetShownOnLivePage,
 } from "./lib/assetReferences";
 import {
   getActiveAssetForStrategy,
@@ -34,7 +35,12 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { v } from "convex/values";
-import { assertStrategyReadable, assertStrategyRole } from "./lib/auth";
+import {
+  assertStrategyReadable,
+  assertStrategyRole,
+  hasRole,
+  type StrategyRole,
+} from "./lib/auth";
 import { getStrategyByPublicId } from "./lib/entities";
 import {
   createR2ObjectKey,
@@ -149,6 +155,20 @@ async function strategyReferencesAsset(
   return await isAssetReferenced(ctx, strategyId, assetPublicId, {
     includeTombstones: false,
   });
+}
+
+/// Whether a reader holding [role] may see the image. Editors, who can
+/// restore a page from the trash, see what it shows; a viewer sees only
+/// pages outside the trash, as everywhere else they read.
+async function readerCanSeeAsset(
+  ctx: AnyCtx,
+  strategyId: Doc<"strategies">["_id"],
+  assetPublicId: string,
+  role: StrategyRole,
+): Promise<boolean> {
+  return hasRole(role, "editor")
+    ? await strategyReferencesAsset(ctx, strategyId, assetPublicId)
+    : await isAssetShownOnLivePage(ctx, strategyId, assetPublicId);
 }
 
 async function markImageAssetDeleted(
@@ -752,9 +772,11 @@ export const listForStrategy = query({
   returns: v.array(imageAssetValidator),
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    await assertStrategyRole(ctx, strategy, "viewer");
+    const { role } = await assertStrategyRole(ctx, strategy, "viewer");
 
-    const referencedAssetIds = await collectLiveAssetIds(ctx, strategy._id);
+    const referencedAssetIds = await collectLiveAssetIds(ctx, strategy._id, {
+      includeTrashedPages: hasRole(role, "editor"),
+    });
     const assets = await Promise.all(
       [...referencedAssetIds].map((assetPublicId) =>
         getViewerAssetForStrategy(ctx, strategy._id, assetPublicId),
@@ -819,13 +841,13 @@ export const getAssetUrl = query({
   returns: v.object({ url: v.union(v.string(), v.null()) }),
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    await assertStrategyReadable(ctx, strategy, args.shareToken);
+    const role = await assertStrategyReadable(ctx, strategy, args.shareToken);
 
     // Builds from before pictures had their own id ask by the image's id.
     const pictureId =
       (await pictureShownByImage(ctx, strategy._id, args.assetPublicId)) ??
       args.assetPublicId;
-    if (!(await strategyReferencesAsset(ctx, strategy._id, pictureId))) {
+    if (!(await readerCanSeeAsset(ctx, strategy._id, pictureId, role))) {
       throw notFoundError("Asset", args.assetPublicId);
     }
 
@@ -1332,7 +1354,11 @@ export const listPotentiallyStale = internalQuery({
     await assertStrategyRole(ctx, strategy, "editor");
     const limit = Math.max(1, Math.min(args.limit ?? 200, 500));
 
-    const referencedAssetIds = await collectLiveAssetIds(ctx, strategy._id);
+    // An image a page in the trash shows is still wanted: the page can be
+    // restored.
+    const referencedAssetIds = await collectLiveAssetIds(ctx, strategy._id, {
+      includeTrashedPages: true,
+    });
     const assets = await ctx.db
         .query("imageAssets")
       .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
