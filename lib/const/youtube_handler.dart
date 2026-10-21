@@ -14,7 +14,10 @@ class YoutubeHandler {
   static final RegExp _idWithStart = RegExp(r'^([A-Za-z0-9_-]+)&t=(.*)$');
 
   /// A start time in a form YouTube writes: `90`, `90s`, `1m30s`, `1h2m3s`.
-  static final RegExp _start = RegExp(r'^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$');
+  /// Each number is capped at six digits, far past any video, so the sum
+  /// can't overflow.
+  static final RegExp _start =
+      RegExp(r'^(?:(\d{1,6})h)?(?:(\d{1,6})m)?(?:(\d{1,6})s?)?$');
 
   static const _youtubeHosts = {
     'youtube.com',

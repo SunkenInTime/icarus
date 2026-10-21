@@ -63,9 +63,11 @@ void main() {
         '0': null,
         'soon': null,
         '': null,
+        '9223372036854775808': null,
+        '99999999999h': null,
       }.entries) {
-        expect(YoutubeHandler.parse('https://youtu.be/$id?t=$t')?.startSeconds,
-            seconds,
+        expect(YoutubeHandler.parse('https://youtu.be/$id?t=$t'),
+            (id: id, startSeconds: seconds),
             reason: t);
       }
     });

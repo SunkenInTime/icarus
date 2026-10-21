@@ -51,8 +51,10 @@ class _YoutubeViewState extends State<YoutubeView>
     with AutomaticKeepAliveClientMixin {
   late final Future<void> _webViewWarmupFuture;
 
-  /// Whether the last page to finish loading was the embed.
-  bool _embedShown = false;
+  /// Whether a page replacing the embed goes to the browser. True from the
+  /// start, so a click before the embed has finished loading counts; after
+  /// a hand-off, only an embed that finishes loading turns it back on.
+  bool _handsOff = true;
 
   @override
   bool get wantKeepAlive => true;
@@ -106,7 +108,7 @@ class _YoutubeViewState extends State<YoutubeView>
                 initialUrlRequest: URLRequest(url: embed),
                 onLoadStart: (controller, url) =>
                     _keepOnEmbed(controller, url, embed),
-                onLoadStop: (controller, url) => _embedShown = _isEmbed(url),
+                onLoadStop: (controller, url) => _handsOff = _isEmbed(url),
               ),
             ),
           ],
@@ -120,16 +122,19 @@ class _YoutubeViewState extends State<YoutubeView>
       url.scheme == 'https' &&
       url.host == YoutubeHandler.embedHost;
 
-  /// The view only ever shows our embed page. The player inside it loads
-  /// in its own frame; a page that would replace the embed, like the one
-  /// behind the player's YouTube links, opens in the user's browser and
-  /// the embed comes back. On Windows the load can't be refused before it
-  /// starts: shouldOverrideUrlLoading misses pages YouTube's service
-  /// worker serves, so this catches every load as it starts.
+  /// The view is for our embed page. The player inside it loads in its own
+  /// frame; a page that would replace the embed, like the one behind the
+  /// player's YouTube links, opens in the user's browser and the embed
+  /// comes back. On Windows the load can't be refused before it starts:
+  /// shouldOverrideUrlLoading misses pages YouTube's service worker serves,
+  /// so this catches every load as it starts. On the web nothing reaches
+  /// here: the app doesn't load the plugin's web script, and a cross-origin
+  /// iframe's address can't be read anyway.
   ///
-  /// Only a page leaving a loaded embed counts. If the embed itself never
-  /// loads, say because its address redirects, sending each redirect to
-  /// the browser and loading the embed again would never end.
+  /// One hand-off, then none until an embed finishes loading: if the
+  /// embed's own address redirected elsewhere, handing each redirect off
+  /// and loading the embed again would never end. That redirected page
+  /// then stays in the view.
   void _keepOnEmbed(
     InAppWebViewController controller,
     WebUri? url,
@@ -138,10 +143,10 @@ class _YoutubeViewState extends State<YoutubeView>
     if (url == null ||
         (url.scheme != 'https' && url.scheme != 'http') ||
         _isEmbed(url) ||
-        !_embedShown) {
+        !_handsOff) {
       return;
     }
-    _embedShown = false;
+    _handsOff = false;
     unawaited(launchUrl(url, mode: LaunchMode.externalApplication));
     unawaited(controller.loadUrl(urlRequest: URLRequest(url: embed)));
   }
