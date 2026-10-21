@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kIsWeb, visibleForTesting;
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/settings.dart';
@@ -24,8 +26,15 @@ class AppErrorReporter {
   /// redacted by their callers, as they are for the copyable debug report.
   static bool echoToConsole = kIsWeb;
 
+  /// How large the persisted log grows before it moves to `<name>.1`,
+  /// replacing the one there, and a fresh log starts. Together the two
+  /// stay near twice this, unless the log can't be moved (another copy of
+  /// the app holds it open) or a single entry is bigger than the cap.
+  static const int persistedLogMaxBytes = 1024 * 1024;
+
   static bool _isDebugDialogOpen = false;
   static File? _persistedLogFile;
+  static int _persistedLogBytes = 0;
   static String? _applicationSupportDirectoryPath;
   static Future<void> _persistedLogWriteQueue = Future.value();
   static final Map<String, _InteractiveNotificationState>
@@ -38,6 +47,10 @@ class AppErrorReporter {
       await logFile.parent.create(recursive: true);
       if (!await logFile.exists()) {
         await logFile.create(recursive: true);
+      }
+      _persistedLogBytes = await logFile.length();
+      if (_persistedLogBytes >= persistedLogMaxBytes) {
+        await _rotatePersistedLog(logFile);
       }
       _persistedLogFile = logFile;
     } catch (error, stackTrace) {
@@ -70,6 +83,10 @@ class AppErrorReporter {
       _applicationSupportDirectoryPath;
 
   static String? get persistedLogPath => _persistedLogFile?.path;
+
+  /// Waits for every queued write to the persisted log.
+  @visibleForTesting
+  static Future<void> flushPersistedLog() => _persistedLogWriteQueue;
 
   static void reportInfo(
     String message, {
@@ -295,12 +312,33 @@ class AppErrorReporter {
       ..writeln()
       ..writeln('-----')
       ..writeln();
+    final bytes = utf8.encode(buffer.toString());
 
-    await logFile.writeAsString(
-      buffer.toString(),
-      mode: FileMode.append,
-      flush: true,
-    );
+    if (_persistedLogBytes > 0 &&
+        _persistedLogBytes + bytes.length > persistedLogMaxBytes) {
+      await _rotatePersistedLog(logFile);
+    }
+    await logFile.writeAsBytes(bytes, mode: FileMode.append, flush: true);
+    _persistedLogBytes += bytes.length;
+  }
+
+  static Future<void> _rotatePersistedLog(File logFile) async {
+    // The byte count is also the retry budget: a log that can't move
+    // (another copy of the app has it open) keeps growing, and the next try
+    // waits for another cap's worth.
+    _persistedLogBytes = 0;
+    try {
+      // Replaces the old .1 in the same step, so a move that fails keeps it.
+      await logFile.rename('${logFile.path}.1');
+    } catch (error, stackTrace) {
+      developer.log(
+        'Failed to rotate persisted debug log.',
+        name: 'AppErrorReporter._rotatePersistedLog',
+        error: error,
+        stackTrace: stackTrace,
+        level: 900,
+      );
+    }
   }
 }
 
