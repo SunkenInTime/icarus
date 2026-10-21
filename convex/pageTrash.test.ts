@@ -904,6 +904,79 @@ describe("page trash", () => {
     ).toEqual([]);
   });
 
+  test("a purge run deletes a bounded share of a big lineup group's rows and the next runs finish it", async () => {
+    vi.useFakeTimers();
+    const { t, owner } = await createHarness();
+    await seed(owner);
+    // A group of 300 lineups, each from its own origin: 300 lineupItems
+    // rows for the origins, 300 for the links, 300 lineupAgents rows.
+    const spots = Array.from({ length: 300 }, (_, index) => index);
+    await apply(owner, [
+      {
+        type: "lineup.add",
+        lineupPublicId: "big",
+        pagePublicId: pageB,
+        payload: lineupsPayload("big", {
+          origins: spots.map((index) => ({ id: `big-o${index}` })),
+          landings: [{ id: "big-l" }],
+          links: spots.map((index) => ({
+            id: `big-k${index}`,
+            originId: `big-o${index}`,
+            landingId: "big-l",
+          })),
+        }),
+        sortIndex: 5,
+      },
+    ]);
+    await deleteB(owner);
+    const trashed = await pageRow(t, pageB);
+    const sideRows = async () =>
+      await t.run(async (ctx) => {
+        const lineupIds = new Set(
+          (
+            await ctx.db
+              .query("lineups")
+              .withIndex("by_pageId", (q) => q.eq("pageId", trashed!._id))
+              .collect()
+          ).map((row) => row._id),
+        );
+        return (
+          (await ctx.db.query("lineupItems").collect()).filter((row) =>
+            lineupIds.has(row.lineupId),
+          ).length +
+          (await ctx.db.query("lineupAgents").collect()).filter((row) =>
+            lineupIds.has(row.lineupId),
+          ).length
+        );
+      });
+    const before = await sideRows();
+    expect(before).toBeGreaterThan(900);
+
+    vi.setSystemTime(Date.now() + PAGE_TRASH_RETENTION_MS + day);
+    await t.mutation(purgeTrashedPages, {});
+    // One run stays within its budget, so a group as big as one op allows
+    // can never take a run past Convex's write limit, and the big group
+    // keeps its row until its side rows are gone.
+    const afterOneRun = await sideRows();
+    expect(before - afterOneRun).toBeLessThanOrEqual(200);
+    expect(
+      (await rowsOnPage(t, trashed!._id)).lineups.map(
+        (row) => row.publicId,
+      ),
+    ).toContain("big");
+
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await pageRow(t, pageB)).toBeNull();
+    expect(await sideRows()).toBe(0);
+    expect(
+      await t.run(async (ctx) =>
+        (await ctx.db.query("lineupItems").collect()).filter(
+          (row) => row.pageId === trashed!._id,
+        ),
+      ),
+    ).toEqual([]);
+  });
+
   test("the orphan purge scheduled by older deletes leaves a page that still has its row alone", async () => {
     const { t, owner } = await createHarness();
     await seed(owner);
