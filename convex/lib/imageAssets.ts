@@ -1,6 +1,11 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { normalizeImageExtension, publicR2UrlForObjectKey } from "./r2";
+import { isSafeFileNameId } from "./fileNameIds";
+import {
+  expectedMimeTypeForExtension,
+  normalizeImageExtension,
+  publicR2UrlForObjectKey,
+} from "./r2";
 
 type AnyCtx = MutationCtx | QueryCtx;
 
@@ -381,12 +386,28 @@ export async function getViewerAssetForStrategy(
   return await getActiveAssetForStrategy(ctx, strategyId, assetPublicId);
 }
 
+/// The desktop app saves a downloaded image as `<publicId><extension>`, so a
+/// row that isn't a safe image file name is never handed out to download,
+/// whichever path wrote it. Rows from before extensions were recorded have
+/// none, and a file without one can't run.
+export function isSavableImageFile(
+  asset: Pick<Doc<"imageAssets">, "publicId" | "fileExtension" | "storagePath">,
+): boolean {
+  const extension = inferFileExtension(asset);
+  return (
+    isSafeFileNameId(asset.publicId) &&
+    (extension === "" || expectedMimeTypeForExtension(extension) !== null)
+  );
+}
+
 export async function serializeAssetForViewer(
   ctx: QueryCtx,
   asset: Doc<"imageAssets">,
 ): Promise<SerializedAsset> {
   const provider = inferProvider(asset);
-  const uploadStatus = inferUploadStatus(asset);
+  const status = inferUploadStatus(asset);
+  const uploadStatus =
+    status === "active" && !isSavableImageFile(asset) ? "failed" : status;
   const url =
     provider === "r2"
       ? asset.objectKey === undefined || uploadStatus !== "active"

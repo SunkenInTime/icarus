@@ -45,6 +45,7 @@ import {
 } from "./lib/errors";
 import { purgeDeletedPageOrphansRef } from "./maintenance";
 import { markDeletedStrategyImageAssetsRef } from "./images";
+import { assertSafeFileNameId } from "./lib/fileNameIds";
 import {
   createResultValidator,
   okResultValidator,
@@ -347,6 +348,7 @@ async function createStrategyWithInitialPageRecord(
   userId: Id<"users">,
   initialPage: InitialPageInput,
 ) {
+  assertSafeFileNameId("Strategy id", args.publicId);
   const now = Date.now();
   const folderId = await resolveOwnedFolderId(ctx, args.folderPublicId, userId);
 
@@ -620,6 +622,7 @@ export const duplicate = mutation({
   returns: createResultValidator,
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
+    assertSafeFileNameId("Strategy id", args.publicId);
     const source = await getStrategyByPublicId(
       ctx,
       args.sourceStrategyPublicId,

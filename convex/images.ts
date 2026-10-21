@@ -14,11 +14,13 @@ import {
   inferUploadStatus,
   isUploadPlaceholder,
   pictureShownByImage,
+  isSavableImageFile,
   serializeAssetForViewer,
   staleUploadAgeMs,
   type Provider,
   type UploadStatus,
 } from "./lib/imageAssets";
+import { assertSafeFileNameId } from "./lib/fileNameIds";
 import {
   action,
   internalAction,
@@ -258,6 +260,7 @@ export const generateUploadUrl = action({
   }),
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
+    assertSafeFileNameId("Image id", args.assetPublicId);
     const config = getR2Config();
     const validated = validateImageUploadMetadata({
       fileExtension: args.fileExtension,
@@ -414,6 +417,15 @@ export const completeUpload = action({
   ) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     if (args.storageId !== undefined || args.provider === "convex") {
+      assertSafeFileNameId("Image id", args.assetPublicId);
+      if (
+        args.fileExtension !== undefined &&
+        expectedMimeTypeForExtension(args.fileExtension) === null
+      ) {
+        throw invalidPayloadError(
+          `Unsupported image extension "${args.fileExtension}".`,
+        );
+      }
       await ctx.runMutation(internal.images.completeLegacyUpload, {
         strategyPublicId: args.strategyPublicId,
         assetPublicId: args.assetPublicId,
@@ -474,12 +486,18 @@ export const completeUpload = action({
     const actualMimeType =
       metadata.mimeType?.split(";")[0]?.trim().toLowerCase() ?? null;
     const actualByteSize = metadata.byteSize;
+    // The extension is what the desktop app names the file on disk, so it
+    // must be the image type that was uploaded, whatever the caller says.
+    const fileExtension = normalizeImageExtension(
+      args.fileExtension ?? intent.fileExtension,
+    );
     if (
       actualByteSize === null ||
       actualByteSize <= 0 ||
       actualByteSize > config.maxImageBytes ||
       expectedMimeType === null ||
-      actualMimeType !== expectedMimeType
+      actualMimeType !== expectedMimeType ||
+      expectedMimeTypeForExtension(fileExtension) !== actualMimeType
     ) {
       await deleteR2Object(config, intent.objectKey);
       await ctx.runMutation(internal.images.markR2UploadFailed, {
@@ -496,7 +514,7 @@ export const completeUpload = action({
       byteSize: actualByteSize,
       etag: metadata.etag ?? args.etag,
       mimeType: actualMimeType,
-      fileExtension: args.fileExtension ?? intent.fileExtension,
+      fileExtension,
       width: args.width,
       height: args.height,
     });
@@ -815,6 +833,9 @@ export const getAssetUrl = query({
     );
     if (asset === null) {
       throw notFoundError("Asset", args.assetPublicId);
+    }
+    if (!isSavableImageFile(asset)) {
+      return { url: null };
     }
 
     return {
