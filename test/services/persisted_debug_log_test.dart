@@ -60,5 +60,22 @@ void main() {
     expect(previous, lessThanOrEqualTo(cap));
     expect(current, lessThanOrEqualTo(cap));
     expect(previous + current, greaterThan(cap));
+    expect(
+        await File(logPath).readAsString(), contains('${cap ~/ 100000 + 1} '));
   });
+
+  test('a log that cannot move keeps the previous one', () async {
+    await File('$logPath.1').writeAsString('the session before last');
+    await File(logPath).writeAsString('x' * cap);
+    // Windows refuses to move a file another handle holds open.
+    final held = await File(logPath).open(mode: FileMode.append);
+    addTearDown(held.close);
+
+    await AppErrorReporter.initializePersistedLog(logPath);
+    AppErrorReporter.reportInfo('still logged');
+    await AppErrorReporter.flushPersistedLog();
+
+    expect(await File('$logPath.1').readAsString(), 'the session before last');
+    expect(await File(logPath).readAsString(), contains('still logged'));
+  }, skip: !Platform.isWindows);
 }

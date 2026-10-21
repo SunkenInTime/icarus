@@ -322,13 +322,13 @@ class AppErrorReporter {
   }
 
   static Future<void> _rotatePersistedLog(File logFile) async {
-    // A log that can't move (another copy of the app has it open) keeps
-    // growing, and the next try waits for another cap's worth.
+    // The byte count is also the retry budget: a log that can't move
+    // (another copy of the app has it open) keeps growing, and the next try
+    // waits for another cap's worth.
     _persistedLogBytes = 0;
     try {
-      final previous = File('${logFile.path}.1');
-      if (await previous.exists()) await previous.delete();
-      await logFile.rename(previous.path);
+      // Replaces the old .1 in the same step, so a move that fails keeps it.
+      await logFile.rename('${logFile.path}.1');
     } catch (error, stackTrace) {
       developer.log(
         'Failed to rotate persisted debug log.',
