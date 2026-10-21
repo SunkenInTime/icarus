@@ -136,20 +136,29 @@ jobs:
             # The description is fetched, not taken from the event, so a
             # rerun sees the current line.
             body=$(gh pr view "$PR" --repo "$REPO" --json body --jq .body | tr -d '\r')
+            # Anyone who can open a PR writes this line, so it is only data:
+            # split without quote or escape handling, and only words checked
+            # against the lane list reach the log or the outputs. Printing it
+            # raw would let it write runner commands into the log.
             line=$(grep -m1 -iE '^ci:' <<<"$body" || true)
             if [[ -n "$line" ]]; then
-              named=" $(cut -d: -f2- <<<"$line" | tr 'A-Z,' 'a-z ' | xargs) "
-              echo "The description names: ${named}"
-              for word in $named; do
+              value=${line#*:}
+              value=${value,,}
+              read -ra words <<<"${value//,/ }"
+              named=" "
+              unknown=0
+              for word in "${words[@]}"; do
                 case "$word" in
-                  analyze|test|web|replay|convex|presence|contract|bridge|desktop|skip) ;;
-                  all) full=true ;;
-                  *)
-                    echo "::warning::The ci: line names an unknown lane, \"$word\"; running every lane."
-                    full=true
-                    ;;
+                  analyze|test|web|replay|convex|presence|contract|bridge|desktop|skip) named+="$word " ;;
+                  all) named+="all "; full=true ;;
+                  *) unknown=$((unknown + 1)) ;;
                 esac
               done
+              printf 'The description names:%s\n' "$named"
+              if (( unknown > 0 )); then
+                printf '::warning::The ci: line has %d word(s) that are not lanes; running every lane. Lanes: analyze test web replay convex presence contract bridge desktop skip all.\n' "$unknown"
+                full=true
+              fi
             fi
           fi
 
