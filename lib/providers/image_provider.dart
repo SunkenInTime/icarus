@@ -411,21 +411,30 @@ class PlacedImageProvider extends Notifier<ImageState> {
     return imagesDirectory;
   }
 
-  /// Copies every image file of [fromStrategyID] into [toStrategyID]'s
-  /// folder. Each strategy keeps its own files, so a copy that only pointed
-  /// at the original's would lose them when the original is deleted.
-  static Future<void> copyImageFiles({
+  /// Copies the files of [pictures], the pictures a strategy shows, from
+  /// [fromStrategyID]'s folder into [toStrategyID]'s. Each strategy keeps its
+  /// own files, so a copy that only pointed at the original's would lose them
+  /// when the original is deleted. Returns how many of [pictures] had no file
+  /// to copy: the original was already missing them.
+  static Future<int> copyImageFiles({
     required String fromStrategyID,
     required String toStrategyID,
+    required Iterable<({String id, String? fileExtension})> pictures,
   }) async {
-    if (kIsWeb) return;
+    if (kIsWeb) return 0;
     final source = await getImageFolder(fromStrategyID);
     final target = await getImageFolder(toStrategyID);
-    await for (final entity in source.list()) {
-      if (entity is File) {
-        await entity.copy(path.join(target.path, path.basename(entity.path)));
+    var missing = 0;
+    for (final picture in pictures.toSet()) {
+      final name = imageFileName(picture.id, picture.fileExtension);
+      final file = name == null ? null : File(path.join(source.path, name));
+      if (file == null || !await file.exists()) {
+        missing++;
+        continue;
       }
+      await file.copy(path.join(target.path, name!));
     }
+    return missing;
   }
 
   static String buildImageFilePath(

@@ -357,6 +357,85 @@ void main() {
       );
       expect(archive.findFile('picture.png')?.content, pictureBytes);
     });
+
+    test(
+        'copies only the pictures the strategy shows, and still copies when '
+        'one was already missing', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_pathProvider, (_) async => hiveDir.path);
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_pathProvider, null));
+      final pictureBytes = Uint8List.fromList([1, 2, 3]);
+      await PlacedImageProvider.writeImageBytes(
+        imageBytes: pictureBytes,
+        strategyID: 'local-strategy',
+        imageID: 'kept',
+        fileExtension: '.png',
+      );
+      final folder = await PlacedImageProvider.getImageFolder('local-strategy');
+      await File(path.join(folder.path, 'notes.txt')).writeAsString('stray');
+      PlacedImage picture(String id) => PlacedImage(
+            position: const Offset(100, 100),
+            id: id,
+            aspectRatio: 1,
+            scale: 1,
+            fileExtension: '.png',
+          );
+      final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+      await box.put(
+        'local-strategy',
+        StrategyData(
+          id: 'local-strategy',
+          name: 'Bind B split',
+          mapData: MapValue.bind,
+          versionNumber: Settings.versionNumber,
+          lastEdited: DateTime.utc(2026),
+          folderID: null,
+          pages: [
+            StrategyPage(
+              id: 'page',
+              name: 'Page 1',
+              drawingData: const [],
+              agentData: const [],
+              abilityData: const [],
+              textData: const [],
+              // "gone" has no file: an older duplicate already lost it.
+              imageData: [picture('kept'), picture('gone')],
+              utilityData: const [],
+              sortIndex: 0,
+              isAttack: true,
+              settings: StrategySettings(),
+            ),
+          ],
+        ),
+      );
+      final messages = <String>[];
+      final container = _container(_RecordingTransport(), messages);
+      addTearDown(container.dispose);
+
+      await container.read(strategyProvider.notifier).duplicateStrategy(
+            'local-strategy',
+            source: StrategySource.local,
+          );
+
+      final copy = box.values.singleWhere((s) => s.id != 'local-strategy');
+      expect(copy.pages.single.imageData, hasLength(2));
+      final copyFolder = await PlacedImageProvider.getImageFolder(copy.id);
+      final copied = copyFolder
+          .listSync()
+          .map((entity) => path.basename(entity.path))
+          .toList();
+      expect(copied, ['kept.png']);
+      expect(messages, [
+        'Duplicated. One picture was already missing from the original, so '
+            'the copy is missing it too.',
+      ]);
+      expect(
+        await File(path.join(copyFolder.path, 'kept.png')).readAsBytes(),
+        pictureBytes,
+      );
+    });
   });
 }
 
