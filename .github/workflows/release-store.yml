@@ -28,6 +28,14 @@ jobs:
     environment: Production
 
     steps:
+      # Before checkout, so no code from another branch runs in a job that
+      # holds the Partner Center secret. The preflight script checks too, but
+      # a branch can edit its own copy of that script.
+      - name: Require Main Branch
+        if: ${{ github.ref != 'refs/heads/main' }}
+        shell: pwsh
+        run: throw "Store releases must be dispatched from main. This run is on $env:GITHUB_REF."
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
