@@ -60,7 +60,7 @@ HTTP Actions URL rather than the client deployment URL. See Convex's
 [deployment URL guide](https://docs.convex.dev/client/react/deployment-urls)
 and [system environment URL definitions](https://docs.convex.dev/production/environment-variables).
 
-Stable desktop, Store, and production backend workflows all enter the protected
+Stable desktop, Store, web beta, and production backend workflows all enter the
 GitHub `Production` environment before they can build or publish. Desktop
 prerelease skips that environment.
 
@@ -81,7 +81,9 @@ first production release:
    See the [Convex deploy-key documentation](https://docs.convex.dev/cli/deploy-key-types).
 3. Create a GitHub environment named `Production`. Restrict its deployment
    branches to `main`, add any required reviewers, and add the secret
-   `CONVEX_PRODUCTION_DEPLOY_KEY`.
+   `CONVEX_PRODUCTION_DEPLOY_KEY`. Deploy Web enters this environment on every
+   push to `main` that it deploys, so a required reviewer means approving each
+   web deploy.
 4. Add the public production URL and a stable client identifier, such as the
    identifier chosen for the shipped Icarus client, to the two GitHub repository
    variables in the previous section.
@@ -141,7 +143,8 @@ unknown paths whenever `build/web` has no top-level `404.html`, so never add
 one. `web/_headers` makes browsers revalidate Flutter's unhashed entry
 files, so testers get a new deploy on refresh.
 
-GitHub repository secrets:
+Secrets, in the GitHub `Production` environment (step 3 of the one-time
+production Convex setup above):
 
 - `CLOUDFLARE_API_TOKEN`: the Cloudflare API token `icarus-web-pages-deploy`,
   scoped to the Icarus account with `Account` > `Cloudflare Pages` > `Edit`
@@ -151,6 +154,13 @@ GitHub repository secrets:
   overview.
 - `CONVEX_PRODUCTION_DEPLOY_KEY`: a `prod:` deploy key for `basic-dove-69`
   (`npx convex deployment token create <name> --prod`).
+
+The deploy job enters `Production`, so it also reads repository secrets, and an
+environment secret overrides a repository secret with the same name ([GitHub's
+secrets reference](https://docs.github.com/en/actions/reference/security/secrets)).
+Copies kept at repository level therefore keep the deploy working while the
+secrets move. Once `Production` has all three, delete the repository copies:
+any workflow on any branch can read a repository secret.
 
 GitHub repository variables: `ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL`
 (`https://basic-dove-69.convex.cloud`) and `ICARUS_PRODUCTION_CONVEX_CLIENT_ID`
