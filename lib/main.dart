@@ -7,7 +7,8 @@ import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -303,9 +304,11 @@ Future<void> main(List<String> args) async {
 
 Future<void> warmUpWebViewEnvironment() {
   if (!isWindowsRuntime) {
-    // Only Windows needs a WebView2 runtime installed. Elsewhere, the web
-    // build included, the platform's own web view is always there.
-    isWebViewInitialized = true;
+    // Only Windows needs a WebView2 runtime installed. The web build and
+    // macOS always have a web view; the plugin has none for Linux, which
+    // keeps the fallback.
+    isWebViewInitialized =
+        kIsWeb || defaultTargetPlatform == TargetPlatform.macOS;
     isWebViewWarmupComplete = true;
     return Future.value();
   }
