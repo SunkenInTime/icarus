@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/painting.dart';
+import 'package:icarus/services/image_file_name.dart';
 import 'package:path/path.dart' as path;
 
 /// Whether this platform keeps strategy images as files on the device.
@@ -13,9 +14,10 @@ String? findLocalImageFile({
   required String imageId,
   required String? fileExtension,
 }) {
-  if (storageDirectory == null || fileExtension == null) return null;
-  final filePath =
-      path.join(storageDirectory, 'images', '$imageId$fileExtension');
+  if (storageDirectory == null) return null;
+  final name = imageFileName(imageId, fileExtension);
+  if (name == null) return null;
+  final filePath = path.join(storageDirectory, 'images', name);
   return File(filePath).existsSync() ? filePath : null;
 }
 
