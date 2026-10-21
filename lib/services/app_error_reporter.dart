@@ -223,7 +223,6 @@ class AppErrorReporter {
 
     if (entryList.isEmpty) {
       buffer.writeln('No logs recorded.');
-      return buffer.toString().trimRight();
     }
 
     for (var i = 0; i < entryList.length; i++) {
@@ -236,7 +235,32 @@ class AppErrorReporter {
       }
     }
 
-    return buffer.toString().trimRight();
+    return _withHomeAsTilde(buffer.toString().trimRight());
+  }
+
+  /// [text] with the user's home folder written as `~`, so a pasted report
+  /// doesn't carry the name of their account.
+  static String _withHomeAsTilde(String text) {
+    if (kIsWeb) return text;
+    final home = Platform
+        .environment[Platform.isWindows ? 'USERPROFILE' : 'HOME']
+        ?.replaceFirst(RegExp(r'[\\/]+$'), '');
+    // A home at the root of a drive would turn every path into ~.
+    if (home == null || !RegExp(r'[\\/][^\\/]+$').hasMatch(home)) {
+      return text;
+    }
+    var result = text;
+    for (final form in {home, home.replaceAll(r'\', '/')}) {
+      // Not inside a longer folder name, like C:\Users\sam beside C:\Users\samuel.
+      result = result.replaceAll(
+        RegExp(
+          '${RegExp.escape(form)}(?![\\w.-])',
+          caseSensitive: !Platform.isWindows,
+        ),
+        '~',
+      );
+    }
+    return result;
   }
 
   static bool get _canShowInteractiveUi =>
