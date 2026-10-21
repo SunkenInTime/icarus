@@ -22,6 +22,7 @@ import type * as lib_contentCopy from "../lib/contentCopy.js";
 import type * as lib_entities from "../lib/entities.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_fieldMerge from "../lib/fieldMerge.js";
+import type * as lib_fileNameIds from "../lib/fileNameIds.js";
 import type * as lib_imageAssets from "../lib/imageAssets.js";
 import type * as lib_lineupItems from "../lib/lineupItems.js";
 import type * as lib_opTypes from "../lib/opTypes.js";
@@ -64,6 +65,7 @@ declare const fullApi: ApiFromModules<{
   "lib/entities": typeof lib_entities;
   "lib/errors": typeof lib_errors;
   "lib/fieldMerge": typeof lib_fieldMerge;
+  "lib/fileNameIds": typeof lib_fileNameIds;
   "lib/imageAssets": typeof lib_imageAssets;
   "lib/lineupItems": typeof lib_lineupItems;
   "lib/opTypes": typeof lib_opTypes;

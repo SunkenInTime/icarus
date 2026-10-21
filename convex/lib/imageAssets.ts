@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { isSafeFileNameId, isSavableImageFileName } from "./fileNameIds";
 import { normalizeImageExtension, publicR2UrlForObjectKey } from "./r2";
 
 type AnyCtx = MutationCtx | QueryCtx;
@@ -73,8 +74,11 @@ export function keepPictureId(
 
 /// [assets] as builds from before pictures had their own id can read them:
 /// they look an image's picture up under the image's own id. Each live image
-/// showing another id's picture gets that picture under its own id too.
-export function withPictureAliases<T extends { publicId: string }>(
+/// showing another id's picture gets that picture under its own id too, when
+/// that id is a name the desktop app can save the picture as.
+export function withPictureAliases<
+  T extends { publicId: string; fileExtension: string },
+>(
   assets: T[],
   elements: Doc<"elements">[],
 ): T[] {
@@ -89,6 +93,7 @@ export function withPictureAliases<T extends { publicId: string }>(
     }
     const picture = byId.get(pictureId);
     if (picture === undefined || byId.has(id)) continue;
+    if (!isSavableImageFileName(id, picture.fileExtension)) continue;
     const alias = { ...picture, publicId: id };
     byId.set(id, alias);
     aliases.push(alias);
@@ -381,12 +386,31 @@ export async function getViewerAssetForStrategy(
   return await getActiveAssetForStrategy(ctx, strategyId, assetPublicId);
 }
 
+/// The desktop app saves a downloaded image as
+/// `<strategy publicId>/images/<publicId><extension>`, so an image whose
+/// folder or file name isn't safe is never handed out to download, whichever
+/// path wrote it.
+export function isSavableImageFile(
+  strategy: Pick<Doc<"strategies">, "publicId">,
+  asset: Pick<Doc<"imageAssets">, "publicId" | "fileExtension" | "storagePath">,
+): boolean {
+  return (
+    isSafeFileNameId(strategy.publicId) &&
+    isSavableImageFileName(asset.publicId, inferFileExtension(asset))
+  );
+}
+
 export async function serializeAssetForViewer(
   ctx: QueryCtx,
+  strategy: Pick<Doc<"strategies">, "publicId">,
   asset: Doc<"imageAssets">,
 ): Promise<SerializedAsset> {
   const provider = inferProvider(asset);
-  const uploadStatus = inferUploadStatus(asset);
+  const status = inferUploadStatus(asset);
+  const uploadStatus =
+    status === "active" && !isSavableImageFile(strategy, asset)
+      ? "failed"
+      : status;
   const url =
     provider === "r2"
       ? asset.objectKey === undefined || uploadStatus !== "active"
