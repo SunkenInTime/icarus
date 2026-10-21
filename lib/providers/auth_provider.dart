@@ -583,8 +583,9 @@ class AuthProvider extends Notifier<AppAuthState> {
 
   /// The reset link this run asked for that can still be used, so a repeat
   /// within [_passwordResetCooldown] doesn't break it (see
-  /// [sendPasswordReset]). Any sign-in, sign-out or Discord start uses up or
-  /// replaces the code the link needs, and forgets it.
+  /// [sendPasswordReset]). Forgotten once the link can't be used here: after
+  /// any sign-in (links are declined while signed in), a sign-out (which
+  /// deletes its code) or a Discord start (which replaces it).
   ({String email, DateTime at})? _lastPasswordReset;
   static const _passwordResetCooldown = Duration(seconds: 60);
 
@@ -790,7 +791,8 @@ class AuthProvider extends Notifier<AppAuthState> {
         event.event == AuthChangeEvent.passwordRecovery) {
       _signIns++;
     }
-    // Signing in spends the code a reset link needs; signing out deletes it.
+    // Signed in, the app declines reset links (see [handleAuthCallbackUri]),
+    // and signing out deletes the code they need: the pending link is done.
     if (event.event == AuthChangeEvent.signedIn ||
         event.event == AuthChangeEvent.passwordRecovery ||
         event.event == AuthChangeEvent.signedOut) {
