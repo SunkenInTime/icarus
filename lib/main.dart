@@ -37,6 +37,7 @@ import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/migrations/hidden_folder_repair.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -225,6 +226,30 @@ Future<void> main(List<String> args) async {
       await MapThemeProfilesProvider.bootstrap();
 
       await StrategyMigrator.migrateLocalLibrary(PlatformPolicy.current);
+      if (PlatformPolicy.current.allowsLocalLibrary) {
+        try {
+          final moved = await moveOrphansToTopLevel(
+            Hive.box<Folder>(HiveBoxNames.foldersBox),
+            Hive.box<StrategyData>(HiveBoxNames.strategiesBox),
+          );
+          if (moved.folders > 0 || moved.strategies > 0) {
+            AppErrorReporter.reportInfo(
+              'Moved ${moved.folders} folders and ${moved.strategies} '
+              'strategies whose folder was gone to the top level',
+              source: 'main.hiddenFolders',
+            );
+          }
+        } catch (error, stackTrace) {
+          // The library opens either way; tried again next launch.
+          AppErrorReporter.reportError(
+            "Couldn't move the items whose folder was gone to the top level",
+            source: 'main.hiddenFolders',
+            error: error,
+            stackTrace: stackTrace,
+            promptUser: false,
+          );
+        }
+      }
 
       // The cloud comes up degraded rather than not at all: a failure here
       // must never keep anyone from the library on this device.

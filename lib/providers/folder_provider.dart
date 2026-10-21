@@ -16,7 +16,6 @@ import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/services/cloud_needs_connection.dart';
-import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:uuid/uuid.dart';
 
 export 'package:icarus/domain/folder.dart' show Folder, FolderColor;
@@ -169,70 +168,110 @@ class FolderProvider extends Notifier<String?> {
   }) async {
     final targetWorkspace = workspace ?? _currentWorkspace;
     if (targetWorkspace == LibraryWorkspace.cloud) {
-      final result = await _runCloudAction(
-        action: () async {
-          await ref
-              .read(convexStrategyRepositoryProvider)
-              .deleteFolder(folderID);
-          return true;
-        },
-        source: 'folder:delete',
-        failureMessage: "Couldn't delete this cloud folder. Try again.",
-      );
-      if (!result.didSucceed) return result;
+      return _deleteCloudFolder(folderID);
+    }
+    return _deleteLocalFolder(folderID);
+  }
 
-      await ref.read(pinnedItemsProvider.notifier).removePin(folderID);
-      if (_currentFolderIdForWorkspace(LibraryWorkspace.cloud) == folderID) {
+  /// The server deletes only an empty folder, so the strategies go first,
+  /// then the folders, each before its parent. What went stays gone when a
+  /// later step fails, and trying again finishes the rest.
+  /// Each call names the folder being deleted, so the server refuses
+  /// anything moved out of it since the library was read.
+  Future<CloudLibraryActionResult> _deleteCloudFolder(String folderID) async {
+    final repository = ref.read(convexStrategyRepositoryProvider);
+    final deletedStrategies = <String>[];
+    var tree = [folderID];
+    final result = await _runCloudAction(
+      action: () async {
+        final inventory = await repository.fetchInventory();
+        tree = folderAndDescendantIds(folderID, inventory.folders);
+        final treeIds = tree.toSet();
+        // All at once: each is its own round trip to the server.
+        await Future.wait([
+          for (final MapEntry(key: strategyId, value: strategyFolderId)
+              in inventory.strategies.entries)
+            if (treeIds.contains(strategyFolderId))
+              () async {
+                final shell = await repository.fetchShell(strategyId);
+                await repository.deleteStrategy(
+                  strategyPublicId: strategyId,
+                  expectedRevision: shell.header.revision,
+                  withinFolderPublicId: folderID,
+                );
+                deletedStrategies.add(strategyId);
+              }(),
+        ]);
+        for (final id in tree.reversed) {
+          await repository.deleteFolder(id, withinFolderPublicId: folderID);
+        }
+        return true;
+      },
+      source: 'folder:delete',
+      failureMessage: "Couldn't delete this cloud folder. Try again.",
+    );
+    // Refused or offline before anything went: the library is as it was.
+    if (!result.didSucceed && deletedStrategies.isEmpty) return result;
+
+    for (final id in deletedStrategies) {
+      await ref.read(strategyProvider.notifier).forgetDeletedCloudStrategy(id);
+    }
+    if (result.didSucceed) {
+      for (final id in tree) {
+        await ref.read(pinnedItemsProvider.notifier).removePin(id);
+      }
+      if (tree.contains(_currentFolderIdForWorkspace(LibraryWorkspace.cloud))) {
         updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
       }
-      ref.invalidate(cloudFoldersProvider);
-      ref.invalidate(cloudFolderTreeProvider);
-      ref.invalidate(cloudStrategiesProvider);
-      return result;
     }
+    ref.invalidate(cloudFoldersProvider);
+    ref.invalidate(cloudFolderTreeProvider);
+    ref.invalidate(cloudStrategiesProvider);
+    return result;
+  }
 
-    final strategyList =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values.toList();
+  /// Deletes the folder, its subfolders and every strategy in them. What
+  /// goes is decided and taken off the library in one step, with nothing
+  /// awaited in between: Hive drops the records from the library as each
+  /// delete is called and writes them after. So nothing the user does while
+  /// the delete finishes (the dialog can close) is caught in it. The files
+  /// and pins of what went are removed afterwards.
+  Future<CloudLibraryActionResult> _deleteLocalFolder(String folderID) async {
+    final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
+    final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final folderIds = folderAndDescendantIds(folderID, {
+      for (final folder in folders.values) folder.id: folder.parentID,
+    });
+    final strategyIds = [
+      for (final strategy in strategies.values)
+        if (folderIds.contains(strategy.folderID)) strategy.id,
+    ];
+
     // Deleting it would delete a strategy that is moving to the cloud.
     final moving = ref.read(movingToCloudProvider);
-    if (moving.contains(folderID) ||
-        strategyList.any(
-          (s) => s.folderID == folderID && moving.contains(s.id),
-        )) {
+    if (folderIds.any(moving.contains) || strategyIds.any(moving.contains)) {
       return CloudLibraryActionResult.failed(
         'Something in this folder is moving to the cloud. Delete it once '
         'the move ends.',
       );
     }
 
-    await ref.read(pinnedItemsProvider.notifier).removePin(folderID);
+    // The two boxes are written separately. Should only one write land,
+    // what is left still shows, and the next launch moves anything whose
+    // folder is gone to the top level (moveOrphansToTopLevel).
+    final removals = [
+      strategies.deleteAll(strategyIds),
+      folders.deleteAll(folderIds),
+    ];
+    await Future.wait(removals);
 
-    List<String> idsToDelete = [];
-
-    for (final strategy in strategyList) {
-      if (strategy.folderID == folderID) {
-        idsToDelete.add(strategy.id);
-      }
+    final strategyNotifier = ref.read(strategyProvider.notifier);
+    for (final id in strategyIds) {
+      await strategyNotifier.forgetDeletedLocalStrategy(id);
     }
-
-    for (final id in idsToDelete) {
-      await ref.read(strategyProvider.notifier).deleteStrategy(
-            id,
-            source: StrategySource.local,
-          );
+    for (final id in folderIds) {
+      await ref.read(pinnedItemsProvider.notifier).removePin(id);
     }
-    // A strategy that started moving to the cloud meanwhile stays, and so
-    // does its folder.
-    if (Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .values
-        .any((s) => s.folderID == folderID)) {
-      return CloudLibraryActionResult.failed(
-        'Something in this folder is moving to the cloud. Delete it once '
-        'the move ends.',
-      );
-    }
-
-    await Hive.box<Folder>(HiveBoxNames.foldersBox).delete(folderID);
     return CloudLibraryActionResult.succeeded;
   }
 
@@ -388,6 +427,22 @@ class FolderProvider extends Notifier<String?> {
     });
     return _currentFolderIdForWorkspace(ref.read(libraryWorkspaceProvider));
   }
+}
+
+/// [folderId] and every folder below it, each parent before its children.
+/// [parentOf] maps every folder to its parent, null at the top level.
+List<String> folderAndDescendantIds(
+  String folderId,
+  Map<String, String?> parentOf,
+) {
+  final tree = [folderId];
+  final seen = {folderId};
+  for (var i = 0; i < tree.length; i++) {
+    for (final MapEntry(key: id, value: parentId) in parentOf.entries) {
+      if (parentId == tree[i] && seen.add(id)) tree.add(id);
+    }
+  }
+  return tree;
 }
 
 extension on Iterable<Folder> {

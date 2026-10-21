@@ -25,6 +25,7 @@ import {
 import type { StrategyRole } from "./lib/auth";
 import {
   assertMoveFinished,
+  assertWithinFolder,
   getFolderByPublicId,
   getStrategyByPublicId,
   livePagesQuery,
@@ -884,6 +885,8 @@ const deleteStrategy = mutation({
     ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     expectedRevision: v.number(),
+    // See assertWithinFolder.
+    withinFolderPublicId: v.optional(v.string()),
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
@@ -893,6 +896,11 @@ const deleteStrategy = mutation({
     if (args.expectedRevision !== strategy.revision) {
       throw conflictError("Strategy revision mismatch");
     }
+    await assertWithinFolder(
+      ctx,
+      strategy.folderId,
+      args.withinFolderPublicId,
+    );
     await deleteStrategyRecord(ctx, strategy);
     return { ok: true } as const;
   },
