@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:icarus/const/youtube_handler.dart';
 
 import 'package:icarus/main.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // class YoutubeView extends StatelessWidget {
 //   const YoutubeView({
@@ -72,6 +76,18 @@ class _YoutubeViewState extends State<YoutubeView>
           return const WebViewDialog();
         }
 
+        final video = YoutubeHandler.parse(widget.youtubeLink);
+        if (video == null) {
+          return Center(
+            child: Text(
+              "This link doesn't point at a YouTube video.",
+              style: TextStyle(
+                color: ShadTheme.of(context).colorScheme.mutedForeground,
+              ),
+            ),
+          );
+        }
+
         return Stack(
           children: [
             const Align(
@@ -81,16 +97,39 @@ class _YoutubeViewState extends State<YoutubeView>
             Positioned.fill(
               child: InAppWebView(
                 webViewEnvironment: webViewEnvironment,
-                initialSettings:
-                    InAppWebViewSettings(allowBackgroundAudioPlaying: false),
+                initialSettings: InAppWebViewSettings(
+                  allowBackgroundAudioPlaying: false,
+                  useShouldOverrideUrlLoading: true,
+                ),
                 initialUrlRequest: URLRequest(
-                    url: WebUri(
-                        "https://embed.icarus-strats.xyz/?v=${YoutubeHandler.extractYoutubeIdWithTimestamp(widget.youtubeLink)}")),
+                  url: WebUri.uri(YoutubeHandler.embedUri(video)),
+                ),
+                shouldOverrideUrlLoading: _keepOnEmbed,
               ),
             ),
           ],
         );
       },
     );
+  }
+
+  /// The view only ever shows our embed page. The player inside it loads
+  /// in its own frame; anything that would replace the page itself, like
+  /// the player's YouTube links, opens in the user's browser instead.
+  Future<NavigationActionPolicy> _keepOnEmbed(
+    InAppWebViewController controller,
+    NavigationAction action,
+  ) async {
+    final url = action.request.url;
+    if (!action.isForMainFrame ||
+        (url != null &&
+            url.scheme == 'https' &&
+            url.host == YoutubeHandler.embedHost)) {
+      return NavigationActionPolicy.ALLOW;
+    }
+    if (url != null && (url.scheme == 'https' || url.scheme == 'http')) {
+      unawaited(launchUrl(url, mode: LaunchMode.externalApplication));
+    }
+    return NavigationActionPolicy.CANCEL;
   }
 }
