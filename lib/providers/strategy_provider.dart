@@ -2292,6 +2292,42 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final newID = const Uuid().v4();
 
+    // The copy is saved only once it has its own copy of the original's
+    // image files.
+    final int missingPictures;
+    try {
+      missingPictures = await PlacedImageProvider.copyImageFiles(
+        fromStrategyID: strategyID,
+        toStrategyID: newID,
+        pictures: [
+          for (final page in originalStrategy.pages) ...[
+            for (final image in page.imageData)
+              (id: image.pictureId, fileExtension: image.fileExtension),
+            for (final link in page.lineUpLinks)
+              for (final image in link.images)
+                (id: image.id, fileExtension: image.fileExtension),
+          ],
+        ],
+      );
+    } on FileSystemException catch (error, stackTrace) {
+      log(
+        'Failed to copy the images of $strategyID: $error',
+        name: 'strategy',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      try {
+        final images = await PlacedImageProvider.getImageFolder(newID);
+        await images.parent.delete(recursive: true);
+      } on FileSystemException {
+        // Only disk space; no strategy points at this folder.
+      }
+      ref.read(cloudLibraryActionReporterProvider).showMessage(
+            "Couldn't duplicate this strategy: its images could not be copied.",
+          );
+      return;
+    }
+
     final duplicatedStrategy = StrategyData(
       id: newID,
       name: "${originalStrategy.name} (Copy)",
@@ -2305,6 +2341,15 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
 
     await strategyBox.put(duplicatedStrategy.id, duplicatedStrategy);
+    if (missingPictures > 0) {
+      ref.read(cloudLibraryActionReporterProvider).showMessage(
+            missingPictures == 1
+                ? 'Duplicated. One picture was already missing from the '
+                    'original, so the copy is missing it too.'
+                : 'Duplicated. $missingPictures pictures were already missing '
+                    'from the original, so the copy is missing them too.',
+          );
+    }
   }
 
   Future<CloudLibraryActionResult> deleteStrategy(

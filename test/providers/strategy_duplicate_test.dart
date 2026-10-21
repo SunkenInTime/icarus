@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:archive/archive.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -11,6 +13,7 @@ import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -18,12 +21,20 @@ import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/cloud_library_action.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:path/path.dart' as path;
 import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('cloud duplicate', () {
     test('asks the server for the whole copy in one mutation', () async {
       final transport = _RecordingTransport();
@@ -224,7 +235,7 @@ void main() {
     setUp(() async {
       hiveDir = await Directory.systemTemp.createTemp('duplicate_test');
       Hive.init(hiveDir.path);
-      registerIcarusAdapters(Hive);
+      if (!Hive.isAdapterRegistered(20)) registerIcarusAdapters(Hive);
       await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
     });
 
@@ -263,8 +274,180 @@ void main() {
       expect(transport.queries, isEmpty);
       expect(transport.mutations, isEmpty);
     });
+
+    test('gives the copy its own image files, which outlive the original',
+        () async {
+      // Images are files in each strategy's folder under the support
+      // directory; point it into this test's folder.
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_pathProvider, (_) async => hiveDir.path);
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_pathProvider, null));
+      // Export reads the strategy's theme.
+      await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+      final pictureBytes = Uint8List.fromList(List.generate(64, (i) => i));
+      await PlacedImageProvider.writeImageBytes(
+        imageBytes: pictureBytes,
+        strategyID: 'local-strategy',
+        imageID: 'picture',
+        fileExtension: '.png',
+      );
+      final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+      await box.put(
+        'local-strategy',
+        StrategyData(
+          id: 'local-strategy',
+          name: 'Bind B split',
+          mapData: MapValue.bind,
+          versionNumber: Settings.versionNumber,
+          lastEdited: DateTime.utc(2026),
+          folderID: null,
+          pages: [
+            StrategyPage(
+              id: 'page',
+              name: 'Page 1',
+              drawingData: const [],
+              agentData: const [],
+              abilityData: const [],
+              textData: const [],
+              imageData: [
+                PlacedImage(
+                  position: const Offset(100, 100),
+                  id: 'picture',
+                  aspectRatio: 1,
+                  scale: 1,
+                  fileExtension: '.png',
+                ),
+              ],
+              utilityData: const [],
+              sortIndex: 0,
+              isAttack: true,
+              settings: StrategySettings(),
+            ),
+          ],
+        ),
+      );
+      final container = _container(_RecordingTransport(), <String>[]);
+      addTearDown(container.dispose);
+      final strategies = container.read(strategyProvider.notifier);
+
+      await strategies.duplicateStrategy(
+        'local-strategy',
+        source: StrategySource.local,
+      );
+      final copy = box.values.singleWhere((s) => s.id != 'local-strategy');
+      await strategies.deleteStrategy(
+        'local-strategy',
+        source: StrategySource.local,
+      );
+
+      final copyPicture = await PlacedImageProvider.getImageFile(
+        strategyID: copy.id,
+        imageID: copy.pages.single.imageData.single.pictureId,
+        fileExtension: '.png',
+      );
+      expect(await copyPicture.readAsBytes(), pictureBytes);
+      final exported = await StrategyImportExportService(container).zipStrategy(
+        id: copy.id,
+        saveDir: await Directory(path.join(hiveDir.path, 'out')).create(),
+      );
+      final archive = ZipDecoder().decodeBytes(
+        await File(exported).readAsBytes(),
+      );
+      expect(archive.findFile('picture.png')?.content, pictureBytes);
+    });
+
+    test(
+        'copies only the pictures the strategy shows, and still copies when '
+        'one was already missing', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_pathProvider, (_) async => hiveDir.path);
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_pathProvider, null));
+      final pictureBytes = Uint8List.fromList([1, 2, 3]);
+      await PlacedImageProvider.writeImageBytes(
+        imageBytes: pictureBytes,
+        strategyID: 'local-strategy',
+        imageID: 'kept',
+        fileExtension: '.png',
+      );
+      final folder = await PlacedImageProvider.getImageFolder('local-strategy');
+      await File(path.join(folder.path, 'notes.txt')).writeAsString('stray');
+      // A picture from before extensions were recorded: no extension, and a
+      // file named by its bare id.
+      await File(path.join(folder.path, 'legacy')).writeAsBytes([9]);
+      PlacedImage picture(String id, {String? fileExtension = '.png'}) =>
+          PlacedImage(
+            position: const Offset(100, 100),
+            id: id,
+            aspectRatio: 1,
+            scale: 1,
+            fileExtension: fileExtension,
+          );
+      final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+      await box.put(
+        'local-strategy',
+        StrategyData(
+          id: 'local-strategy',
+          name: 'Bind B split',
+          mapData: MapValue.bind,
+          versionNumber: Settings.versionNumber,
+          lastEdited: DateTime.utc(2026),
+          folderID: null,
+          pages: [
+            StrategyPage(
+              id: 'page',
+              name: 'Page 1',
+              drawingData: const [],
+              agentData: const [],
+              abilityData: const [],
+              textData: const [],
+              // "gone" has no file: an older duplicate already lost it.
+              imageData: [
+                picture('kept'),
+                picture('gone'),
+                picture('legacy', fileExtension: null),
+              ],
+              utilityData: const [],
+              sortIndex: 0,
+              isAttack: true,
+              settings: StrategySettings(),
+            ),
+          ],
+        ),
+      );
+      final messages = <String>[];
+      final container = _container(_RecordingTransport(), messages);
+      addTearDown(container.dispose);
+
+      await container.read(strategyProvider.notifier).duplicateStrategy(
+            'local-strategy',
+            source: StrategySource.local,
+          );
+
+      final copy = box.values.singleWhere((s) => s.id != 'local-strategy');
+      expect(copy.pages.single.imageData, hasLength(3));
+      final copyFolder = await PlacedImageProvider.getImageFolder(copy.id);
+      final copied = copyFolder
+          .listSync()
+          .map((entity) => path.basename(entity.path))
+          .toList();
+      expect(copied..sort(), ['kept.png', 'legacy']);
+      expect(messages, [
+        'Duplicated. One picture was already missing from the original, so '
+            'the copy is missing it too.',
+      ]);
+      expect(
+        await File(path.join(copyFolder.path, 'kept.png')).readAsBytes(),
+        pictureBytes,
+      );
+    });
   });
 }
+
+const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
 
 ProviderContainer _container(
   _RecordingTransport transport,
