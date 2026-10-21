@@ -38,8 +38,46 @@ abstract base class NormalizedConvexTransport implements ConvexTransport {
   }
 
   @override
-  Stream<ConvexValue> subscribe(String name, ConvexObject args) {
-    late final StreamController<ConvexValue> controller;
+  Stream<ConvexValue> subscribe(String name, ConvexObject args) =>
+      _watch<ConvexValue>(
+        (onUpdate, onError) => client.subscribeValue(
+          name: name,
+          args: args.toDart(),
+          onUpdate: onUpdate,
+          onError: onError,
+        ),
+        (value) => _normalize(value, '$name.returns'),
+      );
+
+  @override
+  Stream<List<ConvexValue>> subscribeTogether(
+    List<(String name, ConvexObject args)> queries,
+  ) =>
+      _watch<List<ConvexValue>>(
+        (onUpdate, onError) => client.subscribeValues(
+          queries: [
+            for (final (name, args) in queries)
+              (name: name, args: args.toDart()),
+          ],
+          onUpdate: onUpdate,
+          onError: onError,
+        ),
+        (values) => [
+          for (final (index, value) in (values! as List<Object?>).indexed)
+            _normalize(value, '${queries[index].$1}.returns'),
+        ],
+      );
+
+  /// A stream of what [subscribe] delivers, each value through [normalize].
+  /// A value that can't be normalized ends the stream with that error.
+  Stream<T> _watch<T>(
+    Future<SubscriptionHandle> Function(
+      void Function(Object? value) onUpdate,
+      void Function(ConvexClientFunctionError error) onError,
+    ) subscribe,
+    T Function(Object? value) normalize,
+  ) {
+    late final StreamController<T> controller;
     SubscriptionHandle? handle;
     var active = false;
 
@@ -56,18 +94,16 @@ abstract base class NormalizedConvexTransport implements ConvexTransport {
     Future<void> start() async {
       active = true;
       try {
-        final nextHandle = await client.subscribeValue(
-          name: name,
-          args: args.toDart(),
-          onUpdate: (value) {
+        final nextHandle = await subscribe(
+          (value) {
             if (!active) return;
             try {
-              controller.add(_normalize(value, '$name.returns'));
+              controller.add(normalize(value));
             } catch (error, stackTrace) {
               closeForContractFailure(error, stackTrace);
             }
           },
-          onError: (error) {
+          (error) {
             if (!active) return;
             controller.addError(_transportError(error));
           },
@@ -82,7 +118,7 @@ abstract base class NormalizedConvexTransport implements ConvexTransport {
       }
     }
 
-    controller = StreamController<ConvexValue>(
+    controller = StreamController<T>(
       onListen: start,
       onCancel: () {
         active = false;

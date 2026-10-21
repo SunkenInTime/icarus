@@ -4984,6 +4984,12 @@ class _UnusedTransport implements ConvexTransport {
   @override
   Stream<ConvexValue> subscribe(String name, ConvexObject args) =>
       throw UnimplementedError();
+
+  @override
+  Stream<List<ConvexValue>> subscribeTogether(
+    List<(String, ConvexObject)> queries,
+  ) =>
+      throw UnimplementedError();
 }
 
 class _BlockingStore extends MemoryDurableStrategyOutboxStore {

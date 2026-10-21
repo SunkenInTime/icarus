@@ -27,56 +27,84 @@ final class ConvexQuery<T> {
 
   Future<T> fetch() => _invoke(() => _transport.query(_name, _args), _decode);
 
-  Stream<T> watch() {
-    late final StreamController<T> controller;
-    StreamSubscription<ConvexValue>? subscription;
-    var active = false;
+  Stream<T> watch() =>
+      _watchDecoded(() => _transport.subscribe(_name, _args), _decode);
 
-    controller = StreamController<T>(
-      onListen: () {
-        active = true;
-        subscription = _transport
-            .subscribe(_name, _args)
-            .listen(
-              (value) {
-                if (!active) return;
-                try {
-                  controller.add(_decode(value));
-                } catch (error, stackTrace) {
-                  active = false;
-                  controller.addError(error, stackTrace);
-                  subscription?.cancel();
-                  controller.close();
-                }
-              },
-              onError: (Object error, StackTrace stackTrace) {
-                if (!active) return;
-                if (error is ConvexTransportError) {
-                  controller.addError(
-                    ConvexFunctionException.fromTransport(error),
-                    stackTrace,
-                  );
-                  return;
-                }
-                active = false;
-                controller.addError(error, stackTrace);
-                subscription?.cancel();
-                controller.close();
-              },
-              onDone: () {
-                if (!active) return;
-                active = false;
-                controller.close();
-              },
-            );
-      },
-      onCancel: () {
-        active = false;
-        return subscription?.cancel();
-      },
+  /// Watches [queries] together: each update holds every query's value, in
+  /// the order given, all from one server state. Queries watched one by one
+  /// can each answer from a different state. The queries share a transport.
+  static Stream<List<Object?>> watchTogether(
+    List<ConvexQuery<Object?>> queries,
+  ) {
+    final transport = queries.first._transport;
+    if (queries.any((query) => !identical(query._transport, transport))) {
+      throw ArgumentError('Queries watched together share one transport.');
+    }
+    return _watchDecoded(
+      () => transport.subscribeTogether([
+        for (final query in queries) (query._name, query._args),
+      ]),
+      (values) => [
+        for (final (index, value) in values.indexed)
+          queries[index]._decode(value),
+      ],
     );
-    return controller.stream;
   }
+}
+
+/// What [subscribe] delivers, each value through [decode]. A function error
+/// is passed on and the watch goes on; any other error, or a value that
+/// can't be decoded, ends it.
+Stream<T> _watchDecoded<V, T>(
+  Stream<V> Function() subscribe,
+  T Function(V) decode,
+) {
+  late final StreamController<T> controller;
+  StreamSubscription<V>? subscription;
+  var active = false;
+
+  controller = StreamController<T>(
+    onListen: () {
+      active = true;
+      subscription = subscribe().listen(
+        (value) {
+          if (!active) return;
+          try {
+            controller.add(decode(value));
+          } catch (error, stackTrace) {
+            active = false;
+            controller.addError(error, stackTrace);
+            subscription?.cancel();
+            controller.close();
+          }
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          if (!active) return;
+          if (error is ConvexTransportError) {
+            controller.addError(
+              ConvexFunctionException.fromTransport(error),
+              stackTrace,
+            );
+            return;
+          }
+          active = false;
+          controller.addError(error, stackTrace);
+          subscription?.cancel();
+          controller.close();
+        },
+        onDone: () {
+          if (!active) return;
+          active = false;
+          controller.close();
+        },
+      );
+    },
+    onCancel: () {
+      active = false;
+      return subscription?.cancel();
+    },
+  );
+  return controller.stream;
 }
 
 Future<T> _invoke<T>(

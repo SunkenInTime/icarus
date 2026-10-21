@@ -115,6 +115,39 @@ class ConvexClient implements ConvexClientValueSource {
     return _NativeSubscriptionHandle(handle);
   }
 
+  @override
+  Future<SubscriptionHandle> subscribeValues({
+    required List<({String name, Map<String, Object?> args})> queries,
+    required void Function(List<Object?> values) onUpdate,
+    required void Function(ConvexClientFunctionError error) onError,
+  }) async {
+    // The bridge leaves out a value that is the same as in its last update,
+    // and sends every value in the first update after a failure.
+    List<Object?>? latest;
+    final handle = await _client.subscribeGroup(
+      queries: [
+        for (final query in queries)
+          (name: query.name, args: _convexDartToJson(query.args)),
+      ],
+      onUpdate: (encoded) {
+        final previous = latest;
+        final values = [
+          for (final (index, value) in encoded.indexed)
+            value == null
+                ? previous![index]
+                : _convexJsonToDart(jsonDecode(value)),
+        ];
+        latest = values;
+        onUpdate(values);
+      },
+      onError: (message, value) {
+        latest = null;
+        onError(_nativeFunctionError(message: message, encodedData: value));
+      },
+    );
+    return _NativeSubscriptionHandle(handle);
+  }
+
   Future<AuthHandleWrapper> setAuthWithRefresh({
     required Future<String?> Function() fetchToken,
     void Function(bool isAuthenticated)? onAuthChange,

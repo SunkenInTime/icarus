@@ -34,6 +34,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 import 'collab/strategy_copy_fixtures.dart';
+import 'collab/subscribe_together_from_each.dart';
 
 /// "+" in a cloud strategy while the server can't make the copy: this
 /// computer copies the page, the new page opens and takes edits at once,
@@ -645,7 +646,7 @@ class _Page {
 /// A server holding one strategy, its first page with an agent, an image
 /// and a lineup group. It answers shell and page reads, and applies page,
 /// element and lineup ops as convex/ops.ts does (no field merge).
-final class _Server implements ConvexTransport {
+final class _Server with SubscribeTogetherFromEach implements ConvexTransport {
   _Server() {
     pages.add(_Page('p1', sortIndex: 0));
     elements['agent-1'] = agentRow('agent-1', 'p1');

@@ -18,6 +18,7 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'collab/strategy_copy_fixtures.dart';
+import 'collab/subscribe_together_from_each.dart';
 
 const _deployment = 'https://one.convex.cloud';
 
@@ -379,7 +380,9 @@ Future<void> _settle() async {
 }
 
 /// Answers a three-page strategy; page a holds one agent.
-final class _Transport implements ConvexTransport {
+final class _Transport
+    with SubscribeTogetherFromEach
+    implements ConvexTransport {
   final reads = <String>[];
   final pageElements = <String, List<Map<String, Object?>>>{
     'a': [agentRow('agent', 'a')],

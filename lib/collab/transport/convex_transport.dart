@@ -141,4 +141,11 @@ abstract interface class ConvexTransport {
   Future<ConvexValue> action(String name, ConvexObject args);
 
   Stream<ConvexValue> subscribe(String name, ConvexObject args);
+
+  /// Watches [queries] together: each update holds every query's value, in
+  /// the order given, all from one server state. Separate [subscribe]
+  /// streams can each answer from a different one.
+  Stream<List<ConvexValue>> subscribeTogether(
+    List<(String name, ConvexObject args)> queries,
+  );
 }

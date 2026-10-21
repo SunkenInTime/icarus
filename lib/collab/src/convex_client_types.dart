@@ -61,4 +61,15 @@ abstract interface class ConvexClientValueSource {
     required void Function(Object? value) onUpdate,
     required void Function(ConvexClientFunctionError error) onError,
   });
+
+  /// Watches [queries] together. [onUpdate] gets every query's value at
+  /// once, in the order given, all from one server state: first when every
+  /// query has one, then as the server answers again. [onError] gets the
+  /// failure when any query fails, and no values follow until every query
+  /// has one again.
+  Future<SubscriptionHandle> subscribeValues({
+    required List<({String name, Map<String, Object?> args})> queries,
+    required void Function(List<Object?> values) onUpdate,
+    required void Function(ConvexClientFunctionError error) onError,
+  });
 }
