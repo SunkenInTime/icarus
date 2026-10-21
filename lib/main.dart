@@ -67,6 +67,7 @@ import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/services/product_metrics.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:icarus/widgets/dialogs/auth/set_password_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
@@ -398,6 +399,7 @@ class _MyAppState extends ConsumerState<MyApp> {
   ProviderSubscription<List<PlacedAgentNode>>? _discordAgentSub;
   ProviderSubscription<List<PlacedAbility>>? _discordAbilitySub;
   ProviderSubscription<bool>? _cloudOutOfReachSub;
+  ProviderSubscription<bool>? _passwordRecoverySub;
   Timer? _discordSyncDebounce;
 
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
@@ -517,6 +519,12 @@ class _MyAppState extends ConsumerState<MyApp> {
       (previous, next) => _measureOffline(previous ?? false, next),
       fireImmediately: true,
     );
+    _passwordRecoverySub = ref.listenManual(
+      passwordRecoveryProvider,
+      (previous, next) {
+        if (next && previous != true) _askForNewPassword();
+      },
+    );
 
     unawaited(_syncDiscordPresence());
 
@@ -580,9 +588,25 @@ class _MyAppState extends ConsumerState<MyApp> {
     _discordAgentSub?.close();
     _discordAbilitySub?.close();
     _cloudOutOfReachSub?.close();
+    _passwordRecoverySub?.close();
     _discordPreferencesSub?.close();
     unawaited(_discordPresence.dispose());
     super.dispose();
+  }
+
+  /// A password reset link signed the user in: ask for the new password.
+  /// After a frame, so the sign-in dialog that sent the link has closed.
+  void _askForNewPassword() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final navigatorContext = appNavigatorKey.currentContext;
+      if (navigatorContext == null) return;
+      await showShadDialog<void>(
+        context: navigatorContext,
+        barrierDismissible: false,
+        builder: (_) => const SetPasswordDialog(),
+      );
+      if (mounted) ref.read(passwordRecoveryProvider.notifier).finish();
+    });
   }
 
   /// Coalesces rapid state changes (e.g. placing several agents in a row)

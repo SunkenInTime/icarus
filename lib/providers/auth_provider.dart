@@ -341,6 +341,13 @@ abstract class AuthProviderSupabaseApi {
     required String password,
   });
 
+  Future<void> resetPasswordForEmail(
+    String email, {
+    required String redirectTo,
+  });
+
+  Future<void> updatePassword(String password);
+
   Future<void> signOut();
   Future<void> getSessionFromUrl(Uri uri);
   Future<AuthResponse> refreshSession();
@@ -444,6 +451,19 @@ class _DefaultAuthProviderSupabaseApi implements AuthProviderSupabaseApi {
   }
 
   @override
+  Future<void> resetPasswordForEmail(
+    String email, {
+    required String redirectTo,
+  }) {
+    return _client.auth.resetPasswordForEmail(email, redirectTo: redirectTo);
+  }
+
+  @override
+  Future<void> updatePassword(String password) async {
+    await _client.auth.updateUser(UserAttributes(password: password));
+  }
+
+  @override
   Future<void> signOut() => _client.auth.signOut();
 
   @override
@@ -493,6 +513,16 @@ class _UnavailableAuthProviderSupabaseApi implements AuthProviderSupabaseApi {
       _refuse();
 
   @override
+  Future<void> resetPasswordForEmail(
+    String email, {
+    required String redirectTo,
+  }) =>
+      _refuse();
+
+  @override
+  Future<void> updatePassword(String password) => _refuse();
+
+  @override
   Future<void> signOut() => _refuse();
 
   @override
@@ -506,6 +536,22 @@ class _UnavailableAuthProviderSupabaseApi implements AuthProviderSupabaseApi {
 /// the `icarus://` deep link on desktop, the page's own origin on web.
 Uri currentAuthRedirectUri() {
   return kIsWeb ? webAuthRedirectUri(Uri.base) : nativeAuthRedirectUri;
+}
+
+/// Whether the session came from a password reset link and is waiting for a
+/// new password. The app asks for one while this is true.
+final passwordRecoveryProvider =
+    NotifierProvider<PasswordRecoveryNotifier, bool>(
+  PasswordRecoveryNotifier.new,
+);
+
+class PasswordRecoveryNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void start() => state = true;
+
+  void finish() => state = false;
 }
 
 class AuthProvider extends Notifier<AppAuthState> {
@@ -530,6 +576,22 @@ class AuthProvider extends Notifier<AppAuthState> {
 
   /// The session [build] started Convex setup for.
   String? _buildSessionFingerprint;
+
+  /// The session the last auth event handled carried (or the one restored
+  /// at start), to tell a change of user from a change of session.
+  Session? _sessionAtLastEvent;
+
+  /// The reset link this run asked for that can still be used, so a repeat
+  /// within [_passwordResetCooldown] doesn't break it (see
+  /// [sendPasswordReset]). Forgotten once the link can't be used here: after
+  /// any sign-in (links are declined while signed in), a sign-out (which
+  /// deletes its code) or a Discord start (which replaces it).
+  ({String email, DateTime at})? _lastPasswordReset;
+  static const _passwordResetCooldown = Duration(seconds: 60);
+
+  /// A reset request still waiting on Supabase, and its address.
+  ({String email, Future<({String message, bool sent})> result})?
+      _pendingPasswordReset;
 
   @visibleForTesting
   static AuthProviderSupabaseApi? debugSupabaseApi;
@@ -618,6 +680,7 @@ class AuthProvider extends Notifier<AppAuthState> {
     final session = _supabaseApi.currentSession;
     final initialGeneration = _advanceAuthGeneration();
     _buildSessionFingerprint = _sessionFingerprint(session);
+    _sessionAtLastEvent = session;
 
     _supabaseAuthSub ??= _supabaseApi.onAuthStateChange.listen(
       _handleSupabaseAuthStateChange,
@@ -695,6 +758,19 @@ class AuthProvider extends Notifier<AppAuthState> {
         _sessionFingerprint(currentSession) == _buildSessionFingerprint) {
       return;
     }
+    // Saving a new password changes the user, not the session. The token
+    // Convex holds is still good, and setting it up again would pull its
+    // auth out from under the library's live queries, which then report
+    // the session as expired.
+    if (event.event == AuthChangeEvent.userUpdated &&
+        currentSession != null &&
+        _sessionFingerprint(_sessionAtLastEvent) ==
+            _sessionFingerprint(currentSession)) {
+      _sessionAtLastEvent = currentSession;
+      state = state.copyWith(user: currentSession.user);
+      return;
+    }
+    _sessionAtLastEvent = currentSession;
 
     final generation = _advanceAuthGeneration();
     state = AppAuthState.fromSession(
@@ -708,8 +784,23 @@ class AuthProvider extends Notifier<AppAuthState> {
 
     if (currentSession == null) {
       _clearAuthIncident();
+      ref.read(passwordRecoveryProvider.notifier).finish();
     }
-    if (event.event == AuthChangeEvent.signedIn) _signIns++;
+    // A reset link signs the user in too, then asks for a new password.
+    if (event.event == AuthChangeEvent.signedIn ||
+        event.event == AuthChangeEvent.passwordRecovery) {
+      _signIns++;
+    }
+    // Signed in, the app declines reset links (see [handleAuthCallbackUri]),
+    // and signing out deletes the code they need: the pending link is done.
+    if (event.event == AuthChangeEvent.signedIn ||
+        event.event == AuthChangeEvent.passwordRecovery ||
+        event.event == AuthChangeEvent.signedOut) {
+      _lastPasswordReset = null;
+    }
+    if (event.event == AuthChangeEvent.passwordRecovery) {
+      ref.read(passwordRecoveryProvider.notifier).start();
+    }
 
     unawaited(
       _configureConvexAuth(
@@ -752,6 +843,8 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   Future<void> signInWithDiscord() async {
+    // Discord's sign-in replaces the code a pending reset link needs.
+    _lastPasswordReset = null;
     state = state.copyWith(
       isLoading: true,
       isConvexUserReady: false,
@@ -963,6 +1056,127 @@ class AuthProvider extends Notifier<AppAuthState> {
     }
   }
 
+  /// Emails a link that signs the user in and asks for a new password.
+  /// Returns what to tell the user. Supabase answers the same whether or not
+  /// an account uses [email], so the message can't say either.
+  Future<({String message, bool sent})> sendPasswordReset(String email) async {
+    // The link only works where the reset was asked for: it carries a code
+    // that exchanges with the verifier this device saves with the request.
+    const where = kIsWeb ? 'in this browser' : 'on this computer';
+    final address = email.toLowerCase();
+    final lastSent = _lastPasswordReset;
+    // Supabase refuses a second request for an address within a minute, but
+    // only after the client has replaced the saved verifier, so the link
+    // already in the inbox would stop working.
+    if (lastSent != null &&
+        lastSent.email == address &&
+        DateTime.now().difference(lastSent.at) < _passwordResetCooldown) {
+      return (
+        message: 'A link is already on its way. Check your inbox and spam, '
+            'and open it $where.',
+        sent: true,
+      );
+    }
+    // The same request again while the first is still out shares its answer
+    // rather than replacing its code.
+    final pending = _pendingPasswordReset;
+    if (pending != null && pending.email == address) return pending.result;
+
+    final result = _requestPasswordReset(email, where: where);
+    _pendingPasswordReset = (email: address, result: result);
+    try {
+      return await result;
+    } finally {
+      if (identical(_pendingPasswordReset?.result, result)) {
+        _pendingPasswordReset = null;
+      }
+    }
+  }
+
+  Future<({String message, bool sent})> _requestPasswordReset(
+    String email, {
+    required String where,
+  }) async {
+    try {
+      await _supabaseApi.resetPasswordForEmail(
+        email,
+        redirectTo: currentAuthRedirectUri().toString(),
+      );
+      _lastPasswordReset = (email: email.toLowerCase(), at: DateTime.now());
+      return (
+        message: 'If an account uses this email, a link to set a new '
+            'password is on its way. Open it $where.',
+        sent: true,
+      );
+    } catch (error, stackTrace) {
+      log(
+        'Password reset request failed: $error',
+        name: 'auth',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return (message: _friendlyPasswordResetError(error), sent: false);
+    }
+  }
+
+  static String _friendlyPasswordResetError(Object error) {
+    if (error is CloudUnavailableException) return error.message;
+    final message = error.toString().toLowerCase();
+    // Supabase lets each address ask once a minute.
+    if (message.contains('for security purposes') ||
+        message.contains('over_email_send_rate_limit') ||
+        message.contains('rate limit')) {
+      return 'A link was sent a moment ago. Wait a minute, then try again.';
+    }
+    if (message.contains('socket') ||
+        message.contains('network') ||
+        message.contains('timed out') ||
+        message.contains('failed host lookup')) {
+      return "Couldn't reach the server. Check your connection and try again.";
+    }
+    return "Couldn't send the email. Please try again.";
+  }
+
+  /// Sets the signed-in user's password. Returns an error message, or null
+  /// once it is saved.
+  Future<String?> setNewPassword(String password) async {
+    try {
+      await _supabaseApi.updatePassword(password);
+      ref.read(passwordRecoveryProvider.notifier).finish();
+      return null;
+    } catch (error, stackTrace) {
+      log(
+        'Setting a new password failed: $error',
+        name: 'auth',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return _friendlyNewPasswordError(error);
+    }
+  }
+
+  static String _friendlyNewPasswordError(Object error) {
+    if (error is CloudUnavailableException) return error.message;
+    if (error is AuthSessionMissingException) {
+      return 'You were signed out. Ask for a new reset link from Sign in.';
+    }
+    final message = error.toString().toLowerCase();
+    if (message.contains('same_password') ||
+        message.contains('different from the old password')) {
+      return "That's already your password. Choose a different one.";
+    }
+    if (message.contains('weak_password')) {
+      return 'Choose a longer password.';
+    }
+    if (message.contains('socket') ||
+        message.contains('network') ||
+        message.contains('timed out') ||
+        message.contains('failed host lookup')) {
+      return "Couldn't reach the server. Check your connection and try again.";
+    }
+    return "Couldn't save your password. Please try again.";
+  }
+
   Future<void> signOut() async {
     final signedOutAccountId = state.user?.id;
     // Supabase reports the sign-out before its request finishes, and the
@@ -1093,6 +1307,37 @@ class AuthProvider extends Notifier<AppAuthState> {
         return true;
       case AuthCallback.signInResult:
         break;
+    }
+
+    // Someone is already signed in, so this is a reset link opened after
+    // signing in some other way, or a stale Discord return. Exchanging it
+    // would swap the session under the open library, possibly for another
+    // account, without the sign-out that keeps accounts apart. Say so
+    // instead; signing out clears the code the link needs, so ask for a new
+    // one.
+    if (_supabaseApi.currentSession != null) {
+      AppErrorReporter.reportInfo(
+        'Ignored auth callback while signed in [$source]: '
+        '${redactDeepLinkUri(uri)}',
+        source: 'auth',
+      );
+      try {
+        Settings.showToast(
+          message: "You're already signed in, so that link wasn't used. To "
+              'set a new password, sign out and ask for a new link.',
+          backgroundColor: Settings.tacticalVioletTheme.secondary,
+          autoCloseDuration: const Duration(seconds: 8),
+        );
+      } catch (error, stackTrace) {
+        log(
+          'Ignored a link while signed in, but the toast could not be shown: '
+          '$error',
+          name: 'auth',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      return true;
     }
 
     AppErrorReporter.reportInfo(

@@ -8,6 +8,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 enum AuthDialogMode { signIn, signUp }
 
+enum _AuthView { signIn, signUp, resetPassword }
+
 enum _AuthField { email, password, confirm }
 
 const _bannerDuration = Duration(milliseconds: 180);
@@ -32,7 +34,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
   final FocusNode _passwordFocusNode = FocusNode();
   final FocusNode _confirmFocusNode = FocusNode();
   bool _submitting = false;
-  bool _isSignUp = false;
+  late _AuthView _view;
   bool _waitingForDiscord = false;
   String? _message;
   bool _messageIsInfo = false;
@@ -41,7 +43,9 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
   @override
   void initState() {
     super.initState();
-    _isSignUp = widget.initialMode == AuthDialogMode.signUp;
+    _view = widget.initialMode == AuthDialogMode.signUp
+        ? _AuthView.signUp
+        : _AuthView.signIn;
   }
 
   @override
@@ -63,13 +67,31 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
     });
   }
 
+  bool get _isSignUp => _view == _AuthView.signUp;
+
+  void _showView(_AuthView view) {
+    setState(() {
+      _view = view;
+      _message = null;
+      _messageIsInfo = false;
+      _errorField = null;
+    });
+  }
+
   Future<void> _submit() async {
+    // Enter in a field still submits while a request is out.
+    if (_submitting || ref.read(authProvider).isLoading) return;
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     final confirm = _confirmController.text;
 
     if (email.isEmpty || !email.contains('@')) {
       _setValidationError('Enter a valid email address.', _AuthField.email);
+      return;
+    }
+
+    if (_view == _AuthView.resetPassword) {
+      await _sendPasswordReset(email);
       return;
     }
 
@@ -102,6 +124,8 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
 
     if (!mounted) return;
 
+    // On success the sign-in lands in the auth state, which closes this
+    // dialog; closing it here too would also close the route beneath.
     setState(() {
       _submitting = false;
       _message = error;
@@ -109,10 +133,23 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
       // but is good news — present it as info, not failure.
       _messageIsInfo = error != null && error.startsWith('Account created');
     });
+  }
 
-    if (error == null) {
-      Navigator.of(context).pop(true);
-    }
+  Future<void> _sendPasswordReset(String email) async {
+    setState(() {
+      _submitting = true;
+      _message = null;
+      _messageIsInfo = false;
+      _errorField = null;
+    });
+    final result =
+        await ref.read(authProvider.notifier).sendPasswordReset(email);
+    if (!mounted) return;
+    setState(() {
+      _submitting = false;
+      _message = result.message;
+      _messageIsInfo = result.sent;
+    });
   }
 
   void _startDiscordSignIn() {
@@ -130,15 +167,19 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
     final authState = ref.watch(authProvider);
     final busy = _submitting || authState.isLoading;
 
-    // The Discord flow completes via a browser round-trip and deep link:
-    // close the dialog once the session actually lands, and drop the pending
-    // state if the provider reports a failure instead.
+    // This is the one place the dialog closes: once a session lands, from
+    // the password form here or from a Discord or reset link coming back
+    // through the browser. A Discord failure drops the pending state.
     ref.listen(authProvider, (previous, next) {
-      if (!_waitingForDiscord) {
+      if (next.isAuthenticated && previous?.isAuthenticated != true) {
+        // Only while this dialog is on top: dismissed and still animating
+        // out, popping would close the route beneath it.
+        if (ModalRoute.of(context)?.isCurrent ?? false) {
+          Navigator.of(context).pop(true);
+        }
         return;
       }
-      if (next.isAuthenticated && previous?.isAuthenticated != true) {
-        Navigator.of(context).pop(true);
+      if (!_waitingForDiscord) {
         return;
       }
       if (next.errorMessage != null &&
@@ -151,13 +192,22 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
       }
     });
 
+    final resetting = _view == _AuthView.resetPassword;
+    final theme = ShadTheme.of(context);
+
     return ShadDialog(
-      title: Text(_isSignUp ? 'Create account' : 'Sign in'),
-      description: Text(
-        _isSignUp
-            ? 'Use email and password to create an account.'
-            : 'Sign in with email and password.',
-      ),
+      title: Text(switch (_view) {
+        _AuthView.signIn => 'Sign in',
+        _AuthView.signUp => 'Create account',
+        _AuthView.resetPassword => 'Reset password',
+      }),
+      description: Text(switch (_view) {
+        _AuthView.signIn => 'Sign in with email and password.',
+        _AuthView.signUp => 'Use email and password to create an account.',
+        _AuthView.resetPassword =>
+          "Enter your account's email and we'll send a link to set a new "
+              'password. It works for accounts made with Discord too.',
+      }),
       child: SizedBox(
         width: 420,
         child: Column(
@@ -171,22 +221,41 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
               keyboardType: TextInputType.emailAddress,
               autofillHints: const [AutofillHints.email],
               hintText: 'Email',
-              textInputAction: TextInputAction.next,
+              textInputAction:
+                  resetting ? TextInputAction.done : TextInputAction.next,
+              onSubmitted: resetting ? (_) => _submit() : null,
               hasError: _errorField == _AuthField.email,
             ),
-            const SizedBox(height: 10),
-            CustomTextField(
-              key: const ValueKey('auth-password-field'),
-              controller: _passwordController,
-              focusNode: _passwordFocusNode,
-              obscureText: true,
-              autofillHints: const [AutofillHints.password],
-              hintText: 'Password',
-              textInputAction:
-                  _isSignUp ? TextInputAction.next : TextInputAction.done,
-              onSubmitted: _isSignUp ? null : (_) => _submit(),
-              hasError: _errorField == _AuthField.password,
-            ),
+            if (!resetting) ...[
+              const SizedBox(height: 10),
+              CustomTextField(
+                key: const ValueKey('auth-password-field'),
+                controller: _passwordController,
+                focusNode: _passwordFocusNode,
+                obscureText: true,
+                autofillHints: const [AutofillHints.password],
+                hintText: 'Password',
+                textInputAction:
+                    _isSignUp ? TextInputAction.next : TextInputAction.done,
+                onSubmitted: _isSignUp ? null : (_) => _submit(),
+                hasError: _errorField == _AuthField.password,
+              ),
+            ],
+            if (_view == _AuthView.signIn)
+              Align(
+                alignment: Alignment.centerRight,
+                child: ShadButton.link(
+                  key: const ValueKey('auth-forgot-password'),
+                  height: 28,
+                  padding: EdgeInsets.zero,
+                  foregroundColor: theme.colorScheme.mutedForeground,
+                  hoverForegroundColor: theme.colorScheme.foreground,
+                  onPressed: busy
+                      ? null
+                      : () => _showView(_AuthView.resetPassword),
+                  child: const Text('Forgot password?'),
+                ),
+              ),
             if (_isSignUp) ...[
               const SizedBox(height: 10),
               CustomTextField(
@@ -209,7 +278,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
               child: _message != null
                   ? Padding(
                       padding: const EdgeInsets.only(bottom: 10),
-                      child: _AuthMessageBanner(
+                      child: AuthMessageBanner(
                         message: _message!,
                         isInfo: _messageIsInfo,
                       ),
@@ -238,29 +307,30 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
                     key: const ValueKey('auth-mode-switch'),
                     onPressed: busy
                         ? null
-                        : () {
-                            setState(() {
-                              _isSignUp = !_isSignUp;
-                              _message = null;
-                              _messageIsInfo = false;
-                              _errorField = null;
-                            });
-                          },
-                    child: Text(
-                      _isSignUp ? 'Sign in instead' : 'Create an account',
-                    ),
+                        : () => _showView(
+                              _view == _AuthView.signIn
+                                  ? _AuthView.signUp
+                                  : _AuthView.signIn,
+                            ),
+                    child: Text(switch (_view) {
+                      _AuthView.signIn => 'Create an account',
+                      _AuthView.signUp => 'Sign in instead',
+                      _AuthView.resetPassword => 'Back to sign in',
+                    }),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 10),
-            ShadButton.secondary(
-              key: const ValueKey('auth-discord-button'),
-              onPressed:
-                  busy || _waitingForDiscord ? null : _startDiscordSignIn,
-              child: const Text('Continue with Discord'),
-            ),
-            const SizedBox(height: 10),
+            if (!resetting) ...[
+              ShadButton.secondary(
+                key: const ValueKey('auth-discord-button'),
+                onPressed:
+                    busy || _waitingForDiscord ? null : _startDiscordSignIn,
+                child: const Text('Continue with Discord'),
+              ),
+              const SizedBox(height: 10),
+            ],
             ShadButton(
               key: const ValueKey('auth-submit-button'),
               onPressed: busy ? null : _submit,
@@ -271,11 +341,14 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : null,
-              child: Text(
-                busy
-                    ? (_isSignUp ? 'Creating…' : 'Signing in…')
-                    : (_isSignUp ? 'Create account' : 'Sign in'),
-              ),
+              child: Text(switch ((_view, busy)) {
+                (_AuthView.signIn, false) => 'Sign in',
+                (_AuthView.signIn, true) => 'Signing in…',
+                (_AuthView.signUp, false) => 'Create account',
+                (_AuthView.signUp, true) => 'Creating…',
+                (_AuthView.resetPassword, false) => 'Send reset link',
+                (_AuthView.resetPassword, true) => 'Sending…',
+              }),
             ),
           ],
         ),
@@ -284,8 +357,9 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
   }
 }
 
-class _AuthMessageBanner extends StatelessWidget {
-  const _AuthMessageBanner({
+class AuthMessageBanner extends StatelessWidget {
+  const AuthMessageBanner({
+    super.key,
     required this.message,
     required this.isInfo,
   });
