@@ -78,5 +78,17 @@ void main() {
           .defaultThemeProfileIdForNewStrategies,
       MapThemeProfilesProvider.immutableDefaultProfileId,
     );
+
+    // A later preference write keeps the reset default on disk.
+    await container.read(appPreferencesProvider.notifier).setAutosaveEnabled(
+          false,
+        );
+    await container.read(appPreferencesProvider.notifier).flushPendingWrites();
+    expect(
+      Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+          .get(MapThemeProfilesProvider.appPreferencesSingletonKey)!
+          .defaultThemeProfileIdForNewStrategies,
+      MapThemeProfilesProvider.immutableDefaultProfileId,
+    );
   });
 }
