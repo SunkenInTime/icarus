@@ -83,7 +83,9 @@ Root: HKCU; Subkey: "Software\\Classes\\Icarus.Replay\\DefaultIcon"; ValueType: 
 Root: HKCU; Subkey: "Software\\Classes\\Icarus.Replay\\shell\\open\\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: registervrf
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Flags: nowait skipifsilent
+; postinstall puts a ticked "Launch Icarus" checkbox on the final page; without
+; it, Setup launches the app unasked. skipifsilent keeps silent installs closed.
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 // True when .vrf has no default program, or Icarus already is it.
