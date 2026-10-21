@@ -498,19 +498,12 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
     final profileExists = state.profiles.any((p) => p.id == profileId);
     final resolvedProfileId =
         profileExists ? profileId : immutableDefaultProfileId;
-    final appPrefsBox =
-        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox);
-    final currentPrefs = appPrefsBox.get(appPreferencesSingletonKey) ??
-        AppPreferences(
-          defaultThemeProfileIdForNewStrategies: immutableDefaultProfileId,
-        );
-
-    await appPrefsBox.put(
-      appPreferencesSingletonKey,
-      currentPrefs.copyWith(
-        defaultThemeProfileIdForNewStrategies: resolvedProfileId,
-      ),
-    );
+    // Through the preferences notifier, which writes the whole record: a
+    // write of its own made after this one would otherwise put back the
+    // default it read at startup.
+    await ref
+        .read(appPreferencesProvider.notifier)
+        .setDefaultThemeProfileIdForNewStrategies(resolvedProfileId);
     await refreshFromHive();
   }
 
@@ -612,6 +605,13 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
   Future<void> refreshFromHive() async {
     await _writeQueue;
     state = _readFromHive();
+  }
+
+  Future<void> setDefaultThemeProfileIdForNewStrategies(String profileId) {
+    return _updatePreferences(
+      (current) =>
+          current.copyWith(defaultThemeProfileIdForNewStrategies: profileId),
+    );
   }
 
   Future<void> setAutosaveEnabled(bool enabled) {
