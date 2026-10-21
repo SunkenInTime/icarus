@@ -22,6 +22,9 @@ final agentProvider =
 class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   List<PlacedAgentNode> poppedAgents = [];
   final Map<String, ActionObjectState> _pendingEditBefore = {};
+
+  /// Copies [duplicateAgentAt] made for a Ctrl-drag that has not dropped.
+  final Set<String> _draggedCopies = {};
   static const _uuid = Uuid();
 
   @override
@@ -133,6 +136,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
     if (coordinateSystem.isOutOfBounds(centerPosition)) {
       removeAgentAsAction(id);
+      _endCopyDrag(id);
       return;
     }
     if (index < 0) return;
@@ -153,6 +157,14 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
+    _endCopyDrag(id);
+  }
+
+  /// A dropped Ctrl-drag copy undoes in one step with the drop.
+  void _endCopyDrag(String id) {
+    if (_draggedCopies.remove(id)) {
+      ref.read(actionProvider.notifier).joinToAddition(id);
+    }
   }
 
   String? duplicateAgentAt({
@@ -171,6 +183,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     final duplicatedAgent =
         _duplicateNode(sourceAgent, id: _uuid.v4(), position: position);
     addAgent(duplicatedAgent);
+    _draggedCopies.add(duplicatedAgent.id);
     // The drag that made the copy moves the copy: hold it like the source.
     ref
         .read(editorPointersProvider.notifier)
