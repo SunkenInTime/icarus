@@ -28,7 +28,8 @@ class AppErrorReporter {
 
   /// How large the persisted log grows before it moves to `<name>.1`,
   /// replacing the one there, and a fresh log starts. Together the two
-  /// never hold much more than twice this.
+  /// stay near twice this, unless the log can't be moved (another copy of
+  /// the app holds it open) or a single entry is bigger than the cap.
   static const int persistedLogMaxBytes = 1024 * 1024;
 
   static bool _isDebugDialogOpen = false;
