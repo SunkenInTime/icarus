@@ -44,6 +44,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # The production secrets belong in this environment, limited to main.
+    environment: Production
     env:
       FVM_HOME: ${{ github.workspace }}/.fvm_cache
       PUB_CACHE: ${{ github.workspace }}/.pub-cache
@@ -67,7 +69,7 @@ jobs:
           missing=0
           for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CONVEX_PRODUCTION_DEPLOY_KEY ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL ICARUS_PRODUCTION_CONVEX_CLIENT_ID; do
             if [[ -z "${!name}" ]]; then
-              echo "::error::Add $name (repository secret or variable). See docs/release_process.md, \"Web beta deploy\"."
+              echo "::error::Add $name. docs/release_process.md, \"Web beta deploy\", says where each one goes."
               missing=1
             fi
           done
