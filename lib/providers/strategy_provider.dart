@@ -2292,7 +2292,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final newID = const Uuid().v4();
 
-    // The copy is saved only once it has every picture the original shows.
+    // The copy is saved only once it has its own copy of the original's
+    // image files.
     try {
       await PlacedImageProvider.copyImageFiles(
         fromStrategyID: strategyID,
