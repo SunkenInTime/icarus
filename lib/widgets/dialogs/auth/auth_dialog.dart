@@ -36,10 +36,6 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
   bool _submitting = false;
   late _AuthView _view;
   bool _waitingForDiscord = false;
-
-  /// A reset link went out from here. On desktop it comes back to this app
-  /// and signs the user in, which closes this dialog.
-  bool _waitingForResetLink = false;
   String? _message;
   bool _messageIsInfo = false;
   _AuthField? _errorField;
@@ -126,6 +122,8 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
 
     if (!mounted) return;
 
+    // On success the sign-in lands in the auth state, which closes this
+    // dialog; closing it here too would also close the route beneath.
     setState(() {
       _submitting = false;
       _message = error;
@@ -133,10 +131,6 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
       // but is good news — present it as info, not failure.
       _messageIsInfo = error != null && error.startsWith('Account created');
     });
-
-    if (error == null) {
-      Navigator.of(context).pop(true);
-    }
   }
 
   Future<void> _sendPasswordReset(String email) async {
@@ -153,7 +147,6 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
       _submitting = false;
       _message = result.message;
       _messageIsInfo = result.sent;
-      _waitingForResetLink = _waitingForResetLink || result.sent;
     });
   }
 
@@ -172,13 +165,10 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
     final authState = ref.watch(authProvider);
     final busy = _submitting || authState.isLoading;
 
-    // The Discord flow completes via a browser round-trip and deep link:
-    // close the dialog once the session actually lands, and drop the pending
-    // state if the provider reports a failure instead.
+    // This is the one place the dialog closes: once a session lands, from
+    // the password form here or from a Discord or reset link coming back
+    // through the browser. A Discord failure drops the pending state.
     ref.listen(authProvider, (previous, next) {
-      if (!_waitingForDiscord && !_waitingForResetLink) {
-        return;
-      }
       if (next.isAuthenticated && previous?.isAuthenticated != true) {
         Navigator.of(context).pop(true);
         return;

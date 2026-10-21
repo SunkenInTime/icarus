@@ -581,6 +581,11 @@ class AuthProvider extends Notifier<AppAuthState> {
   /// at start), to tell a change of user from a change of session.
   Session? _sessionAtLastEvent;
 
+  /// The last reset link this run asked for, so a repeat within
+  /// [_passwordResetCooldown] doesn't break it (see [sendPasswordReset]).
+  ({String email, DateTime at})? _lastPasswordReset;
+  static const _passwordResetCooldown = Duration(seconds: 60);
+
   @visibleForTesting
   static AuthProviderSupabaseApi? debugSupabaseApi;
 
@@ -1039,14 +1044,29 @@ class AuthProvider extends Notifier<AppAuthState> {
   /// Returns what to tell the user. Supabase answers the same whether or not
   /// an account uses [email], so the message can't say either.
   Future<({String message, bool sent})> sendPasswordReset(String email) async {
+    // The link only works where the reset was asked for: it carries a code
+    // that exchanges with the verifier this device saves with the request.
+    const where = kIsWeb ? 'in this browser' : 'on this computer';
+    final address = email.toLowerCase();
+    final lastSent = _lastPasswordReset;
+    // Supabase refuses a second request for an address within a minute, but
+    // only after the client has replaced the saved verifier, so the link
+    // already in the inbox would stop working.
+    if (lastSent != null &&
+        lastSent.email == address &&
+        DateTime.now().difference(lastSent.at) < _passwordResetCooldown) {
+      return (
+        message: 'A link is already on its way. Check your inbox and spam, '
+            'and open it $where.',
+        sent: true,
+      );
+    }
     try {
       await _supabaseApi.resetPasswordForEmail(
         email,
         redirectTo: currentAuthRedirectUri().toString(),
       );
-      // The link only works where the reset was asked for: it carries a
-      // code that exchanges with the verifier this device saved just now.
-      const where = kIsWeb ? 'in this browser' : 'on this computer';
+      _lastPasswordReset = (email: address, at: DateTime.now());
       return (
         message: 'If an account uses this email, a link to set a new '
             'password is on its way. Open it $where.',
@@ -1251,6 +1271,37 @@ class AuthProvider extends Notifier<AppAuthState> {
         return true;
       case AuthCallback.signInResult:
         break;
+    }
+
+    // Someone is already signed in, so this is a reset link opened after
+    // signing in some other way, or a stale Discord return. Exchanging it
+    // would swap the session under the open library, possibly for another
+    // account, without the sign-out that keeps accounts apart. Say so
+    // instead; signing out clears the code the link needs, so ask for a new
+    // one.
+    if (_supabaseApi.currentSession != null) {
+      AppErrorReporter.reportInfo(
+        'Ignored auth callback while signed in [$source]: '
+        '${redactDeepLinkUri(uri)}',
+        source: 'auth',
+      );
+      try {
+        Settings.showToast(
+          message: "You're already signed in, so that link wasn't used. To "
+              'set a new password, sign out and ask for a new link.',
+          backgroundColor: Settings.tacticalVioletTheme.secondary,
+          autoCloseDuration: const Duration(seconds: 8),
+        );
+      } catch (error, stackTrace) {
+        log(
+          'Ignored a link while signed in, but the toast could not be shown: '
+          '$error',
+          name: 'auth',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      return true;
     }
 
     AppErrorReporter.reportInfo(
