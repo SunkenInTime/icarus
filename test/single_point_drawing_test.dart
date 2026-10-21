@@ -13,7 +13,7 @@ FreeDrawing _dot() => FreeDrawing(
     );
 
 void main() {
-  test('a one-point drawing draws on a map under 415 px tall', () {
+  test('a one-point drawing builds on a map under 415 px tall without throwing', () {
     final coordinateSystem =
         CoordinateSystem(playAreaSize: const Size(700, 400));
     final dot = _dot()..rebuildPath(coordinateSystem);
