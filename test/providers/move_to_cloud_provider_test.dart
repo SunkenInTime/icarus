@@ -112,6 +112,7 @@ void main() {
     String id, {
     String? folderID,
     String? themeProfileId,
+    String imageExtension = '.png',
   }) async {
     StrategyPage page(String pageId, int index, {bool withImage = false}) =>
         StrategyPage(
@@ -138,7 +139,7 @@ void main() {
                 id: '$id-image',
                 aspectRatio: 1,
                 scale: 1,
-                fileExtension: '.png',
+                fileExtension: imageExtension,
               ),
           ],
           utilityData: const [],
@@ -467,6 +468,19 @@ void main() {
         true,
       ),
     ]);
+  });
+
+  test("a picture under a name the app can't use keeps the original here",
+      () async {
+    await putStrategy('s1', imageExtension: '.txt');
+    open();
+
+    await mover().moveStrategy('s1');
+
+    expect(strategies().get('s1')!.pages, hasLength(2));
+    expect(cloud.strategies, isEmpty);
+    expect(moves().isEmpty, isTrue);
+    expect(messages.single.$2, isTrue);
   });
 
   test('a cloud copy that reads back short is deleted, not finished', () async {

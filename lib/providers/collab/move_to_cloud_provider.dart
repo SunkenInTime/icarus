@@ -593,7 +593,11 @@ class MoveToCloudNotifier extends Notifier<void> {
   }) async {
     final copied = <({String assetPublicId, String fileExtension})>[];
     for (final MapEntry(key: localPicture, value: cloud) in pictures.entries) {
-      if (imageFileName(localPicture, cloud.fileExtension) == null) continue;
+      // A picture under a name the app may not use stops the move, so the
+      // local strategy stays as it is instead of losing it.
+      if (imageFileName(localPicture, cloud.fileExtension) == null) {
+        throw UnsafeFileNameException('$localPicture${cloud.fileExtension}');
+      }
       final source = await PlacedImageProvider.getImageFile(
         strategyID: localId,
         imageID: localPicture,

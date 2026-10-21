@@ -76,7 +76,8 @@ class PlacedImageProvider extends Notifier<ImageState> {
     final directory = await getApplicationSupportDirectory();
 
     // Create a custom directory inside the application support directory.
-    final customDirectory = Directory(path.join(directory.path, strategyID));
+    final customDirectory =
+        Directory(strategyFolderPath(directory.path, strategyID));
 
     // Create the directory if it doesn't exist.
     if (!await customDirectory.exists()) return;
@@ -384,9 +385,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   static Future<Directory> getImageFolder(String strategyID) async {
-    if (!isSafeFileNameId(strategyID)) {
-      throw UnsafeImageFileNameException(strategyID);
-    }
     // Get the system's application support directory.
     Directory appSupportDir;
     try {
@@ -399,7 +397,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
     // Create the custom directory using the strategy ID.
     final Directory customDirectory =
-        Directory(path.join(appSupportDir.path, strategyID));
+        Directory(strategyFolderPath(appSupportDir.path, strategyID));
     if (!await customDirectory.exists()) {
       await customDirectory.create(recursive: true);
     }
@@ -420,7 +418,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
   ) {
     final name = imageFileName(imageID, fileExtension);
     if (name == null) {
-      throw UnsafeImageFileNameException('$imageID$fileExtension');
+      throw UnsafeFileNameException('$imageID$fileExtension');
     }
     return path.join(imagesDirectoryPath, name);
   }

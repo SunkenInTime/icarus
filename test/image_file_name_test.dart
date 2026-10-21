@@ -42,9 +42,23 @@ void main() {
     expect(imageFileName(uuid, '.PNG'), '$uuid.PNG');
     expect(imageFileName(uuid, '.jpeg'), '$uuid.jpeg');
     expect(imageFileName(uuid, null), isNull);
-    expect(imageFileName(uuid, ''), isNull);
+    // Cloud images from before extensions were recorded: the bare id, as
+    // long as it carries no extension of its own.
+    expect(imageFileName(uuid, ''), uuid);
+    expect(imageFileName('payload.bat', ''), isNull);
     expect(imageFileName(uuid, '.txt'), isNull);
     expect(imageFileName('a/b', '.png'), isNull);
+  });
+
+  test("a strategy's folder is only ever its own", () {
+    expect(strategyFolderPath('support', uuid), endsWith(uuid));
+    for (final id in ['..', 'a/b', r'a\b', 'x.']) {
+      expect(
+        () => strategyFolderPath('support', id),
+        throwsA(isA<UnsafeFileNameException>()),
+        reason: id,
+      );
+    }
   });
 
   test('the path builder refuses a name it may not use', () {
@@ -54,11 +68,11 @@ void main() {
     );
     expect(
       () => PlacedImageProvider.buildImageFilePath('images', 'a/b', '.png'),
-      throwsA(isA<UnsafeImageFileNameException>()),
+      throwsA(isA<UnsafeFileNameException>()),
     );
     expect(
       () => PlacedImageProvider.buildImageFilePath('images', uuid, '.txt'),
-      throwsA(isA<UnsafeImageFileNameException>()),
+      throwsA(isA<UnsafeFileNameException>()),
     );
   });
 }
