@@ -103,8 +103,14 @@ class _YoutubeViewState extends State<YoutubeView>
             Positioned.fill(
               child: InAppWebView(
                 webViewEnvironment: webViewEnvironment,
-                initialSettings:
-                    InAppWebViewSettings(allowBackgroundAudioPlaying: false),
+                initialSettings: InAppWebViewSettings(
+                  allowBackgroundAudioPlaying: false,
+                  // On web the view is an iframe, which must pass these on
+                  // to the YouTube player inside the embed page.
+                  iframeAllow: 'autoplay; encrypted-media; fullscreen; '
+                      'picture-in-picture',
+                  iframeAllowFullscreen: true,
+                ),
                 initialUrlRequest: URLRequest(url: embed),
                 onLoadStart: (controller, url) =>
                     _keepOnEmbed(controller, url, embed),
