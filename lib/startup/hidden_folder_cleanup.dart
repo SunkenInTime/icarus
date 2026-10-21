@@ -1,4 +1,3 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -10,13 +9,12 @@ const _doneKey = 'hiddenFoldersDeleted';
 /// (see [FolderProvider.deleteHiddenFolders]). Once only: a folder hidden by
 /// some future bug stays on disk, where a fix can still bring it back.
 Future<void> deleteFoldersHiddenByEarlierDeletes(
-  ProviderContainer container,
+  FolderProvider folders,
 ) async {
   final box = await Hive.openBox<bool>(HiveBoxNames.libraryCleanupBox);
   if (box.get(_doneKey) == true) return;
   try {
-    final result =
-        await container.read(folderProvider.notifier).deleteHiddenFolders();
+    final result = await folders.deleteHiddenFolders();
     AppErrorReporter.reportInfo(
       'Deleted ${result.deleted} folders earlier deletes left hidden',
       source: 'startup.hiddenFolders',

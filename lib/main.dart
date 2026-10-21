@@ -226,9 +226,6 @@ Future<void> main(List<String> args) async {
       await MapThemeProfilesProvider.bootstrap();
 
       await StrategyMigrator.migrateLocalLibrary(PlatformPolicy.current);
-      if (PlatformPolicy.current.allowsLocalLibrary) {
-        await deleteFoldersHiddenByEarlierDeletes(appProviderContainer);
-      }
 
       // The cloud comes up degraded rather than not at all: a failure here
       // must never keep anyone from the library on this device.
@@ -493,6 +490,14 @@ class _MyAppState extends ConsumerState<MyApp> {
     ref.read(moveToCloudProvider);
     // Sends replay captures the app quit before saving.
     ref.read(replayCaptureQueueProvider);
+    // Here, not before runApp: the folder provider reads the sign-in state,
+    // which needs the cloud clients up. The library never shows these
+    // folders, so nothing the user does meanwhile can reach them.
+    if (PlatformPolicy.current.allowsLocalLibrary) {
+      unawaited(
+        deleteFoldersHiddenByEarlierDeletes(ref.read(folderProvider.notifier)),
+      );
+    }
     // Keeps cloud strategies on this computer for opening offline.
     ref.read(strategyCopyRefresherProvider);
 

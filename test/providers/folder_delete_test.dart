@@ -130,7 +130,9 @@ void main() {
       // The library shows a strategy whose folder is gone at the top level.
       await strategy('top-level', folder: 'maps');
 
-      await deleteFoldersHiddenByEarlierDeletes(container);
+      await deleteFoldersHiddenByEarlierDeletes(
+        container.read(folderProvider.notifier),
+      );
 
       expect(folders().keys, unorderedEquals(['bind', 'sites']));
       expect(
@@ -143,10 +145,14 @@ void main() {
     });
 
     test('are deleted once: a folder hidden later stays on disk', () async {
-      await deleteFoldersHiddenByEarlierDeletes(container);
+      await deleteFoldersHiddenByEarlierDeletes(
+        container.read(folderProvider.notifier),
+      );
       await leftByAnEarlierDelete();
 
-      await deleteFoldersHiddenByEarlierDeletes(container);
+      await deleteFoldersHiddenByEarlierDeletes(
+        container.read(folderProvider.notifier),
+      );
 
       expect(folders().keys, unorderedEquals(['ascent', 'retakes']));
       expect(strategies().keys, unorderedEquals(['a-split', 'b-retake']));
@@ -157,7 +163,9 @@ void main() {
       await folder('right', parent: 'left');
       await strategy('looped', folder: 'left');
 
-      await deleteFoldersHiddenByEarlierDeletes(container);
+      await deleteFoldersHiddenByEarlierDeletes(
+        container.read(folderProvider.notifier),
+      );
 
       expect(folders().keys, unorderedEquals(['left', 'right']));
       expect(strategies().keys, ['looped']);
