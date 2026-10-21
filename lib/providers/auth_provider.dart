@@ -1464,11 +1464,13 @@ class AuthProvider extends Notifier<AppAuthState> {
             return;
           }
 
+          // No error to pass: reportConvexUnauthenticated checks an error
+          // for the server's UNAUTHENTICATED code, and this is the Convex
+          // client's own report that it holds no accepted session. (The web
+          // client sends it when the server rejects the token; the native
+          // one only when no token can be fetched.)
           unawaited(
-            reportConvexUnauthenticated(
-              source: 'convex:onAuthChange',
-              error: Exception('Convex auth state changed to unauthenticated'),
-            ),
+            reportConvexUnauthenticated(source: 'convex:onAuthChange'),
           );
         },
       );

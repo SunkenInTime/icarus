@@ -603,6 +603,39 @@ void main() {
     );
   });
 
+  testWidgets('Convex dropping the session prompts the user when it happens',
+      (tester) async {
+    supabaseApi.currentSession = fakeSession();
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          navigatorKey: appNavigatorKey,
+          home: const Scaffold(body: SizedBox.shrink()),
+        ),
+      ),
+    );
+    container.read(authProvider);
+    await tester.pump();
+    await tester.pump();
+    expect(
+        container.read(authProvider).convexAuthStatus, ConvexAuthStatus.ready);
+
+    // The Convex client reports the session is no longer accepted while
+    // Supabase still holds one, and nothing has been edited or read since.
+    convexApi.emitAuthState(false);
+    convexApi.lastOnAuthChange!(false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final state = container.read(authProvider);
+    expect(state.convexAuthStatus, ConvexAuthStatus.incident);
+    expect(state.lastAuthIncidentSource, 'convex:onAuthChange');
+    expect(find.text('Cloud connection lost'), findsOneWidget);
+  });
+
   testWidgets('auth incident Sign Out uses the guarded flow', (tester) async {
     supabaseApi.currentSession = fakeSession();
     var guardedRequests = 0;
@@ -1640,6 +1673,7 @@ class FakeConvexApi implements AuthProviderConvexApi {
     void Function(bool isAuthenticated)? onAuthChange,
   }) async {
     setAuthCalls += 1;
+    lastOnAuthChange = onAuthChange;
     final completer = setAuthCompleter;
     if (completer != null) {
       return completer.future;
@@ -1652,6 +1686,9 @@ class FakeConvexApi implements AuthProviderConvexApi {
     handles.add(handle);
     return handle;
   }
+
+  /// What the last setup asked to hear when Convex's auth changes.
+  void Function(bool isAuthenticated)? lastOnAuthChange;
 
   void emitAuthState(bool isAuthenticated) {
     _isAuthenticated = isAuthenticated;
