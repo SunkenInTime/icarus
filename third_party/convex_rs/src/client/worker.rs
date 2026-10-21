@@ -244,10 +244,15 @@ async fn _worker_once<T: SyncProtocol>(
                     let _ = tx.send(subscription);
                 },
                 ClientRequest::SubscribeSet(queries, tx, request_sender) => {
-                    let subscriber_ids: Vec<SubscriberId> = queries
+                    // The tokens exist before anything that can fail, so a
+                    // failure drops them and unsubscribes every query.
+                    let subscriptions: Vec<QuerySubscription> = queries
                         .into_iter()
-                        .map(|SubscribeRequest { udf_path, args }| {
-                            base_client.subscribe(udf_path, args)
+                        .map(|SubscribeRequest { udf_path, args }| QuerySubscription {
+                            subscriber_id: base_client.subscribe(udf_path, args),
+                            request_sender: request_sender.clone(),
+                            watch: BroadcastStream::new(watch_sender.subscribe()),
+                            initial: None,
                         })
                         .collect();
                     communicate(
@@ -264,15 +269,6 @@ async fn _worker_once<T: SyncProtocol>(
                     let results = base_client.latest_results().clone();
                     let updates =
                         QuerySetSubscription::new(BroadcastStream::new(watch_sender.subscribe()));
-                    let subscriptions = subscriber_ids
-                        .into_iter()
-                        .map(|subscriber_id| QuerySubscription {
-                            subscriber_id,
-                            request_sender: request_sender.clone(),
-                            watch: BroadcastStream::new(watch_sender.subscribe()),
-                            initial: None,
-                        })
-                        .collect();
                     let _ = tx.send(SubscribedSet {
                         subscriptions,
                         results,

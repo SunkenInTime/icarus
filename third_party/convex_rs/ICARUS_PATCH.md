@@ -49,3 +49,10 @@ transition. Taking the results and opening the watch with nothing awaited in
 between means the watch only yields results newer than the snapshot. The
 `convex_flutter` bridge uses it to deliver a page read in parts (its frame and
 slices) as one consistent page.
+
+A transition now publishes only results the server holds on the current
+connection. Upstream kept every result across a reconnect and published them
+again with the first transition on the new connection, which can be the one
+that only acknowledges re-authentication, before the server has answered any
+query. Subscribers then took old results for current ones. Until the reconnect
+lands, the old results stay readable as before.
