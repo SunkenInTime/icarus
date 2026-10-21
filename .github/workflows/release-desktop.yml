@@ -79,7 +79,7 @@ jobs:
       ICARUS_PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -95,13 +95,13 @@ jobs:
           -ReleaseTarget "${{ inputs.channel == 'stable' && 'stable-desktop' || 'prerelease-desktop' }}"
 
       - name: Sign In To Azure With OIDC
-        uses: azure/login@v3
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
 
       - name: Add Pub Cache To PATH
         shell: pwsh
@@ -119,7 +119,7 @@ jobs:
       # windows/CMakeLists.txt builds the replay decoder (native/replay) with
       # cargo, on the version in native/replay/rust-toolchain.toml.
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.96.1
+        uses: dtolnay/rust-toolchain@3f2778ee6a28c53e512b95bbcf7b2120993da70d # 1.96.1
         with:
           components: clippy, rustfmt
 
@@ -133,14 +133,14 @@ jobs:
       # The early login checks configuration. Refresh after compilation because
       # GitHub's OIDC assertion can expire before signing requests its own scope.
       - name: Refresh Azure Login Before Binary Signing
-        uses: azure/login@v3
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows Release Binaries
-        uses: azure/artifact-signing-action@v2
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
         with:
           endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
@@ -168,14 +168,14 @@ jobs:
           powershell -ExecutionPolicy Bypass -File scripts/release_desktop.ps1 -Phase package -Channel "${{ inputs.channel }}"
 
       - name: Refresh Azure Login Before Installer Signing
-        uses: azure/login@v3
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows Installer
-        uses: azure/artifact-signing-action@v2
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
         with:
           endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
@@ -276,7 +276,7 @@ jobs:
 
       - name: Upload Desktop Artifacts
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: desktop-release-${{ inputs.channel }}
           path: |
