@@ -89,7 +89,8 @@ jobs:
   #   ci: all
   #
   # Lanes: analyze, test, web, replay, convex, presence, contract, bridge,
-  # desktop. "skip" runs none of them. Lanes that guard production or the
+  # desktop, separated by spaces or commas, unquoted. "skip" runs none of
+  # them. A word that is not a lane runs every lane. Lanes that guard production or the
   # library (convex, presence, contract, desktop) still run when the PR
   # changes their files, whatever the line says. Without the line, a PR runs
   # analyze, test and web plus the lanes its changed files reach. The line is
@@ -142,9 +143,7 @@ jobs:
             # raw would let it write runner commands into the log.
             line=$(grep -m1 -iE '^ci:' <<<"$body" || true)
             if [[ -n "$line" ]]; then
-              value=${line#*:}
-              value=${value,,}
-              read -ra words <<<"${value//,/ }"
+              read -ra words <<<"$(tr 'A-Z,' 'a-z ' <<<"${line#*:}")"
               named=" "
               unknown=0
               for word in "${words[@]}"; do
