@@ -28,6 +28,18 @@ jobs:
     environment: Production
 
     steps:
+      # Before checkout, so no code from another branch runs in a job that
+      # holds the Partner Center secret. The preflight script checks too, but
+      # a branch can edit its own copy of that script. -cne, because both
+      # Actions expressions and PowerShell's -ne ignore case, and a branch
+      # named MAIN would pass either.
+      - name: Require Main Branch
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -cne 'refs/heads/main') {
+            throw "Store releases must be dispatched from main. This run is on $env:GITHUB_REF."
+          }
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0

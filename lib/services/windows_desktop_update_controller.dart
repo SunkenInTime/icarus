@@ -390,8 +390,16 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
 
     try {
       await for (final List<int> chunk in response.stream) {
-        sink.add(chunk);
         fileBytesReceived += chunk.length;
+        // Stop reading at the listed length: more bytes can only fail the
+        // hash check, and a server that never stops would fill the disk.
+        if (fileBytesReceived > file.length) {
+          throw FileSystemException(
+            'Downloaded update length mismatch for ${file.filePath}.',
+            destination.path,
+          );
+        }
+        sink.add(chunk);
         _downloadedBytes = completedBytes + fileBytesReceived;
         _downloadProgress = _calculateProgress(_downloadedBytes, totalBytes);
         notifyListeners();
@@ -487,7 +495,9 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
       path.joinAll(
         <String>[
           updateDirectory,
-          ...splitRelativePath(relativePath),
+          ...WindowsDesktopUpdateRestartService.splitRelativePath(
+            relativePath,
+          ),
         ],
       ),
     );
@@ -498,16 +508,9 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
     return baseUri.replace(
       pathSegments: <String>[
         ...baseUri.pathSegments.where((String segment) => segment.isNotEmpty),
-        ...splitRelativePath(relativePath),
+        ...WindowsDesktopUpdateRestartService.splitRelativePath(relativePath),
       ],
     );
-  }
-
-  static List<String> splitRelativePath(String relativePath) {
-    return relativePath
-        .split(RegExp(r'[\\\/]+'))
-        .where((String segment) => segment.isNotEmpty)
-        .toList();
   }
 
   static double _calculateProgress(int receivedBytes, int totalBytes) {

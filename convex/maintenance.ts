@@ -19,22 +19,22 @@ import {
   queueAssetReclaim,
   sweepDeletedImageAssetsRef,
 } from "./images";
-import {
-  refreshStrategyAgentSummary,
-  syncLineupAgents,
-} from "./lib/strategyAgentSummary";
+import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
-import { syncLineupItems } from "./lib/lineupItems";
 
 const MAINTENANCE_BATCH_SIZE = 200;
 // Content rows can each hold up to ~900 KB (the op size cap), so passes
 // that read content take only a few rows per transaction, well under
 // Convex's 16 MiB read and write limits, and reschedule themselves.
 const CONTENT_BATCH_SIZE = 8;
-// Reference rows a purge run turns into reclaim candidates. Each costs one
-// indexed read and two writes, far under Convex's 4,096 index reads.
-const PURGE_REFERENCE_BUDGET = 200;
-// Reference rows the backfill writes per run, well under Convex's 8,192
+// Rows a purge run deletes besides the content rows themselves: reference
+// rows, each turned into a reclaim candidate at the cost of one indexed read
+// and two writes, and a lineup group's lineupItems and lineupAgents rows, one
+// write each. Every delete also counts against Convex's 4,096 reads per
+// transaction, which a run deleting a big group's rows all at once broke;
+// this stays far under that and the 16,000 documents written.
+const PURGE_ROW_BUDGET = 200;
+// Reference rows the backfill writes per run, well under Convex's 16,000
 // documents written per transaction.
 const BACKFILL_WRITE_BUDGET = 2000;
 // How long a deleted page's purge waits before checking again whether the
@@ -64,18 +64,20 @@ export const purgeTrashedPagesRef = makeFunctionReference<"mutation">(
 /// reclaim, in the caller's transaction: a purged row and its reclaim
 /// candidates land together or not at all.
 ///
-/// A row's reference rows are its purge progress. Each one is turned into a
-/// reclaim candidate and deleted, at most PURGE_REFERENCE_BUDGET per run
-/// (each costs one indexed read to skip a duplicate candidate); the row
-/// itself goes once it has none left. A lineup showing hundreds of images
-/// is purged across several runs, each committing its part, so a retry
-/// resumes where the last run stopped. Returns whether every row was purged.
+/// A row's reference rows, and a lineup group's lineupItems and lineupAgents
+/// rows, are its purge progress. Each reference is turned into a reclaim
+/// candidate and deleted, then each side row is deleted, at most
+/// PURGE_ROW_BUDGET in all per run; the row itself goes once it has none
+/// left. A lineup showing hundreds of images, or a group of thousands of
+/// lineups, is purged across several runs, each committing its part, so a
+/// retry resumes where the last run stopped. Returns whether every row was
+/// purged.
 async function purgeContentRows(
   ctx: MutationCtx,
   elements: Doc<"elements">[],
   lineups: Doc<"lineups">[],
 ): Promise<boolean> {
-  let budget = PURGE_REFERENCE_BUDGET;
+  let budget = PURGE_ROW_BUDGET;
   const rows: (
     | { strategyId: Id<"strategies">; elementId: Id<"elements"> }
     | { strategyId: Id<"strategies">; lineupId: Id<"lineups"> }
@@ -115,8 +117,24 @@ async function purgeContentRows(
       break;
     }
     if ("lineupId" in row) {
-      await syncLineupAgents(ctx, row.lineupId, null);
-      await syncLineupItems(ctx, row.lineupId, null);
+      const sideRows = [
+        ...(await ctx.db
+          .query("lineupItems")
+          .withIndex("by_lineupId", (q) => q.eq("lineupId", row.lineupId))
+          .take(budget + 1)),
+        ...(await ctx.db
+          .query("lineupAgents")
+          .withIndex("by_lineupId", (q) => q.eq("lineupId", row.lineupId))
+          .take(budget + 1)),
+      ];
+      for (const sideRow of sideRows.slice(0, budget)) {
+        await ctx.db.delete(sideRow._id);
+      }
+      if (sideRows.length > budget) {
+        purgedAll = false;
+        break;
+      }
+      budget -= sideRows.length;
       await ctx.db.delete(row.lineupId);
     } else {
       await ctx.db.delete(row.elementId);

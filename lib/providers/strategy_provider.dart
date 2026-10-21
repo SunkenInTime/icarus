@@ -35,7 +35,6 @@ import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:hive_ce/hive.dart';
-import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/canonical_json.dart';
@@ -64,6 +63,7 @@ import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/services/image_file_name.dart';
 
 export 'package:icarus/strategy/strategy_models.dart'
     show StrategyData, StrategyState;
@@ -737,7 +737,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     // Create a custom directory inside the application support directory.
 
-    final customDirectory = Directory(path.join(directory.path, strategyID));
+    final customDirectory =
+        Directory(strategyFolderPath(directory.path, strategyID));
 
     if (!await customDirectory.exists()) {
       await customDirectory.create(recursive: true);
@@ -2291,6 +2292,42 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final newID = const Uuid().v4();
 
+    // The copy is saved only once it has its own copy of the original's
+    // image files.
+    final int missingPictures;
+    try {
+      missingPictures = await PlacedImageProvider.copyImageFiles(
+        fromStrategyID: strategyID,
+        toStrategyID: newID,
+        pictures: [
+          for (final page in originalStrategy.pages) ...[
+            for (final image in page.imageData)
+              (id: image.pictureId, fileExtension: image.fileExtension),
+            for (final link in page.lineUpLinks)
+              for (final image in link.images)
+                (id: image.id, fileExtension: image.fileExtension),
+          ],
+        ],
+      );
+    } on FileSystemException catch (error, stackTrace) {
+      log(
+        'Failed to copy the images of $strategyID: $error',
+        name: 'strategy',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      try {
+        final images = await PlacedImageProvider.getImageFolder(newID);
+        await images.parent.delete(recursive: true);
+      } on FileSystemException {
+        // Only disk space; no strategy points at this folder.
+      }
+      ref.read(cloudLibraryActionReporterProvider).showMessage(
+            "Couldn't duplicate this strategy: its images could not be copied.",
+          );
+      return;
+    }
+
     final duplicatedStrategy = StrategyData(
       id: newID,
       name: "${originalStrategy.name} (Copy)",
@@ -2304,6 +2341,15 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
 
     await strategyBox.put(duplicatedStrategy.id, duplicatedStrategy);
+    if (missingPictures > 0) {
+      ref.read(cloudLibraryActionReporterProvider).showMessage(
+            missingPictures == 1
+                ? 'Duplicated. One picture was already missing from the '
+                    'original, so the copy is missing it too.'
+                : 'Duplicated. $missingPictures pictures were already missing '
+                    'from the original, so the copy is missing them too.',
+          );
+    }
   }
 
   Future<CloudLibraryActionResult> deleteStrategy(
@@ -2363,7 +2409,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final directory = await getApplicationSupportDirectory();
 
-    final customDirectory = Directory(path.join(directory.path, strategyID));
+    final customDirectory =
+        Directory(strategyFolderPath(directory.path, strategyID));
 
     if (!await customDirectory.exists()) {
       return CloudLibraryActionResult.succeeded;

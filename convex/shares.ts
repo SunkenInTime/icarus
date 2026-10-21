@@ -27,7 +27,7 @@ import {
   conflictError,
   invalidOpError,
 } from "./lib/errors";
-import { UNKNOWN_DISPLAY_NAME } from "./lib/profile";
+import { discordAvatarUrl, UNKNOWN_DISPLAY_NAME } from "./lib/profile";
 import {
   accessRoleValidator,
   okResultValidator,
@@ -509,7 +509,8 @@ async function describeMember(
   return {
     memberId: row._id,
     displayName: memberName(user),
-    avatarUrl: user?.avatarUrl ?? null,
+    // Rows written before avatars were checked can hold any address.
+    avatarUrl: discordAvatarUrl(user?.avatarUrl),
     role: row.role,
     joinedAt: row.createdAt,
     shareLinkToken: link?.token ?? null,

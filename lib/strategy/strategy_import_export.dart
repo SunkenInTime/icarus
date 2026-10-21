@@ -42,6 +42,7 @@ import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
+import 'package:icarus/services/image_file_name.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -376,7 +377,10 @@ class StrategyImportExportService {
     }
 
     return Directory(
-      path.join(tempDirectoryPath, 'xyz_icarus_strats', strategyID),
+      strategyFolderPath(
+        path.join(tempDirectoryPath, 'xyz_icarus_strats'),
+        strategyID,
+      ),
     ).create(recursive: true);
   }
 
@@ -1910,8 +1914,14 @@ class StrategyImportExportService {
               log('Found JSON file');
               jsonData = await fileEntity.readAsString();
             } else if (path.extension(fileEntity.path) != '.ica') {
-              final fileName = path.basename(fileEntity.path);
-              await fileEntity.copy(path.join(imageFolder.path, fileName));
+              // Only an image file the strategy can show is kept.
+              final fileName = imageFileName(
+                path.basenameWithoutExtension(fileEntity.path),
+                path.extension(fileEntity.path),
+              );
+              if (fileName != null) {
+                await fileEntity.copy(path.join(imageFolder.path, fileName));
+              }
             }
           }
         }
@@ -2697,7 +2707,7 @@ class StrategyImportExportService {
     final supportDirectory =
         await _getApplicationSupportDirectoryOrSystemTemp();
     final customDirectory =
-        Directory(path.join(supportDirectory.path, strategy.id));
+        Directory(strategyFolderPath(supportDirectory.path, strategy.id));
     final imagesDirectory =
         Directory(path.join(customDirectory.path, 'images'));
     await imagesDirectory.create(recursive: true);

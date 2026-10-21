@@ -5,6 +5,7 @@ import {
   assetReferencesReady,
   collectLiveAssetIds,
   isAssetReferenced,
+  isAssetShownOnLivePage,
 } from "./lib/assetReferences";
 import {
   getActiveAssetForStrategy,
@@ -14,11 +15,16 @@ import {
   inferUploadStatus,
   isUploadPlaceholder,
   pictureShownByImage,
+  isSavableImageFile,
   serializeAssetForViewer,
   staleUploadAgeMs,
   type Provider,
   type UploadStatus,
 } from "./lib/imageAssets";
+import {
+  assertSafeFileNameId,
+  isSavableImageFileName,
+} from "./lib/fileNameIds";
 import {
   action,
   internalAction,
@@ -29,7 +35,12 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { v } from "convex/values";
-import { assertStrategyReadable, assertStrategyRole } from "./lib/auth";
+import {
+  assertStrategyReadable,
+  assertStrategyRole,
+  hasRole,
+  type StrategyRole,
+} from "./lib/auth";
 import { getStrategyByPublicId } from "./lib/entities";
 import {
   createR2ObjectKey,
@@ -146,6 +157,20 @@ async function strategyReferencesAsset(
   });
 }
 
+/// Whether a reader holding [role] may see the image. Editors, who can
+/// restore a page from the trash, see what it shows; a viewer sees only
+/// pages outside the trash, as everywhere else they read.
+async function readerCanSeeAsset(
+  ctx: AnyCtx,
+  strategyId: Doc<"strategies">["_id"],
+  assetPublicId: string,
+  role: StrategyRole,
+): Promise<boolean> {
+  return hasRole(role, "editor")
+    ? await strategyReferencesAsset(ctx, strategyId, assetPublicId)
+    : await isAssetShownOnLivePage(ctx, strategyId, assetPublicId);
+}
+
 async function markImageAssetDeleted(
   ctx: MutationCtx,
   asset: Doc<"imageAssets">,
@@ -258,6 +283,7 @@ export const generateUploadUrl = action({
   }),
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
+    assertSafeFileNameId("Image id", args.assetPublicId);
     const config = getR2Config();
     const validated = validateImageUploadMetadata({
       fileExtension: args.fileExtension,
@@ -414,6 +440,15 @@ export const completeUpload = action({
   ) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     if (args.storageId !== undefined || args.provider === "convex") {
+      assertSafeFileNameId("Image id", args.assetPublicId);
+      if (
+        args.fileExtension !== undefined &&
+        expectedMimeTypeForExtension(args.fileExtension) === null
+      ) {
+        throw invalidPayloadError(
+          `Unsupported image extension "${args.fileExtension}".`,
+        );
+      }
       await ctx.runMutation(internal.images.completeLegacyUpload, {
         strategyPublicId: args.strategyPublicId,
         assetPublicId: args.assetPublicId,
@@ -474,12 +509,18 @@ export const completeUpload = action({
     const actualMimeType =
       metadata.mimeType?.split(";")[0]?.trim().toLowerCase() ?? null;
     const actualByteSize = metadata.byteSize;
+    // The extension is what the desktop app names the file on disk, so it
+    // must be the image type that was uploaded, whatever the caller says.
+    const fileExtension = normalizeImageExtension(
+      args.fileExtension ?? intent.fileExtension,
+    );
     if (
       actualByteSize === null ||
       actualByteSize <= 0 ||
       actualByteSize > config.maxImageBytes ||
       expectedMimeType === null ||
-      actualMimeType !== expectedMimeType
+      actualMimeType !== expectedMimeType ||
+      expectedMimeTypeForExtension(fileExtension) !== actualMimeType
     ) {
       await deleteR2Object(config, intent.objectKey);
       await ctx.runMutation(internal.images.markR2UploadFailed, {
@@ -496,7 +537,7 @@ export const completeUpload = action({
       byteSize: actualByteSize,
       etag: metadata.etag ?? args.etag,
       mimeType: actualMimeType,
-      fileExtension: args.fileExtension ?? intent.fileExtension,
+      fileExtension,
       width: args.width,
       height: args.height,
     });
@@ -731,9 +772,11 @@ export const listForStrategy = query({
   returns: v.array(imageAssetValidator),
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    await assertStrategyRole(ctx, strategy, "viewer");
+    const { role } = await assertStrategyRole(ctx, strategy, "viewer");
 
-    const referencedAssetIds = await collectLiveAssetIds(ctx, strategy._id);
+    const referencedAssetIds = await collectLiveAssetIds(ctx, strategy._id, {
+      includeTrashedPages: hasRole(role, "editor"),
+    });
     const assets = await Promise.all(
       [...referencedAssetIds].map((assetPublicId) =>
         getViewerAssetForStrategy(ctx, strategy._id, assetPublicId),
@@ -743,7 +786,7 @@ export const listForStrategy = query({
     return await Promise.all(
       assets
         .filter((asset): asset is Doc<"imageAssets"> => asset !== null)
-        .map((asset) => serializeAssetForViewer(ctx, asset)),
+        .map((asset) => serializeAssetForViewer(ctx, strategy, asset)),
     );
   },
 });
@@ -798,13 +841,13 @@ export const getAssetUrl = query({
   returns: v.object({ url: v.union(v.string(), v.null()) }),
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    await assertStrategyReadable(ctx, strategy, args.shareToken);
+    const role = await assertStrategyReadable(ctx, strategy, args.shareToken);
 
     // Builds from before pictures had their own id ask by the image's id.
     const pictureId =
       (await pictureShownByImage(ctx, strategy._id, args.assetPublicId)) ??
       args.assetPublicId;
-    if (!(await strategyReferencesAsset(ctx, strategy._id, pictureId))) {
+    if (!(await readerCanSeeAsset(ctx, strategy._id, pictureId, role))) {
       throw notFoundError("Asset", args.assetPublicId);
     }
 
@@ -815,6 +858,13 @@ export const getAssetUrl = query({
     );
     if (asset === null) {
       throw notFoundError("Asset", args.assetPublicId);
+    }
+    // An old build saves the picture under the id it asked by.
+    if (
+      !isSavableImageFile(strategy, asset) ||
+      !isSavableImageFileName(args.assetPublicId, inferFileExtension(asset))
+    ) {
+      return { url: null };
     }
 
     return {
@@ -1304,7 +1354,11 @@ export const listPotentiallyStale = internalQuery({
     await assertStrategyRole(ctx, strategy, "editor");
     const limit = Math.max(1, Math.min(args.limit ?? 200, 500));
 
-    const referencedAssetIds = await collectLiveAssetIds(ctx, strategy._id);
+    // An image a page in the trash shows is still wanted: the page can be
+    // restored.
+    const referencedAssetIds = await collectLiveAssetIds(ctx, strategy._id, {
+      includeTrashedPages: true,
+    });
     const assets = await ctx.db
         .query("imageAssets")
       .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
@@ -1323,7 +1377,7 @@ export const listPotentiallyStale = internalQuery({
     });
 
     return await Promise.all(
-      candidates.map((asset) => serializeAssetForViewer(ctx, asset)),
+      candidates.map((asset) => serializeAssetForViewer(ctx, strategy, asset)),
     );
   },
 });

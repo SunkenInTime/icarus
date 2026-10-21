@@ -45,6 +45,8 @@ import {
 } from "./lib/errors";
 import { purgeDeletedPageOrphansRef } from "./maintenance";
 import { markDeletedStrategyImageAssetsRef } from "./images";
+import { assertSafeFileNameId } from "./lib/fileNameIds";
+import { assertKnownMapChange } from "./lib/maps";
 import {
   createResultValidator,
   okResultValidator,
@@ -347,6 +349,8 @@ async function createStrategyWithInitialPageRecord(
   userId: Id<"users">,
   initialPage: InitialPageInput,
 ) {
+  assertSafeFileNameId("Strategy id", args.publicId);
+  assertKnownMapChange(args.mapData, undefined);
   const now = Date.now();
   const folderId = await resolveOwnedFolderId(ctx, args.folderPublicId, userId);
 
@@ -620,6 +624,7 @@ export const duplicate = mutation({
   returns: createResultValidator,
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
+    assertSafeFileNameId("Strategy id", args.publicId);
     const source = await getStrategyByPublicId(
       ctx,
       args.sourceStrategyPublicId,
@@ -638,6 +643,9 @@ export const duplicate = mutation({
       }
       throw conflictError(`Strategy publicId already exists: ${args.publicId}`);
     }
+
+    // A source written before maps were checked must not spread.
+    assertKnownMapChange(source.mapData, undefined);
 
     // The copy lands in the folder the caller is browsing when it is theirs.
     // Browsing a folder someone shared with them, the copy goes to the root
@@ -754,6 +762,7 @@ export const update = mutation({
       patch.name = args.name;
     }
     if (args.mapData !== undefined && args.mapData !== strategy.mapData) {
+      assertKnownMapChange(args.mapData, strategy.mapData);
       patch.mapData = args.mapData;
     }
 

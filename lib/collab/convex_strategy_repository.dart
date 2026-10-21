@@ -96,10 +96,7 @@ class ConvexStrategyRepository {
           includeAgentTypes: const ConvexOptional.present(true),
         )
         .watch()
-        .map(
-          (strategies) =>
-              strategies.map(_strategyEntry).toList(growable: false),
-        );
+        .map(_listedStrategyEntries);
   }
 
   /// The folders [scope] reaches, read once.
@@ -153,10 +150,7 @@ class ConvexStrategyRepository {
     return _api.strategies
         .listSharedWithMe(includeAgentTypes: const ConvexOptional.present(true))
         .watch()
-        .map(
-          (strategies) =>
-              strategies.map(_strategyEntry).toList(growable: false),
-        );
+        .map(_listedStrategyEntries);
   }
 
   /// [shareToken] is a share link the reader holds but has not redeemed
@@ -1154,6 +1148,18 @@ AgentType? _agentTypeOrNull(String name) {
     if (type.name == name) return type;
   }
   return null;
+}
+
+/// The library list leaves out a strategy on a map this build does not
+/// know, a newer map or whatever a peer with edit access wrote, instead of
+/// failing the whole list. This build could not open it anyway.
+List<CloudStrategyEntry> _listedStrategyEntries(
+  List<StrategiesListForFolderResultItem> strategies,
+) {
+  return [
+    for (final strategy in strategies)
+      if (_mapValueOrNull(strategy.mapData) != null) _strategyEntry(strategy),
+  ];
 }
 
 CloudStrategyEntry _strategyEntry(

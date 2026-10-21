@@ -105,7 +105,7 @@ class WindowsDesktopUpdateRestartService {
         path.joinAll(
           <String>[
             updateDirectory,
-            ..._splitRelativePath(file.filePath),
+            ...splitRelativePath(file.filePath),
           ],
         ),
       );
@@ -216,13 +216,18 @@ del "%~f0" >nul 2>&1
 
 function Write-Log {
   param([string]\$Message)
-  \$timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
-  \$line = "[\$timestamp] \$Message"
-  \$logDirectory = Split-Path -Parent \$logPath
-  if (-not [string]::IsNullOrWhiteSpace(\$logDirectory) -and -not (Test-Path -LiteralPath \$logDirectory)) {
-    New-Item -ItemType Directory -Path \$logDirectory -Force | Out-Null
+  # The app has already exited. A log that cannot be written (full disk,
+  # locked file) must not stop the copy and relaunch below.
+  try {
+    \$timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
+    \$line = "[\$timestamp] \$Message"
+    \$logDirectory = Split-Path -Parent \$logPath
+    if (-not [string]::IsNullOrWhiteSpace(\$logDirectory) -and -not (Test-Path -LiteralPath \$logDirectory)) {
+      New-Item -ItemType Directory -Path \$logDirectory -Force | Out-Null
+    }
+    Add-Content -LiteralPath \$logPath -Value \$line -Encoding UTF8
+  } catch {
   }
-  Add-Content -LiteralPath \$logPath -Value \$line -Encoding UTF8
 }
 
 try {
@@ -334,12 +339,38 @@ try {
     );
   }
 
-  static List<String> _splitRelativePath(String filePath) {
-    return filePath
-        .split(RegExp(r'[\\\/]+'))
-        .where((segment) => segment.isNotEmpty)
-        .toList();
+  /// Splits a path from the update's file list into names under the update
+  /// folder. The restart script copies everything in that folder over the
+  /// install, so a path that could name a file anywhere else is refused:
+  /// `..`, a drive (`C:`), a rooted or network path (`\x`, `\\server\x`).
+  /// Windows drops trailing dots and spaces from a name, so `.. ` would mean
+  /// `..`; those are refused too, along with empty names and device names
+  /// (`NUL.txt` is the null device, not a file, so copying it would fail
+  /// halfway through an update).
+  static List<String> splitRelativePath(String filePath) {
+    final segments = filePath.split(RegExp(r'[\\/]'));
+    final isPlainRelativePath = segments.every(
+      (segment) =>
+          segment.isNotEmpty &&
+          !segment.contains(':') &&
+          !segment.endsWith('.') &&
+          !segment.endsWith(' ') &&
+          !_windowsDeviceName.hasMatch(segment),
+    );
+    if (!isPlainRelativePath) {
+      throw FileSystemException(
+        'Desktop update lists a file outside its update folder: $filePath',
+      );
+    }
+    return segments;
   }
+
+  // CON, PRN, AUX, NUL, COM0-9 and LPT0-9 (Windows also takes superscript
+  // 1-3), with or without an extension, and the console buffers.
+  static final RegExp _windowsDeviceName = RegExp(
+    r'^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$) *(\..*)?$',
+    caseSensitive: false,
+  );
 
   static String _resolvePowerShellExecutable() {
     final systemRoot = Platform.environment['SystemRoot'];

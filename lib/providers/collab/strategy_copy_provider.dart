@@ -11,6 +11,8 @@ import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/services/cloud_usage_meter.dart';
+import 'package:icarus/services/product_metrics.dart';
 
 /// Whether [strategyId] can be opened from the copy on this computer. Read
 /// while offline, so the library can mark the strategies that need a
@@ -87,8 +89,14 @@ class StrategyCopyRefresher extends Notifier<void> {
     _walking = true;
     final generation = _generation;
     try {
-      final strategyIds = await _listStrategies();
+      final (strategyIds, owned) = await _listStrategies();
       if (generation != _generation) return;
+      CloudUsageMeter.instance.copyPass(strategyIds.length);
+      if (!_libraryReported) {
+        _libraryReported = true;
+        ProductMetrics.instance
+            .cloudLibrary(owned: owned, total: strategyIds.length);
+      }
       final now = DateTime.now();
       for (final id in strategyIds) {
         final refreshed = store.lastFullRefresh(scope, id);
@@ -118,9 +126,13 @@ class StrategyCopyRefresher extends Notifier<void> {
     unawaited(refreshLibrary());
   }
 
+  /// Whether this session's library size was reported (once a session).
+  static bool _libraryReported = false;
+
   /// Every strategy the signed-in account can open from its library: its
-  /// own, those shared with it, and those inside folders shared with it.
-  Future<Set<String>> _listStrategies() async {
+  /// own, those shared with it, and those inside folders shared with it;
+  /// and how many are its own.
+  Future<(Set<String>, int)> _listStrategies() async {
     final repository = ref.read(convexStrategyRepositoryProvider);
     final inventory = await repository.fetchInventory();
     final shared = await repository.fetchSharedStrategies();
@@ -136,7 +148,7 @@ class StrategyCopyRefresher extends Notifier<void> {
       );
       ids.addAll(strategies.map((entry) => entry.strategy.id));
     }
-    return ids;
+    return (ids, inventory.strategies.length);
   }
 
   Future<void> _drain() async {
@@ -177,6 +189,12 @@ class StrategyCopyRefresher extends Notifier<void> {
       final snapshot = await ref
           .read(convexStrategyRepositoryProvider)
           .fetchFullSnapshot(strategyId);
+      CloudUsageMeter.instance.copyFullRead(
+        [
+          ...snapshot.elementsByPage.values,
+          ...snapshot.lineupsByPage.values,
+        ].fold(0, (rows, page) => rows + page.length),
+      );
       final answer = snapshot.serverAnswer;
       if (answer == null) return true;
       await store.writeFullSnapshot(

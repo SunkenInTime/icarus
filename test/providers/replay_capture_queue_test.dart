@@ -19,12 +19,12 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
-import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/replay/replay_capture.dart';
 import 'package:icarus/replay/replay_frame.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 final _online = StateProvider<bool>((ref) => true);
 
@@ -61,7 +61,6 @@ void main() {
       replayCaptureMessageProvider.overrideWithValue(messages.add),
       convexStrategyRepositoryProvider.overrideWithValue(cloud),
       authProvider.overrideWith(_CloudReadyAuth.new),
-      cloudMediaAccountIdProvider.overrideWithValue('account-1'),
       convexConnectionSnapshotProvider
           .overrideWith((ref) => ref.watch(_online)),
       convexConnectionProvider
@@ -91,6 +90,13 @@ void main() {
       container.read(replayCaptureQueueProvider);
   void setOnline(bool online) =>
       container.read(_online.notifier).state = online;
+
+  /// Signs [accountId] in, on this device and on the server.
+  void signIn(String accountId) {
+    cloud.signedInAs = accountId;
+    (container.read(authProvider.notifier) as _CloudReadyAuth)
+        .signIn(accountId);
+  }
 
   ReplayCapture session({String? folderId}) => ReplayCapture(
         newStore: () => CloudReplayCaptureStore(
@@ -450,6 +456,107 @@ void main() {
     expect(await queue().discard([queued().captures.single.id]), isTrue);
   });
 
+  test(
+      "another account signed in mid-send gets none of the first one's captures",
+      () async {
+    setOnline(false);
+    final first = session();
+    await first.capture(_frame(500), pageName: '0:10');
+    await first.capture(_frame(510), pageName: '0:20');
+    await session().capture(_frame(520), pageName: '1:10');
+    // Signed out and in as someone else while a page add is out.
+    cloud.afterPageAdd = (_) {
+      cloud.afterPageAdd = null;
+      signIn('account-2');
+    };
+    setOnline(true);
+    await queue().sendNow();
+
+    expect(cloud.ownerOf.values, everyElement('account-1'));
+    expect(queued().captures.where((c) => c.isFailed), isEmpty);
+    expect(queued().captures, hasLength(2));
+
+    signIn('account-1');
+    await queue().sendNow();
+    expect(queued().captures, isEmpty);
+    expect(cloud.ownerOf, hasLength(2));
+    expect(cloud.ownerOf.values, everyElement('account-1'));
+  });
+
+  test(
+      'a refusal that went out under another account fails nothing, even with the first account back',
+      () async {
+    setOnline(false);
+    final replay = session();
+    await replay.capture(_frame(500), pageName: '0:10');
+    await replay.capture(_frame(510), pageName: '0:20');
+    // Once the page has landed, someone else signs in just as the next
+    // read goes out, and the first account is back before its refusal
+    // arrives, all before anything derived from the sign-in refreshes.
+    cloud.afterPageAdd = (_) {
+      cloud.afterPageAdd = null;
+      cloud.beforeShellRead = () {
+        cloud.beforeShellRead = null;
+        signIn('account-2');
+      };
+      cloud.afterShellRead = () {
+        cloud.afterShellRead = null;
+        signIn('account-1');
+      };
+    };
+    setOnline(true);
+    await queue().sendNow();
+    expect(queued().captures.where((c) => c.isFailed), isEmpty);
+
+    await queue().sendNow();
+    expect(queued().captures, isEmpty);
+    expect(cloud.strategies.values.single.orderedPages, hasLength(2));
+  });
+
+  test('captures after one that landed across a switch and back still go',
+      () async {
+    setOnline(false);
+    final replay = session();
+    await replay.capture(_frame(500), pageName: '0:10');
+    await replay.capture(_frame(510), pageName: '0:20');
+    // Someone else signs in and out again while the first capture's items
+    // are out; they land, as the server checks them against account 1.
+    cloud.afterItems = () {
+      cloud.afterItems = null;
+      signIn('account-2');
+      signIn('account-1');
+    };
+    // Only coming back online starts sending: no second start to hide a
+    // drain that stopped and never started again.
+    setOnline(true);
+    for (var i = 0; i < 200 && queued().captures.isNotEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    expect(queued().captures, isEmpty);
+    expect(cloud.strategies.values.single.orderedPages, hasLength(2));
+  });
+
+  test('a strategy made just before another account signed in may have landed',
+      () async {
+    setOnline(false);
+    await session().capture(_frame(500), pageName: '0:10');
+    // Made, then the answer is lost while someone else signs in.
+    cloud.afterCreate = () {
+      cloud.afterCreate = null;
+      signIn('account-2');
+      cloud.loseAnswers = true;
+    };
+    setOnline(true);
+    await queue().sendNow();
+    cloud.loseAnswers = false;
+
+    final capture = queued().captures.single;
+    expect(capture.isFailed, isFalse);
+    expect(capture.mayHaveLanded, isTrue);
+    expect(await queue().discard([capture.id]), isTrue);
+  });
+
   test('a record this build cannot read is kept and counted', () async {
     final box = Hive.box<String>(HiveBoxNames.replayCapturesBox);
     await box.put('future', jsonEncode({'version': 99}));
@@ -495,12 +602,23 @@ class _FlakyBox extends Fake implements Box<String> {
 
 class _CloudReadyAuth extends AuthProvider {
   @override
-  AppAuthState build() => const AppAuthState(
+  AppAuthState build() => AppAuthState(
         isLoading: false,
         isAuthenticated: true,
         isConvexUserReady: true,
         convexAuthStatus: ConvexAuthStatus.ready,
-        user: null,
+        user: _user('account-1'),
+      );
+
+  void signIn(String accountId) =>
+      state = state.copyWith(user: _user(accountId));
+
+  static User _user(String id) => User(
+        id: id,
+        appMetadata: const {},
+        userMetadata: const {},
+        aud: 'authenticated',
+        createdAt: '2026-10-21T00:00:00.000Z',
       );
 }
 
@@ -558,8 +676,31 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
   /// Folders new strategies were made in, by strategy id.
   final Map<String, String?> folderOf = {};
 
+  /// The account the server sees signed in. A strategy belongs to the one
+  /// that made it; any other is refused it, as the server refuses one with
+  /// no role on it.
+  String signedInAs = 'account-1';
+  final Map<String, String> ownerOf = {};
+
+  /// Runs right after a strategy is made, before it is answered.
+  void Function()? afterCreate;
+
+  /// Run right before a strategy is read, and right after it is read but
+  /// before it is answered.
+  void Function()? beforeShellRead;
+  void Function()? afterShellRead;
+
+  static const _forbidden = ConvexFunctionException(
+    code: ConvexErrorCode.forbidden,
+    rawCode: 'FORBIDDEN',
+    message: 'Forbidden',
+  );
+
   /// Runs right after a page add is written, before it is answered.
   void Function(_Strategy strategy)? afterPageAdd;
+
+  /// Runs right after a batch of items is written, before it is answered.
+  void Function()? afterItems;
 
   /// The element ids of each batch of items sent, in order.
   final List<List<String>> itemBatches = [];
@@ -626,7 +767,16 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
         message: 'Forbidden',
       );
     }
+    if ((ownerOf[publicId] ?? signedInAs) != signedInAs) {
+      calls++;
+      throw const ConvexFunctionException(
+        code: ConvexErrorCode.conflict,
+        rawCode: 'CONFLICT',
+        message: 'Strategy publicId already exists',
+      );
+    }
     folderOf.putIfAbsent(publicId, () => folderPublicId);
+    ownerOf.putIfAbsent(publicId, () => signedInAs);
     final strategy =
         strategies.putIfAbsent(publicId, () => _Strategy(name, mapData));
     if (strategy.pages.isEmpty) {
@@ -637,6 +787,7 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
         initialPageIsAttack,
       ));
     }
+    afterCreate?.call();
     _answer();
   }
 
@@ -646,8 +797,13 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
     String? shareToken,
   }) async {
     calls++;
+    beforeShellRead?.call();
     final strategy = strategies[strategyPublicId];
+    final owner = ownerOf[strategyPublicId];
+    final refused = owner != null && owner != signedInAs;
+    afterShellRead?.call();
     if (strategy == null) throw _notFound;
+    if (refused) throw _forbidden;
     final now = DateTime.now();
     return RemoteStrategyShell(
       header: RemoteStrategyHeader(
@@ -682,10 +838,15 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
     String? accountSubject,
   }) async {
     _checkBuild();
+    if (accountSubject != null && accountSubject != signedInAs) {
+      calls++;
+      throw _forbidden;
+    }
     final strategy = strategies[strategyPublicId];
     if (strategy == null) throw _notFound;
     final acks = <OpAck>[];
-    if (ops.every((op) => op is ElementAddOp)) {
+    final isItemBatch = ops.every((op) => op is ElementAddOp);
+    if (isItemBatch) {
       itemBatches
           .add([for (final op in ops.cast<ElementAddOp>()) op.elementPublicId]);
     }
@@ -702,6 +863,7 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
       _answered[key] = ack;
       acks.add(ack);
     }
+    if (isItemBatch) afterItems?.call();
     _answer(
       lost: ops.any((op) => op is PageAddOp) ? losePageAdds : loseItemBatches,
     );

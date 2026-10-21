@@ -27,6 +27,8 @@ import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_cloud_migration.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/services/product_metrics.dart';
+import 'package:icarus/services/image_file_name.dart';
 import 'package:uuid/uuid.dart';
 
 /// The local strategies and folders waiting to move to the cloud or moving
@@ -152,6 +154,18 @@ class MoveToCloudNotifier extends Notifier<void> {
           cloudFolderId: cloudFolderId,
           accountId: accountId,
         );
+        ProductMetrics.instance.moveToCloud(
+          kind: 'strategy',
+          strategies: 1,
+          outcome: switch (outcome) {
+            _Outcome.moved ||
+            _Outcome.movedLocalKept ||
+            _Outcome.movedChangedHere =>
+              'moved',
+            _Outcome.notMoved => 'not_moved',
+            _Outcome.changedMeanwhile => 'changed_meanwhile',
+          },
+        );
         switch (outcome) {
           case _Outcome.moved:
             _showMessage(
@@ -222,6 +236,11 @@ class MoveToCloudNotifier extends Notifier<void> {
           accountId: accountId,
         );
         if (cloudFolderIds == null) {
+          ProductMetrics.instance.moveToCloud(
+            kind: 'folder',
+            strategies: strategies.length,
+            outcome: 'not_moved',
+          );
           _showFailure(
             "Couldn't move \"${root.name}\" to the cloud. "
             "It's still on this device.",
@@ -246,6 +265,15 @@ class MoveToCloudNotifier extends Notifier<void> {
 
         final foldersWent =
             await _settleFolders(tree, cloudFolderIds, movedInto);
+        ProductMetrics.instance.moveToCloud(
+          kind: 'folder',
+          strategies: strategies.length,
+          outcome: failed == 0
+              ? 'moved'
+              : failed == strategies.length
+                  ? 'not_moved'
+                  : 'partial',
+        );
 
         if (failed == 0 && foldersWent) {
           _showMessage('Moved "${root.name}" to the cloud.');
@@ -263,6 +291,11 @@ class MoveToCloudNotifier extends Notifier<void> {
         }
       } catch (error, stackTrace) {
         await _report('move_folder', error, stackTrace);
+        ProductMetrics.instance.moveToCloud(
+          kind: 'folder',
+          strategies: strategies.length,
+          outcome: 'failed',
+        );
         _showFailure(
           "Couldn't finish moving \"${root.name}\". What didn't move is "
           'still on this device.',
@@ -560,6 +593,11 @@ class MoveToCloudNotifier extends Notifier<void> {
   }) async {
     final copied = <({String assetPublicId, String fileExtension})>[];
     for (final MapEntry(key: localPicture, value: cloud) in pictures.entries) {
+      // A picture under a name the app may not use stops the move, so the
+      // local strategy stays as it is instead of losing it.
+      if (imageFileName(localPicture, cloud.fileExtension) == null) {
+        throw UnsafeFileNameException('$localPicture${cloud.fileExtension}');
+      }
       final source = await PlacedImageProvider.getImageFile(
         strategyID: localId,
         imageID: localPicture,

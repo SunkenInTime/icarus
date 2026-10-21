@@ -20,6 +20,8 @@ import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:uuid/uuid.dart';
+import 'package:icarus/services/cloud_usage_meter.dart';
+import 'package:icarus/services/product_metrics.dart';
 
 class StrategyOutboxSession {
   const StrategyOutboxSession({
@@ -2209,6 +2211,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         batch = batch.sublist(0, batch.length - 1);
       }
       if (batch.isNotEmpty) {
+        CloudUsageMeter.instance.batchSent(batch.length);
         final acks = await _repo.applyBatch(
           strategyPublicId: strategyPublicId,
           clientId: batchClientId,
@@ -2691,6 +2694,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         'Server returned an incomplete operation result batch.',
       );
     }
+    final refusedByReason = <String, int>{};
     for (final ack in acks) {
       final sent = byOpId[ack.opId];
       if (sent == null) continue;
@@ -2790,7 +2794,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           latestServerPayload: ack.latestPayload,
         );
         await _putRecord(rejected);
+        final reason =
+            syncReason(ack is FailedOpAck ? ack.code : ack.reason);
+        refusedByReason[reason] = (refusedByReason[reason] ?? 0) + 1;
       }
+    }
+    for (final MapEntry(key: reason, value: changes)
+        in refusedByReason.entries) {
+      ProductMetrics.instance.syncFailed(reason: reason, changes: changes);
     }
     // Judged once the records are stored: the canvas may have been drawn
     // fresh meanwhile, and then none of this is on it.

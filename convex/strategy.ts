@@ -168,7 +168,7 @@ export const getFullSnapshot = query({
         await Promise.all(
           assets
             .filter((asset): asset is Doc<"imageAssets"> => asset !== null)
-            .map((asset) => serializeAssetForViewer(ctx, asset)),
+            .map((asset) => serializeAssetForViewer(ctx, strategy, asset)),
         ),
         visibleElements,
       ).sort((left, right) => left.publicId.localeCompare(right.publicId)),

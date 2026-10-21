@@ -16,6 +16,7 @@ import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
+import 'package:icarus/services/product_metrics.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -784,6 +785,7 @@ class AuthProvider extends Notifier<AppAuthState> {
             ? error.message
             : 'Discord sign-in failed: $error',
       );
+      ProductMetrics.instance.signIn(method: 'discord', succeeded: false);
       return;
     }
 
@@ -815,6 +817,7 @@ class AuthProvider extends Notifier<AppAuthState> {
           convexAuthStatus: ConvexAuthStatus.incident,
           errorMessage: message,
         );
+        ProductMetrics.instance.signIn(method: 'email', succeeded: false);
         return message;
       }
 
@@ -834,6 +837,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         convexAuthStatus: ConvexAuthStatus.incident,
         errorMessage: message,
       );
+      ProductMetrics.instance.signIn(method: 'email', succeeded: false);
       return message;
     }
   }
@@ -906,6 +910,23 @@ class AuthProvider extends Notifier<AppAuthState> {
         password: password,
       );
 
+      // Supabase answers a sign-up for an email that already has an account
+      // with success, sends no email, and returns a user with no identities,
+      // so strangers can't probe which emails are registered. The account
+      // may have been made with Discord, so name both ways back in.
+      if (response.user?.identities?.isEmpty ?? false) {
+        const message = 'An account with this email already exists. Sign in '
+            'instead, or continue with Discord if you signed up that way.';
+        state = state.copyWith(
+          isLoading: false,
+          isConvexUserReady: false,
+          convexAuthStatus: ConvexAuthStatus.signedOut,
+          errorMessage: message,
+        );
+        ProductMetrics.instance.signUp('already_registered');
+        return message;
+      }
+
       if (response.session == null) {
         const message =
             'Account created! Check your inbox for the confirmation link, '
@@ -916,10 +937,12 @@ class AuthProvider extends Notifier<AppAuthState> {
           convexAuthStatus: ConvexAuthStatus.signedOut,
           errorMessage: message,
         );
+        ProductMetrics.instance.signUp('confirmation_sent');
         return message;
       }
 
       state = state.copyWith(isLoading: false);
+      ProductMetrics.instance.signUp('signed_in');
       return null;
     } catch (error, stackTrace) {
       log(
@@ -935,6 +958,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         convexAuthStatus: ConvexAuthStatus.incident,
         errorMessage: message,
       );
+      ProductMetrics.instance.signUp('failed');
       return message;
     }
   }
@@ -1118,6 +1142,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         convexAuthStatus: ConvexAuthStatus.incident,
         errorMessage: 'Failed to complete login. Please try again.',
       );
+      ProductMetrics.instance.signIn(method: 'discord', succeeded: false);
       return true;
     }
   }
@@ -1439,11 +1464,13 @@ class AuthProvider extends Notifier<AppAuthState> {
             return;
           }
 
+          // No error to pass: reportConvexUnauthenticated checks an error
+          // for the server's UNAUTHENTICATED code, and this is the Convex
+          // client's own report that it holds no accepted session. (The web
+          // client sends it when the server rejects the token; the native
+          // one only when no token can be fetched.)
           unawaited(
-            reportConvexUnauthenticated(
-              source: 'convex:onAuthChange',
-              error: Exception('Convex auth state changed to unauthenticated'),
-            ),
+            reportConvexUnauthenticated(source: 'convex:onAuthChange'),
           );
         },
       );
@@ -1530,6 +1557,15 @@ class AuthProvider extends Notifier<AppAuthState> {
         convexAuthStatus: ConvexAuthStatus.ready,
         clearError: true,
       );
+      // A fresh sign-in, by either method, reaches here once ready; a
+      // session restored at start or a reconnect comes by other triggers.
+      if (trigger.contains('signedIn')) {
+        final provider = session.user.appMetadata['provider'];
+        ProductMetrics.instance.signIn(
+          method: provider == 'discord' ? 'discord' : 'email',
+          succeeded: true,
+        );
+      }
     } catch (error, stackTrace) {
       if (!_isAuthContextCurrent(
         generation: generation,

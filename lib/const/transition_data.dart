@@ -438,7 +438,13 @@ class PageTransitionEntry {
   }
 
   static double? lengthOf(PlacedWidget w) {
-    if (w is PlacedAbility) return w.length;
+    if (w is PlacedAbility) {
+      // A stored 0 can mean full length, so tween what is drawn.
+      final data = w.data.abilityData;
+      return data is ResizableSquareAbility
+          ? data.resolveLength(w.length)
+          : w.length;
+    }
     if (w is PlacedUtility) return w.length;
     if (w is PlacedViewConeAgent) return w.length;
     return null;

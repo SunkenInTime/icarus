@@ -8,7 +8,11 @@ import {
   requireCurrentUser,
 } from "./lib/auth";
 import { getFolderByPublicId, isListed } from "./lib/entities";
-import { readStrategyAgentTypes } from "./lib/strategyAgentSummary";
+import {
+  maxListedAgentTypes,
+  readStrategyAgentTypes,
+} from "./lib/strategyAgentSummary";
+import { isKnownMapName } from "./lib/maps";
 
 import {
   assertSupportedCloudProtocol,
@@ -349,7 +353,11 @@ async function summariseFolderTrees(
     ).filter(isListed);
     const agentTypesSeen = new Map<string, number>();
     for (const strategy of strategies) {
-      bump(mapCounts.get(folder._id)!, strategy.mapData);
+      // A row written before maps were checked can hold any string, and
+      // every folder above it would return it.
+      if (isKnownMapName(strategy.mapData)) {
+        bump(mapCounts.get(folder._id)!, strategy.mapData);
+      }
       for (const type of await readStrategyAgentTypes(ctx, strategy._id)) {
         bump(agentTypesSeen, type);
       }
@@ -395,7 +403,7 @@ async function summariseFolderTrees(
     merged.set(folder._id, {
       strategyCount: total.strategies,
       mapPeeks: ranked(total.maps).slice(0, 2),
-      agentTypes: ranked(total.agents),
+      agentTypes: ranked(total.agents).slice(0, maxListedAgentTypes),
     });
   }
   return merged;

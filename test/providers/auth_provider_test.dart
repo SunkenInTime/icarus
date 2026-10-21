@@ -603,6 +603,39 @@ void main() {
     );
   });
 
+  testWidgets('Convex dropping the session prompts the user when it happens',
+      (tester) async {
+    supabaseApi.currentSession = fakeSession();
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          navigatorKey: appNavigatorKey,
+          home: const Scaffold(body: SizedBox.shrink()),
+        ),
+      ),
+    );
+    container.read(authProvider);
+    await tester.pump();
+    await tester.pump();
+    expect(
+        container.read(authProvider).convexAuthStatus, ConvexAuthStatus.ready);
+
+    // The Convex client reports the session is no longer accepted while
+    // Supabase still holds one, and nothing has been edited or read since.
+    convexApi.emitAuthState(false);
+    convexApi.lastOnAuthChange!(false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final state = container.read(authProvider);
+    expect(state.convexAuthStatus, ConvexAuthStatus.incident);
+    expect(state.lastAuthIncidentSource, 'convex:onAuthChange');
+    expect(find.text('Cloud connection lost'), findsOneWidget);
+  });
+
   testWidgets('auth incident Sign Out uses the guarded flow', (tester) async {
     supabaseApi.currentSession = fakeSession();
     var guardedRequests = 0;
@@ -785,6 +818,43 @@ void main() {
     expect(
       await auth.signUpWithEmailPassword(email: 'a@b.co', password: 'secret'),
       'Too many attempts. Wait a moment and try again.',
+    );
+  });
+
+  test('a sign-up for an email that already has an account says so',
+      () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final auth = container.read(authProvider.notifier);
+
+    // What Supabase answered on prod for a registered email: no session, no
+    // identities, and no email sent.
+    supabaseApi.signUpUser = fakeSignUpUser(identities: const []);
+    expect(
+      await auth.signUpWithEmailPassword(email: 'a@b.co', password: 'secret'),
+      'An account with this email already exists. Sign in instead, or '
+      'continue with Discord if you signed up that way.',
+    );
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.signedOut,
+    );
+
+    // A new account comes back with its email identity: check your inbox.
+    supabaseApi.signUpUser = fakeSignUpUser(identities: const [
+      UserIdentity(
+        id: 'user-2',
+        userId: 'user-2',
+        identityData: <String, dynamic>{},
+        identityId: 'identity-2',
+        provider: 'email',
+        createdAt: null,
+        lastSignInAt: null,
+      ),
+    ]);
+    expect(
+      await auth.signUpWithEmailPassword(email: 'a@b.co', password: 'secret'),
+      startsWith('Account created!'),
     );
   });
 
@@ -1503,6 +1573,16 @@ Session fakeSession({
   return session;
 }
 
+User fakeSignUpUser({required List<UserIdentity> identities}) => User(
+      id: 'user-2',
+      appMetadata: <String, dynamic>{},
+      userMetadata: <String, dynamic>{},
+      aud: 'authenticated',
+      email: 'a@b.co',
+      createdAt: '2026-10-21T00:00:00.000Z',
+      identities: identities,
+    );
+
 class FakeAuthHandle implements AuthProviderAuthHandle {
   bool isDisposed = false;
 
@@ -1593,6 +1673,7 @@ class FakeConvexApi implements AuthProviderConvexApi {
     void Function(bool isAuthenticated)? onAuthChange,
   }) async {
     setAuthCalls += 1;
+    lastOnAuthChange = onAuthChange;
     final completer = setAuthCompleter;
     if (completer != null) {
       return completer.future;
@@ -1605,6 +1686,9 @@ class FakeConvexApi implements AuthProviderConvexApi {
     handles.add(handle);
     return handle;
   }
+
+  /// What the last setup asked to hear when Convex's auth changes.
+  void Function(bool isAuthenticated)? lastOnAuthChange;
 
   void emitAuthState(bool isAuthenticated) {
     _isAuthenticated = isAuthenticated;
@@ -1622,6 +1706,7 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   Session? sessionFromUrlSession;
   Object? sessionFromUrlError;
   Object? signUpError;
+  User? signUpUser;
   int getSessionFromUrlCalls = 0;
   final List<MultiStreamController<AuthState>> _controllers =
       <MultiStreamController<AuthState>>[];
@@ -1704,7 +1789,7 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
     if (signUpError case final Object error?) {
       throw error;
     }
-    return AuthResponse(session: currentSession);
+    return AuthResponse(session: currentSession, user: signUpUser);
   }
 
   void emit(AuthChangeEvent event, Session? session) {

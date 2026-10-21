@@ -178,6 +178,15 @@ export default defineSchema({
       "assetPublicId",
       "deleted",
     ])
+    // Whether a given page shows an image, in one read: a viewer's check
+    // asks this of each live page instead of reading every page, trash
+    // included, that ever showed the image.
+    .index("by_strategyId_and_assetPublicId_and_deleted_and_pageId", [
+      "strategyId",
+      "assetPublicId",
+      "deleted",
+      "pageId",
+    ])
     .index("by_strategyId_and_deleted", ["strategyId", "deleted"])
     .index("by_elementId", ["elementId"])
     .index("by_lineupId", ["lineupId"]),

@@ -184,6 +184,52 @@ describe("share members", () => {
     await expect(members(b, "s1")).rejects.toThrow("Forbidden");
   });
 
+  test("the owner gets a joiner's avatar only from Discord, stored ones too", async () => {
+    const { t, users } = await createHarness();
+    const { a } = users;
+    await seedStrategy(a, "s1");
+    await share(a, "s1", "view-link", "viewer");
+    const joiners = [
+      ["e", "https://cdn.discordapp.com/avatars/5/e.png"],
+      ["f", "https://tracker.example/f.png"],
+    ] as const;
+    for (const [subject, avatar] of joiners) {
+      const joiner = t.withIdentity({
+        ...identity(subject as Who),
+        "user_metadata.avatar_url": avatar,
+      });
+      await joiner.mutation(ensureCurrentUser, protocol);
+      await redeem(joiner, "view-link");
+    }
+    // A row written before avatars were checked.
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("users")
+        .withIndex("by_externalId", (q) =>
+          q.eq("externalId", "share-members|b"),
+        )
+        .unique();
+      await ctx.db.patch(row!._id, {
+        avatarUrl: "http://192.168.1.1/b.png",
+      });
+    });
+    await redeem(users.b, "view-link");
+
+    const avatars = Object.fromEntries(
+      (
+        (await members(a, "s1")) as {
+          displayName: string;
+          avatarUrl: string | null;
+        }[]
+      ).map((member) => [member.displayName, member.avatarUrl]),
+    );
+    expect(avatars).toEqual({
+      "User E": "https://cdn.discordapp.com/avatars/5/e.png",
+      "User F": null,
+      "User B": null,
+    });
+  });
+
   test("a role change reaches the person's next read and write", async () => {
     const { t, users } = await createHarness();
     const { a, b } = users;

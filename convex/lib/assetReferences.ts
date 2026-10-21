@@ -5,6 +5,7 @@ import {
   collectAssetIdsFromLineupPayload,
   isUploadPlaceholder,
 } from "./imageAssets";
+import { listLivePages } from "./entities";
 
 type AnyCtx = MutationCtx | QueryCtx;
 
@@ -210,12 +211,58 @@ export async function isAssetReferenced(
   return reference !== null;
 }
 
-/// Every image id the strategy's live content shows. Reads reference rows
-/// only (one per image reference), never the content itself.
+/// The ids of the strategy's pages outside the trash. Every snapshot a
+/// client opens reads these pages anyway, so their number is bounded by what
+/// a strategy can hold at all; the trash, which no reader sees, is not.
+async function livePageIds(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+): Promise<Set<Id<"pages">>> {
+  return new Set(
+    (await listLivePages(ctx, strategyId)).map((page) => page._id),
+  );
+}
+
+/// Whether the strategy's live content shows the image on a page outside
+/// the trash. That is what a viewer may see: a page in the trash is hidden
+/// from everyone who cannot restore it. Like isAssetReferenced, every image
+/// counts until the reference backfill has finished.
+export async function isAssetShownOnLivePage(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+  assetPublicId: string,
+): Promise<boolean> {
+  if (!(await assetReferencesReady(ctx))) return true;
+  // One indexed read per live page: the trash can hold any number of pages
+  // that showed this image, and none of them is read.
+  for (const pageId of await livePageIds(ctx, strategyId)) {
+    const reference = await ctx.db
+      .query("assetReferences")
+      .withIndex(
+        "by_strategyId_and_assetPublicId_and_deleted_and_pageId",
+        (q) =>
+          q
+            .eq("strategyId", strategyId)
+            .eq("assetPublicId", assetPublicId)
+            .eq("deleted", false)
+            .eq("pageId", pageId),
+      )
+      .first();
+    if (reference !== null) return true;
+  }
+  return false;
+}
+
+/// Every image id the strategy's live content shows, on pages in the trash
+/// too with [includeTrashedPages]. Reads reference rows (one per image
+/// reference), and without [includeTrashedPages] the live page rows, never
+/// the content itself.
 export async function collectLiveAssetIds(
   ctx: AnyCtx,
   strategyId: Id<"strategies">,
+  { includeTrashedPages }: { includeTrashedPages: boolean },
 ): Promise<Set<string>> {
+  const live = includeTrashedPages ? null : await livePageIds(ctx, strategyId);
   const assetIds = new Set<string>();
   const references = ctx.db
     .query("assetReferences")
@@ -223,6 +270,7 @@ export async function collectLiveAssetIds(
       q.eq("strategyId", strategyId).eq("deleted", false),
     );
   for await (const reference of references) {
+    if (live !== null && !live.has(reference.pageId)) continue;
     assetIds.add(reference.assetPublicId);
   }
   return assetIds;

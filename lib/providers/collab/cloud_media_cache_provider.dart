@@ -8,6 +8,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/services/image_file_name.dart';
 import 'package:icarus/services/local_image_file.dart';
 
 class CloudMediaCacheState {
@@ -31,8 +32,9 @@ class CloudMediaCacheState {
     Map<String, String>? lastErrorByAssetId,
   }) {
     return CloudMediaCacheState(
-      strategyPublicId:
-          clearStrategyPublicId ? null : (strategyPublicId ?? this.strategyPublicId),
+      strategyPublicId: clearStrategyPublicId
+          ? null
+          : (strategyPublicId ?? this.strategyPublicId),
       cachedAssetIds: cachedAssetIds ?? this.cachedAssetIds,
       inFlightAssetIds: inFlightAssetIds ?? this.inFlightAssetIds,
       lastErrorByAssetId: lastErrorByAssetId ?? this.lastErrorByAssetId,
@@ -105,6 +107,11 @@ class CloudMediaCacheNotifier extends Notifier<CloudMediaCacheState> {
     required String strategyId,
     required RemoteImageAsset asset,
   }) async {
+    // A name that can't be an image file is never on this device.
+    if (!isSafeFileNameId(strategyId) ||
+        imageFileName(asset.publicId, asset.fileExtension) == null) {
+      return null;
+    }
     final file = File(
       await localAssetPath(
         strategyId: strategyId,
@@ -144,7 +151,8 @@ class CloudMediaCacheNotifier extends Notifier<CloudMediaCacheState> {
     required RemoteImageAsset asset,
   }) async {
     if (!deviceHasImageFiles) return null;
-    final existing = await localFileForAsset(strategyId: strategyId, asset: asset);
+    final existing =
+        await localFileForAsset(strategyId: strategyId, asset: asset);
     if (existing != null) {
       return existing;
     }
