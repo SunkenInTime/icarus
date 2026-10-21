@@ -107,7 +107,7 @@ void main() {
       expect(result.didSucceed, isFalse);
       expect(repository.folders.keys, ['maps', 'ascent', 'retakes', 'bind']);
       expect(repository.strategies.keys, ['b-retake', 'bind-exec', 'loose']);
-      expect(ops.discarded, ['maps-notes', 'a-split']);
+      expect(ops.discarded, unorderedEquals(['maps-notes', 'a-split']));
     });
   });
 }

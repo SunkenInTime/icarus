@@ -206,16 +206,20 @@ class FolderProvider extends Notifier<String?> {
         final inventory = await repository.fetchInventory();
         tree = folderAndDescendantIds(folderID, inventory.folders);
         final treeIds = tree.toSet();
-        for (final MapEntry(key: strategyId, value: strategyFolderId)
-            in inventory.strategies.entries) {
-          if (!treeIds.contains(strategyFolderId)) continue;
-          final shell = await repository.fetchShell(strategyId);
-          await repository.deleteStrategy(
-            strategyPublicId: strategyId,
-            expectedRevision: shell.header.revision,
-          );
-          deletedStrategies.add(strategyId);
-        }
+        // All at once: each is its own round trip to the server.
+        await Future.wait([
+          for (final MapEntry(key: strategyId, value: strategyFolderId)
+              in inventory.strategies.entries)
+            if (treeIds.contains(strategyFolderId))
+              () async {
+                final shell = await repository.fetchShell(strategyId);
+                await repository.deleteStrategy(
+                  strategyPublicId: strategyId,
+                  expectedRevision: shell.header.revision,
+                );
+                deletedStrategies.add(strategyId);
+              }(),
+        ]);
         for (final id in tree.reversed) {
           await repository.deleteFolder(id);
         }
