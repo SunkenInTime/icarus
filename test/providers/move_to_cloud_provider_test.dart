@@ -473,11 +473,14 @@ void main() {
   test("a picture under a name the app can't use keeps the original here",
       () async {
     await putStrategy('s1', imageExtension: '.txt');
+    final picture = File(p.join(dir.path, 's1', 'images', 's1-image.txt'));
+    await picture.writeAsBytes([4, 5, 6]);
     open();
 
     await mover().moveStrategy('s1');
 
     expect(strategies().get('s1')!.pages, hasLength(2));
+    expect(await picture.readAsBytes(), [4, 5, 6]);
     expect(cloud.strategies, isEmpty);
     expect(moves().isEmpty, isTrue);
     expect(messages.single.$2, isTrue);
