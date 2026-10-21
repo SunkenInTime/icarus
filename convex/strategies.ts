@@ -644,6 +644,9 @@ export const duplicate = mutation({
       throw conflictError(`Strategy publicId already exists: ${args.publicId}`);
     }
 
+    // A source written before maps were checked must not spread.
+    assertKnownMapChange(source.mapData, undefined);
+
     // The copy lands in the folder the caller is browsing when it is theirs.
     // Browsing a folder someone shared with them, the copy goes to the root
     // of their own library: it is theirs, not the folder owner's.

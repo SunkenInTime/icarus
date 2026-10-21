@@ -274,27 +274,6 @@ test("a strategy's agents follow moves, swaps and deletes", async () => {
   expect(await agentsOf()).toEqual(["omen"]);
 });
 
-test("deleting a strategy drops it from the folder summary", async () => {
-  const { owner } = await createHarness();
-  await seedFolder(owner, "root");
-  await seedStrategy(owner, "s-root", "root", "ascent");
-  await placeAgent(owner, "s-root", "e1", "jett");
-  await owner.mutation(deleteStrategy, {
-    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
-    strategyPublicId: "s-root",
-    expectedRevision: 0,
-  });
-
-  const tree = (await owner.query(listFolderTree, { scope: "owned" })) as Array<
-    Record<string, unknown>
-  >;
-  expect(tree[0]).toMatchObject({
-    strategyCount: 0,
-    mapPeeks: [],
-    agentTypes: [],
-  });
-});
-
 test("summaries keep only agent-shaped names, however a peer wrote them", async () => {
   const { t, owner } = await createHarness();
   await seedFolder(owner, "root");
@@ -318,6 +297,18 @@ test("summaries keep only agent-shaped names, however a peer wrote them", async 
       updatedAt: 0,
     });
   });
+
+  const stored = await t.run(async (ctx) => {
+    const s = await ctx.db
+      .query("strategies")
+      .withIndex("by_publicId", (q) => q.eq("publicId", "s"))
+      .unique();
+    return await ctx.db
+      .query("strategyAgentSummaries")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", s!._id))
+      .unique();
+  });
+  expect(stored?.agentTypes).toEqual(["jett"]);
 
   const listed = (await owner.query(listStrategiesForFolder, {
     folderPublicId: "child",
@@ -361,4 +352,49 @@ test("a folder lists at most 32 agents", async () => {
   for (const entry of listed) {
     expect((entry.agentTypes as string[]).length).toBeLessThanOrEqual(32);
   }
+});
+
+
+test("folder previews skip a stored map no build knows", async () => {
+  const { t, owner } = await createHarness();
+  await seedFolder(owner, "root");
+  await seedFolder(owner, "child", "root");
+  await seedStrategy(owner, "s-junk", "child", "ascent");
+  await seedStrategy(owner, "s-haven", "child", "haven");
+  // Written before maps were checked.
+  await t.run(async (ctx) => {
+    const strategy = await ctx.db
+      .query("strategies")
+      .withIndex("by_publicId", (q) => q.eq("publicId", "s-junk"))
+      .unique();
+    await ctx.db.patch(strategy!._id, { mapData: "x".repeat(100_000) });
+  });
+
+  const tree = (await owner.query(listFolderTree, { scope: "owned" })) as Array<
+    Record<string, unknown>
+  >;
+  for (const folder of tree) {
+    expect(folder).toMatchObject({ strategyCount: 2, mapPeeks: ["haven"] });
+  }
+});
+
+test("deleting a strategy drops it from the folder summary", async () => {
+  const { owner } = await createHarness();
+  await seedFolder(owner, "root");
+  await seedStrategy(owner, "s-root", "root", "ascent");
+  await placeAgent(owner, "s-root", "e1", "jett");
+  await owner.mutation(deleteStrategy, {
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+    strategyPublicId: "s-root",
+    expectedRevision: 0,
+  });
+
+  const tree = (await owner.query(listFolderTree, { scope: "owned" })) as Array<
+    Record<string, unknown>
+  >;
+  expect(tree[0]).toMatchObject({
+    strategyCount: 0,
+    mapPeeks: [],
+    agentTypes: [],
+  });
 });

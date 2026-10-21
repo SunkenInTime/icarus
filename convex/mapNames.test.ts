@@ -145,3 +145,23 @@ test("a strategy already on an unknown map can still be edited", async () => {
   expect(response.results[0]).toMatchObject({ status: "applied" });
   expect(await mapOf(t)).toBe("future-map");
 });
+
+test("a strategy already on an unknown map cannot be duplicated", async () => {
+  const { t, owner } = await createHarness();
+  await t.run(async (ctx) => {
+    const strategy = await ctx.db
+      .query("strategies")
+      .withIndex("by_publicId", (q) => q.eq("publicId", "s"))
+      .unique();
+    await ctx.db.patch(strategy!._id, { mapData: "x" });
+  });
+  const duplicate = makeFunctionReference<"mutation">("strategies:duplicate");
+  await expect(
+    owner.mutation(duplicate, {
+      ...protocol,
+      sourceStrategyPublicId: "s",
+      publicId: "copy",
+      name: "copy",
+    }),
+  ).rejects.toThrow(/INVALID_PAYLOAD/);
+});

@@ -20,6 +20,10 @@ const knownMapNames = new Set([
   "summit",
 ]);
 
+export function isKnownMapName(mapData: string): boolean {
+  return knownMapNames.has(mapData);
+}
+
 /// Refuses a strategy write that would put it on [mapData] when that is not
 /// a map's wire name. Only a change is checked: a row already on another
 /// value keeps it, so clients that send the map back with other changes
@@ -28,6 +32,6 @@ export function assertKnownMapChange(
   mapData: string,
   current: string | undefined,
 ): void {
-  if (mapData === current || knownMapNames.has(mapData)) return;
+  if (mapData === current || isKnownMapName(mapData)) return;
   throw invalidPayloadError("Unknown map");
 }
