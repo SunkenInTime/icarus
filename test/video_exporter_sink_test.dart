@@ -155,7 +155,7 @@ VideoExporter _exporter(
     backgroundDotOpacity: 1,
     geometry: null,
     transparentBackground: transparent,
-    images: images ?? _PageImages(),
+    images: images ?? (_PageImages()..releaseOnTearDown()),
   );
 }
 
@@ -178,6 +178,8 @@ class _PageImages extends CapturePageImages {
         );
 
   final held = <List<String>>[];
+
+  void releaseOnTearDown() => addTearDown(release);
 
   @override
   Future<void> holdPages(Iterable<StrategyPage> pages) {
@@ -275,12 +277,16 @@ void main() {
   testWidgets('holds only the pictures of the page it draws and the next one',
       (tester) async {
     CoordinateSystem(playAreaSize: const Size(1600, 900));
+    // Each page with its own picture, so one left behind is let go.
+    StrategyPage withOwnPicture(StrategyPage page) => page.copyWith(
+          imageData: [page.imageData.single.copyWith(id: 'picture-${page.id}')],
+        );
     final pages = [
-      _page('one', 0, const Offset(400, 400)),
-      _page('two', 1, const Offset(700, 600)),
-      _page('three', 2, const Offset(500, 300)),
+      withOwnPicture(_page('one', 0, const Offset(400, 400))),
+      withOwnPicture(_page('two', 1, const Offset(700, 600))),
+      withOwnPicture(_page('three', 2, const Offset(500, 300))),
     ];
-    final images = _PageImages();
+    final images = _PageImages()..releaseOnTearDown();
     final exporter = _exporter(pages, images: images);
 
     final sink = _RecordingSink();
@@ -293,7 +299,7 @@ void main() {
       ['two', 'three'],
       ['three'],
     ]);
-    images.release();
+    expect(images.sources.keys, ['picture-three']);
   });
 
   testWidgets(

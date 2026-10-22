@@ -8,6 +8,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_sink.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
@@ -59,6 +60,10 @@ void main() {
         mapState: MapState(currentMap: MapValue.split, isAttack: true),
         backgroundDotOpacity: 1,
         geometry: null,
+        images: CapturePageImages(
+          imagesOf: (_) => const {},
+          fetch: (_, __, ___) => throw StateError('nothing to fetch'),
+        ),
         requireNavigation: requireNavigation,
       );
       var startedPreparing = false;

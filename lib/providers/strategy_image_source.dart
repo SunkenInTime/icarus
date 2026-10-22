@@ -79,8 +79,8 @@ typedef StrategyImageKey = ({String id, String? fileExtension});
 ///
 /// A capture renders in its own provider container, which has no live cloud
 /// page, upload queue, or pending bytes to resolve an image from. The
-/// capture resolves every image it paints before it starts and overrides
-/// this provider with the result.
+/// capture resolves the images of each page before it draws it and
+/// overrides this provider with them.
 final captureImageSourcesProvider =
     Provider<Map<String, StrategyImageSource>?>((ref) => null);
 

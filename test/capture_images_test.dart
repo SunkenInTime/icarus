@@ -143,8 +143,7 @@ void main() {
     }
   });
 
-  test('each image is decoded for the box the capture draws it in',
-      () async {
+  test('each image is decoded for the box the capture draws it in', () async {
     final big = Uint8List.fromList(
       img.encodePng(img.Image(width: 2000, height: 1000)),
     );
@@ -156,10 +155,12 @@ void main() {
 
     // The capture's widget asks for the same box and gets the held decode.
     final decoded = Completer<ImageInfo>();
-    images.sources['big']!
+    final stream = images.sources['big']!
         .imageProvider(drawnAtMost: const Size(500, 250))!
-        .resolve(ImageConfiguration.empty)
-        .addListener(ImageStreamListener((info, _) => decoded.complete(info)));
+        .resolve(ImageConfiguration.empty);
+    final listener = ImageStreamListener((info, _) => decoded.complete(info));
+    stream.addListener(listener);
+    addTearDown(() => stream.removeListener(listener));
     final info = await decoded.future;
     addTearDown(info.dispose);
     expect((info.image.width, info.image.height), (1000, 500));
@@ -192,7 +193,7 @@ void main() {
     final c = await keyOf('c');
 
     expect(images.sources.keys, unorderedEquals(['b', 'c']));
-    // The shared image is neither downloaded nor decoded again.
+    // The shared image is not downloaded again.
     expect(fetches, ['a', 'b', 'c']);
     cache.clear();
     expect(cache.statusForKey(a).untracked, isTrue);
@@ -318,7 +319,9 @@ void main() {
     final failure = Exception('offline');
     await expectLater(
       resolveCaptureImages(
-        _sized({'remote': const RemoteImageUrl('https://media.example.com/r.png')}),
+        _sized({
+          'remote': const RemoteImageUrl('https://media.example.com/r.png')
+        }),
         fetch: (_, __, ___) async => throw failure,
       ),
       throwsA(
@@ -336,7 +339,9 @@ void main() {
   test('bytes that do not decode stop the capture', () async {
     await expectLater(
       resolveCaptureImages(
-        _sized({'remote': const RemoteImageUrl('https://media.example.com/r.png')}),
+        _sized({
+          'remote': const RemoteImageUrl('https://media.example.com/r.png')
+        }),
         fetch: (_, __, ___) async => Uint8List.fromList([1, 2, 3, 4]),
       ),
       throwsA(
