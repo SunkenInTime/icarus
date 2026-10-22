@@ -196,6 +196,8 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
       final source = await loadVideoExportSource(
         ref,
         pageIds: pageIds,
+        // VideoExporter renders frames at 1:1.
+        pixelRatio: 1,
         isCancelled: () => _cancelRequested,
       );
       images = source.images;

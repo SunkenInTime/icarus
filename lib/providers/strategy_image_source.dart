@@ -9,6 +9,7 @@ import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/local_image_file.dart';
+import 'package:icarus/services/halved_image.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
 /// Where the bytes for one image in the open strategy (a placed image or a
@@ -17,17 +18,26 @@ sealed class StrategyImageSource {
   const StrategyImageSource();
 
   /// What to paint, or null while there is nothing to paint.
-  ImageProvider? get imageProvider => switch (this) {
-        LocalImageFile(:final path) => localImageProvider(path),
-        RemoteImageUrl(:final url) => NetworkImage(
-            url,
-            // Paint through an <img> element when the host does not let the
-            // browser fetch the bytes.
-            webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-          ),
-        ImageBytes(:final bytes) => MemoryImage(bytes),
-        ImageLoading() || ImageFailed() => null,
-      };
+  ///
+  /// [drawnAtMost] is the largest box, in physical pixels, the picture is
+  /// ever drawn in where it is shown: a picture whose half still fills it is
+  /// decoded at half size, a quarter of the memory (see [HalvedImage]). Null
+  /// decodes every pixel, for viewers that zoom past the picture's own size.
+  ImageProvider? imageProvider({required Size? drawnAtMost}) {
+    final ImageProvider? image = switch (this) {
+      LocalImageFile(:final path) => localImageProvider(path),
+      RemoteImageUrl(:final url) => NetworkImage(
+          url,
+          // Paint through an <img> element when the host does not let the
+          // browser fetch the bytes.
+          webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+        ),
+      ImageBytes(:final bytes) => MemoryImage(bytes),
+      ImageLoading() || ImageFailed() => null,
+    };
+    if (image == null || drawnAtMost == null) return image;
+    return HalvedImage(image, box: drawnAtMost);
+  }
 }
 
 /// The image file is on this device. Never produced on web.
@@ -73,6 +83,10 @@ typedef StrategyImageKey = ({String id, String? fileExtension});
 /// this provider with the result.
 final captureImageSourcesProvider =
     Provider<Map<String, StrategyImageSource>?>((ref) => null);
+
+/// The pixel ratio an offscreen capture renders at, and null everywhere
+/// else. A capture draws each picture once, unzoomed, at this ratio.
+final capturePixelRatioProvider = Provider<double?>((ref) => null);
 
 /// Where the bytes for [image] come from, read from a widget's build.
 ///

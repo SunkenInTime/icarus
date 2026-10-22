@@ -9,6 +9,8 @@ import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/pending_media_bytes_store.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/image_scale_policy.dart';
+import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
@@ -17,8 +19,11 @@ import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/screenshot/capture_images.dart';
+import 'package:icarus/screenshot/offscreen_capture.dart';
 import 'package:icarus/services/local_image_file_native.dart' as native;
 import 'package:icarus/services/local_image_file_stub.dart' as web;
+import 'package:icarus/services/halved_image.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
@@ -190,7 +195,7 @@ Widget _imageApp({
       accountId: accountId,
       outboxReliable: outboxReliable,
     ),
-    child: MaterialApp(
+    child: ShadApp(
       home: Scaffold(
         body: ValueListenableBuilder<int>(
           valueListenable: rebuild ?? ValueNotifier(0),
@@ -238,8 +243,12 @@ Future<void> _writeImage(Directory storage) async {
 }
 
 ImageProvider _paintedImage(WidgetTester tester) {
-  return tester.widget<Image>(find.byType(Image)).image;
+  return _unsized(tester.widget<Image>(find.byType(Image)).image);
 }
+
+/// Where the picture comes from, past the size it is decoded at.
+ImageProvider _unsized(ImageProvider image) =>
+    image is HalvedImage ? image.image : image;
 
 void main() {
   group('resolveStrategyImageSource', () {
@@ -336,7 +345,10 @@ void main() {
         pendingBytes: _pendingPng,
       );
       expect((uploading as ImageBytes).bytes, _pendingPng);
-      expect(uploading.imageProvider, isA<MemoryImage>());
+      expect(
+        uploading.imageProvider(drawnAtMost: null),
+        isA<MemoryImage>(),
+      );
 
       // A failed attempt is retried from the same bytes; keep showing them.
       expect(
@@ -564,6 +576,150 @@ void main() {
       expect((image as FileImage).file.path, _imageFile(storage).path);
     });
 
+    testWidgets(
+        'a placed image decodes for the largest it can be drawn: the '
+        'largest image size, fully zoomed in, with the window as tall as '
+        'the display', (tester) async {
+      // A display 1,000 tall; the window 900 tall around a canvas 810 tall.
+      tester.view.display.size = const Size(2400, 1500);
+      tester.view.physicalSize = const Size(2400, 1350);
+      tester.view.devicePixelRatio = 1.5;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.view.display.reset);
+      CoordinateSystem(playAreaSize: const Size(1440, 810));
+      final storage = await _storageWithImage(tester);
+
+      await tester.pumpWidget(_imageApp(
+        source: StrategySource.local,
+        storageDirectory: storage.path,
+      ));
+      await tester.pump();
+
+      final image =
+          tester.widget<Image>(find.byType(Image)).image as HalvedImage;
+      expect(image.image, isA<FileImage>());
+      // Fully zoomed in, the largest image spans 46% of the canvas height,
+      // eight times over. With the window filling the display the canvas
+      // is 910 tall, 1365 physical pixels.
+      const widest = ImageScalePolicy.maxWidth / 1000 * 8 * 910 * 1.5;
+      expect(image.width, widest.ceil());
+      expect(image.height, (widest / (16 / 9)).ceil());
+    });
+
+    testWidgets('resizing the window never decodes a placed image again',
+        (tester) async {
+      tester.view.display.size = const Size(2400, 1500);
+      tester.view.physicalSize = const Size(2400, 1350);
+      tester.view.devicePixelRatio = 1.5;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.view.display.reset);
+      CoordinateSystem(playAreaSize: const Size(1440, 810));
+      final storage = await _storageWithImage(tester);
+      final rebuild = ValueNotifier(0);
+      addTearDown(rebuild.dispose);
+
+      await tester.pumpWidget(_imageApp(
+        source: StrategySource.local,
+        storageDirectory: storage.path,
+        rebuild: rebuild,
+      ));
+      await tester.pump();
+      final before = tester.widget<Image>(find.byType(Image)).image;
+
+      // Dragged 251 physical pixels shorter; the canvas lays out again.
+      tester.view.physicalSize = const Size(2400, 1099);
+      const canvasHeight = 1099 / 1.5 - 90;
+      CoordinateSystem(
+        playAreaSize: const Size(canvasHeight * 16 / 9, canvasHeight),
+      );
+      rebuild.value++;
+      await tester.pump();
+
+      expect(tester.widget<Image>(find.byType(Image)).image, before);
+    });
+
+    testWidgets(
+        'in a capture, a placed image finds its picture already decoded at '
+        'the box the capture held it for', (tester) async {
+      final storage = await _storageWithImage(tester);
+      final file = LocalImageFile(_imageFile(storage).path);
+      // Held as the capture holds a page's pictures before its first frame.
+      final held = await tester.runAsync(
+        () => resolveCaptureImages(
+          {
+            _imageId: (
+              source: file,
+              drawnAtMost: PlacedImageDimensions.capturedPictureBox(
+                pixelRatio: 0.2,
+                aspectRatio: 16 / 9,
+              ),
+            ),
+          },
+          fetch: (_, __, ___) => throw StateError('nothing to fetch'),
+        ),
+      );
+      addTearDown(held!.release);
+      final container = createCaptureContainer(
+        images: held.sources,
+        pixelRatio: 0.2,
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home: Stack(
+            children: [
+              ImageWidget(
+                id: _imageId,
+                pictureId: _imageId,
+                aspectRatio: 16 / 9,
+                scale: 320,
+                fileExtension: '.png',
+              ),
+            ],
+          ),
+        ),
+      ));
+
+      // The first frame paints it: nothing was left to load.
+      expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
+      final painted = tester.widget<Image>(find.byType(Image)).image;
+      final key = await tester.runAsync(
+        () => painted.obtainKey(ImageConfiguration.empty),
+      );
+      expect(
+        PaintingBinding.instance.imageCache.statusForKey(key!).keepAlive,
+        isTrue,
+      );
+    });
+
+    testWidgets(
+        'the full-screen view zooms past the canvas, so it paints every '
+        'pixel', (tester) async {
+      final storage = await _storageWithImage(tester);
+
+      await tester.pumpWidget(_imageApp(
+        source: StrategySource.local,
+        storageDirectory: storage.path,
+      ));
+      await tester.pump();
+      await tester.tap(find.byType(Image));
+      await tester.pumpAndSettle();
+
+      final painted = [
+        for (final image in tester.widgetList<Image>(find.byType(Image)))
+          image.image,
+      ];
+      expect(
+        painted.whereType<FileImage>().single.file.path,
+        _imageFile(storage).path,
+      );
+      // Until every pixel is decoded, the picture as the canvas decoded it
+      // stands in.
+      expect(painted.whereType<HalvedImage>(), hasLength(1));
+    });
+
     testWidgets('a cloud image already cached on desktop paints from its file',
         (tester) async {
       final storage = await _storageWithImage(tester);
@@ -689,13 +845,59 @@ void main() {
     await tester.pump();
 
     final image = tester.widget<Image>(find.byType(Image));
-    expect((image.image as NetworkImage).url, _remoteUrl);
+    expect((_unsized(image.image) as NetworkImage).url, _remoteUrl);
     final decorationImages = tester
         .widgetList<Container>(find.byType(Container))
         .map((container) => container.decoration)
         .whereType<BoxDecoration>()
         .where((decoration) => decoration.image != null);
     expect(decorationImages, isEmpty);
+    expect(
+      tester.takeException(),
+      anyOf(isNull, isA<NetworkImageLoadException>()),
+    );
+  });
+
+  testWidgets('a lineup media tile decodes only enough to fill its tile',
+      (tester) async {
+    tester.view.physicalSize = const Size(2400, 2000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    final youtube = TextEditingController();
+    final notes = TextEditingController();
+    addTearDown(youtube.dispose);
+    addTearDown(notes.dispose);
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: _overrides(
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        assets: [_asset()],
+      ),
+      child: ShadApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 800,
+            child: LineupMediaPage(
+              youtubeLinkController: youtube,
+              notesController: notes,
+              images: [SimpleImageData(id: _imageId, fileExtension: '.png')],
+              onAddImage: () {},
+              onPasteImage: () {},
+              onRemoveImage: (_) {},
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    final tile = find.byType(Image);
+    final image = tester.widget<Image>(tile).image as HalvedImage;
+    final tileSize = tester.getSize(tile) * 2;
+    expect(image.width, tileSize.width.ceil());
+    expect(image.height, tileSize.height.ceil());
     expect(
       tester.takeException(),
       anyOf(isNull, isA<NetworkImageLoadException>()),
@@ -751,7 +953,10 @@ void main() {
 
     final firstTile = find.byType(Image).first;
     expect(tester.widget<Image>(firstTile).key, const ValueKey(removedId));
-    expect(tester.widget<Image>(firstTile).image, isA<MemoryImage>());
+    expect(
+      _unsized(tester.widget<Image>(firstTile).image),
+      isA<MemoryImage>(),
+    );
     final removedState = tester.state(firstTile);
     // flutter_test answers the next image's URL with a 400.
     await tester.pump();
@@ -766,7 +971,7 @@ void main() {
     final moved = find.byType(Image).first;
     expect(find.byType(Image), findsOneWidget);
     expect(tester.widget<Image>(moved).key, const ValueKey(_imageId));
-    expect(tester.widget<Image>(moved).image, isA<NetworkImage>());
+    expect(_unsized(tester.widget<Image>(moved).image), isA<NetworkImage>());
     expect(identical(tester.state(moved), removedState), isFalse);
     expect(
       tester.takeException(),

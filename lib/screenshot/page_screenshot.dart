@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/sort_index_order.dart';
@@ -87,9 +88,15 @@ Future<T> _renderEditorPage<T>(
     {
       // By picture, as the captured page's images look them up.
       for (final image in page.imageData)
-        image.pictureId: readStrategyImageSource(
-          ref,
-          (id: image.pictureId, fileExtension: image.fileExtension),
+        image.pictureId: (
+          source: readStrategyImageSource(
+            ref,
+            (id: image.pictureId, fileExtension: image.fileExtension),
+          ),
+          drawnAtMost: PlacedImageDimensions.capturedPictureBox(
+            pixelRatio: pixelRatio,
+            aspectRatio: image.aspectRatio,
+          ),
         ),
     },
     fetch: (imageId, url, client) => downloadCloudImageBytes(
@@ -131,7 +138,10 @@ Future<T> _renderEditorPage<T>(
     themeOverridePalette: theme.overridePalette,
   );
 
-  final container = createCaptureContainer(images: images.sources);
+  final container = createCaptureContainer(
+    images: images.sources,
+    pixelRatio: pixelRatio,
+  );
   CaptureGeometryLease? geometry;
   try {
     // The sightline models load asynchronously; the capture waits for the
@@ -194,6 +204,7 @@ Future<List<PageScreenshot>> captureStrategyPages(
   final source = await loadVideoExportSource(
     ref,
     pageIds: pageIds,
+    pixelRatio: 1,
     isCancelled: isCancelled,
   );
   final shots = <PageScreenshot>[];
@@ -287,6 +298,7 @@ Future<void> renderPageThumbnails(
           ref,
           read,
           [entry.page],
+          pixelRatio: pageThumbnailPixelRatio,
           isCancelled: isCancelled,
         ));
         ready.add(entry);
@@ -362,7 +374,10 @@ Future<void> _renderPages<T>(
   final mapState = ref.read(mapProvider);
   final strategyState = ref.read(strategyProvider);
   final dotOpacity = ref.read(appPreferencesProvider).backgroundDotOpacity;
-  final container = createCaptureContainer(images: images);
+  final container = createCaptureContainer(
+    images: images,
+    pixelRatio: pixelRatio,
+  );
   CaptureGeometryLease? geometry;
   try {
     geometry = await prepareCaptureGeometry(

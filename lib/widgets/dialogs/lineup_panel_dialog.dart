@@ -385,9 +385,8 @@ class _LineUpRowState extends State<_LineUpRow> {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
-                child: SizedBox(
-                  width: 72,
-                  height: 44,
+                child: SizedBox.fromSize(
+                  size: _thumbnailSize,
                   child: _LineUpThumbnail(image: firstImage),
                 ),
               ),
@@ -449,6 +448,8 @@ class _LineUpRowState extends State<_LineUpRow> {
   }
 }
 
+const _thumbnailSize = Size(72, 44);
+
 /// The first image of a lineup, or a muted glyph when it has none to show.
 class _LineUpThumbnail extends ConsumerWidget {
   const _LineUpThumbnail({required this.image});
@@ -463,7 +464,10 @@ class _LineUpThumbnail extends ConsumerWidget {
         : watchStrategyImageSource(
             ref,
             (id: image.id, fileExtension: image.fileExtension),
-          ).imageProvider;
+          ).imageProvider(
+            drawnAtMost:
+                _thumbnailSize * MediaQuery.devicePixelRatioOf(context),
+          );
     if (imageProvider != null) {
       return Image(
         key: ValueKey(image!.id),

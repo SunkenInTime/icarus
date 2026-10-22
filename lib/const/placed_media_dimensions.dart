@@ -30,6 +30,36 @@ abstract final class PlacedImageDimensions {
     );
   }
 
+  /// The largest box, in physical pixels, the picture inside a placed image
+  /// is ever drawn in: at the largest image width, zoomed in [zoom] times,
+  /// on a canvas [canvasHeight] physical pixels tall.
+  static Size largestPictureBox({
+    required double canvasHeight,
+    required double zoom,
+    required double aspectRatio,
+  }) {
+    // A world unit is as wide as it is tall, and the canvas is
+    // worldHeight of them tall.
+    final width = ImageScalePolicy.maxWidth /
+        CoordinateSystem.worldHeight *
+        canvasHeight *
+        zoom;
+    final safeAspectRatio = aspectRatio <= 0 ? 1.0 : aspectRatio;
+    return Size(width, width / safeAspectRatio);
+  }
+
+  /// The largest box a capture rendered at [pixelRatio] draws the picture
+  /// inside a placed image in: a capture is never zoomed.
+  static Size capturedPictureBox({
+    required double pixelRatio,
+    required double aspectRatio,
+  }) =>
+      largestPictureBox(
+        canvasHeight: CoordinateSystem.screenShotSize.height * pixelRatio,
+        zoom: 1,
+        aspectRatio: aspectRatio,
+      );
+
   static Size _sizeForPixelWidth({
     required double totalWidth,
     required double aspectRatio,

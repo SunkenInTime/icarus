@@ -9,7 +9,8 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// The provider container one offscreen capture renders in, cut off from the
-/// editor's, with [images] as what its images paint.
+/// editor's, with [images] as what its images paint, rendered at
+/// [pixelRatio].
 ///
 /// A capture's providers are built fresh here, and a real auth provider
 /// among them would reach the one Convex client the app syncs through:
@@ -25,12 +26,14 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 /// open in the editor.
 ProviderContainer createCaptureContainer({
   Map<String, StrategyImageSource> images = const {},
+  double pixelRatio = 1,
 }) =>
     ProviderContainer(
       overrides: [
         authProvider.overrideWith(_CaptureAuth.new),
         strategyProvider.overrideWith(_CaptureStrategy.new),
         captureImageSourcesProvider.overrideWithValue(images),
+        capturePixelRatioProvider.overrideWithValue(pixelRatio),
       ],
     );
 

@@ -27,8 +27,8 @@ class CoordinateSystem {
   Size get effectiveSize => _effectiveSize;
   // The normalized coordinate space will maintain this aspect ratio
   static const double defaultMapAspectRatio = 1.24;
-  final double normalizedHeight = _worldHeight;
-  static const double _worldHeight = 1000.0;
+  final double normalizedHeight = worldHeight;
+  static const double worldHeight = 1000.0;
   final double mapAspectRatio = defaultMapAspectRatio;
   final double worldAspectRatio = 16 / 9;
 
@@ -219,11 +219,11 @@ class CoordinateSystem {
   /// at every screen size, so code that only converts sizes needn't wait for
   /// a canvas to lay out.
   static Offset virtualToWorld(Offset virtualOffset) =>
-      virtualOffset * (_worldHeight / _virtualBaseHeight);
+      virtualOffset * (worldHeight / _virtualBaseHeight);
 
   /// [virtualLengthToWorld] without an instance.
   static double virtualLengthInWorld(double virtualLength) =>
-      virtualLength * (_worldHeight / _virtualBaseHeight);
+      virtualLength * (worldHeight / _virtualBaseHeight);
   // Get the scale factor based on screen height
   double get _scaleFactor => _effectiveSize.height / _baseHeight;
 

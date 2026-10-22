@@ -131,6 +131,10 @@ class Settings {
   static const double sideBarPanelWidth = sideBarContentWidth + 20;
   static const double sideBarPanelPaddingLeft = 8;
   static const double sideBarPanelPaddingRight = 8;
+  /// How far the editor's canvas zooms in. Pictures placed on it are
+  /// decoded for this zoom, so it looks the same all the way in.
+  static const double canvasMaxZoom = 8;
+
   static const double sideBarReservedWidth =
       sideBarPanelWidth + sideBarPanelPaddingLeft + sideBarPanelPaddingRight;
 

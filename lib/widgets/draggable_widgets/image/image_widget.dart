@@ -1,5 +1,7 @@
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -9,12 +11,35 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+/// How tall, in physical pixels, a canvas [canvasHeight] logical pixels
+/// tall gets with the window as tall as its display. The window around the
+/// canvas keeps its size as the window is resized, so this stays put while
+/// the edge is dragged; following the canvas itself would decode every
+/// picture again on each frame of the drag.
+double _tallestCanvasHeight(BuildContext context, double canvasHeight) {
+  final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+  final aroundCanvas = MediaQuery.sizeOf(context).height - canvasHeight;
+  final display = View.of(context).display;
+  // In logical pixels. A browser reports its screen in them already; a
+  // desktop reports its display in physical pixels.
+  final displayHeight = kIsWeb
+      ? display.size.height
+      : display.size.height / display.devicePixelRatio;
+  final tallest = math.max(
+    (displayHeight - aroundCanvas) * pixelRatio,
+    canvasHeight * pixelRatio,
+  );
+  // Whole pixels, so float noise between frames never makes a new box.
+  return tallest.roundToDouble();
+}
+
 // Full-screen overlay launcher
 void _showImageFullScreenOverlay({
   required BuildContext context,
   required String heroTag,
   required double aspectRatio,
   required ImageProvider image,
+  required ImageProvider fullImage,
 }) {
   Navigator.of(context).push(
     PageRouteBuilder(
@@ -26,6 +51,7 @@ void _showImageFullScreenOverlay({
           heroTag: heroTag,
           aspectRatio: aspectRatio,
           image: image,
+          fullImage: fullImage,
         ),
       ),
     ),
@@ -37,11 +63,19 @@ class _ImageFullScreenOverlay extends StatelessWidget {
     required this.heroTag,
     required this.aspectRatio,
     required this.image,
+    required this.fullImage,
   });
 
   final String heroTag;
   final double aspectRatio;
+
+  /// The picture as the canvas decoded it, shown until [fullImage] is
+  /// ready. It already fills the overlay before any zoom.
   final ImageProvider image;
+
+  /// Every pixel of the picture: zoomed in, the overlay draws it larger than
+  /// the canvas ever does.
+  final ImageProvider fullImage;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +122,17 @@ class _ImageFullScreenOverlay extends StatelessWidget {
                               height: height,
                               child: Hero(
                                 tag: heroTag,
-                                child: Image(image: image, fit: BoxFit.contain),
+                                child: Image(
+                                  image: fullImage,
+                                  fit: BoxFit.contain,
+                                  frameBuilder: (context, child, frame, _) =>
+                                      frame == null
+                                          ? Image(
+                                              image: image,
+                                              fit: BoxFit.contain,
+                                            )
+                                          : child,
+                                ),
                               ),
                             ),
                           ),
@@ -169,7 +213,24 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
       ref,
       (id: widget.pictureId, fileExtension: widget.fileExtension),
     );
-    final image = source.imageProvider;
+    // A capture draws the picture once, unzoomed, as the capture decoded
+    // it; the editor's canvas zooms in.
+    final capturePixelRatio = ref.watch(capturePixelRatioProvider);
+    final image = source.imageProvider(
+      drawnAtMost: capturePixelRatio != null
+          ? PlacedImageDimensions.capturedPictureBox(
+              pixelRatio: capturePixelRatio,
+              aspectRatio: widget.aspectRatio,
+            )
+          : PlacedImageDimensions.largestPictureBox(
+              canvasHeight: _tallestCanvasHeight(
+                context,
+                coordinateSystem.playAreaSize.height,
+              ),
+              zoom: Settings.canvasMaxZoom,
+              aspectRatio: widget.aspectRatio,
+            ),
+    );
 
     Widget buildThumb() => switch (source) {
           // Gapless, keyed by asset: this image's pending bytes keep painting
@@ -199,6 +260,7 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
                 context: context,
                 heroTag: 'image_${widget.id}',
                 image: image,
+                fullImage: source.imageProvider(drawnAtMost: null)!,
                 aspectRatio: widget.aspectRatio,
               ),
       child: SizedBox(
