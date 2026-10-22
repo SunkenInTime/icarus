@@ -21,10 +21,11 @@ class MapThemeProfileCode {
   static const int version = 1;
   static const int maxNameLength = 40;
 
-  /// The longest code text decoded. A code [encode] writes stays far under
-  /// it, since only the first [maxNameLength] characters of a name go in.
-  /// Anything longer was not written by Icarus, and decoding it would only
-  /// cost time on every keystroke in the import field.
+  /// The longest code text decoded, since the import field decodes on every
+  /// keystroke. A code [encode] writes stays far under it, as only the first
+  /// [maxNameLength] characters of a name go in. Builds before this cap wrote
+  /// the whole name, so their code for a profile named with thousands of
+  /// characters is refused.
   static const int maxEncodedLength = 4096;
 
   static final RegExp _codePattern = RegExp(r'icarus-theme:([A-Za-z0-9_-]+)');

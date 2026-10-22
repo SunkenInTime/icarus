@@ -117,7 +117,9 @@ void main() {
     expect(result.name.runes.length, MapThemeProfileCode.maxNameLength);
   });
 
-  test('a code longer than any Icarus writes is not decoded', () {
+  test('a code over the cap is not decoded', () {
+    // What a build before the cap wrote for a profile with a 4,000-character
+    // name: refused on purpose.
     final oversized = rawCode({
       'v': 1,
       'name': 'x' * 4000,
