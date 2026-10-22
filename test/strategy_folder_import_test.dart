@@ -18,6 +18,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
@@ -580,6 +581,63 @@ void main() {
             .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
             ?.backgroundDotOpacity,
         0.6,
+      );
+    } finally {
+      if (await exportDirectory.exists()) {
+        await exportDirectory.delete(recursive: true);
+      }
+    }
+  });
+
+  test('library backup restores at most the colour library limit of colours',
+      () async {
+    await _storeStrategy(name: 'Colour Backup', folderID: null);
+
+    final exportDirectory = await StrategyImportExportService(container)
+        .buildLibraryExportDirectoryForTest();
+
+    try {
+      final rootDirectory = Directory(
+        path.join(exportDirectory.path, libraryBackupRootDirectoryName),
+      );
+      final manifestFile =
+          File(path.join(rootDirectory.path, archiveMetadataFileName));
+      final decoded =
+          jsonDecode(await manifestFile.readAsString()) as Map<String, dynamic>;
+      final globals = Map<String, dynamic>.from(
+          decoded['globals'] as Map<dynamic, dynamic>);
+      final appPreferences = Map<String, dynamic>.from(
+          globals['appPreferences'] as Map<dynamic, dynamic>);
+      // A hand-edited backup: values that are no colour, then far more
+      // colours than the library holds.
+      appPreferences['customColorValues'] = [
+        -1,
+        0x100000000,
+        for (var i = 0; i < 1000; i++) 0xFF000000 + i,
+      ];
+      globals['appPreferences'] = appPreferences;
+      decoded['globals'] = globals;
+      await manifestFile.writeAsString(jsonEncode(decoded));
+
+      final zipFile = await _zipDirectory(
+        sourceDirectory: rootDirectory,
+        zipPath: path.join(tempDir.path, 'colour-backup.zip'),
+      );
+
+      final result =
+          await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(zipFile.path)],
+      );
+
+      expect(result.globalStateRestored, isTrue);
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
+            ?.customColorValues,
+        [
+          for (var i = 0; i < ColorLibraryController.customColorLimit; i++)
+            0xFF000000 + i,
+        ],
       );
     } finally {
       if (await exportDirectory.exists()) {

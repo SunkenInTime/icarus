@@ -320,6 +320,25 @@ void main() {
         findsOneWidget);
   });
 
+  testWidgets('text far longer than a code is not read as one', (tester) async {
+    final oversized = '${MapThemeProfileCode.prefix}${'A' * 100000}';
+    clipboardText = oversized;
+    await pumpSection(tester);
+
+    await tester.tap(find.text('Import profile code'));
+    await settle(tester);
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).controller.text,
+      isEmpty,
+    );
+    expect(find.text('The colors show here once you paste a code.'),
+        findsOneWidget);
+
+    await tester.enterText(find.byType(EditableText), oversized);
+    await tester.pump();
+    expect(find.text("That isn't an Icarus profile code."), findsOneWidget);
+  });
+
   testWidgets('colors you already have cannot be added twice', (tester) async {
     clipboardText =
         MapThemeProfileCode.encode(name: 'Copy', colors: nightMarket.toJson());
