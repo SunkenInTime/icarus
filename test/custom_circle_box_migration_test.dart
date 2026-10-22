@@ -143,9 +143,14 @@ void main() {
       identical(StrategyMigrator.migrateToCurrentVersion(once), once),
       isTrue,
     );
-    final current = _strategy(version: CustomCircleBoxMigration.version);
+    // Saved by the build that moved it: later builds stamp their own
+    // version on it but leave its pages as they are.
+    final migrated = _strategy(version: CustomCircleBoxMigration.version);
     expect(
-      identical(StrategyMigrator.migrateToCurrentVersion(current), current),
+      identical(
+        StrategyMigrator.migrateToCurrentVersion(migrated).pages,
+        migrated.pages,
+      ),
       isTrue,
     );
   });
