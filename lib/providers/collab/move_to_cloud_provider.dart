@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:developer' show log;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/folder_icons.dart';
@@ -14,9 +16,11 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
@@ -91,6 +95,15 @@ class _Plan {
   final List<StrategyOp> ops;
   final MovedItemIds ids;
 }
+
+/// The full read that checked a move's cloud copy, with the sign-in it was
+/// asked under (null when signed out), when it was asked and when it came.
+typedef _VerifiedRead = ({
+  CloudCopyScope? scope,
+  DateTime askedAt,
+  DateTime arrivedAt,
+  RemoteFullStrategySnapshot snapshot,
+});
 
 /// Moves local strategies and folders into the signed-in user's cloud
 /// library, one strategy at a time.
@@ -479,6 +492,7 @@ class MoveToCloudNotifier extends Notifier<void> {
           current.folderID == folderId;
     }
 
+    _VerifiedRead? verified;
     try {
       final strategy = StrategyMigrator.migrateToCurrentVersion(stored);
       final plan = _plan(strategy);
@@ -499,7 +513,7 @@ class MoveToCloudNotifier extends Notifier<void> {
           .read(cloudMediaUploadQueueProvider.notifier)
           .enqueueMovedImages(strategyPublicId: cloudId, images: uploads);
       await _waitForImages(cloudId, accountId: accountId);
-      await _verify(cloudId, plan, uploads);
+      verified = await _verify(cloudId, plan, uploads);
       // A changed original stays as the newer version. One that is gone
       // leaves the cloud copy as the only one, which finishes.
       if (!unchanged() && !originalGone()) {
@@ -547,6 +561,8 @@ class MoveToCloudNotifier extends Notifier<void> {
       return _Outcome.movedLocalKept;
     } finally {
       ref.invalidate(cloudStrategiesProvider);
+      // Last, so it never holds the original's removal back.
+      if (verified != null) await _keepOffline(verified);
     }
     return _Outcome.moved;
   }
@@ -772,14 +788,18 @@ class MoveToCloudNotifier extends Notifier<void> {
 
   /// Reads the cloud copy back and throws unless it holds everything that
   /// was sent: every page, item and lineup, and every uploaded picture.
-  Future<void> _verify(
+  /// Returns that read, for the offline copy to keep once the move finishes.
+  Future<_VerifiedRead> _verify(
     String cloudId,
     _Plan plan,
     List<({String assetPublicId, String fileExtension})> uploads,
   ) async {
+    final scope = ref.read(cloudCopyScopeProvider);
+    final askedAt = DateTime.now();
     final snapshot = await ref
         .read(convexStrategyRepositoryProvider)
         .fetchFullSnapshot(cloudId);
+    final arrivedAt = DateTime.now();
     final elements = snapshot.elementsByPage.values
         .expand((page) => page)
         .where((element) => !element.deleted)
@@ -802,6 +822,39 @@ class MoveToCloudNotifier extends Notifier<void> {
         '$elements items, $lineups lineups, '
         '${missingPictures.length} pictures missing.',
       );
+    }
+    return (
+      scope: scope,
+      askedAt: askedAt,
+      arrivedAt: arrivedAt,
+      snapshot: snapshot,
+    );
+  }
+
+  /// Keeps [read], the finished cloud copy as [_verify] read it, in this
+  /// device's offline copy, so the copy's next walk need not read it again.
+  /// The read is still the server's answer once the move finishes:
+  /// finishMove changes nothing a full read returns (it only lists the
+  /// strategy). Written under the sign-in the read was made in, which the
+  /// copy refuses once it has ended. A copy that can't be written is left
+  /// for the walk to read; the move itself is done.
+  Future<void> _keepOffline(_VerifiedRead read) async {
+    final scope = read.scope;
+    if (scope == null) return;
+    try {
+      await ref.read(strategyCopyRefresherProvider.notifier).keepFullRead(
+            read.snapshot,
+            scope: scope,
+            askedAt: read.askedAt,
+            arrivedAt: read.arrivedAt,
+          );
+    } catch (error, stackTrace) {
+      log(
+          'Keeping moved strategy ${read.snapshot.header.publicId} offline '
+          'failed: $error',
+          name: 'move_to_cloud',
+          error: error,
+          stackTrace: stackTrace);
     }
   }
 

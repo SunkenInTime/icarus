@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -124,6 +125,15 @@ void main() {
     expect(store.keptStrategyIds(_scope), isEmpty);
   });
 
+  test('a copy that cannot be written stops the walk', () async {
+    // Reading on would cost a full read of every strategy and keep none.
+    repository.owned = {'one', 'two'};
+    store = _UnwritableStore();
+    start();
+    await _settle();
+    expect(repository.fullReads, ['one']);
+  });
+
   test('a full read that answers after sign-out started writes nothing',
       () async {
     repository.owned = {'one'};
@@ -215,6 +225,30 @@ void main() {
     await _settle();
     expect(repository.fullReads.first, 'opened');
   });
+
+  test('a full read made elsewhere is kept, and the walk does not repeat it',
+      () async {
+    repository.owned = {'moved'};
+    final gate = Completer<void>();
+    repository.listGate = gate;
+    final container = start();
+    await container.read(strategyCopyRefresherProvider.notifier).keepFullRead(
+          repository.snapshotFor('moved'),
+          scope: container.read(cloudCopyScopeProvider)!,
+          askedAt: DateTime.now(),
+          arrivedAt: DateTime.now(),
+        );
+    gate.complete();
+    await _settle();
+
+    expect(repository.fullReads, isEmpty);
+    expect(store.keepsStrategy(_scope, 'moved'), isTrue);
+    expect(store.lastFullRefresh(_scope, 'moved'), isNotNull);
+    expect(
+      media.cached['moved'],
+      unorderedEquals(['picture', 'lineup-image']),
+    );
+  });
 }
 
 Future<void> _settle({bool pause = true}) async {
@@ -301,6 +335,10 @@ class _Repository extends ConvexStrategyRepository {
       unansweredReads -= 1;
       throw TimeoutException('no answer');
     }
+    return snapshotFor(strategyPublicId);
+  }
+
+  RemoteFullStrategySnapshot snapshotFor(String strategyPublicId) {
     final answer = answerFor(strategyPublicId);
     return RemoteFullStrategySnapshot(
       header: RemoteStrategyHeader(
@@ -411,4 +449,16 @@ class _ReadyAuthProvider extends AuthProvider {
 class _UnusedTransport implements ConvexTransport {
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
+}
+
+class _UnwritableStore extends MemoryCloudStrategyCopyStore {
+  @override
+  Future<void> writeFullSnapshot(
+    CloudCopyScope scope,
+    ConvexObject answer, {
+    required DateTime askedAt,
+    required DateTime arrivedAt,
+  }) async {
+    throw const FileSystemException('No space left on device');
+  }
 }
