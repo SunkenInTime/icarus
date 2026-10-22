@@ -33,18 +33,18 @@ jobs:
       run:
         working-directory: native/replay
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
       # The version in native/replay/rust-toolchain.toml.
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.96.1
+        uses: dtolnay/rust-toolchain@3f2778ee6a28c53e512b95bbcf7b2120993da70d # 1.96.1
         with:
           components: clippy, rustfmt
 
       - name: Cache Cargo
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/.cargo/registry
@@ -213,11 +213,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Release Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_SOURCE_SHA }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
@@ -243,7 +243,7 @@ jobs:
         shard: [0, 1]
     steps:
       - name: Checkout Release Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_SOURCE_SHA }}
 
@@ -260,7 +260,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Release Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_SOURCE_SHA }}
 
@@ -284,11 +284,11 @@ jobs:
 
     steps:
       - name: Checkout Release Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_SOURCE_SHA }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -360,11 +360,11 @@ jobs:
         working-directory: presence
     steps:
       - name: Checkout Release Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_SOURCE_SHA }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -387,7 +387,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Release Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_SOURCE_SHA }}
           # The contract gate records the merge base with origin/main.
@@ -432,7 +432,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Release Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_SOURCE_SHA }}
 
@@ -447,7 +447,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Release Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_SOURCE_SHA }}
 
@@ -460,7 +460,7 @@ jobs:
 
       # Cargokit builds the Rust bridge into the plugin's build folder. Its
       # compiled dependencies are cached; the bridge crate itself rebuilds.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: third_party/convex_flutter/rust -> ../../../build/linux/x64/release/plugins/convex_flutter/cargokit_build
 
@@ -478,7 +478,7 @@ jobs:
         shell: pwsh
     steps:
       - name: Checkout Release Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_SOURCE_SHA }}
 
@@ -512,7 +512,7 @@ jobs:
 
       # Cargokit builds the Rust bridge into the plugin's build folder. Its
       # compiled dependencies are cached; the bridge crate itself rebuilds.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: third_party/convex_flutter/rust -> ../../../build/windows/x64/plugins/convex_flutter/cargokit_build
 
@@ -534,7 +534,7 @@ jobs:
             -ReleaseCandidateInstaller $installer.FullName
 
       - name: Upload Windows Release Candidate
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: icarus-windows-rc-${{ env.RELEASE_SOURCE_SHA }}
           path: |
@@ -552,7 +552,7 @@ jobs:
         shell: pwsh
     steps:
       - name: Checkout Release Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_SOURCE_SHA }}
 

@@ -9,12 +9,12 @@ runs:
   steps:
     # Its problem matcher resolves against the calling action's folder and
     # fails inside a composite action, so it stays off.
-    - uses: dart-lang/setup-dart@v1
+    - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
       with:
         problem-matcher: false
 
     - name: Cache Pub Packages
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: .pub-cache
         key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
@@ -22,7 +22,7 @@ runs:
           ${{ runner.os }}-pub-
 
     - name: Cache FVM SDK
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: .fvm_cache
         key: ${{ runner.os }}-fvm-${{ hashFiles('.fvmrc') }}

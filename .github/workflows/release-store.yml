@@ -40,7 +40,7 @@ jobs:
             throw "Store releases must be dispatched from main. This run is on $env:GITHUB_REF."
           }
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -51,7 +51,7 @@ jobs:
           ICARUS_PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
         run: powershell -ExecutionPolicy Bypass -File scripts/assert_release_preflight.ps1 -ReleaseTarget store
 
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
 
       - name: Add Pub Cache To PATH
         shell: pwsh
@@ -74,7 +74,7 @@ jobs:
       # windows/CMakeLists.txt builds the replay decoder (native/replay) with
       # cargo, on the version in native/replay/rust-toolchain.toml.
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.96.1
+        uses: dtolnay/rust-toolchain@3f2778ee6a28c53e512b95bbcf7b2120993da70d # 1.96.1
         with:
           components: clippy, rustfmt
 
@@ -87,7 +87,7 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File scripts/build_store_release.ps1
 
       - name: Upload Store Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: store-package
           path: release/out/store/**
@@ -95,7 +95,7 @@ jobs:
 
       - name: Set Up Microsoft Store CLI
         if: ${{ inputs.publish_to_store }}
-        uses: microsoft/setup-msstore-cli@v1
+        uses: microsoft/setup-msstore-cli@3b2ec9136230357ce9abc02b9d056626fb248d3f # v1
 
       - name: Publish To Partner Center
         if: ${{ inputs.publish_to_store }}
