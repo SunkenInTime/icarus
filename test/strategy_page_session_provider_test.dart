@@ -13878,6 +13878,26 @@ void main() {
         .map((intent) => intent.pending.op)
         .whereType<ElementAddOp>();
 
+    test('an item placed after the menus were worked out is offered too',
+        () async {
+      final (container, _, _) = await open();
+      final notifier = container.read(strategyProvider.notifier);
+      expect(
+          notifier.copyDirectionsForPlacedWidget('text-page-2'), hasLength(2));
+      expect(notifier.copyDirectionsForPlacedWidget('placed-later'), isEmpty);
+
+      container.read(textProvider.notifier).addText(
+            PlacedText(id: 'placed-later', position: const Offset(30, 40)),
+          );
+
+      expect(notifier.copyDirectionsForPlacedWidget('placed-later'), [
+        PageTransitionDirection.forward,
+        PageTransitionDirection.backward,
+      ]);
+      // The add's sync runs before the container goes.
+      await pumpEventQueue();
+    });
+
     test('offers both neighbours, and sends a copy with an id of its own',
         () async {
       final (container, queue, _) = await open(nextPage: [
