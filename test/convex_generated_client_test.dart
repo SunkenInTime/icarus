@@ -11,6 +11,8 @@ import 'package:icarus/collab/src/convex_client_types.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/collab/transport/convex_transport_adapter.dart';
 
+import 'collab/subscribe_together_from_each.dart';
+
 void main() {
   test('generated query fetch and watch decode the same typed folder tree',
       () async {
@@ -191,6 +193,70 @@ void main() {
     expect(source.handle.cancelled, isTrue);
   });
 
+  test('queries watched together decode each value in order', () async {
+    final source = _ScriptedValueSource(
+      result: null,
+      subscriptionEvents: [
+        [
+          _folderTreeValue(name: 'First').toDart(),
+          _folderTreeValue(name: 'Second').toDart(),
+        ],
+        const ConvexClientFunctionError(
+          rawCode: 'CONFLICT',
+          message: 'retryable conflict',
+          data: {'code': 'CONFLICT'},
+        ),
+        [
+          _folderTreeValue(name: 'Third').toDart(),
+          _folderTreeValue(name: 'Fourth').toDart(),
+        ],
+      ],
+    );
+    final api = IcarusConvexApi(PlatformConvexTransport(source));
+    final updates = <List<String>>[];
+    final errors = <Object>[];
+    final received = Completer<void>();
+    final subscription = ConvexQuery.watchTogether([
+      api.folders.listTree(),
+      api.folders.listTree(
+        scope: const ConvexOptional.present(FoldersListTreeArgsScope.all),
+      ),
+    ]).listen(
+      (values) {
+        updates.add([
+          for (final value in values)
+            (value! as List<FoldersListTreeResultItem>).single.name,
+        ]);
+        if (updates.length == 2) received.complete();
+      },
+      onError: errors.add,
+    );
+
+    await received.future.timeout(const Duration(seconds: 2));
+    await subscription.cancel();
+
+    expect(updates, [
+      ['First', 'Second'],
+      ['Third', 'Fourth'],
+    ]);
+    // A function error is passed on and the group keeps watching.
+    expect(errors, [isA<ConvexFunctionException>()]);
+    expect(source.handle.cancelled, isTrue);
+  });
+
+  test('queries on different transports are not watched together', () {
+    final first = IcarusConvexApi(_FakeTransport(result: _folderTreeValue()));
+    final second = IcarusConvexApi(_FakeTransport(result: _folderTreeValue()));
+
+    expect(
+      () => ConvexQuery.watchTogether([
+        first.folders.listTree(),
+        second.folders.listTree(),
+      ]),
+      throwsArgumentError,
+    );
+  });
+
   test('normalization failure closes a generated watch', () async {
     final source = _ScriptedValueSource(
       result: _folderTreeValue().toDart(),
@@ -284,7 +350,9 @@ Object? _randomJsonValue(Random random, int depth) {
   };
 }
 
-final class _FakeTransport implements ConvexTransport {
+final class _FakeTransport
+    with SubscribeTogetherFromEach
+    implements ConvexTransport {
   _FakeTransport({required this.result, this.error});
 
   final ConvexValue result;
@@ -360,6 +428,27 @@ final class _ScriptedValueSource implements ConvexClientValueSource {
           onError(event);
         } else {
           onUpdate(event);
+        }
+      }
+    });
+    return handle;
+  }
+
+  /// Hands on [subscriptionEvents] as group updates: each a list of values,
+  /// or a failure.
+  @override
+  Future<SubscriptionHandle> subscribeValues({
+    required List<({String name, Map<String, Object?> args})> queries,
+    required void Function(List<Object?> values) onUpdate,
+    required void Function(ConvexClientFunctionError error) onError,
+  }) async {
+    scheduleMicrotask(() {
+      for (final event in subscriptionEvents) {
+        if (handle.cancelled) return;
+        if (event is ConvexClientFunctionError) {
+          onError(event);
+        } else {
+          onUpdate(event! as List<Object?>);
         }
       }
     });

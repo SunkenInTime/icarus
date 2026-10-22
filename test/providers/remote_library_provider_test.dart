@@ -12,6 +12,8 @@ import 'package:icarus/domain/folder.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 
+import '../collab/subscribe_together_from_each.dart';
+
 void main() {
   test('repository maps the typed folder tree into Icarus folders', () async {
     final transport = _RecordingTransport();
@@ -324,7 +326,9 @@ class _MutableAuthProvider extends AuthProvider {
   }
 }
 
-class _RecordingTransport implements ConvexTransport {
+class _RecordingTransport
+    with SubscribeTogetherFromEach
+    implements ConvexTransport {
   final subscriptionCount = <String, int>{};
   final lastArgs = <String, ConvexObject>{};
   final _subscriptions = <String, StreamController<ConvexValue>>{};

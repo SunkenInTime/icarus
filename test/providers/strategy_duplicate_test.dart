@@ -621,4 +621,10 @@ class _RecordingTransport implements ConvexTransport {
   @override
   Stream<ConvexValue> subscribe(String name, ConvexObject args) =>
       throw UnimplementedError(name);
+
+  @override
+  Stream<List<ConvexValue>> subscribeTogether(
+    List<(String, ConvexObject)> queries,
+  ) =>
+      throw UnimplementedError();
 }

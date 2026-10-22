@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => -829523767;
+  int get rustContentHash => -114872383;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -150,6 +150,13 @@ abstract class RustLibApi extends BaseApi {
     required String name,
     required Map<String, String> args,
     required FutureOr<void> Function(String) onUpdate,
+    required FutureOr<void> Function(String, String?) onError,
+  });
+
+  Future<SubscriptionHandle> crateMobileConvexClientSubscribeGroup({
+    required MobileConvexClient that,
+    required List<GroupQuery> queries,
+    required FutureOr<void> Function(List<String?>) onUpdate,
     required FutureOr<void> Function(String, String?) onError,
   });
 
@@ -785,6 +792,55 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<SubscriptionHandle> crateMobileConvexClientSubscribeGroup({
+    required MobileConvexClient that,
+    required List<GroupQuery> queries,
+    required FutureOr<void> Function(List<String?>) onUpdate,
+    required FutureOr<void> Function(String, String?) onError,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerMobileConvexClient(
+            that,
+            serializer,
+          );
+          sse_encode_list_group_query(queries, serializer);
+          sse_encode_DartFn_Inputs_list_opt_String_Output_unit_AnyhowException(
+            onUpdate,
+            serializer,
+          );
+          sse_encode_DartFn_Inputs_String_opt_String_Output_unit_AnyhowException(
+            onError,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 16,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData:
+              sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSubscriptionHandle,
+          decodeErrorData: sse_decode_client_error,
+        ),
+        constMeta: kCrateMobileConvexClientSubscribeGroupConstMeta,
+        argValues: [that, queries, onUpdate, onError],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateMobileConvexClientSubscribeGroupConstMeta =>
+      const TaskConstMeta(
+        debugName: "MobileConvexClient_subscribe_group",
+        argNames: ["that", "queries", "onUpdate", "onError"],
+      );
+
+  @override
   void crateSubscriptionHandleCancel({required SubscriptionHandle that}) {
     return handler.executeSync(
       SyncTask(
@@ -794,7 +850,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -923,6 +979,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     return (callId, rawArg0) async {
       final arg0 = dco_decode_bool(rawArg0);
+
+      Box<void>? rawOutput;
+      Box<AnyhowException>? rawError;
+      try {
+        rawOutput = Box(await raw(arg0));
+      } catch (e, s) {
+        rawError = Box(AnyhowException("$e\n\n$s"));
+      }
+
+      final serializer = SseSerializer(generalizedFrbRustBinding);
+      assert((rawOutput != null) ^ (rawError != null));
+      if (rawOutput != null) {
+        serializer.buffer.putUint8(0);
+        sse_encode_unit(rawOutput.value, serializer);
+      } else {
+        serializer.buffer.putUint8(1);
+        sse_encode_AnyhowException(rawError!.value, serializer);
+      }
+      final output = serializer.intoRaw();
+
+      generalizedFrbRustBinding.dartFnDeliverOutput(
+        callId: callId,
+        ptr: output.ptr,
+        rustVecLen: output.rustVecLen,
+        dataLen: output.dataLen,
+      );
+    };
+  }
+
+  Future<void> Function(int, dynamic)
+  encode_DartFn_Inputs_list_opt_String_Output_unit_AnyhowException(
+    FutureOr<void> Function(List<String?>) raw,
+  ) {
+    return (callId, rawArg0) async {
+      final arg0 = dco_decode_list_opt_String(rawArg0);
 
       Box<void>? rawOutput;
       Box<AnyhowException>? rawError;
@@ -1158,6 +1249,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  FutureOr<void> Function(List<String?>)
+  dco_decode_DartFn_Inputs_list_opt_String_Output_unit_AnyhowException(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError('');
+  }
+
+  @protected
   FutureOr<void> Function(WebSocketConnectionState)
   dco_decode_DartFn_Inputs_web_socket_connection_state_Output_unit_AnyhowException(
     dynamic raw,
@@ -1263,6 +1363,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  GroupQuery dco_decode_group_query(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return GroupQuery(
+      name: dco_decode_String(arr[0]),
+      args: dco_decode_Map_String_String_None(arr[1]),
+    );
+  }
+
+  @protected
   int dco_decode_i_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -1272,6 +1384,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64 dco_decode_isize(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dcoDecodeI64(raw);
+  }
+
+  @protected
+  List<GroupQuery> dco_decode_list_group_query(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_group_query).toList();
+  }
+
+  @protected
+  List<String?> dco_decode_list_opt_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_opt_String).toList();
   }
 
   @protected
@@ -1563,6 +1687,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  GroupQuery sse_decode_group_query(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_name = sse_decode_String(deserializer);
+    var var_args = sse_decode_Map_String_String_None(deserializer);
+    return GroupQuery(name: var_name, args: var_args);
+  }
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getInt32();
@@ -1572,6 +1704,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64 sse_decode_isize(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getPlatformInt64();
+  }
+
+  @protected
+  List<GroupQuery> sse_decode_list_group_query(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <GroupQuery>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_group_query(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<String?> sse_decode_list_opt_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <String?>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_opt_String(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -1830,6 +1986,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_DartFn_Inputs_list_opt_String_Output_unit_AnyhowException(
+    FutureOr<void> Function(List<String?>) self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_DartOpaque(
+      encode_DartFn_Inputs_list_opt_String_Output_unit_AnyhowException(self),
+      serializer,
+    );
+  }
+
+  @protected
   void
   sse_encode_DartFn_Inputs_web_socket_connection_state_Output_unit_AnyhowException(
     FutureOr<void> Function(WebSocketConnectionState) self,
@@ -1965,6 +2133,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_group_query(GroupQuery self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.name, serializer);
+    sse_encode_Map_String_String_None(self.args, serializer);
+  }
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putInt32(self);
@@ -1974,6 +2149,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_isize(PlatformInt64 self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putPlatformInt64(self);
+  }
+
+  @protected
+  void sse_encode_list_group_query(
+    List<GroupQuery> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_group_query(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_opt_String(
+    List<String?> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_opt_String(item, serializer);
+    }
   }
 
   @protected
@@ -2257,6 +2456,28 @@ class MobileConvexClientImpl extends RustOpaque implements MobileConvexClient {
     that: this,
     name: name,
     args: args,
+    onUpdate: onUpdate,
+    onError: onError,
+  );
+
+  /// Subscribes to [queries] together, so their values always come from one
+  /// server state: separate subscriptions can each answer from a different
+  /// one, and a page read in parts would then show a state the server never
+  /// had.
+  ///
+  /// [on_update] gets every query's value at once, first when all of them
+  /// have one, then each time the server answers again. A value is JSON, or
+  /// None where it is the same as in the last update. [on_error] gets the
+  /// failure when any query fails; the next update after it sends every
+  /// value. Updates arrive in order, each after the last one's callback
+  /// returned.
+  Future<SubscriptionHandle> subscribeGroup({
+    required List<GroupQuery> queries,
+    required FutureOr<void> Function(List<String?>) onUpdate,
+    required FutureOr<void> Function(String, String?) onError,
+  }) => RustLib.instance.api.crateMobileConvexClientSubscribeGroup(
+    that: this,
+    queries: queries,
     onUpdate: onUpdate,
     onError: onError,
   );

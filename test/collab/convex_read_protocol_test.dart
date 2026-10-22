@@ -4,6 +4,8 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 
+import 'subscribe_together_from_each.dart';
+
 /// The server refuses element and lineup payloads, and the shell, to a
 /// client that does not say which protocol it reads, so every such read
 /// says it.
@@ -66,7 +68,9 @@ void main() {
   });
 }
 
-final class _RecordingTransport implements ConvexTransport {
+final class _RecordingTransport
+    with SubscribeTogetherFromEach
+    implements ConvexTransport {
   final calls = <(String, ConvexObject)>[];
 
   @override

@@ -106,6 +106,25 @@ impl Stream for QuerySubscription {
     }
 }
 
+/// Queries subscribed together, as returned by
+/// [`ConvexClient::subscribe_set()`].
+///
+/// [`SubscribedSet::results`] holds every subscribed query's result as of the
+/// moment these were added, and [`SubscribedSet::updates`] yields every later
+/// change, so the latest results always come from one server state. Results
+/// read from separate [`ConvexClient::subscribe`] calls can come from
+/// different ones.
+pub struct SubscribedSet {
+    /// One token per query, in the order given. Dropping a token
+    /// unsubscribes its query.
+    pub subscriptions: Vec<QuerySubscription>,
+    /// The results of every subscribed query when these were added. A query
+    /// the server hasn't answered yet has none.
+    pub results: QueryResults,
+    /// Every later change to the results.
+    pub updates: QuerySetSubscription,
+}
+
 /// A subscription to a consistent view of multiple queries.
 ///
 /// [`QuerySetSubscription`]

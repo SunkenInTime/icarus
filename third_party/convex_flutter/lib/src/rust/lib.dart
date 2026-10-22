@@ -8,8 +8,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'lib.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `connected_client`, `handle_direct_function_result`, `internal_action`, `internal_mutation`, `internal_set_auth`, `internal_subscribe`, `new`, `new`, `parse_json_args`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `connected_client`, `group_step`, `handle_direct_function_result`, `internal_action`, `internal_mutation`, `internal_set_auth`, `internal_subscribe`, `new`, `new`, `parse_json_args`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `GroupStep`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<AuthHandle>>
 abstract class AuthHandle implements RustOpaqueInterface {
@@ -117,6 +118,23 @@ abstract class MobileConvexClient implements RustOpaqueInterface {
     required FutureOr<void> Function(String) onUpdate,
     required FutureOr<void> Function(String, String?) onError,
   });
+
+  /// Subscribes to [queries] together, so their values always come from one
+  /// server state: separate subscriptions can each answer from a different
+  /// one, and a page read in parts would then show a state the server never
+  /// had.
+  ///
+  /// [on_update] gets every query's value at once, first when all of them
+  /// have one, then each time the server answers again. A value is JSON, or
+  /// None where it is the same as in the last update. [on_error] gets the
+  /// failure when any query fails; the next update after it sends every
+  /// value. Updates arrive in order, each after the last one's callback
+  /// returned.
+  Future<SubscriptionHandle> subscribeGroup({
+    required List<GroupQuery> queries,
+    required FutureOr<void> Function(List<String?>) onUpdate,
+    required FutureOr<void> Function(String, String?) onError,
+  });
 }
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SubscriptionHandle>>
@@ -146,6 +164,26 @@ sealed class ClientError with _$ClientError implements FrbException {
   /// An unexpected server-side error from a remote Convex function.
   const factory ClientError.serverError({required String msg}) =
       ClientError_ServerError;
+}
+
+/// One query of a group subscribed together (see
+/// [MobileConvexClient::subscribe_group]).
+class GroupQuery {
+  final String name;
+  final Map<String, String> args;
+
+  const GroupQuery({required this.name, required this.args});
+
+  @override
+  int get hashCode => name.hashCode ^ args.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GroupQuery &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          args == other.args;
 }
 
 /// WebSocket connection state exposed to Flutter/Dart.

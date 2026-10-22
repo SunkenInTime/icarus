@@ -168,6 +168,22 @@ class NativeConvexClient implements IConvexClient {
     );
   }
 
+  @override
+  Future<SubscriptionHandle> subscribeGroup({
+    required List<({String name, Map<String, dynamic> args})> queries,
+    required void Function(List<String?>) onUpdate,
+    required void Function(String, String?) onError,
+  }) async {
+    return await _rustClient.subscribeGroup(
+      queries: [
+        for (final query in queries)
+          GroupQuery(name: query.name, args: buildArgs(query.args)),
+      ],
+      onUpdate: (values) => onUpdate(values),
+      onError: (message, value) => onError(message, value),
+    );
+  }
+
   // ============================================================================
   // IConvexClient Implementation - Authentication
   // ============================================================================

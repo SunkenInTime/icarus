@@ -22,6 +22,14 @@ The native manual reconnect API calls the Icarus-patched `convex` 0.10.4 crate
 in `../convex_rs`. It waits for a real connecting-to-connected transition; the
 published package method only ran its configured health query.
 
+`subscribe_group` subscribes to several queries together through the
+patched crate's `subscribe_set` and calls Dart once per server transition with
+every value, all from one server state. Separate `subscribe` calls each run
+their own task and post each update from a spawned task, so two queries changed
+by one write can reach Dart apart. A group sends a value only when it changed
+since the last update, awaits each callback before the next, and sends every
+value again after a failure.
+
 Generated Dart and Rust bridge files are never hand-edited. They are regenerated
 from `rust/src/lib.rs` with `flutter_rust_bridge_codegen` 2.11.1. Hand-written
 changes are limited to the Dart client implementation, `rust/src/lib.rs`, and

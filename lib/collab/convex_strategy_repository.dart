@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' show min;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,7 @@ import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/generated/generated.dart';
+import 'package:icarus/collab/page_slices.dart';
 import 'package:icarus/collab/presence/presence_models.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/collab/transport/convex_transport_adapter.dart';
@@ -196,40 +198,204 @@ class ConvexStrategyRepository {
         .map(_strategyShell);
   }
 
+  /// The pages watched in slices right now (see [watchPageSnapshot]), by
+  /// [_pageKey]: the page the watch last handed on from its slices, or none
+  /// while they fail, and how many watch it.
+  final _slicedPages = <String, (RemotePageSnapshot?, int)>{};
+
+  String _pageKey(
+          String strategyPublicId, String pagePublicId, String? token) =>
+      '$strategyPublicId|$pagePublicId|${token ?? ''}';
+
+  /// [pagePublicId], read once. A page watched in slices answers with the
+  /// page its watch last handed on, as the web client answers a read of any
+  /// query it watches from the live answer: the read costs nothing, where
+  /// reading it through every slice would cost a call each. It is that very
+  /// answer, so a reader that noted the connection it came on (see
+  /// RemoteEditorSnapshotNotifier.answeredOnCurrentConnection) still knows
+  /// when it came from before a reconnect.
   Future<RemotePageSnapshot> fetchPageSnapshot({
     required String strategyPublicId,
     required String pagePublicId,
     String? shareToken,
   }) async {
+    final (live, _) =
+        _slicedPages[_pageKey(strategyPublicId, pagePublicId, shareToken)] ??
+            (null, 0);
+    if (live != null) return live;
     return _pageSnapshot(
-      await _api.page
-          .getSnapshot(
-            clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
-            strategyPublicId: strategyPublicId,
-            pagePublicId: pagePublicId,
-            shareToken: _optional(shareToken),
-            acceptsPictureIds: const ConvexOptional.present(true),
-          )
-          .fetch(),
+      await _wholePage(strategyPublicId, pagePublicId, shareToken).fetch(),
     );
   }
 
+  ConvexQuery<PageGetSnapshotResult> _wholePage(
+    String strategyPublicId,
+    String pagePublicId,
+    String? shareToken,
+  ) =>
+      _api.page.getSnapshot(
+        clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+        strategyPublicId: strategyPublicId,
+        pagePublicId: pagePublicId,
+        shareToken: _optional(shareToken),
+        // This client keeps an image's picture id (PlacedImage.assetId).
+        acceptsPictureIds: const ConvexOptional.present(true),
+      );
+
+  /// The frame and the slices starting at [starts] (see page_slices.dart).
+  (
+    ConvexQuery<PageGetFrameResult>,
+    List<ConvexQuery<PageGetElementSliceResult>>,
+  ) _pageParts(
+    String strategyPublicId,
+    String pagePublicId,
+    String? shareToken,
+    List<String> starts,
+  ) {
+    final protocol = currentCloudProtocolVersion.toDouble();
+    final token = _optional(shareToken);
+    return (
+      _api.page.getFrame(
+        clientProtocolVersion: protocol,
+        strategyPublicId: strategyPublicId,
+        pagePublicId: pagePublicId,
+        shareToken: token,
+      ),
+      [
+        for (final (index, start) in starts.indexed)
+          _api.page.getElementSlice(
+            clientProtocolVersion: protocol,
+            strategyPublicId: strategyPublicId,
+            pagePublicId: pagePublicId,
+            shareToken: token,
+            fromPublicId: start,
+            toPublicId: index + 1 < starts.length
+                ? ConvexOptional.present(starts[index + 1])
+                : const ConvexOptional.absent(),
+          ),
+      ],
+    );
+  }
+
+  /// The whole page, live. Watched whole at first, as reading it once just
+  /// before costs nothing more; once it changes while watched (someone is
+  /// editing it), watched in slices instead (see page_slices.dart), so each
+  /// further edit re-reads one slice rather than the whole page. A page too
+  /// small for more than one slice stays whole.
   Stream<RemotePageSnapshot> watchPageSnapshot({
     required String strategyPublicId,
     required String pagePublicId,
     String? shareToken,
   }) {
-    return _api.page
-        .getSnapshot(
-          clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
-          strategyPublicId: strategyPublicId,
-          pagePublicId: pagePublicId,
-          shareToken: _optional(shareToken),
-          // This client keeps an image's picture id (PlacedImage.assetId).
-          acceptsPictureIds: const ConvexOptional.present(true),
-        )
-        .watch()
-        .map(_pageSnapshot);
+    final key = _pageKey(strategyPublicId, pagePublicId, shareToken);
+    late final StreamController<RemotePageSnapshot> controller;
+    StreamSubscription<PageGetSnapshotResult>? whole;
+    StreamSubscription<PageGetSnapshotResult>? sliced;
+    var slicing = false;
+    var registered = false;
+    String? firstVersion;
+    PageGetSnapshotResult? lastWhole;
+
+    /// Until the slices first answer, the whole page is still watched: when
+    /// they fail first, it carries the page again from its latest answer,
+    /// and the slices are tried again once the page changes after that.
+    void giveUpSlices() {
+      final stopping = sliced;
+      sliced = null;
+      slicing = false;
+      if (stopping != null) unawaited(stopping.cancel());
+      if (lastWhole case final page?) {
+        firstVersion = _pageVersion(page);
+        controller.add(_pageSnapshot(page));
+      }
+    }
+
+    void watchSlices(PageGetSnapshotResult page) {
+      final starts = pageSliceStarts(page.elements.length);
+      if (starts.length == 1) return;
+      // From here only the slices carry the page. They were asked for after
+      // the whole page's last answer arrived, so their first answer is at
+      // least as new; a later answer of the whole page could arrive after
+      // it, and the page shown would go back.
+      slicing = true;
+      final (frame, slices) =
+          _pageParts(strategyPublicId, pagePublicId, shareToken, starts);
+      sliced = assembledPages(
+        ConvexQuery.watchTogether([frame, ...slices]),
+      ).listen(
+        (assembled) {
+          final page = _pageSnapshot(assembled);
+          final (_, watchers) = _slicedPages[key] ?? (null, 0);
+          // The slices answered: they carry the page from here on.
+          if (whole case final stopping?) {
+            whole = null;
+            unawaited(stopping.cancel());
+            _slicedPages[key] = (page, watchers + 1);
+            registered = true;
+          } else {
+            _slicedPages[key] = (page, watchers);
+          }
+          controller.add(page);
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          if (!registered) {
+            giveUpSlices();
+            return;
+          }
+          // Until the slices answer again, a read goes to the server rather
+          // than to a page they no longer stand behind.
+          final (_, watchers) = _slicedPages[key]!;
+          _slicedPages[key] = (null, watchers);
+          controller.addError(error, stackTrace);
+        },
+        onDone: () {
+          if (!registered) giveUpSlices();
+        },
+      );
+    }
+
+    controller = StreamController<RemotePageSnapshot>(
+      onListen: () {
+        whole = _wholePage(strategyPublicId, pagePublicId, shareToken)
+            .watch()
+            .listen(
+          (page) {
+            lastWhole = page;
+            if (slicing) return;
+            controller.add(_pageSnapshot(page));
+            // The web client can hand over its cached answer and then the
+            // same one from the server: only different rows are a change.
+            final version = _pageVersion(page);
+            firstVersion ??= version;
+            if (version != firstVersion && sliced == null) watchSlices(page);
+          },
+          onError: controller.addError,
+        );
+      },
+      onPause: () {
+        whole?.pause();
+        sliced?.pause();
+      },
+      onResume: () {
+        whole?.resume();
+        sliced?.resume();
+      },
+      onCancel: () async {
+        if (registered) {
+          final (page, watchers) = _slicedPages[key]!;
+          if (watchers <= 1) {
+            _slicedPages.remove(key);
+          } else {
+            _slicedPages[key] = (page, watchers - 1);
+          }
+        }
+        await Future.wait([
+          if (whole case final w?) w.cancel(),
+          if (sliced case final s?) s.cancel(),
+        ]);
+      },
+    );
+    return controller.stream;
   }
 
   /// Which of [assetPublicIds] the strategy's content shows on the server,
@@ -1139,6 +1305,16 @@ RemotePageSnapshot _pageSnapshot(
     serverAnswer: fromCopy ? null : result.encode('pageSnapshot'),
   );
 }
+
+/// What [page] holds, by row and revision: any write to it changes this.
+String _pageVersion(PageGetSnapshotResult page) => [
+      page.page.revision,
+      page.content.revision,
+      for (final element in page.elements)
+        '${element.publicId}:${element.revision}:${element.deleted}',
+      for (final lineup in page.lineups)
+        '${lineup.publicId}:${lineup.revision}:${lineup.deleted}',
+    ].join('|');
 
 RemoteFullStrategySnapshot _fullSnapshot(StrategyGetFullSnapshotResult result) {
   final pages = result.pages.map((page) {

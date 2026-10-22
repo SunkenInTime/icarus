@@ -220,6 +220,76 @@ class ConvexClient implements ConvexClientValueSource {
     );
   }
 
+  @override
+  Future<SubscriptionHandle> subscribeValues({
+    required List<({String name, Map<String, Object?> args})> queries,
+    required void Function(List<Object?> values) onUpdate,
+    required void Function(ConvexClientFunctionError error) onError,
+  }) async {
+    // Convex's client calls every listener whose query a server answer
+    // changed in one synchronous pass, so values handed on a microtask later
+    // all come from that one answer.
+    final values = List<Object?>.filled(queries.length, null);
+    final answered = List<bool>.filled(queries.length, false);
+    var handOnScheduled = false;
+    var cancelled = false;
+
+    void handOnSoon() {
+      if (handOnScheduled) return;
+      handOnScheduled = true;
+      scheduleMicrotask(() {
+        handOnScheduled = false;
+        if (cancelled || answered.contains(false)) return;
+        onUpdate(List.unmodifiable(values));
+      });
+    }
+
+    final handles = [
+      for (final (index, query) in queries.indexed)
+        _subscribeMember(
+          query,
+          onUpdate: (value) {
+            values[index] = value;
+            answered[index] = true;
+            handOnSoon();
+          },
+          onError: (error) {
+            // A failed query has no value until it answers again, so its
+            // last one never goes out with the others' newer ones.
+            answered[index] = false;
+            onError(error);
+          },
+        ),
+    ];
+    return _WebGroupSubscriptionHandle(handles, onCancel: () {
+      cancelled = true;
+    });
+  }
+
+  _WebSubscriptionHandle _subscribeMember(
+    ({String name, Map<String, Object?> args}) query, {
+    required void Function(Object? value) onUpdate,
+    required void Function(ConvexClientFunctionError error) onError,
+  }) {
+    final updateCallback = ((JSAny? value, JSAny? _) {
+      onUpdate(_fromJsConvex(value));
+    }).toJS;
+    final errorCallback = ((JSAny? error, JSAny? _) {
+      onError(_jsFunctionError(error));
+    }).toJS;
+    final unsubscribe = _client.onUpdate(
+      query.name,
+      _toJsConvex(query.args),
+      updateCallback,
+      errorCallback,
+    );
+    return _WebSubscriptionHandle(
+      unsubscribe: unsubscribe,
+      updateCallback: updateCallback,
+      errorCallback: errorCallback,
+    );
+  }
+
   Future<AuthHandleWrapper> setAuthWithRefresh({
     required Future<String?> Function() fetchToken,
     void Function(bool isAuthenticated)? onAuthChange,
@@ -423,6 +493,22 @@ Object? _fromJsConvex(JSAny? value) {
     };
   }
   return value.dartify();
+}
+
+class _WebGroupSubscriptionHandle implements SubscriptionHandle {
+  _WebGroupSubscriptionHandle(this._members, {required this.onCancel});
+
+  final List<_WebSubscriptionHandle> _members;
+  final void Function() onCancel;
+
+  @override
+  void cancel() {
+    onCancel();
+    for (final member in _members) {
+      member.cancel();
+    }
+    _members.clear();
+  }
 }
 
 class _WebSubscriptionHandle implements SubscriptionHandle {
