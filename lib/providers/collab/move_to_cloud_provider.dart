@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' show log;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -96,10 +97,11 @@ class _Plan {
 }
 
 /// The full read that checked a move's cloud copy, with the sign-in it was
-/// asked under (null when signed out) and when.
+/// asked under (null when signed out), when it was asked and when it came.
 typedef _VerifiedRead = ({
   CloudCopyScope? scope,
   DateTime askedAt,
+  DateTime arrivedAt,
   RemoteFullStrategySnapshot snapshot,
 });
 
@@ -530,7 +532,6 @@ class MoveToCloudNotifier extends Notifier<void> {
         return _Outcome.notMoved;
       }
     }
-    if (verified != null) await _keepOffline(verified, accountId: accountId);
 
     // The cloud copy is complete and listed. The record goes before the
     // original: were the app to stop between the two, the strategy would be
@@ -560,6 +561,8 @@ class MoveToCloudNotifier extends Notifier<void> {
       return _Outcome.movedLocalKept;
     } finally {
       ref.invalidate(cloudStrategiesProvider);
+      // Last, so it never holds the original's removal back.
+      if (verified != null) await _keepOffline(verified);
     }
     return _Outcome.moved;
   }
@@ -796,6 +799,7 @@ class MoveToCloudNotifier extends Notifier<void> {
     final snapshot = await ref
         .read(convexStrategyRepositoryProvider)
         .fetchFullSnapshot(cloudId);
+    final arrivedAt = DateTime.now();
     final elements = snapshot.elementsByPage.values
         .expand((page) => page)
         .where((element) => !element.deleted)
@@ -819,26 +823,39 @@ class MoveToCloudNotifier extends Notifier<void> {
         '${missingPictures.length} pictures missing.',
       );
     }
-    return (scope: scope, askedAt: askedAt, snapshot: snapshot);
+    return (
+      scope: scope,
+      askedAt: askedAt,
+      arrivedAt: arrivedAt,
+      snapshot: snapshot,
+    );
   }
 
   /// Keeps [read], the finished cloud copy as [_verify] read it, in this
   /// device's offline copy, so the copy's next walk need not read it again.
-  /// The read stays true once the move finishes: finishing only lists the
-  /// strategy, and nothing could change it in between, since it can't be
-  /// opened anywhere while it moves. Kept only for the account that moved
-  /// it, in the sign-in the read was made under.
-  Future<void> _keepOffline(
-    _VerifiedRead read, {
-    required String accountId,
-  }) async {
+  /// The read is still the server's answer once the move finishes:
+  /// finishMove changes nothing a full read returns (it only lists the
+  /// strategy). Written under the sign-in the read was made in, which the
+  /// copy refuses once it has ended. A copy that can't be written is left
+  /// for the walk to read; the move itself is done.
+  Future<void> _keepOffline(_VerifiedRead read) async {
     final scope = read.scope;
-    if (scope == null || scope.accountId != accountId) return;
-    await ref.read(strategyCopyRefresherProvider.notifier).keepFullRead(
-          read.snapshot,
-          scope: scope,
-          askedAt: read.askedAt,
-        );
+    if (scope == null) return;
+    try {
+      await ref.read(strategyCopyRefresherProvider.notifier).keepFullRead(
+            read.snapshot,
+            scope: scope,
+            askedAt: read.askedAt,
+            arrivedAt: read.arrivedAt,
+          );
+    } catch (error, stackTrace) {
+      log(
+          'Keeping moved strategy ${read.snapshot.header.publicId} offline '
+          'failed: $error',
+          name: 'move_to_cloud',
+          error: error,
+          stackTrace: stackTrace);
+    }
   }
 
   /// Deletes what a move put in the cloud, unless the move finished, with

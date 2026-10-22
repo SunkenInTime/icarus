@@ -182,12 +182,25 @@ class StrategyCopyRefresher extends Notifier<void> {
     // that session is still signed in when the answer arrives.
     final scope = ref.read(cloudCopyScopeProvider);
     if (scope == null || ref.read(cloudOfflineProvider)) return false;
-    final askedAt = DateTime.now();
-    final RemoteFullStrategySnapshot snapshot;
     try {
-      snapshot = await ref
+      final askedAt = DateTime.now();
+      final snapshot = await ref
           .read(convexStrategyRepositoryProvider)
           .fetchFullSnapshot(strategyId);
+      final arrivedAt = DateTime.now();
+      CloudUsageMeter.instance.copyFullRead(
+        [
+          ...snapshot.elementsByPage.values,
+          ...snapshot.lineupsByPage.values,
+        ].fold(0, (rows, page) => rows + page.length),
+      );
+      await keepFullRead(
+        snapshot,
+        scope: scope,
+        askedAt: askedAt,
+        arrivedAt: arrivedAt,
+      );
+      return true;
     } catch (error, stackTrace) {
       log('Keeping strategy $strategyId offline failed: $error',
           name: 'strategy_copy', error: error, stackTrace: stackTrace);
@@ -201,60 +214,48 @@ class StrategyCopyRefresher extends Notifier<void> {
       }
       return !isConvexReadUnanswered(error);
     }
-    CloudUsageMeter.instance.copyFullRead(
-      [
-        ...snapshot.elementsByPage.values,
-        ...snapshot.lineupsByPage.values,
-      ].fold(0, (rows, page) => rows + page.length),
-    );
-    await keepFullRead(snapshot, scope: scope, askedAt: askedAt);
-    return true;
   }
 
   /// Keeps [snapshot], all of one strategy as the server answered a full
-  /// read asked at [askedAt] under [scope], in the copy, and brings its
-  /// images onto disk. It counts as refreshed (see
+  /// read asked at [askedAt] under [scope] and received at [arrivedAt], in
+  /// the copy, and brings its images onto disk. It counts as refreshed (see
   /// [CloudStrategyCopyStore.lastFullRefresh]) only once every image is on
   /// disk too, so one that failed to download is tried again by the next
   /// walk. A read made elsewhere (moving a strategy to the cloud reads it
   /// back whole) is kept the same way, so the walk need not make it again.
+  /// Throws when the copy could not be written.
   Future<void> keepFullRead(
     RemoteFullStrategySnapshot snapshot, {
     required CloudCopyScope scope,
     required DateTime askedAt,
+    required DateTime arrivedAt,
   }) async {
     final answer = snapshot.serverAnswer;
     if (answer == null || !_keepsCopies) return;
     final strategyId = snapshot.header.publicId;
     final store = ref.read(cloudStrategyCopyStoreProvider);
-    try {
-      await store.writeFullSnapshot(
-        scope,
-        answer,
-        askedAt: askedAt,
-        arrivedAt: DateTime.now(),
-      );
-      // Image files are only ever added here, never deleted. An image
-      // still uploading has nothing to download yet.
-      final images = {
-        for (final asset in snapshot.assetsById.values)
-          if (asset.uploadStatus == 'active' &&
-              (asset.url?.isNotEmpty ?? false))
-            asset.publicId: asset,
-      };
-      final imagesOnDisk =
-          await ref.read(cloudMediaCacheProvider.notifier).ensureAssetIdsCached(
-                strategyId: strategyId,
-                strategyPublicId: strategyId,
-                assetsById: images,
-                assetIds: images.keys,
-              );
-      if (imagesOnDisk) {
-        await store.noteFullRefresh(scope, strategyId, at: DateTime.now());
-      }
-    } catch (error, stackTrace) {
-      log('Keeping strategy $strategyId offline failed: $error',
-          name: 'strategy_copy', error: error, stackTrace: stackTrace);
+    await store.writeFullSnapshot(
+      scope,
+      answer,
+      askedAt: askedAt,
+      arrivedAt: arrivedAt,
+    );
+    // Image files are only ever added here, never deleted. An image
+    // still uploading has nothing to download yet.
+    final images = {
+      for (final asset in snapshot.assetsById.values)
+        if (asset.uploadStatus == 'active' && (asset.url?.isNotEmpty ?? false))
+          asset.publicId: asset,
+    };
+    final imagesOnDisk =
+        await ref.read(cloudMediaCacheProvider.notifier).ensureAssetIdsCached(
+              strategyId: strategyId,
+              strategyPublicId: strategyId,
+              assetsById: images,
+              assetIds: images.keys,
+            );
+    if (imagesOnDisk) {
+      await store.noteFullRefresh(scope, strategyId, at: DateTime.now());
     }
   }
 
