@@ -70,18 +70,21 @@ class LocalFolderIndex {
       if (parentID == null) continue;
       (_foldersByParent[parentID] ??= []).add(folder);
     }
-    var order = 0;
+    var position = 0;
     for (final strategy in strategies) {
-      _libraryOrder[strategy] = order++;
       final folderID = strategy.folderID;
-      if (folderID == null) continue;
-      (_strategiesByFolder[folderID] ??= []).add(strategy);
+      if (folderID != null) {
+        (_strategiesByFolder[folderID] ??= []).add((position, strategy));
+      }
+      position++;
     }
   }
 
   final _foldersByParent = <String, List<Folder>>{};
-  final _strategiesByFolder = <String, List<StrategyData>>{};
-  final _libraryOrder = Map<StrategyData, int>.identity();
+
+  /// Each strategy with its position in the library, so a subtree can be
+  /// handed back in library order.
+  final _strategiesByFolder = <String, List<(int, StrategyData)>>{};
 
   int childFolderCount(String folderId) =>
       _foldersByParent[folderId]?.length ?? 0;
@@ -89,16 +92,16 @@ class LocalFolderIndex {
   /// Strategies in [root] and every folder below it, in library order.
   List<StrategyData> strategiesInTree(Folder root) {
     final visited = <String>{};
-    final strategies = <StrategyData>[];
+    final found = <(int, StrategyData)>[];
     final pending = <Folder>[root];
     while (pending.isNotEmpty) {
       final current = pending.removeLast();
       if (!visited.add(current.id)) continue;
-      strategies.addAll(_strategiesByFolder[current.id] ?? const []);
+      found.addAll(_strategiesByFolder[current.id] ?? const []);
       pending.addAll(_foldersByParent[current.id] ?? const []);
     }
-    return strategies
-      ..sort((a, b) => _libraryOrder[a]!.compareTo(_libraryOrder[b]!));
+    found.sort((a, b) => a.$1.compareTo(b.$1));
+    return [for (final (_, strategy) in found) strategy];
   }
 }
 

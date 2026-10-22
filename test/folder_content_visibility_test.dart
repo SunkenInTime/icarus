@@ -350,8 +350,9 @@ void main() {
 
   test('folder index matches a full scan of the library', () {
     // A messy library: nesting, orphans whose parent is gone, a parent cycle,
-    // and strategies whose folder is gone. The index must give every folder
-    // the same strategies, in the same order, as scanning everything.
+    // strategies whose folder is gone, and one strategy listed twice. The
+    // index must give every folder the same strategies, in the same order,
+    // as scanning everything.
     final random = math.Random(7);
     final folders = [
       for (var i = 0; i < 60; i++)
@@ -365,6 +366,18 @@ void main() {
             _ => 'f${random.nextInt(60)}',
           },
         ),
+      folder(
+        id: 'loop-a',
+        name: 'Loop A',
+        dateCreated: DateTime.utc(2026, 1, 1),
+        parentID: 'loop-b',
+      ),
+      folder(
+        id: 'loop-b',
+        name: 'Loop B',
+        dateCreated: DateTime.utc(2026, 1, 1),
+        parentID: 'loop-a',
+      ),
     ];
     final strategies = [
       for (var i = 0; i < 400; i++)
@@ -381,6 +394,20 @@ void main() {
           ),
         ),
     ];
+    strategies
+      ..add(
+        strategy(
+          id: 'in-loop',
+          name: 'In loop',
+          folderID: 'loop-b',
+          lastEdited: DateTime.utc(2026, 2, 1),
+        ),
+      )
+      // The same object twice keeps both of its places.
+      ..insert(
+        0,
+        strategies.lastWhere((item) => item.folderID?.startsWith('f') ?? false),
+      );
 
     List<String> fullScan(Folder root) {
       final ids = <String>{};
@@ -397,6 +424,11 @@ void main() {
     }
 
     final index = LocalFolderIndex(folders: folders, strategies: strategies);
+    final loopA = folders.firstWhere((item) => item.id == 'loop-a');
+    expect(
+      index.strategiesInTree(loopA).map((strategy) => strategy.id),
+      ['in-loop'],
+    );
     for (final item in folders) {
       expect(
         index.strategiesInTree(item).map((strategy) => strategy.id),
