@@ -15,6 +15,7 @@ void _showImageFullScreenOverlay({
   required String heroTag,
   required double aspectRatio,
   required ImageProvider image,
+  required ImageProvider fullImage,
 }) {
   Navigator.of(context).push(
     PageRouteBuilder(
@@ -26,6 +27,7 @@ void _showImageFullScreenOverlay({
           heroTag: heroTag,
           aspectRatio: aspectRatio,
           image: image,
+          fullImage: fullImage,
         ),
       ),
     ),
@@ -37,11 +39,19 @@ class _ImageFullScreenOverlay extends StatelessWidget {
     required this.heroTag,
     required this.aspectRatio,
     required this.image,
+    required this.fullImage,
   });
 
   final String heroTag;
   final double aspectRatio;
+
+  /// The picture as the canvas decoded it, shown until [fullImage] is
+  /// ready. It already fills the overlay before any zoom.
   final ImageProvider image;
+
+  /// Every pixel of the picture: zoomed in, the overlay draws it larger than
+  /// the canvas ever does.
+  final ImageProvider fullImage;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +98,17 @@ class _ImageFullScreenOverlay extends StatelessWidget {
                               height: height,
                               child: Hero(
                                 tag: heroTag,
-                                child: Image(image: image, fit: BoxFit.contain),
+                                child: Image(
+                                  image: fullImage,
+                                  fit: BoxFit.contain,
+                                  frameBuilder: (context, child, frame, _) =>
+                                      frame == null
+                                          ? Image(
+                                              image: image,
+                                              fit: BoxFit.contain,
+                                            )
+                                          : child,
+                                ),
                               ),
                             ),
                           ),
@@ -169,7 +189,22 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
       ref,
       (id: widget.pictureId, fileExtension: widget.fileExtension),
     );
-    final image = source.imageProvider;
+    // A capture draws the picture once, unzoomed, as the capture decoded
+    // it; the editor's canvas zooms in.
+    final capturePixelRatio = ref.watch(capturePixelRatioProvider);
+    final image = source.imageProvider(
+      drawnAtMost: capturePixelRatio != null
+          ? PlacedImageDimensions.capturedPictureBox(
+              pixelRatio: capturePixelRatio,
+              aspectRatio: widget.aspectRatio,
+            )
+          : PlacedImageDimensions.largestPictureBox(
+              canvasHeight: coordinateSystem.playAreaSize.height *
+                  MediaQuery.devicePixelRatioOf(context),
+              zoom: Settings.canvasMaxZoom,
+              aspectRatio: widget.aspectRatio,
+            ),
+    );
 
     Widget buildThumb() => switch (source) {
           // Gapless, keyed by asset: this image's pending bytes keep painting
@@ -199,6 +234,7 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
                 context: context,
                 heroTag: 'image_${widget.id}',
                 image: image,
+                fullImage: source.imageProvider(drawnAtMost: null)!,
                 aspectRatio: widget.aspectRatio,
               ),
       child: SizedBox(

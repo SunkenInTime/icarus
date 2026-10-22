@@ -5,6 +5,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
@@ -82,7 +83,8 @@ typedef SavedStrategyRead = ({
   Map<String, RemoteImageAsset> assets,
 });
 
-/// Saves the open strategy and reads it back whole for [pageIds].
+/// Saves the open strategy and reads it back whole for [pageIds], with its
+/// images decoded for a capture rendered at [pixelRatio].
 ///
 /// A local strategy is saved and read back from the library. A cloud
 /// strategy's other pages live only on the server, so the export sends the
@@ -97,6 +99,7 @@ typedef SavedStrategyRead = ({
 Future<VideoExportSource> loadVideoExportSource(
   WidgetRef ref, {
   required Set<String> pageIds,
+  required double pixelRatio,
   bool Function() isCancelled = _never,
 }) async {
   final read = await readSavedStrategy(
@@ -115,6 +118,7 @@ Future<VideoExportSource> loadVideoExportSource(
     ref,
     read,
     pages,
+    pixelRatio: pixelRatio,
     isCancelled: isCancelled,
   );
   return (strategy: read.strategy, images: images);
@@ -197,13 +201,14 @@ Future<SavedStrategyRead> readSavedStrategy(
 }
 
 /// Loads and decodes every image on [pages] of [read], so a capture of them
-/// paints with each one in place. Throws [CaptureImagesUnavailable] when one
-/// cannot be loaded, and [VideoExportCancelled] once [isCancelled] turns
-/// true.
+/// rendered at [pixelRatio] paints with each one in place. Throws
+/// [CaptureImagesUnavailable] when one cannot be loaded, and
+/// [VideoExportCancelled] once [isCancelled] turns true.
 Future<CaptureImages> resolvePageImages(
   WidgetRef ref,
   SavedStrategyRead read,
   Iterable<StrategyPage> pages, {
+  required double pixelRatio,
   bool Function() isCancelled = _never,
 }) {
   final state = ref.read(strategyProvider);
@@ -217,19 +222,25 @@ Future<CaptureImages> resolvePageImages(
       for (final page in pages)
         // By picture, as the captured pages' images look them up.
         for (final image in page.imageData)
-          image.pictureId: resolveStrategyImageSource(
-            localFilePath: findLocalImageFile(
-              storageDirectory: state.storageDirectory,
-              imageId: image.pictureId,
-              fileExtension: image.fileExtension,
+          image.pictureId: (
+            source: resolveStrategyImageSource(
+              localFilePath: findLocalImageFile(
+                storageDirectory: state.storageDirectory,
+                imageId: image.pictureId,
+                fileExtension: image.fileExtension,
+              ),
+              isCloudStrategy: isCloud,
+              // The whole strategy was just read. An export has waited for
+              // this device's uploads to land; a preview shows those that
+              // have.
+              assetsLoaded: true,
+              remoteAsset: read.assets[image.pictureId],
+              uploadMayBeQueuedHere: false,
             ),
-            isCloudStrategy: isCloud,
-            // The whole strategy was just read. An export has waited for
-            // this device's uploads to land; a preview shows those that
-            // have.
-            assetsLoaded: true,
-            remoteAsset: read.assets[image.pictureId],
-            uploadMayBeQueuedHere: false,
+            drawnAtMost: PlacedImageDimensions.capturedPictureBox(
+              pixelRatio: pixelRatio,
+              aspectRatio: image.aspectRatio,
+            ),
           ),
     },
     fetch: (imageId, url, client) => downloadCloudImageBytes(

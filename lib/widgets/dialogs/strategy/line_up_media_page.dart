@@ -252,10 +252,10 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
 
   Widget _buildImageTile(int index) {
     final image = widget.images[index];
-    final imageProvider = watchStrategyImageSource(
+    final source = watchStrategyImageSource(
       ref,
       (id: image.id, fileExtension: image.fileExtension),
-    ).imageProvider;
+    );
 
     // Keyed by asset: when a removal shifts another image into this slot, it
     // must not inherit this one's frame. Gapless playback is only for the
@@ -272,19 +272,27 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             borderRadius: BorderRadius.circular(8),
             color: Settings.tacticalVioletTheme.secondary,
           ),
-          child: imageProvider == null
-              ? Center(
-                  child: Icon(
-                    LucideIcons.imageOff,
-                    color: Settings.tacticalVioletTheme.secondaryForeground,
-                  ),
-                )
-              : Image(
-                  key: ValueKey(image.id),
-                  image: imageProvider,
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final imageProvider = source.imageProvider(
+                drawnAtMost: constraints.biggest *
+                    MediaQuery.devicePixelRatioOf(context),
+              );
+              return imageProvider == null
+                  ? Center(
+                      child: Icon(
+                        LucideIcons.imageOff,
+                        color: Settings.tacticalVioletTheme.secondaryForeground,
+                      ),
+                    )
+                  : Image(
+                      key: ValueKey(image.id),
+                      image: imageProvider,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                    );
+            },
+          ),
         ),
         Positioned(
           top: 4,

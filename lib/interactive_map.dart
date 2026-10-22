@@ -248,7 +248,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                           constrained: false,
                           alignment: Alignment.topLeft,
                           minScale: 1.0,
-                          maxScale: 8.0,
+                          maxScale: Settings.canvasMaxZoom,
                           onInteractionUpdate: (_) {
                             ref.read(screenZoomProvider.notifier).updateZoom(
                                 controller.value.getMaxScaleOnAxis());

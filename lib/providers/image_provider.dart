@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
-import 'dart:async' show Completer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
@@ -115,16 +114,19 @@ class PlacedImageProvider extends Notifier<ImageState> {
     }
   }
 
+  /// The picture's width over its height, read from its header: the
+  /// pixels are never decoded (except on web, which decodes to read it).
   Future<double> getImageAspectRatio(Uint8List imageData) async {
-    final completer = Completer<ui.Image>();
-    ui.decodeImageFromList(
-      imageData,
-      (ui.Image img) {
-        completer.complete(img);
+    late final double aspectRatio;
+    final codec = await ui.instantiateImageCodecWithSize(
+      await ui.ImmutableBuffer.fromUint8List(imageData),
+      getTargetSize: (width, height) {
+        aspectRatio = width / height;
+        return const ui.TargetImageSize();
       },
     );
-    final ui.Image image = await completer.future;
-    return image.width / image.height;
+    codec.dispose();
+    return aspectRatio;
   }
 
   Future<void> addImage(

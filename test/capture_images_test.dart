@@ -64,6 +64,14 @@ class _RefusingAfterCloseClient extends http.BaseClient {
   void close() => closed = true;
 }
 
+/// The box every image in these captures is drawn in.
+const _box = Size(497, 280);
+
+Map<String, CaptureImage> _sized(Map<String, StrategyImageSource> sources) =>
+    sources.map(
+      (id, source) => MapEntry(id, (source: source, drawnAtMost: _box)),
+    );
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -84,12 +92,12 @@ void main() {
       () async {
     final requests = <(String, String)>[];
     final images = await resolveCaptureImages(
-      {
+      _sized({
         'remote': const RemoteImageUrl('https://media.example.com/remote.png'),
         'file': LocalImageFile(filePath),
         'uploading': ImageBytes(pending),
         'failed': const ImageFailed(),
-      },
+      }),
       fetch: (imageId, url, _) async {
         requests.add((imageId, url));
         return fetched;
@@ -108,17 +116,19 @@ void main() {
   test('every image that paints is decoded and held until released', () async {
     final cache = PaintingBinding.instance.imageCache;
     final images = await resolveCaptureImages(
-      {
+      _sized({
         'remote': const RemoteImageUrl('https://media.example.com/remote.png'),
         'file': LocalImageFile(filePath),
-      },
+      }),
       fetch: (_, __, ___) async => fetched,
     );
 
     // The capture's widgets ask for the same keys and find them decoded.
     final keys = [
       for (final source in images.sources.values)
-        await source.imageProvider!.obtainKey(ImageConfiguration.empty),
+        await source
+            .imageProvider(drawnAtMost: _box)!
+            .obtainKey(ImageConfiguration.empty),
     ];
     // Live, so no amount of cache pressure evicts them before the capture.
     cache.clear();
@@ -133,14 +143,36 @@ void main() {
     }
   });
 
+  test('each image is decoded for the box the capture draws it in',
+      () async {
+    final big = Uint8List.fromList(
+      img.encodePng(img.Image(width: 2000, height: 1000)),
+    );
+    final images = await resolveCaptureImages(
+      {'big': (source: ImageBytes(big), drawnAtMost: const Size(500, 250))},
+      fetch: (_, __, ___) async => fetched,
+    );
+    addTearDown(images.release);
+
+    // The capture's widget asks for the same box and gets the held decode.
+    final decoded = Completer<ImageInfo>();
+    images.sources['big']!
+        .imageProvider(drawnAtMost: const Size(500, 250))!
+        .resolve(ImageConfiguration.empty)
+        .addListener(ImageStreamListener((info, _) => decoded.complete(info)));
+    final info = await decoded.future;
+    addTearDown(info.dispose);
+    expect((info.image.width, info.image.height), (500, 250));
+  });
+
   test('cloud images download together, not one after another', () async {
     final started = <String>[];
     final watch = Stopwatch()..start();
     final images = await resolveCaptureImages(
-      {
+      _sized({
         for (final id in ['a', 'b', 'c', 'd'])
           id: RemoteImageUrl('https://media.example.com/$id.png'),
-      },
+      }),
       fetch: (imageId, _, __) async {
         started.add(imageId);
         await Future<void>.delayed(const Duration(milliseconds: 200));
@@ -161,10 +193,10 @@ void main() {
     await expectLater(
       http.runWithClient(
         () => resolveCaptureImages(
-          {
+          _sized({
             'broken': const RemoteImageUrl('https://media.example.com/x.png'),
             'slow': const RemoteImageUrl('https://media.example.com/s.png'),
-          },
+          }),
           fetch: (imageId, url, client) async {
             if (imageId == 'broken') throw Exception('offline');
             return (await client.get(Uri.parse(url))).bodyBytes;
@@ -191,10 +223,10 @@ void main() {
     }, _png(40));
     final images = await http.runWithClient(
       () => resolveCaptureImages(
-        {
+        _sized({
           for (final id in ['fast', 'slow', 'expired'])
             id: RemoteImageUrl('https://media.example.com/$id.png'),
-        },
+        }),
         fetch: (imageId, url, client) => downloadCloudImageBytes(
           url,
           client: client,
@@ -215,10 +247,10 @@ void main() {
     final started = <String>[];
     await expectLater(
       resolveCaptureImages(
-        {
+        _sized({
           'remote': const RemoteImageUrl('https://media.example.com/r.png'),
           'loading': const ImageLoading(),
-        },
+        }),
         fetch: (imageId, _, __) async {
           started.add(imageId);
           return fetched;
@@ -232,7 +264,7 @@ void main() {
   test('an image still loading stops the capture', () async {
     await expectLater(
       resolveCaptureImages(
-        {'loading': const ImageLoading()},
+        _sized({'loading': const ImageLoading()}),
         fetch: (_, __, ___) async => fetched,
       ),
       throwsA(
@@ -251,7 +283,7 @@ void main() {
     final failure = Exception('offline');
     await expectLater(
       resolveCaptureImages(
-        {'remote': const RemoteImageUrl('https://media.example.com/r.png')},
+        _sized({'remote': const RemoteImageUrl('https://media.example.com/r.png')}),
         fetch: (_, __, ___) async => throw failure,
       ),
       throwsA(
@@ -269,7 +301,7 @@ void main() {
   test('bytes that do not decode stop the capture', () async {
     await expectLater(
       resolveCaptureImages(
-        {'remote': const RemoteImageUrl('https://media.example.com/r.png')},
+        _sized({'remote': const RemoteImageUrl('https://media.example.com/r.png')}),
         fetch: (_, __, ___) async => Uint8List.fromList([1, 2, 3, 4]),
       ),
       throwsA(

@@ -274,7 +274,7 @@ void main() {
       final source = await tester.runAsync(
         () => http.runWithClient(
           () async {
-            final loading = loadVideoExportSource(ref, pageIds: {'a'});
+            final loading = loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1);
             await Future<void>.delayed(const Duration(milliseconds: 250));
             // The edits were pushed, but nothing is read until they land.
             expect(queue.flushes, 1);
@@ -342,7 +342,7 @@ void main() {
 
       final source = await tester.runAsync(
         () => http.runWithClient(
-          () => loadVideoExportSource(ref, pageIds: {'a'}),
+          () => loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1),
           () => MockClient((_) async => http.Response.bytes(_png, 200)),
         ),
       );
@@ -370,7 +370,7 @@ void main() {
       );
 
       Object? error;
-      loadVideoExportSource(ref, pageIds: {'a'}).then<void>(
+      loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1).then<void>(
         (_) {},
         onError: (Object caught) => error = caught,
       );
@@ -391,7 +391,7 @@ void main() {
       final ref = await _pumpRef(tester, cloud(queue, repository));
 
       Object? error;
-      loadVideoExportSource(ref, pageIds: {'a'}).then<void>(
+      loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1).then<void>(
         (_) {},
         onError: (Object caught) => error = caught,
       );
@@ -418,7 +418,7 @@ void main() {
       );
 
       Object? error;
-      loadVideoExportSource(ref, pageIds: {'a'}).then<void>(
+      loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1).then<void>(
         (_) {},
         onError: (Object caught) => error = caught,
       );
@@ -448,7 +448,7 @@ void main() {
       final source = await tester.runAsync(
         () => http.runWithClient(
           () async {
-            final loading = loadVideoExportSource(ref, pageIds: {'a'});
+            final loading = loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1);
             await Future<void>.delayed(const Duration(milliseconds: 300));
             expect(repository.fetches, 0);
             // The page reads again, and the canvas is queued.
@@ -477,7 +477,7 @@ void main() {
       );
 
       Object? error;
-      loadVideoExportSource(ref, pageIds: {'a'}).then<void>(
+      loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1).then<void>(
         (_) {},
         onError: (Object caught) => error = caught,
       );
@@ -506,7 +506,7 @@ void main() {
       );
 
       Object? error;
-      loadVideoExportSource(ref, pageIds: {'a'}).then<void>(
+      loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1).then<void>(
         (_) {},
         onError: (Object caught) => error = caught,
       );
@@ -533,6 +533,7 @@ void main() {
       loadVideoExportSource(
         ref,
         pageIds: {'a'},
+        pixelRatio: 1,
         isCancelled: () => cancelled,
       ).then<void>((_) {}, onError: (Object caught) => error = caught);
       await tester.pump(const Duration(seconds: 1));
@@ -562,6 +563,7 @@ void main() {
             () => loadVideoExportSource(
               ref,
               pageIds: {'a', 'b'},
+              pixelRatio: 1,
               isCancelled: () => cancelled,
             ),
             () => MockClient((request) async {
@@ -596,7 +598,7 @@ void main() {
       Object? error;
       await tester.runAsync(() async {
         try {
-          await loadVideoExportSource(ref, pageIds: {'a', 'deleted'});
+          await loadVideoExportSource(ref, pageIds: {'a', 'deleted'}, pixelRatio: 1);
         } catch (caught) {
           error = caught;
         }
@@ -624,7 +626,7 @@ void main() {
 
       final source = await tester.runAsync(
         () => http.runWithClient(
-          () => loadVideoExportSource(ref, pageIds: {'a'}),
+          () => loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1),
           () => MockClient((_) async => http.Response.bytes(_png, 200)),
         ),
       );
@@ -714,7 +716,7 @@ void main() {
       ]);
 
       final source = await tester.runAsync(
-        () => loadVideoExportSource(ref, pageIds: {'a'}),
+        () => loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1),
       );
       addTearDown(source!.images.release);
       final capture = createCaptureContainer();
@@ -819,7 +821,7 @@ void main() {
       ]);
 
       final source = await tester.runAsync(
-        () => loadVideoExportSource(ref, pageIds: {'a'}),
+        () => loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1),
       );
       addTearDown(source!.images.release);
 

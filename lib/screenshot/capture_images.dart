@@ -35,6 +35,11 @@ typedef CaptureImageFetcher = Future<Uint8List> Function(
   http.Client client,
 );
 
+/// One image a capture paints: where its bytes come from, and the largest
+/// box the capture draws it in (see
+/// [PlacedImageDimensions.capturedPictureBox]), which it is decoded for.
+typedef CaptureImage = ({StrategyImageSource source, Size drawnAtMost});
+
 /// What each image in a capture paints, by image id, decoded and held in
 /// the image cache so the capture's first frame already has every picture.
 /// Call [release] once the capture is done.
@@ -53,8 +58,8 @@ class CaptureImages {
   }
 }
 
-/// Turns where each image's bytes come from, by image id, into what an
-/// offscreen capture can paint.
+/// Turns each image a capture paints, by image id, into what an offscreen
+/// capture can paint.
 ///
 /// A capture has no network reads of its own, so cloud URLs are fetched here
 /// and painted from memory. Files and bytes already in memory paint as they
@@ -64,11 +69,11 @@ class CaptureImages {
 /// fetch or a decode fails. [checkpoint] runs before each image; whatever it
 /// throws stops the work and releases what was held.
 Future<CaptureImages> resolveCaptureImages(
-  Map<String, StrategyImageSource> sources, {
+  Map<String, CaptureImage> images, {
   required CaptureImageFetcher fetch,
   void Function()? checkpoint,
 }) async {
-  if (sources.values.any((source) => source is ImageLoading)) {
+  if (images.values.any((image) => image.source is ImageLoading)) {
     throw const CaptureImagesUnavailable.stillLoading();
   }
   // Downloads run together, so a page's wait is its slowest image rather
@@ -78,18 +83,21 @@ Future<CaptureImages> resolveCaptureImages(
   // unhandled error.
   final client = http.Client();
   final downloads = {
-    for (final MapEntry(key: imageId, value: source) in sources.entries)
+    for (final MapEntry(key: imageId, value: (:source, drawnAtMost: _))
+        in images.entries)
       if (source case RemoteImageUrl(:final url))
         imageId: _guard(() => fetch(imageId, url, client))..ignore(),
   };
   final resolved = <String, StrategyImageSource>{};
   final holds = <_HeldImage>[];
   try {
-    for (final MapEntry(key: imageId, value: source) in sources.entries) {
+    for (final MapEntry(key: imageId, value: (:source, :drawnAtMost))
+        in images.entries) {
       checkpoint?.call();
       final download = downloads[imageId];
       final paintable = download == null ? source : ImageBytes(await download);
-      final image = paintable.imageProvider;
+      // Decoded as the capture's image widgets paint it.
+      final image = paintable.imageProvider(drawnAtMost: drawnAtMost);
       if (image != null) {
         holds.add(await _guard(() => _HeldImage.decode(image)));
       }

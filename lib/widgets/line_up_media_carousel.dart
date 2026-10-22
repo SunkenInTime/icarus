@@ -204,7 +204,8 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
                   ref,
                   (id: image.id, fileExtension: image.fileExtension),
                 );
-                return switch (source.imageProvider) {
+                // Every pixel: the carousel zooms past the picture's size.
+                return switch (source.imageProvider(drawnAtMost: null)) {
                   final imageProvider? => InteractiveViewer(
                       minScale: 0.5,
                       maxScale: 4.0,
