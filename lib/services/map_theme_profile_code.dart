@@ -21,6 +21,12 @@ class MapThemeProfileCode {
   static const int version = 1;
   static const int maxNameLength = 40;
 
+  /// The longest code text decoded. A code [encode] writes stays far under
+  /// it, since only the first [maxNameLength] characters of a name go in.
+  /// Anything longer was not written by Icarus, and decoding it would only
+  /// cost time on every keystroke in the import field.
+  static const int maxEncodedLength = 4096;
+
   static final RegExp _codePattern = RegExp(r'icarus-theme:([A-Za-z0-9_-]+)');
   static final RegExp _hexColor = RegExp(r'^#[0-9a-fA-F]{6}$');
 
@@ -31,7 +37,9 @@ class MapThemeProfileCode {
   }) {
     final json = jsonEncode({
       'v': version,
-      'name': name,
+      // Cut the way [parse] cuts, so a long name can't make the code longer
+      // than [maxEncodedLength].
+      'name': String.fromCharCodes(name.trim().runes.take(maxNameLength)),
       'base': colors['base'],
       'detail': colors['detail'],
       'highlight': colors['highlight'],
@@ -41,7 +49,11 @@ class MapThemeProfileCode {
   }
 
   /// The first profile code inside [text], or null when it holds none.
-  static String? find(String text) => _codePattern.firstMatch(text)?[0];
+  static String? find(String text) {
+    final match = _codePattern.firstMatch(text);
+    if (match == null || match[1]!.length > maxEncodedLength) return null;
+    return match[0];
+  }
 
   static MapThemeProfileCodeResult parse(String text) {
     final match = _codePattern.firstMatch(text);
@@ -49,6 +61,9 @@ class MapThemeProfileCode {
       return text.trim().isEmpty
           ? const MapThemeProfileCodeEmpty()
           : const MapThemeProfileCodeInvalid();
+    }
+    if (match[1]!.length > maxEncodedLength) {
+      return const MapThemeProfileCodeInvalid();
     }
 
     final Object? decoded;

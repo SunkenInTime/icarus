@@ -29,6 +29,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -1857,8 +1858,13 @@ class StrategyImportExportService {
             globals.showRegionNames ?? currentPreferences.showRegionNames,
         backgroundDotOpacity: globals.backgroundDotOpacity?.clamp(0.0, 1.0) ??
             currentPreferences.backgroundDotOpacity,
+        // Written straight to storage, past the colour library that limits
+        // what the colour pickers have to draw, so the limit applies here.
         customColorValues: globals.hasCustomColorValues
             ? globals.customColorValues
+                .where((value) => value >= 0 && value <= 0xFFFFFFFF)
+                .take(ColorLibraryController.customColorLimit)
+                .toList(growable: false)
             : currentPreferences.customColorValues,
       ),
     );

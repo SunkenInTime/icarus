@@ -117,6 +117,47 @@ void main() {
     expect(result.name.runes.length, MapThemeProfileCode.maxNameLength);
   });
 
+  test('a code longer than any Icarus writes is not decoded', () {
+    final oversized = rawCode({
+      'v': 1,
+      'name': 'x' * 4000,
+      'base': '#000000',
+      'detail': '#111111',
+      'highlight': '#222222',
+    });
+
+    expect(
+      MapThemeProfileCode.parse(oversized),
+      isA<MapThemeProfileCodeInvalid>(),
+    );
+    expect(MapThemeProfileCode.find('look: $oversized'), isNull);
+  });
+
+  test('a profile with a long name still shares a code that imports', () {
+    // Plain, four-byte, and JSON-escaped characters: the longest a name's
+    // characters can encode.
+    for (final name in ['x' * 4000, '\u{1F600}' * 100, '"\\\u0001' * 100]) {
+      final code =
+          MapThemeProfileCode.encode(name: name, colors: palette.toJson());
+      expect(
+        code.length,
+        lessThan(
+          MapThemeProfileCode.prefix.length +
+              MapThemeProfileCode.maxEncodedLength,
+        ),
+      );
+      expect(MapThemeProfileCode.find(code), code);
+      final result =
+          MapThemeProfileCode.parse(code) as MapThemeProfileCodeValid;
+      expect(
+        result.name,
+        String.fromCharCodes(
+          name.runes.take(MapThemeProfileCode.maxNameLength),
+        ).trim(),
+      );
+    }
+  });
+
   test('versions this build does not know are not imported', () {
     for (final version in [0, -1]) {
       expect(
