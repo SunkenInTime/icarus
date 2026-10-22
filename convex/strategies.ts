@@ -30,6 +30,7 @@ import {
   getStrategyByPublicId,
   livePagesQuery,
   isListed,
+  listedStrategiesInFolder,
 } from "./lib/entities";
 import {
   assertSupportedCloudProtocol,
@@ -222,10 +223,7 @@ async function listStrategiesInFolder(
 ) {
   let candidates: Doc<"strategies">[];
   if (folderId !== undefined) {
-    candidates = await ctx.db
-      .query("strategies")
-      .withIndex("by_folderId", (q) => q.eq("folderId", folderId))
-      .collect();
+    candidates = await listedStrategiesInFolder(ctx, folderId);
   } else if (scope === "shared") {
     const memberships = await ctx.db
       .query("strategyCollaborators")
@@ -243,11 +241,13 @@ async function listStrategiesInFolder(
   } else {
     candidates = await ctx.db
       .query("strategies")
-      .withIndex("by_ownerId", (q) => q.eq("ownerId", userId))
+      .withIndex("by_ownerId_and_folderId_and_unfinishedMove", (q) =>
+        q
+          .eq("ownerId", userId)
+          .eq("folderId", undefined)
+          .eq("unfinishedMove", undefined),
+      )
       .collect();
-    candidates = candidates.filter(
-      (strategy) => strategy.folderId === undefined,
-    );
 
     if (scope === "all") {
       const memberships = await ctx.db
@@ -482,7 +482,9 @@ export const listInventory = query({
     );
     const strategies = await ctx.db
       .query("strategies")
-      .withIndex("by_ownerId", (q) => q.eq("ownerId", user._id))
+      .withIndex("by_ownerId_and_folderId_and_unfinishedMove", (q) =>
+        q.eq("ownerId", user._id),
+      )
       .collect();
     return {
       folders: folders.map((folder) => ({
