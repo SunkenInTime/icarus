@@ -5,8 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
+import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
@@ -19,6 +21,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
@@ -33,6 +36,8 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:path/path.dart' as p;
 
+import '../collab/strategy_copy_fixtures.dart';
+
 var _adaptersRegistered = false;
 
 final _account = StateProvider<String?>((ref) => 'account-1');
@@ -45,6 +50,7 @@ void main() {
   late _FakeCloud cloud;
   late _HeldUploads uploads;
   late List<(String, bool)> messages;
+  late MemoryCloudStrategyCopyStore offlineCopy;
   late ProviderContainer container;
 
   Box<StrategyData> strategies() =>
@@ -72,6 +78,7 @@ void main() {
     cloud = _FakeCloud();
     uploads = _HeldUploads(cloud);
     messages = [];
+    offlineCopy = MemoryCloudStrategyCopyStore();
   });
 
   tearDown(() async {
@@ -95,6 +102,16 @@ void main() {
       moveToCloudMessageProvider.overrideWithValue(
         (message, {failed = false}) => messages.add((message, failed)),
       ),
+      cloudStrategyCopyStoreProvider.overrideWithValue(offlineCopy),
+      cloudCopyScopeProvider.overrideWith((ref) {
+        final accountId = ref.watch(_account);
+        return accountId == null
+            ? null
+            : CloudCopyScope.begin(
+                deploymentUrl: 'https://one.convex.cloud',
+                accountId: accountId,
+              );
+      }),
     ]);
   }
 
@@ -210,6 +227,26 @@ void main() {
     expect(moves().isEmpty, isTrue);
     expect(container.read(movingToCloudProvider), isEmpty);
     expect(messages, [('Moved "Strategy s1" to the cloud.', false)]);
+  });
+
+  test('a moved strategy is kept offline from the read that checked it',
+      () async {
+    await putStrategy('s1');
+    open();
+
+    await mover().moveStrategy('s1');
+
+    final moved = cloud.strategies.keys.single;
+    final scope = container.read(cloudCopyScopeProvider)!;
+    expect(cloud.fullReads, [moved], reason: 'read once, to check it');
+    expect(offlineCopy.keepsStrategy(scope, moved), isTrue);
+    expect(
+      offlineCopy.readShell(scope, moved)!.pages.map((page) => page.name),
+      ['Page 1', 'Page 2'],
+    );
+    // Refreshed, so the copy's walk leaves it alone: its picture was already
+    // on disk, copied there for the upload, so nothing had to download.
+    expect(offlineCopy.lastFullRefresh(scope, moved), isNotNull);
   });
 
   test("a custom map theme's colors go with it; a built-in one by name",
@@ -497,6 +534,7 @@ void main() {
     expect(cloud.finished, isEmpty);
     expect(strategies().containsKey('s1'), isTrue);
     expect(messages.single.$2, isTrue);
+    expect(offlineCopy.entryKeys, isEmpty);
   });
 
   test('an edit while it moves keeps the edited original here', () async {
@@ -515,6 +553,8 @@ void main() {
     expect(cloud.strategies, isEmpty);
     expect(cloud.finished, isEmpty);
     expect(strategies().get('s1')!.name, 'Strategy s1 v2');
+    expect(offlineCopy.entryKeys, isEmpty,
+        reason: 'its checking read is not kept');
     expect(messages, [
       (
         '"Strategy s1" changed while it was moving, so it stays on this '
@@ -554,6 +594,8 @@ void main() {
     expect(cloud.strategies, isEmpty, reason: 'the copy is deleted');
     expect(strategies().containsKey('s1'), isTrue);
     expect(messages.single.$2, isTrue);
+    expect(offlineCopy.entryKeys, isEmpty,
+        reason: 'its checking read is not kept');
   });
 
   test('a move waiting while the account changes stays here', () async {
@@ -611,6 +653,11 @@ void main() {
     expect(cloud.strategies.values.single.unfinished, isFalse);
     expect(cloud.deletedStrategies, isEmpty);
     expect(strategies().containsKey('s1'), isFalse);
+    expect(
+      offlineCopy.keptStrategyIds(container.read(cloudCopyScopeProvider)!),
+      cloud.strategies.keys.toSet(),
+      reason: 'it did finish, so what was read is on the server',
+    );
     expect(moves().isEmpty, isTrue);
     expect(messages, [('Moved "Strategy s1" to the cloud.', false)]);
   });
@@ -892,6 +939,7 @@ class _FakeCloud extends ConvexStrategyRepository {
   final created = <String>[];
   final finished = <String>[];
   final deletedStrategies = <String>[];
+  final fullReads = <String>[];
   Set<String> refuseBatchesOf = {};
   bool loseOneItem = false;
   bool loseFinishAnswer = false;
@@ -1000,6 +1048,7 @@ class _FakeCloud extends ConvexStrategyRepository {
     String strategyPublicId, {
     String? shareToken,
   }) async {
+    fullReads.add(strategyPublicId);
     final strategy = strategies[strategyPublicId]!;
     final at = DateTime.utc(2026);
     final elements = [...strategy.elements];
@@ -1055,6 +1104,27 @@ class _FakeCloud extends ConvexStrategyRepository {
             legacyStoragePath: null,
           ),
       },
+      // What the offline copy keeps of it: the strategy, its pages and its
+      // pictures.
+      serverAnswer: ConvexValue.fromDart({
+        'header': {...headerRow(name: strategy.name), 'publicId': strategy.id},
+        'pages': [
+          for (final (index, page) in strategy.pages.indexed)
+            {
+              ...pageRow(page.id, sortIndex: index, name: page.name),
+              'strategyPublicId': strategy.id,
+              'settings': null,
+              'contentRevision': 1,
+              'contentCreatedAt': 1.0,
+              'contentUpdatedAt': 1.0,
+            },
+        ],
+        'elements': const <Object?>[],
+        'lineups': const <Object?>[],
+        'assets': [
+          for (final picture in strategy.activePictures) assetRow(picture),
+        ],
+      }) as ConvexObject,
     );
   }
 

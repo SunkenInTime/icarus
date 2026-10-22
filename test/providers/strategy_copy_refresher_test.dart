@@ -215,6 +215,29 @@ void main() {
     await _settle();
     expect(repository.fullReads.first, 'opened');
   });
+
+  test('a full read made elsewhere is kept, and the walk does not repeat it',
+      () async {
+    repository.owned = {'moved'};
+    final gate = Completer<void>();
+    repository.listGate = gate;
+    final container = start();
+    await container.read(strategyCopyRefresherProvider.notifier).keepFullRead(
+          repository.snapshotFor('moved'),
+          scope: container.read(cloudCopyScopeProvider)!,
+          askedAt: DateTime.now(),
+        );
+    gate.complete();
+    await _settle();
+
+    expect(repository.fullReads, isEmpty);
+    expect(store.keepsStrategy(_scope, 'moved'), isTrue);
+    expect(store.lastFullRefresh(_scope, 'moved'), isNotNull);
+    expect(
+      media.cached['moved'],
+      unorderedEquals(['picture', 'lineup-image']),
+    );
+  });
 }
 
 Future<void> _settle({bool pause = true}) async {
@@ -301,6 +324,10 @@ class _Repository extends ConvexStrategyRepository {
       unansweredReads -= 1;
       throw TimeoutException('no answer');
     }
+    return snapshotFor(strategyPublicId);
+  }
+
+  RemoteFullStrategySnapshot snapshotFor(String strategyPublicId) {
     final answer = answerFor(strategyPublicId);
     return RemoteFullStrategySnapshot(
       header: RemoteStrategyHeader(

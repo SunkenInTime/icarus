@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/folder_icons.dart';
@@ -14,9 +15,11 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
@@ -91,6 +94,14 @@ class _Plan {
   final List<StrategyOp> ops;
   final MovedItemIds ids;
 }
+
+/// The full read that checked a move's cloud copy, with the sign-in it was
+/// asked under (null when signed out) and when.
+typedef _VerifiedRead = ({
+  CloudCopyScope? scope,
+  DateTime askedAt,
+  RemoteFullStrategySnapshot snapshot,
+});
 
 /// Moves local strategies and folders into the signed-in user's cloud
 /// library, one strategy at a time.
@@ -479,6 +490,7 @@ class MoveToCloudNotifier extends Notifier<void> {
           current.folderID == folderId;
     }
 
+    _VerifiedRead? verified;
     try {
       final strategy = StrategyMigrator.migrateToCurrentVersion(stored);
       final plan = _plan(strategy);
@@ -499,7 +511,7 @@ class MoveToCloudNotifier extends Notifier<void> {
           .read(cloudMediaUploadQueueProvider.notifier)
           .enqueueMovedImages(strategyPublicId: cloudId, images: uploads);
       await _waitForImages(cloudId, accountId: accountId);
-      await _verify(cloudId, plan, uploads);
+      verified = await _verify(cloudId, plan, uploads);
       // A changed original stays as the newer version. One that is gone
       // leaves the cloud copy as the only one, which finishes.
       if (!unchanged() && !originalGone()) {
@@ -518,6 +530,7 @@ class MoveToCloudNotifier extends Notifier<void> {
         return _Outcome.notMoved;
       }
     }
+    if (verified != null) await _keepOffline(verified, accountId: accountId);
 
     // The cloud copy is complete and listed. The record goes before the
     // original: were the app to stop between the two, the strategy would be
@@ -772,11 +785,14 @@ class MoveToCloudNotifier extends Notifier<void> {
 
   /// Reads the cloud copy back and throws unless it holds everything that
   /// was sent: every page, item and lineup, and every uploaded picture.
-  Future<void> _verify(
+  /// Returns that read, for the offline copy to keep once the move finishes.
+  Future<_VerifiedRead> _verify(
     String cloudId,
     _Plan plan,
     List<({String assetPublicId, String fileExtension})> uploads,
   ) async {
+    final scope = ref.read(cloudCopyScopeProvider);
+    final askedAt = DateTime.now();
     final snapshot = await ref
         .read(convexStrategyRepositoryProvider)
         .fetchFullSnapshot(cloudId);
@@ -803,6 +819,26 @@ class MoveToCloudNotifier extends Notifier<void> {
         '${missingPictures.length} pictures missing.',
       );
     }
+    return (scope: scope, askedAt: askedAt, snapshot: snapshot);
+  }
+
+  /// Keeps [read], the finished cloud copy as [_verify] read it, in this
+  /// device's offline copy, so the copy's next walk need not read it again.
+  /// The read stays true once the move finishes: finishing only lists the
+  /// strategy, and nothing could change it in between, since it can't be
+  /// opened anywhere while it moves. Kept only for the account that moved
+  /// it, in the sign-in the read was made under.
+  Future<void> _keepOffline(
+    _VerifiedRead read, {
+    required String accountId,
+  }) async {
+    final scope = read.scope;
+    if (scope == null || scope.accountId != accountId) return;
+    await ref.read(strategyCopyRefresherProvider.notifier).keepFullRead(
+          read.snapshot,
+          scope: scope,
+          askedAt: read.askedAt,
+        );
   }
 
   /// Deletes what a move put in the cloud, unless the move finished, with

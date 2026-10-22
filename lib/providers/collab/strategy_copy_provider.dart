@@ -5,6 +5,7 @@ import 'dart:developer';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
+import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
@@ -174,29 +175,59 @@ class StrategyCopyRefresher extends Notifier<void> {
     }
   }
 
-  /// Reads all of [strategyId] into the copy, with its images. It counts as
-  /// refreshed (see [CloudStrategyCopyStore.lastFullRefresh]) only once
-  /// every image is on disk too, so one that failed to download is tried
-  /// again by the next walk. False when the server did not answer.
+  /// Reads all of [strategyId] into the copy, with its images (see
+  /// [keepFullRead]). False when the server did not answer.
   Future<bool> _keepStrategy(String strategyId) async {
     // Written with the scope this read is asked under, so it lands only if
     // that session is still signed in when the answer arrives.
     final scope = ref.read(cloudCopyScopeProvider);
     if (scope == null || ref.read(cloudOfflineProvider)) return false;
-    final store = ref.read(cloudStrategyCopyStoreProvider);
+    final askedAt = DateTime.now();
+    final RemoteFullStrategySnapshot snapshot;
     try {
-      final askedAt = DateTime.now();
-      final snapshot = await ref
+      snapshot = await ref
           .read(convexStrategyRepositoryProvider)
           .fetchFullSnapshot(strategyId);
-      CloudUsageMeter.instance.copyFullRead(
-        [
-          ...snapshot.elementsByPage.values,
-          ...snapshot.lineupsByPage.values,
-        ].fold(0, (rows, page) => rows + page.length),
-      );
-      final answer = snapshot.serverAnswer;
-      if (answer == null) return true;
+    } catch (error, stackTrace) {
+      log('Keeping strategy $strategyId offline failed: $error',
+          name: 'strategy_copy', error: error, stackTrace: stackTrace);
+      if (isTypedConvexNotFoundError(error) ||
+          isTypedConvexForbiddenError(error)) {
+        // Deleted, or no longer shared: nothing of it can be opened.
+        await ref
+            .read(cloudStrategyCopyStoreProvider)
+            .deleteStrategy(scope, strategyId);
+        return true;
+      }
+      return !isConvexReadUnanswered(error);
+    }
+    CloudUsageMeter.instance.copyFullRead(
+      [
+        ...snapshot.elementsByPage.values,
+        ...snapshot.lineupsByPage.values,
+      ].fold(0, (rows, page) => rows + page.length),
+    );
+    await keepFullRead(snapshot, scope: scope, askedAt: askedAt);
+    return true;
+  }
+
+  /// Keeps [snapshot], all of one strategy as the server answered a full
+  /// read asked at [askedAt] under [scope], in the copy, and brings its
+  /// images onto disk. It counts as refreshed (see
+  /// [CloudStrategyCopyStore.lastFullRefresh]) only once every image is on
+  /// disk too, so one that failed to download is tried again by the next
+  /// walk. A read made elsewhere (moving a strategy to the cloud reads it
+  /// back whole) is kept the same way, so the walk need not make it again.
+  Future<void> keepFullRead(
+    RemoteFullStrategySnapshot snapshot, {
+    required CloudCopyScope scope,
+    required DateTime askedAt,
+  }) async {
+    final answer = snapshot.serverAnswer;
+    if (answer == null || !_keepsCopies) return;
+    final strategyId = snapshot.header.publicId;
+    final store = ref.read(cloudStrategyCopyStoreProvider);
+    try {
       await store.writeFullSnapshot(
         scope,
         answer,
@@ -221,17 +252,9 @@ class StrategyCopyRefresher extends Notifier<void> {
       if (imagesOnDisk) {
         await store.noteFullRefresh(scope, strategyId, at: DateTime.now());
       }
-      return true;
     } catch (error, stackTrace) {
       log('Keeping strategy $strategyId offline failed: $error',
           name: 'strategy_copy', error: error, stackTrace: stackTrace);
-      if (isTypedConvexNotFoundError(error) ||
-          isTypedConvexForbiddenError(error)) {
-        // Deleted, or no longer shared: nothing of it can be opened.
-        await store.deleteStrategy(scope, strategyId);
-        return true;
-      }
-      return !isConvexReadUnanswered(error);
     }
   }
 
