@@ -1,0 +1,64 @@
+{
+  "version": "5.0.1+105",
+  "shortVersion": 105,
+  "title": "5.0.1 Update",
+  "description": "Reset a forgotten password, keep pictures in duplicated strategies, and fixes for folders, sharing and large libraries.",
+  "date": "2026-10-22",
+  "mandatory": false,
+  "channels": ["desktop", "stable"],
+  "platforms": ["windows"],
+  "changes": [
+    {
+      "message": "Forgot your password? Choose Forgot password when you sign in and we'll email you a link to set a new one. If you signed up with Discord, use the same link to add a password and sign in with email too.",
+      "type": "feat"
+    },
+    {
+      "message": "Lineup videos play from every common YouTube link, including youtube.com/watch and Shorts links. Before, only youtu.be links played.",
+      "type": "fix"
+    },
+    {
+      "message": "The installer asks whether to open Icarus when it finishes.",
+      "type": "feat"
+    },
+    {
+      "message": "A duplicated strategy keeps its pictures. Before, the copy showed \"Image unavailable\", and deleting the original removed the pictures for good.",
+      "type": "fix"
+    },
+    {
+      "message": "Deleting a folder now deletes the folders and strategies inside it, as the dialog says. Folders that earlier deletes left hidden show up again at the top of your library.",
+      "type": "fix"
+    },
+    {
+      "message": "A broken shared strategy or folder can no longer stop your cloud library from loading.",
+      "type": "fix"
+    },
+    {
+      "message": "Icarus tells you as soon as your cloud session stops being accepted, instead of showing Synced.",
+      "type": "fix"
+    },
+    {
+      "message": "Signing up with an email that already has an account tells you to sign in instead.",
+      "type": "fix"
+    },
+    {
+      "message": "Undo removes a Ctrl-drag copy in one step, instead of leaving a hidden copy behind.",
+      "type": "fix"
+    },
+    {
+      "message": "Your default map theme stays set when you change another setting.",
+      "type": "fix"
+    },
+    {
+      "message": "Pictures on strategies use far less memory, and big libraries, folders and lineup pages open and save faster.",
+      "type": "fix"
+    },
+    {
+      "message": "Editing a page with teammates uses less data while you drag.",
+      "type": "fix"
+    },
+    {
+      "message": "Security and privacy fixes for image file names, the updater, and the avatars other people's apps can see.",
+      "type": "fix"
+    }
+  ]
+}
