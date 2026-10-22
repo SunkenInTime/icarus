@@ -23,7 +23,7 @@ import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/screenshot/offscreen_capture.dart';
 import 'package:icarus/services/local_image_file_native.dart' as native;
 import 'package:icarus/services/local_image_file_stub.dart' as web;
-import 'package:icarus/services/resize_to_cover.dart';
+import 'package:icarus/services/halved_image.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
@@ -248,7 +248,7 @@ ImageProvider _paintedImage(WidgetTester tester) {
 
 /// Where the picture comes from, past the size it is decoded at.
 ImageProvider _unsized(ImageProvider image) =>
-    image is ResizeToCover ? image.image : image;
+    image is HalvedImage ? image.image : image;
 
 void main() {
   group('resolveStrategyImageSource', () {
@@ -591,7 +591,7 @@ void main() {
       await tester.pump();
 
       final image =
-          tester.widget<Image>(find.byType(Image)).image as ResizeToCover;
+          tester.widget<Image>(find.byType(Image)).image as HalvedImage;
       expect(image.image, isA<FileImage>());
       // Fully zoomed in, the largest image spans 46% of the canvas height,
       // eight times over: the canvas is 1080 tall, 1620 physical pixels.
@@ -644,6 +644,8 @@ void main() {
         ),
       ));
 
+      // The first frame paints it: nothing was left to load.
+      expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
       final painted = tester.widget<Image>(find.byType(Image)).image;
       final key = await tester.runAsync(
         () => painted.obtainKey(ImageConfiguration.empty),
@@ -677,7 +679,7 @@ void main() {
       );
       // Until every pixel is decoded, the picture as the canvas decoded it
       // stands in.
-      expect(painted.whereType<ResizeToCover>(), hasLength(1));
+      expect(painted.whereType<HalvedImage>(), hasLength(1));
     });
 
     testWidgets('a cloud image already cached on desktop paints from its file',
@@ -854,7 +856,7 @@ void main() {
     await tester.pump();
 
     final tile = find.byType(Image);
-    final image = tester.widget<Image>(tile).image as ResizeToCover;
+    final image = tester.widget<Image>(tile).image as HalvedImage;
     final tileSize = tester.getSize(tile) * 2;
     expect(image.width, tileSize.width.ceil());
     expect(image.height, tileSize.height.ceil());

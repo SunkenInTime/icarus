@@ -6,7 +6,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/services/resize_to_cover.dart';
+import 'package:icarus/services/halved_image.dart';
 import 'package:image/image.dart' as img;
 
 /// A real PNG [width] × [height].
@@ -38,9 +38,9 @@ Future<Size> _decodedSize(WidgetTester tester, ImageProvider image) async {
 void main() {
   tearDown(() => PaintingBinding.instance.imageCache.clear());
 
-  group('ResizeToCover.targetSize', () {
+  group('HalvedImage.targetSize', () {
     ui.TargetImageSize target(int w, int h, int boxW, int boxH) =>
-        ResizeToCover.targetSize(
+        HalvedImage.targetSize(
           intrinsicWidth: w,
           intrinsicHeight: h,
           width: boxW,
@@ -78,20 +78,20 @@ void main() {
       expect((size.width, size.height), (null, null));
     });
 
-    test(
-        'a halving that would change the picture\'s shape by half a pixel '
-        'at its box is not taken', () {
-      // An 8000x101 strip in a 497 px wide box: a half would be 4000x51,
-      // a 1% wider strip, 5 px at the box's width.
+    test('a picture with an odd side has no exact half, so keeps every pixel',
+        () {
+      // 501 px would not be half of 1001: the decoder would sample, not
+      // average, the middle column.
+      final odd = target(1001, 1000, 400, 400);
+      expect((odd.width, odd.height), (null, null));
       final strip = target(8000, 101, 497, 7);
       expect((strip.width, strip.height), (null, null));
-      // A shape that halves evenly still does.
       final even = target(8000, 100, 497, 7);
       expect((even.width, even.height), (4000, 50));
     });
 
     test('a box with no finite size keeps every pixel', () {
-      final box = ResizeToCover(
+      final box = HalvedImage(
         MemoryImage(Uint8List(0)),
         box: const Size(double.infinity, double.infinity),
       );
@@ -107,14 +107,14 @@ void main() {
     expect(
       await _decodedSize(
         tester,
-        ResizeToCover(MemoryImage(png), box: const Size(400, 100)),
+        HalvedImage(MemoryImage(png), box: const Size(400, 100)),
       ),
       const Size(1000, 250),
     );
     expect(
       await _decodedSize(
         tester,
-        ResizeToCover(MemoryImage(png), box: const Size(4000, 1000)),
+        HalvedImage(MemoryImage(png), box: const Size(4000, 1000)),
       ),
       const Size(2000, 500),
     );
@@ -130,7 +130,7 @@ void main() {
       final white = (pixel.x % 4 == 1 || pixel.x % 4 == 2);
       pixel.setRgb(white ? 255 : 0, white ? 255 : 0, white ? 255 : 0);
     }
-    final provider = ResizeToCover(
+    final provider = HalvedImage(
       MemoryImage(img.encodePng(stripes)),
       box: const Size(32, 4),
     );
@@ -152,9 +152,9 @@ void main() {
   testWidgets('the same picture in boxes the same whole size shares one key',
       (tester) async {
     final image = MemoryImage(_png(64, 64));
-    final a = ResizeToCover(image, box: const Size(10.2, 10.2));
-    final b = ResizeToCover(image, box: const Size(10.9, 10.9));
-    final c = ResizeToCover(image, box: const Size(20, 20));
+    final a = HalvedImage(image, box: const Size(10.2, 10.2));
+    final b = HalvedImage(image, box: const Size(10.9, 10.9));
+    final c = HalvedImage(image, box: const Size(20, 20));
 
     expect(a, b);
     expect(

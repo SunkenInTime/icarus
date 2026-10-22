@@ -8,7 +8,7 @@ import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/services/clipboard_service.dart';
-import 'package:icarus/services/resize_to_cover.dart';
+import 'package:icarus/services/halved_image.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_library.dart';
 
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -281,7 +281,7 @@ class _UploadDropSquare extends StatelessWidget {
                             children: [
                               LayoutBuilder(
                                 builder: (context, constraints) => Image(
-                                  image: ResizeToCover(
+                                  image: HalvedImage(
                                     MemoryImage(selectedBytes!),
                                     box: constraints.biggest *
                                         MediaQuery.devicePixelRatioOf(context),

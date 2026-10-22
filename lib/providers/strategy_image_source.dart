@@ -9,7 +9,7 @@ import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/local_image_file.dart';
-import 'package:icarus/services/resize_to_cover.dart';
+import 'package:icarus/services/halved_image.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
 /// Where the bytes for one image in the open strategy (a placed image or a
@@ -20,8 +20,8 @@ sealed class StrategyImageSource {
   /// What to paint, or null while there is nothing to paint.
   ///
   /// [drawnAtMost] is the largest box, in physical pixels, the picture is
-  /// ever drawn in where it is shown: it is decoded with just enough pixels
-  /// to fill that box, so a huge screenshot costs what its box costs. Null
+  /// ever drawn in where it is shown: a picture whose half still fills it is
+  /// decoded at half size, a quarter of the memory (see [HalvedImage]). Null
   /// decodes every pixel, for viewers that zoom past the picture's own size.
   ImageProvider? imageProvider({required Size? drawnAtMost}) {
     final ImageProvider? image = switch (this) {
@@ -36,7 +36,7 @@ sealed class StrategyImageSource {
       ImageLoading() || ImageFailed() => null,
     };
     if (image == null || drawnAtMost == null) return image;
-    return ResizeToCover(image, box: drawnAtMost);
+    return HalvedImage(image, box: drawnAtMost);
   }
 }
 

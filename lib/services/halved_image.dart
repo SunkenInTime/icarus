@@ -5,24 +5,24 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show SynchronousFuture;
 import 'package:flutter/painting.dart';
 
-/// [image] decoded at half its size when half still fills a box [width] ×
-/// [height] physical pixels, the largest it is drawn, and at full size
-/// otherwise: a quarter of the memory for a picture that is never drawn
-/// larger than half its size.
+/// [image] decoded at half its size when it is never drawn larger than
+/// that, and at full size otherwise: a quarter of the memory for a picture
+/// whose half still fills a box [width] × [height] physical pixels, the
+/// largest it is drawn.
 ///
-/// Half, and no smaller, because that is the one reduction the GPU would
-/// have made the same way. To draw a picture smaller the GPU averages it
-/// down by halves (mipmaps), and the decoder's half averages each 2×2 block
-/// just as the GPU's first half does. Shrunk further in the decoder's one
-/// step, fine detail such as thin text is sampled rather than averaged; and
-/// shrunk straight to the box, text drew visibly softer at the canvas's
-/// full zoom.
+/// Exactly half, and no smaller, because that is the one reduction the GPU
+/// makes the same way. To draw a picture smaller the GPU averages it down
+/// by halves (mipmaps), and the decoder's exact half averages each 2×2
+/// block as the GPU's first half does. A side with an odd number of pixels
+/// has no exact half, so that picture keeps every pixel. Shrunk further in
+/// the decoder's single step, fine detail such as thin text is sampled
+/// rather than averaged; shrunk straight to the box, text drew visibly
+/// softer at the canvas's full zoom.
 ///
-/// Unlike [ResizeImage] it needs no aspect ratio up front: whichever side
-/// needs more pixels to fill the box decides, which is enough for both
-/// [BoxFit.contain] and [BoxFit.cover].
-class ResizeToCover extends ImageProvider<ResizeToCoverKey> {
-  ResizeToCover(this.image, {required Size box})
+/// Whichever side needs more pixels to fill the box decides, which is
+/// enough for both [BoxFit.contain] and [BoxFit.cover].
+class HalvedImage extends ImageProvider<HalvedImageKey> {
+  HalvedImage(this.image, {required Size box})
       : width = _pixels(box.width),
         height = _pixels(box.height);
 
@@ -34,62 +34,56 @@ class ResizeToCover extends ImageProvider<ResizeToCoverKey> {
       extent.isFinite ? math.max(1, extent.ceil()) : 0;
 
   /// The size to decode a picture [intrinsicWidth] × [intrinsicHeight] at
-  /// for a box [width] × [height]. A box with no finite size decodes the
-  /// whole picture.
-  ///
-  /// A halved odd side rounds to a whole pixel, which changes the picture's
-  /// shape a little. A half that would move its edge by half a pixel or
-  /// more, drawn at the box's size, is not taken: a long strip a few pixels
-  /// tall keeps its pixels.
+  /// for a box [width] × [height]: its exact half, or every pixel. A box
+  /// with no finite size decodes every pixel.
   static ui.TargetImageSize targetSize({
     required int intrinsicWidth,
     required int intrinsicHeight,
     required int width,
     required int height,
   }) {
-    if (width <= 0 || height <= 0) return const ui.TargetImageSize();
-    final halfWidth = (intrinsicWidth / 2).ceil();
-    final halfHeight = (intrinsicHeight / 2).ceil();
-    if (halfWidth < width || halfHeight < height) {
-      return const ui.TargetImageSize();
-    }
-    final shapeChange =
-        (halfWidth * intrinsicHeight) / (halfHeight * intrinsicWidth) - 1;
-    if (shapeChange.abs() * math.max(width, height) >= 0.5) {
+    final halfWidth = intrinsicWidth ~/ 2;
+    final halfHeight = intrinsicHeight ~/ 2;
+    if (width <= 0 ||
+        height <= 0 ||
+        intrinsicWidth.isOdd ||
+        intrinsicHeight.isOdd ||
+        halfWidth < width ||
+        halfHeight < height) {
       return const ui.TargetImageSize();
     }
     return ui.TargetImageSize(width: halfWidth, height: halfHeight);
   }
 
   @override
-  Future<ResizeToCoverKey> obtainKey(ImageConfiguration configuration) {
+  Future<HalvedImageKey> obtainKey(ImageConfiguration configuration) {
     // Answers synchronously when [image] does, as ResizeImage does, so a
     // picture already decoded paints on the first frame.
-    Completer<ResizeToCoverKey>? completer;
-    SynchronousFuture<ResizeToCoverKey>? result;
+    Completer<HalvedImageKey>? completer;
+    SynchronousFuture<HalvedImageKey>? result;
     image.obtainKey(configuration).then((Object key) {
-      final resized = ResizeToCoverKey._(key, width, height);
+      final resized = HalvedImageKey._(key, width, height);
       if (completer == null) {
-        result = SynchronousFuture<ResizeToCoverKey>(resized);
+        result = SynchronousFuture<HalvedImageKey>(resized);
       } else {
         completer.complete(resized);
       }
     });
     if (result != null) return result!;
-    completer = Completer<ResizeToCoverKey>();
+    completer = Completer<HalvedImageKey>();
     return completer.future;
   }
 
   @override
   ImageStreamCompleter loadImage(
-    ResizeToCoverKey key,
+    HalvedImageKey key,
     ImageDecoderCallback decode,
   ) {
     Future<ui.Codec> decodeToCover(
       ui.ImmutableBuffer buffer, {
       ui.TargetImageSizeCallback? getTargetSize,
     }) {
-      assert(getTargetSize == null, 'ResizeToCover wraps a plain provider.');
+      assert(getTargetSize == null, 'HalvedImage wraps a plain provider.');
       return decode(
         buffer,
         getTargetSize: (intrinsicWidth, intrinsicHeight) => targetSize(
@@ -112,7 +106,7 @@ class ResizeToCover extends ImageProvider<ResizeToCoverKey> {
 
   @override
   bool operator ==(Object other) =>
-      other is ResizeToCover &&
+      other is HalvedImage &&
       other.image == image &&
       other.width == width &&
       other.height == height;
@@ -121,11 +115,11 @@ class ResizeToCover extends ImageProvider<ResizeToCoverKey> {
   int get hashCode => Object.hash(image, width, height);
 
   @override
-  String toString() => 'ResizeToCover($image, $width×$height)';
+  String toString() => 'HalvedImage($image, $width×$height)';
 }
 
-class ResizeToCoverKey {
-  const ResizeToCoverKey._(this._image, this._width, this._height);
+class HalvedImageKey {
+  const HalvedImageKey._(this._image, this._width, this._height);
 
   final Object _image;
   final int _width;
@@ -133,7 +127,7 @@ class ResizeToCoverKey {
 
   @override
   bool operator ==(Object other) =>
-      other is ResizeToCoverKey &&
+      other is HalvedImageKey &&
       other._image == _image &&
       other._width == _width &&
       other._height == _height;
