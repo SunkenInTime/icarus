@@ -282,6 +282,20 @@ export function isListed(strategy: Doc<"strategies">): boolean {
   return strategy.unfinishedMove !== true;
 }
 
+/// The listed strategies in [folderId], read without touching the ones a
+/// move is still putting together: their writes don't re-run the read.
+export async function listedStrategiesInFolder(
+  ctx: AnyCtx,
+  folderId: Id<"folders">,
+): Promise<Doc<"strategies">[]> {
+  return await ctx.db
+    .query("strategies")
+    .withIndex("by_folderId_and_unfinishedMove", (q) =>
+      q.eq("folderId", folderId).eq("unfinishedMove", undefined),
+    )
+    .collect();
+}
+
 /// Refuses to share or copy [strategy] while a move from a device is still
 /// putting it together: what would be shared or copied is only part of it.
 export function assertMoveFinished(strategy: Doc<"strategies">): void {

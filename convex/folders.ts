@@ -11,6 +11,7 @@ import {
   assertWithinFolder,
   getFolderByPublicId,
   isListed,
+  listedStrategiesInFolder,
 } from "./lib/entities";
 import {
   maxListedAgentTypes,
@@ -349,12 +350,7 @@ async function summariseFolderTrees(
     counts.set(key, (counts.get(key) ?? 0) + 1);
 
   for (const folder of folders) {
-    const strategies = (
-      await ctx.db
-        .query("strategies")
-        .withIndex("by_folderId", (q) => q.eq("folderId", folder._id))
-        .collect()
-    ).filter(isListed);
+    const strategies = await listedStrategiesInFolder(ctx, folder._id);
     const agentTypesSeen = new Map<string, number>();
     for (const strategy of strategies) {
       // A row written before maps were checked can hold any string, and
@@ -477,7 +473,9 @@ const deleteFolder = mutation({
 
     const strategies = await ctx.db
       .query("strategies")
-      .withIndex("by_folderId", (q) => q.eq("folderId", folder._id))
+      .withIndex("by_folderId_and_unfinishedMove", (q) =>
+        q.eq("folderId", folder._id),
+      )
       .collect();
     if (strategies.some(isListed)) {
       throw invalidOpError("Folder has strategies");

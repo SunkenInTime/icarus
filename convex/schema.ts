@@ -47,14 +47,22 @@ export default defineSchema({
     // Set while a device is still moving this strategy in from its local
     // library: the strategy holds only part of the work, so no library list
     // or folder summary shows it until the device calls finishMove. Absent
-    // on every other strategy.
-    unfinishedMove: v.optional(v.boolean()),
+    // on every other strategy, never false: library lists find the rest
+    // with `.eq("unfinishedMove", undefined)`.
+    unfinishedMove: v.optional(v.literal(true)),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_publicId", ["publicId"])
-    .index("by_ownerId", ["ownerId"])
-    .index("by_folderId", ["folderId"]),
+    // Library lists read only `.eq("unfinishedMove", undefined)`, so the
+    // many writes of a move in progress never re-run them; finishing the
+    // move does, once.
+    .index("by_ownerId_and_folderId_and_unfinishedMove", [
+      "ownerId",
+      "folderId",
+      "unfinishedMove",
+    ])
+    .index("by_folderId_and_unfinishedMove", ["folderId", "unfinishedMove"]),
   pages: defineTable({
     publicId: v.string(),
     strategyId: v.id("strategies"),
