@@ -246,6 +246,10 @@ void main() {
     addTearDown(container.dispose);
     _activatePage(container, strategy, pages[1]);
     final notifier = container.read(strategyProvider.notifier);
+    expect(notifier.copyDirectionsForPlacedWidget(agent.id), [
+      PageTransitionDirection.backward,
+      PageTransitionDirection.forward,
+    ]);
 
     for (final id in [agent.id, ability.id, text.id, image.id, utility.id]) {
       expect(

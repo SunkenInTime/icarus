@@ -177,6 +177,33 @@ class ImportBatchResult {
   }
 }
 
+/// Adds up an import's results one entry at a time. A loop of
+/// [ImportBatchResult.merge] copies every issue so far on each entry, which
+/// takes seconds for a folder of thousands of skipped files.
+class _ImportBatchTotal {
+  int _strategiesImported = 0;
+  int _foldersCreated = 0;
+  int _themeProfilesImported = 0;
+  bool _globalStateRestored = false;
+  final List<ImportIssue> _issues = [];
+
+  void add(ImportBatchResult result) {
+    _strategiesImported += result.strategiesImported;
+    _foldersCreated += result.foldersCreated;
+    _themeProfilesImported += result.themeProfilesImported;
+    _globalStateRestored = _globalStateRestored || result.globalStateRestored;
+    _issues.addAll(result.issues);
+  }
+
+  ImportBatchResult get result => ImportBatchResult(
+        strategiesImported: _strategiesImported,
+        foldersCreated: _foldersCreated,
+        themeProfilesImported: _themeProfilesImported,
+        globalStateRestored: _globalStateRestored,
+        issues: _issues,
+      );
+}
+
 class _ImportEntityListing {
   const _ImportEntityListing({
     required this.entities,
@@ -346,10 +373,10 @@ class StrategyImportExportService {
 
   Future<ImportBatchResult> loadFromFileDrop(List<XFile> files) async {
     final targetFolderId = _localFolderOnScreen();
-    var result = const ImportBatchResult.empty();
+    final total = _ImportBatchTotal();
 
     for (final file in files) {
-      result = result.merge(
+      total.add(
         await _importDroppedItem(
           file: file,
           targetFolderId: targetFolderId,
@@ -357,7 +384,7 @@ class StrategyImportExportService {
       );
     }
 
-    return result;
+    return total.result;
   }
 
   /// Where an import lands: the local folder on screen, or the top level when
@@ -657,12 +684,12 @@ class StrategyImportExportService {
     required Iterable<FileSystemEntity> entities,
     required String parentFolderId,
   }) async {
-    var result = const ImportBatchResult.empty();
+    final total = _ImportBatchTotal();
     final sortedEntities = _sortedImportEntities(entities);
 
     for (final entity in sortedEntities) {
       if (entity is Directory) {
-        result = result.merge(
+        total.add(
           await _importDirectoryTree(
             sourceDir: entity,
             parentFolderId: parentFolderId,
@@ -677,7 +704,7 @@ class StrategyImportExportService {
             file: XFile(entity.path),
             targetFolderId: parentFolderId,
           );
-          result = result.merge(
+          total.add(
             const ImportBatchResult(
               strategiesImported: 1,
               foldersCreated: 0,
@@ -687,7 +714,7 @@ class StrategyImportExportService {
             ),
           );
         } on NewerVersionImportException {
-          result = result.merge(
+          total.add(
             ImportBatchResult(
               strategiesImported: 0,
               foldersCreated: 0,
@@ -708,7 +735,7 @@ class StrategyImportExportService {
             stackTrace: stackTrace,
             source: 'StrategyImportExportService._importEntitiesIntoFolder',
           );
-          result = result.merge(
+          total.add(
             ImportBatchResult(
               strategiesImported: 0,
               foldersCreated: 0,
@@ -726,7 +753,7 @@ class StrategyImportExportService {
         continue;
       }
 
-      result = result.merge(
+      total.add(
         ImportBatchResult(
           strategiesImported: 0,
           foldersCreated: 0,
@@ -742,7 +769,7 @@ class StrategyImportExportService {
       );
     }
 
-    return result;
+    return total.result;
   }
 
   Future<ImportBatchResult> _importDirectoryTree({
@@ -945,7 +972,7 @@ class StrategyImportExportService {
     required _ZipManifestData manifestData,
     required String? parentFolderId,
   }) async {
-    var result = const ImportBatchResult.empty();
+    final total = _ImportBatchTotal();
     var profileIdRemap = const <String, String>{};
 
     if (manifestData.manifest.archiveType == ArchiveType.libraryBackup) {
@@ -956,7 +983,7 @@ class StrategyImportExportService {
       }
       final globalImportResult = await _importArchiveGlobals(globals);
       profileIdRemap = globalImportResult.profileIdRemap;
-      result = result.merge(
+      total.add(
         ImportBatchResult(
           strategiesImported: 0,
           foldersCreated: 0,
@@ -1000,7 +1027,7 @@ class StrategyImportExportService {
             : Color(folderEntry.customColorValue!),
       );
       localFolderIdsByManifestId[folderEntry.manifestId] = createdFolder.id;
-      result = result.merge(
+      total.add(
         const ImportBatchResult(
           strategiesImported: 0,
           foldersCreated: 1,
@@ -1039,7 +1066,7 @@ class StrategyImportExportService {
             displayNameOverride: strategyEntry.name,
             themeProfileIdRemap: profileIdRemap,
           );
-          result = result.merge(
+          total.add(
             const ImportBatchResult(
               strategiesImported: 1,
               foldersCreated: 0,
@@ -1049,7 +1076,7 @@ class StrategyImportExportService {
             ),
           );
         } on NewerVersionImportException {
-          result = result.merge(
+          total.add(
             ImportBatchResult(
               strategiesImported: 0,
               foldersCreated: 0,
@@ -1070,7 +1097,7 @@ class StrategyImportExportService {
             stackTrace: stackTrace,
             source: 'StrategyImportExportService._importManifestArchiveFromZip',
           );
-          result = result.merge(
+          total.add(
             ImportBatchResult(
               strategiesImported: 0,
               foldersCreated: 0,
@@ -1094,7 +1121,7 @@ class StrategyImportExportService {
 
     final undeclaredIssues = _collectUndeclaredZipArchiveIssues(manifestData);
     if (undeclaredIssues.isNotEmpty) {
-      result = result.merge(
+      total.add(
         ImportBatchResult(
           strategiesImported: 0,
           foldersCreated: 0,
@@ -1105,7 +1132,7 @@ class StrategyImportExportService {
       );
     }
 
-    return result;
+    return total.result;
   }
 
   void _validateArchiveManifestFromZip(_ZipManifestData manifestData) {
@@ -1338,14 +1365,14 @@ class StrategyImportExportService {
       }
     }
 
-    var result = const ImportBatchResult.empty();
+    final total = _ImportBatchTotal();
 
     final tempDirectory =
         await Directory.systemTemp.createTemp('icarus-zip-legacy-import');
     try {
       final sortedDirectories = directDirectories.toList()..sort();
       for (final directoryPrefix in sortedDirectories) {
-        result = result.merge(
+        total.add(
           await _importLegacyZipDirectory(
             directoryPrefix: directoryPrefix,
             filesByPath: filesByPath,
@@ -1357,7 +1384,7 @@ class StrategyImportExportService {
       directFiles.sort();
       for (final archivePath in directFiles) {
         if (path.extension(archivePath).toLowerCase() != '.ica') {
-          result = result.merge(
+          total.add(
             ImportBatchResult(
               strategiesImported: 0,
               foldersCreated: 0,
@@ -1383,7 +1410,7 @@ class StrategyImportExportService {
             file: XFile(tempFile.path),
             targetFolderId: parentFolderId,
           );
-          result = result.merge(
+          total.add(
             const ImportBatchResult(
               strategiesImported: 1,
               foldersCreated: 0,
@@ -1393,7 +1420,7 @@ class StrategyImportExportService {
             ),
           );
         } on NewerVersionImportException {
-          result = result.merge(
+          total.add(
             ImportBatchResult(
               strategiesImported: 0,
               foldersCreated: 0,
@@ -1415,7 +1442,7 @@ class StrategyImportExportService {
             source:
                 'StrategyImportExportService._importLegacyZipEntitiesIntoFolder',
           );
-          result = result.merge(
+          total.add(
             ImportBatchResult(
               strategiesImported: 0,
               foldersCreated: 0,
@@ -1437,7 +1464,7 @@ class StrategyImportExportService {
       } catch (_) {}
     }
 
-    return result;
+    return total.result;
   }
 
   Future<_ManifestImportData?> _loadManifestIfPresent(
@@ -1468,7 +1495,7 @@ class StrategyImportExportService {
   }) async {
     _validateArchiveManifest(manifestData);
 
-    var result = const ImportBatchResult.empty();
+    final total = _ImportBatchTotal();
     var profileIdRemap = const <String, String>{};
 
     if (manifestData.manifest.archiveType == ArchiveType.libraryBackup) {
@@ -1479,7 +1506,7 @@ class StrategyImportExportService {
       }
       final globalImportResult = await _importArchiveGlobals(globals);
       profileIdRemap = globalImportResult.profileIdRemap;
-      result = result.merge(
+      total.add(
         ImportBatchResult(
           strategiesImported: 0,
           foldersCreated: 0,
@@ -1523,7 +1550,7 @@ class StrategyImportExportService {
             : Color(folderEntry.customColorValue!),
       );
       localFolderIdsByManifestId[folderEntry.manifestId] = createdFolder.id;
-      result = result.merge(
+      total.add(
         const ImportBatchResult(
           strategiesImported: 0,
           foldersCreated: 1,
@@ -1558,7 +1585,7 @@ class StrategyImportExportService {
           displayNameOverride: strategyEntry.name,
           themeProfileIdRemap: profileIdRemap,
         );
-        result = result.merge(
+        total.add(
           const ImportBatchResult(
             strategiesImported: 1,
             foldersCreated: 0,
@@ -1568,7 +1595,7 @@ class StrategyImportExportService {
           ),
         );
       } on NewerVersionImportException {
-        result = result.merge(
+        total.add(
           ImportBatchResult(
             strategiesImported: 0,
             foldersCreated: 0,
@@ -1589,7 +1616,7 @@ class StrategyImportExportService {
           stackTrace: stackTrace,
           source: 'StrategyImportExportService._importManifestArchive',
         );
-        result = result.merge(
+        total.add(
           ImportBatchResult(
             strategiesImported: 0,
             foldersCreated: 0,
@@ -1610,7 +1637,7 @@ class StrategyImportExportService {
       manifestData: manifestData,
     );
     if (undeclaredIssues.isNotEmpty) {
-      result = result.merge(
+      total.add(
         ImportBatchResult(
           strategiesImported: 0,
           foldersCreated: 0,
@@ -1621,7 +1648,7 @@ class StrategyImportExportService {
       );
     }
 
-    return result;
+    return total.result;
   }
 
   void _validateArchiveManifest(_ManifestImportData manifestData) {

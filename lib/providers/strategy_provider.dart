@@ -897,33 +897,51 @@ class StrategyProvider extends Notifier<StrategyState> {
   ) {
     if (widgetId.isEmpty) return const [];
     if (_currentStrategyIsCloud()) return _cloudCopyDirections(widgetId);
-    if (!Hive.isBoxOpen(HiveBoxNames.strategiesBox)) return const [];
+    final neighbours = _localNeighbours();
+    if (neighbours == null) return const [];
+    final root = pageCopyRoot(widgetId);
+    return [
+      if (neighbours.backward case final page?
+          when !page.placedRoots.contains(root))
+        PageTransitionDirection.backward,
+      if (neighbours.forward case final page?
+          when !page.placedRoots.contains(root))
+        PageTransitionDirection.forward,
+    ];
+  }
 
+  _LocalNeighbours? _cachedLocalNeighbours;
+
+  /// The pages next to the one on screen in a local strategy. Every item on
+  /// the page asks for its copy directions each time it builds, so this is
+  /// worked out once per saved strategy and page on screen: a save puts a
+  /// new strategy in the box.
+  _LocalNeighbours? _localNeighbours() {
     final strategyId = state.strategyId;
-    if (strategyId == null) return const [];
-    final strat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(
-      strategyId,
-    );
-    if (strat == null || strat.pages.length < 2) return const [];
-
-    final orderedPages = [...strat.pages]
-      ..sortBySortIndex((item) => item.sortIndex);
-    final currentPageId = ref.read(strategyPageSessionProvider).activePageId;
-    final currentIndex = orderedPages.indexWhere(
-      (page) => page.id == currentPageId,
-    );
-    if (currentIndex < 0) return const [];
-
-    final directions = <PageTransitionDirection>[];
-    if (currentIndex > 0 &&
-        !_pageContainsPlacedWidget(orderedPages[currentIndex - 1], widgetId)) {
-      directions.add(PageTransitionDirection.backward);
+    if (strategyId == null || !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) {
+      return null;
     }
-    if (currentIndex < orderedPages.length - 1 &&
-        !_pageContainsPlacedWidget(orderedPages[currentIndex + 1], widgetId)) {
-      directions.add(PageTransitionDirection.forward);
+    final strat =
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
+    final pageId = ref.read(strategyPageSessionProvider).activePageId;
+    if (strat == null || pageId == null) return null;
+    final cached = _cachedLocalNeighbours;
+    if (cached != null &&
+        identical(cached.strategy, strat) &&
+        cached.pageId == pageId) {
+      return cached;
     }
-    return directions;
+
+    final pages = [...strat.pages]..sortBySortIndex((item) => item.sortIndex);
+    final index = pages.indexWhere((page) => page.id == pageId);
+    if (index < 0) return null;
+    return _cachedLocalNeighbours = _LocalNeighbours(
+      strategy: strat,
+      pageId: pageId,
+      backward: index > 0 ? _PageCopyRoots(pages[index - 1]) : null,
+      forward:
+          index < pages.length - 1 ? _PageCopyRoots(pages[index + 1]) : null,
+    );
   }
 
   Future<PageCopyResult> copyPlacedWidgetToAdjacentPage({
@@ -1014,7 +1032,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
     if (snapshot == null ||
         !_currentStrategyCanEditPages() ||
-        _cloudElementOnScreen(widgetId) == null) {
+        !_idsOnScreen().contains(widgetId)) {
       return const [];
     }
     return [
@@ -1097,6 +1115,33 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
     }
     return null;
+  }
+
+  ({List<List<PlacedWidget>> lists, Set<String> ids})? _cachedIdsOnScreen;
+
+  /// The ids [_cloudElementOnScreen] finds. Every item on the page asks for
+  /// its copy directions each time it builds, so they are gathered once for
+  /// each version of the page's items: an edit replaces the list it is in.
+  Set<String> _idsOnScreen() {
+    final lists = <List<PlacedWidget>>[
+      ref.read(agentProvider),
+      ref.read(abilityProvider),
+      ref.read(textProvider),
+      ref.read(utilityProvider),
+      ref.read(placedImageProvider).images,
+    ];
+    final cached = _cachedIdsOnScreen;
+    if (cached != null &&
+        Iterable.generate(lists.length)
+            .every((i) => identical(cached.lists[i], lists[i]))) {
+      return cached.ids;
+    }
+    final ids = {
+      for (final list in lists)
+        for (final widget in list) widget.id,
+    };
+    _cachedIdsOnScreen = (lists: lists, ids: ids);
+    return ids;
   }
 
   /// Copies [widgetId] to the next or previous page of a cloud strategy, as
@@ -1267,18 +1312,14 @@ class StrategyProvider extends Notifier<StrategyState> {
             if (_lineUpCopyFitsOutbox(pageId, linkIds)) direction,
       ];
     }
-    final pages = _orderedLocalPages();
-    final currentIndex = pages.indexWhere(
-      (page) => page.id == ref.read(strategyPageSessionProvider).activePageId,
-    );
-    if (currentIndex < 0) return const [];
+    final neighbours = _localNeighbours();
+    if (neighbours == null) return const [];
     final roots = {for (final id in linkIds) pageCopyRoot(id)};
-    bool has(StrategyPage page) =>
-        page.lineUpLinks.any((link) => roots.contains(pageCopyRoot(link.id)));
+    bool has(_PageCopyRoots page) => roots.any(page.lineUpRoots.contains);
     return [
-      if (currentIndex > 0 && !has(pages[currentIndex - 1]))
+      if (neighbours.backward case final page? when !has(page))
         PageTransitionDirection.backward,
-      if (currentIndex < pages.length - 1 && !has(pages[currentIndex + 1]))
+      if (neighbours.forward case final page? when !has(page))
         PageTransitionDirection.forward,
     ];
   }
@@ -2795,4 +2836,42 @@ String autoStrategyName(MapValue map, Iterable<String> existingNames) {
     final candidate = '$base $n';
     if (!taken.contains(candidate.toLowerCase())) return candidate;
   }
+}
+
+/// The pages either side of [pageId] in [strategy] as saved, or null where
+/// there is none.
+class _LocalNeighbours {
+  const _LocalNeighbours({
+    required this.strategy,
+    required this.pageId,
+    required this.backward,
+    required this.forward,
+  });
+
+  final StrategyData strategy;
+  final String pageId;
+  final _PageCopyRoots? backward;
+  final _PageCopyRoots? forward;
+}
+
+/// What a page holds, by the id each item and lineup shares with its copies
+/// (see page_copy_id.dart).
+class _PageCopyRoots {
+  _PageCopyRoots(StrategyPage page)
+      : placedRoots = {
+          for (final PlacedWidget widget in [
+            ...page.agentData,
+            ...page.abilityData,
+            ...page.textData,
+            ...page.imageData,
+            ...page.utilityData,
+          ])
+            pageCopyRoot(widget.id),
+        },
+        lineUpRoots = {
+          for (final link in page.lineUpLinks) pageCopyRoot(link.id),
+        };
+
+  final Set<String> placedRoots;
+  final Set<String> lineUpRoots;
 }
