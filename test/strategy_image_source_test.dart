@@ -578,10 +578,15 @@ void main() {
 
     testWidgets(
         'a placed image decodes for the largest it can be drawn: the '
-        'largest image size, fully zoomed in', (tester) async {
+        'largest image size, fully zoomed in, with the window as tall as '
+        'the display', (tester) async {
+      // A display 1,000 tall; the window 900 tall around a canvas 810 tall.
+      tester.view.display.size = const Size(2400, 1500);
       tester.view.physicalSize = const Size(2400, 1350);
       tester.view.devicePixelRatio = 1.5;
       addTearDown(tester.view.reset);
+      addTearDown(tester.view.display.reset);
+      CoordinateSystem(playAreaSize: const Size(1440, 810));
       final storage = await _storageWithImage(tester);
 
       await tester.pumpWidget(_imageApp(
@@ -594,10 +599,43 @@ void main() {
           tester.widget<Image>(find.byType(Image)).image as HalvedImage;
       expect(image.image, isA<FileImage>());
       // Fully zoomed in, the largest image spans 46% of the canvas height,
-      // eight times over: the canvas is 1080 tall, 1620 physical pixels.
-      const widest = ImageScalePolicy.maxWidth / 1000 * 8 * 1080 * 1.5;
+      // eight times over. With the window filling the display the canvas
+      // is 910 tall, 1365 physical pixels.
+      const widest = ImageScalePolicy.maxWidth / 1000 * 8 * 910 * 1.5;
       expect(image.width, widest.ceil());
       expect(image.height, (widest / (16 / 9)).ceil());
+    });
+
+    testWidgets('resizing the window never decodes a placed image again',
+        (tester) async {
+      tester.view.display.size = const Size(2400, 1500);
+      tester.view.physicalSize = const Size(2400, 1350);
+      tester.view.devicePixelRatio = 1.5;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.view.display.reset);
+      CoordinateSystem(playAreaSize: const Size(1440, 810));
+      final storage = await _storageWithImage(tester);
+      final rebuild = ValueNotifier(0);
+      addTearDown(rebuild.dispose);
+
+      await tester.pumpWidget(_imageApp(
+        source: StrategySource.local,
+        storageDirectory: storage.path,
+        rebuild: rebuild,
+      ));
+      await tester.pump();
+      final before = tester.widget<Image>(find.byType(Image)).image;
+
+      // Dragged 251 physical pixels shorter; the canvas lays out again.
+      tester.view.physicalSize = const Size(2400, 1099);
+      const canvasHeight = 1099 / 1.5 - 90;
+      CoordinateSystem(
+        playAreaSize: const Size(canvasHeight * 16 / 9, canvasHeight),
+      );
+      rebuild.value++;
+      await tester.pump();
+
+      expect(tester.widget<Image>(find.byType(Image)).image, before);
     });
 
     testWidgets(

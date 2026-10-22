@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,23 @@ import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+
+/// How tall, in physical pixels, a canvas [canvasHeight] logical pixels
+/// tall gets with the window as tall as its display. The window around the
+/// canvas keeps its size as the window is resized, so this stays put while
+/// the edge is dragged; following the canvas itself would decode every
+/// picture again on each frame of the drag.
+double _tallestCanvasHeight(BuildContext context, double canvasHeight) {
+  final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+  final aroundCanvas = MediaQuery.sizeOf(context).height - canvasHeight;
+  final displayHeight = View.of(context).display.size.height;
+  final tallest = math.max(
+    displayHeight - aroundCanvas * pixelRatio,
+    canvasHeight * pixelRatio,
+  );
+  // Whole pixels, so float noise between frames never makes a new box.
+  return tallest.roundToDouble();
+}
 
 // Full-screen overlay launcher
 void _showImageFullScreenOverlay({
@@ -199,8 +217,10 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
               aspectRatio: widget.aspectRatio,
             )
           : PlacedImageDimensions.largestPictureBox(
-              canvasHeight: coordinateSystem.playAreaSize.height *
-                  MediaQuery.devicePixelRatioOf(context),
+              canvasHeight: _tallestCanvasHeight(
+                context,
+                coordinateSystem.playAreaSize.height,
+              ),
               zoom: Settings.canvasMaxZoom,
               aspectRatio: widget.aspectRatio,
             ),
