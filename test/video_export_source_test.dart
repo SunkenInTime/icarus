@@ -274,13 +274,20 @@ void main() {
       final source = await tester.runAsync(
         () => http.runWithClient(
           () async {
-            final loading = loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1);
+            final loading =
+                loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1);
             await Future<void>.delayed(const Duration(milliseconds: 250));
             // The edits were pushed, but nothing is read until they land.
             expect(queue.flushes, 1);
             expect(repository.fetches, 0);
             queue.settle();
-            return loading;
+            final source = await loading;
+            // No image loads until the export reaches its page.
+            expect(requested, isEmpty);
+            await source.images.holdPages(
+              source.strategy.pages.where((page) => page.id == 'a'),
+            );
+            return source;
           },
           () => MockClient((request) async {
             requested.add(request.url.query);
@@ -448,7 +455,8 @@ void main() {
       final source = await tester.runAsync(
         () => http.runWithClient(
           () async {
-            final loading = loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1);
+            final loading =
+                loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1);
             await Future<void>.delayed(const Duration(milliseconds: 300));
             expect(repository.fetches, 0);
             // The page reads again, and the canvas is queued.
@@ -560,12 +568,16 @@ void main() {
       await tester.runAsync(() async {
         try {
           await http.runWithClient(
-            () => loadVideoExportSource(
-              ref,
-              pageIds: {'a', 'b'},
-              pixelRatio: 1,
-              isCancelled: () => cancelled,
-            ),
+            () async {
+              final source = await loadVideoExportSource(
+                ref,
+                pageIds: {'a', 'b'},
+                pixelRatio: 1,
+                isCancelled: () => cancelled,
+              );
+              addTearDown(source.images.release);
+              await source.images.holdPages(source.strategy.pages);
+            },
             () => MockClient((request) async {
               requested.add(request.url.query);
               // The user cancels while the first image downloads.
@@ -598,7 +610,8 @@ void main() {
       Object? error;
       await tester.runAsync(() async {
         try {
-          await loadVideoExportSource(ref, pageIds: {'a', 'deleted'}, pixelRatio: 1);
+          await loadVideoExportSource(ref,
+              pageIds: {'a', 'deleted'}, pixelRatio: 1);
         } catch (caught) {
           error = caught;
         }
@@ -820,9 +833,12 @@ void main() {
         strategyProvider.overrideWith(() => strategy),
       ]);
 
-      final source = await tester.runAsync(
-        () => loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1),
-      );
+      final source = await tester.runAsync(() async {
+        final source =
+            await loadVideoExportSource(ref, pageIds: {'a'}, pixelRatio: 1);
+        await source.images.holdPages(source.strategy.pages);
+        return source;
+      });
       addTearDown(source!.images.release);
 
       expect(strategy.saves, 1);

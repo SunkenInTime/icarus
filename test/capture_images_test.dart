@@ -165,6 +165,41 @@ void main() {
     expect((info.image.width, info.image.height), (1000, 500));
   });
 
+  test(
+      'holding the next pages lets go of the images left behind and keeps '
+      'the ones they share', () async {
+    final cache = PaintingBinding.instance.imageCache;
+    final fetches = <String>[];
+    final images = CaptureImages(
+      fetch: (imageId, _, __) async {
+        fetches.add(imageId);
+        return _png(imageId.codeUnitAt(0));
+      },
+    );
+    addTearDown(images.release);
+    Map<String, CaptureImage> remote(List<String> ids) => _sized({
+          for (final id in ids)
+            id: RemoteImageUrl('https://media.example.com/$id.png'),
+        });
+    Future<Object> keyOf(String id) => images.sources[id]!
+        .imageProvider(drawnAtMost: _box)!
+        .obtainKey(ImageConfiguration.empty);
+
+    await images.hold(remote(['a', 'b']));
+    final a = await keyOf('a');
+    final b = await keyOf('b');
+    await images.hold(remote(['b', 'c']));
+    final c = await keyOf('c');
+
+    expect(images.sources.keys, unorderedEquals(['b', 'c']));
+    // The shared image is neither downloaded nor decoded again.
+    expect(fetches, ['a', 'b', 'c']);
+    cache.clear();
+    expect(cache.statusForKey(a).untracked, isTrue);
+    expect(cache.statusForKey(b).live, isTrue);
+    expect(cache.statusForKey(c).live, isTrue);
+  });
+
   test('cloud images download together, not one after another', () async {
     final started = <String>[];
     final watch = Stopwatch()..start();

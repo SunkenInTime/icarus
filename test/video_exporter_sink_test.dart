@@ -10,6 +10,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -19,6 +20,7 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_sink.dart';
 import 'package:icarus/services/video_export/quicktime_animation_sink.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
@@ -130,6 +132,7 @@ StrategyPage _page(String id, int sortIndex, Offset imageAt) => StrategyPage(
 VideoExporter _exporter(
   List<StrategyPage> pages, {
   bool transparent = false,
+  CapturePageImages? images,
 }) {
   return VideoExporter(
     strategy: StrategyData(
@@ -152,8 +155,35 @@ VideoExporter _exporter(
     backgroundDotOpacity: 1,
     geometry: null,
     transparentBackground: transparent,
-    imageSources: {'image-1': ImageBytes(_magentaPng)},
+    images: images ?? _PageImages(),
   );
+}
+
+/// The magenta picture on every page, recording which pages the export
+/// holds as it goes.
+class _PageImages extends CapturePageImages {
+  _PageImages()
+      : super(
+          imagesOf: (page) => {
+            for (final image in page.imageData)
+              image.pictureId: (
+                source: ImageBytes(_magentaPng),
+                drawnAtMost: PlacedImageDimensions.capturedPictureBox(
+                  pixelRatio: 1,
+                  aspectRatio: image.aspectRatio,
+                ),
+              ),
+          },
+          fetch: (_, __, ___) => throw StateError('nothing to fetch'),
+        );
+
+  final held = <List<String>>[];
+
+  @override
+  Future<void> holdPages(Iterable<StrategyPage> pages) {
+    held.add([for (final page in pages) page.id]);
+    return super.holdPages(pages);
+  }
 }
 
 /// Runs the export on real time with the app's frames still coming, as in
@@ -240,6 +270,30 @@ void main() {
   tearDownAll(() async {
     await Hive.close();
     await hiveDir.delete(recursive: true);
+  });
+
+  testWidgets('holds only the pictures of the page it draws and the next one',
+      (tester) async {
+    CoordinateSystem(playAreaSize: const Size(1600, 900));
+    final pages = [
+      _page('one', 0, const Offset(400, 400)),
+      _page('two', 1, const Offset(700, 600)),
+      _page('three', 2, const Offset(500, 300)),
+    ];
+    final images = _PageImages();
+    final exporter = _exporter(pages, images: images);
+
+    final sink = _RecordingSink();
+
+    final outcome = await _exportWithFrames(tester, exporter, pages, sink);
+
+    expect(outcome, same(sink.video));
+    expect(images.held, [
+      ['one', 'two'],
+      ['two', 'three'],
+      ['three'],
+    ]);
+    images.release();
   });
 
   testWidgets(

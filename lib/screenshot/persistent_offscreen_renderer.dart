@@ -241,12 +241,15 @@ class PersistentOffscreenRenderer {
       // providers and focus tree are still alive.
       await drainFrame();
 
-      _rootElement = RenderObjectToWidgetAdapter<RenderBox>(
-        container: _repaintBoundary,
-        debugShortDescription: '[Icarus video export root]',
-      ).attachToRenderTree(_buildOwner, _rootElement);
-      _flushFrame();
-      _rootElement = null;
+      // A capture stopped before its first frame has nothing to unmount.
+      if (_rootElement != null) {
+        _rootElement = RenderObjectToWidgetAdapter<RenderBox>(
+          container: _repaintBoundary,
+          debugShortDescription: '[Icarus video export root]',
+        ).attachToRenderTree(_buildOwner, _rootElement);
+        _flushFrame();
+        _rootElement = null;
+      }
 
       // Unmounting can schedule focus microtasks and widget cleanup callbacks.
       // Let both queues drain before releasing the objects they reference.

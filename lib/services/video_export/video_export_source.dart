@@ -72,9 +72,13 @@ class VideoExportPagesChanged implements Exception {
   String toString() => 'VideoExportPagesChanged';
 }
 
-/// The strategy a video export renders, saved and whole, with its images
-/// decoded. Release [images] once the export is done.
-typedef VideoExportSource = ({StrategyData strategy, CaptureImages images});
+/// The strategy a video export renders, saved and whole, with its images,
+/// which the export holds page by page. Release [images] once the export is
+/// done.
+typedef VideoExportSource = ({
+  StrategyData strategy,
+  CapturePageImages images,
+});
 
 /// The open strategy read whole, with what its cloud images are, before any
 /// image is loaded.
@@ -84,7 +88,7 @@ typedef SavedStrategyRead = ({
 });
 
 /// Saves the open strategy and reads it back whole for [pageIds], with its
-/// images decoded for a capture rendered at [pixelRatio].
+/// images ready to load for a capture rendered at [pixelRatio].
 ///
 /// A local strategy is saved and read back from the library. A cloud
 /// strategy's other pages live only on the server, so the export sends the
@@ -94,7 +98,7 @@ typedef SavedStrategyRead = ({
 /// Throws [VideoExportNotSynced] when this device's work does not land
 /// (see [sendCloudWork]), [VideoExportPagesChanged] when a page in
 /// [pageIds] no longer exists, [CaptureImagesUnavailable] when an image on
-/// the exported pages cannot be loaded, and [VideoExportCancelled] once
+/// the exported pages is still loading, and [VideoExportCancelled] once
 /// [isCancelled] turns true.
 Future<VideoExportSource> loadVideoExportSource(
   WidgetRef ref, {
@@ -114,13 +118,20 @@ Future<VideoExportSource> loadVideoExportSource(
   if (pages.length != pageIds.length) {
     throw const VideoExportPagesChanged();
   }
-  final images = await resolvePageImages(
+  final images = capturePageImages(
     ref,
     read,
-    pages,
     pixelRatio: pixelRatio,
     isCancelled: isCancelled,
   );
+  // An image still on its way stops the export before it starts; the
+  // others load as the export reaches their pages.
+  if (pages.any((page) => images
+      .imagesOf(page)
+      .values
+      .any((image) => image.source is ImageLoading))) {
+    throw const CaptureImagesUnavailable.stillLoading();
+  }
   return (strategy: read.strategy, images: images);
 }
 
@@ -200,14 +211,13 @@ Future<SavedStrategyRead> readSavedStrategy(
   }
 }
 
-/// Loads and decodes every image on [pages] of [read], so a capture of them
-/// rendered at [pixelRatio] paints with each one in place. Throws
+/// The images on the pages of [read], for a capture rendered at
+/// [pixelRatio] to hold page by page. Loading them throws
 /// [CaptureImagesUnavailable] when one cannot be loaded, and
 /// [VideoExportCancelled] once [isCancelled] turns true.
-Future<CaptureImages> resolvePageImages(
+CapturePageImages capturePageImages(
   WidgetRef ref,
-  SavedStrategyRead read,
-  Iterable<StrategyPage> pages, {
+  SavedStrategyRead read, {
   required double pixelRatio,
   bool Function() isCancelled = _never,
 }) {
@@ -217,31 +227,30 @@ Future<CaptureImages> resolvePageImages(
   final shareToken =
       linkView?.strategyPublicId == strategyId ? linkView!.token : null;
   final isCloud = state.source == StrategySource.cloud;
-  return resolveCaptureImages(
-    {
-      for (final page in pages)
-        // By picture, as the captured pages' images look them up.
-        for (final image in page.imageData)
-          image.pictureId: (
-            source: resolveStrategyImageSource(
-              localFilePath: findLocalImageFile(
-                storageDirectory: state.storageDirectory,
-                imageId: image.pictureId,
-                fileExtension: image.fileExtension,
-              ),
-              isCloudStrategy: isCloud,
-              // The whole strategy was just read. An export has waited for
-              // this device's uploads to land; a preview shows those that
-              // have.
-              assetsLoaded: true,
-              remoteAsset: read.assets[image.pictureId],
-              uploadMayBeQueuedHere: false,
+  return CapturePageImages(
+    imagesOf: (page) => {
+      // By picture, as the captured pages' images look them up.
+      for (final image in page.imageData)
+        image.pictureId: (
+          source: resolveStrategyImageSource(
+            localFilePath: findLocalImageFile(
+              storageDirectory: state.storageDirectory,
+              imageId: image.pictureId,
+              fileExtension: image.fileExtension,
             ),
-            drawnAtMost: PlacedImageDimensions.capturedPictureBox(
-              pixelRatio: pixelRatio,
-              aspectRatio: image.aspectRatio,
-            ),
+            isCloudStrategy: isCloud,
+            // The whole strategy was just read. An export has waited for
+            // this device's uploads to land; a preview shows those that
+            // have.
+            assetsLoaded: true,
+            remoteAsset: read.assets[image.pictureId],
+            uploadMayBeQueuedHere: false,
           ),
+          drawnAtMost: PlacedImageDimensions.capturedPictureBox(
+            pixelRatio: pixelRatio,
+            aspectRatio: image.aspectRatio,
+          ),
+        ),
     },
     fetch: (imageId, url, client) => downloadCloudImageBytes(
       url,
