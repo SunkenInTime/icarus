@@ -488,7 +488,7 @@ void main() {
   testWidgets(
       "a page drawn from this computer's copy is never Synced, and says "
       'how old the copy is', (tester) async {
-    final copiedAt = DateTime.now().subtract(const Duration(minutes: 5));
+    final copiedAt = _recentCopyTime();
     // Connected and ready, queues settled: only the copy differs.
     final container = _createContainer(
       sessionStatus: ConvexAuthStatus.ready,
@@ -522,7 +522,7 @@ void main() {
 
   testWidgets("the copy's tooltip counts the changes saved on this computer",
       (tester) async {
-    final copiedAt = DateTime.now().subtract(const Duration(minutes: 5));
+    final copiedAt = _recentCopyTime();
     final container = _createContainer(
       connected: false,
       shownCopy: (copiedAt: copiedAt),
@@ -2315,4 +2315,13 @@ class _ReadyAuthProvider extends AuthProvider {
         convexAuthStatus: ConvexAuthStatus.ready,
         user: null,
       );
+}
+
+/// A few minutes ago, but never yesterday: the tooltip names a copy from
+/// another day by its date, and a run just after midnight would cross it.
+DateTime _recentCopyTime() {
+  final now = DateTime.now();
+  final fiveMinutesAgo = now.subtract(const Duration(minutes: 5));
+  final midnight = DateTime(now.year, now.month, now.day);
+  return fiveMinutesAgo.isBefore(midnight) ? midnight : fiveMinutesAgo;
 }
