@@ -76,6 +76,19 @@ void main() {
       expect((size.width, size.height), (null, null));
     });
 
+    test(
+        'a halving that would change the picture\'s shape by half a pixel '
+        'at its box is not taken', () {
+      // An 8000x101 strip in a 497 px wide box: a half would be 4000x51,
+      // a 1% wider strip, 5 px at the box's width.
+      final strip = target(8000, 101, 497, 7);
+      expect((strip.width, strip.height), (null, null));
+      // A shape that halves evenly still does, as far as it stays whole:
+      // an eighth would be 12.5 px tall.
+      final even = target(8000, 100, 497, 7);
+      expect((even.width, even.height), (2000, 25));
+    });
+
     test('a box with no finite size keeps every pixel', () {
       final box = ResizeToCover(
         MemoryImage(Uint8List(0)),
@@ -105,7 +118,7 @@ void main() {
     );
   });
 
-  testWidgets('the same picture in the same box shares one decode',
+  testWidgets('the same picture in boxes the same whole size shares one key',
       (tester) async {
     final image = MemoryImage(_png(64, 64));
     final a = ResizeToCover(image, box: const Size(10.2, 10.2));
@@ -120,7 +133,7 @@ void main() {
     expect(a, isNot(c));
   });
 
-  testWidgets('a picture added to a page gets its aspect ratio from its size',
+  testWidgets('a picture added to a page still gets its aspect ratio',
       (tester) async {
     final container = ProviderContainer();
     addTearDown(container.dispose);

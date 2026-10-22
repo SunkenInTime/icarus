@@ -19,6 +19,7 @@ import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/screenshot/offscreen_capture.dart';
 import 'package:icarus/services/local_image_file_native.dart' as native;
 import 'package:icarus/services/local_image_file_stub.dart' as web;
@@ -600,11 +601,28 @@ void main() {
     });
 
     testWidgets(
-        'in a capture, a placed image asks for the box the capture decoded '
-        'it for', (tester) async {
+        'in a capture, a placed image finds its picture already decoded at '
+        'the box the capture held it for', (tester) async {
       final storage = await _storageWithImage(tester);
+      final file = LocalImageFile(_imageFile(storage).path);
+      // Held as the capture holds a page's pictures before its first frame.
+      final held = await tester.runAsync(
+        () => resolveCaptureImages(
+          {
+            _imageId: (
+              source: file,
+              drawnAtMost: PlacedImageDimensions.capturedPictureBox(
+                pixelRatio: 0.2,
+                aspectRatio: 16 / 9,
+              ),
+            ),
+          },
+          fetch: (_, __, ___) => throw StateError('nothing to fetch'),
+        ),
+      );
+      addTearDown(held!.release);
       final container = createCaptureContainer(
-        images: {_imageId: LocalImageFile(_imageFile(storage).path)},
+        images: held.sources,
         pixelRatio: 0.2,
       );
       addTearDown(container.dispose);
@@ -625,16 +643,14 @@ void main() {
           ),
         ),
       ));
-      await tester.pump();
 
+      final painted = tester.widget<Image>(find.byType(Image)).image;
+      final key = await tester.runAsync(
+        () => painted.obtainKey(ImageConfiguration.empty),
+      );
       expect(
-        tester.widget<Image>(find.byType(Image)).image,
-        LocalImageFile(_imageFile(storage).path).imageProvider(
-          drawnAtMost: PlacedImageDimensions.capturedPictureBox(
-            pixelRatio: 0.2,
-            aspectRatio: 16 / 9,
-          ),
-        ),
+        PaintingBinding.instance.imageCache.statusForKey(key!).keepAlive,
+        isTrue,
       );
     });
 

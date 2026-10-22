@@ -8,13 +8,15 @@ import 'package:flutter/painting.dart';
 /// [image] decoded with only as many pixels as it needs to fill a box
 /// [width] × [height] physical pixels: its full size, halved as many times
 /// as it can be while it still fills the box. Drawn no larger than that
-/// box, it looks the same as the full picture and holds a fraction of the
-/// memory.
+/// box, it holds a fraction of the memory.
 ///
-/// Only halving, because halving is how the GPU shrinks a picture to draw
-/// it smaller: the halved picture is one the GPU would have made from the
-/// full one anyway. A picture shrunk to any other size first is drawn
-/// visibly softer.
+/// Only halving, because the GPU shrinks a picture by halving it too
+/// (mipmaps) when it draws it smaller. Shrunk straight to the box instead,
+/// text in a picture drew visibly softer at the canvas's full zoom. The
+/// decoder makes the halves in one step (a JPEG by its own scaling, other
+/// formats with one linear resize), so below half size the result is close
+/// to the GPU's, not identical; measured differences were at edges and not
+/// visible at the sizes pictures are drawn.
 ///
 /// Unlike [ResizeImage] it needs no aspect ratio up front: whichever side
 /// needs more pixels to fill the box decides, which is enough for both
@@ -34,6 +36,11 @@ class ResizeToCover extends ImageProvider<ResizeToCoverKey> {
   /// The size to decode a picture [intrinsicWidth] × [intrinsicHeight] at
   /// to fill a box [width] × [height]. A box with no finite size decodes the
   /// whole picture.
+  ///
+  /// A halved side rounds to whole pixels, which changes the picture's
+  /// shape a little. A halving that would move its edge by half a pixel or
+  /// more, drawn at the box's size, is not taken: a long strip a few pixels
+  /// tall keeps its pixels.
   static ui.TargetImageSize targetSize({
     required int intrinsicWidth,
     required int intrinsicHeight,
@@ -42,15 +49,18 @@ class ResizeToCover extends ImageProvider<ResizeToCoverKey> {
   }) {
     if (width <= 0 || height <= 0) return const ui.TargetImageSize();
     final needed = math.max(width / intrinsicWidth, height / intrinsicHeight);
-    var divisor = 1;
-    while (needed * divisor * 2 <= 1) {
-      divisor *= 2;
+    final longestSide = math.max(width, height);
+    ui.TargetImageSize? best;
+    for (var divisor = 2; needed * divisor <= 1; divisor *= 2) {
+      final halvedWidth = (intrinsicWidth / divisor).ceil();
+      final halvedHeight = (intrinsicHeight / divisor).ceil();
+      final shapeChange =
+          (halvedWidth * intrinsicHeight) / (halvedHeight * intrinsicWidth) - 1;
+      if (shapeChange.abs() * longestSide < 0.5) {
+        best = ui.TargetImageSize(width: halvedWidth, height: halvedHeight);
+      }
     }
-    if (divisor == 1) return const ui.TargetImageSize();
-    return ui.TargetImageSize(
-      width: (intrinsicWidth / divisor).ceil(),
-      height: (intrinsicHeight / divisor).ceil(),
-    );
+    return best ?? const ui.TargetImageSize();
   }
 
   @override
