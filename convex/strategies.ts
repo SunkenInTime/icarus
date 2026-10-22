@@ -480,6 +480,8 @@ export const listInventory = query({
     const folderPublicIds = new Map(
       folders.map((folder) => [folder._id, folder.publicId]),
     );
+    // Every strategy of the owner, half-moved ones too (filtered below):
+    // this is read once, not watched, so their writes cost nothing here.
     const strategies = await ctx.db
       .query("strategies")
       .withIndex("by_ownerId_and_folderId_and_unfinishedMove", (q) =>
