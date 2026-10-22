@@ -213,7 +213,7 @@ Future<List<PageScreenshot>> captureStrategyPages(
       ref,
       strategy: source.strategy,
       pages: _numbered(source.strategy, pageIds),
-      images: source.images.sources,
+      images: source.images,
       transparentBackground: transparentBackground,
       pixelRatio: 1,
       read: _png,
@@ -286,39 +286,34 @@ Future<void> renderPageThumbnails(
     onUnavailable(missing, const VideoExportPagesChanged());
   }
 
-  // Each page's images load on their own, so one that won't load costs
+  if (pages.isEmpty) return;
+
+  // Each page's images load as it is reached, so one that won't load costs
   // only its own page.
-  final ready = <({int number, StrategyPage page})>[];
-  final held = <CaptureImages>[];
+  final images = capturePageImages(
+    ref,
+    read,
+    pixelRatio: pageThumbnailPixelRatio,
+    isCancelled: isCancelled,
+  );
+  final rendered = <String>{};
   try {
-    for (final entry in pages) {
-      if (isCancelled()) return;
-      try {
-        held.add(await resolvePageImages(
-          ref,
-          read,
-          [entry.page],
-          pixelRatio: pageThumbnailPixelRatio,
-          isCancelled: isCancelled,
-        ));
-        ready.add(entry);
-      } on VideoExportCancelled {
-        return;
-      } catch (error) {
-        onUnavailable({entry.page.id}, error);
-      }
-    }
-    if (ready.isEmpty) return;
     await _renderPages(
       ref,
       strategy: read.strategy,
-      pages: ready,
-      images: {for (final images in held) ...images.sources},
+      pages: pages,
+      images: images,
       transparentBackground: true,
       pixelRatio: pageThumbnailPixelRatio,
       read: _image,
-      onRendered: (_, page, image) => onThumbnail(page.id, image),
-      onPageFailed: (page, error) => onUnavailable({page.id}, error),
+      onRendered: (_, page, image) {
+        rendered.add(page.id);
+        onThumbnail(page.id, image);
+      },
+      onPageFailed: (page, error) {
+        rendered.add(page.id);
+        onUnavailable({page.id}, error);
+      },
       isCancelled: isCancelled,
       settleUntilQuiet: true,
     );
@@ -326,11 +321,15 @@ Future<void> renderPageThumbnails(
     return;
   } catch (error) {
     // The renderer itself could not start; nothing more will draw.
-    onUnavailable({for (final entry in ready) entry.page.id}, error);
+    onUnavailable(
+      {
+        for (final entry in pages)
+          if (!rendered.contains(entry.page.id)) entry.page.id,
+      },
+      error,
+    );
   } finally {
-    for (final images in held) {
-      images.release();
-    }
+    images.release();
   }
 }
 
@@ -348,16 +347,18 @@ List<({int number, StrategyPage page})> _numbered(
   ];
 }
 
-/// Renders [pages] of [strategy], in order, painting their images from
-/// [images], and hands each frame [read] takes to [onRendered].
+/// Renders [pages] of [strategy], in order, and hands each frame [read]
+/// takes to [onRendered]. Each page's images are held while it renders, and
+/// let go of once the next page begins.
 ///
-/// A page that fails to render goes to [onPageFailed] and the rest carry
-/// on; without it, the failure ends the whole render.
+/// A page that fails to render, or whose images fail to load, goes to
+/// [onPageFailed] and the rest carry on; without it, the failure ends the
+/// whole render.
 Future<void> _renderPages<T>(
   WidgetRef ref, {
   required StrategyData strategy,
   required List<({int number, StrategyPage page})> pages,
-  required Map<String, StrategyImageSource> images,
+  required CapturePageImages images,
   required bool transparentBackground,
   required double pixelRatio,
   required _ReadFrame<T> read,
@@ -375,7 +376,7 @@ Future<void> _renderPages<T>(
   final strategyState = ref.read(strategyProvider);
   final dotOpacity = ref.read(appPreferencesProvider).backgroundDotOpacity;
   final container = createCaptureContainer(
-    images: images,
+    images: images.sources,
     pixelRatio: pixelRatio,
   );
   CaptureGeometryLease? geometry;
@@ -400,6 +401,7 @@ Future<void> _renderPages<T>(
           checkCancelled();
           onPage?.call(index + 1, pages.length);
           try {
+            await images.holdPages([entry.page]);
             final view = ScreenshotView.forPage(
               strategy,
               entry.page,
@@ -422,7 +424,9 @@ Future<void> _renderPages<T>(
             first = false;
             onRendered(entry.number, entry.page, await read(renderer, view));
           } catch (error) {
-            if (onPageFailed == null) rethrow;
+            if (onPageFailed == null || error is VideoExportCancelled) {
+              rethrow;
+            }
             onPageFailed(entry.page, error);
           }
         }

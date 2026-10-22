@@ -143,8 +143,7 @@ void main() {
     }
   });
 
-  test('each image is decoded for the box the capture draws it in',
-      () async {
+  test('each image is decoded for the box the capture draws it in', () async {
     final big = Uint8List.fromList(
       img.encodePng(img.Image(width: 2000, height: 1000)),
     );
@@ -156,13 +155,50 @@ void main() {
 
     // The capture's widget asks for the same box and gets the held decode.
     final decoded = Completer<ImageInfo>();
-    images.sources['big']!
+    final stream = images.sources['big']!
         .imageProvider(drawnAtMost: const Size(500, 250))!
-        .resolve(ImageConfiguration.empty)
-        .addListener(ImageStreamListener((info, _) => decoded.complete(info)));
+        .resolve(ImageConfiguration.empty);
+    final listener = ImageStreamListener((info, _) => decoded.complete(info));
+    stream.addListener(listener);
+    addTearDown(() => stream.removeListener(listener));
     final info = await decoded.future;
     addTearDown(info.dispose);
     expect((info.image.width, info.image.height), (1000, 500));
+  });
+
+  test(
+      'holding the next pages lets go of the images left behind and keeps '
+      'the ones they share', () async {
+    final cache = PaintingBinding.instance.imageCache;
+    final fetches = <String>[];
+    final images = CaptureImages(
+      fetch: (imageId, _, __) async {
+        fetches.add(imageId);
+        return _png(imageId.codeUnitAt(0));
+      },
+    );
+    addTearDown(images.release);
+    Map<String, CaptureImage> remote(List<String> ids) => _sized({
+          for (final id in ids)
+            id: RemoteImageUrl('https://media.example.com/$id.png'),
+        });
+    Future<Object> keyOf(String id) => images.sources[id]!
+        .imageProvider(drawnAtMost: _box)!
+        .obtainKey(ImageConfiguration.empty);
+
+    await images.hold(remote(['a', 'b']));
+    final a = await keyOf('a');
+    final b = await keyOf('b');
+    await images.hold(remote(['b', 'c']));
+    final c = await keyOf('c');
+
+    expect(images.sources.keys, unorderedEquals(['b', 'c']));
+    // The shared image is not downloaded again.
+    expect(fetches, ['a', 'b', 'c']);
+    cache.clear();
+    expect(cache.statusForKey(a).untracked, isTrue);
+    expect(cache.statusForKey(b).live, isTrue);
+    expect(cache.statusForKey(c).live, isTrue);
   });
 
   test('cloud images download together, not one after another', () async {
@@ -283,7 +319,9 @@ void main() {
     final failure = Exception('offline');
     await expectLater(
       resolveCaptureImages(
-        _sized({'remote': const RemoteImageUrl('https://media.example.com/r.png')}),
+        _sized({
+          'remote': const RemoteImageUrl('https://media.example.com/r.png')
+        }),
         fetch: (_, __, ___) async => throw failure,
       ),
       throwsA(
@@ -301,7 +339,9 @@ void main() {
   test('bytes that do not decode stop the capture', () async {
     await expectLater(
       resolveCaptureImages(
-        _sized({'remote': const RemoteImageUrl('https://media.example.com/r.png')}),
+        _sized({
+          'remote': const RemoteImageUrl('https://media.example.com/r.png')
+        }),
         fetch: (_, __, ___) async => Uint8List.fromList([1, 2, 3, 4]),
       ),
       throwsA(

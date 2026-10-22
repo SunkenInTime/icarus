@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:flutter/painting.dart';
 import 'package:http/http.dart' as http;
 import 'package:icarus/providers/strategy_image_source.dart';
+import 'package:icarus/providers/strategy_page.dart';
 
 /// An image a capture would paint is not ready: its cloud copy is still
 /// loading, or its bytes could not be fetched or decoded. The capture stops
@@ -41,78 +43,134 @@ typedef CaptureImageFetcher = Future<Uint8List> Function(
 typedef CaptureImage = ({StrategyImageSource source, Size drawnAtMost});
 
 /// What each image in a capture paints, by image id, decoded and held in
-/// the image cache so the capture's first frame already has every picture.
-/// Call [release] once the capture is done.
+/// the image cache so a frame that draws them already has every picture.
+/// A capture that walks a strategy page by page holds only the pages it is
+/// drawing (see [hold]). Call [release] once the capture is done.
 class CaptureImages {
-  CaptureImages._(this.sources, this._holds);
+  CaptureImages({required CaptureImageFetcher fetch}) : _fetch = fetch;
 
-  /// Feeds [captureImageSourcesProvider] in the capture's container.
-  final Map<String, StrategyImageSource> sources;
-  final List<_HeldImage> _holds;
+  final CaptureImageFetcher _fetch;
+  final _sources = <String, StrategyImageSource>{};
+  final _holds = <String, _HeldImage>{};
+
+  /// Feeds [captureImageSourcesProvider] in the capture's container. It
+  /// stays current: an image [hold] loads is in it before the frame that
+  /// draws it is built.
+  late final Map<String, StrategyImageSource> sources =
+      UnmodifiableMapView(_sources);
+
+  /// Holds exactly [images]: lets go of every held image not among them,
+  /// then loads and decodes those not held yet.
+  ///
+  /// A capture has no network reads of its own, so cloud URLs are fetched
+  /// here and painted from memory. Files and bytes already in memory paint
+  /// as they are, and an image the editor shows as unavailable is captured
+  /// that way too. Every image that paints is decoded before this returns.
+  /// Throws [CaptureImagesUnavailable] while an image is still loading, or
+  /// when a fetch or a decode fails. [checkpoint] runs before each image;
+  /// whatever it throws stops the work. What was loaded stays held until
+  /// the next [hold] or [release].
+  Future<void> hold(
+    Map<String, CaptureImage> images, {
+    void Function()? checkpoint,
+  }) async {
+    for (final imageId in [..._sources.keys]) {
+      if (images.containsKey(imageId)) continue;
+      _holds.remove(imageId)?.release();
+      _sources.remove(imageId);
+    }
+    final missing = {
+      for (final MapEntry(key: imageId, value: image) in images.entries)
+        if (!_sources.containsKey(imageId)) imageId: image,
+    };
+    if (missing.values.any((image) => image.source is ImageLoading)) {
+      throw const CaptureImagesUnavailable.stillLoading();
+    }
+    // Downloads run together, so a page's wait is its slowest image rather
+    // than the sum of them. They share one client, closed only when this
+    // returns, so a capture that stops early aborts the downloads it no
+    // longer needs; a download nobody awaits must not surface as an
+    // unhandled error.
+    final client = http.Client();
+    final downloads = {
+      for (final MapEntry(key: imageId, value: (:source, drawnAtMost: _))
+          in missing.entries)
+        if (source case RemoteImageUrl(:final url))
+          imageId: _guard(() => _fetch(imageId, url, client))..ignore(),
+    };
+    try {
+      for (final MapEntry(key: imageId, value: (:source, :drawnAtMost))
+          in missing.entries) {
+        checkpoint?.call();
+        final download = downloads[imageId];
+        final paintable =
+            download == null ? source : ImageBytes(await download);
+        // Decoded as the capture's image widgets paint it.
+        final image = paintable.imageProvider(drawnAtMost: drawnAtMost);
+        if (image != null) {
+          _holds[imageId] = await _guard(() => _HeldImage.decode(image));
+        }
+        _sources[imageId] = paintable;
+      }
+      checkpoint?.call();
+    } finally {
+      client.close();
+    }
+  }
 
   void release() {
-    for (final hold in _holds) {
+    for (final hold in _holds.values) {
       hold.release();
     }
     _holds.clear();
+    _sources.clear();
   }
 }
 
-/// Turns each image a capture paints, by image id, into what an offscreen
-/// capture can paint.
-///
-/// A capture has no network reads of its own, so cloud URLs are fetched here
-/// and painted from memory. Files and bytes already in memory paint as they
-/// are, and an image the editor shows as unavailable is captured that way
-/// too. Every image that paints is decoded before this returns. Throws
-/// [CaptureImagesUnavailable] while an image is still loading, or when a
-/// fetch or a decode fails. [checkpoint] runs before each image; whatever it
-/// throws stops the work and releases what was held.
+/// A capture's images, held a page or two at a time as it walks a
+/// strategy, so a long strategy never has every page's pictures in memory
+/// at once.
+class CapturePageImages {
+  CapturePageImages({
+    required this.imagesOf,
+    required CaptureImageFetcher fetch,
+    this.checkpoint,
+  }) : _held = CaptureImages(fetch: fetch);
+
+  /// The images on a page, as the capture draws them.
+  final Map<String, CaptureImage> Function(StrategyPage page) imagesOf;
+
+  /// Runs before each image loads (see [CaptureImages.hold]).
+  final void Function()? checkpoint;
+  final CaptureImages _held;
+
+  /// See [CaptureImages.sources].
+  Map<String, StrategyImageSource> get sources => _held.sources;
+
+  /// Holds the images of [pages] and lets go of every other.
+  Future<void> holdPages(Iterable<StrategyPage> pages) => _held.hold(
+        {for (final page in pages) ...imagesOf(page)},
+        checkpoint: checkpoint,
+      );
+
+  void release() => _held.release();
+}
+
+/// Holds every image in [images] for a one-page capture (see
+/// [CaptureImages.hold]). Whatever stops it releases what was held.
 Future<CaptureImages> resolveCaptureImages(
   Map<String, CaptureImage> images, {
   required CaptureImageFetcher fetch,
   void Function()? checkpoint,
 }) async {
-  if (images.values.any((image) => image.source is ImageLoading)) {
-    throw const CaptureImagesUnavailable.stillLoading();
-  }
-  // Downloads run together, so a page's wait is its slowest image rather
-  // than the sum of them. They share one client, closed only when this
-  // returns, so a capture that stops early aborts the downloads it no
-  // longer needs; a download nobody awaits must not surface as an
-  // unhandled error.
-  final client = http.Client();
-  final downloads = {
-    for (final MapEntry(key: imageId, value: (:source, drawnAtMost: _))
-        in images.entries)
-      if (source case RemoteImageUrl(:final url))
-        imageId: _guard(() => fetch(imageId, url, client))..ignore(),
-  };
-  final resolved = <String, StrategyImageSource>{};
-  final holds = <_HeldImage>[];
+  final held = CaptureImages(fetch: fetch);
   try {
-    for (final MapEntry(key: imageId, value: (:source, :drawnAtMost))
-        in images.entries) {
-      checkpoint?.call();
-      final download = downloads[imageId];
-      final paintable = download == null ? source : ImageBytes(await download);
-      // Decoded as the capture's image widgets paint it.
-      final image = paintable.imageProvider(drawnAtMost: drawnAtMost);
-      if (image != null) {
-        holds.add(await _guard(() => _HeldImage.decode(image)));
-      }
-      resolved[imageId] = paintable;
-    }
-    checkpoint?.call();
+    await held.hold(images, checkpoint: checkpoint);
   } catch (_) {
-    for (final hold in holds) {
-      hold.release();
-    }
+    held.release();
     rethrow;
-  } finally {
-    client.close();
   }
-  return CaptureImages._(resolved, holds);
+  return held;
 }
 
 Future<T> _guard<T>(Future<T> Function() load) async {

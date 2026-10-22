@@ -477,7 +477,8 @@ void main() {
           transparentBackground: false,
           onPage: (page, total) {
             started.add(page);
-            // The user cancels while the first page renders.
+            // The user cancels as the first page starts, while its pictures
+            // load.
             cancelled = true;
           },
           isCancelled: () => cancelled,

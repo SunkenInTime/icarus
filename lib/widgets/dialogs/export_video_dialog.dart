@@ -191,7 +191,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
       _progress = 0;
       _progressLabel = 'Saving your changes';
     });
-    CaptureImages? images;
+    CapturePageImages? images;
     try {
       final source = await loadVideoExportSource(
         ref,
@@ -234,7 +234,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
             ref.read(appPreferencesProvider).backgroundDotOpacity,
         geometry: geometry,
         transparentBackground: transparent,
-        imageSources: images.sources,
+        images: images,
         navigation: navigation,
         requireNavigation: requireNavigation,
       );

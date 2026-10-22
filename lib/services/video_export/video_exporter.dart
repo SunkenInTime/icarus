@@ -10,7 +10,7 @@ import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/page_transition/transition_planner.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/strategy_image_source.dart';
+import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -34,8 +34,8 @@ class VideoExporter {
     required this.mapState,
     required this.backgroundDotOpacity,
     required this.geometry,
+    required this.images,
     this.transparentBackground = false,
-    this.imageSources = const {},
     this.navigation,
     this.requireNavigation = false,
   });
@@ -50,9 +50,9 @@ class VideoExporter {
   /// [ScreenshotView.transparentBackground]). The sink must keep alpha.
   final bool transparentBackground;
 
-  /// What each image on the exported pages paints, by image id; see
-  /// [captureImageSourcesProvider].
-  final Map<String, StrategyImageSource> imageSources;
+  /// The images on the exported pages. The export holds only those of the
+  /// page it is drawing and the next one.
+  final CapturePageImages images;
   final NavigationGeometryMap? navigation;
   final bool requireNavigation;
 
@@ -152,7 +152,7 @@ class VideoExporter {
     PersistentOffscreenRenderer? renderer;
     _sink = sink;
     try {
-      final offscreenContainer = createCaptureContainer(images: imageSources);
+      final offscreenContainer = createCaptureContainer(images: images.sources);
       captureContainer = offscreenContainer;
       onProgress?.call(0, 'Preparing map');
       captureGeometry = await prepareCaptureGeometry(
@@ -193,22 +193,28 @@ class VideoExporter {
         );
       }
 
-      // Warm the first page's SVGs and image streams once. Later pages get a
-      // shorter warm-up immediately before their transition begins; the
-      // transition frames themselves never pay a fixed settling delay.
-      final firstView = _stillView(pages.first);
-      firstView.hydrateProviders(offscreenContainer);
-      await renderer.prepare(
-        firstView,
-        settleDuration: const Duration(milliseconds: 800),
-      );
-
       for (var i = 0; i < pages.length; i++) {
         final page = pages[i];
+        final nextPage = i + 1 < pages.length ? pages[i + 1] : null;
+        // The still needs this page's images, the transition after it the
+        // next page's too; every earlier page's are let go.
+        await images.holdPages([page, if (nextPage != null) nextPage]);
+        if (_cancelled) throw VideoExportCancelled();
+        if (i == 0) {
+          // Warm the first page's SVGs and image streams once. Later pages
+          // get a shorter warm-up immediately before their transition
+          // begins; the transition frames themselves never pay a fixed
+          // settling delay.
+          final firstView = _stillView(page);
+          firstView.hydrateProviders(offscreenContainer);
+          await renderer.prepare(
+            firstView,
+            settleDuration: const Duration(milliseconds: 800),
+          );
+        }
         await renderFrame(_stillView(page), stepSeconds);
 
-        if (i + 1 >= pages.length) continue;
-        final nextPage = pages[i + 1];
+        if (nextPage == null) continue;
         final entries = TransitionPlanner.diff(
           TransitionPlanner.placedWidgetMapForPage(page),
           TransitionPlanner.placedWidgetMapForPage(nextPage),
