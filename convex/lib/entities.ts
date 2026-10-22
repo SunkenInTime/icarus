@@ -1,6 +1,6 @@
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { invalidOpError, notFoundError } from "./errors";
+import { conflictError, invalidOpError, notFoundError } from "./errors";
 
 type AnyCtx = QueryCtx | MutationCtx;
 
@@ -18,6 +18,31 @@ export async function getStrategyByPublicId(
   }
 
   return strategy;
+}
+
+/// Refuses unless [folderId] is the folder [withinFolderPublicId] or lies
+/// below it. A client deleting a folder's contents one call at a time sends
+/// the folder it is deleting, so a strategy or subfolder someone moved out
+/// after the client listed it is never deleted. Absent, nothing is checked:
+/// clients that never send it behave as before.
+export async function assertWithinFolder(
+  ctx: AnyCtx,
+  folderId: Id<"folders"> | undefined,
+  withinFolderPublicId: string | undefined,
+): Promise<void> {
+  if (withinFolderPublicId === undefined) return;
+  const within = await ctx.db
+    .query("folders")
+    .withIndex("by_publicId", (q) => q.eq("publicId", withinFolderPublicId))
+    .first();
+  const visited = new Set<Id<"folders">>();
+  let current = folderId;
+  while (within !== null && current !== undefined && !visited.has(current)) {
+    if (current === within._id) return;
+    visited.add(current);
+    current = (await ctx.db.get(current))?.parentFolderId;
+  }
+  throw conflictError("Not inside the folder being deleted");
 }
 
 export async function getFolderByPublicId(

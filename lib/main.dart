@@ -7,7 +7,8 @@ import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -37,6 +38,7 @@ import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/migrations/hidden_folder_repair.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -67,6 +69,7 @@ import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/services/product_metrics.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:icarus/widgets/dialogs/auth/set_password_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
@@ -224,6 +227,30 @@ Future<void> main(List<String> args) async {
       await MapThemeProfilesProvider.bootstrap();
 
       await StrategyMigrator.migrateLocalLibrary(PlatformPolicy.current);
+      if (PlatformPolicy.current.allowsLocalLibrary) {
+        try {
+          final moved = await moveOrphansToTopLevel(
+            Hive.box<Folder>(HiveBoxNames.foldersBox),
+            Hive.box<StrategyData>(HiveBoxNames.strategiesBox),
+          );
+          if (moved.folders > 0 || moved.strategies > 0) {
+            AppErrorReporter.reportInfo(
+              'Moved ${moved.folders} folders and ${moved.strategies} '
+              'strategies whose folder was gone to the top level',
+              source: 'main.hiddenFolders',
+            );
+          }
+        } catch (error, stackTrace) {
+          // The library opens either way; tried again next launch.
+          AppErrorReporter.reportError(
+            "Couldn't move the items whose folder was gone to the top level",
+            source: 'main.hiddenFolders',
+            error: error,
+            stackTrace: stackTrace,
+            promptUser: false,
+          );
+        }
+      }
 
       // The cloud comes up degraded rather than not at all: a failure here
       // must never keep anyone from the library on this device.
@@ -277,6 +304,11 @@ Future<void> main(List<String> args) async {
 
 Future<void> warmUpWebViewEnvironment() {
   if (!isWindowsRuntime) {
+    // Only Windows needs a WebView2 runtime installed. The web build and
+    // macOS always have a web view; the plugin has none for Linux, which
+    // keeps the fallback.
+    isWebViewInitialized =
+        kIsWeb || defaultTargetPlatform == TargetPlatform.macOS;
     isWebViewWarmupComplete = true;
     return Future.value();
   }
@@ -398,6 +430,7 @@ class _MyAppState extends ConsumerState<MyApp> {
   ProviderSubscription<List<PlacedAgentNode>>? _discordAgentSub;
   ProviderSubscription<List<PlacedAbility>>? _discordAbilitySub;
   ProviderSubscription<bool>? _cloudOutOfReachSub;
+  ProviderSubscription<bool>? _passwordRecoverySub;
   Timer? _discordSyncDebounce;
 
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
@@ -517,6 +550,12 @@ class _MyAppState extends ConsumerState<MyApp> {
       (previous, next) => _measureOffline(previous ?? false, next),
       fireImmediately: true,
     );
+    _passwordRecoverySub = ref.listenManual(
+      passwordRecoveryProvider,
+      (previous, next) {
+        if (next && previous != true) _askForNewPassword();
+      },
+    );
 
     unawaited(_syncDiscordPresence());
 
@@ -580,9 +619,25 @@ class _MyAppState extends ConsumerState<MyApp> {
     _discordAgentSub?.close();
     _discordAbilitySub?.close();
     _cloudOutOfReachSub?.close();
+    _passwordRecoverySub?.close();
     _discordPreferencesSub?.close();
     unawaited(_discordPresence.dispose());
     super.dispose();
+  }
+
+  /// A password reset link signed the user in: ask for the new password.
+  /// After a frame, so the sign-in dialog that sent the link has closed.
+  void _askForNewPassword() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final navigatorContext = appNavigatorKey.currentContext;
+      if (navigatorContext == null) return;
+      await showShadDialog<void>(
+        context: navigatorContext,
+        barrierDismissible: false,
+        builder: (_) => const SetPasswordDialog(),
+      );
+      if (mounted) ref.read(passwordRecoveryProvider.notifier).finish();
+    });
   }
 
   /// Coalesces rapid state changes (e.g. placing several agents in a row)

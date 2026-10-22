@@ -858,6 +858,219 @@ void main() {
     );
   });
 
+  test('a reset link signs in and asks for a new password until one is saved',
+      () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final auth = container.read(authProvider.notifier);
+
+    final sent = await auth.sendPasswordReset('a@b.co');
+    expect(sent.sent, isTrue);
+    expect(sent.message, endsWith('Open it on this computer.'));
+    // The link must come back to this app, which holds the code verifier.
+    expect(supabaseApi.resetRedirectTo, 'icarus://auth/callback');
+
+    supabaseApi.sessionFromUrlSession = fakeSession();
+    supabaseApi.sessionFromUrlEvent = AuthChangeEvent.passwordRecovery;
+    await auth.handleAuthCallbackUri(
+      Uri.parse('icarus://auth/callback?code=reset-code'),
+      source: 'test',
+    );
+    await pumpMicrotasks();
+    expect(container.read(authProvider).isAuthenticated, isTrue);
+    expect(container.read(passwordRecoveryProvider), isTrue);
+
+    // Supabase refuses the old password; the ask stays open.
+    supabaseApi.updatePasswordError = const AuthApiException(
+      'New password should be different from the old password.',
+      statusCode: '422',
+      code: 'same_password',
+    );
+    expect(
+      await auth.setNewPassword('secret'),
+      "That's already your password. Choose a different one.",
+    );
+    expect(container.read(passwordRecoveryProvider), isTrue);
+
+    supabaseApi.updatePasswordError = null;
+    expect(await auth.setNewPassword('new-secret'), isNull);
+    expect(supabaseApi.updatedPassword, 'new-secret');
+    expect(container.read(passwordRecoveryProvider), isFalse);
+  });
+
+  test('a link opened while signed in leaves the session alone', () async {
+    final signedIn = fakeSession();
+    supabaseApi.currentSession = signedIn;
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(authProvider);
+    await pumpMicrotasks();
+    expect(convexApi.setAuthCalls, 1);
+
+    // A reset link for whichever account, opened after signing in.
+    supabaseApi.sessionFromUrlSession = fakeSession(
+      accessToken: 'other-token',
+      userId: 'user-2',
+    );
+    supabaseApi.sessionFromUrlEvent = AuthChangeEvent.passwordRecovery;
+    final handled = await container
+        .read(authProvider.notifier)
+        .handleAuthCallbackUri(
+          Uri.parse('icarus://auth/callback?code=reset-code'),
+          source: 'test',
+        );
+    await pumpMicrotasks();
+
+    expect(handled, isTrue, reason: 'handled, so the caller scrubs the URL');
+    expect(supabaseApi.getSessionFromUrlCalls, 0);
+    expect(supabaseApi.currentSession, same(signedIn));
+    expect(convexApi.setAuthCalls, 1);
+    expect(container.read(passwordRecoveryProvider), isFalse);
+  });
+
+  test('an ordinary sign-in does not ask for a new password', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    supabaseApi.sessionFromUrlSession = fakeSession();
+    await container.read(authProvider.notifier).handleAuthCallbackUri(
+          Uri.parse('icarus://auth/callback?code=discord-code'),
+          source: 'test',
+        );
+    await pumpMicrotasks();
+
+    expect(container.read(authProvider).isAuthenticated, isTrue);
+    expect(container.read(passwordRecoveryProvider), isFalse);
+  });
+
+  test('signing out drops a pending ask for a new password', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(authProvider);
+    await pumpMicrotasks();
+
+    supabaseApi.currentSession = fakeSession();
+    supabaseApi.emit(AuthChangeEvent.passwordRecovery, fakeSession());
+    await pumpMicrotasks();
+    expect(container.read(passwordRecoveryProvider), isTrue);
+
+    supabaseApi.currentSession = null;
+    supabaseApi.emit(AuthChangeEvent.signedOut, null);
+    await pumpMicrotasks();
+    expect(container.read(passwordRecoveryProvider), isFalse);
+  });
+
+  test('saving a new password keeps the cloud connection as it is', () async {
+    supabaseApi.currentSession = fakeSession();
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(authProvider);
+    await pumpMicrotasks();
+    expect(convexApi.setAuthCalls, 1);
+    expect(container.read(authProvider).convexAuthStatus, ConvexAuthStatus.ready);
+
+    // Supabase reports the password change as the user updated, on the
+    // same session. Setting Convex up again would drop the library's live
+    // queries' auth and raise "Cloud connection lost".
+    final session = supabaseApi.currentSession!;
+    final updated = Session(
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      tokenType: session.tokenType,
+      user: User(
+        id: session.user.id,
+        appMetadata: <String, dynamic>{},
+        userMetadata: <String, dynamic>{'full_name': 'Renamed User'},
+        aud: 'authenticated',
+        email: session.user.email,
+        createdAt: session.user.createdAt,
+      ),
+    );
+    supabaseApi.currentSession = updated;
+    supabaseApi.emit(AuthChangeEvent.userUpdated, updated);
+    await pumpMicrotasks();
+    await pumpMicrotasks();
+
+    expect(convexApi.setAuthCalls, 1);
+    final state = container.read(authProvider);
+    expect(state.convexAuthStatus, ConvexAuthStatus.ready);
+    expect(state.user?.userMetadata?['full_name'], 'Renamed User');
+  });
+
+  test('asking again for the same reset link within a minute keeps the first',
+      () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final auth = container.read(authProvider.notifier);
+
+    expect((await auth.sendPasswordReset('a@b.co')).sent, isTrue);
+    expect(supabaseApi.resetRequests, 1);
+
+    // A second request would replace the code verifier the first link
+    // needs, then be refused by Supabase. It never leaves the app.
+    final again = await auth.sendPasswordReset('A@B.co');
+    expect(again.sent, isTrue);
+    expect(again.message, startsWith('A link is already on its way.'));
+    expect(supabaseApi.resetRequests, 1);
+
+    // Another address is a new request.
+    await auth.sendPasswordReset('c@d.co');
+    expect(supabaseApi.resetRequests, 2);
+  });
+
+  test('a sign-out forgets the sent link, so asking again sends', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final auth = container.read(authProvider.notifier);
+
+    await auth.sendPasswordReset('a@b.co');
+    expect(supabaseApi.resetRequests, 1);
+
+    // Signing out deletes the code the link needed; it is dead.
+    supabaseApi.emit(AuthChangeEvent.signedOut, null);
+    await pumpMicrotasks();
+
+    final again = await auth.sendPasswordReset('a@b.co');
+    expect(supabaseApi.resetRequests, 2);
+    expect(again.message, startsWith('If an account uses this email'));
+  });
+
+  test('a reset asked for again while the first is out sends once', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final auth = container.read(authProvider.notifier);
+
+    supabaseApi.resetCompletion = Completer<void>();
+    final first = auth.sendPasswordReset('a@b.co');
+    final second = auth.sendPasswordReset('a@b.co');
+    await pumpMicrotasks();
+    expect(supabaseApi.resetRequests, 1);
+
+    supabaseApi.resetCompletion!.complete();
+    expect((await first).sent, isTrue);
+    expect((await second).sent, isTrue);
+    expect(supabaseApi.resetRequests, 1);
+  });
+
+  test('a reset asked for again within a minute says to wait', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    // What Supabase answers a second request for the same address.
+    supabaseApi.resetError = const AuthApiException(
+      'For security purposes, you can only request this after 42 seconds.',
+      statusCode: '429',
+      code: 'over_email_send_rate_limit',
+    );
+    final result =
+        await container.read(authProvider.notifier).sendPasswordReset('a@b.co');
+    expect(result.sent, isFalse);
+    expect(
+      result.message,
+      'A link was sent a moment ago. Wait a minute, then try again.',
+    );
+  });
+
   test('a setup the server refuses says Icarus was updated', () async {
     supabaseApi.currentSession = fakeSession();
     convexApi.mutationError = _upgradeRequired;
@@ -1707,6 +1920,13 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   Object? sessionFromUrlError;
   Object? signUpError;
   User? signUpUser;
+  AuthChangeEvent sessionFromUrlEvent = AuthChangeEvent.signedIn;
+  String? resetRedirectTo;
+  int resetRequests = 0;
+  Completer<void>? resetCompletion;
+  Object? resetError;
+  String? updatedPassword;
+  Object? updatePasswordError;
   int getSessionFromUrlCalls = 0;
   final List<MultiStreamController<AuthState>> _controllers =
       <MultiStreamController<AuthState>>[];
@@ -1736,9 +1956,30 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
     if (sessionFromUrlSession case final Session session?) {
       currentSession = session;
       for (final controller in _controllers) {
-        controller.add(AuthState(AuthChangeEvent.signedIn, currentSession));
+        controller.add(AuthState(sessionFromUrlEvent, currentSession));
       }
     }
+  }
+
+  @override
+  Future<void> resetPasswordForEmail(
+    String email, {
+    required String redirectTo,
+  }) async {
+    resetRequests += 1;
+    await resetCompletion?.future;
+    if (resetError case final Object error?) {
+      throw error;
+    }
+    resetRedirectTo = redirectTo;
+  }
+
+  @override
+  Future<void> updatePassword(String password) async {
+    if (updatePasswordError case final Object error?) {
+      throw error;
+    }
+    updatedPassword = password;
   }
 
   @override

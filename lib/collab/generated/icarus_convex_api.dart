@@ -250,6 +250,7 @@ abstract interface class FoldersModule {
   Future<FoldersDeleteResult> delete({
     required double clientProtocolVersion,
     required String folderPublicId,
+    ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
   });
   ConvexQuery<List<FoldersListTreeResultItem>> listTree({
     ConvexOptional<FoldersListTreeArgsScope> scope =
@@ -314,10 +315,12 @@ final class _FoldersModule implements FoldersModule {
   Future<FoldersDeleteResult> delete({
     required double clientProtocolVersion,
     required String folderPublicId,
+    ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
   }) {
     final args = encodeFoldersDeleteArgs(
       clientProtocolVersion: clientProtocolVersion,
       folderPublicId: folderPublicId,
+      withinFolderPublicId: withinFolderPublicId,
     );
     return _invoke(
       () => _transport.mutation('folders:delete', args),
@@ -1420,6 +1423,7 @@ abstract interface class StrategiesModule {
     required double clientProtocolVersion,
     required double expectedRevision,
     required String strategyPublicId,
+    ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
   });
   Future<ConvexValue> duplicate({
     required double clientProtocolVersion,
@@ -1565,11 +1569,13 @@ final class _StrategiesModule implements StrategiesModule {
     required double clientProtocolVersion,
     required double expectedRevision,
     required String strategyPublicId,
+    ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
   }) {
     final args = encodeStrategiesDeleteArgs(
       clientProtocolVersion: clientProtocolVersion,
       expectedRevision: expectedRevision,
       strategyPublicId: strategyPublicId,
+      withinFolderPublicId: withinFolderPublicId,
     );
     return _invoke(
       () => _transport.mutation('strategies:delete', args),

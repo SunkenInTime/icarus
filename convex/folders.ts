@@ -7,7 +7,11 @@ import {
   getEffectiveFolderRoleForUser,
   requireCurrentUser,
 } from "./lib/auth";
-import { getFolderByPublicId, isListed } from "./lib/entities";
+import {
+  assertWithinFolder,
+  getFolderByPublicId,
+  isListed,
+} from "./lib/entities";
 import {
   maxListedAgentTypes,
   readStrategyAgentTypes,
@@ -449,6 +453,8 @@ const deleteFolder = mutation({
   args: {
     ...cloudProtocolArgs,
     folderPublicId: v.string(),
+    // See assertWithinFolder.
+    withinFolderPublicId: v.optional(v.string()),
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
@@ -459,6 +465,7 @@ const deleteFolder = mutation({
     if (role !== "owner") {
       throw forbiddenError();
     }
+    await assertWithinFolder(ctx, folder._id, args.withinFolderPublicId);
 
     const children = await ctx.db
       .query("folders")

@@ -137,6 +137,23 @@ The dialog calls:
 
 Those methods authenticate directly with Supabase.
 
+### Password reset
+
+"Forgot password?" in the sign-in dialog calls `sendPasswordReset(...)`, which
+asks Supabase to email a reset link with the same redirect Discord uses
+(`currentAuthRedirectUri()`). Supabase answers the same whether or not an
+account uses the address, so the dialog can't say which.
+
+The link is a PKCE sign-in: it returns with a `?code=` that only exchanges with
+the verifier this device saved when the reset was requested. So it must be
+opened in the same browser (web) or on the same computer (desktop, where the
+browser hands `icarus://auth/callback` back to the app). Supabase marks that
+sign-in `passwordRecovery`; the provider sets `passwordRecoveryProvider`, and
+the app root shows `SetPasswordDialog`, which calls `setNewPassword(...)`.
+
+The reset email works for accounts made with Discord too: setting a password
+there lets the user sign in with email and password as well.
+
 ### Discord OAuth
 
 Discord login uses Supabase OAuth. The redirect depends on the platform

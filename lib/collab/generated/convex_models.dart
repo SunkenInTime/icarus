@@ -6012,12 +6012,15 @@ ConvexValue decodeFoldersCreateResult(ConvexValue value) => _decodeRaw(
 ConvexObject encodeFoldersDeleteArgs({
   required double clientProtocolVersion,
   required String folderPublicId,
+  ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
 }) => ConvexObject({
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
     'folders.js:delete.args.clientProtocolVersion',
   ),
   'folderPublicId': ConvexString(folderPublicId),
+  if (withinFolderPublicId.isPresent)
+    'withinFolderPublicId': ConvexString(withinFolderPublicId.value),
 });
 
 FoldersDeleteResult decodeFoldersDeleteResult(ConvexValue value) =>
@@ -6972,6 +6975,7 @@ ConvexObject encodeStrategiesDeleteArgs({
   required double clientProtocolVersion,
   required double expectedRevision,
   required String strategyPublicId,
+  ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
 }) => ConvexObject({
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
@@ -6982,6 +6986,8 @@ ConvexObject encodeStrategiesDeleteArgs({
     'strategies.js:delete.args.expectedRevision',
   ),
   'strategyPublicId': ConvexString(strategyPublicId),
+  if (withinFolderPublicId.isPresent)
+    'withinFolderPublicId': ConvexString(withinFolderPublicId.value),
 });
 
 FoldersDeleteResult decodeStrategiesDeleteResult(ConvexValue value) =>

@@ -503,6 +503,37 @@ class ActionProvider extends Notifier<List<UserAction>> {
     return action.copy();
   }
 
+  /// Joins the last step, a move or removal of [id], to the step before it
+  /// when that one added [id], so one undo takes both back. A Ctrl-drag
+  /// adds its copy when the drag starts and moves the copy on drop. A copy
+  /// dropped off the map leaves no step at all.
+  void joinToAddition(String id) {
+    if (state.length < 2) return;
+    final added = state[state.length - 2];
+    final last = state.last;
+    if (added.type != ActionType.addition ||
+        added.id != id ||
+        last.id != id ||
+        last.group != added.group) {
+      return;
+    }
+    final earlier = state.sublist(0, state.length - 2);
+    final placed = last.objectDelta?.after;
+    if (last.type == ActionType.deletion) {
+      state = earlier;
+    } else if (last.type == ActionType.edit && placed != null) {
+      state = [
+        ...earlier,
+        UserAction(
+          type: ActionType.addition,
+          id: id,
+          group: added.group,
+          objectDelta: ObjectHistoryDelta(after: placed),
+        ),
+      ];
+    }
+  }
+
   void clearAllAsAction() {
     if (!ref.canEditPages) return;
     _performBulkClear(_clearableGroups);

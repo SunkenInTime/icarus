@@ -626,10 +626,16 @@ class ConvexStrategyRepository {
     );
   }
 
-  Future<void> deleteFolder(String folderPublicId) async {
+  /// With [withinFolderPublicId], the server deletes the folder only while
+  /// it is that folder or lies below it.
+  Future<void> deleteFolder(
+    String folderPublicId, {
+    String? withinFolderPublicId,
+  }) async {
     await _api.folders.delete(
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       folderPublicId: folderPublicId,
+      withinFolderPublicId: _optional(withinFolderPublicId),
     );
   }
 
@@ -756,14 +762,18 @@ class ConvexStrategyRepository {
     );
   }
 
+  /// With [withinFolderPublicId], the server deletes the strategy only while
+  /// it lies somewhere below that folder.
   Future<void> deleteStrategy({
     required String strategyPublicId,
     required int expectedRevision,
+    String? withinFolderPublicId,
   }) async {
     await _api.strategies.delete(
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       strategyPublicId: strategyPublicId,
       expectedRevision: expectedRevision.toDouble(),
+      withinFolderPublicId: _optional(withinFolderPublicId),
     );
   }
 
