@@ -2794,8 +2794,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           latestServerPayload: ack.latestPayload,
         );
         await _putRecord(rejected);
-        final reason =
-            syncReason(ack is FailedOpAck ? ack.code : ack.reason);
+        final reason = syncReason(ack is FailedOpAck ? ack.code : ack.reason);
         refusedByReason[reason] = (refusedByReason[reason] ?? 0) + 1;
       }
     }
@@ -4207,14 +4206,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     final fields = {...written.fields, ...merge.fields}.toList()..sort();
     final base = merge.base;
     if (base == null) return op.withMerge(FieldMerge(fields: fields));
+    final writtenFields = written.fields.toSet();
+    final writtenValue = mergeFieldReader(writtenPayload, lineup: lineup);
     final rebased = <String, Object?>{};
     for (final field in fields) {
-      if (!written.fields.contains(field)) {
+      if (!writtenFields.contains(field)) {
         if (base.containsKey(field)) rebased[field] = base[field];
       } else if (field == placeMergeField) {
         if (predecessor.sortIndex case final at?) rebased[field] = at;
       } else {
-        final value = mergeFieldValue(writtenPayload, field, lineup: lineup);
+        final value = writtenValue(field);
         if (value.present) rebased[field] = value.value;
       }
     }

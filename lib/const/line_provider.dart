@@ -515,15 +515,18 @@ class LineUpGraph {
   /// (lib/collab/cloud_lineup_rows.dart) and never uses this.
   List<LineUpGroup> toLegacyGroups() {
     final landingsById = {for (final landing in landings) landing.id: landing};
+    final linksByOrigin = <String, List<LineUpLink>>{};
+    for (final link in links) {
+      (linksByOrigin[link.originId] ??= []).add(link);
+    }
     return [
       for (final origin in origins)
         LineUpGroup(
           id: origin.id,
           agent: origin.agent.copyWith(lineUpID: origin.id),
           items: [
-            for (final link in links)
-              if (link.originId == origin.id &&
-                  landingsById.containsKey(link.landingId))
+            for (final link in linksByOrigin[origin.id] ?? const <LineUpLink>[])
+              if (landingsById.containsKey(link.landingId))
                 LineUpItem(
                   id: link.id,
                   ability: landingsById[link.landingId]!
@@ -1108,6 +1111,12 @@ class LineUpProvider extends Notifier<LineUpState> {
   void startEdit(String linkId) {
     final start = state.linkById(linkId);
     if (start == null) return;
+    final linksByOrigin = <String, List<LineUpLink>>{};
+    final linksByLanding = <String, List<LineUpLink>>{};
+    for (final link in state.links) {
+      (linksByOrigin[link.originId] ??= []).add(link);
+      (linksByLanding[link.landingId] ??= []).add(link);
+    }
     final linkIds = <String>{};
     final originIds = <String>{};
     final landingIds = <String>{};
@@ -1115,11 +1124,12 @@ class LineUpProvider extends Notifier<LineUpState> {
     while (pending.isNotEmpty) {
       final link = pending.removeLast();
       if (!linkIds.add(link.id)) continue;
-      originIds.add(link.originId);
-      landingIds.add(link.landingId);
-      pending.addAll(state.links.where((other) =>
-          other.originId == link.originId ||
-          other.landingId == link.landingId));
+      if (originIds.add(link.originId)) {
+        pending.addAll(linksByOrigin[link.originId]!);
+      }
+      if (landingIds.add(link.landingId)) {
+        pending.addAll(linksByLanding[link.landingId]!);
+      }
     }
     state = state.copyWith(
       edit: LineUpPlacementEdit(
@@ -1833,11 +1843,14 @@ class LineUpAbilityStackCandidate {
   final int paintOrder;
 }
 
+/// Read when a landing is tapped, never watched, so entries change in place:
+/// copying the map per landing made opening a page with many lineups
+/// quadratic.
 class LineUpAbilityHitboxRegistry
     extends Notifier<Map<String, LineUpAbilityHitboxEntry>> {
   @override
   Map<String, LineUpAbilityHitboxEntry> build() {
-    return const {};
+    return {};
   }
 
   void register({
@@ -1852,14 +1865,11 @@ class LineUpAbilityHitboxRegistry
       return;
     }
 
-    state = {
-      ...state,
-      landingId: LineUpAbilityHitboxEntry(
-        landingId: landingId,
-        globalRect: globalRect,
-        owner: owner,
-      ),
-    };
+    state[landingId] = LineUpAbilityHitboxEntry(
+      landingId: landingId,
+      globalRect: globalRect,
+      owner: owner,
+    );
   }
 
   void unregister({required String landingId, Object? owner}) {
@@ -1868,8 +1878,7 @@ class LineUpAbilityHitboxRegistry
       return;
     }
 
-    final nextState = {...state}..remove(landingId);
-    state = nextState;
+    state.remove(landingId);
   }
 }
 

@@ -218,19 +218,18 @@ List<String>? lineupMergeFields(
       !cloudJsonEquivalent(baseData['id'], desiredData['id'])) {
     return null;
   }
-  return [
-    for (final collection in _lineupCollections)
-      for (final id in {
-        ..._lineupItems(baseData, collection).keys,
-        ..._lineupItems(desiredData, collection).keys,
-      }.toList()
-        ..sort())
-        if (!_sameItem(
-          _lineupItems(baseData, collection)[id],
-          _lineupItems(desiredData, collection)[id],
-        ))
-          '$collection/$id',
-  ];
+  final fields = <String>[];
+  for (final collection in _lineupCollections) {
+    final baseItems = _lineupItems(baseData, collection);
+    final desiredItems = _lineupItems(desiredData, collection);
+    for (final id in {...baseItems.keys, ...desiredItems.keys}.toList()
+      ..sort()) {
+      if (!_sameItem(baseItems[id], desiredItems[id])) {
+        fields.add('$collection/$id');
+      }
+    }
+  }
+  return fields;
 }
 
 bool _sameItem(Object? left, Object? right) =>
@@ -244,9 +243,10 @@ Map<String, Object?> mergeBaseValues(
   List<String> fields, {
   required bool lineup,
 }) {
+  final valueOf = mergeFieldReader(payload, lineup: lineup);
   final values = <String, Object?>{};
   for (final field in fields) {
-    final value = mergeFieldValue(payload, field, lineup: lineup);
+    final value = valueOf(field);
     if (value.present) values[field] = value.value;
   }
   return values;
@@ -258,17 +258,29 @@ Map<String, Object?> mergeBaseValues(
   Object? payload,
   String field, {
   required bool lineup,
+}) =>
+    mergeFieldReader(payload, lineup: lineup)(field);
+
+/// [mergeFieldValue] for many fields of one [payload]: each lineup
+/// collection is indexed by id once, not once per field.
+({bool present, Object? value}) Function(String field) mergeFieldReader(
+  Object? payload, {
+  required bool lineup,
 }) {
   final data = _dataOf(payload);
-  if (data == null) return (present: false, value: null);
+  if (data == null) return (_) => (present: false, value: null);
   if (!lineup) {
-    return (present: data.containsKey(field), value: data[field]);
+    return (field) => (present: data.containsKey(field), value: data[field]);
   }
-  final slash = field.indexOf('/');
-  if (slash <= 0) return (present: false, value: null);
-  final item =
-      _lineupItems(data, field.substring(0, slash))[field.substring(slash + 1)];
-  return (present: item != null, value: item);
+  final itemsByCollection = <String, Map<String, Map<String, Object?>>>{};
+  return (field) {
+    final slash = field.indexOf('/');
+    if (slash <= 0) return (present: false, value: null);
+    final collection = field.substring(0, slash);
+    final item = (itemsByCollection[collection] ??=
+        _lineupItems(data, collection))[field.substring(slash + 1)];
+    return (present: item != null, value: item);
+  };
 }
 
 /// [merge]'s fields of [desired] written onto [current] (both cloud
@@ -300,7 +312,7 @@ Map<String, dynamic>? mergedPayload(
   return _withFields(
     current,
     fields,
-    (field) => mergeFieldValue(desired, field, lineup: lineup),
+    mergeFieldReader(desired, lineup: lineup),
     lineup: lineup,
   );
 }
@@ -354,38 +366,51 @@ Map<String, dynamic>? _withFields(
     }
     return {...Map<String, dynamic>.from(payload), 'data': data};
   }
-  final lists = {
-    for (final collection in _lineupCollections)
-      collection: [
-        for (final item in current[collection] as List? ?? const [])
-          if (item is Map) Map<String, Object?>.from(item),
-      ],
-  };
+  // Each id's position in its list, first copy first. A removed item leaves
+  // a null until the end so the positions stay right.
+  final lists = <String, List<Map<String, Object?>?>>{};
+  final positions = <String, Map<String, int>>{};
+  for (final collection in _lineupCollections) {
+    final list = lists[collection] = [
+      for (final item in current[collection] as List? ?? const [])
+        if (item is Map) Map<String, Object?>.from(item),
+    ];
+    final byId = positions[collection] = {};
+    for (final (index, item) in list.indexed) {
+      if (item!['id'] case final String id) byId.putIfAbsent(id, () => index);
+    }
+  }
   for (final field in fields) {
     final slash = field.indexOf('/');
-    final list = slash <= 0 ? null : lists[field.substring(0, slash)];
+    final collection = slash <= 0 ? null : field.substring(0, slash);
+    final list = lists[collection];
     final id = field.substring(slash + 1);
     if (list == null || id.isEmpty) return null;
-    final index = list.indexWhere((item) => item['id'] == id);
+    final byId = positions[collection]!;
+    final index = byId[id];
     final wanted = valueOf(field);
     final item = wanted.value;
     if (!wanted.present || item is! Map) {
-      if (index >= 0) list.removeAt(index);
-    } else if (index >= 0) {
+      if (index != null) list[index] = null;
+      byId.remove(id);
+    } else if (index != null) {
       list[index] = Map<String, Object?>.from(item);
     } else {
+      byId[id] = list.length;
       list.add(Map<String, Object?>.from(item));
     }
   }
-  final links = lists['links']!;
+  final links = lists['links']!.nonNulls.toList();
+  final linkedOriginIds = {for (final link in links) link['originId']};
+  final linkedLandingIds = {for (final link in links) link['landingId']};
   data
     ..['origins'] = [
-      for (final origin in lists['origins']!)
-        if (links.any((link) => link['originId'] == origin['id'])) origin,
+      for (final origin in lists['origins']!.nonNulls)
+        if (linkedOriginIds.contains(origin['id'])) origin,
     ]
     ..['landings'] = [
-      for (final landing in lists['landings']!)
-        if (links.any((link) => link['landingId'] == landing['id'])) landing,
+      for (final landing in lists['landings']!.nonNulls)
+        if (linkedLandingIds.contains(landing['id'])) landing,
     ]
     ..['links'] = links;
   return {...Map<String, dynamic>.from(payload), 'data': data};

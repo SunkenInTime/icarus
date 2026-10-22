@@ -94,25 +94,26 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
     final notifier = ref.read(lineUpProvider.notifier);
 
     // Dragged ends sit at their drafts; the rest wherever the page has them.
+    // Drawn in the page's order, so overlapping ends stack as on the canvas.
     final origins = [
-      for (final id in edit.originIds)
-        if (state.originById(id) case final origin?)
-          edit.movedOrigins[id] == null
+      for (final origin in state.origins)
+        if (edit.originIds.contains(origin.id))
+          edit.movedOrigins[origin.id] == null
               ? origin
               : origin.copyWith(
                   agent: origin.agent.copyWith(
-                    position: edit.movedOrigins[id],
+                    position: edit.movedOrigins[origin.id],
                   ),
                 ),
     ];
     final landings = [
-      for (final id in edit.landingIds)
-        if (state.landingById(id) case final landing?)
-          edit.movedLandings[id] == null
+      for (final landing in state.landings)
+        if (edit.landingIds.contains(landing.id))
+          edit.movedLandings[landing.id] == null
               ? landing
               : landing.copyWith(
                   ability: landing.ability.copyWith(
-                    position: edit.movedLandings[id],
+                    position: edit.movedLandings[landing.id],
                   ),
                 ),
     ];
