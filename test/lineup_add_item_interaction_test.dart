@@ -550,6 +550,65 @@ void main() {
     expect(container.read(lineUpProvider).edit, isNull);
   });
 
+  testWidgets('edit placement stacks the ends it moves as the page does',
+      (tester) async {
+    final container = _createContainer();
+    PlacedAgent agent(String id) => PlacedAgent(
+          id: id,
+          type: AgentType.breach,
+          position: const Offset(180, 220),
+          isAlly: true,
+        );
+    // Overlapping landings: whichever is drawn last takes the drag.
+    LineUpLanding landing(String id) => LineUpLanding(
+          id: id,
+          ability: PlacedAbility(
+            id: id,
+            data: AgentData.agents[AgentType.breach]!.abilities.first,
+            position: const Offset(320, 360),
+            isAlly: true,
+          ),
+        );
+    container.read(lineUpProvider.notifier).fromHive(LineUpGraph(
+          origins: [
+            LineUpOrigin(id: 'a', agent: agent('a')),
+            LineUpOrigin(id: 'b', agent: agent('b')),
+          ],
+          landings: [landing('x'), landing('y'), landing('z')],
+          links: [
+            LineUpLink(id: 's', originId: 'a', landingId: 'x'),
+            LineUpLink(id: 't', originId: 'b', landingId: 'x'),
+            LineUpLink(id: 'u', originId: 'a', landingId: 'y'),
+            LineUpLink(id: 'v', originId: 'b', landingId: 'z'),
+          ],
+        ));
+    container.read(interactionStateProvider.notifier).editLineUpPlacement('s');
+
+    CoordinateSystem(playAreaSize: const Size(900, 600));
+    await _pumpHarness(
+      tester,
+      container: container,
+      child: const SizedBox(
+        width: 900,
+        height: 600,
+        child: LineUpPlacementEditor(),
+      ),
+    );
+
+    final drawn = tester
+        .widgetList(find.byWidgetPredicate((widget) =>
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>)
+                .value
+                .startsWith('lineup-edit-ability-')))
+        .map((widget) => (widget.key! as ValueKey<String>).value);
+    expect(drawn, [
+      'lineup-edit-ability-x',
+      'lineup-edit-ability-y',
+      'lineup-edit-ability-z',
+    ]);
+  });
+
   testWidgets('opening another page ends a placement edit and says so',
       (tester) async {
     final container = _createContainer();

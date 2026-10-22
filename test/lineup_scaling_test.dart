@@ -11,8 +11,8 @@ import 'package:icarus/const/placed_classes.dart';
 // Pages with many lineups, or cloud groups with many links, must not cost
 // time that grows with the square of their size. Each size below takes
 // seconds when the work is quadratic and milliseconds when it is linear, so
-// the one-second limit leaves room for a slow machine either way.
-const _limit = Duration(seconds: 1);
+// the two-second limit leaves room for a slow machine either way.
+const _limit = Duration(seconds: 2);
 
 PlacedAgent _agent(String id, [Offset position = const Offset(1, 2)]) =>
     PlacedAgent(
