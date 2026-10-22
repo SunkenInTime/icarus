@@ -162,7 +162,7 @@ void main() {
         .addListener(ImageStreamListener((info, _) => decoded.complete(info)));
     final info = await decoded.future;
     addTearDown(info.dispose);
-    expect((info.image.width, info.image.height), (500, 250));
+    expect((info.image.width, info.image.height), (1000, 500));
   });
 
   test('cloud images download together, not one after another', () async {

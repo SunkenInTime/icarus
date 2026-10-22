@@ -47,17 +47,17 @@ void main() {
           height: boxH,
         );
 
-    test('a picture twice its box or more is halved until it just fits', () {
+    test('a picture twice its box or more is halved, and only once', () {
       // An 8K screenshot in a 16:9 box half its width.
       final size = target(7680, 4320, 3840, 2160);
       expect((size.width, size.height), (3840, 2160));
-      // A quarter of it is still more than the box needs, an eighth is not.
-      final halved = target(7680, 4320, 1000, 563);
-      expect((halved.width, halved.height), (1920, 1080));
+      // A box an eighth its width still gets the half: smaller, the
+      // decoder would sample fine detail rather than average it.
+      final small = target(7680, 4320, 960, 540);
+      expect((small.width, small.height), (3840, 2160));
     });
 
     test('a picture less than twice its box keeps every pixel', () {
-      // Shrunk to anything but a half, it would draw softer.
       final size = target(7680, 4320, 3976, 2236);
       expect((size.width, size.height), (null, null));
     });
@@ -67,8 +67,10 @@ void main() {
         'still covers a box of another shape', () {
       // A wide picture in a square thumbnail: its height must fill the box,
       // so its width overflows it.
-      final size = target(4000, 1000, 200, 200);
-      expect((size.width, size.height), (1000, 250));
+      final size = target(4000, 1000, 200, 600);
+      expect((size.width, size.height), (null, null));
+      final halved = target(4000, 1000, 200, 500);
+      expect((halved.width, halved.height), (2000, 500));
     });
 
     test('a picture smaller than its box keeps every pixel', () {
@@ -83,10 +85,9 @@ void main() {
       // a 1% wider strip, 5 px at the box's width.
       final strip = target(8000, 101, 497, 7);
       expect((strip.width, strip.height), (null, null));
-      // A shape that halves evenly still does, as far as it stays whole:
-      // an eighth would be 12.5 px tall.
+      // A shape that halves evenly still does.
       final even = target(8000, 100, 497, 7);
-      expect((even.width, even.height), (2000, 25));
+      expect((even.width, even.height), (4000, 50));
     });
 
     test('a box with no finite size keeps every pixel', () {
@@ -99,7 +100,8 @@ void main() {
     });
   });
 
-  testWidgets('a big picture decodes at the size of its box', (tester) async {
+  testWidgets('a picture at least twice its box decodes at half size',
+      (tester) async {
     final png = _png(2000, 500);
 
     expect(
@@ -107,7 +109,7 @@ void main() {
         tester,
         ResizeToCover(MemoryImage(png), box: const Size(400, 100)),
       ),
-      const Size(500, 125),
+      const Size(1000, 250),
     );
     expect(
       await _decodedSize(
@@ -116,6 +118,35 @@ void main() {
       ),
       const Size(2000, 500),
     );
+  });
+
+  testWidgets(
+      'the half averages each 2x2 block, like the first mipmap level, '
+      'so one-pixel detail turns grey rather than vanishing', (tester) async {
+    // Columns black, white, white, black: every pair of columns averages to
+    // grey. Sampling one column of each pair would keep black and white.
+    final stripes = img.Image(width: 64, height: 8);
+    for (final pixel in stripes) {
+      final white = (pixel.x % 4 == 1 || pixel.x % 4 == 2);
+      pixel.setRgb(white ? 255 : 0, white ? 255 : 0, white ? 255 : 0);
+    }
+    final provider = ResizeToCover(
+      MemoryImage(img.encodePng(stripes)),
+      box: const Size(32, 4),
+    );
+
+    final rgba = await tester.runAsync(() async {
+      final decoded = Completer<ui.Image>();
+      provider.resolve(ImageConfiguration.empty).addListener(
+            ImageStreamListener((info, _) => decoded.complete(info.image)),
+          );
+      final image = await decoded.future;
+      expect((image.width, image.height), (32, 4));
+      return image.toByteData();
+    });
+    for (var i = 0; i < rgba!.lengthInBytes; i += 4) {
+      expect(rgba.getUint8(i), inInclusiveRange(120, 135));
+    }
   });
 
   testWidgets('the same picture in boxes the same whole size shares one key',

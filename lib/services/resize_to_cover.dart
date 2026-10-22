@@ -5,18 +5,18 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show SynchronousFuture;
 import 'package:flutter/painting.dart';
 
-/// [image] decoded with only as many pixels as it needs to fill a box
-/// [width] × [height] physical pixels: its full size, halved as many times
-/// as it can be while it still fills the box. Drawn no larger than that
-/// box, it holds a fraction of the memory.
+/// [image] decoded at half its size when half still fills a box [width] ×
+/// [height] physical pixels, the largest it is drawn, and at full size
+/// otherwise: a quarter of the memory for a picture that is never drawn
+/// larger than half its size.
 ///
-/// Only halving, because the GPU shrinks a picture by halving it too
-/// (mipmaps) when it draws it smaller. Shrunk straight to the box instead,
-/// text in a picture drew visibly softer at the canvas's full zoom. The
-/// decoder makes the halves in one step (a JPEG by its own scaling, other
-/// formats with one linear resize), so below half size the result is close
-/// to the GPU's, not identical; measured differences were at edges and not
-/// visible at the sizes pictures are drawn.
+/// Half, and no smaller, because that is the one reduction the GPU would
+/// have made the same way. To draw a picture smaller the GPU averages it
+/// down by halves (mipmaps), and the decoder's half averages each 2×2 block
+/// just as the GPU's first half does. Shrunk further in the decoder's one
+/// step, fine detail such as thin text is sampled rather than averaged; and
+/// shrunk straight to the box, text drew visibly softer at the canvas's
+/// full zoom.
 ///
 /// Unlike [ResizeImage] it needs no aspect ratio up front: whichever side
 /// needs more pixels to fill the box decides, which is enough for both
@@ -34,11 +34,11 @@ class ResizeToCover extends ImageProvider<ResizeToCoverKey> {
       extent.isFinite ? math.max(1, extent.ceil()) : 0;
 
   /// The size to decode a picture [intrinsicWidth] × [intrinsicHeight] at
-  /// to fill a box [width] × [height]. A box with no finite size decodes the
+  /// for a box [width] × [height]. A box with no finite size decodes the
   /// whole picture.
   ///
-  /// A halved side rounds to whole pixels, which changes the picture's
-  /// shape a little. A halving that would move its edge by half a pixel or
+  /// A halved odd side rounds to a whole pixel, which changes the picture's
+  /// shape a little. A half that would move its edge by half a pixel or
   /// more, drawn at the box's size, is not taken: a long strip a few pixels
   /// tall keeps its pixels.
   static ui.TargetImageSize targetSize({
@@ -48,19 +48,17 @@ class ResizeToCover extends ImageProvider<ResizeToCoverKey> {
     required int height,
   }) {
     if (width <= 0 || height <= 0) return const ui.TargetImageSize();
-    final needed = math.max(width / intrinsicWidth, height / intrinsicHeight);
-    final longestSide = math.max(width, height);
-    ui.TargetImageSize? best;
-    for (var divisor = 2; needed * divisor <= 1; divisor *= 2) {
-      final halvedWidth = (intrinsicWidth / divisor).ceil();
-      final halvedHeight = (intrinsicHeight / divisor).ceil();
-      final shapeChange =
-          (halvedWidth * intrinsicHeight) / (halvedHeight * intrinsicWidth) - 1;
-      if (shapeChange.abs() * longestSide < 0.5) {
-        best = ui.TargetImageSize(width: halvedWidth, height: halvedHeight);
-      }
+    final halfWidth = (intrinsicWidth / 2).ceil();
+    final halfHeight = (intrinsicHeight / 2).ceil();
+    if (halfWidth < width || halfHeight < height) {
+      return const ui.TargetImageSize();
     }
-    return best ?? const ui.TargetImageSize();
+    final shapeChange =
+        (halfWidth * intrinsicHeight) / (halfHeight * intrinsicWidth) - 1;
+    if (shapeChange.abs() * math.max(width, height) >= 0.5) {
+      return const ui.TargetImageSize();
+    }
+    return ui.TargetImageSize(width: halfWidth, height: halfHeight);
   }
 
   @override
