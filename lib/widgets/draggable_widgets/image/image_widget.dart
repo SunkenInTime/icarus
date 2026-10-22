@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -18,9 +19,14 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 double _tallestCanvasHeight(BuildContext context, double canvasHeight) {
   final pixelRatio = MediaQuery.devicePixelRatioOf(context);
   final aroundCanvas = MediaQuery.sizeOf(context).height - canvasHeight;
-  final displayHeight = View.of(context).display.size.height;
+  final display = View.of(context).display;
+  // In logical pixels. A browser reports its screen in them already; a
+  // desktop reports its display in physical pixels.
+  final displayHeight = kIsWeb
+      ? display.size.height
+      : display.size.height / display.devicePixelRatio;
   final tallest = math.max(
-    displayHeight - aroundCanvas * pixelRatio,
+    (displayHeight - aroundCanvas) * pixelRatio,
     canvasHeight * pixelRatio,
   );
   // Whole pixels, so float noise between frames never makes a new box.
