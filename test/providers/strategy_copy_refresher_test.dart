@@ -152,9 +152,83 @@ void main() {
       ]);
       expect(repository.fullReads, isEmpty);
       expect(
-        DateTime.now().difference(store.lastFullRefresh(_scope, 'one')!),
+        DateTime.now().difference(store.lastFoundCurrent(_scope, 'one')!),
         lessThan(const Duration(minutes: 1)),
       );
+      // The last full read is still when it was.
+      expect(
+        DateTime.now().difference(store.lastFullRefresh(_scope, 'one')!),
+        greaterThan(const Duration(hours: 24)),
+      );
+    });
+
+    test('found current within a day is not asked about again', () async {
+      repository.owned = {'one'};
+      await keepOld('one');
+      await store.noteFoundCurrent(
+        _scope,
+        'one',
+        at: DateTime.now().subtract(const Duration(hours: 1)),
+      );
+      start();
+      await _settle();
+      expect(repository.versionChecks, isEmpty);
+      expect(repository.fullReads, isEmpty);
+    });
+
+    test('read whole more than a week ago is read again, changed or not',
+        () async {
+      repository.owned = {'one'};
+      await keepOld('one', age: const Duration(days: 8));
+      await store.noteFoundCurrent(
+        _scope,
+        'one',
+        at: DateTime.now().subtract(const Duration(hours: 1)),
+      );
+      start();
+      await _settle();
+      expect(repository.versionChecks, isEmpty);
+      expect(repository.fullReads, ['one']);
+    });
+
+    test('a batch the server could not answer reads only its own', () async {
+      final ids = [for (var i = 0; i < 150; i++) 's$i'];
+      repository.owned = ids.toSet();
+      for (final id in ids) {
+        await keepOld(id);
+      }
+      repository.failingVersionChecks = 1;
+      start();
+      await _settle();
+      expect(repository.versionChecks.map((ids) => ids.length), [100, 50]);
+      // The second batch was answered: found current, not read again.
+      expect(
+        [for (final id in ids) store.lastFoundCurrent(_scope, id) != null],
+        [for (var i = 0; i < 150; i++) i >= 100],
+      );
+      expect(repository.fullReads.toSet().intersection(ids.skip(100).toSet()),
+          isEmpty);
+    });
+
+    test('a sign-out while asking writes and drops nothing', () async {
+      repository.owned = {'one'};
+      repository.gone.add('one');
+      await keepOld('one');
+      final gate = Completer<void>();
+      repository.versionsGate = gate;
+      final container = start();
+      await _settle(pause: false);
+      expect(repository.versionChecks, hasLength(1));
+
+      (container.read(authProvider.notifier) as _ReadyAuthProvider)
+          .startSigningOut();
+      _beginSession('account-a').endSessions();
+      final kept = store.entryKeys.toSet();
+      gate.complete();
+      await _settle();
+
+      expect(store.entryKeys.toSet(), kept);
+      expect(repository.fullReads, isEmpty);
     });
 
     test('whose content moved on is read again', () async {
@@ -389,6 +463,12 @@ class _Repository extends ConvexStrategyRepository {
 
   /// While set, asking for content versions fails like this.
   Object? versionsError;
+
+  /// How many of the next asks fail with [versionsError].
+  int failingVersionChecks = 0;
+
+  /// While set, asking for content versions waits for it.
+  Completer<void>? versionsGate;
   final versionChecks = <List<String>>[];
 
   ConvexObject answerFor(String id) {
@@ -417,7 +497,12 @@ class _Repository extends ConvexStrategyRepository {
     List<String> strategyPublicIds,
   ) async {
     versionChecks.add(strategyPublicIds);
+    await versionsGate?.future;
     if (versionsError case final error?) throw error;
+    if (failingVersionChecks > 0) {
+      failingVersionChecks -= 1;
+      throw TimeoutException('no answer');
+    }
     return {
       for (final id in strategyPublicIds)
         id: gone.contains(id) ? null : copiedVersionOf(answerFor(id)),
@@ -466,6 +551,7 @@ class _Repository extends ConvexStrategyRepository {
   Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
     String strategyPublicId, {
     String? shareToken,
+    bool forOfflineCopy = false,
   }) async {
     fullReads.add(strategyPublicId);
     await fullReadGate?.future;

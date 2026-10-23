@@ -427,10 +427,13 @@ class ConvexStrategyRepository {
   /// The server's MAX_REFERENCED_ASSET_IDS_PER_QUERY.
   static const _referencedIdsBatch = 100;
 
-  /// [shareToken]: see [fetchShell].
+  /// [shareToken]: see [fetchShell]. [forOfflineCopy] asks for the
+  /// content version too (see CopiedVersion), which only a server that
+  /// knows it answers; nothing else sends it.
   Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
     String strategyPublicId, {
     String? shareToken,
+    bool forOfflineCopy = false,
   }) async {
     return upgradeRemoteFullSnapshot(_fullSnapshot(
       await _api.strategy
@@ -442,8 +445,9 @@ class ConvexStrategyRepository {
             // snapshot without the pages in the server's trash.
             acceptsTrashedPagesLeftOut: const ConvexOptional.present(true),
             acceptsPictureIds: const ConvexOptional.present(true),
-            // Kept with an offline copy, to tell later whether it is current.
-            includeContentVersion: const ConvexOptional.present(true),
+            includeContentVersion: forOfflineCopy
+                ? const ConvexOptional.present(true)
+                : const ConvexOptional.absent(),
           )
           .fetch(),
     ));

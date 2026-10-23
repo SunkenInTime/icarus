@@ -91,11 +91,18 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
   }
 
   /// When the whole strategy was last read into the copy at once (see
-  /// [writeFullSnapshot]), or last found unchanged since such a read.
-  /// Pages kept as the editor read them don't count.
+  /// [writeFullSnapshot]). Pages kept as the editor read them don't count.
   DateTime? lastFullRefresh(CloudCopyScope scope, String strategyId) {
     final entry = _entry(readEntry(_refreshKey(scope, strategyId)));
     final at = entry?['fullRefreshAt'];
+    return at is num ? DateTime.fromMillisecondsSinceEpoch(at.toInt()) : null;
+  }
+
+  /// When the server last said [strategyId] was still as its last full read
+  /// (see [noteFoundCurrent]).
+  DateTime? lastFoundCurrent(CloudCopyScope scope, String strategyId) {
+    final entry = _entry(readEntry(_refreshKey(scope, strategyId)));
+    final at = entry?['foundCurrentAt'];
     return at is num ? DateTime.fromMillisecondsSinceEpoch(at.toInt()) : null;
   }
 
@@ -236,6 +243,23 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
           'contentVersion': version.contentVersion,
         },
       }),
+    );
+  }
+
+  /// Notes that the server said, [at], that [strategyId] is still as its
+  /// last full read (see [copiedVersion]).
+  Future<void> noteFoundCurrent(
+    CloudCopyScope scope,
+    String strategyId, {
+    required DateTime at,
+  }) async {
+    if (scope.hasEnded) return;
+    final key = _refreshKey(scope, strategyId);
+    final entry = _entry(readEntry(key));
+    if (entry == null) return;
+    await writeEntry(
+      key,
+      jsonEncode({...entry, 'foundCurrentAt': at.millisecondsSinceEpoch}),
     );
   }
 

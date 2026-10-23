@@ -798,7 +798,7 @@ class MoveToCloudNotifier extends Notifier<void> {
     final askedAt = DateTime.now();
     final snapshot = await ref
         .read(convexStrategyRepositoryProvider)
-        .fetchFullSnapshot(cloudId);
+        .fetchFullSnapshot(cloudId, forOfflineCopy: true);
     final arrivedAt = DateTime.now();
     final elements = snapshot.elementsByPage.values
         .expand((page) => page)

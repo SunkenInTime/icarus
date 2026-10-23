@@ -31,9 +31,15 @@ final strategyKeptOfflineProvider =
       );
 });
 
-/// How old a strategy's copy may get before the background refresh reads it
-/// again.
+/// How long a strategy's copy goes before the background refresh makes sure
+/// it is current: asks whether it changed (see [CopiedVersion]), and reads
+/// it again if it did.
 const strategyCopyMaxAge = Duration(hours: 24);
+
+/// How long a copy goes before it is read again whole, changed or not. This
+/// heals what a content version can't see: a server change to what a read
+/// returns, or an edit made outside the app.
+const strategyCopyFullReadMaxAge = Duration(days: 7);
 
 /// The pause between two background reads, so they stay out of the way of
 /// the editor's own.
@@ -102,18 +108,23 @@ class StrategyCopyRefresher extends Notifier<void> {
             .cloudLibrary(owned: owned, total: strategyIds.length);
       }
       final now = DateTime.now();
-      final stale = <String>[];
+      final toRead = <String>[];
+      final toAsk = <String>[];
       for (final id in strategyIds) {
-        final refreshed = store.lastFullRefresh(scope, id);
-        if (refreshed == null ||
-            now.difference(refreshed) > strategyCopyMaxAge ||
+        final read = store.lastFullRefresh(scope, id);
+        if (read == null ||
+            now.difference(read) > strategyCopyFullReadMaxAge ||
             !store.keepsStrategy(scope, id)) {
-          stale.add(id);
+          toRead.add(id);
+          continue;
         }
+        final found = store.lastFoundCurrent(scope, id);
+        final current = found != null && found.isAfter(read) ? found : read;
+        if (now.difference(current) > strategyCopyMaxAge) toAsk.add(id);
       }
-      final changed = await _changedOf(scope, stale);
+      toRead.addAll(await _changedOf(scope, toAsk, generation));
       if (generation != _generation) return;
-      for (final id in changed) {
+      for (final id in toRead) {
         if (_queued.add(id)) _queue.addLast(id);
       }
       for (final id in store.keptStrategyIds(scope)) {
@@ -131,14 +142,15 @@ class StrategyCopyRefresher extends Notifier<void> {
     }
   }
 
-  /// Of the old copies [ids], the ones to read again. A copy that says what
-  /// it was read as (see [CopiedVersion]) is asked about first: one the
-  /// server still holds as it was counts as refreshed without being read,
-  /// and one that is gone is dropped. The rest, and every one the server
-  /// couldn't say about, are read whole.
+  /// Of the copies [ids], the ones to read again. A copy that says what it
+  /// was read as (see [CopiedVersion]) is asked about first: one the server
+  /// still holds as it was is noted current without being read, and one
+  /// that is gone is dropped. The rest, and every one the server couldn't
+  /// say about, are read whole. Stops once [generation] has passed.
   Future<List<String>> _changedOf(
     CloudCopyScope scope,
     List<String> ids,
+    int generation,
   ) async {
     final store = ref.read(cloudStrategyCopyStoreProvider);
     final copied = <String, CopiedVersion>{};
@@ -154,6 +166,7 @@ class StrategyCopyRefresher extends Notifier<void> {
     final asked = copied.keys.toList();
     const batch = ConvexStrategyRepository.contentVersionsBatch;
     for (var start = 0; start < asked.length; start += batch) {
+      if (generation != _generation || scope.hasEnded) break;
       final some = asked.sublist(start, min(start + batch, asked.length));
       final Map<String, CopiedVersion?> current;
       try {
@@ -163,8 +176,8 @@ class StrategyCopyRefresher extends Notifier<void> {
       } catch (error, stackTrace) {
         log('Asking whether offline copies are current failed: $error',
             name: 'strategy_copy', error: error, stackTrace: stackTrace);
-        changed.addAll(asked.sublist(start));
-        break;
+        changed.addAll(some);
+        continue;
       }
       final checkedAt = DateTime.now();
       for (final id in some) {
@@ -172,14 +185,9 @@ class StrategyCopyRefresher extends Notifier<void> {
           changed.add(id);
         } else if (current[id] == null) {
           // Deleted, or no longer shared: nothing of it can be opened.
-          await store.deleteStrategy(scope, id);
+          if (!scope.hasEnded) await store.deleteStrategy(scope, id);
         } else if (current[id] == copied[id]) {
-          await store.noteFullRefresh(
-            scope,
-            id,
-            at: checkedAt,
-            version: current[id],
-          );
+          await store.noteFoundCurrent(scope, id, at: checkedAt);
         } else {
           changed.add(id);
         }
@@ -253,7 +261,7 @@ class StrategyCopyRefresher extends Notifier<void> {
       final askedAt = DateTime.now();
       final snapshot = await ref
           .read(convexStrategyRepositoryProvider)
-          .fetchFullSnapshot(strategyId);
+          .fetchFullSnapshot(strategyId, forOfflineCopy: true);
       final arrivedAt = DateTime.now();
       CloudUsageMeter.instance.copyFullRead(
         [
