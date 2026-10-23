@@ -471,7 +471,9 @@ class _Repository extends ConvexStrategyRepository {
   Completer<void>? versionsGate;
   final versionChecks = <List<String>>[];
 
-  ConvexObject answerFor(String id) {
+  /// The full read of [id], with its content version only when asked for
+  /// it, as the server answers.
+  ConvexObject answerFor(String id, {bool withContentVersion = true}) {
     final answer = Map<String, Object?>.from(
       _renamed(
         fullAnswer(
@@ -488,7 +490,7 @@ class _Repository extends ConvexStrategyRepository {
     return ConvexValue.fromDart({
       ...answer,
       'header': header,
-      'contentVersion': (versions[id] ?? 0).toDouble(),
+      if (withContentVersion) 'contentVersion': (versions[id] ?? 0).toDouble(),
     }) as ConvexObject;
   }
 
@@ -560,11 +562,17 @@ class _Repository extends ConvexStrategyRepository {
       unansweredReads -= 1;
       throw TimeoutException('no answer');
     }
-    return snapshotFor(strategyPublicId);
+    return snapshotFor(strategyPublicId, forOfflineCopy: forOfflineCopy);
   }
 
-  RemoteFullStrategySnapshot snapshotFor(String strategyPublicId) {
-    final answer = answerFor(strategyPublicId);
+  RemoteFullStrategySnapshot snapshotFor(
+    String strategyPublicId, {
+    bool forOfflineCopy = true,
+  }) {
+    final answer = answerFor(
+      strategyPublicId,
+      withContentVersion: forOfflineCopy,
+    );
     return RemoteFullStrategySnapshot(
       header: RemoteStrategyHeader(
         publicId: strategyPublicId,
