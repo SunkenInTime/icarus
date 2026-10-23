@@ -8,7 +8,7 @@ import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
-import 'package:icarus/collab/generated/generated.dart';
+import 'package:icarus/collab/copied_version.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
@@ -155,9 +155,9 @@ class StrategyCopyRefresher extends Notifier<void> {
     const batch = ConvexStrategyRepository.contentVersionsBatch;
     for (var start = 0; start < asked.length; start += batch) {
       final some = asked.sublist(start, min(start + batch, asked.length));
-      final List<StrategyListContentVersionsResultItem> answers;
+      final Map<String, CopiedVersion?> current;
       try {
-        answers = await ref
+        current = await ref
             .read(convexStrategyRepositoryProvider)
             .fetchContentVersions(some);
       } catch (error, stackTrace) {
@@ -167,36 +167,23 @@ class StrategyCopyRefresher extends Notifier<void> {
         break;
       }
       final checkedAt = DateTime.now();
-      final unanswered = some.toSet();
-      for (final answer in answers) {
-        final id = switch (answer) {
-          StrategyListContentVersionsResultItemFound(:final strategyPublicId) ||
-          StrategyListContentVersionsResultItemGone(:final strategyPublicId) =>
-            strategyPublicId,
-        };
-        if (!unanswered.remove(id)) continue;
-        switch (answer) {
-          case StrategyListContentVersionsResultItemFound():
-            final current = copiedVersionFrom(
-              answer.header.encode('header'),
-              answer.contentVersion.toInt(),
-            );
-            if (current == copied[id]) {
-              await store.noteFullRefresh(
-                scope,
-                id,
-                at: checkedAt,
-                version: current,
-              );
-            } else {
-              changed.add(id);
-            }
-          case StrategyListContentVersionsResultItemGone():
-            // Deleted, or no longer shared: nothing of it can be opened.
-            await store.deleteStrategy(scope, id);
+      for (final id in some) {
+        if (!current.containsKey(id)) {
+          changed.add(id);
+        } else if (current[id] == null) {
+          // Deleted, or no longer shared: nothing of it can be opened.
+          await store.deleteStrategy(scope, id);
+        } else if (current[id] == copied[id]) {
+          await store.noteFullRefresh(
+            scope,
+            id,
+            at: checkedAt,
+            version: current[id],
+          );
+        } else {
+          changed.add(id);
         }
       }
-      changed.addAll(unanswered);
     }
     return changed;
   }

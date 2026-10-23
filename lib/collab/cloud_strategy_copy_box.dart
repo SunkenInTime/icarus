@@ -2,10 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
-import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/copied_version.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -13,27 +13,6 @@ import 'package:icarus/const/hive_boxes.dart';
 /// The version of every entry in the copy. An entry at any other version,
 /// older or newer, is read as absent: the copy is a cache, never a record.
 const cloudStrategyCopyVersion = 1;
-
-/// What a full read of a strategy was of: its header, with the reader's
-/// role, as canonical JSON, and its content version. While the server's
-/// answer to strategy:listContentVersions holds the same two, nothing a
-/// full read returns has changed.
-typedef CopiedVersion = ({String header, int contentVersion});
-
-/// The version [answer], a strategy:getFullSnapshot answer, was read at, or
-/// null when it was asked without includeContentVersion.
-CopiedVersion? copiedVersionOf(ConvexObject answer) {
-  final contentVersion = _jsonSafe(answer)['contentVersion'];
-  final header = answer.value['header'];
-  if (contentVersion is! num || header is! ConvexObject) return null;
-  return copiedVersionFrom(header, contentVersion.toInt());
-}
-
-/// The version of a strategy whose header reads [header].
-CopiedVersion copiedVersionFrom(ConvexObject header, int contentVersion) => (
-      header: canonicalCloudJsonEncode(_jsonSafe(header)),
-      contentVersion: contentVersion,
-    );
 
 /// A copy on this computer of the cloud strategies the signed-in account
 /// can open, read when the server can't answer.

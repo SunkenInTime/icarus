@@ -8,6 +8,7 @@ import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/copied_version.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/maps.dart';
@@ -412,27 +413,15 @@ class _Repository extends ConvexStrategyRepository {
   }
 
   @override
-  Future<List<StrategyListContentVersionsResultItem>> fetchContentVersions(
+  Future<Map<String, CopiedVersion?>> fetchContentVersions(
     List<String> strategyPublicIds,
   ) async {
     versionChecks.add(strategyPublicIds);
     if (versionsError case final error?) throw error;
-    return [
+    return {
       for (final id in strategyPublicIds)
-        StrategyListContentVersionsResultItem.decode(
-          ConvexValue.fromDart(
-            gone.contains(id)
-                ? {'strategyPublicId': id, 'status': 'gone'}
-                : {
-                    'strategyPublicId': id,
-                    'status': 'found',
-                    'header': answerFor(id).toDart()['header'],
-                    'contentVersion': (versions[id] ?? 0).toDouble(),
-                  },
-          ),
-          'versions',
-        ),
-    ];
+        id: gone.contains(id) ? null : copiedVersionOf(answerFor(id)),
+    };
   }
 
   /// [value] with the fixture's strategy id swapped for [id].

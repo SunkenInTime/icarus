@@ -7,6 +7,7 @@ import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/copied_version.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/page_slices.dart';
@@ -451,18 +452,33 @@ class ConvexStrategyRepository {
   /// Most strategies [strategyPublicIds] asks about at once.
   static const contentVersionsBatch = 100;
 
-  /// Each strategy's header and content version now, to compare with an
-  /// offline copy's (see CopiedVersion), or gone. At most
-  /// [contentVersionsBatch] at once.
-  Future<List<StrategyListContentVersionsResultItem>> fetchContentVersions(
+  /// Each strategy's version now, to compare with an offline copy's (see
+  /// [CopiedVersion]); null for one that is gone (deleted, or no longer
+  /// readable). At most [contentVersionsBatch] at once; one the server
+  /// didn't answer for is left out.
+  Future<Map<String, CopiedVersion?>> fetchContentVersions(
     List<String> strategyPublicIds,
-  ) {
-    return _api.strategy
+  ) async {
+    final answers = await _api.strategy
         .listContentVersions(
           clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
           strategyPublicIds: strategyPublicIds,
         )
         .fetch();
+    return {
+      for (final answer in answers)
+        ...switch (answer) {
+          StrategyListContentVersionsResultItemFound() => {
+              answer.strategyPublicId: copiedVersionFrom(
+                answer.header.encode('header'),
+                answer.contentVersion.toInt(),
+              ),
+            },
+          StrategyListContentVersionsResultItemGone() => {
+              answer.strategyPublicId: null,
+            },
+        },
+    };
   }
 
   Future<CloudImageUploadIntent> generateImageUploadUrl({
