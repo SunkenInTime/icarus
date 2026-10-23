@@ -267,7 +267,7 @@ jobs:
       - uses: ./.github/actions/setup-flutter
 
       - name: Build Web Client
-        run: fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
+        run: fvm flutter build web --no-wasm-dry-run --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
 
   convex:
     needs: changes

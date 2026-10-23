@@ -1,5 +1,3 @@
-// ignore_for_file: non_const_argument_for_const_parameter
-
 import 'package:flutter/material.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/folder_icons.dart';
@@ -94,12 +92,14 @@ int folderIconIdFromCloud({
   if (iconId != null && FolderIconRegistry.isKnownId(iconId)) {
     return iconId;
   }
-  final icon = codePoint == null
-      ? Icons.drive_folder_upload
-      : IconData(
-          codePoint,
-          fontFamily: fontFamily,
-          fontPackage: fontPackage,
-        );
-  return FolderIconRegistry.idForLegacyIconData(icon);
+  if (codePoint == null) {
+    return FolderIconRegistry.idForLegacyIconData(Icons.drive_folder_upload);
+  }
+  return FolderIconRegistry.idForStoredIcon(
+    StoredFolderIcon(
+      codePoint: codePoint,
+      fontFamily: fontFamily,
+      fontPackage: fontPackage,
+    ),
+  );
 }

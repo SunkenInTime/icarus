@@ -153,7 +153,7 @@ jobs:
           ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}
           ICARUS_PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
         run: >-
-          fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons
+          fvm flutter build web --no-wasm-dry-run
           --dart-define=ICARUS_CLOUD_ENVIRONMENT=production
           --dart-define=ICARUS_CONVEX_DEPLOYMENT_URL="$ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL"
           --dart-define=ICARUS_CONVEX_CLIENT_ID="$ICARUS_PRODUCTION_CONVEX_CLIENT_ID"

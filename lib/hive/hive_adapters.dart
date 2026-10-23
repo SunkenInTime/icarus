@@ -42,7 +42,6 @@ import 'package:icarus/strategy/strategy_models.dart';
   AdapterSpec<StrategySettings>(),
   AdapterSpec<PlacedUtility>(),
   AdapterSpec<UtilityType>(),
-  AdapterSpec<IconData>(),
   AdapterSpec<FolderColor>(),
   AdapterSpec<LineUp>(),
   AdapterSpec<LineUpGroup>(),
@@ -67,6 +66,7 @@ import 'package:icarus/strategy/strategy_models.dart';
   freeDrawingAdapterTypeId,
   lineAdapterTypeId,
   folderAdapterTypeId,
+  storedFolderIconAdapterTypeId,
   strategyPageAdapterTypeId,
   rectangleDrawingAdapterTypeId,
   ellipseDrawingAdapterTypeId,
@@ -77,6 +77,7 @@ const int placedAgentAdapterTypeId = 2;
 const int placedAbilityAdapterTypeId = 3;
 const int abilityInfoAdapterTypeId = 9;
 const int folderAdapterTypeId = 17;
+const int storedFolderIconAdapterTypeId = 18;
 const int freeDrawingAdapterTypeId = 11;
 const int lineAdapterTypeId = 12;
 const int strategyPageAdapterTypeId = 20;
@@ -560,6 +561,44 @@ class EllipseDrawingAdapter extends TypeAdapter<EllipseDrawing> {
       ..write(obj.id)
       ..writeByte(7)
       ..write(obj.boundingBox);
+  }
+}
+
+/// Reads the icons older builds saved as IconData, field for field, into
+/// [StoredFolderIcon]. Nothing writes these any more; folders save an icon id.
+class StoredFolderIconAdapter extends TypeAdapter<StoredFolderIcon> {
+  @override
+  final typeId = storedFolderIconAdapterTypeId;
+
+  @override
+  StoredFolderIcon read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (var i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return StoredFolderIcon(
+      codePoint: (fields[0] as num).toInt(),
+      fontFamily: fields[1] as String?,
+      fontPackage: fields[2] as String?,
+      matchTextDirection: fields[3] as bool? ?? false,
+      fontFamilyFallback: (fields[4] as List?)?.cast<String>(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, StoredFolderIcon obj) {
+    writer
+      ..writeByte(5)
+      ..writeByte(0)
+      ..write(obj.codePoint)
+      ..writeByte(1)
+      ..write(obj.fontFamily)
+      ..writeByte(2)
+      ..write(obj.fontPackage)
+      ..writeByte(3)
+      ..write(obj.matchTextDirection)
+      ..writeByte(4)
+      ..write(obj.fontFamilyFallback);
   }
 }
 

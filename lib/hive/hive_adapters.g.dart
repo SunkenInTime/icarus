@@ -745,52 +745,6 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
           typeId == other.typeId;
 }
 
-class IconDataAdapter extends TypeAdapter<IconData> {
-  @override
-  final typeId = 18;
-
-  @override
-  IconData read(BinaryReader reader) {
-    final numOfFields = reader.readByte();
-    final fields = <int, dynamic>{
-      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
-    };
-    return IconData(
-      (fields[0] as num).toInt(),
-      fontFamily: fields[1] as String?,
-      fontPackage: fields[2] as String?,
-      matchTextDirection: fields[3] == null ? false : fields[3] as bool,
-      fontFamilyFallback: (fields[4] as List?)?.cast<String>(),
-    );
-  }
-
-  @override
-  void write(BinaryWriter writer, IconData obj) {
-    writer
-      ..writeByte(5)
-      ..writeByte(0)
-      ..write(obj.codePoint)
-      ..writeByte(1)
-      ..write(obj.fontFamily)
-      ..writeByte(2)
-      ..write(obj.fontPackage)
-      ..writeByte(3)
-      ..write(obj.matchTextDirection)
-      ..writeByte(4)
-      ..write(obj.fontFamilyFallback);
-  }
-
-  @override
-  int get hashCode => typeId.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is IconDataAdapter &&
-          runtimeType == other.runtimeType &&
-          typeId == other.typeId;
-}
-
 class FolderColorAdapter extends TypeAdapter<FolderColor> {
   @override
   final typeId = 19;
