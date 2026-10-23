@@ -28,6 +28,7 @@ on:
       - presence/**
       - package.json
       - package-lock.json
+      - tool/prepare_web_fonts.dart
       - .github/workflows/deploy-web.yml
   workflow_dispatch:
 
