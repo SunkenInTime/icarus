@@ -269,6 +269,9 @@ jobs:
       - name: Build Web Client
         run: fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
 
+      - name: Prepare Web Fonts
+        run: fvm dart run tool/prepare_web_fonts.dart build/web
+
   convex:
     needs: changes
     if: needs.changes.outputs.convex == 'true'

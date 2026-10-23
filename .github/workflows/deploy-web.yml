@@ -158,6 +158,9 @@ jobs:
           --dart-define=ICARUS_CONVEX_DEPLOYMENT_URL="$ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL"
           --dart-define=ICARUS_CONVEX_CLIENT_ID="$ICARUS_PRODUCTION_CONVEX_CLIENT_ID"
 
+      - name: Prepare Web Fonts
+        run: fvm dart run tool/prepare_web_fonts.dart build/web
+
       # --branch=main: Cloudflare Pages treats a deploy to the project's
       # production branch (main) as the production deployment, and the custom
       # domain beta.icarusstrats.com follows production. Any other branch name
