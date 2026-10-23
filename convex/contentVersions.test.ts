@@ -5,6 +5,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { DataModel } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
+import { countingContentWrites } from "./lib/functions";
 import { markAssetReferencesReady } from "./lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import schema from "./schema";
@@ -340,6 +342,65 @@ describe("listContentVersions", () => {
   });
 });
 
+describe("the counting database", () => {
+  /// Runs [handler] the way every mutation runs: through the wrapper.
+  async function counted(
+    t: Awaited<ReturnType<typeof createHarness>>["t"],
+    handler: (ctx: MutationCtx) => Promise<void>,
+  ) {
+    const run = countingContentWrites(async (ctx) => await handler(ctx)) as (
+      ctx: MutationCtx,
+      args: object,
+    ) => Promise<unknown>;
+    await t.run(async (ctx) => {
+      await run(ctx, {});
+    });
+  }
+
+  async function pageOf(ctx: MutationCtx, strategyPublicId: string) {
+    const strategy = (await ctx.db
+      .query("strategies")
+      .withIndex("by_publicId", (q) => q.eq("publicId", strategyPublicId))
+      .first())!;
+    return (await ctx.db
+      .query("pages")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+      .first())!;
+  }
+
+  test("counts a write made through ctx.db.table()", async () => {
+    const { t, owner } = await createHarness();
+    await create(owner, "s");
+    await counted(t, async (ctx) => {
+      const page = await pageOf(ctx, "s");
+      // Not in MutationCtx's type, but there at run time.
+      const db = ctx.db as unknown as {
+        table(name: string): {
+          patch(id: unknown, value: object): Promise<void>;
+        };
+      };
+      await db.table("pages").patch(page._id, { name: "renamed" });
+    });
+    expect((await versions(owner, "s"))[0]).toMatchObject({
+      contentVersion: 2,
+    });
+  });
+
+  test("counts a row given to another strategy for both", async () => {
+    const { t, owner } = await createHarness();
+    await create(owner, "a");
+    await create(owner, "b");
+    await counted(t, async (ctx) => {
+      const page = await pageOf(ctx, "a");
+      const other = await pageOf(ctx, "b");
+      await ctx.db.patch(page._id, { strategyId: other.strategyId });
+    });
+    const [a, b] = await versions(owner, "a", "b");
+    expect(a).toMatchObject({ contentVersion: 2 });
+    expect(b).toMatchObject({ contentVersion: 2 });
+  });
+});
+
 describe("every mutation counts content writes", () => {
   test("no module defines one with the generated builders", () => {
     // A mutation defined with the generated `mutation`/`internalMutation`
@@ -361,17 +422,15 @@ describe("every mutation counts content writes", () => {
         }
         if (path.endsWith(join("lib", "functions.ts"))) continue;
         const source = readFileSync(path, "utf8");
-        for (const match of source.matchAll(
-          /import\s*\{([^}]*)\}\s*from\s*"[./]*_generated\/server"/g,
-        )) {
-          const names = match[1]!.split(",").map((name) => name.trim());
-          if (
-            names.some((name) =>
-              /^(mutation|internalMutation)(\s+as\s+\w+)?$/.test(name),
-            )
-          ) {
-            offenders.push(path);
-          }
+        // The generated builders by name, the whole generated module, or
+        // Convex's own builders underneath them.
+        const bypasses = [
+          /import\s*\{[^}]*(mutation|internalMutation)[^}]*\}\s*from\s*"[./]*_generated\/server"/,
+          /import\s*\*\s*as\s+\w+\s+from\s*"[./]*_generated\/server"/,
+          /(mutationGeneric|internalMutationGeneric)/,
+        ];
+        if (bypasses.some((pattern) => pattern.test(source))) {
+          offenders.push(path);
         }
       }
     };

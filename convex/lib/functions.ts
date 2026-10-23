@@ -40,7 +40,8 @@ type ContentTable = (typeof CONTENT_TABLES)[number];
 type Handler = (ctx: MutationCtx, args: unknown) => unknown;
 type MutationDefinition = Handler | { handler: Handler };
 
-function countingContentWrites(definition: MutationDefinition) {
+/// Exported for tests, which run handlers through it directly.
+export function countingContentWrites(definition: MutationDefinition) {
   const handler =
     typeof definition === "function" ? definition : definition.handler;
   const counted: Handler = async (ctx, args) => {
@@ -60,8 +61,9 @@ class ContentWrites {
   readonly db: DatabaseWriter;
   private readonly strategies = new Set<Id<"strategies">>();
   /// Whose each content row this transaction has seen is: the strategy, or
-  /// for page contents the page. A row never changes hands, so a write to a
-  /// row the handler already read needs no second read to know it.
+  /// for page contents the page. A row changes hands only through a write
+  /// that names its new owner, which counts for both (see [change]), so a
+  /// write to a row the handler already read needs no second read.
   private readonly owners = new Map<string, string>();
 
   constructor(private readonly raw: DatabaseWriter) {
@@ -74,10 +76,22 @@ class ContentWrites {
       patch: (...args: unknown[]) => writes.change("patch", args),
       replace: (...args: unknown[]) => writes.change("replace", args),
       delete: (...args: unknown[]) => writes.change("delete", args),
+      // ctx.db.table(name).insert(...) and friends: the same methods, with
+      // the table named first.
+      table: (table: string) => ({
+        get: (id: unknown) => writes.get([table, id]),
+        query: () => writes.query(table),
+        insert: (value: Record<string, unknown>) => writes.insert(table, value),
+        patch: (id: unknown, value: unknown) =>
+          writes.change("patch", [table, id, value]),
+        replace: (id: unknown, value: unknown) =>
+          writes.change("replace", [table, id, value]),
+        delete: (id: unknown) => writes.change("delete", [table, id]),
+      }),
     };
     this.db = new Proxy(raw, {
       get(target, property, receiver) {
-        if (typeof property === "string" && property in methods) {
+        if (typeof property === "string" && Object.hasOwn(methods, property)) {
           return methods[property];
         }
         const value = Reflect.get(target, property, receiver);
@@ -167,12 +181,24 @@ class ContentWrites {
     const named = args.length === (method === "delete" ? 2 : 3);
     const id = (named ? args[1] : args[0]) as string;
     const table = named ? (args[0] as string) : this.tableOf(id);
+    if (table === undefined || !isContentTable(table)) {
+      return await (this.raw[method] as (...a: unknown[]) => Promise<void>)(
+        ...args,
+      );
+    }
     // Before the write: a deleted row can't say whose it was.
-    if (table !== undefined && isContentTable(table))
+    await this.note(table, id);
+    await (this.raw[method] as (...a: unknown[]) => Promise<void>)(...args);
+    // A write that gives the row a new owner counts for that one too.
+    const value = (named ? args[2] : args[1]) as
+      | Record<string, unknown>
+      | undefined;
+    const newOwner =
+      table === "pageContents" ? value?.pageId : value?.strategyId;
+    if (typeof newOwner === "string" && newOwner !== this.owners.get(id)) {
+      this.owners.set(id, newOwner);
       await this.note(table, id);
-    return await (this.raw[method] as (...a: unknown[]) => Promise<void>)(
-      ...args,
-    );
+    }
   }
 
   private tableOf(id: unknown): ContentTable | undefined {
