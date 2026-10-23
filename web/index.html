@@ -32,8 +32,117 @@
 
   <title>Icarus</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    html, body { margin: 0; background: #09090b; }
+    #loading {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      background: #09090b;
+      transition: opacity 200ms ease-out;
+    }
+    #loading.done { opacity: 0; }
+  </style>
 </head>
 <body>
+  <!--
+    Shown until Flutter draws its first frame, which waits for main.dart.js,
+    CanvasKit and the fonts to download. It draws the app's WingDotLoader
+    (lib/widgets/dot_matrix_loaders.dart) on a canvas, so it needs nothing
+    else from the network.
+  -->
+  <div id="loading" role="progressbar" aria-label="Loading Icarus">
+    <canvas width="96" height="96" style="width: 96px; height: 96px"></canvas>
+  </div>
+  <script>
+    (function () {
+      var loading = document.getElementById('loading');
+      var canvas = loading.querySelector('canvas');
+      var ratio = window.devicePixelRatio || 1;
+      canvas.width = canvas.height = Math.round(96 * ratio);
+      var ctx = canvas.getContext('2d');
+      ctx.scale(ratio, ratio);
+
+      var size = 96, columns = 18, spacing = size / columns;
+      var maxRadius = spacing * 0.46;
+      var offDot = 'rgba(39, 39, 42, 0.45)';
+      var violet = [124, 58, 237], white = [250, 250, 250];
+      var beat = 1.4, feathers = 5, spanX = 0.72;
+
+      function sq(x) { return x * x; }
+      function clamp(x) { return Math.min(1, Math.max(0, x)); }
+      function smoothstep(a, b, x) { var u = clamp((x - a) / (b - a)); return u * u * (3 - 2 * u); }
+      function fract(x) { return x - Math.floor(x); }
+
+      // A port of _WingDotPainter.sample: [brightness, color] or null.
+      function sample(u, v, t) {
+        var phase = 2 * Math.PI * t / beat;
+        var pulse = fract(t / beat);
+        var flap = Math.sin(phase + 0.4 * Math.sin(phase));
+        var alpha = -0.12 + flap * 0.42;
+        var ca = Math.cos(alpha), sa = Math.sin(alpha);
+        var rx = u - 0.16, ry = v - 0.40;
+        var x = rx * ca + ry * sa;
+        var y = -rx * sa + ry * ca;
+        if (x < -0.03 || x > spanX + 0.04) return null;
+        var nx = clamp(x / spanX);
+        y += 0.07 * sq(nx) * Math.sin(phase - 1.1);
+        var yTop = -0.13 * Math.sin(Math.PI * nx * 0.9);
+        var f = fract((x + y * 0.55) / spanX * feathers);
+        var notch = sq(Math.abs(2 * (f - 0.5)));
+        var yBot = 0.11 + 0.34 * Math.pow(nx, 1.35) - 0.11 * notch;
+        var mask = smoothstep(-0.02, 0.03, x) *
+            (1 - smoothstep(spanX * 0.94, spanX + 0.03, x)) *
+            smoothstep(yTop - 0.025, yTop + 0.03, y) *
+            (1 - smoothstep(yBot - 0.035, yBot + 0.02, y));
+        if (mask < 0.05) return null;
+        var seam = 0.30 + 0.70 * smoothstep(0.85, 0.5, Math.abs(2 * (f - 0.5)));
+        var shimmer = Math.exp(-sq((nx - pulse * 1.3) / 0.20));
+        var k = clamp(nx * 0.5 + shimmer * 0.35);
+        return [
+          mask * seam * (0.35 + 0.40 * nx + 0.35 * shimmer),
+          'rgb(' + violet.map(function (c, i) { return Math.round(c + (white[i] - c) * k); }) + ')',
+        ];
+      }
+
+      function draw(t) {
+        ctx.clearRect(0, 0, size, size);
+        for (var row = 0; row < columns; row++) {
+          for (var col = 0; col < columns; col++) {
+            var cx = (col + 0.5) * spacing, cy = (row + 0.5) * spacing;
+            var dot = sample(cx / size, cy / size, t);
+            var lit = dot && dot[0] >= 0.03;
+            ctx.fillStyle = lit ? dot[1] : offDot;
+            ctx.beginPath();
+            ctx.arc(cx, cy, lit ? maxRadius * Math.sqrt(clamp(dot[0])) : maxRadius * 0.22, 0, 2 * Math.PI);
+            ctx.fill();
+          }
+        }
+      }
+
+      var start = performance.now(), frame = 0;
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        draw(0.35);
+      } else {
+        (function tick(now) {
+          draw((now - start) / 1000);
+          frame = requestAnimationFrame(tick);
+        })(start);
+      }
+
+      window.addEventListener('flutter-first-frame', function () {
+        loading.classList.add('done');
+        setTimeout(function () {
+          cancelAnimationFrame(frame);
+          loading.remove();
+        }, 200);
+      }, { once: true });
+    })();
+  </script>
+
   <!--
     Official Convex browser transport. Flutter's published Convex package still
     uses an obsolete web authentication wire shape; native builds continue to
