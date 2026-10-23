@@ -441,9 +441,28 @@ class ConvexStrategyRepository {
             // snapshot without the pages in the server's trash.
             acceptsTrashedPagesLeftOut: const ConvexOptional.present(true),
             acceptsPictureIds: const ConvexOptional.present(true),
+            // Kept with an offline copy, to tell later whether it is current.
+            includeContentVersion: const ConvexOptional.present(true),
           )
           .fetch(),
     ));
+  }
+
+  /// Most strategies [strategyPublicIds] asks about at once.
+  static const contentVersionsBatch = 100;
+
+  /// Each strategy's header and content version now, to compare with an
+  /// offline copy's (see CopiedVersion), or gone. At most
+  /// [contentVersionsBatch] at once.
+  Future<List<StrategyListContentVersionsResultItem>> fetchContentVersions(
+    List<String> strategyPublicIds,
+  ) {
+    return _api.strategy
+        .listContentVersions(
+          clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+          strategyPublicIds: strategyPublicIds,
+        )
+        .fetch();
   }
 
   Future<CloudImageUploadIntent> generateImageUploadUrl({

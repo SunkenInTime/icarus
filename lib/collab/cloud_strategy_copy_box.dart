@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -12,6 +13,27 @@ import 'package:icarus/const/hive_boxes.dart';
 /// The version of every entry in the copy. An entry at any other version,
 /// older or newer, is read as absent: the copy is a cache, never a record.
 const cloudStrategyCopyVersion = 1;
+
+/// What a full read of a strategy was of: its header, with the reader's
+/// role, as canonical JSON, and its content version. While the server's
+/// answer to strategy:listContentVersions holds the same two, nothing a
+/// full read returns has changed.
+typedef CopiedVersion = ({String header, int contentVersion});
+
+/// The version [answer], a strategy:getFullSnapshot answer, was read at, or
+/// null when it was asked without includeContentVersion.
+CopiedVersion? copiedVersionOf(ConvexObject answer) {
+  final contentVersion = _jsonSafe(answer)['contentVersion'];
+  final header = answer.value['header'];
+  if (contentVersion is! num || header is! ConvexObject) return null;
+  return copiedVersionFrom(header, contentVersion.toInt());
+}
+
+/// The version of a strategy whose header reads [header].
+CopiedVersion copiedVersionFrom(ConvexObject header, int contentVersion) => (
+      header: canonicalCloudJsonEncode(_jsonSafe(header)),
+      contentVersion: contentVersion,
+    );
 
 /// A copy on this computer of the cloud strategies the signed-in account
 /// can open, read when the server can't answer.
@@ -90,11 +112,22 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
   }
 
   /// When the whole strategy was last read into the copy at once (see
-  /// [writeFullSnapshot]). Pages kept as the editor read them don't count.
+  /// [writeFullSnapshot]), or last found unchanged since such a read.
+  /// Pages kept as the editor read them don't count.
   DateTime? lastFullRefresh(CloudCopyScope scope, String strategyId) {
     final entry = _entry(readEntry(_refreshKey(scope, strategyId)));
     final at = entry?['fullRefreshAt'];
     return at is num ? DateTime.fromMillisecondsSinceEpoch(at.toInt()) : null;
+  }
+
+  /// The version the last full read of [strategyId] was of (see
+  /// [noteFullRefresh]), or null when it didn't say.
+  CopiedVersion? copiedVersion(CloudCopyScope scope, String strategyId) {
+    final entry = _entry(readEntry(_refreshKey(scope, strategyId)));
+    final header = entry?['header'];
+    final contentVersion = entry?['contentVersion'];
+    if (header is! String || contentVersion is! num) return null;
+    return (header: header, contentVersion: contentVersion.toInt());
   }
 
   /// The strategies [scope] keeps anything of.
@@ -206,11 +239,12 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
   }
 
   /// Notes that all of [strategyId], images included, was read into the copy
-  /// [at] (see [lastFullRefresh]).
+  /// [at] (see [lastFullRefresh]), as of [version] when the read said.
   Future<void> noteFullRefresh(
     CloudCopyScope scope,
     String strategyId, {
     required DateTime at,
+    CopiedVersion? version,
   }) async {
     if (scope.hasEnded) return;
     await writeEntry(
@@ -218,6 +252,10 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
       jsonEncode({
         'copyVersion': cloudStrategyCopyVersion,
         'fullRefreshAt': at.millisecondsSinceEpoch,
+        if (version != null) ...{
+          'header': version.header,
+          'contentVersion': version.contentVersion,
+        },
       }),
     );
   }

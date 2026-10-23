@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:developer';
+import 'dart:math' show min;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
@@ -80,8 +82,9 @@ class StrategyCopyRefresher extends Notifier<void> {
   }
 
   /// Walks My Library and Shared and queues every strategy whose copy is
-  /// missing or old. A strategy the walk no longer finds is dropped from the
-  /// copy, but only after every list was read.
+  /// missing, or old and changed since (see [_changedOf]). A strategy the
+  /// walk no longer finds is dropped from the copy, but only after every
+  /// list was read.
   Future<void> refreshLibrary() async {
     if (_walking) return;
     final scope = ref.read(cloudCopyScopeProvider);
@@ -99,12 +102,19 @@ class StrategyCopyRefresher extends Notifier<void> {
             .cloudLibrary(owned: owned, total: strategyIds.length);
       }
       final now = DateTime.now();
+      final stale = <String>[];
       for (final id in strategyIds) {
         final refreshed = store.lastFullRefresh(scope, id);
-        final stale = refreshed == null ||
+        if (refreshed == null ||
             now.difference(refreshed) > strategyCopyMaxAge ||
-            !store.keepsStrategy(scope, id);
-        if (stale && _queued.add(id)) _queue.addLast(id);
+            !store.keepsStrategy(scope, id)) {
+          stale.add(id);
+        }
+      }
+      final changed = await _changedOf(scope, stale);
+      if (generation != _generation) return;
+      for (final id in changed) {
+        if (_queued.add(id)) _queue.addLast(id);
       }
       for (final id in store.keptStrategyIds(scope)) {
         if (!strategyIds.contains(id)) {
@@ -119,6 +129,76 @@ class StrategyCopyRefresher extends Notifier<void> {
       _walking = false;
       _walkIfWanted();
     }
+  }
+
+  /// Of the old copies [ids], the ones to read again. A copy that says what
+  /// it was read as (see [CopiedVersion]) is asked about first: one the
+  /// server still holds as it was counts as refreshed without being read,
+  /// and one that is gone is dropped. The rest, and every one the server
+  /// couldn't say about, are read whole.
+  Future<List<String>> _changedOf(
+    CloudCopyScope scope,
+    List<String> ids,
+  ) async {
+    final store = ref.read(cloudStrategyCopyStoreProvider);
+    final copied = <String, CopiedVersion>{};
+    final changed = <String>[];
+    for (final id in ids) {
+      final version = store.copiedVersion(scope, id);
+      if (version != null && store.keepsStrategy(scope, id)) {
+        copied[id] = version;
+      } else {
+        changed.add(id);
+      }
+    }
+    final asked = copied.keys.toList();
+    const batch = ConvexStrategyRepository.contentVersionsBatch;
+    for (var start = 0; start < asked.length; start += batch) {
+      final some = asked.sublist(start, min(start + batch, asked.length));
+      final List<StrategyListContentVersionsResultItem> answers;
+      try {
+        answers = await ref
+            .read(convexStrategyRepositoryProvider)
+            .fetchContentVersions(some);
+      } catch (error, stackTrace) {
+        log('Asking whether offline copies are current failed: $error',
+            name: 'strategy_copy', error: error, stackTrace: stackTrace);
+        changed.addAll(asked.sublist(start));
+        break;
+      }
+      final checkedAt = DateTime.now();
+      final unanswered = some.toSet();
+      for (final answer in answers) {
+        final id = switch (answer) {
+          StrategyListContentVersionsResultItemFound(:final strategyPublicId) ||
+          StrategyListContentVersionsResultItemGone(:final strategyPublicId) =>
+            strategyPublicId,
+        };
+        if (!unanswered.remove(id)) continue;
+        switch (answer) {
+          case StrategyListContentVersionsResultItemFound():
+            final current = copiedVersionFrom(
+              answer.header.encode('header'),
+              answer.contentVersion.toInt(),
+            );
+            if (current == copied[id]) {
+              await store.noteFullRefresh(
+                scope,
+                id,
+                at: checkedAt,
+                version: current,
+              );
+            } else {
+              changed.add(id);
+            }
+          case StrategyListContentVersionsResultItemGone():
+            // Deleted, or no longer shared: nothing of it can be opened.
+            await store.deleteStrategy(scope, id);
+        }
+      }
+      changed.addAll(unanswered);
+    }
+    return changed;
   }
 
   void _walkIfWanted() {
@@ -255,7 +335,12 @@ class StrategyCopyRefresher extends Notifier<void> {
               assetIds: images.keys,
             );
     if (imagesOnDisk) {
-      await store.noteFullRefresh(scope, strategyId, at: DateTime.now());
+      await store.noteFullRefresh(
+        scope,
+        strategyId,
+        at: DateTime.now(),
+        version: copiedVersionOf(answer),
+      );
     }
   }
 
