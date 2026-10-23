@@ -140,8 +140,11 @@ class Settings {
 
   static final Uri windowsStoreLink = Uri.parse(
       "https://apps.microsoft.com/detail/9PBWHHZRQFW6?hl=en-us&gl=US&ocid=pdpshare");
+  /// The newest stable installer, the same link icarusstrats.com uses.
+  /// GitHub Pages can't hold it (files there max out at 100 MB), so the copy
+  /// under downloads/ on Pages stopped at 4.6.1.
   static final Uri stableWindowsInstallerLink = Uri.parse(
-      "https://sunkenintime.github.io/icarus/downloads/windows/stable/icarus-setup-latest.exe");
+      "https://github.com/SunkenInTime/icarus/releases/latest/download/icarus-setup.exe");
   static ThemeData appTheme = ThemeData(
       colorScheme: const ColorScheme.dark(
         // primary: Color.fromARGB(255, 129, 75, 223),
