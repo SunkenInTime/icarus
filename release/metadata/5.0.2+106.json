@@ -1,0 +1,20 @@
+{
+  "version": "5.0.2+106",
+  "shortVersion": 106,
+  "title": "5.0.2 Update",
+  "description": "Keeping your cloud library available offline uses far less data.",
+  "date": "2026-10-22",
+  "mandatory": false,
+  "channels": ["desktop", "stable"],
+  "platforms": ["windows"],
+  "changes": [
+    {
+      "message": "Icarus asks whether a cloud strategy changed before downloading it again for offline use, and downloads only the ones that did. Before, it downloaded every cloud strategy again each day.",
+      "type": "fix"
+    },
+    {
+      "message": "Strategies you move to the cloud stay available offline as part of the move, instead of being downloaded again afterward.",
+      "type": "fix"
+    }
+  ]
+}
