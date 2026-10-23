@@ -8,6 +8,7 @@ import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/copied_version.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/maps.dart';
@@ -123,6 +124,182 @@ void main() {
     await _settle();
     expect(repository.fullReads, ['one']);
     expect(store.keptStrategyIds(_scope), isEmpty);
+  });
+
+  group('an old copy', () {
+    /// Keeps [id] in the copy as read [age] ago, with the version the read
+    /// was of unless [versioned] is false (copies kept before versions were).
+    Future<void> keepOld(
+      String id, {
+      Duration age = const Duration(hours: 25),
+      bool versioned = true,
+    }) async {
+      final at = DateTime.now().subtract(age);
+      final answer = repository.answerFor(id);
+      await store.writeFullSnapshot(_scope, answer, askedAt: at, arrivedAt: at);
+      await store.noteFullRefresh(_scope, id,
+          at: at, version: versioned ? copiedVersionOf(answer) : null);
+    }
+
+    test('the server still holds as it was is kept without reading it',
+        () async {
+      repository.owned = {'one'};
+      await keepOld('one');
+      start();
+      await _settle();
+      expect(repository.versionChecks, [
+        ['one'],
+      ]);
+      expect(repository.fullReads, isEmpty);
+      expect(
+        DateTime.now().difference(store.lastFoundCurrent(_scope, 'one')!),
+        lessThan(const Duration(minutes: 1)),
+      );
+      // The last full read is still when it was.
+      expect(
+        DateTime.now().difference(store.lastFullRefresh(_scope, 'one')!),
+        greaterThan(const Duration(hours: 24)),
+      );
+    });
+
+    test('found current within a day is not asked about again', () async {
+      repository.owned = {'one'};
+      await keepOld('one');
+      await store.noteFoundCurrent(
+        _scope,
+        'one',
+        at: DateTime.now().subtract(const Duration(hours: 1)),
+      );
+      start();
+      await _settle();
+      expect(repository.versionChecks, isEmpty);
+      expect(repository.fullReads, isEmpty);
+    });
+
+    test('read whole more than a week ago is read again, changed or not',
+        () async {
+      repository.owned = {'one'};
+      await keepOld('one', age: const Duration(days: 8));
+      await store.noteFoundCurrent(
+        _scope,
+        'one',
+        at: DateTime.now().subtract(const Duration(hours: 1)),
+      );
+      start();
+      await _settle();
+      expect(repository.versionChecks, isEmpty);
+      expect(repository.fullReads, ['one']);
+    });
+
+    test('a batch the server could not answer reads only its own', () async {
+      final ids = [for (var i = 0; i < 150; i++) 's$i'];
+      repository.owned = ids.toSet();
+      for (final id in ids) {
+        await keepOld(id);
+      }
+      repository.failingVersionChecks = 1;
+      start();
+      await _settle();
+      expect(repository.versionChecks.map((ids) => ids.length), [100, 50]);
+      // The second batch was answered: found current, not read again.
+      expect(
+        [for (final id in ids) store.lastFoundCurrent(_scope, id) != null],
+        [for (var i = 0; i < 150; i++) i >= 100],
+      );
+      expect(repository.fullReads.toSet().intersection(ids.skip(100).toSet()),
+          isEmpty);
+    });
+
+    test('a sign-out while asking writes and drops nothing', () async {
+      repository.owned = {'one'};
+      repository.gone.add('one');
+      await keepOld('one');
+      final gate = Completer<void>();
+      repository.versionsGate = gate;
+      final container = start();
+      await _settle(pause: false);
+      expect(repository.versionChecks, hasLength(1));
+
+      (container.read(authProvider.notifier) as _ReadyAuthProvider)
+          .startSigningOut();
+      _beginSession('account-a').endSessions();
+      final kept = store.entryKeys.toSet();
+      gate.complete();
+      await _settle();
+
+      expect(store.entryKeys.toSet(), kept);
+      expect(repository.fullReads, isEmpty);
+    });
+
+    test('whose content moved on is read again', () async {
+      repository.owned = {'one'};
+      await keepOld('one');
+      repository.versions['one'] = 3;
+      start();
+      await _settle();
+      expect(repository.fullReads, ['one']);
+      expect(store.copiedVersion(_scope, 'one')?.contentVersion, 3);
+    });
+
+    test('whose header changed, as a role does, is read again', () async {
+      repository.owned = {'one'};
+      await keepOld('one');
+      repository.roles['one'] = 'editor';
+      start();
+      await _settle();
+      expect(repository.fullReads, ['one']);
+    });
+
+    test('the server says is gone is dropped unread', () async {
+      repository.owned = {'one'};
+      await keepOld('one');
+      repository.gone.add('one');
+      start();
+      await _settle();
+      expect(repository.fullReads, isEmpty);
+      expect(store.keptStrategyIds(_scope), isEmpty);
+    });
+
+    test('is read whole when the server cannot say', () async {
+      repository.owned = {'one', 'two'};
+      await keepOld('one');
+      await keepOld('two');
+      repository.versionsError = TimeoutException('no answer');
+      start();
+      await _settle();
+      expect(repository.fullReads, unorderedEquals(['one', 'two']));
+    });
+
+    test('kept before versions were is read whole, once', () async {
+      repository.owned = {'one'};
+      await keepOld('one', versioned: false);
+      start();
+      await _settle();
+      expect(repository.versionChecks, isEmpty);
+      expect(repository.fullReads, ['one']);
+      expect(store.copiedVersion(_scope, 'one'), isNotNull);
+    });
+
+    test('a fresh one is not asked about', () async {
+      repository.owned = {'one'};
+      await keepOld('one', age: const Duration(hours: 1));
+      start();
+      await _settle();
+      expect(repository.versionChecks, isEmpty);
+      expect(repository.fullReads, isEmpty);
+    });
+
+    test('a large library is asked about 100 at a time', () async {
+      final ids = [for (var i = 0; i < 150; i++) 's$i'];
+      repository.owned = ids.toSet();
+      for (final id in ids) {
+        await keepOld(id);
+      }
+      start();
+      await _settle();
+      expect(repository.versionChecks.map((ids) => ids.length), [100, 50]);
+      expect(repository.fullReads, isEmpty);
+    });
   });
 
   test('a copy that cannot be written stops the walk', () async {
@@ -275,14 +452,63 @@ class _Repository extends ConvexStrategyRepository {
   Completer<void>? fullReadGate;
   final fullReads = <String>[];
 
-  ConvexObject answerFor(String id) {
-    final answer = fullAnswer(
-      ['a', 'b'],
-      elements: [imageRow('image', 'a', 'picture')],
-      lineups: [lineupRow('lineup', 'b', 'lineup-image')],
-      assets: [assetRow('picture'), assetRow('lineup-image')],
-    ).toDart();
-    return ConvexValue.fromDart(_renamed(answer, id)) as ConvexObject;
+  /// Each strategy's content version on the server (0 when unset).
+  final versions = <String, int>{};
+
+  /// The caller's role per strategy, when not the fixture's.
+  final roles = <String, String>{};
+
+  /// Strategies the server says are gone.
+  final gone = <String>{};
+
+  /// While set, asking for content versions fails like this.
+  Object? versionsError;
+
+  /// How many of the next asks fail with [versionsError].
+  int failingVersionChecks = 0;
+
+  /// While set, asking for content versions waits for it.
+  Completer<void>? versionsGate;
+  final versionChecks = <List<String>>[];
+
+  /// The full read of [id], with its content version only when asked for
+  /// it, as the server answers.
+  ConvexObject answerFor(String id, {bool withContentVersion = true}) {
+    final answer = Map<String, Object?>.from(
+      _renamed(
+        fullAnswer(
+          ['a', 'b'],
+          elements: [imageRow('image', 'a', 'picture')],
+          lineups: [lineupRow('lineup', 'b', 'lineup-image')],
+          assets: [assetRow('picture'), assetRow('lineup-image')],
+        ).toDart(),
+        id,
+      )! as Map,
+    );
+    final header = Map<String, Object?>.from(answer['header']! as Map);
+    if (roles[id] case final role?) header['role'] = role;
+    return ConvexValue.fromDart({
+      ...answer,
+      'header': header,
+      if (withContentVersion) 'contentVersion': (versions[id] ?? 0).toDouble(),
+    }) as ConvexObject;
+  }
+
+  @override
+  Future<Map<String, CopiedVersion?>> fetchContentVersions(
+    List<String> strategyPublicIds,
+  ) async {
+    versionChecks.add(strategyPublicIds);
+    await versionsGate?.future;
+    if (versionsError case final error?) throw error;
+    if (failingVersionChecks > 0) {
+      failingVersionChecks -= 1;
+      throw TimeoutException('no answer');
+    }
+    return {
+      for (final id in strategyPublicIds)
+        id: gone.contains(id) ? null : copiedVersionOf(answerFor(id)),
+    };
   }
 
   /// [value] with the fixture's strategy id swapped for [id].
@@ -327,6 +553,7 @@ class _Repository extends ConvexStrategyRepository {
   Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
     String strategyPublicId, {
     String? shareToken,
+    bool forOfflineCopy = false,
   }) async {
     fullReads.add(strategyPublicId);
     await fullReadGate?.future;
@@ -335,11 +562,17 @@ class _Repository extends ConvexStrategyRepository {
       unansweredReads -= 1;
       throw TimeoutException('no answer');
     }
-    return snapshotFor(strategyPublicId);
+    return snapshotFor(strategyPublicId, forOfflineCopy: forOfflineCopy);
   }
 
-  RemoteFullStrategySnapshot snapshotFor(String strategyPublicId) {
-    final answer = answerFor(strategyPublicId);
+  RemoteFullStrategySnapshot snapshotFor(
+    String strategyPublicId, {
+    bool forOfflineCopy = true,
+  }) {
+    final answer = answerFor(
+      strategyPublicId,
+      withContentVersion: forOfflineCopy,
+    );
     return RemoteFullStrategySnapshot(
       header: RemoteStrategyHeader(
         publicId: strategyPublicId,

@@ -7,6 +7,7 @@ import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/copied_version.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/page_slices.dart';
@@ -426,10 +427,13 @@ class ConvexStrategyRepository {
   /// The server's MAX_REFERENCED_ASSET_IDS_PER_QUERY.
   static const _referencedIdsBatch = 100;
 
-  /// [shareToken]: see [fetchShell].
+  /// [shareToken]: see [fetchShell]. [forOfflineCopy] asks for the
+  /// content version too (see CopiedVersion), which only a server that
+  /// knows it answers; nothing else sends it.
   Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
     String strategyPublicId, {
     String? shareToken,
+    bool forOfflineCopy = false,
   }) async {
     return upgradeRemoteFullSnapshot(_fullSnapshot(
       await _api.strategy
@@ -441,9 +445,44 @@ class ConvexStrategyRepository {
             // snapshot without the pages in the server's trash.
             acceptsTrashedPagesLeftOut: const ConvexOptional.present(true),
             acceptsPictureIds: const ConvexOptional.present(true),
+            includeContentVersion: forOfflineCopy
+                ? const ConvexOptional.present(true)
+                : const ConvexOptional.absent(),
           )
           .fetch(),
     ));
+  }
+
+  /// Most strategies [strategyPublicIds] asks about at once.
+  static const contentVersionsBatch = 100;
+
+  /// Each strategy's version now, to compare with an offline copy's (see
+  /// [CopiedVersion]); null for one that is gone (deleted, or no longer
+  /// readable). At most [contentVersionsBatch] at once; one the server
+  /// didn't answer for is left out.
+  Future<Map<String, CopiedVersion?>> fetchContentVersions(
+    List<String> strategyPublicIds,
+  ) async {
+    final answers = await _api.strategy
+        .listContentVersions(
+          clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+          strategyPublicIds: strategyPublicIds,
+        )
+        .fetch();
+    return {
+      for (final answer in answers)
+        ...switch (answer) {
+          StrategyListContentVersionsResultItemFound() => {
+              answer.strategyPublicId: copiedVersionFrom(
+                answer.header.encode('header'),
+                answer.contentVersion.toInt(),
+              ),
+            },
+          StrategyListContentVersionsResultItemGone() => {
+              answer.strategyPublicId: null,
+            },
+        },
+    };
   }
 
   Future<CloudImageUploadIntent> generateImageUploadUrl({

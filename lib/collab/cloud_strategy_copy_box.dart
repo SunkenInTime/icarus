@@ -5,6 +5,7 @@ import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/copied_version.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -95,6 +96,24 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
     final entry = _entry(readEntry(_refreshKey(scope, strategyId)));
     final at = entry?['fullRefreshAt'];
     return at is num ? DateTime.fromMillisecondsSinceEpoch(at.toInt()) : null;
+  }
+
+  /// When the server last said [strategyId] was still as its last full read
+  /// (see [noteFoundCurrent]).
+  DateTime? lastFoundCurrent(CloudCopyScope scope, String strategyId) {
+    final entry = _entry(readEntry(_refreshKey(scope, strategyId)));
+    final at = entry?['foundCurrentAt'];
+    return at is num ? DateTime.fromMillisecondsSinceEpoch(at.toInt()) : null;
+  }
+
+  /// The version the last full read of [strategyId] was of (see
+  /// [noteFullRefresh]), or null when it didn't say.
+  CopiedVersion? copiedVersion(CloudCopyScope scope, String strategyId) {
+    final entry = _entry(readEntry(_refreshKey(scope, strategyId)));
+    final header = entry?['header'];
+    final contentVersion = entry?['contentVersion'];
+    if (header is! String || contentVersion is! num) return null;
+    return (header: header, contentVersion: contentVersion.toInt());
   }
 
   /// The strategies [scope] keeps anything of.
@@ -206,11 +225,12 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
   }
 
   /// Notes that all of [strategyId], images included, was read into the copy
-  /// [at] (see [lastFullRefresh]).
+  /// [at] (see [lastFullRefresh]), as of [version] when the read said.
   Future<void> noteFullRefresh(
     CloudCopyScope scope,
     String strategyId, {
     required DateTime at,
+    CopiedVersion? version,
   }) async {
     if (scope.hasEnded) return;
     await writeEntry(
@@ -218,7 +238,28 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
       jsonEncode({
         'copyVersion': cloudStrategyCopyVersion,
         'fullRefreshAt': at.millisecondsSinceEpoch,
+        if (version != null) ...{
+          'header': version.header,
+          'contentVersion': version.contentVersion,
+        },
       }),
+    );
+  }
+
+  /// Notes that the server said, [at], that [strategyId] is still as its
+  /// last full read (see [copiedVersion]).
+  Future<void> noteFoundCurrent(
+    CloudCopyScope scope,
+    String strategyId, {
+    required DateTime at,
+  }) async {
+    if (scope.hasEnded) return;
+    final key = _refreshKey(scope, strategyId);
+    final entry = _entry(readEntry(key));
+    if (entry == null) return;
+    await writeEntry(
+      key,
+      jsonEncode({...entry, 'foundCurrentAt': at.millisecondsSinceEpoch}),
     );
   }
 

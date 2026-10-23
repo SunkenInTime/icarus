@@ -1047,6 +1047,7 @@ class _FakeCloud extends ConvexStrategyRepository {
   Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
     String strategyPublicId, {
     String? shareToken,
+    bool forOfflineCopy = false,
   }) async {
     fullReads.add(strategyPublicId);
     final strategy = strategies[strategyPublicId]!;

@@ -166,6 +166,7 @@ class _Repository extends Fake implements ConvexStrategyRepository {
   Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
     String strategyPublicId, {
     String? shareToken,
+    bool forOfflineCopy = false,
   }) async {
     fetches++;
     shareTokens.add(shareToken);

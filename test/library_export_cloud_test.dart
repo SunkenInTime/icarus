@@ -843,6 +843,7 @@ class _CloudRepository extends Fake implements ConvexStrategyRepository {
   Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
     String strategyPublicId, {
     String? shareToken,
+    bool forOfflineCopy = false,
   }) async {
     if (unreadable.contains(strategyPublicId)) throw StateError('offline');
     if (deletedAfterInventory.contains(strategyPublicId)) {

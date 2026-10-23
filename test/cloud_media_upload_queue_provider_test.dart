@@ -1529,6 +1529,7 @@ class _ReferencingRepository extends _UploadRecordingRepository {
   Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
     String strategyPublicId, {
     String? shareToken,
+    bool forOfflineCopy = false,
   }) async {
     final now = DateTime.utc(2026, 9, 3);
     return RemoteFullStrategySnapshot(
