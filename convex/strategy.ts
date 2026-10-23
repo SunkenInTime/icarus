@@ -6,10 +6,7 @@ import {
   getEffectiveStrategyRoleForUser,
   requireCurrentUser,
 } from "./lib/auth";
-import {
-  clientUpgradeRequiredError,
-  invalidPayloadError,
-} from "./lib/errors";
+import { clientUpgradeRequiredError, invalidPayloadError } from "./lib/errors";
 import {
   assertSupportedCloudProtocol,
   cloudProtocolArgs,

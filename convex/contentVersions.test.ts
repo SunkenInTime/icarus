@@ -1,7 +1,4 @@
-import {
-  convexTest,
-  type TestConvexForDataModel,
-} from "convex-test";
+import { convexTest, type TestConvexForDataModel } from "convex-test";
 import { makeFunctionReference } from "convex/server";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

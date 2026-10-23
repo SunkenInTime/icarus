@@ -13,7 +13,9 @@ import type { Id } from "../_generated/dataModel";
 /// generated builders directly.
 export const mutation = ((definition: MutationDefinition) =>
   generatedMutation(
-    countingContentWrites(definition) as Parameters<typeof generatedMutation>[0],
+    countingContentWrites(definition) as Parameters<
+      typeof generatedMutation
+    >[0],
   )) as typeof generatedMutation;
 
 export const internalMutation = ((definition: MutationDefinition) =>
@@ -57,13 +59,16 @@ function countingContentWrites(definition: MutationDefinition) {
 class ContentWrites {
   readonly db: DatabaseWriter;
   private readonly strategies = new Set<Id<"strategies">>();
-  /// Pages this transaction wrote, so contents written after their page
-  /// was deleted still find their strategy.
-  private readonly pageStrategies = new Map<Id<"pages">, Id<"strategies">>();
+  /// Whose each content row this transaction has seen is: the strategy, or
+  /// for page contents the page. A row never changes hands, so a write to a
+  /// row the handler already read needs no second read to know it.
+  private readonly owners = new Map<string, string>();
 
   constructor(private readonly raw: DatabaseWriter) {
     const writes = this;
     const methods: Record<string, unknown> = {
+      get: (...args: unknown[]) => writes.get(args),
+      query: (table: string) => writes.query(table),
       insert: (table: string, value: Record<string, unknown>) =>
         writes.insert(table, value),
       patch: (...args: unknown[]) => writes.change("patch", args),
@@ -81,49 +86,124 @@ class ContentWrites {
     });
   }
 
+  private async get(args: unknown[]) {
+    const row = await (this.raw.get as (...a: unknown[]) => Promise<unknown>)(
+      ...args,
+    );
+    const table =
+      args.length === 2 ? (args[0] as string) : this.tableOf(args[0]);
+    if (table !== undefined) this.remember(table, row);
+    return row;
+  }
+
+  /// The query, with whatever content rows it returns remembered.
+  private query(table: string) {
+    const query = (this.raw.query as (t: string) => object)(table);
+    return isContentTable(table) ? this.watch(table, query) : query;
+  }
+
+  private watch(table: ContentTable, target: object): object {
+    const writes = this;
+    return new Proxy(target, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (typeof value !== "function") return value;
+        return (...args: unknown[]) => {
+          const result = value.apply(target, args);
+          if (result instanceof Promise) {
+            return result.then((answer) => {
+              writes.remember(table, answer);
+              return answer;
+            });
+          }
+          return result !== null && typeof result === "object"
+            ? writes.watch(table, result)
+            : result;
+        };
+      },
+    });
+  }
+
+  /// Rows, lists of rows, pages of rows and iterator steps alike.
+  private remember(table: string, answer: unknown): void {
+    if (
+      !isContentTable(table) ||
+      answer === null ||
+      typeof answer !== "object"
+    ) {
+      return;
+    }
+    if (Array.isArray(answer)) {
+      for (const row of answer) this.remember(table, row);
+      return;
+    }
+    const value = answer as Record<string, unknown>;
+    if (Array.isArray(value.page)) return this.remember(table, value.page);
+    if ("done" in value && "value" in value) {
+      return this.remember(table, value.value);
+    }
+    const owner = table === "pageContents" ? value.pageId : value.strategyId;
+    if (typeof value._id === "string" && typeof owner === "string") {
+      this.owners.set(value._id, owner);
+    }
+  }
+
   private async insert(table: string, value: Record<string, unknown>) {
     const id = await (
       this.raw.insert as (t: string, v: unknown) => Promise<string>
     )(table, value);
     if (isContentTable(table)) {
-      await this.note(table, { ...value, _id: id });
+      this.remember(table, { ...value, _id: id });
+      await this.note(table, id);
     }
     return id;
   }
 
   /// patch, replace and delete, with or without the table name first.
-  private async change(method: "patch" | "replace" | "delete", args: unknown[]) {
+  private async change(
+    method: "patch" | "replace" | "delete",
+    args: unknown[],
+  ) {
     const named = args.length === (method === "delete" ? 2 : 3);
     const id = (named ? args[1] : args[0]) as string;
-    const table = named
-      ? (args[0] as string)
-      : CONTENT_TABLES.find((name) => this.raw.normalizeId(name, id) !== null);
-    if (table !== undefined && isContentTable(table)) {
-      // Read before the write: a deleted row can't say whose it was.
-      const row = await this.raw.get(id as Id<ContentTable>);
-      if (row !== null) await this.note(table, row);
-    }
+    const table = named ? (args[0] as string) : this.tableOf(id);
+    // Before the write: a deleted row can't say whose it was.
+    if (table !== undefined && isContentTable(table))
+      await this.note(table, id);
     return await (this.raw[method] as (...a: unknown[]) => Promise<void>)(
       ...args,
     );
   }
 
-  private async note(table: ContentTable, row: Record<string, unknown>) {
-    if (table === "pages") {
-      const strategyId = row.strategyId as Id<"strategies">;
-      this.pageStrategies.set(row._id as Id<"pages">, strategyId);
-      this.strategies.add(strategyId);
+  private tableOf(id: unknown): ContentTable | undefined {
+    if (typeof id !== "string") return undefined;
+    return CONTENT_TABLES.find(
+      (name) => this.raw.normalizeId(name, id) !== null,
+    );
+  }
+
+  /// Notes the strategy that content row [id] of [table] belongs to.
+  private async note(table: ContentTable, id: string) {
+    let owner = this.owners.get(id);
+    if (owner === undefined) {
+      this.remember(table, await this.raw.get(id as Id<ContentTable>));
+      owner = this.owners.get(id);
+    }
+    if (owner === undefined) return;
+    if (table !== "pageContents") {
+      this.strategies.add(owner as Id<"strategies">);
       return;
     }
-    if (table === "pageContents") {
-      const pageId = row.pageId as Id<"pages">;
-      const page = await this.raw.get(pageId);
-      const strategyId = page?.strategyId ?? this.pageStrategies.get(pageId);
-      // Contents left behind by a page deleted earlier show in no read.
-      if (strategyId !== undefined) this.strategies.add(strategyId);
-      return;
+    // A page deleted earlier in this transaction is remembered here.
+    let strategyId = this.owners.get(owner);
+    if (strategyId === undefined) {
+      this.remember("pages", await this.raw.get(owner as Id<"pages">));
+      strategyId = this.owners.get(owner);
     }
-    this.strategies.add(row.strategyId as Id<"strategies">);
+    // Contents left behind by a page deleted earlier show in no read.
+    if (strategyId !== undefined) {
+      this.strategies.add(strategyId as Id<"strategies">);
+    }
   }
 
   /// One change row for each strategy written, in the same transaction as
