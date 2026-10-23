@@ -1,7 +1,25 @@
 {
     "appName":  "Icarus",
-    "description":  "Reset a forgotten password, keep pictures in duplicated strategies, and fixes for folders, sharing and large libraries.",
+    "description":  "Keeping your cloud library available offline uses far less data.",
     "items":  [
+                  {
+                      "version":  "5.0.2+106",
+                      "shortVersion":  106,
+                      "changes":  [
+                                      {
+                                          "message":  "Icarus asks whether a cloud strategy changed before downloading it again for offline use, and downloads only the ones that did. Before, it downloaded every cloud strategy again each day.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Strategies you move to the cloud stay available offline as part of the move, instead of being downloaded again afterward.",
+                                          "type":  "fix"
+                                      }
+                                  ],
+                      "date":  "2026-10-22",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/5.0.2%2B106-windows",
+                      "platform":  "windows"
+                  },
                   {
                       "version":  "5.0.1+105",
                       "shortVersion":  105,
