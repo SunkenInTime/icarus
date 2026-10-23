@@ -315,7 +315,7 @@ void main() {
           1: 'folder-old-cloud',
           2: null,
           3: DateTime.utc(2026, 8, 30),
-          4: Icons.folder,
+          4: StoredFolderIcon.fromIconData(Icons.folder),
           5: FolderColor.custom,
           6: const Color(0xFF22C55E),
           7: FolderIconRegistry.sentinelRoleId,
