@@ -48349,6 +48349,18 @@
     {
       "args": {
         "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "maintenance.js:foldContentChanges",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
         "value": {
           "pageId": {
             "fieldType": {
