@@ -221,4 +221,7 @@ export const fullStrategySnapshotValidator = v.object({
   elements: v.array(elementValidator),
   lineups: v.array(lineupValidator),
   assets: v.array(imageAssetValidator),
+  // Only when asked for (includeContentVersion): older clients refuse a
+  // field they don't know.
+  contentVersion: v.optional(v.number()),
 });

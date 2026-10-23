@@ -1,8 +1,15 @@
 import { query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { assertStrategyReadable } from "./lib/auth";
-import { clientUpgradeRequiredError } from "./lib/errors";
+import {
+  assertStrategyReadable,
+  getEffectiveStrategyRoleForUser,
+  requireCurrentUser,
+} from "./lib/auth";
+import {
+  clientUpgradeRequiredError,
+  invalidPayloadError,
+} from "./lib/errors";
 import {
   assertSupportedCloudProtocol,
   cloudProtocolArgs,
@@ -31,6 +38,7 @@ import {
 import { internalError } from "./lib/errors";
 import {
   fullStrategySnapshotValidator,
+  strategyHeaderValidator,
   strategyShellValidator,
 } from "./lib/publicValidators";
 
@@ -87,6 +95,9 @@ export const getFullSnapshot = query({
     // without it, as they would write them, and find pictures under each
     // image's own id (withPictureAliases).
     acceptsPictureIds: v.optional(v.boolean()),
+    // Set by clients that keep an offline copy: the answer then carries the
+    // strategy's content version, to compare with listContentVersions.
+    includeContentVersion: v.optional(v.boolean()),
   },
   returns: fullStrategySnapshotValidator,
   handler: async (ctx, args) => {
@@ -172,6 +183,81 @@ export const getFullSnapshot = query({
         ),
         visibleElements,
       ).sort((left, right) => left.publicId.localeCompare(right.publicId)),
+      ...(args.includeContentVersion === true
+        ? { contentVersion: await readContentVersion(ctx, strategy._id) }
+        : {}),
     };
   },
 });
+
+export const MAX_CONTENT_VERSIONS_PER_QUERY = 100;
+
+/// Whether a device's offline copies are still current, without reading
+/// the strategies whole. A copy of a full read (getFullSnapshot with
+/// includeContentVersion) is current while its header and content version
+/// both equal the ones here: the header carries the strategy row and the
+/// caller's role, and the content version goes up with every write to the
+/// strategy's pages, contents, elements, lineups and images (see
+/// lib/functions.ts). "gone" when the strategy is deleted or the caller can
+/// no longer read it.
+export const listContentVersions = query({
+  args: {
+    ...cloudProtocolArgs,
+    strategyPublicIds: v.array(v.string()),
+  },
+  returns: v.array(
+    v.union(
+      v.object({
+        strategyPublicId: v.string(),
+        status: v.literal("found"),
+        header: strategyHeaderValidator,
+        contentVersion: v.number(),
+      }),
+      v.object({
+        strategyPublicId: v.string(),
+        status: v.literal("gone"),
+      }),
+    ),
+  ),
+  handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
+    if (args.strategyPublicIds.length > MAX_CONTENT_VERSIONS_PER_QUERY) {
+      throw invalidPayloadError(
+        `Ask about at most ${MAX_CONTENT_VERSIONS_PER_QUERY} strategies at once.`,
+      );
+    }
+    const user = await requireCurrentUser(ctx);
+    return await Promise.all(
+      args.strategyPublicIds.map(async (strategyPublicId) => {
+        const strategy = await ctx.db
+          .query("strategies")
+          .withIndex("by_publicId", (q) => q.eq("publicId", strategyPublicId))
+          .first();
+        const role =
+          strategy === null
+            ? null
+            : await getEffectiveStrategyRoleForUser(ctx, strategy, user._id);
+        if (strategy === null || role === null) {
+          return { strategyPublicId, status: "gone" as const };
+        }
+        return {
+          strategyPublicId,
+          status: "found" as const,
+          header: serializeStrategyHeader(strategy, role),
+          contentVersion: await readContentVersion(ctx, strategy._id),
+        };
+      }),
+    );
+  },
+});
+
+async function readContentVersion(
+  ctx: QueryCtx,
+  strategyId: Id<"strategies">,
+): Promise<number> {
+  const counted = await ctx.db
+    .query("strategyContentVersions")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))
+    .unique();
+  return counted?.version ?? 0;
+}

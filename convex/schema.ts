@@ -327,6 +327,16 @@ export default defineSchema({
     agentTypes: v.array(v.string()),
     updatedAt: v.number(),
   }).index("by_strategyId", ["strategyId"]),
+  // Derived: goes up by one in every transaction that writes a strategy's
+  // pages, page contents, elements, lineups or image assets (see
+  // lib/functions.ts), so a device can tell its offline copy of the
+  // strategy is still current without reading it whole. No row is
+  // version 0. Its own table, so content edits don't re-run queries that
+  // read the strategy row.
+  strategyContentVersions: defineTable({
+    strategyId: v.id("strategies"),
+    version: v.number(),
+  }).index("by_strategyId", ["strategyId"]),
   operationEvents: defineTable({
     strategyId: v.id("strategies"),
     pageId: v.optional(v.id("pages")),

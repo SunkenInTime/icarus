@@ -1,9 +1,6 @@
 import { makeFunctionReference, paginationOptsValidator } from "convex/server";
-import {
-  internalMutation,
-  internalQuery,
-  type MutationCtx,
-} from "./_generated/server";
+import { internalQuery, type MutationCtx } from "./_generated/server";
+import { internalMutation } from "./lib/functions";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
