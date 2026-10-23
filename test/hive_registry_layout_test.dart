@@ -1,17 +1,22 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/material.dart' show IconData, Icons;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:hive_ce/src/binary/binary_reader_impl.dart';
 import 'package:hive_ce/src/binary/binary_writer_impl.dart';
+import 'package:hive_ce/src/registry/type_registry_impl.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/bounding_box.dart';
+import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/const/weapons.dart';
+import 'package:icarus/domain/folder.dart';
 import 'package:icarus/hive/hive_adapters.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -228,10 +233,61 @@ void _expectSameContent(StrategyPage actual, StrategyPage expected) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  group('folders saved with an IconData icon', () {
+    // Writes a folder the way desktop builds before the icon registry and
+    // cloud builds before the main merge did: the icon as an IconData.
+    Uint8List writeShippedFolder(IconData icon) {
+      final shipped = TypeRegistryImpl()
+        ..registerAdapter(_ShippedIconDataAdapter())
+        ..registerAdapter(FolderColorAdapter());
+      final writer = BinaryWriterImpl(shipped)
+        ..writeByte(6)
+        ..writeByte(0)
+        ..write('Retakes')
+        ..writeByte(1)
+        ..write('folder-1')
+        ..writeByte(2)
+        ..write(null)
+        ..writeByte(3)
+        ..write(DateTime.utc(2025, 6, 1))
+        ..writeByte(4)
+        ..write(icon)
+        ..writeByte(5)
+        ..write(FolderColor.blue);
+      return Uint8List.fromList(writer.toBytes());
+    }
+
+    Folder read(Uint8List bytes) {
+      _ensureAdaptersRegistered();
+      return FolderAdapter().read(BinaryReaderImpl(bytes, Hive));
+    }
+
+    test('keep the icon they were saved with', () {
+      // The ids these icons have had in the registry since it shipped.
+      final shippedIds = {
+        Icons.flag: 29,
+        CustomIcons.sword: 36,
+        Icons.folder: FolderIconRegistry.legacyFolderId,
+      };
+      for (final MapEntry(key: icon, value: id) in shippedIds.entries) {
+        final folder = read(writeShippedFolder(icon));
+        expect(folder.iconId, id);
+        expect(folder.name, 'Retakes');
+        expect(folder.color, FolderColor.blue);
+      }
+    });
+
+    test('fall back to the default icon when the icon is unknown', () {
+      final folder = read(writeShippedFolder(const IconData(0xf0000)));
+      expect(folder.iconId, FolderIconRegistry.defaultId);
+    });
+  });
+
   test('shipped Hive typeIds are fixed', () {
     expect(PlacedAgentAdapter().typeId, 2);
     expect(PlacedAbilityAdapter().typeId, 3);
     expect(AbilityInfoAdapter().typeId, 9);
+    expect(StoredFolderIconAdapter().typeId, 18);
     expect(StrategyPageAdapter().typeId, 20);
     expect(LineUpAdapter().typeId, 21);
     expect(SimpleImageDataAdapter().typeId, 22);
@@ -422,4 +478,31 @@ void main() {
       _expectSameContent(_read(bytes), page);
     });
   });
+}
+
+/// The IconData adapter builds before the folder icon registry generated and
+/// shipped, copied byte for byte. Folders they saved carry an icon written by
+/// it.
+class _ShippedIconDataAdapter extends TypeAdapter<IconData> {
+  @override
+  final typeId = 18;
+
+  @override
+  IconData read(BinaryReader reader) => throw UnimplementedError();
+
+  @override
+  void write(BinaryWriter writer, IconData obj) {
+    writer
+      ..writeByte(5)
+      ..writeByte(0)
+      ..write(obj.codePoint)
+      ..writeByte(1)
+      ..write(obj.fontFamily)
+      ..writeByte(2)
+      ..write(obj.fontPackage)
+      ..writeByte(3)
+      ..write(obj.matchTextDirection)
+      ..writeByte(4)
+      ..write(obj.fontFamilyFallback);
+  }
 }

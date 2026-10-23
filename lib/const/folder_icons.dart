@@ -223,34 +223,63 @@ class FolderIconRegistry {
     return switch (value) {
       final int id => id,
       final IconData icon => idForLegacyIconData(icon),
+      final StoredFolderIcon icon => idForStoredIcon(icon),
       _ => defaultId,
     };
   }
 
   static int idForLegacyIconData(IconData icon) {
-    return tryIdForLegacyIconData(icon) ?? defaultId;
+    return idForStoredIcon(StoredFolderIcon.fromIconData(icon));
   }
 
-  static int? tryIdForLegacyIconData(IconData icon) {
+  static int idForStoredIcon(StoredFolderIcon icon) {
     for (final entry in entries) {
       final candidate = entry.iconData;
-      if (candidate != null && _sameIconData(candidate, icon)) {
+      if (candidate != null && icon.matches(candidate)) {
         return entry.id;
       }
     }
-    return null;
+    return defaultId;
   }
 
   static IconData legacyIconDataForId(int id) {
     return _byId[id]?.iconData ?? _byId[defaultId]!.iconData!;
   }
+}
 
-  static bool _sameIconData(IconData a, IconData b) {
-    return a.codePoint == b.codePoint &&
-        a.fontFamily == b.fontFamily &&
-        a.fontPackage == b.fontPackage &&
-        a.matchTextDirection == b.matchTextDirection &&
-        _sameFontFamilyFallback(a.fontFamilyFallback, b.fontFamilyFallback);
+/// A folder icon as older builds saved it: the fields of an [IconData].
+///
+/// Saved icons are only matched against the registry, never drawn, so they
+/// stay plain fields. Building an [IconData] from saved data would stop
+/// release builds from tree-shaking icon fonts, which the web build needs.
+class StoredFolderIcon {
+  const StoredFolderIcon({
+    required this.codePoint,
+    this.fontFamily,
+    this.fontPackage,
+    this.matchTextDirection = false,
+    this.fontFamilyFallback,
+  });
+
+  StoredFolderIcon.fromIconData(IconData icon)
+      : codePoint = icon.codePoint,
+        fontFamily = icon.fontFamily,
+        fontPackage = icon.fontPackage,
+        matchTextDirection = icon.matchTextDirection,
+        fontFamilyFallback = icon.fontFamilyFallback;
+
+  final int codePoint;
+  final String? fontFamily;
+  final String? fontPackage;
+  final bool matchTextDirection;
+  final List<String>? fontFamilyFallback;
+
+  bool matches(IconData icon) {
+    return codePoint == icon.codePoint &&
+        fontFamily == icon.fontFamily &&
+        fontPackage == icon.fontPackage &&
+        matchTextDirection == icon.matchTextDirection &&
+        _sameFontFamilyFallback(fontFamilyFallback, icon.fontFamilyFallback);
   }
 
   static bool _sameFontFamilyFallback(List<String>? a, List<String>? b) {

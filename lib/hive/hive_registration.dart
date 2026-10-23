@@ -35,6 +35,9 @@ void registerIcarusAdapters(HiveInterface hive) {
   if (!hive.isAdapterRegistered(ellipseDrawingAdapterTypeId)) {
     hive.registerAdapter(EllipseDrawingAdapter());
   }
+  if (!hive.isAdapterRegistered(storedFolderIconAdapterTypeId)) {
+    hive.registerAdapter(StoredFolderIconAdapter());
+  }
   if (!hive.isAdapterRegistered(folderAdapterTypeId)) {
     hive.registerAdapter(FolderAdapter());
   }
@@ -70,6 +73,9 @@ void registerIcarusIsolatedAdapters(IsolatedHiveInterface hive) {
   }
   if (!hive.isAdapterRegistered(ellipseDrawingAdapterTypeId)) {
     hive.registerAdapter(EllipseDrawingAdapter());
+  }
+  if (!hive.isAdapterRegistered(storedFolderIconAdapterTypeId)) {
+    hive.registerAdapter(StoredFolderIconAdapter());
   }
   if (!hive.isAdapterRegistered(folderAdapterTypeId)) {
     hive.registerAdapter(FolderAdapter());

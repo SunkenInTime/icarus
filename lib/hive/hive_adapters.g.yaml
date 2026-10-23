@@ -271,20 +271,6 @@ types:
         index: 8
       sentinel:
         index: 9
-  IconData:
-    typeId: 18
-    nextIndex: 5
-    fields:
-      codePoint:
-        index: 0
-      fontFamily:
-        index: 1
-      fontPackage:
-        index: 2
-      matchTextDirection:
-        index: 3
-      fontFamilyFallback:
-        index: 4
   FolderColor:
     typeId: 19
     nextIndex: 7
