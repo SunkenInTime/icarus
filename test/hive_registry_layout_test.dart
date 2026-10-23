@@ -263,10 +263,15 @@ void main() {
     }
 
     test('keep the icon they were saved with', () {
-      for (final icon in [Icons.flag, CustomIcons.sword, Icons.folder]) {
+      // The ids these icons have had in the registry since it shipped.
+      final shippedIds = {
+        Icons.flag: 29,
+        CustomIcons.sword: 36,
+        Icons.folder: FolderIconRegistry.legacyFolderId,
+      };
+      for (final MapEntry(key: icon, value: id) in shippedIds.entries) {
         final folder = read(writeShippedFolder(icon));
-        expect(folder.iconId, FolderIconRegistry.idForLegacyIconData(icon));
-        expect(folder.iconId, isNot(FolderIconRegistry.defaultId));
+        expect(folder.iconId, id);
         expect(folder.name, 'Retakes');
         expect(folder.color, FolderColor.blue);
       }
