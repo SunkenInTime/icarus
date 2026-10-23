@@ -44,7 +44,26 @@
       background: #09090b;
       transition: opacity 200ms ease-out;
     }
-    #loading.done { opacity: 0; }
+    #loading.done { opacity: 0; pointer-events: none; }
+    #load-failed {
+      display: none;
+      text-align: center;
+      font: 14px/20px system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: #a1a1aa;
+    }
+    #load-failed h1 { margin: 0 0 4px; font-size: 16px; font-weight: 600; color: #fafafa; }
+    #load-failed button {
+      margin-top: 16px;
+      padding: 8px 16px;
+      border: 1px solid #3f3f46;
+      border-radius: 8px;
+      background: #27272a;
+      color: #fafafa;
+      font: 500 14px/20px system-ui, -apple-system, "Segoe UI", sans-serif;
+      cursor: pointer;
+    }
+    #loading.failed canvas { display: none; }
+    #loading.failed #load-failed { display: block; }
   </style>
 </head>
 <body>
@@ -52,10 +71,15 @@
     Shown until Flutter draws its first frame, which waits for main.dart.js,
     CanvasKit and the fonts to download. It draws the app's WingDotLoader
     (lib/widgets/dot_matrix_loaders.dart) on a canvas, so it needs nothing
-    else from the network.
+    else from the network. If a script fails to download, it says so instead.
   -->
   <div id="loading" role="progressbar" aria-label="Loading Icarus">
     <canvas width="96" height="96" style="width: 96px; height: 96px"></canvas>
+    <div id="load-failed" role="alert">
+      <h1>Icarus couldn't load</h1>
+      <div>Check your connection, then reload.</div>
+      <button type="button" onclick="location.reload()">Reload</button>
+    </div>
   </div>
   <script>
     (function () {
@@ -132,6 +156,16 @@
           frame = requestAnimationFrame(tick);
         })(start);
       }
+
+      // A script that fails to download (flutter_bootstrap.js, main.dart.js,
+      // CanvasKit) means the app will never start. Load errors don't bubble,
+      // so listen in the capture phase.
+      window.addEventListener('error', function (event) {
+        if (!(event.target instanceof HTMLScriptElement)) return;
+        cancelAnimationFrame(frame);
+        loading.classList.add('failed');
+        loading.removeAttribute('role');
+      }, true);
 
       window.addEventListener('flutter-first-frame', function () {
         loading.classList.add('done');
