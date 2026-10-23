@@ -3,12 +3,12 @@ import {
   mutation as generatedMutation,
 } from "../_generated/server";
 import type { DatabaseWriter, MutationCtx } from "../_generated/server";
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Id } from "../_generated/dataModel";
 
 /// Every mutation is defined here, not with the generated builders: these
-/// count each strategy's content writes in strategyContentVersions, so a
-/// device can tell whether its offline copy of a strategy is still current
-/// (strategies:listContentVersions) without reading the strategy whole.
+/// record each strategy's content writes (see lib/contentVersions.ts), so
+/// a device can tell whether its offline copy of a strategy is still
+/// current (strategy:listContentVersions) without reading it whole.
 /// convex/contentVersions.test.ts fails on a module that uses the
 /// generated builders directly.
 export const mutation = ((definition: MutationDefinition) =>
@@ -24,8 +24,8 @@ export const internalMutation = ((definition: MutationDefinition) =>
   )) as typeof generatedInternalMutation;
 
 /// The tables a full read of a strategy (strategy:getFullSnapshot) is made
-/// of, besides the strategy row: that read compares the strategy row
-/// itself, and the reader's role, from strategies:listContentVersions.
+/// of, besides the strategy row: listContentVersions hands out the strategy
+/// row itself, with the reader's role, to compare.
 const CONTENT_TABLES = [
   "pages",
   "pageContents",
@@ -44,7 +44,7 @@ function countingContentWrites(definition: MutationDefinition) {
   const counted: Handler = async (ctx, args) => {
     const writes = new ContentWrites(ctx.db);
     const result = await handler({ ...ctx, db: writes.db }, args);
-    await writes.countVersions();
+    await writes.record();
     return result;
   };
   return typeof definition === "function"
@@ -126,24 +126,12 @@ class ContentWrites {
     this.strategies.add(row.strategyId as Id<"strategies">);
   }
 
-  /// One step up for each strategy written, in the same transaction as the
-  /// writes. A strategy deleted by now loses its count instead.
-  async countVersions() {
+  /// One change row for each strategy written, in the same transaction as
+  /// the writes. Only an insert: reading anything here would make edits to
+  /// one strategy from two devices collide.
+  async record() {
     for (const strategyId of this.strategies) {
-      const counted: Doc<"strategyContentVersions"> | null = await this.raw
-        .query("strategyContentVersions")
-        .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))
-        .unique();
-      if ((await this.raw.get(strategyId)) === null) {
-        if (counted !== null) await this.raw.delete(counted._id);
-      } else if (counted === null) {
-        await this.raw.insert("strategyContentVersions", {
-          strategyId,
-          version: 1,
-        });
-      } else {
-        await this.raw.patch(counted._id, { version: counted.version + 1 });
-      }
+      await this.raw.insert("strategyContentChanges", { strategyId });
     }
   }
 }

@@ -1,5 +1,6 @@
 import { cronJobs } from "convex/server";
 import {
+  foldContentChangesRef,
   purgeOldOperationEventsRef,
   purgeOldTombstonesRef,
   purgeTrashedPagesRef,
@@ -12,6 +13,12 @@ import {
 
 const crons = cronJobs();
 
+crons.interval(
+  "fold-content-changes",
+  { minutes: 2 },
+  foldContentChangesRef,
+  {},
+);
 crons.interval(
   "purge-operation-events",
   { hours: 24 },

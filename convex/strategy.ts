@@ -36,6 +36,7 @@ import {
   serializeStrategyHeader,
 } from "./lib/snapshotSerialization";
 import { internalError } from "./lib/errors";
+import { readContentVersion } from "./lib/contentVersions";
 import {
   fullStrategySnapshotValidator,
   strategyHeaderValidator,
@@ -198,7 +199,7 @@ export const MAX_CONTENT_VERSIONS_PER_QUERY = 100;
 /// both equal the ones here: the header carries the strategy row and the
 /// caller's role, and the content version goes up with every write to the
 /// strategy's pages, contents, elements, lineups and images (see
-/// lib/functions.ts). "gone" when the strategy is deleted or the caller can
+/// lib/contentVersions.ts). "gone" when the strategy is deleted or the caller can
 /// no longer read it.
 export const listContentVersions = query({
   args: {
@@ -250,14 +251,3 @@ export const listContentVersions = query({
     );
   },
 });
-
-async function readContentVersion(
-  ctx: QueryCtx,
-  strategyId: Id<"strategies">,
-): Promise<number> {
-  const counted = await ctx.db
-    .query("strategyContentVersions")
-    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))
-    .unique();
-  return counted?.version ?? 0;
-}

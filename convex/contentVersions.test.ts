@@ -30,6 +30,15 @@ const getFullSnapshot = makeFunctionReference<"query">(
 const listContentVersions = makeFunctionReference<"query">(
   "strategy:listContentVersions",
 );
+const foldContentChanges = makeFunctionReference<"mutation">(
+  "maintenance:foldContentChanges",
+);
+
+/// Folds every change row, as the cron does once they are a minute old.
+async function foldAll(t: { mutation: Harness["mutation"] }) {
+  vi.advanceTimersByTime(2 * 60 * 1000);
+  await t.mutation(foldContentChanges, {});
+}
 
 type Harness = TestConvexForDataModel<DataModel>;
 
@@ -152,6 +161,43 @@ describe("a strategy's content version", () => {
     expect((await fullRead(owner, "s")).contentVersion).toBe(2);
   });
 
+  test("folding keeps every version and leaves one row to read", async () => {
+    const { t, owner } = await createHarness();
+    await create(owner, "s");
+    await addAgent(owner, "s", "agent-1");
+    await addAgent(owner, "s", "agent-2");
+    expect((await versions(owner, "s"))[0]).toMatchObject({
+      contentVersion: 3,
+    });
+    await foldAll(t);
+    expect((await versions(owner, "s"))[0]).toMatchObject({
+      contentVersion: 3,
+    });
+    await addAgent(owner, "s", "agent-3");
+    expect((await versions(owner, "s"))[0]).toMatchObject({
+      contentVersion: 4,
+    });
+    expect(
+      await t.run(async (ctx) => ({
+        folded: (await ctx.db.query("strategyContentVersions").collect()).map(
+          (row) => row.version,
+        ),
+        unfolded: (await ctx.db.query("strategyContentChanges").collect())
+          .length,
+      })),
+    ).toEqual({ folded: [3], unfolded: 1 });
+  });
+
+  test("a change row younger than a minute is left to fold later", async () => {
+    const { t, owner } = await createHarness();
+    await create(owner, "s");
+    await t.mutation(foldContentChanges, {});
+    expect(
+      (await t.run((ctx) => ctx.db.query("strategyContentChanges").collect()))
+        .length,
+    ).toBe(1);
+  });
+
   test("only the strategy written moves", async () => {
     const { owner } = await createHarness();
     await create(owner, "a");
@@ -224,10 +270,14 @@ describe("a strategy's content version", () => {
     expect(await versions(owner, "s")).toEqual([
       { strategyPublicId: "s", status: "gone" },
     ]);
-    // Its content goes in later transactions; none of them counts for it.
+    // Its content goes in later transactions; folding drops what they wrote.
     await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await foldAll(t);
     expect(
-      await t.run((ctx) => ctx.db.query("strategyContentVersions").collect()),
+      await t.run(async (ctx) => [
+        ...(await ctx.db.query("strategyContentVersions").collect()),
+        ...(await ctx.db.query("strategyContentChanges").collect()),
+      ]),
     ).toEqual([]);
   });
 });

@@ -18,6 +18,7 @@ import {
 } from "./images";
 import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
+import { foldOldContentChanges } from "./lib/contentVersions";
 
 const MAINTENANCE_BATCH_SIZE = 200;
 // Content rows can each hold up to ~900 KB (the op size cap), so passes
@@ -55,6 +56,9 @@ export const backfillAssetReferencesRef = makeFunctionReference<"mutation">(
 );
 export const purgeTrashedPagesRef = makeFunctionReference<"mutation">(
   "maintenance:purgeTrashedPages",
+);
+export const foldContentChangesRef = makeFunctionReference<"mutation">(
+  "maintenance:foldContentChanges",
 );
 
 /// Hard-deletes content rows, and queues the images they showed for
@@ -236,6 +240,17 @@ export const purgeTrashedPages = internalMutation({
     }
     // The next run continues this page, or finds the next one due.
     await ctx.scheduler.runAfter(0, purgeTrashedPagesRef, {});
+  },
+});
+
+/// Keeps reading a content version cheap (see lib/contentVersions.ts).
+export const foldContentChanges = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const read = await foldOldContentChanges(ctx, MAINTENANCE_BATCH_SIZE);
+    if (read === MAINTENANCE_BATCH_SIZE) {
+      await ctx.scheduler.runAfter(0, foldContentChangesRef, {});
+    }
   },
 });
 
