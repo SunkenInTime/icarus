@@ -1,4 +1,5 @@
-import { mutation, type MutationCtx } from "./_generated/server";
+import { type MutationCtx } from "./_generated/server";
+import { mutation } from "./lib/functions";
 import { ConvexError, v, type Infer } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertCallerIsAccount, assertStrategyRole } from "./lib/auth";

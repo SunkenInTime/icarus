@@ -28,12 +28,12 @@ import {
 import {
   action,
   internalAction,
-  internalMutation,
   internalQuery,
   query,
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
+import { internalMutation } from "./lib/functions";
 import { v } from "convex/values";
 import {
   assertStrategyReadable,

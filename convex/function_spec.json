@@ -48349,6 +48349,18 @@
     {
       "args": {
         "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "maintenance.js:foldContentChanges",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
         "value": {
           "pageId": {
             "fieldType": {
@@ -194130,6 +194142,12 @@
             },
             "optional": false
           },
+          "includeContentVersion": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "shareToken": {
             "fieldType": {
               "type": "string"
@@ -194309,6 +194327,12 @@
               }
             },
             "optional": false
+          },
+          "contentVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
           },
           "elements": {
             "fieldType": {
@@ -217732,6 +217756,195 @@
             },
             "optional": false
           }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "strategyPublicIds": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "string"
+              }
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "strategy.js:listContentVersions",
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "union",
+          "value": [
+            {
+              "type": "object",
+              "value": {
+                "contentVersion": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "header": {
+                  "fieldType": {
+                    "type": "object",
+                    "value": {
+                      "createdAt": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": false
+                      },
+                      "mapData": {
+                        "fieldType": {
+                          "type": "string"
+                        },
+                        "optional": false
+                      },
+                      "name": {
+                        "fieldType": {
+                          "type": "string"
+                        },
+                        "optional": false
+                      },
+                      "publicId": {
+                        "fieldType": {
+                          "type": "string"
+                        },
+                        "optional": false
+                      },
+                      "revision": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": false
+                      },
+                      "role": {
+                        "fieldType": {
+                          "type": "union",
+                          "value": [
+                            {
+                              "type": "literal",
+                              "value": "owner"
+                            },
+                            {
+                              "type": "literal",
+                              "value": "editor"
+                            },
+                            {
+                              "type": "literal",
+                              "value": "viewer"
+                            }
+                          ]
+                        },
+                        "optional": false
+                      },
+                      "themeOverridePalette": {
+                        "fieldType": {
+                          "type": "union",
+                          "value": [
+                            {
+                              "type": "object",
+                              "value": {
+                                "base": {
+                                  "fieldType": {
+                                    "type": "string"
+                                  },
+                                  "optional": false
+                                },
+                                "detail": {
+                                  "fieldType": {
+                                    "type": "string"
+                                  },
+                                  "optional": false
+                                },
+                                "highlight": {
+                                  "fieldType": {
+                                    "type": "string"
+                                  },
+                                  "optional": false
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "optional": false
+                      },
+                      "themeProfileId": {
+                        "fieldType": {
+                          "type": "union",
+                          "value": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "optional": false
+                      },
+                      "updatedAt": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": false
+                      }
+                    }
+                  },
+                  "optional": false
+                },
+                "status": {
+                  "fieldType": {
+                    "type": "literal",
+                    "value": "found"
+                  },
+                  "optional": false
+                },
+                "strategyPublicId": {
+                  "fieldType": {
+                    "type": "string"
+                  },
+                  "optional": false
+                }
+              }
+            },
+            {
+              "type": "object",
+              "value": {
+                "status": {
+                  "fieldType": {
+                    "type": "literal",
+                    "value": "gone"
+                  },
+                  "optional": false
+                },
+                "strategyPublicId": {
+                  "fieldType": {
+                    "type": "string"
+                  },
+                  "optional": false
+                }
+              }
+            }
+          ]
         }
       },
       "visibility": {

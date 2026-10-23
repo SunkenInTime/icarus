@@ -327,6 +327,20 @@ export default defineSchema({
     agentTypes: v.array(v.string()),
     updatedAt: v.number(),
   }).index("by_strategyId", ["strategyId"]),
+  // Derived: a strategy's content version, so a device can tell its
+  // offline copy is still current without reading the strategy whole (see
+  // lib/contentVersions.ts). Every transaction that writes a strategy's
+  // pages, page contents, elements, lineups or image assets inserts one
+  // change row (lib/functions.ts); the version is the count folded into
+  // strategyContentVersions plus the change rows not folded yet. Writers
+  // only insert, so two people editing one strategy never collide here.
+  strategyContentChanges: defineTable({
+    strategyId: v.id("strategies"),
+  }).index("by_strategyId", ["strategyId"]),
+  strategyContentVersions: defineTable({
+    strategyId: v.id("strategies"),
+    version: v.number(),
+  }).index("by_strategyId", ["strategyId"]),
   operationEvents: defineTable({
     strategyId: v.id("strategies"),
     pageId: v.optional(v.id("pages")),

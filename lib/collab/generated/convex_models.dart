@@ -589,6 +589,31 @@ sealed class SharesResolveResult {
   ConvexObject encode(String path);
 }
 
+sealed class StrategyListContentVersionsResultItem {
+  const StrategyListContentVersionsResultItem();
+
+  factory StrategyListContentVersionsResultItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    final discriminator = _decodeString(
+      object.value['status'] ?? _missing(path, 'status'),
+      '$path.status',
+    );
+    return switch (discriminator) {
+      'found' => StrategyListContentVersionsResultItemFound.decode(value, path),
+      'gone' => StrategyListContentVersionsResultItemGone.decode(value, path),
+      _ => throw ConvexDecodingException(
+        path,
+        'unknown discriminator $discriminator',
+      ),
+    };
+  }
+
+  ConvexObject encode(String path);
+}
+
 final class ElementsListForPageResultItem {
   const ElementsListForPageResultItem({
     required this.createdAt,
@@ -4952,8 +4977,10 @@ final class StrategyGetFullSnapshotResult {
     required this.header,
     required this.lineups,
     required this.pages,
+    this.contentVersion = const ConvexOptional.absent(),
   });
   final List<ImagesListForStrategyResultItem> assets;
+  final ConvexOptional<double> contentVersion;
   final List<ElementsListForPageResultItem> elements;
   final StrategiesGetHeaderResult header;
   final List<LineupsListForPageResultItem> lineups;
@@ -4963,6 +4990,7 @@ final class StrategyGetFullSnapshotResult {
     final object = _decodeObject(value, path);
     _checkObjectFields(object, path, const {
       'assets',
+      'contentVersion',
       'elements',
       'header',
       'lineups',
@@ -4981,6 +5009,14 @@ final class StrategyGetFullSnapshotResult {
                 ),
               )
               .toList(growable: false),
+      contentVersion: object.value.containsKey('contentVersion')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['contentVersion']!,
+                '$path.contentVersion',
+              ),
+            )
+          : const ConvexOptional.absent(),
       elements:
           _decodeArray(
                 object.value['elements'] ?? _missing(path, 'elements'),
@@ -5033,6 +5069,11 @@ final class StrategyGetFullSnapshotResult {
             )
             .toList(growable: false),
       ),
+      if (contentVersion.isPresent)
+        'contentVersion': _encodeNumber(
+          contentVersion.value,
+          '$path.contentVersion',
+        ),
       'elements': ConvexArray(
         elements.indexed
             .map(
@@ -5239,6 +5280,85 @@ final class StrategyGetShellResult {
             )
             .toList(growable: false),
       ),
+    });
+  }
+}
+
+final class StrategyListContentVersionsResultItemFound
+    extends StrategyListContentVersionsResultItem {
+  const StrategyListContentVersionsResultItemFound({
+    required this.contentVersion,
+    required this.header,
+    required this.strategyPublicId,
+  });
+  final double contentVersion;
+  final StrategiesGetHeaderResult header;
+  final String strategyPublicId;
+
+  factory StrategyListContentVersionsResultItemFound.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {
+      'status',
+      'contentVersion',
+      'header',
+      'strategyPublicId',
+    });
+    return StrategyListContentVersionsResultItemFound(
+      contentVersion: _decodeNumber(
+        object.value['contentVersion'] ?? _missing(path, 'contentVersion'),
+        '$path.contentVersion',
+      ),
+      header: StrategiesGetHeaderResult.decode(
+        object.value['header'] ?? _missing(path, 'header'),
+        '$path.header',
+      ),
+      strategyPublicId: _decodeString(
+        object.value['strategyPublicId'] ?? _missing(path, 'strategyPublicId'),
+        '$path.strategyPublicId',
+      ),
+    );
+  }
+
+  @override
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'status': ConvexString('found'),
+      'contentVersion': _encodeNumber(contentVersion, '$path.contentVersion'),
+      'header': header.encode('$path.header'),
+      'strategyPublicId': ConvexString(strategyPublicId),
+    });
+  }
+}
+
+final class StrategyListContentVersionsResultItemGone
+    extends StrategyListContentVersionsResultItem {
+  const StrategyListContentVersionsResultItemGone({
+    required this.strategyPublicId,
+  });
+  final String strategyPublicId;
+
+  factory StrategyListContentVersionsResultItemGone.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    _checkObjectFields(object, path, const {'status', 'strategyPublicId'});
+    return StrategyListContentVersionsResultItemGone(
+      strategyPublicId: _decodeString(
+        object.value['strategyPublicId'] ?? _missing(path, 'strategyPublicId'),
+        '$path.strategyPublicId',
+      ),
+    );
+  }
+
+  @override
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'status': ConvexString('gone'),
+      'strategyPublicId': ConvexString(strategyPublicId),
     });
   }
 }
@@ -7161,6 +7281,7 @@ ConvexObject encodeStrategyGetFullSnapshotArgs({
   ConvexOptional<bool> acceptsTrashedPagesLeftOut =
       const ConvexOptional.absent(),
   required double clientProtocolVersion,
+  ConvexOptional<bool> includeContentVersion = const ConvexOptional.absent(),
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
@@ -7174,6 +7295,8 @@ ConvexObject encodeStrategyGetFullSnapshotArgs({
     clientProtocolVersion,
     'strategy.js:getFullSnapshot.args.clientProtocolVersion',
   ),
+  if (includeContentVersion.isPresent)
+    'includeContentVersion': ConvexBoolean(includeContentVersion.value),
   if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
@@ -7200,6 +7323,32 @@ ConvexObject encodeStrategyGetShellArgs({
 
 StrategyGetShellResult decodeStrategyGetShellResult(ConvexValue value) =>
     StrategyGetShellResult.decode(value, 'strategy.js:getShell.returns');
+
+ConvexObject encodeStrategyListContentVersionsArgs({
+  required double clientProtocolVersion,
+  required List<String> strategyPublicIds,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategy.js:listContentVersions.args.clientProtocolVersion',
+  ),
+  'strategyPublicIds': ConvexArray(
+    strategyPublicIds.indexed
+        .map((entry) => ConvexString(entry.$2))
+        .toList(growable: false),
+  ),
+});
+
+List<StrategyListContentVersionsResultItem>
+decodeStrategyListContentVersionsResult(ConvexValue value) =>
+    _decodeArray(value, 'strategy.js:listContentVersions.returns').value.indexed
+        .map(
+          (entry) => StrategyListContentVersionsResultItem.decode(
+            entry.$2,
+            _indexPath('strategy.js:listContentVersions.returns', entry.$1),
+          ),
+        )
+        .toList(growable: false);
 
 ConvexObject encodeUsersEnsureCurrentUserArgs({
   required double clientProtocolVersion,

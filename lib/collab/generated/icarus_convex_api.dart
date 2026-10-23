@@ -1742,6 +1742,7 @@ abstract interface class StrategyModule {
     ConvexOptional<bool> acceptsTrashedPagesLeftOut =
         const ConvexOptional.absent(),
     required double clientProtocolVersion,
+    ConvexOptional<bool> includeContentVersion = const ConvexOptional.absent(),
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
@@ -1749,6 +1750,10 @@ abstract interface class StrategyModule {
     required double clientProtocolVersion,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
+  });
+  ConvexQuery<List<StrategyListContentVersionsResultItem>> listContentVersions({
+    required double clientProtocolVersion,
+    required List<String> strategyPublicIds,
   });
 }
 
@@ -1761,6 +1766,7 @@ final class _StrategyModule implements StrategyModule {
     ConvexOptional<bool> acceptsTrashedPagesLeftOut =
         const ConvexOptional.absent(),
     required double clientProtocolVersion,
+    ConvexOptional<bool> includeContentVersion = const ConvexOptional.absent(),
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
@@ -1768,6 +1774,7 @@ final class _StrategyModule implements StrategyModule {
       acceptsPictureIds: acceptsPictureIds,
       acceptsTrashedPagesLeftOut: acceptsTrashedPagesLeftOut,
       clientProtocolVersion: clientProtocolVersion,
+      includeContentVersion: includeContentVersion,
       shareToken: shareToken,
       strategyPublicId: strategyPublicId,
     );
@@ -1795,6 +1802,23 @@ final class _StrategyModule implements StrategyModule {
       name: 'strategy:getShell',
       args: args,
       decode: decodeStrategyGetShellResult,
+    );
+  }
+
+  @override
+  ConvexQuery<List<StrategyListContentVersionsResultItem>> listContentVersions({
+    required double clientProtocolVersion,
+    required List<String> strategyPublicIds,
+  }) {
+    final args = encodeStrategyListContentVersionsArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      strategyPublicIds: strategyPublicIds,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'strategy:listContentVersions',
+      args: args,
+      decode: decodeStrategyListContentVersionsResult,
     );
   }
 }

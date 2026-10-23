@@ -1,4 +1,4 @@
-import { mutation } from "./_generated/server";
+import { mutation } from "./lib/functions";
 import { v } from "convex/values";
 import { signPass } from "../presence/src/pass";
 import { assertStrategyRole } from "./lib/auth";
