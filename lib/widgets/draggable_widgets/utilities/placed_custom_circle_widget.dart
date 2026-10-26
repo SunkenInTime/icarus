@@ -14,6 +14,7 @@ import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_resize_tooltip.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/marker_hit_hole.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
@@ -93,29 +94,16 @@ class _PlacedCustomCircleWidgetState
       CustomCircleUtility.maxDiameterInVirtual(mapScale),
     );
     final circleInset = (scaledMaxDiameter - scaledDiameter) / 2;
-    final arcRegionHalf = coordinateSystem.scale(
-      (Settings.shapeHandleLength / 2) + Settings.shapeHandleHitPadding,
+    final arcRegionSize = coordinateSystem.scale(
+      Settings.shapeHandleLength + (2 * Settings.shapeHandleHitPadding),
     );
     final handleCenter = _computeHandleCenter(
       coordinateSystem: coordinateSystem,
       scaledDiameter: scaledDiameter,
       scaledMaxDiameter: scaledMaxDiameter,
     );
-    // The handle region ends where the center marker begins, so a small
-    // circle still moves when grabbed at its center. The handle sits on the
-    // diagonal, so the region stays square and its near corner touches the
-    // marker's edge.
-    final markerClearance = (coordinateSystem.scale(
-              Settings.shapeCenterMarkerSize,
-            ) /
-            2) *
-        math.cos(_handleAngle);
-    final arcRegionLeft = math.max(
-      handleCenter.dx - arcRegionHalf,
-      (scaledMaxDiameter / 2) + markerClearance,
-    );
-    final arcRegionTop = arcRegionLeft;
-    final arcRegionSize = handleCenter.dx + arcRegionHalf - arcRegionLeft;
+    final arcRegionLeft = handleCenter.dx - (arcRegionSize / 2);
+    final arcRegionTop = handleCenter.dy - (arcRegionSize / 2);
     final rightOverflow = math.max(
       0.0,
       (arcRegionLeft + arcRegionSize) - scaledMaxDiameter,
@@ -247,61 +235,56 @@ class _PlacedCustomCircleWidgetState
       (scaledMaxDiameter / 2) - arcRegionLeft,
       (scaledMaxDiameter / 2) - arcRegionTop,
     );
-    final handlePoint = circleCenter +
-        Offset(
-          handleRadius * math.cos(_handleAngle),
-          handleRadius * math.sin(_handleAngle),
-        );
 
     return Positioned(
       left: arcRegionLeft,
       top: arcRegionTop,
       child: ShapeIndicatorFade(
         visible: showIndicators,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.resizeUpLeftDownRight,
-          onEnter: (_) {
-            setState(() {
-              _isHandleHovered = true;
-            });
-          },
-          onExit: (_) {
-            setState(() {
-              _isHandleHovered = false;
-            });
-          },
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanStart: (details) => _startCircleResize(
-              globalPosition: details.globalPosition,
-              mapScale: mapScale,
-              diameterMeters: diameterMeters,
-            ),
-            onPanUpdate: (details) =>
-                _updateDiameter(details.globalPosition, mapScale),
-            onPanEnd: (_) => _finishCircleResize(),
-            onPanCancel: _cancelCircleResize,
-            child: SizedBox(
-              width: arcRegionSize,
-              height: arcRegionSize,
-              child: Center(
-                child: IgnorePointer(
-                  child: AnimatedScale(
-                    duration: const Duration(milliseconds: 160),
-                    curve: Curves.easeOutCubic,
-                    scale: _isResizing || _isHandleHovered ? 1.0 : 0.9,
-                    alignment: Alignment(
-                      (2 * handlePoint.dx / arcRegionSize) - 1,
-                      (2 * handlePoint.dy / arcRegionSize) - 1,
-                    ),
-                    child: CustomPaint(
-                      size: Size(arcRegionSize, arcRegionSize),
-                      painter: _CircleResizeArcPainter(
-                        color: Colors.white,
-                        strokeWidth: strokeWidth,
-                        center: circleCenter,
-                        radius: handleRadius,
-                        handleSweep: handleSweep,
+        child: MarkerHitHole(
+          center: circleCenter,
+          radius: coordinateSystem.scale(Settings.shapeCenterMarkerSize) / 2,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.resizeUpLeftDownRight,
+            onEnter: (_) {
+              setState(() {
+                _isHandleHovered = true;
+              });
+            },
+            onExit: (_) {
+              setState(() {
+                _isHandleHovered = false;
+              });
+            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanStart: (details) => _startCircleResize(
+                globalPosition: details.globalPosition,
+                mapScale: mapScale,
+                diameterMeters: diameterMeters,
+              ),
+              onPanUpdate: (details) =>
+                  _updateDiameter(details.globalPosition, mapScale),
+              onPanEnd: (_) => _finishCircleResize(),
+              onPanCancel: _cancelCircleResize,
+              child: SizedBox(
+                width: arcRegionSize,
+                height: arcRegionSize,
+                child: Center(
+                  child: IgnorePointer(
+                    child: AnimatedScale(
+                      duration: const Duration(milliseconds: 160),
+                      curve: Curves.easeOutCubic,
+                      scale: _isResizing || _isHandleHovered ? 1.0 : 0.9,
+                      child: CustomPaint(
+                        size: Size(arcRegionSize, arcRegionSize),
+                        painter: _CircleResizeArcPainter(
+                          color: Colors.white,
+                          strokeWidth: strokeWidth,
+                          center: circleCenter,
+                          radius: handleRadius,
+                          handleSweep: handleSweep,
+                        ),
                       ),
                     ),
                   ),
@@ -339,18 +322,14 @@ class _PlacedCustomCircleWidgetState
   }
 
   /// The arc sits on the circle's border. On a circle too small for that, it
-  /// sits far enough out that the whole arc, ends included, lies inside the
-  /// handle region, which stops at the marker's edge on each axis.
+  /// sits just outside the center marker instead, so it never covers it.
   double _computeHandleRadius({
     required CoordinateSystem coordinateSystem,
     required double scaledDiameter,
   }) {
-    final regionInner =
-        (coordinateSystem.scale(Settings.shapeCenterMarkerSize) / 2) *
-            math.cos(_handleAngle);
-    final halfStroke = coordinateSystem.scale(_handleStrokeWidthVirtual) / 2;
-    final clearOfMarker = (regionInner + halfStroke) /
-        math.sin(_handleAngle - (_maxHandleSweep / 2));
+    final clearOfMarker =
+        (coordinateSystem.scale(Settings.shapeCenterMarkerSize) / 2) +
+            (coordinateSystem.scale(_handleStrokeWidthVirtual) / 2);
     return math.max(
       _computeCircleBorderRadius(
         coordinateSystem: coordinateSystem,

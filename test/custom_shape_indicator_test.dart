@@ -199,6 +199,42 @@ void main() {
     expect(container.read(utilityProvider).single.customLength, greaterThan(1));
   });
 
+  testWidgets('a 1 m circle still resizes from its arc handle', (tester) async {
+    final utility = _circle()..customDiameter = 1;
+    final container = _containerWith(utility);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        container: container,
+        child: PlacedCustomCircleWidget(
+          utility: utility,
+          id: utility.id,
+          onDragEnd: (_) {},
+        ),
+      ),
+    );
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(
+      location: tester.getCenter(find.byType(CustomCircleUtilityWidget).first),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    final arc = tester.getCenter(find.byWidgetPredicate((widget) =>
+        widget is MouseRegion &&
+        widget.cursor == SystemMouseCursors.resizeUpLeftDownRight));
+    await mouse.moveTo(arc);
+    await mouse.down(arc);
+    await mouse.moveBy(const Offset(30, 30));
+    await tester.pump();
+    await mouse.up();
+    await tester.pump();
+
+    expect(
+        container.read(utilityProvider).single.customDiameter, greaterThan(1));
+  });
+
   testWidgets('circle screenshot removes center marker immediately',
       (tester) async {
     final utility = _circle();
