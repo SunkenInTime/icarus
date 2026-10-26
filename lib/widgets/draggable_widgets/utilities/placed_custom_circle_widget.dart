@@ -93,16 +93,29 @@ class _PlacedCustomCircleWidgetState
       CustomCircleUtility.maxDiameterInVirtual(mapScale),
     );
     final circleInset = (scaledMaxDiameter - scaledDiameter) / 2;
-    final arcRegionSize = coordinateSystem.scale(
-      Settings.shapeHandleLength + (2 * Settings.shapeHandleHitPadding),
+    final arcRegionHalf = coordinateSystem.scale(
+      (Settings.shapeHandleLength / 2) + Settings.shapeHandleHitPadding,
     );
     final handleCenter = _computeHandleCenter(
       coordinateSystem: coordinateSystem,
       scaledDiameter: scaledDiameter,
       scaledMaxDiameter: scaledMaxDiameter,
     );
-    final arcRegionLeft = handleCenter.dx - (arcRegionSize / 2);
-    final arcRegionTop = handleCenter.dy - (arcRegionSize / 2);
+    // The handle region ends where the center marker begins, so a small
+    // circle still moves when grabbed at its center. The handle sits on the
+    // diagonal, so the region stays square and its near corner touches the
+    // marker's edge.
+    final markerClearance = (coordinateSystem.scale(
+              Settings.shapeCenterMarkerSize,
+            ) /
+            2) *
+        math.cos(_handleAngle);
+    final arcRegionLeft = math.max(
+      handleCenter.dx - arcRegionHalf,
+      (scaledMaxDiameter / 2) + markerClearance,
+    );
+    final arcRegionTop = arcRegionLeft;
+    final arcRegionSize = handleCenter.dx + arcRegionHalf - arcRegionLeft;
     final rightOverflow = math.max(
       0.0,
       (arcRegionLeft + arcRegionSize) - scaledMaxDiameter,
@@ -168,7 +181,6 @@ class _PlacedCustomCircleWidgetState
               coordinateSystem: coordinateSystem,
               scaledDiameter: scaledDiameter,
               scaledMaxDiameter: scaledMaxDiameter,
-              circleInset: circleInset,
               mapScale: mapScale,
               arcRegionSize: arcRegionSize,
               arcRegionLeft: arcRegionLeft,
@@ -215,7 +227,6 @@ class _PlacedCustomCircleWidgetState
     required CoordinateSystem coordinateSystem,
     required double scaledDiameter,
     required double scaledMaxDiameter,
-    required double circleInset,
     required double mapScale,
     required double arcRegionSize,
     required double arcRegionLeft,
@@ -224,12 +235,23 @@ class _PlacedCustomCircleWidgetState
     required bool showIndicators,
   }) {
     final strokeWidth = coordinateSystem.scale(_handleStrokeWidthVirtual);
-    final circleBorderStrokeWidth =
-        coordinateSystem.scale(_circleBorderStrokeVirtual);
-    final handleSweep = _computeHandleSweep(
+    final handleRadius = _computeHandleRadius(
       coordinateSystem: coordinateSystem,
       scaledDiameter: scaledDiameter,
     );
+    final handleSweep = _computeHandleSweep(
+      coordinateSystem: coordinateSystem,
+      handleRadius: handleRadius,
+    );
+    final circleCenter = Offset(
+      (scaledMaxDiameter / 2) - arcRegionLeft,
+      (scaledMaxDiameter / 2) - arcRegionTop,
+    );
+    final handlePoint = circleCenter +
+        Offset(
+          handleRadius * math.cos(_handleAngle),
+          handleRadius * math.sin(_handleAngle),
+        );
 
     return Positioned(
       left: arcRegionLeft,
@@ -268,15 +290,17 @@ class _PlacedCustomCircleWidgetState
                     duration: const Duration(milliseconds: 160),
                     curve: Curves.easeOutCubic,
                     scale: _isResizing || _isHandleHovered ? 1.0 : 0.9,
+                    alignment: Alignment(
+                      (2 * handlePoint.dx / arcRegionSize) - 1,
+                      (2 * handlePoint.dy / arcRegionSize) - 1,
+                    ),
                     child: CustomPaint(
                       size: Size(arcRegionSize, arcRegionSize),
                       painter: _CircleResizeArcPainter(
                         color: Colors.white,
                         strokeWidth: strokeWidth,
-                        circleDiameter: scaledDiameter,
-                        circleOffset: Offset(circleInset - arcRegionLeft,
-                            circleInset - arcRegionTop),
-                        circleBorderStrokeWidth: circleBorderStrokeWidth,
+                        center: circleCenter,
+                        radius: handleRadius,
                         handleSweep: handleSweep,
                       ),
                     ),
@@ -306,16 +330,30 @@ class _PlacedCustomCircleWidgetState
 
   double _computeHandleSweep({
     required CoordinateSystem coordinateSystem,
-    required double scaledDiameter,
+    required double handleRadius,
   }) {
-    final radius = _computeCircleBorderRadius(
-      coordinateSystem: coordinateSystem,
-      scaledDiameter: scaledDiameter,
-    );
-    if (radius <= 0) return _maxHandleSweep;
+    if (handleRadius <= 0) return _maxHandleSweep;
 
     final arcLength = coordinateSystem.scale(_handleArcLengthVirtual);
-    return (arcLength / radius).clamp(0.0, _maxHandleSweep);
+    return (arcLength / handleRadius).clamp(0.0, _maxHandleSweep);
+  }
+
+  /// The arc sits on the circle's border. On a circle too small for that, it
+  /// sits just outside the center marker instead, so it never covers it.
+  double _computeHandleRadius({
+    required CoordinateSystem coordinateSystem,
+    required double scaledDiameter,
+  }) {
+    final clearOfMarker =
+        (coordinateSystem.scale(Settings.shapeCenterMarkerSize) / 2) +
+            (coordinateSystem.scale(_handleStrokeWidthVirtual) / 2);
+    return math.max(
+      _computeCircleBorderRadius(
+        coordinateSystem: coordinateSystem,
+        scaledDiameter: scaledDiameter,
+      ),
+      clearOfMarker,
+    );
   }
 
   Offset _computeHandleCenter({
@@ -323,7 +361,7 @@ class _PlacedCustomCircleWidgetState
     required double scaledDiameter,
     required double scaledMaxDiameter,
   }) {
-    final radius = _computeCircleBorderRadius(
+    final radius = _computeHandleRadius(
       coordinateSystem: coordinateSystem,
       scaledDiameter: scaledDiameter,
     );
@@ -435,27 +473,20 @@ class _CircleResizeArcPainter extends CustomPainter {
   const _CircleResizeArcPainter({
     required this.color,
     required this.strokeWidth,
-    required this.circleDiameter,
-    required this.circleOffset,
-    required this.circleBorderStrokeWidth,
+    required this.center,
+    required this.radius,
     required this.handleSweep,
   });
 
   final Color color;
   final double strokeWidth;
-  final double circleDiameter;
-  final Offset circleOffset;
-  final double circleBorderStrokeWidth;
+  final Offset center;
+  final double radius;
   final double handleSweep;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rect = Rect.fromLTWH(
-      circleOffset.dx + (circleBorderStrokeWidth / 2),
-      circleOffset.dy + (circleBorderStrokeWidth / 2),
-      circleDiameter - circleBorderStrokeWidth,
-      circleDiameter - circleBorderStrokeWidth,
-    );
+    final rect = Rect.fromCircle(center: center, radius: radius);
     final paint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
@@ -475,9 +506,8 @@ class _CircleResizeArcPainter extends CustomPainter {
   bool shouldRepaint(covariant _CircleResizeArcPainter oldDelegate) {
     return oldDelegate.color != color ||
         oldDelegate.strokeWidth != strokeWidth ||
-        oldDelegate.circleDiameter != circleDiameter ||
-        oldDelegate.circleOffset != circleOffset ||
-        oldDelegate.circleBorderStrokeWidth != circleBorderStrokeWidth ||
+        oldDelegate.center != center ||
+        oldDelegate.radius != radius ||
         oldDelegate.handleSweep != handleSweep;
   }
 }

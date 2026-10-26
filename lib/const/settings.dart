@@ -64,6 +64,9 @@ class Settings {
   static const double shapeHandleHitPadding = 8;
   static const double shapeRotationHandleSize = 24;
   static const double shapeRotationHandleOffset = 36;
+  // The dot at a custom shape's center is what moves it, so resize handles
+  // never cover it, however small the shape.
+  static const double shapeCenterMarkerSize = 16;
 
   static const double strokeThicknessThin = 2;
   static const double strokeThicknessSmall = 3;

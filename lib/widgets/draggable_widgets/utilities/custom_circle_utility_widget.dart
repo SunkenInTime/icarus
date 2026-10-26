@@ -64,7 +64,7 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
         CustomCircleUtility.maxDiameterInVirtual(effectiveMapScale);
     final scaledDiameter = coord.scale(diameterInVirtual);
     final scaledMaxDiameter = coord.scale(maxDiameterInVirtual);
-    final iconSize = coord.scale(Settings.utilityIconSize);
+    final markerSize = coord.scale(Settings.shapeCenterMarkerSize);
 
     final circle = SizedBox(
       width: scaledDiameter,
@@ -107,8 +107,8 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
                   duration: const Duration(milliseconds: 150),
                   curve: Curves.easeOutCubic,
                   child: Container(
-                    width: iconSize * 0.8,
-                    height: iconSize * 0.8,
+                    width: markerSize,
+                    height: markerSize,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.white.withValues(alpha: 0.9),
