@@ -350,6 +350,12 @@ class _PlacedCustomRectangleWidgetState
     final markerRadius =
         coordinateSystem.scale(Settings.shapeCenterMarkerSize) / 2;
     final isLengthAxis = _isLengthHandle(handle);
+    // The pill is drawn along its edge and shrinks to fit a short one, so a
+    // small shape's pills frame it instead of crossing. Its hit area keeps
+    // the full length.
+    final edge = isLengthAxis ? scaledWidth : scaledLength;
+    final drawnPillLength = (edge * Settings.shapeHandleMaxEdgeFraction)
+        .clamp(pillThickness, pillLength);
     final shapeCenter = Offset(scaledLength / 2, scaledWidth / 2);
     final handleCenter = _resizeHandleCenter(
       handle: handle,
@@ -410,8 +416,8 @@ class _PlacedCustomRectangleWidgetState
                 offset: handleCenter - hitRect.center,
                 child: Center(
                   child: _ResizePill(
-                    width: isLengthAxis ? pillThickness : pillLength,
-                    height: isLengthAxis ? pillLength : pillThickness,
+                    width: isLengthAxis ? pillThickness : drawnPillLength,
+                    height: isLengthAxis ? drawnPillLength : pillThickness,
                     isActive: _activeHandle == handle ||
                         _hoveredResizeHandle == handle,
                   ),
