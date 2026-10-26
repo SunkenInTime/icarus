@@ -347,21 +347,39 @@ class _PlacedCustomRectangleWidgetState
     final pillThickness = coordinateSystem.scale(Settings.shapeHandleThickness);
     final pillLength = coordinateSystem.scale(Settings.shapeHandleLength);
     final hitPadding = coordinateSystem.scale(Settings.shapeHandleHitPadding);
+    final markerRadius =
+        coordinateSystem.scale(Settings.shapeCenterMarkerSize) / 2;
     final isLengthAxis = _isLengthHandle(handle);
-    final hitWidth =
-        (isLengthAxis ? pillThickness : pillLength) + (2 * hitPadding);
-    final hitHeight =
-        (isLengthAxis ? pillLength : pillThickness) + (2 * hitPadding);
+    // The pill is drawn along its edge and shrinks to fit a short one, so a
+    // small shape's pills frame it instead of crossing. Its hit area keeps
+    // the full length.
+    final edge = isLengthAxis ? scaledWidth : scaledLength;
+    final drawnPillLength = (edge * Settings.shapeHandleMaxEdgeFraction)
+        .clamp(pillThickness, pillLength);
+    final shapeCenter = Offset(scaledLength / 2, scaledWidth / 2);
     final handleCenter = _resizeHandleCenter(
       handle: handle,
       coordinateSystem: coordinateSystem,
       scaledLength: scaledLength,
       scaledWidth: scaledWidth,
     );
+    final outward = _outwardDirection(handle);
+    final along = Offset(outward.dy.abs(), outward.dx.abs());
+    final pillReach = (handleCenter - shapeCenter).distance;
+    final hitHalfThickness = (pillThickness / 2) + hitPadding;
+    final hitHalfLength = (pillLength / 2) + hitPadding;
+    // The hit area ends where the center marker begins, so a small shape
+    // still moves when grabbed at its center.
+    final hitInner = math.max(pillReach - hitHalfThickness, markerRadius);
+    final hitOuter = pillReach + hitHalfThickness;
+    final hitRect = Rect.fromPoints(
+      shapeCenter + (outward * hitInner) + (along * hitHalfLength),
+      shapeCenter + (outward * hitOuter) - (along * hitHalfLength),
+    );
 
     return Positioned(
-      left: insetX + handleCenter.dx - (hitWidth / 2),
-      top: insetY + handleCenter.dy - (hitHeight / 2),
+      left: insetX + hitRect.left,
+      top: insetY + hitRect.top,
       child: ShapeIndicatorFade(
         visible: showIndicators,
         child: MouseRegion(
@@ -392,14 +410,17 @@ class _PlacedCustomRectangleWidgetState
             onPanEnd: (_) => _commitRectangleResize(),
             onPanCancel: _resetActiveHandle,
             child: SizedBox(
-              width: hitWidth,
-              height: hitHeight,
-              child: Center(
-                child: _ResizePill(
-                  width: isLengthAxis ? pillThickness : pillLength,
-                  height: isLengthAxis ? pillLength : pillThickness,
-                  isActive:
-                      _activeHandle == handle || _hoveredResizeHandle == handle,
+              width: hitRect.width,
+              height: hitRect.height,
+              child: Transform.translate(
+                offset: handleCenter - hitRect.center,
+                child: Center(
+                  child: _ResizePill(
+                    width: isLengthAxis ? pillThickness : drawnPillLength,
+                    height: isLengthAxis ? drawnPillLength : pillThickness,
+                    isActive: _activeHandle == handle ||
+                        _hoveredResizeHandle == handle,
+                  ),
                 ),
               ),
             ),
@@ -413,6 +434,16 @@ class _PlacedCustomRectangleWidgetState
       handle == _RectangleResizeHandle.left ||
       handle == _RectangleResizeHandle.right;
 
+  Offset _outwardDirection(_RectangleResizeHandle handle) => switch (handle) {
+        _RectangleResizeHandle.left => const Offset(-1, 0),
+        _RectangleResizeHandle.right => const Offset(1, 0),
+        _RectangleResizeHandle.top => const Offset(0, -1),
+        _RectangleResizeHandle.bottom => const Offset(0, 1),
+        _RectangleResizeHandle.none => Offset.zero,
+      };
+
+  /// The pill sits on its edge's stroke. On a shape too small for that, it
+  /// sits just outside the center marker instead, so it never covers it.
   Offset _resizeHandleCenter({
     required _RectangleResizeHandle handle,
     required CoordinateSystem coordinateSystem,
@@ -420,15 +451,13 @@ class _PlacedCustomRectangleWidgetState
     required double scaledWidth,
   }) {
     final halfStroke = _computeRectangleBorderStrokeWidth(coordinateSystem) / 2;
-    return switch (handle) {
-      _RectangleResizeHandle.left => Offset(halfStroke, scaledWidth / 2),
-      _RectangleResizeHandle.right =>
-        Offset(scaledLength - halfStroke, scaledWidth / 2),
-      _RectangleResizeHandle.top => Offset(scaledLength / 2, halfStroke),
-      _RectangleResizeHandle.bottom =>
-        Offset(scaledLength / 2, scaledWidth - halfStroke),
-      _RectangleResizeHandle.none => Offset(scaledLength / 2, scaledWidth / 2),
-    };
+    final edgeReach =
+        (_isLengthHandle(handle) ? scaledLength : scaledWidth) / 2 - halfStroke;
+    final clearOfMarker =
+        (coordinateSystem.scale(Settings.shapeCenterMarkerSize) / 2) +
+            (coordinateSystem.scale(Settings.shapeHandleThickness) / 2);
+    return Offset(scaledLength / 2, scaledWidth / 2) +
+        (_outwardDirection(handle) * math.max(edgeReach, clearOfMarker));
   }
 
   MouseCursor _resizeCursor({

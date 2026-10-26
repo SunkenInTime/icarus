@@ -96,6 +96,145 @@ void main() {
     expect(dragEnded, isTrue);
   });
 
+  for (final diameterMeters in [1.0, 2.0]) {
+    testWidgets('a $diameterMeters m circle moves when grabbed at its center',
+        (tester) async {
+      var dragEnded = false;
+      final utility = _circle()..customDiameter = diameterMeters;
+      final container = _containerWith(utility);
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        _harness(
+          container: container,
+          child: PlacedCustomCircleWidget(
+            utility: utility,
+            id: utility.id,
+            onDragEnd: (_) => dragEnded = true,
+          ),
+        ),
+      );
+
+      await _hoverThenDrag(
+        tester,
+        tester.getCenter(find.byType(CustomCircleUtilityWidget).first),
+      );
+
+      expect(dragEnded, isTrue);
+      expect(container.read(utilityProvider).single.customDiameter,
+          diameterMeters);
+    });
+  }
+
+  for (final sideMeters in [1.0, 2.0]) {
+    testWidgets('a $sideMeters m square moves when grabbed at its center',
+        (tester) async {
+      var dragEnded = false;
+      final utility = _rectangle()
+        ..customWidth = sideMeters
+        ..customLength = sideMeters;
+      final container = _containerWith(utility);
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        _harness(
+          container: container,
+          child: PlacedCustomRectangleWidget(
+            utility: utility,
+            id: utility.id,
+            isAttack: true,
+            onDragEnd: (_) => dragEnded = true,
+          ),
+        ),
+      );
+
+      await _hoverThenDrag(
+        tester,
+        tester.getCenter(find.byType(CustomRectangleUtilityWidget)),
+      );
+
+      expect(dragEnded, isTrue);
+      final stored = container.read(utilityProvider).single;
+      expect(stored.customWidth, sideMeters);
+      expect(stored.customLength, sideMeters);
+    });
+  }
+
+  testWidgets('a 1 m square still resizes from its edge handle',
+      (tester) async {
+    final utility = _rectangle()
+      ..customWidth = 1
+      ..customLength = 1;
+    final container = _containerWith(utility);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        container: container,
+        child: PlacedCustomRectangleWidget(
+          utility: utility,
+          id: utility.id,
+          isAttack: true,
+          onDragEnd: (_) {},
+        ),
+      ),
+    );
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(
+      location: tester.getCenter(find.byType(CustomRectangleUtilityWidget)),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    final handle = tester.getCenter(
+      find.byKey(const ValueKey('custom-rectangle-resize-right')),
+    );
+    await mouse.moveTo(handle);
+    await mouse.down(handle);
+    await mouse.moveBy(const Offset(40, 0));
+    await tester.pump();
+    await mouse.up();
+    await tester.pump();
+
+    expect(container.read(utilityProvider).single.customLength, greaterThan(1));
+  });
+
+  testWidgets('a 1 m circle still resizes from its arc handle', (tester) async {
+    final utility = _circle()..customDiameter = 1;
+    final container = _containerWith(utility);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        container: container,
+        child: PlacedCustomCircleWidget(
+          utility: utility,
+          id: utility.id,
+          onDragEnd: (_) {},
+        ),
+      ),
+    );
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(
+      location: tester.getCenter(find.byType(CustomCircleUtilityWidget).first),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    final arc = tester.getCenter(find.byWidgetPredicate((widget) =>
+        widget is MouseRegion &&
+        widget.cursor == SystemMouseCursors.resizeUpLeftDownRight));
+    await mouse.moveTo(arc);
+    await mouse.down(arc);
+    await mouse.moveBy(const Offset(30, 30));
+    await tester.pump();
+    await mouse.up();
+    await tester.pump();
+
+    expect(
+        container.read(utilityProvider).single.customDiameter, greaterThan(1));
+  });
+
   testWidgets('circle screenshot removes center marker immediately',
       (tester) async {
     final utility = _circle();
@@ -411,6 +550,19 @@ void main() {
     );
     expect(container.read(actionProvider), hasLength(2));
   });
+}
+
+/// Hovers first so the resize handles are live, as they are for a user.
+Future<void> _hoverThenDrag(WidgetTester tester, Offset start) async {
+  final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+  await mouse.addPointer(location: start);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 200));
+  await mouse.down(start);
+  await mouse.moveBy(const Offset(40, 0));
+  await tester.pump();
+  await mouse.up();
+  await tester.pump();
 }
 
 Future<void> _openShapeColorSubmenu(WidgetTester tester) async {
