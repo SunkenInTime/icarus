@@ -339,14 +339,18 @@ class _PlacedCustomCircleWidgetState
   }
 
   /// The arc sits on the circle's border. On a circle too small for that, it
-  /// sits just outside the center marker instead, so it never covers it.
+  /// sits far enough out that the whole arc, ends included, lies inside the
+  /// handle region, which stops at the marker's edge on each axis.
   double _computeHandleRadius({
     required CoordinateSystem coordinateSystem,
     required double scaledDiameter,
   }) {
-    final clearOfMarker =
-        (coordinateSystem.scale(Settings.shapeCenterMarkerSize) / 2) +
-            (coordinateSystem.scale(_handleStrokeWidthVirtual) / 2);
+    final regionInner =
+        (coordinateSystem.scale(Settings.shapeCenterMarkerSize) / 2) *
+            math.cos(_handleAngle);
+    final halfStroke = coordinateSystem.scale(_handleStrokeWidthVirtual) / 2;
+    final clearOfMarker = (regionInner + halfStroke) /
+        math.sin(_handleAngle - (_maxHandleSweep / 2));
     return math.max(
       _computeCircleBorderRadius(
         coordinateSystem: coordinateSystem,
