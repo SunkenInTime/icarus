@@ -181,6 +181,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
           },
           onPanEnd: (_) => _finishResize(ref),
           child: Draggable<PlacedWidget>(
+            maxSimultaneousDrags: itemDragLimit(context),
             data: widget.placedImage,
             feedback: ZoomTransform(
               child: IgnorePointer(

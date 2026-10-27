@@ -596,6 +596,11 @@ class _AgentListState extends ConsumerState<_AgentList> {
                     isAttack: isAttack,
                   ).dy,
                   child: Draggable<PlacedWidget>(
+                    // One of several selected: a drag on it moves them all.
+                    maxSimultaneousDrags:
+                        ref.watch(dragsWithSelectionProvider(agent.id))
+                            ? 0
+                            : null,
                     data: agent,
                     dragAnchorStrategy: zoomDragAnchorStrategy,
                     onDragStarted: () {

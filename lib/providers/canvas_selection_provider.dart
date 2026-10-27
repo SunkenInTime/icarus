@@ -58,20 +58,31 @@ final selectedDrawingIdsProvider = Provider<Set<String>>((ref) {
   };
 });
 
-/// How far a drag of the selection has carried it so far, in canvas pixels,
-/// or null when none is under way. The selected items are drawn this far
-/// from where they are saved until the drag ends and moves them.
+/// A drag of the selection under way: the items it carries, as they were
+/// when it began, and how far it has carried them, in canvas pixels.
+typedef CanvasGroupDrag = ({Set<String> ids, Offset by});
+
+/// The drag of the selection under way, or null. Its items are drawn this
+/// far from where they are saved until the drag ends and moves them.
 final canvasGroupDragProvider =
-    NotifierProvider<CanvasGroupDragNotifier, Offset?>(
+    NotifierProvider<CanvasGroupDragNotifier, CanvasGroupDrag?>(
   CanvasGroupDragNotifier.new,
 );
 
-class CanvasGroupDragNotifier extends Notifier<Offset?> {
+class CanvasGroupDragNotifier extends Notifier<CanvasGroupDrag?> {
   @override
-  Offset? build() => null;
+  CanvasGroupDrag? build() => null;
 
-  void set(Offset? offset) => state = offset;
+  void set(CanvasGroupDrag? drag) => state = drag;
 }
+
+/// Whether item [id] is one of several selected items that move together:
+/// a drag on it drags them all, so its own drag stands aside.
+final dragsWithSelectionProvider = Provider.family<bool, String>((ref, id) {
+  final selection = ref.watch(canvasSelectionProvider);
+  return selection.length > 1 &&
+      selection.any((item) => item.id == id && movesWithSelection(item.kind));
+});
 
 /// Whether [kind] moves when the selection is dragged. A lineup marks the
 /// spot its screenshots were taken from, so it stays where it is.
@@ -152,13 +163,10 @@ class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
     if (state.isNotEmpty) state = const {};
   }
 
-  /// Moves everything selected that moves (see [movesWithSelection]) by
-  /// [by], in world coordinates, as one undo step.
-  void moveSelected(Offset by) {
-    final ids = {
-      for (final item in state)
-        if (movesWithSelection(item.kind)) item.id,
-    };
+  /// Moves the items [ids] (a drag of the selection, as it was when the
+  /// drag began) by [by], in world coordinates, as one undo step. Lineups
+  /// never move this way (see [movesWithSelection]).
+  void moveItems(Set<String> ids, Offset by) {
     if (ids.isEmpty ||
         by == Offset.zero ||
         !ref.read(currentStrategyCapabilitiesProvider).canEditPages) {

@@ -188,6 +188,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         },
         onPanEnd: (_) => _finishResize(),
         child: Draggable<PlacedText>(
+          maxSimultaneousDrags: itemDragLimit(context),
           data: widget.placedText,
           feedback: Opacity(
             opacity: 0.8,

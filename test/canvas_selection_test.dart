@@ -155,7 +155,7 @@ void main() {
     final selection = container.read(canvasSelectionProvider.notifier);
 
     selection.select([_a, (kind: SelectableKind.drawing, id: 'd')]);
-    selection.moveSelected(const Offset(50, 20));
+    selection.moveItems({'a', 'd'}, const Offset(50, 20));
 
     Offset agentAt(String id) => container
         .read(agentProvider)

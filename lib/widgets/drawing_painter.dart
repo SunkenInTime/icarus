@@ -69,17 +69,16 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
     // Selected drawings follow a drag of the selection. This layer is turned
     // with the map on defense, so the drag's direction turns too.
     final groupDrag = ref.watch(canvasGroupDragProvider);
-    final shiftedIds = groupDrag == null
-        ? const <String>{}
-        : ref.watch(selectedDrawingIdsProvider);
+    final shiftedIds = groupDrag?.ids ?? const <String>{};
     CustomPainter drawingPainter = DrawingPainter(
         updateCounter: drawingState.updateCounter,
         coordinateSystem: coordinateSystem,
         elements: drawingState.elements, // Pass the data directly
         currentLine: drawingState.currentElement,
         shiftedIds: shiftedIds,
-        shift:
-            isAttack ? groupDrag ?? Offset.zero : -(groupDrag ?? Offset.zero));
+        shift: isAttack
+            ? groupDrag?.by ?? Offset.zero
+            : -(groupDrag?.by ?? Offset.zero));
 
     final currentInteractionState = ref.watch(interactionStateProvider);
 

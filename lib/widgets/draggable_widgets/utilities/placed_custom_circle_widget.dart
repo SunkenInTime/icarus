@@ -135,6 +135,7 @@ class _PlacedCustomCircleWidgetState
         clipBehavior: Clip.none,
         children: [
           Draggable<PlacedUtility>(
+            maxSimultaneousDrags: itemDragLimit(context),
             data: utilityRef,
             dragAnchorStrategy:
                 ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
