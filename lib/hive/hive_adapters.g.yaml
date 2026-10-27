@@ -359,7 +359,7 @@ types:
         index: 4
   AppPreferences:
     typeId: 28
-    nextIndex: 23
+    nextIndex: 24
     fields:
       defaultThemeProfileIdForNewStrategies:
         index: 0
@@ -405,6 +405,8 @@ types:
         index: 21
       transparentVideoBackground:
         index: 22
+      canvasSelectionHintSeen:
+        index: 23
   PlacedViewConeAgent:
     typeId: 29
     nextIndex: 11

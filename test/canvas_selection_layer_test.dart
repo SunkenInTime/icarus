@@ -1,0 +1,210 @@
+import 'dart:io';
+
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/widgets/canvas_selection_layer.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
+
+class _NoopStrategyProvider extends StrategyProvider {
+  @override
+  StrategyState build() {
+    return const StrategyState(
+      strategyId: 'test-strategy',
+      strategyName: null,
+      source: StrategySource.local,
+      storageDirectory: null,
+      isOpen: true,
+    );
+  }
+
+  @override
+  void setUnsaved() {}
+}
+
+/// An item drawn as a 20 px square with its top-left at [at], the way the
+/// canvas draws one: in its own layer, marking what it draws.
+Widget _item(String id, Offset at) => EditorEntityLayer(
+      id: id,
+      kind: SelectableKind.agent,
+      child: Positioned(
+        left: at.dx,
+        top: at.dy,
+        child: const EditorItemOutline(
+          child: SizedBox.square(
+            dimension: 20,
+            child: ColoredBox(color: Colors.white),
+          ),
+        ),
+      ),
+    );
+
+const _a = (kind: SelectableKind.agent, id: 'a');
+const _b = (kind: SelectableKind.agent, id: 'b');
+const _c = (kind: SelectableKind.agent, id: 'c');
+
+void main() {
+  late ProviderContainer container;
+  late Directory tempDir;
+
+  setUpAll(() {
+    registerIcarusAdapters(Hive);
+    CoordinateSystem(playAreaSize: const Size(800, 450));
+  });
+
+  setUp(() async {
+    tempDir = await Directory.systemTemp.createTemp('icarus-selection-');
+    Hive.init(tempDir.path);
+    // Told already: the first-open hint would write preferences mid-test.
+    await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox).then(
+      (box) => box.put(
+        MapThemeProfilesProvider.appPreferencesSingletonKey,
+        AppPreferences(
+          defaultThemeProfileIdForNewStrategies:
+              MapThemeProfilesProvider.immutableDefaultProfile.id,
+          canvasSelectionHintSeen: true,
+        ),
+      ),
+    );
+  });
+
+  tearDown(() async {
+    await Hive.close();
+    await tempDir.delete(recursive: true);
+  });
+
+  Future<void> pumpCanvas(WidgetTester tester) async {
+    container = ProviderContainer(
+      overrides: [strategyProvider.overrideWith(_NoopStrategyProvider.new)],
+    );
+    addTearDown(container.dispose);
+    container.read(agentProvider.notifier).fromHive([
+      for (final id in ['a', 'b', 'c'])
+        PlacedAgent(id: id, type: AgentType.jett, position: Offset.zero),
+    ]);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: CanvasSelectionLayer(
+              enabled: true,
+              child: SizedBox(
+                width: 800,
+                height: 450,
+                child: Stack(
+                  children: [
+                    _item('a', const Offset(100, 100)),
+                    _item('b', const Offset(200, 100)),
+                    _item('c', const Offset(400, 300)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+  }
+
+  Future<void> mouseDrag(WidgetTester tester, Offset from, Offset to) async {
+    final gesture = await tester.startGesture(
+      from,
+      kind: PointerDeviceKind.mouse,
+      buttons: kPrimaryMouseButton,
+    );
+    for (var i = 1; i <= 10; i++) {
+      await gesture.moveTo(Offset.lerp(from, to, i / 10)!);
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pump();
+  }
+
+  testWidgets('a box selects the items whose middle it covers', (
+    tester,
+  ) async {
+    await pumpCanvas(tester);
+
+    // Covers a's middle (110, 110) and b's (210, 110), not c's.
+    await mouseDrag(tester, const Offset(50, 50), const Offset(250, 200));
+
+    expect(container.read(canvasSelectionProvider), {_a, _b});
+  });
+
+  testWidgets('a box drawn up and to the left selects the same', (
+    tester,
+  ) async {
+    await pumpCanvas(tester);
+
+    await mouseDrag(tester, const Offset(250, 200), const Offset(50, 50));
+
+    expect(container.read(canvasSelectionProvider), {_a, _b});
+  });
+
+  testWidgets('Shift adds with a click, a click on nothing clears', (
+    tester,
+  ) async {
+    await pumpCanvas(tester);
+
+    await tester.tapAt(const Offset(110, 110), kind: PointerDeviceKind.mouse);
+    await tester.pump();
+    expect(container.read(canvasSelectionProvider), {_a});
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.tapAt(const Offset(410, 310), kind: PointerDeviceKind.mouse);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+    expect(container.read(canvasSelectionProvider), {_a, _c});
+
+    await tester.tapAt(const Offset(600, 50), kind: PointerDeviceKind.mouse);
+    await tester.pump();
+    expect(container.read(canvasSelectionProvider), isEmpty);
+  });
+
+  testWidgets('with Space held a drag selects nothing', (tester) async {
+    await pumpCanvas(tester);
+    // The canvas has the keyboard once it is pressed.
+    await tester.tapAt(const Offset(600, 50), kind: PointerDeviceKind.mouse);
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
+    await mouseDrag(tester, const Offset(50, 50), const Offset(250, 200));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.space);
+
+    expect(container.read(canvasSelectionProvider), isEmpty);
+    expect(container.read(canvasPanKeyHeldProvider), isFalse);
+  });
+
+  testWidgets('Escape clears the selection, select all takes the page', (
+    tester,
+  ) async {
+    await pumpCanvas(tester);
+    await mouseDrag(tester, const Offset(50, 50), const Offset(250, 200));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(container.read(canvasSelectionProvider), isEmpty);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(container.read(canvasSelectionProvider), {_a, _b, _c});
+  });
+}

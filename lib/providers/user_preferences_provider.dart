@@ -146,6 +146,11 @@ class AppPreferences extends HiveObject {
   /// is a lossless .mov for editing, not an MP4 to share.
   final bool transparentVideoBackground;
 
+  /// Whether this install has said that a drag on the map selects and Space
+  /// moves the map. Stores written before selection existed read false, so
+  /// updating users are told once.
+  final bool canvasSelectionHintSeen;
+
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
     this.autosaveEnabled = true,
@@ -169,6 +174,7 @@ class AppPreferences extends HiveObject {
     this.welcomeTourSeen = false,
     this.transparentScreenshotBackground = false,
     this.transparentVideoBackground = false,
+    this.canvasSelectionHintSeen = false,
   })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
         customShortcutBindings =
             Map.unmodifiable(customShortcutBindings ?? const {});
@@ -196,6 +202,7 @@ class AppPreferences extends HiveObject {
     bool? welcomeTourSeen,
     bool? transparentScreenshotBackground,
     bool? transparentVideoBackground,
+    bool? canvasSelectionHintSeen,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
@@ -232,6 +239,8 @@ class AppPreferences extends HiveObject {
           this.transparentScreenshotBackground,
       transparentVideoBackground:
           transparentVideoBackground ?? this.transparentVideoBackground,
+      canvasSelectionHintSeen:
+          canvasSelectionHintSeen ?? this.canvasSelectionHintSeen,
     );
   }
 }
@@ -733,6 +742,12 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
   Future<void> markWelcomeTourSeen() {
     return _updatePreferences(
       (current) => current.copyWith(welcomeTourSeen: true),
+    );
+  }
+
+  Future<void> markCanvasSelectionHintSeen() {
+    return _updatePreferences(
+      (current) => current.copyWith(canvasSelectionHintSeen: true),
     );
   }
 

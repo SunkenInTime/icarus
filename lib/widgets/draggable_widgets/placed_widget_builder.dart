@@ -42,6 +42,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/placed_view_cone_widg
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/line_up_line_painter.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
 import 'package:uuid/uuid.dart';
@@ -491,6 +492,7 @@ class _AbilityList extends ConsumerWidget {
           EditorEntityLayer(
             key: ValueKey('entity-${ability.id}'),
             id: ability.id,
+            kind: SelectableKind.ability,
             child: PlacedAbilityWidget(
               key: ValueKey(ability.id),
               rotation: ability.rotation,
@@ -577,6 +579,7 @@ class _AgentListState extends ConsumerState<_AgentList> {
           EditorEntityLayer(
             key: ValueKey('entity-${agent.id}'),
             id: agent.id,
+            kind: SelectableKind.agent,
             child: switch (agent) {
               PlacedAgent() => Positioned(
                   key: ValueKey(agent.id),
@@ -744,6 +747,7 @@ class _TextList extends ConsumerWidget {
           EditorEntityLayer(
             key: ValueKey('entity-${placedText.id}'),
             id: placedText.id,
+            kind: SelectableKind.text,
             child: PlacedTextBuilder(
               key: ValueKey(placedText.id),
               size: placedText.size,
@@ -807,6 +811,7 @@ class _PlacedImageList extends ConsumerWidget {
           EditorEntityLayer(
             key: ValueKey('entity-${placedImage.id}'),
             id: placedImage.id,
+            kind: SelectableKind.image,
             child: PlacedImageBuilder(
               key: ValueKey(placedImage.id),
               placedImage: placedImage,
@@ -873,6 +878,7 @@ class _ViewConeUtilityList extends ConsumerWidget {
           EditorEntityLayer(
             key: ValueKey('entity-${placedUtility.id}'),
             id: placedUtility.id,
+            kind: SelectableKind.utility,
             child: PlacedViewConeWidget(
               key: ValueKey(placedUtility.id),
               utility: placedUtility,
@@ -947,6 +953,7 @@ class _UtilityList extends ConsumerWidget {
           EditorEntityLayer(
             key: ValueKey('entity-${placedUtility.id}'),
             id: placedUtility.id,
+            kind: SelectableKind.utility,
             child: Positioned(
               key: ValueKey(placedUtility.id),
               left: screenPositionForWidget(
@@ -1033,6 +1040,7 @@ class _CustomShapeUtilityList extends ConsumerWidget {
           EditorEntityLayer(
             key: ValueKey('entity-${placedUtility.id}'),
             id: placedUtility.id,
+            kind: SelectableKind.utility,
             child: Positioned(
               key: ValueKey('custom-shape-${placedUtility.id}'),
               left: screenPositionForWidget(
@@ -1209,6 +1217,7 @@ class _LineUpAgents extends ConsumerWidget {
             EditorEntityLayer(
               key: ValueKey('entity-${origin.id}'),
               id: origin.id,
+              kind: SelectableKind.lineup,
               child: LineUpOriginAgentWidget(origin: origin),
             ),
       ],
@@ -1237,6 +1246,7 @@ class _LineUpAbilities extends ConsumerWidget {
             EditorEntityLayer(
               key: ValueKey('entity-${landing.id}'),
               id: landing.id,
+              kind: SelectableKind.lineup,
               child: LineUpLandingAbilityWidget(landing: landing),
             ),
       ],

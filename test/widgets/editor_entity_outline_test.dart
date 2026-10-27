@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/presence/presence_models.dart';
 import 'package:icarus/providers/collab/editing_presence_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
 
@@ -61,7 +62,13 @@ void main() {
     await _pump(
       tester,
       canvas: const Stack(
-        children: [EditorEntityLayer(id: 'item', child: _item)],
+        children: [
+          EditorEntityLayer(
+            id: 'item',
+            kind: SelectableKind.agent,
+            child: _item,
+          )
+        ],
       ),
       editors: {'other': _teammate},
     );
@@ -75,7 +82,13 @@ void main() {
     await _pump(
       tester,
       canvas: const Stack(
-        children: [EditorEntityLayer(id: 'item', child: _item)],
+        children: [
+          EditorEntityLayer(
+            id: 'item',
+            kind: SelectableKind.agent,
+            child: _item,
+          )
+        ],
       ),
       editors: {'item': _teammate},
     );
@@ -101,7 +114,13 @@ void main() {
     await _pump(
       tester,
       canvas: const Stack(
-        children: [EditorEntityLayer(id: 'item', child: _item)],
+        children: [
+          EditorEntityLayer(
+            id: 'item',
+            kind: SelectableKind.agent,
+            child: _item,
+          )
+        ],
       ),
       editors: {'item': _teammate},
       zoom: 2,
@@ -130,6 +149,7 @@ void main() {
         children: [
           EditorEntityLayer(
             id: 'item',
+            kind: SelectableKind.agent,
             child: Positioned(
               left: 100,
               top: 50,

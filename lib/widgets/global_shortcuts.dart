@@ -6,6 +6,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
@@ -180,6 +181,12 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
           ContextualDeleteIntent: CallbackAction<ContextualDeleteIntent>(
             onInvoke: (intent) {
               if (!capabilities.canEditPages) return null;
+              // What the user selected goes before what the cursor is on.
+              if (ref.read(canvasSelectionProvider).isNotEmpty) {
+                _dismissDeleteMenu();
+                ref.read(canvasSelectionProvider.notifier).deleteSelected();
+                return null;
+              }
               final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
               if (hoveredTarget != null) {
                 _dismissDeleteMenu();
