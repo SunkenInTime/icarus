@@ -5,6 +5,7 @@ import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/drawing_provider.dart';
 
 class ActionObjectState {
   final String id;
@@ -85,22 +86,23 @@ class ActionObjectState {
   }
 
   /// The object as plain JSON, the same fields live sync sends. Only kinds
-  /// that record field edits have one; drawings are only added and removed,
-  /// and lineups keep their own history.
+  /// that record field edits have one; lineups keep their own history.
   Map<String, dynamic> toJson() {
     final Object encoded = switch (kind) {
       ActionObjectKind.agent => agent!.toJson(),
       ActionObjectKind.ability => ability!.toJson(),
+      ActionObjectKind.drawing => DrawingProvider.elementToJson(drawing!),
       ActionObjectKind.text => text!.toJson(),
       ActionObjectKind.image => image!.toJson(),
       ActionObjectKind.utility => utility!.toJson(),
-      ActionObjectKind.drawing ||
       ActionObjectKind.lineUp =>
         throw UnsupportedError('$kind records no field edits'),
     };
     return jsonDecode(jsonEncode(encoded)) as Map<String, dynamic>;
   }
 
+  /// The object [toJson] wrote. A free drawing comes back without its
+  /// screen path; whoever puts it on the canvas rebuilds it.
   factory ActionObjectState.fromJson(
     ActionObjectKind kind,
     Map<String, dynamic> json,
@@ -110,13 +112,14 @@ class ActionObjectState {
         ActionObjectState.agent(PlacedAgentNode.fromJson(json)),
       ActionObjectKind.ability =>
         ActionObjectState.ability(PlacedAbility.fromJson(json)),
+      ActionObjectKind.drawing =>
+        ActionObjectState.drawing(DrawingProvider.elementFromJson(json)),
       ActionObjectKind.text =>
         ActionObjectState.text(PlacedText.fromJson(json)),
       ActionObjectKind.image =>
         ActionObjectState.image(PlacedImage.fromJson(json)),
       ActionObjectKind.utility =>
         ActionObjectState.utility(PlacedUtility.fromJson(json)),
-      ActionObjectKind.drawing ||
       ActionObjectKind.lineUp =>
         throw UnsupportedError('$kind records no field edits'),
     };
