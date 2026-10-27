@@ -11,6 +11,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -235,5 +236,106 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
     expect(container.read(canvasSelectionProvider), {_a, _b, _c});
+  });
+
+  Offset positionOf(String id) => container
+      .read(agentProvider)
+      .firstWhere((agent) => agent.id == id)
+      .position;
+
+  Future<TestGesture> dragFrom(
+    WidgetTester tester,
+    Offset from,
+    Offset to,
+  ) async {
+    final gesture = await tester.startGesture(
+      from,
+      kind: PointerDeviceKind.mouse,
+      buttons: kPrimaryMouseButton,
+    );
+    for (var i = 1; i <= 10; i++) {
+      await gesture.moveTo(Offset.lerp(from, to, i / 10)!);
+      await tester.pump();
+    }
+    return gesture;
+  }
+
+  testWidgets('dragging a selected item moves the selection in one step', (
+    tester,
+  ) async {
+    await pumpCanvas(tester);
+    container.read(canvasSelectionProvider.notifier).select([_a, _b]);
+    await tester.pump();
+
+    final gesture = await dragFrom(
+      tester,
+      const Offset(110, 110),
+      const Offset(160, 130),
+    );
+    // Drawn where the drag has carried them, saved where they were.
+    expect(container.read(canvasGroupDragProvider), const Offset(50, 20));
+    expect(positionOf('a'), Offset.zero);
+    await gesture.up();
+    await tester.pump();
+
+    final moved = CoordinateSystem.instance.screenToCoordinate(
+      const Offset(50, 20),
+    );
+    expect(positionOf('a'), moved);
+    expect(positionOf('b'), moved);
+    expect(positionOf('c'), Offset.zero);
+    expect(container.read(canvasGroupDragProvider), isNull);
+    expect(container.read(canvasSelectionProvider), {_a, _b});
+
+    container.read(actionProvider.notifier).undoAction();
+    expect(positionOf('a'), Offset.zero);
+    expect(positionOf('b'), Offset.zero);
+  });
+
+  testWidgets('Escape during a drag leaves everything where it was', (
+    tester,
+  ) async {
+    await pumpCanvas(tester);
+    container.read(canvasSelectionProvider.notifier).select([_a, _b]);
+    await tester.pump();
+
+    final gesture = await dragFrom(
+      tester,
+      const Offset(110, 110),
+      const Offset(160, 130),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await gesture.up();
+    await tester.pump();
+
+    expect(positionOf('a'), Offset.zero);
+    expect(positionOf('b'), Offset.zero);
+    expect(container.read(canvasGroupDragProvider), isNull);
+    expect(container.read(canvasSelectionProvider), {_a, _b});
+  });
+
+  testWidgets('a drag stops where the selection would leave the map', (
+    tester,
+  ) async {
+    await pumpCanvas(tester);
+    container.read(canvasSelectionProvider.notifier).select([_a, _c]);
+    await tester.pump();
+
+    final gesture = await dragFrom(
+      tester,
+      const Offset(410, 310),
+      const Offset(410, 900),
+    );
+    await gesture.up();
+    await tester.pump();
+
+    // c's middle (410, 310) stops short of the bottom edge; a moves as far.
+    final margin =
+        CoordinateSystem.instance.coordinateToScreen(const Offset(20, 0)).dx;
+    final moved = CoordinateSystem.instance.screenToCoordinate(
+      Offset(0, 450 - margin - 310),
+    );
+    expect(positionOf('c').dy, closeTo(moved.dy, 0.001));
+    expect(positionOf('a'), positionOf('c'));
   });
 }

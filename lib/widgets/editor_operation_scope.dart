@@ -128,15 +128,24 @@ class EditorEntityLayer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     void hold(PointerEvent event) =>
         ref.read(editorPointersProvider.notifier).holdEntity(event.pointer, id);
+    // While the selection is dragged, a selected item is drawn where the
+    // drag has carried it; it moves for real when the drag ends.
+    final dragged = movesWithSelection(kind) &&
+        ref.watch(selectedCanvasIdsProvider.select((ids) => ids.contains(id)));
+    final shift = dragged ? ref.watch(canvasGroupDragProvider) : null;
     return Positioned.fill(
       child: Listener(
         behavior: HitTestBehavior.deferToChild,
         onPointerDown: hold,
         onPointerPanZoomStart: hold,
-        child: ItemOutlineScope(
-          id: id,
-          kind: kind,
-          child: Stack(clipBehavior: Clip.none, children: [child]),
+        // Always here, so the item keeps its state when a drag starts.
+        child: Transform.translate(
+          offset: shift ?? Offset.zero,
+          child: ItemOutlineScope(
+            id: id,
+            kind: kind,
+            child: Stack(clipBehavior: Clip.none, children: [child]),
+          ),
         ),
       ),
     );

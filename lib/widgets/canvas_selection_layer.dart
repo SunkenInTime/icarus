@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -75,10 +76,10 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   bool _boxAdds = false;
 
   /// The press that may become a click: where it went down, and whether a
-  /// box has started from it since.
+  /// box or a drag of the selection has started from it since.
   int? _clickPointer;
   Offset? _clickDown;
-  bool _clickBecameBox = false;
+  bool _pressBecameDrag = false;
 
   @override
   void initState() {
@@ -131,6 +132,12 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
       return KeyEventResult.handled;
     }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (key == LogicalKeyboardKey.escape && _dragOrigin != null) {
+      // Escape drops the drag; everything stays where it was.
+      _dragDropped = true;
+      ref.read(canvasGroupDragProvider.notifier).set(null);
+      return KeyEventResult.handled;
+    }
     if (key == LogicalKeyboardKey.escape && _box != null) {
       // Escape drops the box being drawn; the selection stays as it was.
       _boxOrigin = null;
@@ -191,8 +198,8 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     if (origin == null) return;
     // A box exists once the pointer has moved: a press that won the gesture
     // only because nothing else wanted it is still a click.
-    if (!_clickBecameBox) _teachOnce();
-    _clickBecameBox = true;
+    if (!_pressBecameDrag) _teachOnce();
+    _pressBecameDrag = true;
     setState(() => _box = Rect.fromPoints(origin, details.localPosition));
   }
 
@@ -298,14 +305,14 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     }
     _clickPointer = event.pointer;
     _clickDown = event.position;
-    _clickBecameBox = false;
+    _pressBecameDrag = false;
   }
 
   void _onPointerUp(PointerUpEvent event) {
     if (event.pointer != _clickPointer) return;
     _clickPointer = null;
     final down = _clickDown;
-    if (_clickBecameBox || down == null) return;
+    if (_pressBecameDrag || down == null) return;
     // A press that moved is a drag of something, not a click.
     if ((event.position - down).distance > kTouchSlop) return;
     _click(event);
@@ -335,8 +342,14 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
       }
       return null;
     }
-    final onCanvas = canvas.globalToLocal(event.position);
-    final point = _stored(onCanvas);
+    return _drawingAt(event.position);
+  }
+
+  /// The drawing on top under the screen point [global], if any.
+  SelectedItem? _drawingAt(Offset global) {
+    final canvas = _canvas;
+    if (canvas == null) return null;
+    final point = _stored(canvas.globalToLocal(global));
     final zoom = ref.read(screenZoomProvider);
     final reach = CoordinateSystem.instance
         .screenToCoordinate(Offset(_clickReach / zoom, 0))
@@ -354,22 +367,132 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   /// How far from a stroke a click still selects it, in screen pixels.
   static const double _clickReach = 6;
 
+  /// Whether a press takes hold of the selection to drag it: it lands on a
+  /// selected item that moves, and there is more than that item to move. A
+  /// lone selected item drags as it always has (Ctrl to copy it, onto an
+  /// agent to join it); a drawing has no drag of its own, so it is taken
+  /// alone too.
+  bool _grabsSelection(PointerDownEvent event) {
+    if (!widget.enabled || ref.read(canvasPanKeyHeldProvider)) return false;
+    final selection = ref.read(canvasSelectionProvider);
+    final held =
+        ref.read(editorPointersProvider)[event.pointer]?.entityIds ?? const {};
+    final pressed = held.isNotEmpty
+        ? held
+        : {if (_drawingAt(event.position) case final drawing?) drawing.id};
+    final grabbed = [
+      for (final item in selection)
+        if (movesWithSelection(item.kind) && pressed.contains(item.id)) item,
+    ];
+    if (grabbed.isEmpty) return false;
+    return selection.length > 1 ||
+        grabbed.single.kind == SelectableKind.drawing;
+  }
+
+  /// Where the selection's drag began, how far it may go each way so
+  /// nothing leaves the map, and whether Escape dropped it.
+  Offset? _dragOrigin;
+  Rect _dragRoom = Rect.zero;
+  bool _dragDropped = false;
+
+  void _onDragStart(PointerDownEvent event) {
+    _dragOrigin = event.localPosition;
+    _dragDropped = false;
+    _dragRoom = _roomToMove();
+    // A teammate's change to what is being dragged waits for the drop.
+    final pointers = ref.read(editorPointersProvider.notifier);
+    for (final item in ref.read(canvasSelectionProvider)) {
+      if (movesWithSelection(item.kind)) {
+        pointers.holdEntity(event.pointer, item.id);
+      }
+    }
+  }
+
+  void _onDragUpdate(Offset local) {
+    final origin = _dragOrigin;
+    if (origin == null || _dragDropped) return;
+    final moved = local - origin;
+    if (moved.distance > kTouchSlop) _pressBecameDrag = true;
+    if (!_pressBecameDrag) return;
+    ref.read(canvasGroupDragProvider.notifier).set(
+          Offset(
+            moved.dx.clamp(_dragRoom.left, _dragRoom.right),
+            moved.dy.clamp(_dragRoom.top, _dragRoom.bottom),
+          ),
+        );
+  }
+
+  void _onDragEnd() {
+    final shift = ref.read(canvasGroupDragProvider);
+    _dragOrigin = null;
+    ref.read(canvasGroupDragProvider.notifier).set(null);
+    if (shift == null || _dragDropped) return;
+    // The drag moved what is drawn; items are saved attack side up.
+    final world = CoordinateSystem.instance.screenToCoordinate(shift);
+    ref
+        .read(canvasSelectionProvider.notifier)
+        .moveSelected(_isAttack ? world : -world);
+  }
+
+  void _onDragCancel() {
+    _dragOrigin = null;
+    ref.read(canvasGroupDragProvider.notifier).set(null);
+  }
+
+  /// How far the selection can be dragged each way, in canvas pixels, before
+  /// the middle of something in it would leave the map.
+  Rect _roomToMove() {
+    final canvas = _canvas;
+    if (canvas == null) return Rect.zero;
+    final ids = {
+      for (final item in ref.read(canvasSelectionProvider))
+        if (movesWithSelection(item.kind)) item.id,
+    };
+    final points = <Offset>[
+      for (final (:item, :corners) in _registry.itemsIn(canvas))
+        if (ids.contains(item.id)) _middle(corners),
+      for (final drawing in ref.read(drawingProvider).elements)
+        if (ids.contains(drawing.id))
+          if (drawing.boundingBox case final bounds?) ...[
+            _drawn(bounds.min),
+            _drawn(bounds.max),
+          ],
+    ];
+    if (points.isEmpty) return Rect.zero;
+    final coordinates = CoordinateSystem.instance;
+    // Clear of the edge where a drop deletes (CoordinateSystem.isOutOfBounds).
+    final margin = coordinates.coordinateToScreen(const Offset(20, 0)).dx;
+    final size = coordinates.playAreaSize;
+    var spread = Rect.fromPoints(points.first, points.first);
+    for (final point in points.skip(1)) {
+      spread = spread.expandToInclude(Rect.fromPoints(point, point));
+    }
+    final left = math.min(0.0, margin - spread.left);
+    final top = math.min(0.0, margin - spread.top);
+    return Rect.fromLTRB(
+      left,
+      top,
+      math.max(left, size.width - margin - spread.right),
+      math.max(top, size.height - margin - spread.bottom),
+    );
+  }
+
   /// The selected drawings' extents on the canvas. Drawings are painted, not
   /// laid out, so their outline is drawn here rather than by the item.
   List<Rect> _selectedDrawingOutlines() {
-    final ids = {
-      for (final item in ref.watch(canvasSelectionProvider))
-        if (item.kind == SelectableKind.drawing) item.id,
-    };
+    final ids = ref.watch(selectedDrawingIdsProvider);
     if (ids.isEmpty) return const [];
+    // They follow a drag of the selection, as the drawings do.
+    final shift = ref.watch(canvasGroupDragProvider) ?? Offset.zero;
     return [
       for (final drawing in ref.watch(drawingProvider).elements)
         if (ids.contains(drawing.id))
           if (drawing.boundingBox case final bounds?)
-            Rect.fromPoints(
-              _drawn(bounds.min),
-              _drawn(bounds.max),
-            ).inflate(CoordinateSystem.instance.scale(drawing.thickness) / 2),
+            Rect.fromPoints(_drawn(bounds.min), _drawn(bounds.max))
+                .inflate(
+                  CoordinateSystem.instance.scale(drawing.thickness) / 2,
+                )
+                .shift(shift),
     ];
   }
 
@@ -391,6 +514,18 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
             child: RawGestureDetector(
               behavior: HitTestBehavior.opaque,
               gestures: {
+                if (selecting)
+                  _SelectionDragRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                          _SelectionDragRecognizer>(
+                    _SelectionDragRecognizer.new,
+                    (recognizer) => recognizer
+                      ..grabs = _grabsSelection
+                      ..onStart = _onDragStart
+                      ..onUpdate = _onDragUpdate
+                      ..onEnd = _onDragEnd
+                      ..onCancel = _onDragCancel,
+                  ),
                 if (selecting)
                   PanGestureRecognizer: GestureRecognizerFactoryWithHandlers<
                       PanGestureRecognizer>(
@@ -507,4 +642,57 @@ class _SelectionBoxPainter extends CustomPainter {
   @override
   bool shouldRepaint(_SelectionBoxPainter oldDelegate) =>
       box != oldDelegate.box || zoom != oldDelegate.zoom;
+}
+
+/// Takes a press on the selection away from the item under it the moment it
+/// lands, so the whole selection is dragged rather than that one item.
+class _SelectionDragRecognizer extends OneSequenceGestureRecognizer {
+  _SelectionDragRecognizer()
+      : super(
+          supportedDevices: const {PointerDeviceKind.mouse},
+          allowedButtonsFilter: (buttons) => buttons == kPrimaryMouseButton,
+        );
+
+  late bool Function(PointerDownEvent event) grabs;
+  late void Function(PointerDownEvent event) onStart;
+  late void Function(Offset local) onUpdate;
+  late VoidCallback onEnd;
+  late VoidCallback onCancel;
+
+  @override
+  bool isPointerAllowed(PointerDownEvent event) =>
+      super.isPointerAllowed(event) && grabs(event);
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    // Won before the item's own drag can start.
+    resolve(GestureDisposition.accepted);
+    onStart(event);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerMoveEvent) {
+      onUpdate(event.localPosition);
+    } else if (event is PointerUpEvent) {
+      onEnd();
+      stopTrackingPointer(event.pointer);
+    } else if (event is PointerCancelEvent) {
+      onCancel();
+      stopTrackingPointer(event.pointer);
+    }
+  }
+
+  @override
+  void rejectGesture(int pointer) {
+    onCancel();
+    super.rejectGesture(pointer);
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {}
+
+  @override
+  String get debugDescription => 'selection drag';
 }

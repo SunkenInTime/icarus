@@ -143,4 +143,32 @@ void main() {
       (kind: SelectableKind.drawing, id: 'd'),
     });
   });
+
+  test('moving a selection moves agents and drawings, and undoes in one step',
+      () {
+    final container = _container();
+    container.read(agentProvider.notifier).fromHive([
+      _agent('a', const Offset(100, 100)),
+      _agent('b', const Offset(300, 300)),
+    ]);
+    container.read(drawingProvider.notifier).fromHive([_line('d')]);
+    final selection = container.read(canvasSelectionProvider.notifier);
+
+    selection.select([_a, (kind: SelectableKind.drawing, id: 'd')]);
+    selection.moveSelected(const Offset(50, 20));
+
+    Offset agentAt(String id) => container
+        .read(agentProvider)
+        .firstWhere((agent) => agent.id == id)
+        .position;
+    Line line() => container.read(drawingProvider).elements.single as Line;
+    expect(agentAt('a'), const Offset(150, 120));
+    expect(agentAt('b'), const Offset(300, 300));
+    expect(line().lineStart, const Offset(150, 120));
+
+    container.read(actionProvider.notifier).undoAction();
+
+    expect(agentAt('a'), const Offset(100, 100));
+    expect(line().lineStart, const Offset(100, 100));
+  });
 }

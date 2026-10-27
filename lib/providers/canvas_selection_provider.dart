@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -47,6 +49,33 @@ final selectedCanvasIdsProvider = Provider<Set<String>>((ref) {
       if (lineupIds.contains(link.id)) ...[link.originId, link.landingId],
   };
 });
+
+/// The ids of the selected drawings.
+final selectedDrawingIdsProvider = Provider<Set<String>>((ref) {
+  return {
+    for (final item in ref.watch(canvasSelectionProvider))
+      if (item.kind == SelectableKind.drawing) item.id,
+  };
+});
+
+/// How far a drag of the selection has carried it so far, in canvas pixels,
+/// or null when none is under way. The selected items are drawn this far
+/// from where they are saved until the drag ends and moves them.
+final canvasGroupDragProvider =
+    NotifierProvider<CanvasGroupDragNotifier, Offset?>(
+  CanvasGroupDragNotifier.new,
+);
+
+class CanvasGroupDragNotifier extends Notifier<Offset?> {
+  @override
+  Offset? build() => null;
+
+  void set(Offset? offset) => state = offset;
+}
+
+/// Whether [kind] moves when the selection is dragged. A lineup marks the
+/// spot its screenshots were taken from, so it stays where it is.
+bool movesWithSelection(SelectableKind kind) => kind != SelectableKind.lineup;
 
 class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
   @override
@@ -121,6 +150,64 @@ class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
 
   void clear() {
     if (state.isNotEmpty) state = const {};
+  }
+
+  /// Moves everything selected that moves (see [movesWithSelection]) by
+  /// [by], in world coordinates, as one undo step.
+  void moveSelected(Offset by) {
+    final ids = {
+      for (final item in state)
+        if (movesWithSelection(item.kind)) item.id,
+    };
+    if (ids.isEmpty ||
+        by == Offset.zero ||
+        !ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
+      return;
+    }
+    ref.read(actionProvider.notifier).performTransaction(
+      groups: const [],
+      mutation: () {
+        // In each kind's own order: a move brings an item to the front, so
+        // the moved items keep their order among themselves.
+        for (final agent in [...ref.read(agentProvider)]) {
+          if (!ids.contains(agent.id)) continue;
+          ref
+              .read(agentProvider.notifier)
+              .updatePosition(agent.position + by, agent.id);
+        }
+        for (final ability in [...ref.read(abilityProvider)]) {
+          if (!ids.contains(ability.id)) continue;
+          ref
+              .read(abilityProvider.notifier)
+              .updatePosition(ability.position + by, ability.id);
+        }
+        for (final text in [...ref.read(textProvider)]) {
+          if (!ids.contains(text.id)) continue;
+          ref
+              .read(textProvider.notifier)
+              .updatePosition(text.position + by, text.id);
+        }
+        for (final image in [...ref.read(placedImageProvider).images]) {
+          if (!ids.contains(image.id)) continue;
+          ref
+              .read(placedImageProvider.notifier)
+              .updatePosition(image.position + by, image.id);
+        }
+        for (final utility in [...ref.read(utilityProvider)]) {
+          if (!ids.contains(utility.id)) continue;
+          ref
+              .read(utilityProvider.notifier)
+              .updatePosition(utility.position + by, utility.id);
+        }
+        final drawingIds = {
+          for (final drawing in ref.read(drawingProvider).elements)
+            if (ids.contains(drawing.id)) drawing.id,
+        };
+        if (drawingIds.isNotEmpty) {
+          ref.read(drawingProvider.notifier).translateDrawings(drawingIds, by);
+        }
+      },
+    );
   }
 
   /// Deletes everything selected as one undo step.
