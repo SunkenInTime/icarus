@@ -469,6 +469,26 @@ class DrawingProvider extends Notifier<DrawingState> {
     _triggerRepaint();
   }
 
+  /// Adds finished [drawings] (a paste) on top, each recorded as its own
+  /// addition (wrap the call in performTransaction for one undo step).
+  void addDrawings(List<DrawingElement> drawings) {
+    if (!ref.canEditPages || drawings.isEmpty) return;
+    state = state.copyWith(elements: [...state.elements, ...drawings]);
+    for (final drawing in drawings) {
+      ref.read(actionProvider.notifier).addAction(
+            UserAction(
+              type: ActionType.addition,
+              id: drawing.id,
+              group: ActionGroup.drawing,
+              objectDelta: ObjectHistoryDelta(
+                after: ActionObjectState.drawing(drawing),
+              ),
+            ),
+          );
+    }
+    _triggerRepaint();
+  }
+
   /// Deletes the drawings in [ids], each recorded as its own deletion (wrap
   /// the call in performTransaction for one undo step).
   void deleteDrawingsById(Set<String> ids) {

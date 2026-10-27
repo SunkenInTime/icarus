@@ -7,15 +7,19 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
+import 'package:icarus/providers/canvas_clipboard_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 
 /// Whether Space is held to move the map: while it is, a drag anywhere on
@@ -43,8 +47,8 @@ class _CanvasPanKeyHeld extends Notifier<bool> {
 /// middle-button drag and the scroll wheel move and zoom the map as before.
 ///
 /// A press on the canvas gives it the keyboard, so the selection's keys
-/// (Escape, Delete, Backspace, select all) and Space reach it, and never
-/// fire from a dialog, a menu or the library.
+/// (Escape, Delete, Backspace, select all, copy, cut, paste) and Space
+/// reach it, and never fire from a dialog, a menu or the library.
 class CanvasSelectionLayer extends ConsumerStatefulWidget {
   const CanvasSelectionLayer({
     required this.enabled,
@@ -175,7 +179,94 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
       selection.selectAll();
       return KeyEventResult.handled;
     }
+    bool primaryWith(LogicalKeyboardKey key) =>
+        IcarusKeyBinding(trigger: key, primary: true)
+            .toActivator()
+            .accepts(event, HardwareKeyboard.instance);
+    if (primaryWith(LogicalKeyboardKey.keyC) && hasSelection) {
+      _copy();
+      return KeyEventResult.handled;
+    }
+    if (primaryWith(LogicalKeyboardKey.keyX) && hasSelection) {
+      unawaited(_cut());
+      return KeyEventResult.handled;
+    }
+    if (primaryWith(LogicalKeyboardKey.keyV) &&
+        ref.read(canvasClipboardProvider) != null) {
+      unawaited(_paste());
+      return KeyEventResult.handled;
+    }
     return KeyEventResult.ignored;
+  }
+
+  CanvasClipboard? _copy() {
+    final clipboard = ref.read(canvasClipboardProvider.notifier);
+    final copied = clipboard.copySelection(
+      (pictures) => readCopiedPictures(ref, pictures),
+    );
+    return copied == 0 ? null : ref.read(canvasClipboardProvider);
+  }
+
+  /// Copies the selection, then deletes it once its pictures are read: a
+  /// deleted picture may not be there to read later. Only what was cut is
+  /// deleted, and only while its page is still the one on screen.
+  Future<void> _cut() async {
+    final cut = ref.read(canvasSelectionProvider);
+    final page = ref.read(strategyPageSessionProvider).activePageId;
+    final copied = _copy();
+    if (copied == null) return;
+    await copied.pictures;
+    if (!mounted ||
+        ref.read(strategyPageSessionProvider).activePageId != page) {
+      return;
+    }
+    ref.read(canvasSelectionProvider.notifier).deleteItems(cut);
+  }
+
+  bool _pasting = false;
+
+  Future<void> _paste() async {
+    if (_pasting) return;
+    _pasting = true;
+    try {
+      final refusal = await ref.read(canvasClipboardProvider.notifier).paste();
+      if (refusal == null || !mounted) return;
+      final copiedOn = ref.read(canvasClipboardProvider)?.map;
+      Settings.showToast(
+        message: switch (refusal) {
+          PasteRefusal.otherMap => copiedOn == null
+              ? 'What you copied is from another map.'
+              : 'What you copied is from ${Maps.displayName(copiedOn)}. Paste '
+                  'it into a strategy on ${Maps.displayName(copiedOn)}.',
+          PasteRefusal.picturesMissing =>
+            "A picture in what you copied hadn't loaded when you copied it, "
+                'so nothing was pasted. Copy it again once it shows.',
+          PasteRefusal.pageChanged =>
+            'The page changed before the paste finished, so nothing was '
+                'pasted.',
+          PasteRefusal.pictureTooLarge =>
+            'A picture in what you copied is over 15 MB, more than a cloud '
+                'strategy takes, so nothing was pasted.',
+        },
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Paste failed: $error',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'canvas_selection_layer.paste',
+        promptUser: false,
+      );
+      if (mounted) {
+        Settings.showToast(
+          message: "Couldn't paste what you copied.",
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+      }
+    } finally {
+      _pasting = false;
+    }
   }
 
   /// The first time a drag on the map draws a box instead of moving the map,

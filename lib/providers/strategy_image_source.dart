@@ -107,6 +107,13 @@ StrategyImageSource readStrategyImageSource(
 ) =>
     _strategyImageSource(ref.read, image);
 
+/// [readStrategyImageSource] for code that holds a provider's [Ref].
+StrategyImageSource readStrategyImageSourceOf(
+  Ref ref,
+  StrategyImageKey image,
+) =>
+    _strategyImageSource(ref.read, image);
+
 StrategyImageSource _strategyImageSource(
   T Function<T>(ProviderListenable<T> provider) watch,
   StrategyImageKey image,

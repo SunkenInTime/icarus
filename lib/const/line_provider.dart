@@ -377,9 +377,12 @@ class LineUpGraph {
   /// The lineups [linkIds] and the spots they aim at, ready to be put on
   /// another page, each under a new id that carries its original's (see
   /// page_copy_id.dart). Spots they share stay shared in the copy.
-  LineUpGraph copyOfLinks(Set<String> linkIds) {
+  LineUpGraph copyOfLinks(
+    Set<String> linkIds, {
+    String Function(String id) newId = newPageCopyId,
+  }) {
     final newIds = <String, String>{};
-    String renamed(String id) => newIds[id] ??= newPageCopyId(id);
+    String renamed(String id) => newIds[id] ??= newId(id);
     final part = linksWithSpots(linkIds);
     return LineUpGraph(
       origins: [
@@ -1396,6 +1399,20 @@ class LineUpProvider extends Notifier<LineUpState> {
                 : link,
         ]);
     }
+  }
+
+  /// Adds [copies] (a paste: lineups whose ids are all new) as one undoable
+  /// addition.
+  void addCopies(LineUpGraph copies) {
+    if (!ref.canEditPages || copies.links.isEmpty) return;
+    _apply(from: LineUpGraph.empty, to: copies);
+    _record(
+      LineUpGraphAction(
+        type: ActionType.addition,
+        id: copies.links.first.id,
+        after: copies.deepCopy(),
+      ),
+    );
   }
 
   // --- Deletions -----------------------------------------------------------

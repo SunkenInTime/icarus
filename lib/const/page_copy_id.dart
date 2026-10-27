@@ -34,3 +34,15 @@ String pageCopyRoot(String id) {
 /// A fresh id for a copy of [id] on another page.
 String newPageCopyId(String id) =>
     '${pageCopyRoot(id)}$_copyMark${const Uuid().v4()}';
+
+/// The longest root a copy id keeps, URL-encoded, as the server's
+/// (convex/lib/pageCopyId.ts): a longer one would make the op's storage
+/// key too long to keep, so that copy gets a plain id.
+const _maxKeptRootLength = 80;
+
+/// [newPageCopyId], or a plain id when [id]'s root is too long for the copy
+/// to be stored to send (only an item imported with an unusually long id).
+String newStorableCopyId(String id) =>
+    Uri.encodeComponent(pageCopyRoot(id)).length > _maxKeptRootLength
+        ? const Uuid().v4()
+        : newPageCopyId(id);
