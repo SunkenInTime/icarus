@@ -23,7 +23,7 @@ List<StrategyOp> pageCopyContentOps({
   final newLineupId = _sharedCopyIds();
   return [
     for (final element in elements)
-      _copiedElement(pageId, element, _copyId(element.publicId)),
+      _copiedElement(pageId, element, newStorableCopyId(element.publicId)),
     for (final lineup in lineups)
       _copiedLineupGroup(pageId, lineup, newLineupId),
   ];
@@ -67,21 +67,11 @@ RemotePageSnapshot pageMadeHere({
   );
 }
 
-/// The longest root a copy id keeps, URL-encoded, as the server's
-/// (convex/lib/pageCopyId.ts): a longer one would make the op's storage
-/// key too long to keep, so that copy gets a plain id.
-const _maxKeptRootLength = 80;
-
-String _copyId(String id) =>
-    Uri.encodeComponent(pageCopyRoot(id)).length > _maxKeptRootLength
-        ? const Uuid().v4()
-        : newPageCopyId(id);
-
 /// One copy id per id, shared by every lineup group copied: a spot or
 /// lineup named twice is the same copy both times.
 String Function(String id) _sharedCopyIds() {
   final ids = <String, String>{};
-  return (id) => ids[id] ??= _copyId(id);
+  return (id) => ids[id] ??= newStorableCopyId(id);
 }
 
 ElementAddOp _copiedElement(String pageId, DrawnRow element, String id) {

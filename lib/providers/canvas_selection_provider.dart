@@ -220,7 +220,12 @@ class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
 
   /// Deletes everything selected as one undo step.
   void deleteSelected() {
-    final selection = state;
+    deleteItems(state);
+    clear();
+  }
+
+  /// Deletes [selection] (items of the page on screen) as one undo step.
+  void deleteItems(Set<SelectedItem> selection) {
     if (selection.isEmpty ||
         !ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
       return;

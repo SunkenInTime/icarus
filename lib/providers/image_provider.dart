@@ -236,6 +236,23 @@ class PlacedImageProvider extends Notifier<ImageState> {
     }
   }
 
+  /// Places [image], a copy whose picture is already saved where this
+  /// strategy keeps its pictures (a paste), as an undoable addition.
+  void addImageCopy(PlacedImage image) {
+    if (!ref.canEditPages) return;
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.addition,
+            id: image.id,
+            group: ActionGroup.image,
+            objectDelta: ObjectHistoryDelta(
+              after: ActionObjectState.image(image),
+            ),
+          ),
+        );
+    state = state.copyWith(images: [...state.images, image]);
+  }
+
   void removeImageAsAction(String id) {
     if (!ref.canEditPages) return;
     final index = PlacedWidget.getIndexByID(id, state.images);
