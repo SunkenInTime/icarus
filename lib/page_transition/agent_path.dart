@@ -74,8 +74,20 @@ class AgentTransitionPathPlanner {
     final native = navigation?.geometry ?? geometry?.navigationGeometry;
     Offset centerFor(Offset position) =>
         position + coordinateSystem.virtualOffsetToWorld(storedAgentAnchor);
-    // Without map data the overlay moves agents straight.
-    if (geometry == null && native == null) return const {};
+    // Without map data agents go straight. A path, not an empty plan: the
+    // overlay draws a path from the agent's center, so an agent that changes
+    // form between pages (a cone or circle composite) stays where it stands.
+    if (geometry == null && native == null) {
+      return {
+        for (final entry in entries)
+          if (entry.kind == TransitionKind.move &&
+              entry.visualWidget is PlacedAgentNode)
+            entry.id: AgentTransitionPath.straight(
+              centerFor(entry.startPos),
+              centerFor(entry.endPos),
+            ),
+      };
+    }
     final observerHeight =
         navigation?.observerHeightCm ?? geometry!.observerHeight;
     final defaultFloor = navigation?.defaultFloorElevationCm ??

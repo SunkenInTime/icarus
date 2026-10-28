@@ -332,7 +332,7 @@ void main() {
     expect(path.positionAt(.5), Offset.lerp(apart, onFloor, .5));
     expect(path.positionAt(1), onFloor);
   });
-  test('missing navigation plans no route, so the overlay moves straight', () {
+  test('missing navigation moves agents straight between their centers', () {
     final coordinates = CoordinateSystem(playAreaSize: const Size(1920, 1080));
     const start = Offset(200, 300), end = Offset(500, 600);
     final routes = AgentTransitionPathPlanner.plan(
@@ -347,6 +347,10 @@ void main() {
       endAgentSize: 40,
       coordinateSystem: coordinates,
     );
-    expect(routes, isEmpty);
+    final anchor = coordinates.virtualOffsetToWorld(storedAgentAnchor);
+    final path = routes['sova']!;
+    expect(path.positionAt(0), start + anchor);
+    expect(path.positionAt(.5), (start + end) / 2 + anchor);
+    expect(path.positionAt(1), end + anchor);
   });
 }
