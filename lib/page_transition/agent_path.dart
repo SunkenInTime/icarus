@@ -14,28 +14,20 @@ import 'package:icarus/view_cone/vision_geometry.dart';
 class AgentTransitionPath {
   AgentTransitionPath(List<Offset> points)
       : points = List<Offset>.unmodifiable(points),
-        _cumulativeDistances = _buildCumulativeDistances(points),
-        _unreachableDestination = null;
+        _cumulativeDistances = _buildCumulativeDistances(points);
 
-  /// Keep an unreachable move at its source until the next page takes over.
-  /// Inventing a straight route would visibly move the agent through a wall.
-  AgentTransitionPath.unreachable(Offset start, Offset end)
-      : points = List.unmodifiable([start]),
-        _cumulativeDistances = const [0],
-        _unreachableDestination = end;
+  /// A move the map has no route for (off the map, onto a box, no map data)
+  /// goes straight, as every other item does. It may cross a wall; an agent
+  /// that holds still and then jumps reads as broken.
+  AgentTransitionPath.straight(Offset start, Offset end) : this([start, end]);
 
   final List<Offset> points;
   final List<double> _cumulativeDistances;
-  final Offset? _unreachableDestination;
-  bool get isReachable => _unreachableDestination == null;
 
   double get length =>
       _cumulativeDistances.isEmpty ? 0 : _cumulativeDistances.last;
 
   Offset positionAt(double progress) {
-    if (_unreachableDestination != null) {
-      return progress >= 1 ? _unreachableDestination : points.first;
-    }
     if (points.isEmpty) return Offset.zero;
     if (points.length == 1 || length <= _epsilon) return points.last;
 
@@ -75,7 +67,6 @@ class AgentTransitionPathPlanner {
     required List<PageTransitionEntry> entries,
     required VisionGeometryMap? geometry,
     NavigationGeometryMap? navigation,
-    bool requireNavigation = false,
     required double startAgentSize,
     required double endAgentSize,
     required CoordinateSystem coordinateSystem,
@@ -83,20 +74,7 @@ class AgentTransitionPathPlanner {
     final native = navigation?.geometry ?? geometry?.navigationGeometry;
     Offset centerFor(Offset position) =>
         position + coordinateSystem.virtualOffsetToWorld(storedAgentAnchor);
-    if (requireNavigation && native == null) {
-      // Missing map data cannot establish a safe route. Page navigation still
-      // finishes, but agents wait for the destination page instead of crossing
-      // walls along the overlay's default straight-line interpolation.
-      return {
-        for (final entry in entries)
-          if (entry.kind == TransitionKind.move &&
-              entry.visualWidget is PlacedAgentNode)
-            entry.id: AgentTransitionPath.unreachable(
-              centerFor(entry.startPos),
-              centerFor(entry.endPos),
-            ),
-      };
-    }
+    // Without map data the overlay moves agents straight.
     if (geometry == null && native == null) return const {};
     final observerHeight =
         navigation?.observerHeightCm ?? geometry!.observerHeight;
@@ -144,7 +122,7 @@ class AgentTransitionPathPlanner {
               );
               return route.isReachable
                   ? AgentTransitionPath(route.points)
-                  : AgentTransitionPath.unreachable(startCenter, endCenter);
+                  : AgentTransitionPath.straight(startCenter, endCenter);
             }
             final routeElevation = startElevation == null
                 ? endElevation
@@ -165,7 +143,7 @@ class AgentTransitionPathPlanner {
 }
 
 /// Legacy SVG movement fallback for maps without a baked player navmesh.
-/// Failed searches never manufacture a route through known collision.
+/// A failed search goes straight (see [AgentTransitionPath.straight]).
 class AgentTransitionPathfinder {
   const AgentTransitionPathfinder({
     this.gridSpacing = 18,
@@ -191,14 +169,14 @@ class AgentTransitionPathfinder {
 
     final bounds = layer.boundary?.outerGroup.bounds;
     if (bounds == null || !layer.contains(start) || !layer.contains(end)) {
-      return AgentTransitionPath.unreachable(start, end);
+      return AgentTransitionPath.straight(start, end);
     }
 
     final origin = bounds.topLeft;
     final startNode = _nearestConnectableNode(start, origin, layer);
     final endNode = _nearestConnectableNode(end, origin, layer);
     if (startNode == null || endNode == null) {
-      return AgentTransitionPath.unreachable(start, end);
+      return AgentTransitionPath.straight(start, end);
     }
 
     final open = <_GridNode>{startNode};
@@ -249,7 +227,7 @@ class AgentTransitionPathfinder {
       }
     }
 
-    return AgentTransitionPath.unreachable(start, end);
+    return AgentTransitionPath.straight(start, end);
   }
 
   _GridNode? _nearestConnectableNode(

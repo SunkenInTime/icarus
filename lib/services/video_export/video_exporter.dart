@@ -221,7 +221,6 @@ class VideoExporter {
           entries: entries,
           geometry: geometry,
           navigation: navigation,
-          requireNavigation: requireNavigation,
           startAgentSize: page.settings.agentSize,
           endAgentSize: nextPage.settings.agentSize,
           coordinateSystem: CoordinateSystem.instance,

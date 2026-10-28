@@ -22,14 +22,11 @@ void main() {
       expect(path.positionAt(2), const Offset(8, 9));
     });
 
-    test('unreachable moves stay at their source until the destination page',
-        () {
-      final path = AgentTransitionPath.unreachable(
-          const Offset(2, 3), const Offset(8, 9));
-      expect(path.isReachable, isFalse);
-      expect(path.length, 0);
-      expect(path.positionAt(.5), const Offset(2, 3));
-      expect(path.positionAt(.999), const Offset(2, 3));
+    test('a move with no route goes straight, never holding then jumping', () {
+      final path =
+          AgentTransitionPath.straight(const Offset(2, 3), const Offset(8, 9));
+      expect(path.positionAt(0), const Offset(2, 3));
+      expect(path.positionAt(.5), const Offset(5, 6));
       expect(path.positionAt(1), const Offset(8, 9));
     });
   });
@@ -84,10 +81,10 @@ void main() {
 
     const boundedSearch = AgentTransitionPathfinder(
         gridSpacing: 10, clearance: 2, maxExpandedNodes: 0);
-    final unreachable = boundedSearch.findPath(
+    final unrouted = boundedSearch.findPath(
         start: const Offset(20, 30), end: const Offset(100, 30), layer: layer);
-    expect(unreachable.isReachable, isFalse);
-    expect(unreachable.positionAt(.5), const Offset(20, 30));
+    expect(unrouted.points, const [Offset(20, 30), Offset(100, 30)]);
+    expect(unrouted.positionAt(.5), const Offset(60, 30));
   });
 
   test('smoothed paths preserve clearance from wall corners', () {
