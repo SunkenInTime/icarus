@@ -737,8 +737,10 @@ void main() {
     expect(folder.listSync(), isEmpty);
     expect(toldCancelled, isTrue);
     ignoreTestFontOverflow(tester);
-    // Let the toast leave.
-    await tester.pump(const Duration(seconds: 10));
+    // Take the toast away now: its timer runs on real time and would close
+    // it after the test, on a torn-down tree.
+    toastification.dismissAll(delayForAnimation: false);
+    await tester.pump(const Duration(seconds: 4));
   });
 
   testWidgets('a finished capture closes only its own dialog', (tester) async {
