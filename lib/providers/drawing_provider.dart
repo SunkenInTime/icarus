@@ -406,6 +406,15 @@ class DrawingProvider extends Notifier<DrawingState> {
     _triggerRepaint();
   }
 
+  /// Deletes the drawings in [ids], each recorded as its own deletion (wrap
+  /// the call in performTransaction for one undo step).
+  void deleteDrawingsById(Set<String> ids) {
+    // Last first, so the indexes still to delete stay where they were.
+    for (final (index, drawing) in [...state.elements.indexed].reversed) {
+      if (ids.contains(drawing.id)) deleteDrawing(index);
+    }
+  }
+
   void onErase(Offset mousePos) {
     if (!ref.canEditPages) return;
     final Set<int> indicesToDelete = {

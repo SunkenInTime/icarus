@@ -17,6 +17,7 @@ enum IcarusShortcutAction {
   switchSide,
   switchSideThisPage,
   openDeleteMenu,
+  selectAll,
   rotateClockwise,
   rotateCounterclockwise,
   saveStrategy,
@@ -304,6 +305,18 @@ class ShortcutInfo {
       intent: ContextualDeleteIntent(),
       searchAliases: ['delete'],
     ),
+    // Taken by CanvasSelectionLayer while the canvas is on screen, beside the
+    // fixed Delete, Backspace and Escape.
+    IcarusShortcutDefinition(
+      action: IcarusShortcutAction.selectAll,
+      title: 'Select All',
+      defaultBinding: IcarusKeyBinding(
+        trigger: LogicalKeyboardKey.keyA,
+        primary: true,
+      ),
+      intent: SelectAllIntent(),
+      searchAliases: ['select'],
+    ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.rotateClockwise,
       title: 'Rotate Clockwise',
@@ -523,6 +536,10 @@ class ToggleErasingIntent extends Intent {
 
 class ContextualDeleteIntent extends Intent {
   const ContextualDeleteIntent();
+}
+
+class SelectAllIntent extends Intent {
+  const SelectAllIntent();
 }
 
 class RotateHoveredIntent extends Intent {

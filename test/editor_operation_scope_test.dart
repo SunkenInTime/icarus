@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 
 void main() {
@@ -161,6 +162,7 @@ void main() {
                       EditorEntityLayer(
                         key: ValueKey(id),
                         id: id,
+                        kind: SelectableKind.agent,
                         child: Positioned(
                           left: left,
                           top: 0,
