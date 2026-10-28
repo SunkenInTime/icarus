@@ -171,12 +171,10 @@ void main() {
           entries: entries,
           geometry: null,
           navigation: navigation,
-          requireNavigation: true,
           startAgentSize: 0,
           endAgentSize: 0,
           coordinateSystem: coordinates)['sova']!;
       final defense = route();
-      expect(defense.isReachable, isTrue, reason: 'defense offset $offset');
       expect(defense.points.first, start);
       expect(defense.points.last, end);
       expect(defense.points.any((p) => p.dy >= 20), isTrue);
@@ -242,12 +240,12 @@ void main() {
       ],
       geometry: null,
       navigation: navigation,
-      requireNavigation: true,
       startAgentSize: 0,
       endAgentSize: 0,
       coordinateSystem: coordinates,
     );
-    expect(routes['sova']!.isReachable, isTrue);
+    expect(navigation.geometry.findRoute(start: start, end: end).isReachable,
+        isTrue);
     expect(routes['sova']!.points.first, start);
     expect(routes['sova']!.points.last, end);
   });
@@ -284,37 +282,75 @@ void main() {
         throwsA(isA<FormatException>().having((error) => error.message,
             'message', 'Invalid world gzip checksum or length.')));
   });
-  for (final requireNavigation in [false, true]) {
-    test(
-        'missing navigation ${requireNavigation ? 'holds native movement' : 'preserves the legacy fallback'}',
-        () {
-      final coordinates =
-          CoordinateSystem(playAreaSize: const Size(1920, 1080));
-      const start = Offset(200, 300), end = Offset(500, 600);
-      final routes = AgentTransitionPathPlanner.plan(
-        entries: [
-          PageTransitionEntry.move(
-            from:
-                PlacedAgent(id: 'sova', type: AgentType.sova, position: start),
-            to: PlacedAgent(id: 'sova', type: AgentType.sova, position: end),
-          )
-        ],
-        geometry: null,
-        requireNavigation: requireNavigation,
-        startAgentSize: 20,
-        endAgentSize: 40,
-        coordinateSystem: coordinates,
-      );
-      if (!requireNavigation) {
-        expect(routes, isEmpty);
-      } else {
-        final path = routes['sova']!;
-        expect(path.isReachable, isFalse);
-        expect(path.positionAt(.999),
-            start + coordinates.virtualOffsetToWorld(storedAgentAnchor));
-        expect(path.positionAt(1),
-            end + coordinates.virtualOffsetToWorld(storedAgentAnchor));
-      }
-    });
-  }
+  test('an agent the map has no route for moves straight (an Ascent box top)',
+      () async {
+    final navigation = await loadNavigationGeometry(MapValue.ascent);
+    final mesh = navigation.geometry;
+    double? floorAt(Offset point) => mesh.floorHeightAt(point,
+        preferredElevation: navigation.defaultFloorElevationCm);
+    Offset centerOf(NavigationTriangle triangle) =>
+        triangle.vertices
+            .map((vertex) => mesh.vertices[vertex].position)
+            .reduce((a, b) => a + b) /
+        3;
+    final sizes = <int, int>{};
+    for (final component in mesh.components) {
+      sizes[component] = (sizes[component] ?? 0) + 1;
+    }
+    final mainFloor =
+        sizes.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+    final onFloor = centerOf(mesh.triangles.firstWhere(
+        (triangle) => mesh.components[triangle.polygon] == mainFloor));
+    // A patch the walking mesh doesn't join to the floor around it.
+    final apart = mesh.triangles.map(centerOf).firstWhere((point) =>
+        mesh
+            .findRoute(
+                start: point,
+                end: onFloor,
+                startFloorHeight: floorAt(point),
+                endFloorHeight: floorAt(onFloor))
+            .failure ==
+        'disconnected-floors');
+    final coordinates = CoordinateSystem(playAreaSize: const Size(1920, 1080));
+    final anchor = coordinates.virtualOffsetToWorld(storedAgentAnchor);
+    final path = AgentTransitionPathPlanner.plan(
+      entries: [
+        PageTransitionEntry.move(
+          from: PlacedAgent(
+              id: 'sova', type: AgentType.sova, position: apart - anchor),
+          to: PlacedAgent(
+              id: 'sova', type: AgentType.sova, position: onFloor - anchor),
+        )
+      ],
+      geometry: null,
+      navigation: navigation,
+      startAgentSize: 0,
+      endAgentSize: 0,
+      coordinateSystem: coordinates,
+    )['sova']!;
+    expect(path.positionAt(0), apart);
+    expect(path.positionAt(.5), Offset.lerp(apart, onFloor, .5));
+    expect(path.positionAt(1), onFloor);
+  });
+  test('missing navigation moves agents straight between their centers', () {
+    final coordinates = CoordinateSystem(playAreaSize: const Size(1920, 1080));
+    const start = Offset(200, 300), end = Offset(500, 600);
+    final routes = AgentTransitionPathPlanner.plan(
+      entries: [
+        PageTransitionEntry.move(
+          from: PlacedAgent(id: 'sova', type: AgentType.sova, position: start),
+          to: PlacedAgent(id: 'sova', type: AgentType.sova, position: end),
+        )
+      ],
+      geometry: null,
+      startAgentSize: 20,
+      endAgentSize: 40,
+      coordinateSystem: coordinates,
+    );
+    final anchor = coordinates.virtualOffsetToWorld(storedAgentAnchor);
+    final path = routes['sova']!;
+    expect(path.positionAt(0), start + anchor);
+    expect(path.positionAt(.5), (start + end) / 2 + anchor);
+    expect(path.positionAt(1), end + anchor);
+  });
 }

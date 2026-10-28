@@ -504,10 +504,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       VisionGeometryMap? transitionGeometry;
       NavigationGeometryMap? transitionNavigation;
       final map = ref.read(mapProvider).currentMap;
-      final requireNavigation = ref.read(worldGeometryEnabledProvider(map));
+      final usesNavigationMesh = ref.read(worldGeometryEnabledProvider(map));
       if (needsAgentRouting) {
         try {
-          if (requireNavigation) {
+          if (usesNavigationMesh) {
             transitionNavigation =
                 await ref.read(navigationGeometryProvider(map).future);
           } else {
@@ -515,8 +515,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
                 await ref.read(viewConeGeometryProvider(map).future);
           }
         } on Object {
-          // The provider reports the failure. Required native routes hold at
-          // their sources, so changing pages cannot invent movement through walls.
+          // The provider reports the failure. Agents then move straight.
         }
       }
 
@@ -541,7 +540,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         entries: entries,
         geometry: transitionGeometry,
         navigation: transitionNavigation,
-        requireNavigation: requireNavigation,
         startAgentSize: startSettings.agentSize,
         endAgentSize: endSettings.agentSize,
         coordinateSystem: CoordinateSystem.instance,
