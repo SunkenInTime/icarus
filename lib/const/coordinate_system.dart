@@ -19,7 +19,13 @@ class CoordinateSystem {
     isScreenshot = value;
   }
 
-  static CoordinateSystem? _instance;
+  /// The coordinates of the canvas on screen, set by that canvas as it lays
+  /// out. A screen without a canvas must not set them: every item, lineup
+  /// line and stroke on the canvas converts through them. Until a canvas has
+  /// laid out, the capture size stands in, so a strategy can load before its
+  /// canvas is on screen.
+  static CoordinateSystem _instance =
+      CoordinateSystem._(playAreaSize: screenShotSize);
 
   // Use screenshot dimensions when isScreenshot is true; otherwise use play area size
   Size get _effectiveSize => isScreenshot ? screenShotSize : _playAreaSize;
@@ -100,7 +106,7 @@ class CoordinateSystem {
 
   factory CoordinateSystem({required Size playAreaSize}) {
     _instance = CoordinateSystem._(playAreaSize: playAreaSize);
-    return _instance!;
+    return _instance;
   }
 
   /// The coordinates every capture draws in: 1920×1080, always in screenshot
@@ -133,12 +139,7 @@ class CoordinateSystem {
       _lastZoneIsCapture = zone[_captureZoneKey] is CoordinateSystem;
     }
     if (_lastZoneIsCapture) return _capture;
-    if (_instance == null) {
-      throw StateError(
-        "CoordinateSystem must be initialized with playAreaSize first",
-      );
-    }
-    return _instance!;
+    return _instance;
   }
 
   Offset screenToCoordinate(Offset screenPoint) {
