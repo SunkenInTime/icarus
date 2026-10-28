@@ -147,6 +147,35 @@ void main() {
     expect(container.read(canvasSelectionProvider), {_a, _b});
   });
 
+  testWidgets('a touch drag draws no box: touch still moves the map', (
+    tester,
+  ) async {
+    await pumpCanvas(tester);
+
+    final gesture = await tester.startGesture(
+      const Offset(50, 50),
+      kind: PointerDeviceKind.touch,
+    );
+    for (var i = 1; i <= 10; i++) {
+      await gesture.moveTo(
+        Offset.lerp(const Offset(50, 50), const Offset(250, 200), i / 10)!,
+      );
+      await tester.pump();
+    }
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is CustomPaint &&
+            widget.painter.runtimeType.toString() == '_SelectionBoxPainter',
+      ),
+      findsNothing,
+    );
+    await gesture.up();
+    await tester.pump();
+
+    expect(container.read(canvasSelectionProvider), isEmpty);
+  });
+
   testWidgets('a box drawn up and to the left selects the same', (
     tester,
   ) async {
