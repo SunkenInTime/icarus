@@ -713,9 +713,10 @@ void main() {
     // It stays up, saying so, until the capture has stopped.
     expect(find.text('Stopping…'), findsOneWidget);
     // The clock moves too, so the dialog's closing animation plays out. The
-    // toast is shown while real time passes here, so its timer runs on real
-    // time: it is looked for as it shows, not after a slow machine has let
-    // it close.
+    // toast is shown while real time passes here, so its closing timer runs
+    // on real time: it is looked for as it shows, and taken away at once,
+    // so it neither closes before the check on a slow machine nor closes
+    // itself after the test, on a torn-down tree.
     var toldCancelled = false;
     for (var i = 0;
         i < 400 && find.text('Saving screenshots').evaluate().isNotEmpty;
@@ -724,8 +725,11 @@ void main() {
         () => Future<void>.delayed(const Duration(milliseconds: 16)),
       );
       await tester.pump(const Duration(milliseconds: 16));
-      toldCancelled |=
-          find.text('Screenshots cancelled.').evaluate().isNotEmpty;
+      if (!toldCancelled &&
+          find.text('Screenshots cancelled.').evaluate().isNotEmpty) {
+        toldCancelled = true;
+        toastification.dismissAll(delayForAnimation: false);
+      }
     }
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 100));
@@ -737,9 +741,7 @@ void main() {
     expect(folder.listSync(), isEmpty);
     expect(toldCancelled, isTrue);
     ignoreTestFontOverflow(tester);
-    // Take the toast away now: its timer runs on real time and would close
-    // it after the test, on a torn-down tree.
-    toastification.dismissAll(delayForAnimation: false);
+    // Let the toast's removal play out.
     await tester.pump(const Duration(seconds: 4));
   });
 
