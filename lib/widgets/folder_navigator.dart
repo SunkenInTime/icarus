@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/maps.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
@@ -203,9 +202,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
     final desktopUpdateController = ref.watch(desktopUpdateControllerProvider);
 
-    final double height = MediaQuery.sizeOf(context).height - 90;
-    final Size playAreaSize = Size(height * (16 / 9), height);
-    CoordinateSystem(playAreaSize: playAreaSize);
     final tab = ref.watch(libraryTabProvider);
     final workspace = ref.watch(libraryWorkspaceProvider);
     final isCloudWorkspace = workspace == LibraryWorkspace.cloud;
