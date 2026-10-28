@@ -14,6 +14,7 @@ const Map<String, AgentType> replayAgentsById = {
   'dade69b4-4f5a-8528-247b-219e5a1facd6': AgentType.fade,
   'e370fa57-4757-3604-3648-499e1f642d3f': AgentType.gekko,
   '95b78ed7-4637-86d9-7e41-71ba8c293152': AgentType.harbor,
+  'ddd5a15c-4fbe-42fa-3789-11a55ca5ee04': AgentType.hush,
   '0e38b510-41a8-5780-5e8f-568b2a4f2d6c': AgentType.iso,
   'add6443a-41bd-e414-f6ad-e58d267f4e95': AgentType.jett,
   '601dbbe7-43ce-be57-2a40-4abd24953621': AgentType.kayo,

@@ -102,6 +102,7 @@ void main() {
         'Harmonize',
         'Bassquake',
       ],
+      AgentType.hush: ['Flow', 'Flashbulb', 'Displacement', 'Suspension'],
     };
 
     expect(AgentData.agents.keys.toSet(), expectedNames.keys.toSet());

@@ -155,5 +155,6 @@ flutter:
     - assets/agents/Waylay/
     - assets/agents/Veto/
     - assets/agents/Miks/
+    - assets/agents/Hush/
 
   uses-material-design: true

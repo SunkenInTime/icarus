@@ -405,6 +405,8 @@ class AgentTypeAdapter extends TypeAdapter<AgentType> {
         return AgentType.veto;
       case 28:
         return AgentType.miks;
+      case 29:
+        return AgentType.hush;
       default:
         return AgentType.jett;
     }
@@ -471,6 +473,8 @@ class AgentTypeAdapter extends TypeAdapter<AgentType> {
         writer.writeByte(27);
       case AgentType.miks:
         writer.writeByte(28);
+      case AgentType.hush:
+        writer.writeByte(29);
     }
   }
 

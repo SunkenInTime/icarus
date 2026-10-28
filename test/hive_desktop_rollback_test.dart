@@ -30,8 +30,9 @@ HiveImpl _currentRegistry() {
 }
 
 /// What desktop 4.6.3 registers: this build's adapters, which are unchanged
-/// since that release, except the eight this build writes by hand and the
-/// weapon list, which gained the Warden.
+/// since that release, except the eight this build writes by hand, the
+/// weapon list, which gained the Warden, and the agent list, which gained
+/// Hush.
 HiveImpl _desktop463Registry() {
   final registry = _currentRegistry();
   // hive_ce warns on every override, which is the point here.
@@ -47,7 +48,8 @@ HiveImpl _desktop463Registry() {
       ..registerAdapter(Desktop463LineAdapter(), override: true)
       ..registerAdapter(Desktop463RectangleDrawingAdapter(), override: true)
       ..registerAdapter(Desktop463EllipseDrawingAdapter(), override: true)
-      ..registerAdapter(Desktop463WeaponTypeAdapter(), override: true);
+      ..registerAdapter(Desktop463WeaponTypeAdapter(), override: true)
+      ..registerAdapter(Desktop463AgentTypeAdapter(), override: true);
   } finally {
     Logger.level = previousLevel;
   }
@@ -74,6 +76,39 @@ PlacedAbility _ability(
     data: AgentData.agents[AgentType.breach]!.abilities.first,
     position: const Offset(30, 40),
     visualState: visualState,
+  );
+}
+
+/// A page holding each of [types] and every one of its abilities, with ids by
+/// position so pages of different agents compare.
+StrategyPage _rosterPage(List<AgentType> types) {
+  return StrategyPage(
+    id: 'page-roster',
+    name: 'Roster',
+    drawingData: const [],
+    agentData: [
+      for (var a = 0; a < types.length; a++)
+        PlacedAgent(
+          id: 'agent-$a',
+          type: types[a],
+          position: const Offset(1, 1),
+        ),
+    ],
+    abilityData: [
+      for (var a = 0; a < types.length; a++)
+        for (final (i, info) in AgentData.agents[types[a]]!.abilities.indexed)
+          PlacedAbility(
+            id: 'ability-$a-$i',
+            data: info,
+            position: const Offset(5, 5),
+          ),
+    ],
+    textData: const [],
+    imageData: const [],
+    utilityData: const [],
+    sortIndex: 0,
+    isAttack: true,
+    settings: StrategySettings(),
   );
 }
 
@@ -215,37 +250,21 @@ void main() {
     _expectSamePage(_across(desktop463, current, rolledBack), page);
   });
 
-  test('every agent and ability survives a rollback', () {
-    final page = StrategyPage(
-      id: 'page-roster',
-      name: 'Roster',
-      drawingData: const [],
-      agentData: [
-        for (final type in AgentType.values)
-          PlacedAgent(
-            id: 'agent-${type.name}',
-            type: type,
-            position: const Offset(1, 1),
-          ),
-      ],
-      abilityData: [
-        for (final agent in AgentData.agents.values)
-          for (var i = 0; i < agent.abilities.length; i++)
-            PlacedAbility(
-              id: 'ability-${agent.type.name}-$i',
-              data: agent.abilities[i],
-              position: const Offset(5, 5),
-            ),
-      ],
-      textData: const [],
-      imageData: const [],
-      utilityData: const [],
-      sortIndex: 0,
-      isAttack: true,
-      settings: StrategySettings(),
-    );
+  test('every agent 4.6.3 knows, and its abilities, survives a rollback', () {
+    final page = _rosterPage([
+      for (final type in AgentType.values)
+        if (type != AgentType.hush) type,
+    ]);
 
     _expectSamePage(_across(current, desktop463, page), page);
+  });
+
+  test('desktop 4.6.3 opens a Hush this build saved as Jett', () {
+    // 4.6.3 reads an agent index it doesn't know as Jett, and an ability by
+    // its agent and index, so Hush's four abilities open as Jett's.
+    final opened = _across(current, desktop463, _rosterPage([AgentType.hush]));
+
+    _expectSamePage(opened, _rosterPage([AgentType.jett]));
   });
 
   test('folders keep their exact icon and color through a rollback', () {

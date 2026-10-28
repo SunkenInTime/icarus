@@ -85,6 +85,8 @@ const _followUps = {
   'GameObject_Nox_Wall',
   'GameObject_Nox_BarbedWire',
   'Patch_Nox_BarbedWire',
+  'GameObject_Paprika_E_RedirectPullArea',
+  'GameObject_Paprika_X_LevitateZone',
 };
 
 /// The asset name of a class path, the part Riot names the blueprint by:
@@ -541,6 +543,18 @@ final Map<String, ReplayAbilityEntry> _catalog = {
       blocks: ReplayVisionBlock.line),
   'GameObject_Mage_E_WorldSmoke': _smoke(AgentType.harbor, 2),
   'GameObject_Mage_X_TidalWave': _rectangle(AgentType.harbor, 3),
+
+  // Hush (Paprika), 13.09 asset index. Flow's actor is its anchor; the
+  // Displacement and Suspension areas open where their projectiles go off.
+  'GameObject_Paprika_4_PullBlast': _marker(AgentType.hush, 0),
+  'Projectile_Paprika_Q_RedirectFlash': _projectile(AgentType.hush, 1),
+  'Projectile_Paprika_Q_RedirectFlash_Underhand':
+      _projectile(AgentType.hush, 1),
+  'Projectile_Paprika_E_RedirectPull': _flight(AgentType.hush, 2),
+  'Projectile_Paprika_E_RedirectPull_Underhand': _flight(AgentType.hush, 2),
+  'GameObject_Paprika_E_RedirectPullArea': _area(AgentType.hush, 2),
+  'Projectile_Paprika_X_FullBendPop': _flight(AgentType.hush, 3),
+  'GameObject_Paprika_X_LevitateZone': _area(AgentType.hush, 3),
 
   // Iso (Sequoia).
   'GameObject_Sequoia_4_MovingCover': _rectangle(AgentType.iso, 0),

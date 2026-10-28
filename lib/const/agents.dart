@@ -32,6 +32,7 @@ enum AgentType {
   waylay,
   veto,
   miks,
+  hush,
 }
 
 enum AgentState {
@@ -1191,6 +1192,38 @@ class AgentData implements DraggableData {
       agent.abilities[2] = miksWaveform;
       agent.abilities[3] = miksHarmonize;
       agent.abilities.add(miksUlt);
+
+      return agent;
+    })(),
+    AgentType.hush: (() {
+      final agent = AgentData(
+        type: AgentType.hush,
+        role: AgentRole.duelist,
+        name: "Hush",
+        abilityNames: const [
+          "Flow",
+          "Flashbulb",
+          "Displacement",
+          "Suspension",
+        ],
+      );
+
+      // Radii from the Valorant 13.09 files: Displacement's pull area
+      // (RangeRadius 575) and the players Suspension lifts
+      // (PlayerHitRadius 700; its 900 dome only lifts dropped guns).
+      agent.abilities[2].abilityData = CircleAbility(
+        iconPath: agent.abilities[2].iconPath,
+        size: 5.75,
+        rangeOutlineColor: const Color(0xFFF47AC7),
+        hasCenterDot: true,
+      );
+
+      agent.abilities.last.abilityData = CircleAbility(
+        iconPath: agent.abilities.last.iconPath,
+        size: 7,
+        rangeOutlineColor: const Color(0xFFF47AC7),
+        hasCenterDot: true,
+      );
 
       return agent;
     })(),
