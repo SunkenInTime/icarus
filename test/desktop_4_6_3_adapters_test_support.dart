@@ -1,7 +1,9 @@
 // Desktop 4.6.3's adapters for the typeIds this build writes by hand, copied
 // verbatim from the desktop-stable-v4.6.3+103 tag (only the class names
-// changed), plus its WeaponTypeAdapter, which this build extended with the
-// Warden. Every other adapter is unchanged since that release. Rollback
+// changed), plus its WeaponTypeAdapter and AgentTypeAdapter, which this
+// build extended with the Warden and Hush. Each of those two gains only the
+// write case Dart's exhaustive switch demands for the new value, which
+// throws. Every other adapter is unchanged since that release. Rollback
 // tests decode with these to prove 4.6.3 opens, and keeps, what this build
 // saves. Never edit them to match this build.
 
@@ -615,6 +617,155 @@ class Desktop463WeaponTypeAdapter extends TypeAdapter<WeaponType> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is Desktop463WeaponTypeAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class Desktop463AgentTypeAdapter extends TypeAdapter<AgentType> {
+  @override
+  final typeId = 7;
+
+  @override
+  AgentType read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return AgentType.jett;
+      case 1:
+        return AgentType.raze;
+      case 2:
+        return AgentType.pheonix;
+      case 3:
+        return AgentType.astra;
+      case 4:
+        return AgentType.clove;
+      case 5:
+        return AgentType.breach;
+      case 6:
+        return AgentType.iso;
+      case 7:
+        return AgentType.viper;
+      case 8:
+        return AgentType.deadlock;
+      case 9:
+        return AgentType.yoru;
+      case 10:
+        return AgentType.sova;
+      case 11:
+        return AgentType.skye;
+      case 12:
+        return AgentType.kayo;
+      case 13:
+        return AgentType.killjoy;
+      case 14:
+        return AgentType.brimstone;
+      case 15:
+        return AgentType.cypher;
+      case 16:
+        return AgentType.chamber;
+      case 17:
+        return AgentType.fade;
+      case 18:
+        return AgentType.gekko;
+      case 19:
+        return AgentType.harbor;
+      case 20:
+        return AgentType.neon;
+      case 21:
+        return AgentType.omen;
+      case 22:
+        return AgentType.reyna;
+      case 23:
+        return AgentType.sage;
+      case 24:
+        return AgentType.vyse;
+      case 25:
+        return AgentType.tejo;
+      case 26:
+        return AgentType.waylay;
+      case 27:
+        return AgentType.veto;
+      case 28:
+        return AgentType.miks;
+      default:
+        return AgentType.jett;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, AgentType obj) {
+    switch (obj) {
+      case AgentType.jett:
+        writer.writeByte(0);
+      case AgentType.raze:
+        writer.writeByte(1);
+      case AgentType.pheonix:
+        writer.writeByte(2);
+      case AgentType.astra:
+        writer.writeByte(3);
+      case AgentType.clove:
+        writer.writeByte(4);
+      case AgentType.breach:
+        writer.writeByte(5);
+      case AgentType.iso:
+        writer.writeByte(6);
+      case AgentType.viper:
+        writer.writeByte(7);
+      case AgentType.deadlock:
+        writer.writeByte(8);
+      case AgentType.yoru:
+        writer.writeByte(9);
+      case AgentType.sova:
+        writer.writeByte(10);
+      case AgentType.skye:
+        writer.writeByte(11);
+      case AgentType.kayo:
+        writer.writeByte(12);
+      case AgentType.killjoy:
+        writer.writeByte(13);
+      case AgentType.brimstone:
+        writer.writeByte(14);
+      case AgentType.cypher:
+        writer.writeByte(15);
+      case AgentType.chamber:
+        writer.writeByte(16);
+      case AgentType.fade:
+        writer.writeByte(17);
+      case AgentType.gekko:
+        writer.writeByte(18);
+      case AgentType.harbor:
+        writer.writeByte(19);
+      case AgentType.neon:
+        writer.writeByte(20);
+      case AgentType.omen:
+        writer.writeByte(21);
+      case AgentType.reyna:
+        writer.writeByte(22);
+      case AgentType.sage:
+        writer.writeByte(23);
+      case AgentType.vyse:
+        writer.writeByte(24);
+      case AgentType.tejo:
+        writer.writeByte(25);
+      case AgentType.waylay:
+        writer.writeByte(26);
+      case AgentType.veto:
+        writer.writeByte(27);
+      case AgentType.miks:
+        writer.writeByte(28);
+      // Not in 4.6.3, which can never hold one; only Dart's exhaustive
+      // switch needs the case.
+      case AgentType.hush:
+        throw StateError('Desktop 4.6.3 has no Hush');
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Desktop463AgentTypeAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

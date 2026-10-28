@@ -12,6 +12,9 @@ import 'package:path/path.dart' as path;
 
 const _fixtureName = 'canvas-compatibility-v97.ica';
 
+/// Agents Icarus added after the fixture was frozen.
+const _agentsSinceFixture = {AgentType.hush};
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -58,13 +61,16 @@ void main() {
     }
   });
 
-  test('contains every current agent and ability', () {
+  test('contains every agent and ability Icarus had at v97', () {
     final agents = _entries(pages, 'agentData');
     final actualAgentTypes =
         agents.map((agent) => agent['type'] as String).toSet();
     expect(
       actualAgentTypes,
-      AgentType.values.map((type) => type.name).toSet(),
+      AgentType.values
+          .where((type) => !_agentsSinceFixture.contains(type))
+          .map((type) => type.name)
+          .toSet(),
     );
     expect(
       agents.map((agent) => agent['kind'] as String? ?? 'plain').toSet(),
@@ -75,8 +81,9 @@ void main() {
 
     final expectedAbilities = <String>{
       for (final type in AgentType.values)
-        for (final info in AgentData.agents[type]!.abilities)
-          '${type.name}:${info.index}',
+        if (!_agentsSinceFixture.contains(type))
+          for (final info in AgentData.agents[type]!.abilities)
+            '${type.name}:${info.index}',
     };
     final actualAbilities = _entries(pages, 'abilityData')
         .map((ability) => Map<String, dynamic>.from(ability['data'] as Map))
