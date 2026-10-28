@@ -239,8 +239,9 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
               : 'What you copied is from ${Maps.displayName(copiedOn)}. Paste '
                   'it into a strategy on ${Maps.displayName(copiedOn)}.',
           PasteRefusal.picturesMissing =>
-            "A picture in what you copied hadn't loaded when you copied it, "
-                'so nothing was pasted. Copy it again once it shows.',
+            "A picture in what you copied couldn't be read when you copied "
+                'it, so nothing was pasted. Check your connection and copy '
+                'it again.',
           PasteRefusal.pageChanged =>
             'The page changed before the paste finished, so nothing was '
                 'pasted.',

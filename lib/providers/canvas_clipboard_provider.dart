@@ -89,7 +89,8 @@ enum PasteRefusal {
   /// What was copied belongs on another map.
   otherMap,
 
-  /// A picture in it could not be read when it was copied.
+  /// A picture in it could not be read when it was copied (offline, or the
+  /// browser was not let download it).
   picturesMissing,
 
   /// A picture in it is larger than a cloud strategy takes.
@@ -197,15 +198,17 @@ class CanvasClipboardNotifier extends Notifier<CanvasClipboard?> {
       for (final link in clipboard.lineups.links)
         for (final image in link.images) image.id: image.fileExtension,
     };
-    // A picture's new id, by its id where it was copied. A picture keeps
-    // its id only in the strategy it came from, and only while it is still
-    // there: once its last use is cut, its file is cleaned up and its cloud
-    // copy swept, and the paste puts it back from the bytes it carried.
+    // A picture's new id, by its id where it was copied. A picture keeps its
+    // id in the strategy it came from. In the cloud it is still there: a cut
+    // image's tombstone keeps its picture for 30 days, and the clipboard
+    // lasts one session. A local strategy cleans up a picture nothing shows
+    // when it reopens, so there it keeps its id only while its file is
+    // there, and is otherwise put back from the bytes the copy carried.
     final newPictureIds = <String, String>{};
     final keep = clipboard.strategyId == strategyId;
     final renew = [
       for (final MapEntry(key: id, value: extension) in pictureIds.entries)
-        if (!keep || _gone(id, extension)) id,
+        if (!keep || (!isCloud && _gone(id, extension))) id,
     ];
     if (renew.isNotEmpty) {
       final pictures = await clipboard.pictures;
@@ -314,8 +317,8 @@ class CanvasClipboardNotifier extends Notifier<CanvasClipboard?> {
   bool get _canEdit =>
       ref.read(currentStrategyCapabilitiesProvider).canEditPages;
 
-  /// Whether picture [id] can no longer be shown in the strategy on screen.
-  /// One still uploading is on its way, so it is not gone.
+  /// Whether picture [id] can no longer be shown in the local strategy on
+  /// screen: its file is gone.
   bool _gone(String id, String fileExtension) => readStrategyImageSourceOf(
         ref,
         (id: id, fileExtension: fileExtension),

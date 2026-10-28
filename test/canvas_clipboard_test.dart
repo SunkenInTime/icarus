@@ -21,12 +21,80 @@ import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/collab/strategy_capabilities.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
+import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
 /// Where the open strategy keeps its files, for a test that puts a picture
 /// there.
 String? _storage;
+
+class _OpenCloudStrategy extends StrategyProvider {
+  @override
+  StrategyState build() {
+    return const StrategyState(
+      strategyId: 'source-strategy',
+      strategyName: null,
+      source: StrategySource.cloud,
+      storageDirectory: null,
+      isOpen: true,
+    );
+  }
+
+  @override
+  void setUnsaved() {}
+}
+
+/// The cloud page on screen, loaded, listing no pictures: the only image
+/// showing one was cut.
+class _PageAfterCut extends RemoteEditorSnapshotNotifier {
+  @override
+  Future<RemoteEditorSnapshot?> build() async {
+    final at = DateTime.utc(2026);
+    return RemoteEditorSnapshot(
+      shell: RemoteStrategyShell(
+        header: RemoteStrategyHeader(
+          publicId: 'source-strategy',
+          name: 'Source',
+          mapData: 'Ascent',
+          revision: 1,
+          createdAt: at,
+          updatedAt: at,
+        ),
+        pages: const [],
+      ),
+      activePage: RemotePageSnapshot(
+        page: RemotePage(
+          publicId: 'page-1',
+          strategyPublicId: 'source-strategy',
+          name: 'Page 1',
+          sortIndex: 0,
+          isAttack: true,
+          revision: 1,
+          createdAt: at,
+          updatedAt: at,
+        ),
+        content: RemotePageContent(revision: 1, createdAt: at, updatedAt: at),
+        elements: const [],
+        lineups: const [],
+        assetsById: const {},
+      ),
+    );
+  }
+
+  @override
+  Future<void> refresh() async {}
+}
+
+class _IdleUploads extends CloudMediaUploadQueueNotifier {
+  @override
+  CloudMediaUploadQueueState build() =>
+      const CloudMediaUploadQueueState(jobs: [], isProcessing: false);
+}
 
 class _OpenStrategy extends StrategyProvider {
   @override
@@ -308,5 +376,39 @@ void main() {
     final pasted = container.read(agentProvider).last.id;
     expect(pasted, isNot(contains('~cp1~')));
     expect(pasted.length, lessThan(50));
+  });
+
+  test(
+      'a cut cloud image pastes back in its strategy without its bytes: '
+      'its picture is still there', () async {
+    final container = ProviderContainer(
+      overrides: [
+        strategyProvider.overrideWith(_OpenCloudStrategy.new),
+        currentStrategyCapabilitiesProvider.overrideWithValue(
+          StrategyCapabilities.fromCloudRole('owner'),
+        ),
+        remoteEditorSnapshotProvider.overrideWith(_PageAfterCut.new),
+        cloudMediaAccountIdProvider.overrideWithValue('account-a'),
+        cloudMediaUploadQueueProvider.overrideWith(_IdleUploads.new),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(remoteEditorSnapshotProvider.future);
+    container.listen(canvasSelectionProvider, (_, __) {});
+    container.listen(canvasClipboardProvider, (_, __) {});
+    container.read(placedImageProvider.notifier).fromHive([_image()]);
+    container.read(canvasSelectionProvider.notifier).selectAll();
+    // The browser was not let download it, so the copy carries no bytes.
+    container.read(canvasClipboardProvider.notifier).copySelection(_noPictures);
+    container.read(canvasSelectionProvider.notifier).deleteSelected();
+
+    final refusal =
+        await container.read(canvasClipboardProvider.notifier).paste();
+
+    expect(refusal, isNull);
+    expect(
+      container.read(placedImageProvider).images.single.pictureId,
+      'img',
+    );
   });
 }
