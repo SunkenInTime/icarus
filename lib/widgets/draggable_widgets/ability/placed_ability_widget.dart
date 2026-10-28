@@ -184,6 +184,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
 
       if (index < 0) {
         return Draggable<PlacedWidget>(
+          maxSimultaneousDrags: itemDragLimit(context),
           dragAnchorStrategy:
               ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
           data: widget.data,
@@ -362,6 +363,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             });
           },
           child: Draggable<PlacedWidget>(
+            maxSimultaneousDrags: itemDragLimit(context),
             data: widget.data,
             dragAnchorStrategy: (draggable, context, position) {
               final RenderBox renderObject =
@@ -470,6 +472,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       left: screenPosition.dx,
       top: screenPosition.dy,
       child: Draggable<PlacedWidget>(
+        maxSimultaneousDrags: itemDragLimit(context),
         dragAnchorStrategy:
             ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
         data: widget.data,
@@ -615,6 +618,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           });
         },
         child: Draggable<PlacedWidget>(
+          maxSimultaneousDrags: itemDragLimit(context),
           data: widget.data,
           dragAnchorStrategy: (draggable, context, position) {
             _visionDragOrigin.start(

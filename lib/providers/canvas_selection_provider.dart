@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -47,6 +49,44 @@ final selectedCanvasIdsProvider = Provider<Set<String>>((ref) {
       if (lineupIds.contains(link.id)) ...[link.originId, link.landingId],
   };
 });
+
+/// The ids of the selected drawings.
+final selectedDrawingIdsProvider = Provider<Set<String>>((ref) {
+  return {
+    for (final item in ref.watch(canvasSelectionProvider))
+      if (item.kind == SelectableKind.drawing) item.id,
+  };
+});
+
+/// A drag of the selection under way: the items it carries, as they were
+/// when it began, and how far it has carried them, in canvas pixels.
+typedef CanvasGroupDrag = ({Set<String> ids, Offset by});
+
+/// The drag of the selection under way, or null. Its items are drawn this
+/// far from where they are saved until the drag ends and moves them.
+final canvasGroupDragProvider =
+    NotifierProvider<CanvasGroupDragNotifier, CanvasGroupDrag?>(
+  CanvasGroupDragNotifier.new,
+);
+
+class CanvasGroupDragNotifier extends Notifier<CanvasGroupDrag?> {
+  @override
+  CanvasGroupDrag? build() => null;
+
+  void set(CanvasGroupDrag? drag) => state = drag;
+}
+
+/// Whether item [id] is one of several selected items that move together:
+/// a drag on it drags them all, so its own drag stands aside.
+final dragsWithSelectionProvider = Provider.family<bool, String>((ref, id) {
+  final selection = ref.watch(canvasSelectionProvider);
+  return selection.length > 1 &&
+      selection.any((item) => item.id == id && movesWithSelection(item.kind));
+});
+
+/// Whether [kind] moves when the selection is dragged. A lineup marks the
+/// spot its screenshots were taken from, so it stays where it is.
+bool movesWithSelection(SelectableKind kind) => kind != SelectableKind.lineup;
 
 class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
   @override
@@ -121,6 +161,61 @@ class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
 
   void clear() {
     if (state.isNotEmpty) state = const {};
+  }
+
+  /// Moves the items [ids] (a drag of the selection, as it was when the
+  /// drag began) by [by], in world coordinates, as one undo step. Lineups
+  /// never move this way (see [movesWithSelection]).
+  void moveItems(Set<String> ids, Offset by) {
+    if (ids.isEmpty ||
+        by == Offset.zero ||
+        !ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
+      return;
+    }
+    ref.read(actionProvider.notifier).performTransaction(
+      groups: const [],
+      mutation: () {
+        // In each kind's own order: a move brings an item to the front, so
+        // the moved items keep their order among themselves.
+        for (final agent in [...ref.read(agentProvider)]) {
+          if (!ids.contains(agent.id)) continue;
+          ref
+              .read(agentProvider.notifier)
+              .updatePosition(agent.position + by, agent.id);
+        }
+        for (final ability in [...ref.read(abilityProvider)]) {
+          if (!ids.contains(ability.id)) continue;
+          ref
+              .read(abilityProvider.notifier)
+              .updatePosition(ability.position + by, ability.id);
+        }
+        for (final text in [...ref.read(textProvider)]) {
+          if (!ids.contains(text.id)) continue;
+          ref
+              .read(textProvider.notifier)
+              .updatePosition(text.position + by, text.id);
+        }
+        for (final image in [...ref.read(placedImageProvider).images]) {
+          if (!ids.contains(image.id)) continue;
+          ref
+              .read(placedImageProvider.notifier)
+              .updatePosition(image.position + by, image.id);
+        }
+        for (final utility in [...ref.read(utilityProvider)]) {
+          if (!ids.contains(utility.id)) continue;
+          ref
+              .read(utilityProvider.notifier)
+              .updatePosition(utility.position + by, utility.id);
+        }
+        final drawingIds = {
+          for (final drawing in ref.read(drawingProvider).elements)
+            if (ids.contains(drawing.id)) drawing.id,
+        };
+        if (drawingIds.isNotEmpty) {
+          ref.read(drawingProvider.notifier).translateDrawings(drawingIds, by);
+        }
+      },
+    );
   }
 
   /// Deletes everything selected as one undo step.

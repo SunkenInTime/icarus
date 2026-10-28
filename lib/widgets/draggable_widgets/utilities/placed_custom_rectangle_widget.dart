@@ -178,6 +178,7 @@ class _PlacedCustomRectangleWidgetState
                       left: insetX,
                       top: insetY,
                       child: Draggable<PlacedUtility>(
+                        maxSimultaneousDrags: itemDragLimit(context),
                         data: utilityRef,
                         dragAnchorStrategy: (draggable, context, position) =>
                             _rotatedDragAnchor(

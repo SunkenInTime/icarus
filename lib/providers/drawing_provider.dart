@@ -105,6 +105,8 @@ class DrawingProvider extends Notifier<DrawingState> {
         _upsertDrawing(cloneDrawingElement(before));
         return;
       case ActionType.edit:
+        _writeEdit(action.id, delta.undoOnto);
+        return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
         return;
@@ -138,10 +140,62 @@ class DrawingProvider extends Notifier<DrawingState> {
         _removeDrawingById(action.id);
         return;
       case ActionType.edit:
+        _writeEdit(action.id, delta.redoOnto);
+        return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
         return;
     }
+  }
+
+  /// Writes an edit onto the drawing [id] where it sits in the stack. The
+  /// written copy comes from JSON or history, so its screen path is rebuilt
+  /// for the canvas as it is now.
+  void _writeEdit(
+    String id,
+    ActionObjectState Function(ActionObjectState current) write,
+  ) {
+    final index = DrawingElement.getIndexByID(id, state.elements);
+    if (index < 0) return;
+    final written =
+        write(ActionObjectState.drawing(state.elements[index])).drawing!;
+    if (written is FreeDrawing) {
+      written.rebuildPath(CoordinateSystem.instance);
+    }
+    _upsertDrawing(written);
+  }
+
+  /// Moves the drawings named in [ids] by [worldDelta] (world units, in the
+  /// attack-side coordinates drawings are stored in), each keeping its place
+  /// in the stack, and records one edit per drawing moved. A group move runs
+  /// this inside [ActionProvider.performTransaction] so the whole move is
+  /// one undo step. Nothing here keeps the drawings on the map; the caller
+  /// limits [worldDelta].
+  void translateDrawings(Set<String> ids, Offset worldDelta) {
+    if (!ref.canEditPages || ids.isEmpty || worldDelta == Offset.zero) return;
+    final coordinateSystem = CoordinateSystem.instance;
+    final newElements = [...state.elements];
+    final edits = <UserAction>[];
+    for (final (index, drawing) in state.elements.indexed) {
+      if (!ids.contains(drawing.id)) continue;
+      final moved = _translated(drawing, worldDelta, coordinateSystem);
+      newElements[index] = moved;
+      edits.add(UserAction(
+        type: ActionType.edit,
+        id: drawing.id,
+        group: ActionGroup.drawing,
+        objectDelta: ObjectHistoryDelta(
+          before: ActionObjectState.drawing(drawing),
+          after: ActionObjectState.drawing(moved),
+        ),
+      ));
+    }
+    if (edits.isEmpty) return;
+
+    state = state.copyWith(elements: newElements);
+    _triggerRepaint();
+    final history = ref.read(actionProvider.notifier);
+    edits.forEach(history.addAction);
   }
 
   String toJson() {
@@ -186,6 +240,15 @@ class DrawingProvider extends Notifier<DrawingState> {
 
     return result;
   }
+
+  /// One drawing as the JSON saves and live sync write for it.
+  static Map<String, dynamic> elementToJson(DrawingElement element) =>
+      _serializeDrawingElement(element);
+
+  /// The drawing [elementToJson] wrote. A free drawing comes back without
+  /// its screen path; rebuild it before putting it on the canvas.
+  static DrawingElement elementFromJson(Map<String, dynamic> json) =>
+      _deserializeDrawingElement(json);
 
   static Map<String, dynamic> _serializeDrawingElement(DrawingElement element) {
     if (element is FreeDrawing) {
@@ -1001,6 +1064,54 @@ int _readDrawingColorValue(Map<String, dynamic> json) {
     return const ColorConverter().fromJson(value).toARGB32();
   }
   return 0xFFFFFFFF;
+}
+
+/// [drawing] moved by [delta] in world units: every point and its bounding
+/// box shift together, and a free drawing's screen path is rebuilt.
+DrawingElement _translated(
+  DrawingElement drawing,
+  Offset delta,
+  CoordinateSystem coordinateSystem,
+) {
+  final box = drawing.boundingBox;
+  final movedBox = box == null
+      ? null
+      : BoundingBox(min: box.min + delta, max: box.max + delta);
+  return switch (drawing) {
+    FreeDrawing() => drawing.copyWith(
+        listOfPoints: [for (final point in drawing.listOfPoints) point + delta],
+        boundingBox: movedBox,
+        cachedPolylineLengthUnits: drawing.cachedPolylineLengthUnits,
+      )..rebuildPath(coordinateSystem),
+    Line() => drawing.copyWith(
+        lineStart: drawing.lineStart + delta,
+        lineEnd: drawing.lineEnd + delta,
+        boundingBox: movedBox,
+      ),
+    RectangleDrawing() => RectangleDrawing(
+        start: drawing.start + delta,
+        end: drawing.end + delta,
+        colorValue: drawing.colorValue,
+        thickness: drawing.thickness,
+        boundingBox: movedBox,
+        isDotted: drawing.isDotted,
+        hasArrow: drawing.hasArrow,
+        id: drawing.id,
+      ),
+    EllipseDrawing() => EllipseDrawing(
+        start: drawing.start + delta,
+        end: drawing.end + delta,
+        colorValue: drawing.colorValue,
+        thickness: drawing.thickness,
+        boundingBox: movedBox,
+        isDotted: drawing.isDotted,
+        hasArrow: drawing.hasArrow,
+        id: drawing.id,
+      ),
+    _ => throw UnsupportedError(
+        'Unsupported drawing element: ${drawing.runtimeType}',
+      ),
+  };
 }
 
 BoundingBox _boundingBoxForPoints(Offset a, Offset b) {

@@ -10,6 +10,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/canvas_resize_provider.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -150,6 +151,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
 
   @override
   Widget build(BuildContext context) {
+    // A drag of the selection moves the cones without a new layout.
+    ref.listen(canvasGroupDragProvider, (_, __) => _cones.moved());
     bool isAttack = ref.watch(mapProvider).isAttack;
     final canEditPages = ref.watch(
       currentStrategyCapabilitiesProvider.select(

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
@@ -233,6 +234,7 @@ class _PlacedCircleAgentWidgetState
           clipBehavior: Clip.none,
           children: [
             Draggable<PlacedWidget>(
+              maxSimultaneousDrags: itemDragLimit(context),
               data: current,
               dragAnchorStrategy:
                   ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,

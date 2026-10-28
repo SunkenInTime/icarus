@@ -40,6 +40,7 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
     final abilitySize = ref
         .watch(strategySettingsProvider.select((state) => state.abilitySize));
     return Draggable<PlacedUtility>(
+      maxSimultaneousDrags: itemDragLimit(context),
       dragAnchorStrategy:
           ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
       data: widget.utility,

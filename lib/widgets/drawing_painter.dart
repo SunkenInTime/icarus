@@ -8,6 +8,7 @@ import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
@@ -65,11 +66,19 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
     final bool isAttack = widget.isAttackOverride ??
         ref.watch(mapProvider.select((state) => state.isAttack));
 
+    // Selected drawings follow a drag of the selection. This layer is turned
+    // with the map on defense, so the drag's direction turns too.
+    final groupDrag = ref.watch(canvasGroupDragProvider);
+    final shiftedIds = groupDrag?.ids ?? const <String>{};
     CustomPainter drawingPainter = DrawingPainter(
         updateCounter: drawingState.updateCounter,
         coordinateSystem: coordinateSystem,
         elements: drawingState.elements, // Pass the data directly
-        currentLine: drawingState.currentElement);
+        currentLine: drawingState.currentElement,
+        shiftedIds: shiftedIds,
+        shift: isAttack
+            ? groupDrag?.by ?? Offset.zero
+            : -(groupDrag?.by ?? Offset.zero));
 
     final currentInteractionState = ref.watch(interactionStateProvider);
 
@@ -527,11 +536,18 @@ class DrawingPainter extends CustomPainter {
   final DrawingElement? currentLine;
   final int updateCounter;
 
+  /// Drawings drawn [shift] from where they are saved, in this painter's
+  /// coordinates, while a drag of the selection carries them.
+  final Set<String> shiftedIds;
+  final Offset shift;
+
   DrawingPainter({
     required this.updateCounter,
     required this.currentLine,
     required this.coordinateSystem,
     required this.elements,
+    this.shiftedIds = const {},
+    this.shift = Offset.zero,
   });
 
   @override
@@ -621,12 +637,12 @@ class DrawingPainter extends CustomPainter {
       }
     }
 
-    for (int i = 0; i < elements.length; i++) {
-      paint.color = elements[i].color;
-      if (elements[i] is Line) {
-        paintLine(canvas, paint, elements[i] as Line);
-      } else if (elements[i] is RectangleDrawing) {
-        final rectangle = elements[i] as RectangleDrawing;
+    void paintElement(DrawingElement element) {
+      paint.color = element.color;
+      if (element is Line) {
+        paintLine(canvas, paint, element);
+      } else if (element is RectangleDrawing) {
+        final rectangle = element;
         paint.strokeWidth = coordinateSystem.scale(rectangle.thickness);
         final screenRect = Rect.fromPoints(
           coordinateSystem.coordinateToScreen(rectangle.start),
@@ -640,13 +656,13 @@ class DrawingPainter extends CustomPainter {
         } else {
           canvas.drawRect(screenRect, paint);
         }
-      } else if (elements[i] is EllipseDrawing) {
-        paintEllipse(canvas, paint, elements[i] as EllipseDrawing);
-      } else if (elements[i] is FreeDrawing) {
-        FreeDrawing freeDrawing = elements[i] as FreeDrawing;
+      } else if (element is EllipseDrawing) {
+        paintEllipse(canvas, paint, element);
+      } else if (element is FreeDrawing) {
+        final freeDrawing = element;
         paint.strokeWidth = coordinateSystem.scale(freeDrawing.thickness);
         List<Offset> points = freeDrawing.listOfPoints;
-        if (points.length < 2) continue;
+        if (points.length < 2) return;
 
         if (freeDrawing.isDotted) {
           final space = coordinateSystem.scale(10);
@@ -657,7 +673,7 @@ class DrawingPainter extends CustomPainter {
         }
 
         if (freeDrawing.hasArrow) {
-          if (points.length < 2) continue;
+          if (points.length < 2) return;
 
           final from =
               coordinateSystem.coordinateToScreen(points[points.length - 2]);
@@ -665,6 +681,19 @@ class DrawingPainter extends CustomPainter {
           drawArrow(canvas, paint, from, to, freeDrawing.thickness);
         }
       }
+    }
+
+    for (final element in elements) {
+      if (!shiftedIds.contains(element.id)) paintElement(element);
+    }
+    if (shiftedIds.isNotEmpty) {
+      // Drawn where a drag of the selection has carried them.
+      canvas.save();
+      canvas.translate(shift.dx, shift.dy);
+      for (final element in elements) {
+        if (shiftedIds.contains(element.id)) paintElement(element);
+      }
+      canvas.restore();
     }
 
     if (currentLine != null) {
@@ -716,6 +745,8 @@ class DrawingPainter extends CustomPainter {
   @override
   bool shouldRepaint(DrawingPainter oldDelegate) {
     if (oldDelegate.updateCounter != updateCounter ||
+        oldDelegate.shift != shift ||
+        !identical(oldDelegate.shiftedIds, shiftedIds) ||
         oldDelegate.coordinateSystem.isScreenshot) {
       // log("Repainting DrawingPainter");
       return true;

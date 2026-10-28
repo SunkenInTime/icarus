@@ -177,6 +177,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
             left: iconInset,
             top: iconInset,
             child: Draggable<PlacedWidget>(
+              maxSimultaneousDrags: itemDragLimit(context),
               data: widget.data,
               dragAnchorStrategy: (draggable, context, position) {
                 final renderObject = context.findRenderObject()! as RenderBox;

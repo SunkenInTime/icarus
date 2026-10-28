@@ -128,20 +128,56 @@ class EditorEntityLayer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     void hold(PointerEvent event) =>
         ref.read(editorPointersProvider.notifier).holdEntity(event.pointer, id);
+    // While the selection is dragged, an item it carries is drawn where the
+    // drag has carried it; it moves for real when the drag ends.
+    final shift = ref.watch(
+      canvasGroupDragProvider.select(
+        (drag) => drag != null && drag.ids.contains(id) ? drag.by : null,
+      ),
+    );
     return Positioned.fill(
       child: Listener(
         behavior: HitTestBehavior.deferToChild,
         onPointerDown: hold,
         onPointerPanZoomStart: hold,
-        child: ItemOutlineScope(
-          id: id,
-          kind: kind,
-          child: Stack(clipBehavior: Clip.none, children: [child]),
+        // Always here, so the item keeps its state when a drag starts.
+        child: Transform.translate(
+          offset: shift ?? Offset.zero,
+          child: _DragsWithSelection(
+            value: ref.watch(dragsWithSelectionProvider(id)),
+            child: ItemOutlineScope(
+              id: id,
+              kind: kind,
+              child: Stack(clipBehavior: Clip.none, children: [child]),
+            ),
+          ),
         ),
       ),
     );
   }
 }
+
+/// Whether the item below is one of several selected items that move
+/// together (see [itemDragLimit]).
+class _DragsWithSelection extends InheritedWidget {
+  const _DragsWithSelection({required this.value, required super.child});
+
+  final bool value;
+
+  @override
+  bool updateShouldNotify(_DragsWithSelection oldWidget) =>
+      value != oldWidget.value;
+}
+
+/// The `maxSimultaneousDrags` of a canvas item's own [Draggable]: none while
+/// the item is one of several selected, so a drag on it moves the whole
+/// selection instead (the canvas's selection drag takes it). Its handles
+/// and taps are left as they are.
+int? itemDragLimit(BuildContext context) =>
+    context.dependOnInheritedWidgetOfExactType<_DragsWithSelection>()?.value ??
+            false
+        ? 0
+        : null;
 
 /// Draws the [EditorItemOutline]s under it in the color of the teammate
 /// changing item [id], if anyone is, and in the selection's color while the

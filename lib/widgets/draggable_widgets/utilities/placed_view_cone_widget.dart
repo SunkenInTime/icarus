@@ -211,6 +211,7 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
           });
         },
         child: Draggable<PlacedUtility>(
+          maxSimultaneousDrags: itemDragLimit(context),
           data: widget.utility,
           dragAnchorStrategy: (draggable, context, position) {
             _dragOrigin.start(

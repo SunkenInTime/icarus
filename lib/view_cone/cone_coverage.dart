@@ -33,6 +33,10 @@ class ConeCoverage extends ChangeNotifier {
   }
 
   void _changed() => notifyListeners();
+
+  /// Repaints the layer from where the cones sit now, after something above
+  /// them moved them without a new layout (a drag of the selection).
+  void moved() => notifyListeners();
 }
 
 /// How much of the way a cone lifts the floor toward the theme's wall
