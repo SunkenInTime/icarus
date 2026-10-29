@@ -153,10 +153,9 @@ String _lines(String text, int count, String joiner) =>
 Future<void> _play(String script) async {
   // The app opens its window and first screen meanwhile.
   await Future<void>.delayed(const Duration(seconds: 6));
-  final List<Map<String, dynamic>> steps;
+  final List<Object?> steps;
   try {
-    steps = (jsonDecode(await File(script).readAsString()) as List)
-        .cast<Map<String, dynamic>>();
+    steps = jsonDecode(await File(script).readAsString()) as List;
   } catch (error) {
     _log('FAIL reading $script: $error');
     _log('SUMMARY steps=0 failed=1 flutterErrors=0 misplaced=0 PROBLEMS');
@@ -165,6 +164,11 @@ Future<void> _play(String script) async {
   }
   _log('RUN $_runId $script');
   for (final raw in steps) {
+    if (raw is! Map<String, dynamic> || raw.isEmpty) {
+      _failedSteps++;
+      _log('FAIL not a step: ${jsonEncode(raw)}');
+      continue;
+    }
     final step = _expand(raw) as Map<String, dynamic>;
     if (step['exit'] != null) break;
     final started = DateTime.now();
@@ -184,7 +188,12 @@ Future<void> _play(String script) async {
             'FAIL ${jsonEncode(step)}: $error @ ${_lines('$stack', 8, ' | ')}');
       }
     }
-    await _checkItems();
+    try {
+      await _checkItems();
+    } catch (error) {
+      _failedSteps++;
+      _log('FAIL checking items: $error');
+    }
     await _flush();
   }
   final problems = _flutterErrors + _failedSteps + _misplaced.length;
@@ -194,7 +203,7 @@ Future<void> _play(String script) async {
     '${problems == 0 ? 'CLEAN' : 'PROBLEMS'}',
   );
   await _flush();
-  if (steps.any((step) => step['exit'] != null)) exit(0);
+  if (steps.any((step) => step is Map && step['exit'] != null)) exit(0);
 }
 
 Object? _expand(Object? value) => switch (value) {
