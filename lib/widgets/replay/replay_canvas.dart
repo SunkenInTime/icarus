@@ -15,6 +15,7 @@ import 'package:icarus/replay/replay_drawing.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/widgets/canonical_map_artwork.dart';
+import 'package:icarus/widgets/canvas_coordinates.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
@@ -176,7 +177,7 @@ class _MapCamera extends TransformationController {
 }
 
 class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, CanvasCoordinates {
   final _controller = _MapCamera();
   Size? _lastViewport;
 
@@ -379,8 +380,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
       builder: (context, constraints) {
         final height = constraints.maxHeight;
         final worldWidth = height * 16 / 9;
-        CoordinateSystem(playAreaSize: Size(worldWidth, height));
-        final coordinates = CoordinateSystem.instance;
+        final coordinates = layOutCoordinates(Size(worldWidth, height));
         final viewportWidth = (constraints.maxWidth - widget.reservedRight)
             .clamp(0.0, constraints.maxWidth);
         final viewport = Size(viewportWidth, height);
