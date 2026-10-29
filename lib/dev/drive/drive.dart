@@ -9,10 +9,11 @@
 //   driver builds).
 // - Agents and lineup ends drawn somewhere other than where their saved
 //   positions put them (misplacedItems), after every step and through every
-//   soak.
+//   soak. Agents with a view cone or circle aren't checked yet.
+// - Cloud work that never settles, in waitSettled.
 // - Steps that fail.
-// The log ends with a SUMMARY line, and the exit step quits with code 1 when
-// any of them happened.
+// The log ends with a SUMMARY line saying CLEAN or PROBLEMS; tool/drive/
+// run.ps1 reads it, since the app's exit code can't be trusted.
 //
 // A step is one JSON object; the key that names it comes first. In any
 // string, "{run}" becomes this run's id (ICARUS_DRIVE_RUN), so names and
@@ -82,6 +83,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -89,6 +91,7 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import 'package:window_manager/window_manager.dart';
 
 /// Starts the script in ICARUS_DRIVE_SCRIPT, if there is one, once the app
@@ -99,10 +102,7 @@ void startDrive() {
   if (script == null) return;
   _logPath = env['ICARUS_DRIVE_LOG'];
   _runId = env['ICARUS_DRIVE_RUN'] ??
-      DateTime.now()
-          .toIso8601String()
-          .replaceAll(RegExp(r'\D'), '')
-          .substring(8, 14);
+      DateTime.now().microsecondsSinceEpoch.toRadixString(36);
   _signals = env['ICARUS_DRIVE_SIGNALS'];
   _out = env['ICARUS_DRIVE_OUT'] ?? File(script).parent.path;
   _here = File(script).parent.path;
@@ -153,8 +153,16 @@ String _lines(String text, int count, String joiner) =>
 Future<void> _play(String script) async {
   // The app opens its window and first screen meanwhile.
   await Future<void>.delayed(const Duration(seconds: 6));
-  final steps = (jsonDecode(await File(script).readAsString()) as List)
-      .cast<Map<String, dynamic>>();
+  final List<Map<String, dynamic>> steps;
+  try {
+    steps = (jsonDecode(await File(script).readAsString()) as List)
+        .cast<Map<String, dynamic>>();
+  } catch (error) {
+    _log('FAIL reading $script: $error');
+    _log('SUMMARY steps=0 failed=1 flutterErrors=0 misplaced=0 PROBLEMS');
+    await _flush();
+    exit(0);
+  }
   _log('RUN $_runId $script');
   for (final raw in steps) {
     final step = _expand(raw) as Map<String, dynamic>;
@@ -186,7 +194,7 @@ Future<void> _play(String script) async {
     '${problems == 0 ? 'CLEAN' : 'PROBLEMS'}',
   );
   await _flush();
-  if (steps.any((step) => step['exit'] != null)) exit(problems == 0 ? 0 : 1);
+  if (steps.any((step) => step['exit'] != null)) exit(0);
 }
 
 Object? _expand(Object? value) => switch (value) {
@@ -573,9 +581,12 @@ Future<void> _place(
   final at = _itemCenter(id);
   final coordinates = CoordinateSystem.instance;
   final zoom = appProviderContainer.read(screenZoomProvider);
-  final delta = (coordinates.screenToCoordinate(target) -
+  final onScreen = (coordinates.screenToCoordinate(target) -
           coordinates.screenToCoordinate(at)) /
       zoom;
+  // Defense draws the attack-side world turned half a circle.
+  final delta =
+      appProviderContainer.read(mapProvider).isAttack ? onScreen : -onScreen;
   moveTo(const Offset(500, 500) + delta);
   await Future<void>.delayed(const Duration(milliseconds: 300));
   await _frames();
@@ -614,10 +625,12 @@ Future<void> _run(Map<String, dynamic> step) async {
         }
       }, (step['seconds'] ?? 120) as num);
     case 'waitSettled':
+      // Work that never reaches the server is a failure, whatever else
+      // went right.
       try {
         await _waitFor(_settled, value as num);
       } on TimeoutException {
-        _log('NOT SETTLED ${_probe()}');
+        throw StateError('not settled: ${_probe()}');
       }
     case 'waitFile':
       final file = File(value as String);
@@ -625,8 +638,12 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'signal':
       await _signal(value as String).writeAsString(_runId);
     case 'waitSignal':
+      // Only this run's: a signal file left from another run doesn't count.
       final file = _signal(value as String);
-      await _waitFor(file.existsSync, (step['seconds'] ?? 300) as num);
+      await _waitFor(
+        () => file.existsSync() && file.readAsStringSync() == _runId,
+        (step['seconds'] ?? 300) as num,
+      );
     case 'tapText':
       await _tap(
         _centerOf((w) => _isText(w, value as String), nth: nth),
@@ -781,12 +798,16 @@ Future<void> _run(Map<String, dynamic> step) async {
         _centerOf((w) => w is AgentWidget && (w.id == id || w.lineUpId == id)),
       );
     case 'signIn':
-      if (!c.read(authProvider).isConvexUserReady) {
-        final env = Platform.environment;
+      final email = Platform.environment['ICARUS_DRIVE_EMAIL']!;
+      final signedIn = Supabase.instance.client.auth.currentUser?.email;
+      if (signedIn != null && signedIn != email) {
+        throw StateError('signed in as $signedIn, not $email');
+      }
+      if (signedIn == null) {
         final error =
             await c.read(authProvider.notifier).signInWithEmailPassword(
-                  email: env['ICARUS_DRIVE_EMAIL']!,
-                  password: env['ICARUS_DRIVE_PASSWORD']!,
+                  email: email,
+                  password: Platform.environment['ICARUS_DRIVE_PASSWORD']!,
                 );
         if (error != null) throw StateError(error);
       }

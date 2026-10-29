@@ -15,8 +15,10 @@ import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 /// Items on the editor's canvas drawn somewhere other than where their saved
 /// positions put them on that canvas, one line each.
 ///
-/// Covers placed agents and both ends of every lineup, the items users saw
-/// drift away from their lines in #405. Where an item is drawn is the spot
+/// Covers plain placed agents and both ends of every lineup, the items users
+/// saw drift away from their lines in #405. Agents with a view cone or
+/// circle draw through an offset composite and aren't checked, nor are
+/// lineup ends while placement editing moves them. Where an item is drawn is the spot
 /// the canvas built it at; where it belongs is worked out from the canvas's
 /// own size, not from the shared coordinates the canvas drew with, so a
 /// canvas drawing with the wrong coordinates shows up here. Empty when no
