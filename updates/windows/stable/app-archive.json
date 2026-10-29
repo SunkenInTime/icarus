@@ -1,7 +1,49 @@
 {
     "appName":  "Icarus",
-    "description":  "Keeping your cloud library available offline uses far less data.",
+    "description":  "Select, move and copy many things at once, and Hush is here.",
     "items":  [
+                  {
+                      "version":  "5.1.0+107",
+                      "shortVersion":  107,
+                      "changes":  [
+                                      {
+                                          "message":  "Hush, the new duelist, is in the agent list with all four of her abilities.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Drag on an empty part of the map to select everything inside the box. Click to select one thing, Shift+click to add more, and Ctrl+A to select the whole page.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "To move the map, hold Space and drag, or drag with the middle mouse button. A plain drag on the map now selects.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Drag anything you selected to move it all together, and undo the move in one step. Delete removes the whole selection.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Copy with Ctrl+C or cut with Ctrl+X, then paste with Ctrl+V into any strategy on the same map. Pasted things land exactly where they were, pictures and lineups included.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Lineup lines and agents no longer slide off their spots while you edit.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Small custom shapes move when you drag the dot in their middle. Before, the resize handles covered it.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Agents slide straight to their new spot when you switch pages, even with no walking route between the two, such as off the map or on top of a box. Before, they stood still and then jumped.",
+                                          "type":  "fix"
+                                      }
+                                  ],
+                      "date":  "2026-10-29",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/5.1.0%2B107-windows",
+                      "platform":  "windows"
+                  },
                   {
                       "version":  "5.0.2+106",
                       "shortVersion":  106,
