@@ -1,11 +1,13 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
+import 'package:icarus/config/drive_build.dart';
 import 'package:icarus/const/coordinate_system.dart';
 
 /// For a canvas: the editor's map, the replay's. It sets the coordinates
 /// that every item, lineup line and stroke on it converts through, and in
-/// debug builds it checks after each frame, while it is on screen, that
-/// nothing else has replaced them.
+/// debug and driver builds it checks after each frame, while it is on
+/// screen, that nothing else has replaced them.
 ///
 /// Anything that replaces them, even a screen hidden under the editor,
 /// moves whatever redraws next and nothing else, so on screen it looks like
@@ -13,6 +15,15 @@ import 'package:icarus/const/coordinate_system.dart';
 mixin CanvasCoordinates<T extends StatefulWidget> on State<T> {
   /// The canvas whose coordinates everything converts through.
   static CanvasCoordinates? _owner;
+
+  static final _mounted = <CanvasCoordinates>{};
+
+  /// The canvases on screen that have laid out.
+  static Iterable<CanvasCoordinates> get onScreen =>
+      _mounted.where((canvas) => canvas._onScreen && canvas._laidOut != null);
+
+  /// The play area this canvas laid out last.
+  Size? get laidOutPlayArea => _laidOut;
 
   Size? _laidOut;
   bool _onScreen = true;
@@ -46,10 +57,8 @@ mixin CanvasCoordinates<T extends StatefulWidget> on State<T> {
   @override
   void initState() {
     super.initState();
-    assert(() {
-      _checkAfterNextFrame();
-      return true;
-    }());
+    _mounted.add(this);
+    if (kDebugMode || driveBuild) _checkAfterNextFrame();
   }
 
   @override
@@ -62,6 +71,7 @@ mixin CanvasCoordinates<T extends StatefulWidget> on State<T> {
 
   @override
   void dispose() {
+    _mounted.remove(this);
     // Not holding a closed canvas, and the replay it shows, in memory.
     if (identical(_owner, this)) _owner = null;
     super.dispose();
