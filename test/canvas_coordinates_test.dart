@@ -95,6 +95,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pump();
     expect(tester.takeException(), isNull);
+    expect(
+        CoordinateSystem.instance.playAreaSize, const Size(500 * 16 / 9, 500));
 
     // Back on screen, the canvas underneath takes them back.
     navigatorKey.currentState!.pop();
@@ -103,6 +105,59 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(
         CoordinateSystem.instance.playAreaSize, const Size(600 * 16 / 9, 600));
+  });
+
+  testWidgets('a covered canvas that lays out mid-slide leaves them be',
+      (tester) async {
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: navigatorKey,
+      home: const _Canvas(),
+    ));
+    navigatorKey.currentState!.push(MaterialPageRoute<void>(
+      builder: (_) => const Padding(
+        padding: EdgeInsets.only(top: 100),
+        child: _Canvas(),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // Still on screen under the incoming route, it lays out again: a replay
+    // that keeps playing does, every frame.
+    tester.element(find.byType(_Canvas).first).markNeedsBuild();
+    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(
+        CoordinateSystem.instance.playAreaSize, const Size(500 * 16 / 9, 500));
+  });
+
+  testWidgets('a canvas under a dialog keeps its coordinates as it resizes',
+      (tester) async {
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: navigatorKey,
+      home: const _Canvas(),
+    ));
+    showDialog<void>(
+      context: navigatorKey.currentContext!,
+      builder: (_) => const AlertDialog(content: Text('Delete page?')),
+    );
+    await tester.pumpAndSettle();
+
+    tester.view.physicalSize = const Size(1000, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pump();
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(
+        CoordinateSystem.instance.playAreaSize, const Size(700 * 16 / 9, 700));
   });
 
   test('only a canvas sets the coordinates', () {
