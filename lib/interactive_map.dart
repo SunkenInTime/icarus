@@ -21,6 +21,7 @@ import 'package:icarus/providers/transition_provider.dart';
 
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/canonical_map_artwork.dart';
+import 'package:icarus/widgets/canvas_coordinates.dart';
 import 'package:icarus/widgets/canvas_selection_layer.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
@@ -45,7 +46,8 @@ class InteractiveMap extends ConsumerStatefulWidget {
   ConsumerState<ConsumerStatefulWidget> createState() => _InteractiveMapState();
 }
 
-class _InteractiveMapState extends ConsumerState<InteractiveMap> {
+class _InteractiveMapState extends ConsumerState<InteractiveMap>
+    with CanvasCoordinates {
   final controller = TransformationController();
   Size? _lastViewportSize;
   Size? _lastPlayAreaSize;
@@ -188,8 +190,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
         final double height = constraints.maxHeight;
         final double worldWidth = height * (16 / 9);
         final Size playAreaSize = Size(worldWidth, height);
-        CoordinateSystem(playAreaSize: playAreaSize);
-        final coordinateSystem = CoordinateSystem.instance;
+        final coordinateSystem = layOutCoordinates(playAreaSize);
         final double viewportWidth = (constraints.maxWidth - sideBarWidth)
             .clamp(0.0, constraints.maxWidth);
         final viewportSize = Size(viewportWidth, height);
