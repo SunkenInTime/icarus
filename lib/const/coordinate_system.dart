@@ -104,6 +104,11 @@ class CoordinateSystem {
   double get mapPaddingNormalizedX =>
       (worldNormalizedWidth - mapNormalizedWidth) / 2;
 
+  /// The coordinates of a play area this size, without making them the
+  /// canvas's: for checking where a canvas should have drawn something.
+  factory CoordinateSystem.forSize(Size playAreaSize) =>
+      CoordinateSystem._(playAreaSize: playAreaSize);
+
   factory CoordinateSystem({required Size playAreaSize}) {
     _instance = CoordinateSystem._(playAreaSize: playAreaSize);
     return _instance;

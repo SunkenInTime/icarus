@@ -5,7 +5,9 @@ import 'package:icarus/collab/durable_cloud_media_outbox.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/config/cloud_build_config.dart';
 import 'package:icarus/config/cloud_startup.dart';
+import 'package:icarus/config/drive_build.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/dev/drive/drive_session.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/local_image_file.dart' show deviceHasImageFiles;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -117,6 +119,9 @@ Future<void> initializeCloudClients(CloudBuildConfig config) async {
   await Supabase.initialize(
     url: 'https://gjdirtrtgnawqoruavqn.supabase.co',
     anonKey: 'sb_publishable_6M0VCSZCvRFrcgNANWPVWw_U06T_rUo',
-    authOptions: const FlutterAuthClientOptions(detectSessionInUri: false),
+    authOptions: FlutterAuthClientOptions(
+      detectSessionInUri: false,
+      localStorage: driveBuild ? DriveSessionStorage() : null,
+    ),
   );
 }
