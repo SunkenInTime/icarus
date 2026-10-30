@@ -6,6 +6,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -158,10 +159,12 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
           ),
         ),
         for (final origin in origins)
-          ItemOutlineScope(
+          EditorEntityLayer(
             key: ValueKey('lineup-edit-outline-${origin.id}'),
             // A teammate editing this end too sees it outlined.
             id: origin.id,
+            selectionId: originEndId(origin.id),
+            kind: SelectableKind.lineupEnd,
             child: LineUpOriginAgentWidget(
               key: ValueKey('lineup-edit-agent-${origin.id}'),
               origin: origin,
@@ -205,10 +208,12 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
             ),
           ),
         for (final landing in landings)
-          ItemOutlineScope(
+          EditorEntityLayer(
             key: ValueKey('lineup-edit-outline-${landing.id}'),
             // A teammate editing this end too sees it outlined.
             id: landing.id,
+            selectionId: landingEndId(landing.id),
+            kind: SelectableKind.lineupEnd,
             child: LineUpLandingAbilityWidget(
               key: ValueKey('lineup-edit-ability-${landing.id}'),
               landing: landing,

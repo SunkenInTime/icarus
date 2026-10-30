@@ -112,10 +112,15 @@ class EditorEntityLayer extends ConsumerWidget {
     required this.id,
     required this.kind,
     required this.child,
+    this.selectionId,
     super.key,
   });
 
   final String id;
+
+  /// What the selection calls the item, when that can't be [id]: see
+  /// [originEndId].
+  final String? selectionId;
 
   /// What the item is, for selecting it. A lineup's throw spot and landing
   /// are [SelectableKind.lineup] under their own ids.
@@ -126,8 +131,13 @@ class EditorEntityLayer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    void hold(PointerEvent event) =>
-        ref.read(editorPointersProvider.notifier).holdEntity(event.pointer, id);
+    final selectionId = this.selectionId ?? id;
+    void hold(PointerEvent event) {
+      final pointers = ref.read(editorPointersProvider.notifier);
+      pointers.holdEntity(event.pointer, id);
+      pointers.holdEntity(event.pointer, selectionId);
+    }
+
     // While the selection is dragged, an item it carries is drawn where the
     // drag has carried it; it moves for real when the drag ends.
     final shift = ref.watch(
@@ -144,9 +154,10 @@ class EditorEntityLayer extends ConsumerWidget {
         child: Transform.translate(
           offset: shift ?? Offset.zero,
           child: _DragsWithSelection(
-            value: ref.watch(dragsWithSelectionProvider(id)),
+            value: ref.watch(dragsWithSelectionProvider(selectionId)),
             child: ItemOutlineScope(
               id: id,
+              selectionId: selectionId,
               kind: kind,
               child: Stack(clipBehavior: Clip.none, children: [child]),
             ),
@@ -188,21 +199,30 @@ class ItemOutlineScope extends ConsumerWidget {
     required this.id,
     required this.child,
     this.kind,
+    this.selectionId,
     super.key,
   });
 
   final String id;
   final SelectableKind? kind;
+
+  /// What the selection calls the item, when that isn't [id].
+  final String? selectionId;
   final Widget child;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final editor = ref.watch(itemEditorsProvider.select((items) => items[id]));
+    final selectionId = this.selectionId ?? id;
     final selected = kind != null &&
-        ref.watch(selectedCanvasIdsProvider.select((ids) => ids.contains(id)));
+        ref.watch(
+          selectedCanvasIdsProvider.select(
+            (ids) => ids.contains(selectionId),
+          ),
+        );
     final outlined = editor != null || selected;
     return _ItemOutlineStyle(
-      item: kind == null ? null : (kind: kind!, id: id),
+      item: kind == null ? null : (kind: kind!, id: selectionId),
       color: editor == null ? null : presenceColorFor(editor.uid),
       selected: selected,
       // The outline keeps its width on screen at any zoom; only an outlined

@@ -276,8 +276,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                             child: CanvasSelectionLayer(
                               enabled: canEditPages &&
                                   !transitionPresentation.active &&
-                                  ref.watch(interactionStateProvider) ==
-                                      InteractionState.navigation,
+                                  !ref
+                                      .watch(interactionStateProvider)
+                                      .takesCanvasDrags,
                               child: SizedBox(
                                 width: worldWidth,
                                 height: height,

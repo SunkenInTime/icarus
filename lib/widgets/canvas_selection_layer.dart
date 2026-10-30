@@ -14,6 +14,7 @@ import 'package:icarus/providers/canvas_clipboard_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
@@ -36,11 +37,11 @@ class _CanvasPanKeyHeld extends Notifier<bool> {
   }
 }
 
-/// The strategy canvas in navigation mode, as a whiteboard: a drag on an
-/// empty part of the map draws a box that selects what it covers, a click
-/// selects an item (Shift adds or removes it), and holding Space turns
-/// every drag into moving the map. [child] is the canvas, in the canvas's
-/// own coordinates (the same space items are laid out in).
+/// The strategy canvas as a whiteboard: a drag on an empty part of the map
+/// draws a box that selects what it covers, a click selects an item (Shift
+/// adds or removes it), and holding Space turns every drag into moving the
+/// map. [child] is the canvas, in the canvas's own coordinates (the same
+/// space items are laid out in).
 ///
 /// The map's own pan and zoom stay with the [InteractiveViewer] around this:
 /// the box is a mouse gesture, so a touch drag, a trackpad's two fingers, a
@@ -56,7 +57,8 @@ class CanvasSelectionLayer extends ConsumerStatefulWidget {
     super.key,
   });
 
-  /// Selecting is possible: the navigation tool is on and the page can be
+  /// Selecting is possible: no tool takes the canvas's drags and the page
+  /// can be edited. A lineup mode narrows it to the ends being placed or
   /// edited. Space still moves the map when this is false.
   final bool enabled;
 
@@ -150,6 +152,7 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
       // Escape drops the drag; everything stays where it was.
       _dragDropped = true;
       ref.read(canvasGroupDragProvider.notifier).set(null);
+      _moveLineUpEnds(Offset.zero);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.escape && _box != null) {
@@ -165,6 +168,8 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
       selection.clear();
       return KeyEventResult.handled;
     }
+    // The page is out of reach, and the keys below are all for the page.
+    if (_lineUpMode) return KeyEventResult.ignored;
     if ((key == LogicalKeyboardKey.delete ||
             key == LogicalKeyboardKey.backspace) &&
         hasSelection) {
@@ -326,6 +331,14 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   Set<SelectedItem> _itemsIn(Rect box) {
     final canvas = _canvas;
     if (canvas == null) return const {};
+    if (_lineUpMode) {
+      return {
+        for (final (:item, :corners) in _registry.itemsIn(canvas))
+          if (item.kind == SelectableKind.lineupEnd &&
+              box.contains(_middle(corners)))
+            item,
+      };
+    }
     final found = <SelectedItem>{};
     final lineupEnds = <String>{};
     for (final (:item, :corners) in _registry.itemsIn(canvas)) {
@@ -359,6 +372,8 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     }
     return found;
   }
+
+  bool get _lineUpMode => ref.read(interactionStateProvider).isLineUpMode;
 
   static Offset _middle(List<Offset> corners) =>
       corners.reduce((a, b) => a + b) / corners.length.toDouble();
@@ -456,7 +471,7 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   /// The drawing on top under the screen point [global], if any.
   SelectedItem? _drawingAt(Offset global) {
     final canvas = _canvas;
-    if (canvas == null) return null;
+    if (canvas == null || _lineUpMode) return null;
     final point = _stored(canvas.globalToLocal(global));
     final zoom = ref.read(screenZoomProvider);
     final reach = CoordinateSystem.instance
@@ -515,6 +530,10 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   Rect _dragRoom = Rect.zero;
   bool _dragDropped = false;
 
+  /// Where the lineup ends the drag carries were when it began. Unlike the
+  /// page's items they move as the drag goes, so the lines into them follow.
+  Map<String, Offset> _dragEndsFrom = const {};
+
   void _onDragStart(DragStartDetails details) {
     final ids = _dragIds;
     final pointer = _dragPointer;
@@ -522,6 +541,11 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     _dragOrigin = details.localPosition;
     _dragDropped = false;
     _dragRoom = _roomToMove(ids);
+    _dragEndsFrom = {
+      for (final MapEntry(key: id, value: position)
+          in ref.read(lineUpProvider).movableEnds.entries)
+        if (ids.contains(id)) id: position,
+    };
     // A teammate's change to what is being dragged waits for the drop.
     final pointers = ref.read(editorPointersProvider.notifier);
     for (final id in ids) {
@@ -535,13 +559,23 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     if (origin == null || ids == null || _dragDropped) return;
     final moved = details.localPosition - origin;
     _pressBecameDrag = true;
-    ref.read(canvasGroupDragProvider.notifier).set((
-      ids: ids,
-      by: Offset(
-        moved.dx.clamp(_dragRoom.left, _dragRoom.right),
-        moved.dy.clamp(_dragRoom.top, _dragRoom.bottom),
-      ),
-    ));
+    final by = Offset(
+      moved.dx.clamp(_dragRoom.left, _dragRoom.right),
+      moved.dy.clamp(_dragRoom.top, _dragRoom.bottom),
+    );
+    if (_dragEndsFrom.isNotEmpty) {
+      _moveLineUpEnds(by);
+    } else {
+      ref.read(canvasGroupDragProvider.notifier).set((ids: ids, by: by));
+    }
+  }
+
+  /// Puts the lineup ends the drag carries [by] from where it began.
+  void _moveLineUpEnds(Offset by) {
+    final world = CoordinateSystem.instance.screenToCoordinate(by);
+    ref
+        .read(lineUpProvider.notifier)
+        .moveEndsFrom(_dragEndsFrom, _isAttack ? world : -world);
   }
 
   void _onDragEnd(DragEndDetails details) {
@@ -560,6 +594,7 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     _dragPointer = null;
     _dragIds = null;
     _dragOrigin = null;
+    _dragEndsFrom = const {};
     if (ref.read(canvasGroupDragProvider) != null) {
       ref.read(canvasGroupDragProvider.notifier).set(null);
     }

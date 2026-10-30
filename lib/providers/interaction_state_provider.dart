@@ -16,12 +16,20 @@ enum InteractionState {
   lineUpEditing,
 }
 
-extension LineUpInteraction on InteractionState {
+extension CanvasInteraction on InteractionState {
   /// Placing a lineup or moving placed ones: the rest of the page dims and
   /// stays out of reach until the user finishes.
   bool get isLineUpMode =>
       this == InteractionState.lineUpPlacing ||
       this == InteractionState.lineUpEditing;
+
+  /// Whether a drag on the canvas belongs to the tool: it draws or erases, so
+  /// it can't also select. A drag means nothing to any other tool.
+  bool get takesCanvasDrags =>
+      this == InteractionState.drawing || this == InteractionState.erasing;
+
+  /// Whether the items on the page can be pressed, moved and selected.
+  bool get itemsInReach => !takesCanvasDrags && !isLineUpMode;
 }
 
 final interactionStateProvider =

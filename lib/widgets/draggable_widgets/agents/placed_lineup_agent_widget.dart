@@ -12,6 +12,7 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class PlacedLineupAgentWidget extends ConsumerWidget {
   const PlacedLineupAgentWidget({
@@ -43,6 +44,7 @@ class PlacedLineupAgentWidget extends ConsumerWidget {
       top: screenPosition.dy,
       child: draggable
           ? Draggable<PlacedWidget>(
+              maxSimultaneousDrags: itemDragLimit(context),
               data: agent,
               dragAnchorStrategy:
                   ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,

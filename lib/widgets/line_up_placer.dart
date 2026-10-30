@@ -8,12 +8,14 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/team_provider.dart';
 import 'package:icarus/widgets/current_line_up_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_lineup_agent_widget.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
@@ -159,67 +161,76 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                     text: lineUpPlacementStatus(placement),
                   ),
                 if (draftAbility != null)
-                  PlacedAbilityWidget(
+                  EditorEntityLayer(
                     // A new draft ability starts from its own geometry, not
                     // the one it replaced.
                     key: ValueKey(draftAbility.id),
-                    rotation: draftAbility.rotation,
-                    data: draftAbility,
-                    ability: draftAbility,
                     id: draftAbility.id,
-                    length: draftAbility.length,
-                    isLineUp: true,
-                    onDragEnd: (details, _) {
-                      final mapState = ref.read(mapProvider);
-                      final mapScale =
-                          Maps.mapScale[mapState.currentMap] ?? 1.0;
-                      final abilitySize =
-                          ref.read(strategySettingsProvider).abilitySize;
+                    kind: SelectableKind.lineupEnd,
+                    child: PlacedAbilityWidget(
+                      rotation: draftAbility.rotation,
+                      data: draftAbility,
+                      ability: draftAbility,
+                      id: draftAbility.id,
+                      length: draftAbility.length,
+                      isLineUp: true,
+                      onDragEnd: (details, _) {
+                        final mapState = ref.read(mapProvider);
+                        final mapScale =
+                            Maps.mapScale[mapState.currentMap] ?? 1.0;
+                        final abilitySize =
+                            ref.read(strategySettingsProvider).abilitySize;
 
-                      final abilityData = draftAbility.data.abilityData!;
-                      final virtualOffset =
-                          storedAbilityPositionForRenderedScreenPosition(
-                        ability: abilityData,
-                        coordinateSystem: coordinateSystem,
-                        renderedScreenPosition: localOffset(details.offset),
-                        mapScale: mapScale,
-                        abilitySize: abilitySize,
-                        isAttack: mapState.isAttack,
-                      );
-                      final safeArea = storedAbilityAnchor(
-                        ability: abilityData,
-                        mapScale: mapScale,
-                      );
+                        final abilityData = draftAbility.data.abilityData!;
+                        final virtualOffset =
+                            storedAbilityPositionForRenderedScreenPosition(
+                          ability: abilityData,
+                          coordinateSystem: coordinateSystem,
+                          renderedScreenPosition: localOffset(details.offset),
+                          mapScale: mapScale,
+                          abilitySize: abilitySize,
+                          isAttack: mapState.isAttack,
+                        );
+                        final safeArea = storedAbilityAnchor(
+                          ability: abilityData,
+                          mapScale: mapScale,
+                        );
 
-                      if (coordinateSystem.isOutOfBounds(
-                        virtualOffset.translate(safeArea.dx, safeArea.dy),
-                      )) {
-                        ref.read(lineUpProvider.notifier).clearDraftAbility();
-                        return;
-                      }
+                        if (coordinateSystem.isOutOfBounds(
+                          virtualOffset.translate(safeArea.dx, safeArea.dy),
+                        )) {
+                          ref.read(lineUpProvider.notifier).clearDraftAbility();
+                          return;
+                        }
 
-                      ref
-                          .read(lineUpProvider.notifier)
-                          .updateDraftAbilityPosition(virtualOffset);
-                    },
+                        ref
+                            .read(lineUpProvider.notifier)
+                            .updateDraftAbilityPosition(virtualOffset);
+                      },
+                    ),
                   ),
                 if (draftAgent != null)
-                  PlacedLineupAgentWidget(
-                    agent: draftAgent,
-                    draggable: true,
-                    onDragEnd: (details) {
-                      final virtualOffset =
-                          storedAgentPositionForRenderedScreenPosition(
-                        coordinateSystem: coordinateSystem,
-                        renderedScreenPosition: localOffset(details.offset),
-                        agentSize: ref.read(strategySettingsProvider).agentSize,
-                        isAttack: ref.read(mapProvider).isAttack,
-                      );
+                  EditorEntityLayer(
+                    id: draftAgent.id,
+                    kind: SelectableKind.lineupEnd,
+                    child: PlacedLineupAgentWidget(
+                      agent: draftAgent,
+                      draggable: true,
+                      onDragEnd: (details) {
+                        final virtualOffset =
+                            storedAgentPositionForRenderedScreenPosition(
+                          coordinateSystem: coordinateSystem,
+                          renderedScreenPosition: localOffset(details.offset),
+                          agentSize:
+                              ref.read(strategySettingsProvider).agentSize,
+                          isAttack: ref.read(mapProvider).isAttack,
+                        );
 
-                      ref
-                          .read(lineUpProvider.notifier)
-                          .updateDraftAgentPosition(virtualOffset);
-                    },
+                        ref
+                            .read(lineUpProvider.notifier)
+                            .updateDraftAgentPosition(virtualOffset);
+                      },
+                    ),
                   ),
               ],
             );

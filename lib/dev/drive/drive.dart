@@ -39,7 +39,8 @@
 // Editor content
 //   {"addAgent": id, "at": [x, y], "agent": "jett"?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
-//   {"addImage": path, "at": [x, y]}   {"addLineup": n}  two lineups, ids lo1{n}, lo2{n}
+//   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?}  two lineups, ids
+//                                      lo1{n}, lo2{n}; legacy ones share one id per lineup
 //   {"dragAgent": id, "by": [dx, dy]}  {"hoverAgent": id}
 // Library and cloud
 //   {"signIn": true}                   ICARUS_DRIVE_EMAIL / ICARUS_DRIVE_PASSWORD
@@ -49,6 +50,8 @@
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
+//   {"logLineups": tag}
+//   {"expectSelected": n}              fails unless n items are selected
 //   {"exit": 1}
 import 'dart:async';
 import 'dart:convert';
@@ -74,6 +77,7 @@ import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
@@ -509,6 +513,9 @@ const _icons = {
   'house300': LucideIcons.house300,
   'chevronLeft300': LucideIcons.chevronLeft300,
   'pencil': LucideIcons.pencil,
+  'eye': LucideIcons.eye,
+  'square': LucideIcons.square,
+  'type': LucideIcons.type,
   'camera': LucideIcons.camera,
   'play': LucideIcons.play,
   'pause': LucideIcons.pause,
@@ -754,6 +761,7 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _place(id, _point(step, 'at'), (p) => images.updatePosition(p, id));
     case 'addLineup':
       final smoke = AgentData.agents[AgentType.brimstone]!.abilities[2];
+      final legacy = step['legacy'] == true;
       LineUpGraph one(String n, Offset from, Offset to) => LineUpGraph(
             origins: [
               LineUpOrigin(
@@ -769,21 +777,21 @@ Future<void> _run(Map<String, dynamic> step) async {
             ],
             landings: [
               LineUpLanding(
-                id: 'll$n',
+                id: legacy ? 'lo$n' : 'll$n',
                 ability: PlacedAbility(
-                  id: 'll$n',
+                  id: legacy ? 'lo$n' : 'll$n',
                   data: smoke,
                   position: to,
                   isAlly: true,
-                  lineUpID: 'll$n',
+                  lineUpID: legacy ? 'lo$n' : 'll$n',
                 ),
               ),
             ],
             links: [
               LineUpLink(
-                id: 'lk$n',
+                id: legacy ? 'lo$n' : 'lk$n',
                 originId: 'lo$n',
-                landingId: 'll$n',
+                landingId: legacy ? 'lo$n' : 'll$n',
                 name: 'Smoke $n',
                 images: const [],
               ),
@@ -877,6 +885,17 @@ Future<void> _run(Map<String, dynamic> step) async {
           Duration(milliseconds: (step['every'] ?? 100) as int),
         );
       }
+    case 'logLineups':
+      final lineUps = c.read(lineUpProvider);
+      String at(Offset? p) => p == null
+          ? 'gone'
+          : '(${p.dx.toStringAsFixed(1)}, ${p.dy.toStringAsFixed(1)})';
+      _log('LINEUPS $value ${[
+        for (final link in lineUps.links)
+          '${link.id} '
+              'origin@${at(lineUps.originById(link.originId)?.agent.position)} '
+              'landing@${at(lineUps.landingById(link.landingId)?.ability.position)}',
+      ]}');
     case 'logCoords':
       final canvas = _canvasSize();
       _log(
@@ -896,8 +915,14 @@ Future<void> _run(Map<String, dynamic> step) async {
         'texts=${c.read(textProvider).length} '
         'drawings=${c.read(drawingProvider).elements.length} '
         'images=${c.read(placedImageProvider).images.length} '
-        'lineups=${c.read(lineUpProvider).graph.links.length}',
+        'lineups=${c.read(lineUpProvider).graph.links.length} '
+        'selected=${c.read(canvasSelectionProvider).length}',
       );
+    case 'expectSelected':
+      final selected = c.read(canvasSelectionProvider).length;
+      if (selected != value) {
+        throw StateError('$selected selected, expected $value');
+      }
     case 'probe':
       _log('PROBE $value ${_probe()}');
     case 'texts':
