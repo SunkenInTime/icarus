@@ -1,7 +1,21 @@
 {
     "appName":  "Icarus",
-    "description":  "Drag to select with a tool open, and move a lineup\u0027s two ends together.",
+    "description":  "A fix for undoing a lineup while adding another to it.",
     "items":  [
+                  {
+                      "version":  "5.1.2+109",
+                      "shortVersion":  109,
+                      "changes":  [
+                                      {
+                                          "message":  "Undoing a lineup while you add another one to it now ends placing. Before, pressing Next and Done showed an error and left the Create Lineup window stuck.",
+                                          "type":  "fix"
+                                      }
+                                  ],
+                      "date":  "2026-10-30",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/5.1.2%2B109-windows",
+                      "platform":  "windows"
+                  },
                   {
                       "version":  "5.1.1+108",
                       "shortVersion":  108,
