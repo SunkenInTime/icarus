@@ -23,14 +23,10 @@ extension CanvasInteraction on InteractionState {
       this == InteractionState.lineUpPlacing ||
       this == InteractionState.lineUpEditing;
 
-  /// Whether the items on the canvas can be pressed, moved and selected.
-  /// Drawing and erasing take every press on the canvas for themselves, and
-  /// a lineup mode puts the page out of reach. The other tools are panels of
-  /// things to add, and leave the canvas as it is with no tool on.
-  bool get itemsInReach =>
-      this != InteractionState.drawing &&
-      this != InteractionState.erasing &&
-      !isLineUpMode;
+  /// Whether a drag on the canvas belongs to the tool: it draws or erases, so
+  /// it can't also select. A drag means nothing to any other tool.
+  bool get takesCanvasDrags =>
+      this == InteractionState.drawing || this == InteractionState.erasing;
 }
 
 final interactionStateProvider =

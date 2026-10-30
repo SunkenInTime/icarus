@@ -276,9 +276,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                             child: CanvasSelectionLayer(
                               enabled: canEditPages &&
                                   !transitionPresentation.active &&
-                                  ref
+                                  !ref
                                       .watch(interactionStateProvider)
-                                      .itemsInReach,
+                                      .takesCanvasDrags,
                               child: SizedBox(
                                 width: worldWidth,
                                 height: height,
@@ -420,12 +420,19 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                         child: transitionPresentation.hideView
                                             ? SizedBox.shrink()
                                             : Opacity(
-                                                opacity: ref
+                                                opacity: !ref
                                                         .watch(
                                                             interactionStateProvider)
                                                         .isLineUpMode
-                                                    ? 0.2
-                                                    : 1.0,
+                                                    ? 1.0
+                                                    // Dim, but not so far that
+                                                    // a selection can't be seen.
+                                                    : ref.watch(
+                                                            canvasSelectionProvider
+                                                                .select((ids) =>
+                                                                    ids.isEmpty))
+                                                        ? 0.2
+                                                        : 0.6,
                                                 child: ConeCoverageScope(
                                                     coverage: _cones,
                                                     child: PlacedWidgetBuilder()),

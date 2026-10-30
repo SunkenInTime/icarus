@@ -112,12 +112,8 @@ void main() {
     expect(container.read(canvasSelectionProvider), {_b});
   });
 
-  test('a tool that takes the canvas clears the selection', () {
-    for (final tool in [
-      InteractionState.drawing,
-      InteractionState.erasing,
-      InteractionState.lineUpPlacing,
-    ]) {
+  test("a tool that takes the canvas's drags clears the selection", () {
+    for (final tool in [InteractionState.drawing, InteractionState.erasing]) {
       final container = _container();
       container
           .read(agentProvider.notifier)
@@ -130,7 +126,7 @@ void main() {
     }
   });
 
-  test('a tool panel keeps the selection, open or closed', () {
+  test('every other tool keeps the selection, on or off', () {
     final container = _container();
     container
         .read(agentProvider.notifier)
@@ -138,15 +134,16 @@ void main() {
     container.read(canvasSelectionProvider.notifier).select([_a]);
     final tools = container.read(interactionStateProvider.notifier);
 
-    for (final panel in [
+    for (final tool in [
       InteractionState.visionCone,
       InteractionState.customShapes,
       InteractionState.textTools,
       InteractionState.roleIcons,
+      InteractionState.lineUpPlacing,
       InteractionState.navigation,
     ]) {
-      tools.update(panel);
-      expect(container.read(canvasSelectionProvider), {_a}, reason: '$panel');
+      tools.update(tool);
+      expect(container.read(canvasSelectionProvider), {_a}, reason: '$tool');
     }
   });
 

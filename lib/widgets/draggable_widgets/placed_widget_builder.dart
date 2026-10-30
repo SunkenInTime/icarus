@@ -129,7 +129,8 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
           builder: (context, candidateData, rejectedData) {
             return RepaintBoundary(
               child: IgnorePointer(
-                ignoring: !interactionState.itemsInReach,
+                ignoring: interactionState.takesCanvasDrags ||
+                    interactionState.isLineUpMode,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [

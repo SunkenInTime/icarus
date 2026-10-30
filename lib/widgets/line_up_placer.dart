@@ -8,6 +8,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/team_provider.dart';
@@ -58,6 +59,18 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
             lineUpState.originById(placement?.pinnedOriginId ?? '');
         final pinnedLanding =
             lineUpState.landingById(placement?.pinnedLandingId ?? '');
+        // A delete, an undo or a teammate removed the end this lineup was
+        // being added to.
+        if ((placement?.pinnedOriginId != null && pinnedOrigin == null) ||
+            (placement?.pinnedLandingId != null && pinnedLanding == null)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            ref
+                .read(interactionStateProvider.notifier)
+                .update(InteractionState.navigation);
+          });
+          return const SizedBox.shrink();
+        }
 
         Offset localOffset(Offset globalOffset) {
           final renderBox = context.findRenderObject() as RenderBox;

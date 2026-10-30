@@ -14,6 +14,7 @@ import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -111,7 +112,7 @@ void main() {
     await tempDir.delete(recursive: true);
   });
 
-  Future<void> pumpCanvas(WidgetTester tester) async {
+  Future<void> pumpCanvas(WidgetTester tester, {bool locked = false}) async {
     container = ProviderContainer(
       overrides: [strategyProvider.overrideWith(_NoopStrategyProvider.new)],
     );
@@ -131,12 +132,16 @@ void main() {
               child: SizedBox(
                 width: 800,
                 height: 450,
-                child: Stack(
-                  children: [
-                    _item('a', const Offset(100, 100), handle: true),
-                    _item('b', const Offset(200, 100)),
-                    _item('c', const Offset(400, 300)),
-                  ],
+                // As a lineup mode locks the page.
+                child: IgnorePointer(
+                  ignoring: locked,
+                  child: Stack(
+                    children: [
+                      _item('a', const Offset(100, 100), handle: true),
+                      _item('b', const Offset(200, 100)),
+                      _item('c', const Offset(400, 300)),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -170,6 +175,53 @@ void main() {
     await mouseDrag(tester, const Offset(50, 50), const Offset(250, 200));
 
     expect(container.read(canvasSelectionProvider), {_a, _b});
+  });
+
+  group('with a lineup mode locking the page', () {
+    Future<void> pumpLocked(WidgetTester tester) async {
+      await pumpCanvas(tester, locked: true);
+      container
+          .read(interactionStateProvider.notifier)
+          .update(InteractionState.lineUpPlacing);
+      await tester.pump();
+    }
+
+    Offset position(String id) => container
+        .read(agentProvider)
+        .firstWhere((agent) => agent.id == id)
+        .position;
+
+    testWidgets('a box selects and a click on an item selects it', (
+      tester,
+    ) async {
+      await pumpLocked(tester);
+
+      await mouseDrag(tester, const Offset(50, 50), const Offset(250, 200));
+      expect(container.read(canvasSelectionProvider), {_a, _b});
+
+      await tester.tapAt(const Offset(410, 310), kind: PointerDeviceKind.mouse);
+      await tester.pump();
+      expect(container.read(canvasSelectionProvider), {_c});
+    });
+
+    testWidgets('a press on the selection drags it, even one item', (
+      tester,
+    ) async {
+      await pumpLocked(tester);
+      await mouseDrag(tester, const Offset(50, 50), const Offset(250, 200));
+
+      await mouseDrag(tester, const Offset(110, 110), const Offset(160, 130));
+
+      expect(position('a'), isNot(Offset.zero));
+      expect(position('b'), position('a'));
+      expect(position('c'), Offset.zero);
+
+      await tester.tapAt(const Offset(410, 310), kind: PointerDeviceKind.mouse);
+      await tester.pump();
+      await mouseDrag(tester, const Offset(410, 310), const Offset(460, 330));
+
+      expect(position('c'), isNot(Offset.zero));
+    });
   });
 
   testWidgets('a touch drag draws no box: touch still moves the map', (

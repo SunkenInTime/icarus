@@ -14,6 +14,7 @@ import 'package:icarus/providers/canvas_clipboard_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
@@ -56,8 +57,8 @@ class CanvasSelectionLayer extends ConsumerStatefulWidget {
     super.key,
   });
 
-  /// Selecting is possible: no tool has put the items out of reach and the
-  /// page can be edited. Space still moves the map when this is false.
+  /// Selecting is possible: no tool takes the canvas's drags and the page
+  /// can be edited. Space still moves the map when this is false.
   final bool enabled;
 
   final Widget child;
@@ -408,7 +409,24 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     }
     _clickPointer = event.pointer;
     _clickDown = event.position;
-    _clickHeld = held;
+    _clickHeld = _pressedItems(event);
+  }
+
+  bool get _itemsLocked => ref.read(interactionStateProvider).isLineUpMode;
+
+  /// The ids of the items a press landed on. An item a lineup mode locks
+  /// takes no pointer, so it is found by where it is drawn.
+  Set<String> _pressedItems(PointerDownEvent event) {
+    final canvas = _canvas;
+    if (!_itemsLocked || canvas == null) {
+      return ref.read(editorPointersProvider)[event.pointer]?.entityIds ??
+          const {};
+    }
+    final at = canvas.globalToLocal(event.position);
+    return {
+      for (final (:item, :corners) in _registry.itemsIn(canvas))
+        if ((Path()..addPolygon(corners, true)).contains(at)) item.id,
+    };
   }
 
   void _onPointerUp(PointerUpEvent event) {
@@ -478,15 +496,15 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   /// Whether a press takes hold of the selection to drag it: it lands on a
   /// selected item that moves, and there is more than that item to move. A
   /// lone selected item drags as it always has (Ctrl to copy it, onto an
-  /// agent to join it); a drawing has no drag of its own, so it is taken
-  /// alone too. The items it would carry are noted now, as they are.
+  /// agent to join it); a drawing or a locked item has no drag of its own,
+  /// so it is taken alone too. The items it would carry are noted now, as
+  /// they are.
   bool _grabsSelection(PointerDownEvent event) {
     if (!widget.enabled || ref.read(canvasPanKeyHeldProvider)) return false;
     final selection = ref.read(canvasSelectionProvider);
-    final held =
-        ref.read(editorPointersProvider)[event.pointer]?.entityIds ?? const {};
-    final pressed = held.isNotEmpty
-        ? held
+    final items = _pressedItems(event);
+    final pressed = items.isNotEmpty
+        ? items
         : {if (_drawingAt(event.position) case final drawing?) drawing.id};
     final grabbed = [
       for (final item in selection)
@@ -494,7 +512,8 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     ];
     if (grabbed.isEmpty) return false;
     if (selection.length == 1 &&
-        grabbed.single.kind != SelectableKind.drawing) {
+        grabbed.single.kind != SelectableKind.drawing &&
+        !_itemsLocked) {
       return false;
     }
     _dragPointer = event.pointer;
