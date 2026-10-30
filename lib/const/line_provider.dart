@@ -691,6 +691,25 @@ class LineUpState {
     return pairs;
   }
 
+  /// The ends being placed or edited, by id, and where each is now.
+  Map<String, Offset> get movableEnds {
+    final edit = this.edit;
+    return {
+      if (placement?.draftAgent case final agent?) agent.id: agent.position,
+      if (placement?.draftAbility case final ability?)
+        ability.id: ability.position,
+      if (edit != null) ...{
+        for (final origin in origins)
+          if (edit.originIds.contains(origin.id))
+            origin.id: edit.movedOrigins[origin.id] ?? origin.agent.position,
+        for (final landing in landings)
+          if (edit.landingIds.contains(landing.id))
+            landing.id:
+                edit.movedLandings[landing.id] ?? landing.ability.position,
+      },
+    };
+  }
+
   /// Whether saving the edit would move anything.
   bool get editMovesAnything {
     final edit = this.edit;
@@ -1161,6 +1180,22 @@ class LineUpProvider extends Notifier<LineUpState> {
         movedLandings: {...edit.movedLandings, landingId: position},
       ),
     );
+  }
+
+  /// Moves the ends in [from], a [LineUpState.movableEnds], to [by] away from
+  /// where it has them.
+  void moveEndsFrom(Map<String, Offset> from, Offset by) {
+    for (final MapEntry(key: id, value: position) in from.entries) {
+      final moved = position + by;
+      if (id == state.placement?.draftAgent?.id) {
+        updateDraftAgentPosition(moved);
+      } else if (id == state.placement?.draftAbility?.id) {
+        updateDraftAbilityPosition(moved);
+      } else {
+        moveEditedOrigin(id, moved);
+        moveEditedLanding(id, moved);
+      }
+    }
   }
 
   void cancelEdit() {

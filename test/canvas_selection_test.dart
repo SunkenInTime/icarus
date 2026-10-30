@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -112,8 +113,12 @@ void main() {
     expect(container.read(canvasSelectionProvider), {_b});
   });
 
-  test("a tool that takes the canvas's drags clears the selection", () {
-    for (final tool in [InteractionState.drawing, InteractionState.erasing]) {
+  test('a tool that puts the page out of reach clears the selection', () {
+    for (final tool in [
+      InteractionState.drawing,
+      InteractionState.erasing,
+      InteractionState.lineUpPlacing,
+    ]) {
       final container = _container();
       container
           .read(agentProvider.notifier)
@@ -126,7 +131,7 @@ void main() {
     }
   });
 
-  test('every other tool keeps the selection, on or off', () {
+  test('a tool panel keeps the selection, open or closed', () {
     final container = _container();
     container
         .read(agentProvider.notifier)
@@ -139,12 +144,28 @@ void main() {
       InteractionState.customShapes,
       InteractionState.textTools,
       InteractionState.roleIcons,
-      InteractionState.lineUpPlacing,
       InteractionState.navigation,
     ]) {
       tools.update(tool);
       expect(container.read(canvasSelectionProvider), {_a}, reason: '$tool');
     }
+  });
+
+  test('an end that stops being placed leaves the selection', () {
+    final container = _container();
+    final lineUps = container.read(lineUpProvider.notifier);
+    container
+        .read(interactionStateProvider.notifier)
+        .update(InteractionState.lineUpPlacing);
+    lineUps.setDraftAgent(_agent('draft', const Offset(10, 10)));
+    const end = (kind: SelectableKind.lineupEnd, id: 'draft');
+    container.read(canvasSelectionProvider.notifier).select([end]);
+
+    lineUps.updateDraftAgentPosition(const Offset(20, 20));
+    expect(container.read(canvasSelectionProvider), {end});
+
+    lineUps.setDraftAgent(_agent('other', const Offset(10, 10)));
+    expect(container.read(canvasSelectionProvider), isEmpty);
   });
 
   test('select all takes every item on the page, toggle takes one back', () {

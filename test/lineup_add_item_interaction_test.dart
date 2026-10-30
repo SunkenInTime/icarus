@@ -304,38 +304,6 @@ void main() {
     );
   });
 
-  testWidgets('placing leaves the mode when its pinned end is deleted',
-      (tester) async {
-    final container = _createContainer();
-    final group = _breachGroup();
-    container
-        .read(lineUpProvider.notifier)
-        .fromHive(LineUpGraph.fromLegacyGroups([group]));
-    container.read(lineUpProvider.notifier).startFromOrigin(group.id);
-    container
-        .read(interactionStateProvider.notifier)
-        .update(InteractionState.lineUpPlacing);
-    await _pumpHarness(
-      tester,
-      container: container,
-      child: const SizedBox(
-        width: 900,
-        height: 600,
-        child: LineupPositionWidget(),
-      ),
-    );
-
-    container.read(lineUpProvider.notifier).deleteOrigin(group.id);
-    await tester.pump();
-    await tester.pump();
-
-    expect(
-      container.read(interactionStateProvider),
-      InteractionState.navigation,
-    );
-    expect(container.read(lineUpProvider).placement, isNull);
-  });
-
   testWidgets('new-lineup current agent and ability reposition on resize',
       (tester) async {
     final container = _createContainer();

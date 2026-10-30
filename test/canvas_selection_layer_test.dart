@@ -9,6 +9,7 @@ import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -44,9 +45,15 @@ var _handleMoves = 0;
 /// canvas draws one: in its own layer, marking what it draws. With
 /// [handle], a 6 px handle in its top-right corner takes drags of its own,
 /// as a resize or rotate handle does.
-Widget _item(String id, Offset at, {bool handle = false}) => EditorEntityLayer(
+Widget _item(
+  String id,
+  Offset at, {
+  bool handle = false,
+  SelectableKind kind = SelectableKind.agent,
+}) =>
+    EditorEntityLayer(
       id: id,
-      kind: SelectableKind.agent,
+      kind: kind,
       child: Positioned(
         left: at.dx,
         top: at.dy,
@@ -112,7 +119,7 @@ void main() {
     await tempDir.delete(recursive: true);
   });
 
-  Future<void> pumpCanvas(WidgetTester tester, {bool locked = false}) async {
+  Future<void> pumpCanvas(WidgetTester tester, {bool lineUp = false}) async {
     container = ProviderContainer(
       overrides: [strategyProvider.overrideWith(_NoopStrategyProvider.new)],
     );
@@ -132,16 +139,34 @@ void main() {
               child: SizedBox(
                 width: 800,
                 height: 450,
-                // As a lineup mode locks the page.
-                child: IgnorePointer(
-                  ignoring: locked,
-                  child: Stack(
-                    children: [
-                      _item('a', const Offset(100, 100), handle: true),
-                      _item('b', const Offset(200, 100)),
-                      _item('c', const Offset(400, 300)),
+                child: Stack(
+                  children: [
+                    // As a lineup mode puts the page out of reach.
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        ignoring: lineUp,
+                        child: Stack(
+                          children: [
+                            _item('a', const Offset(100, 100), handle: true),
+                            _item('b', const Offset(200, 100)),
+                            _item('c', const Offset(400, 300)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (lineUp) ...[
+                      _item(
+                        'draft-agent',
+                        const Offset(150, 100),
+                        kind: SelectableKind.lineupEnd,
+                      ),
+                      _item(
+                        'draft-ability',
+                        const Offset(150, 150),
+                        kind: SelectableKind.lineupEnd,
+                      ),
                     ],
-                  ),
+                  ],
                 ),
               ),
             ),
@@ -177,50 +202,101 @@ void main() {
     expect(container.read(canvasSelectionProvider), {_a, _b});
   });
 
-  group('with a lineup mode locking the page', () {
-    Future<void> pumpLocked(WidgetTester tester) async {
-      await pumpCanvas(tester, locked: true);
+  group('in a lineup mode', () {
+    const draftAgent = (kind: SelectableKind.lineupEnd, id: 'draft-agent');
+    const draftAbility = (kind: SelectableKind.lineupEnd, id: 'draft-ability');
+
+    Future<void> pumpLineUp(WidgetTester tester) async {
+      await pumpCanvas(tester, lineUp: true);
       container
           .read(interactionStateProvider.notifier)
           .update(InteractionState.lineUpPlacing);
+      final lineUps = container.read(lineUpProvider.notifier);
+      lineUps.setDraftAgent(
+        PlacedAgent(
+          id: 'draft-agent',
+          type: AgentType.jett,
+          position: const Offset(100, 100),
+        ),
+      );
+      lineUps.setDraftAbility(
+        PlacedAbility(
+          id: 'draft-ability',
+          data: AgentData.agents[AgentType.jett]!.abilities.first,
+          position: const Offset(200, 200),
+        ),
+      );
       await tester.pump();
     }
 
-    Offset position(String id) => container
-        .read(agentProvider)
-        .firstWhere((agent) => agent.id == id)
-        .position;
-
-    testWidgets('a box selects and a click on an item selects it', (
+    testWidgets('a box takes the ends being placed, not the page', (
       tester,
     ) async {
-      await pumpLocked(tester);
+      await pumpLineUp(tester);
 
+      // Covers both drafts and the page's a and b.
       await mouseDrag(tester, const Offset(50, 50), const Offset(250, 200));
-      expect(container.read(canvasSelectionProvider), {_a, _b});
 
-      await tester.tapAt(const Offset(410, 310), kind: PointerDeviceKind.mouse);
-      await tester.pump();
-      expect(container.read(canvasSelectionProvider), {_c});
+      expect(
+        container.read(canvasSelectionProvider),
+        {draftAgent, draftAbility},
+      );
     });
 
-    testWidgets('a press on the selection drags it, even one item', (
+    testWidgets('dragging the selected ends moves them both as it goes', (
       tester,
     ) async {
-      await pumpLocked(tester);
+      await pumpLineUp(tester);
       await mouseDrag(tester, const Offset(50, 50), const Offset(250, 200));
 
-      await mouseDrag(tester, const Offset(110, 110), const Offset(160, 130));
+      final gesture = await tester.startGesture(
+        const Offset(160, 110),
+        kind: PointerDeviceKind.mouse,
+        buttons: kPrimaryMouseButton,
+      );
+      for (var i = 1; i <= 10; i++) {
+        await gesture.moveTo(Offset(160 + i * 5, 110 + i * 2));
+        await tester.pump();
+      }
 
-      expect(position('a'), isNot(Offset.zero));
-      expect(position('b'), position('a'));
-      expect(position('c'), Offset.zero);
+      final placement = container.read(lineUpProvider).placement!;
+      final moved = placement.draftAgent!.position - const Offset(100, 100);
+      expect(moved.dx, greaterThan(0));
+      expect(moved.dy, greaterThan(0));
+      expect(
+        placement.draftAbility!.position - const Offset(200, 200),
+        moved,
+      );
 
-      await tester.tapAt(const Offset(410, 310), kind: PointerDeviceKind.mouse);
+      await gesture.up();
       await tester.pump();
-      await mouseDrag(tester, const Offset(410, 310), const Offset(460, 330));
+      expect(container.read(agentProvider).first.position, Offset.zero);
+      expect(
+        container.read(canvasSelectionProvider),
+        {draftAgent, draftAbility},
+      );
+    });
 
-      expect(position('c'), isNot(Offset.zero));
+    testWidgets('Escape during the drag puts the ends back', (tester) async {
+      await pumpLineUp(tester);
+      await mouseDrag(tester, const Offset(50, 50), const Offset(250, 200));
+
+      final gesture = await tester.startGesture(
+        const Offset(160, 110),
+        kind: PointerDeviceKind.mouse,
+        buttons: kPrimaryMouseButton,
+      );
+      for (var i = 1; i <= 10; i++) {
+        await gesture.moveTo(Offset(160 + i * 5, 110));
+        await tester.pump();
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await gesture.up();
+      await tester.pump();
+
+      final placement = container.read(lineUpProvider).placement!;
+      expect(placement.draftAgent!.position, const Offset(100, 100));
+      expect(placement.draftAbility!.position, const Offset(200, 200));
     });
   });
 

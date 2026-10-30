@@ -420,19 +420,12 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                         child: transitionPresentation.hideView
                                             ? SizedBox.shrink()
                                             : Opacity(
-                                                opacity: !ref
+                                                opacity: ref
                                                         .watch(
                                                             interactionStateProvider)
                                                         .isLineUpMode
-                                                    ? 1.0
-                                                    // Dim, but not so far that
-                                                    // a selection can't be seen.
-                                                    : ref.watch(
-                                                            canvasSelectionProvider
-                                                                .select((ids) =>
-                                                                    ids.isEmpty))
-                                                        ? 0.2
-                                                        : 0.6,
+                                                    ? 0.2
+                                                    : 1.0,
                                                 child: ConeCoverageScope(
                                                     coverage: _cones,
                                                     child: PlacedWidgetBuilder()),

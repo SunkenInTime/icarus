@@ -58,7 +58,8 @@ class CanvasSelectionLayer extends ConsumerStatefulWidget {
   });
 
   /// Selecting is possible: no tool takes the canvas's drags and the page
-  /// can be edited. Space still moves the map when this is false.
+  /// can be edited. A lineup mode narrows it to the ends being placed or
+  /// edited. Space still moves the map when this is false.
   final bool enabled;
 
   final Widget child;
@@ -151,6 +152,7 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
       // Escape drops the drag; everything stays where it was.
       _dragDropped = true;
       ref.read(canvasGroupDragProvider.notifier).set(null);
+      _moveLineUpEnds(Offset.zero);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.escape && _box != null) {
@@ -166,6 +168,8 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
       selection.clear();
       return KeyEventResult.handled;
     }
+    // The page is out of reach, and the keys below are all for the page.
+    if (_lineUpMode) return KeyEventResult.ignored;
     if ((key == LogicalKeyboardKey.delete ||
             key == LogicalKeyboardKey.backspace) &&
         hasSelection) {
@@ -327,6 +331,14 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   Set<SelectedItem> _itemsIn(Rect box) {
     final canvas = _canvas;
     if (canvas == null) return const {};
+    if (_lineUpMode) {
+      return {
+        for (final (:item, :corners) in _registry.itemsIn(canvas))
+          if (item.kind == SelectableKind.lineupEnd &&
+              box.contains(_middle(corners)))
+            item,
+      };
+    }
     final found = <SelectedItem>{};
     final lineupEnds = <String>{};
     for (final (:item, :corners) in _registry.itemsIn(canvas)) {
@@ -360,6 +372,8 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     }
     return found;
   }
+
+  bool get _lineUpMode => ref.read(interactionStateProvider).isLineUpMode;
 
   static Offset _middle(List<Offset> corners) =>
       corners.reduce((a, b) => a + b) / corners.length.toDouble();
@@ -409,24 +423,7 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     }
     _clickPointer = event.pointer;
     _clickDown = event.position;
-    _clickHeld = _pressedItems(event);
-  }
-
-  bool get _itemsLocked => ref.read(interactionStateProvider).isLineUpMode;
-
-  /// The ids of the items a press landed on. An item a lineup mode locks
-  /// takes no pointer, so it is found by where it is drawn.
-  Set<String> _pressedItems(PointerDownEvent event) {
-    final canvas = _canvas;
-    if (!_itemsLocked || canvas == null) {
-      return ref.read(editorPointersProvider)[event.pointer]?.entityIds ??
-          const {};
-    }
-    final at = canvas.globalToLocal(event.position);
-    return {
-      for (final (:item, :corners) in _registry.itemsIn(canvas))
-        if ((Path()..addPolygon(corners, true)).contains(at)) item.id,
-    };
+    _clickHeld = held;
   }
 
   void _onPointerUp(PointerUpEvent event) {
@@ -463,13 +460,10 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     final canvas = _canvas;
     if (canvas == null) return null;
     if (heldIds.isNotEmpty) {
-      // The newest of them, which is drawn on top: a locked item's press can
-      // land on several.
-      return _registry
-          .itemsIn(canvas)
-          .map((entry) => entry.item)
-          .where((item) => heldIds.contains(item.id))
-          .lastOrNull;
+      for (final (:item, corners: _) in _registry.itemsIn(canvas)) {
+        if (heldIds.contains(item.id)) return item;
+      }
+      return null;
     }
     return _drawingAt(event.position);
   }
@@ -477,7 +471,7 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   /// The drawing on top under the screen point [global], if any.
   SelectedItem? _drawingAt(Offset global) {
     final canvas = _canvas;
-    if (canvas == null) return null;
+    if (canvas == null || _lineUpMode) return null;
     final point = _stored(canvas.globalToLocal(global));
     final zoom = ref.read(screenZoomProvider);
     final reach = CoordinateSystem.instance
@@ -499,15 +493,15 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   /// Whether a press takes hold of the selection to drag it: it lands on a
   /// selected item that moves, and there is more than that item to move. A
   /// lone selected item drags as it always has (Ctrl to copy it, onto an
-  /// agent to join it); a drawing or a locked item has no drag of its own,
-  /// so it is taken alone too. The items it would carry are noted now, as
-  /// they are.
+  /// agent to join it); a drawing has no drag of its own, so it is taken
+  /// alone too. The items it would carry are noted now, as they are.
   bool _grabsSelection(PointerDownEvent event) {
     if (!widget.enabled || ref.read(canvasPanKeyHeldProvider)) return false;
     final selection = ref.read(canvasSelectionProvider);
-    final items = _pressedItems(event);
-    final pressed = items.isNotEmpty
-        ? items
+    final held =
+        ref.read(editorPointersProvider)[event.pointer]?.entityIds ?? const {};
+    final pressed = held.isNotEmpty
+        ? held
         : {if (_drawingAt(event.position) case final drawing?) drawing.id};
     final grabbed = [
       for (final item in selection)
@@ -515,8 +509,7 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     ];
     if (grabbed.isEmpty) return false;
     if (selection.length == 1 &&
-        grabbed.single.kind != SelectableKind.drawing &&
-        !_itemsLocked) {
+        grabbed.single.kind != SelectableKind.drawing) {
       return false;
     }
     _dragPointer = event.pointer;
@@ -537,6 +530,10 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   Rect _dragRoom = Rect.zero;
   bool _dragDropped = false;
 
+  /// Where the lineup ends the drag carries were when it began. Unlike the
+  /// page's items they move as the drag goes, so the lines into them follow.
+  Map<String, Offset> _dragEndsFrom = const {};
+
   void _onDragStart(DragStartDetails details) {
     final ids = _dragIds;
     final pointer = _dragPointer;
@@ -544,6 +541,11 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     _dragOrigin = details.localPosition;
     _dragDropped = false;
     _dragRoom = _roomToMove(ids);
+    _dragEndsFrom = {
+      for (final MapEntry(key: id, value: position)
+          in ref.read(lineUpProvider).movableEnds.entries)
+        if (ids.contains(id)) id: position,
+    };
     // A teammate's change to what is being dragged waits for the drop.
     final pointers = ref.read(editorPointersProvider.notifier);
     for (final id in ids) {
@@ -557,13 +559,23 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     if (origin == null || ids == null || _dragDropped) return;
     final moved = details.localPosition - origin;
     _pressBecameDrag = true;
-    ref.read(canvasGroupDragProvider.notifier).set((
-      ids: ids,
-      by: Offset(
-        moved.dx.clamp(_dragRoom.left, _dragRoom.right),
-        moved.dy.clamp(_dragRoom.top, _dragRoom.bottom),
-      ),
-    ));
+    final by = Offset(
+      moved.dx.clamp(_dragRoom.left, _dragRoom.right),
+      moved.dy.clamp(_dragRoom.top, _dragRoom.bottom),
+    );
+    if (_dragEndsFrom.isNotEmpty) {
+      _moveLineUpEnds(by);
+    } else {
+      ref.read(canvasGroupDragProvider.notifier).set((ids: ids, by: by));
+    }
+  }
+
+  /// Puts the lineup ends the drag carries [by] from where it began.
+  void _moveLineUpEnds(Offset by) {
+    final world = CoordinateSystem.instance.screenToCoordinate(by);
+    ref
+        .read(lineUpProvider.notifier)
+        .moveEndsFrom(_dragEndsFrom, _isAttack ? world : -world);
   }
 
   void _onDragEnd(DragEndDetails details) {
@@ -582,6 +594,7 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     _dragPointer = null;
     _dragIds = null;
     _dragOrigin = null;
+    _dragEndsFrom = const {};
     if (ref.read(canvasGroupDragProvider) != null) {
       ref.read(canvasGroupDragProvider.notifier).set(null);
     }

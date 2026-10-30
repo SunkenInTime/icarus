@@ -15,15 +15,26 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 
 /// The kinds of thing the user can select on the canvas. A lineup is
-/// selected as its link: the throw spot and landing come with it.
-enum SelectableKind { agent, ability, text, image, utility, drawing, lineup }
+/// selected as its link: the throw spot and landing come with it. A
+/// [lineupEnd] is an end being placed or edited, the only thing a lineup mode
+/// lets the user select.
+enum SelectableKind {
+  agent,
+  ability,
+  text,
+  image,
+  utility,
+  drawing,
+  lineup,
+  lineupEnd,
+}
 
 /// One selected item on the page on screen.
 typedef SelectedItem = ({SelectableKind kind, String id});
 
 /// What the user has selected on the page on screen. Selection belongs to
 /// this window only: it is never saved or synced, and it empties when the
-/// page or the strategy changes, or a tool takes the canvas's drags. Items
+/// page or the strategy changes, or a tool puts the page out of reach. Items
 /// that leave the page (an undo, a teammate's delete) leave the selection
 /// with them.
 final canvasSelectionProvider =
@@ -103,7 +114,7 @@ class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
       strategyPageSessionProvider.select((state) => state.activePageId),
     );
     clearOnChange(
-      interactionStateProvider.select((state) => state.takesCanvasDrags),
+      interactionStateProvider.select((state) => state.itemsInReach),
     );
     clearOnChange(
       currentStrategyCapabilitiesProvider.select(
@@ -121,7 +132,16 @@ class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
     pruneOnChange(placedImageProvider.select((state) => state.images));
     pruneOnChange(utilityProvider);
     pruneOnChange(drawingProvider.select((state) => state.elements));
-    pruneOnChange(lineUpProvider.select((state) => state.links));
+    pruneOnChange(
+      lineUpProvider.select(
+        (state) => (
+          state.links,
+          state.placement?.draftAgent?.id,
+          state.placement?.draftAbility?.id,
+          state.edit?.linkIds,
+        ),
+      ),
+    );
     return const {};
   }
 
@@ -141,6 +161,8 @@ class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
           (kind: SelectableKind.drawing, id: drawing.id),
         for (final link in ref.read(lineUpProvider).links)
           (kind: SelectableKind.lineup, id: link.id),
+        for (final id in ref.read(lineUpProvider).movableEnds.keys)
+          (kind: SelectableKind.lineupEnd, id: id),
       };
 
   void _prune() {
@@ -255,6 +277,9 @@ class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
               drawingIds.add(item.id);
             case SelectableKind.lineup:
               ref.read(lineUpProvider.notifier).deleteLink(item.id);
+            // Not on the page yet: the lineup mode's Cancel drops it.
+            case SelectableKind.lineupEnd:
+              break;
           }
         }
         if (drawingIds.isNotEmpty) {

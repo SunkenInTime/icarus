@@ -239,6 +239,7 @@ class _MovableEnd extends StatelessWidget {
     return MouseRegion(
       cursor: SystemMouseCursors.grab,
       child: Draggable<_MovingLineUpEnd>(
+        maxSimultaneousDrags: itemDragLimit(context),
         data: const _MovingLineUpEnd(),
         feedback: const SizedBox.shrink(),
         onDragUpdate: onMove,
