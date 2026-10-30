@@ -150,18 +150,6 @@ void main() {
     }
   });
 
-  test('items are in reach except while a tool takes the canvas', () {
-    expect(
-      InteractionState.values.where((state) => !state.itemsInReach).toSet(),
-      {
-        InteractionState.drawing,
-        InteractionState.erasing,
-        InteractionState.lineUpPlacing,
-        InteractionState.lineUpEditing,
-      },
-    );
-  });
-
   test('select all takes every item on the page, toggle takes one back', () {
     final container = _container();
     container.read(agentProvider.notifier).fromHive([

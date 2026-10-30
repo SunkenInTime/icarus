@@ -49,6 +49,7 @@
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
+//   {"expectSelected": n}              fails unless n items are selected
 //   {"exit": 1}
 import 'dart:async';
 import 'dart:convert';
@@ -903,6 +904,11 @@ Future<void> _run(Map<String, dynamic> step) async {
         'lineups=${c.read(lineUpProvider).graph.links.length} '
         'selected=${c.read(canvasSelectionProvider).length}',
       );
+    case 'expectSelected':
+      final selected = c.read(canvasSelectionProvider).length;
+      if (selected != value) {
+        throw StateError('$selected selected, expected $value');
+      }
     case 'probe':
       _log('PROBE $value ${_probe()}');
     case 'texts':
