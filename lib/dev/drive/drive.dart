@@ -886,11 +886,15 @@ Future<void> _run(Map<String, dynamic> step) async {
         );
       }
     case 'logLineups':
+      final lineUps = c.read(lineUpProvider);
+      String at(Offset? p) => p == null
+          ? 'gone'
+          : '(${p.dx.toStringAsFixed(1)}, ${p.dy.toStringAsFixed(1)})';
       _log('LINEUPS $value ${[
-        for (final link in c.read(lineUpProvider).links)
+        for (final link in lineUps.links)
           '${link.id} '
-              'origin@${c.read(lineUpProvider).originById(link.originId)?.agent.position} '
-              'landing@${c.read(lineUpProvider).landingById(link.landingId)?.ability.position}',
+              'origin@${at(lineUps.originById(link.originId)?.agent.position)} '
+              'landing@${at(lineUps.landingById(link.landingId)?.ability.position)}',
       ]}');
     case 'logCoords':
       final canvas = _canvasSize();
