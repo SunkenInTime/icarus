@@ -1,7 +1,25 @@
 {
     "appName":  "Icarus",
-    "description":  "Select, move and copy many things at once, and Hush is here.",
+    "description":  "Drag to select with a tool open, and move a lineup\u0027s two ends together.",
     "items":  [
+                  {
+                      "version":  "5.1.1+108",
+                      "shortVersion":  108,
+                      "changes":  [
+                                      {
+                                          "message":  "Dragging on the map to select now works with the text, vision cone, custom shape and agent role tools open. Before, you had to close the tool first. While one of these is open, a drag selects instead of moving the map, so hold Space and drag to move it.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "While placing or editing a lineup, drag a box around its agent and ability to select them, then drag either one to move them together. The rest of the page stays locked.",
+                                          "type":  "feat"
+                                      }
+                                  ],
+                      "date":  "2026-10-30",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/5.1.1%2B108-windows",
+                      "platform":  "windows"
+                  },
                   {
                       "version":  "5.1.0+107",
                       "shortVersion":  107,
