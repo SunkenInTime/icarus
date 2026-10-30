@@ -290,6 +290,10 @@ void main() {
         await gesture.moveTo(Offset(160 + i * 5, 110));
         await tester.pump();
       }
+      expect(
+        container.read(lineUpProvider).placement!.draftAgent!.position,
+        isNot(const Offset(100, 100)),
+      );
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await gesture.up();
       await tester.pump();
