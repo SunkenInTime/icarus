@@ -74,6 +74,7 @@ import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
@@ -509,6 +510,9 @@ const _icons = {
   'house300': LucideIcons.house300,
   'chevronLeft300': LucideIcons.chevronLeft300,
   'pencil': LucideIcons.pencil,
+  'eye': LucideIcons.eye,
+  'square': LucideIcons.square,
+  'type': LucideIcons.type,
   'camera': LucideIcons.camera,
   'play': LucideIcons.play,
   'pause': LucideIcons.pause,
@@ -896,7 +900,8 @@ Future<void> _run(Map<String, dynamic> step) async {
         'texts=${c.read(textProvider).length} '
         'drawings=${c.read(drawingProvider).elements.length} '
         'images=${c.read(placedImageProvider).images.length} '
-        'lineups=${c.read(lineUpProvider).graph.links.length}',
+        'lineups=${c.read(lineUpProvider).graph.links.length} '
+        'selected=${c.read(canvasSelectionProvider).length}',
       );
     case 'probe':
       _log('PROBE $value ${_probe()}');

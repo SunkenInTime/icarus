@@ -36,11 +36,11 @@ class _CanvasPanKeyHeld extends Notifier<bool> {
   }
 }
 
-/// The strategy canvas in navigation mode, as a whiteboard: a drag on an
-/// empty part of the map draws a box that selects what it covers, a click
-/// selects an item (Shift adds or removes it), and holding Space turns
-/// every drag into moving the map. [child] is the canvas, in the canvas's
-/// own coordinates (the same space items are laid out in).
+/// The strategy canvas as a whiteboard: a drag on an empty part of the map
+/// draws a box that selects what it covers, a click selects an item (Shift
+/// adds or removes it), and holding Space turns every drag into moving the
+/// map. [child] is the canvas, in the canvas's own coordinates (the same
+/// space items are laid out in).
 ///
 /// The map's own pan and zoom stay with the [InteractiveViewer] around this:
 /// the box is a mouse gesture, so a touch drag, a trackpad's two fingers, a
@@ -56,8 +56,8 @@ class CanvasSelectionLayer extends ConsumerStatefulWidget {
     super.key,
   });
 
-  /// Selecting is possible: the navigation tool is on and the page can be
-  /// edited. Space still moves the map when this is false.
+  /// Selecting is possible: no tool has put the items out of reach and the
+  /// page can be edited. Space still moves the map when this is false.
   final bool enabled;
 
   final Widget child;

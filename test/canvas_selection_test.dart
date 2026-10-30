@@ -112,18 +112,54 @@ void main() {
     expect(container.read(canvasSelectionProvider), {_b});
   });
 
-  test('changing tools clears the selection', () {
+  test('a tool that takes the canvas clears the selection', () {
+    for (final tool in [
+      InteractionState.drawing,
+      InteractionState.erasing,
+      InteractionState.lineUpPlacing,
+    ]) {
+      final container = _container();
+      container
+          .read(agentProvider.notifier)
+          .fromHive([_agent('a', const Offset(10, 10))]);
+      container.read(canvasSelectionProvider.notifier).select([_a]);
+
+      container.read(interactionStateProvider.notifier).update(tool);
+
+      expect(container.read(canvasSelectionProvider), isEmpty, reason: '$tool');
+    }
+  });
+
+  test('a tool panel keeps the selection, open or closed', () {
     final container = _container();
     container
         .read(agentProvider.notifier)
         .fromHive([_agent('a', const Offset(10, 10))]);
     container.read(canvasSelectionProvider.notifier).select([_a]);
+    final tools = container.read(interactionStateProvider.notifier);
 
-    container
-        .read(interactionStateProvider.notifier)
-        .update(InteractionState.drawing);
+    for (final panel in [
+      InteractionState.visionCone,
+      InteractionState.customShapes,
+      InteractionState.textTools,
+      InteractionState.roleIcons,
+      InteractionState.navigation,
+    ]) {
+      tools.update(panel);
+      expect(container.read(canvasSelectionProvider), {_a}, reason: '$panel');
+    }
+  });
 
-    expect(container.read(canvasSelectionProvider), isEmpty);
+  test('items are in reach except while a tool takes the canvas', () {
+    expect(
+      InteractionState.values.where((state) => !state.itemsInReach).toSet(),
+      {
+        InteractionState.drawing,
+        InteractionState.erasing,
+        InteractionState.lineUpPlacing,
+        InteractionState.lineUpEditing,
+      },
+    );
   });
 
   test('select all takes every item on the page, toggle takes one back', () {

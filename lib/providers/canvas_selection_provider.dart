@@ -23,8 +23,9 @@ typedef SelectedItem = ({SelectableKind kind, String id});
 
 /// What the user has selected on the page on screen. Selection belongs to
 /// this window only: it is never saved or synced, and it empties when the
-/// page, the strategy, or the tool changes. Items that leave the page (an
-/// undo, a teammate's delete) leave the selection with them.
+/// page or the strategy changes, or a tool puts the items out of reach. Items
+/// that leave the page (an undo, a teammate's delete) leave the selection
+/// with them.
 final canvasSelectionProvider =
     NotifierProvider<CanvasSelectionNotifier, Set<SelectedItem>>(
   CanvasSelectionNotifier.new,
@@ -101,7 +102,9 @@ class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
     clearOnChange(
       strategyPageSessionProvider.select((state) => state.activePageId),
     );
-    clearOnChange(interactionStateProvider);
+    clearOnChange(
+      interactionStateProvider.select((state) => state.itemsInReach),
+    );
     clearOnChange(
       currentStrategyCapabilitiesProvider.select(
         (capabilities) => capabilities.canEditPages,
