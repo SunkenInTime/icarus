@@ -39,7 +39,8 @@
 // Editor content
 //   {"addAgent": id, "at": [x, y], "agent": "jett"?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
-//   {"addImage": path, "at": [x, y]}   {"addLineup": n}  two lineups, ids lo1{n}, lo2{n}
+//   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?}  two lineups, ids
+//                                      lo1{n}, lo2{n}; legacy ones share one id per lineup
 //   {"dragAgent": id, "by": [dx, dy]}  {"hoverAgent": id}
 // Library and cloud
 //   {"signIn": true}                   ICARUS_DRIVE_EMAIL / ICARUS_DRIVE_PASSWORD
@@ -49,6 +50,7 @@
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
+//   {"logLineups": tag}
 //   {"expectSelected": n}              fails unless n items are selected
 //   {"exit": 1}
 import 'dart:async';
@@ -759,6 +761,7 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _place(id, _point(step, 'at'), (p) => images.updatePosition(p, id));
     case 'addLineup':
       final smoke = AgentData.agents[AgentType.brimstone]!.abilities[2];
+      final legacy = step['legacy'] == true;
       LineUpGraph one(String n, Offset from, Offset to) => LineUpGraph(
             origins: [
               LineUpOrigin(
@@ -774,21 +777,21 @@ Future<void> _run(Map<String, dynamic> step) async {
             ],
             landings: [
               LineUpLanding(
-                id: 'll$n',
+                id: legacy ? 'lo$n' : 'll$n',
                 ability: PlacedAbility(
-                  id: 'll$n',
+                  id: legacy ? 'lo$n' : 'll$n',
                   data: smoke,
                   position: to,
                   isAlly: true,
-                  lineUpID: 'll$n',
+                  lineUpID: legacy ? 'lo$n' : 'll$n',
                 ),
               ),
             ],
             links: [
               LineUpLink(
-                id: 'lk$n',
+                id: legacy ? 'lo$n' : 'lk$n',
                 originId: 'lo$n',
-                landingId: 'll$n',
+                landingId: legacy ? 'lo$n' : 'll$n',
                 name: 'Smoke $n',
                 images: const [],
               ),
@@ -882,6 +885,13 @@ Future<void> _run(Map<String, dynamic> step) async {
           Duration(milliseconds: (step['every'] ?? 100) as int),
         );
       }
+    case 'logLineups':
+      _log('LINEUPS $value ${[
+        for (final link in c.read(lineUpProvider).links)
+          '${link.id} '
+              'origin@${c.read(lineUpProvider).originById(link.originId)?.agent.position} '
+              'landing@${c.read(lineUpProvider).landingById(link.landingId)?.ability.position}',
+      ]}');
     case 'logCoords':
       final canvas = _canvasSize();
       _log(

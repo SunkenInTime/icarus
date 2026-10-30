@@ -110,8 +110,9 @@
   {"tapAt": [1528, 131]},
   {"wait": 1},
   {"expectSelected": 0},
-  {"addLineup": "{run}"},
+  {"addLineup": "{run}", "legacy": true},
   {"wait": 1},
+  {"logLineups": "before-edit"},
   {"tapAt": [428, 654], "button": "secondary"},
   {"wait": 1},
   {"tapText": "Edit placement"},
@@ -128,6 +129,7 @@
   {"tapKey": "lineup-edit-save"},
   {"wait": 1},
   {"shot": "{out}/13-edit-saved.png"},
+  {"logLineups": "after-edit"},
   {"logPage": "edit-saved"},
   {"expectSelected": 0},
   {"exit": 1}

@@ -163,6 +163,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
             key: ValueKey('lineup-edit-outline-${origin.id}'),
             // A teammate editing this end too sees it outlined.
             id: origin.id,
+            selectionId: originEndId(origin.id),
             kind: SelectableKind.lineupEnd,
             child: LineUpOriginAgentWidget(
               key: ValueKey('lineup-edit-agent-${origin.id}'),
@@ -211,6 +212,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
             key: ValueKey('lineup-edit-outline-${landing.id}'),
             // A teammate editing this end too sees it outlined.
             id: landing.id,
+            selectionId: landingEndId(landing.id),
             kind: SelectableKind.lineupEnd,
             child: LineUpLandingAbilityWidget(
               key: ValueKey('lineup-edit-ability-${landing.id}'),

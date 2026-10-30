@@ -95,6 +95,45 @@ void main() {
     });
   });
 
+  test('moving both ends of a migrated lineup keeps them apart', () {
+    final container = _createContainer();
+    final notifier = container.read(lineUpProvider.notifier);
+    // A migrated lineup has its origin and landing under one id.
+    notifier.fromHive(
+      LineUpGraph.fromLegacyGroups([
+        LineUpGroup(
+          id: 'old',
+          agent: _sova('old', const Offset(100, 100)),
+          items: [
+            LineUpItem(
+              id: 'old',
+              ability: _sovaAbility('old', const Offset(400, 400)),
+              youtubeLink: '',
+              notes: '',
+              images: const [],
+            ),
+          ],
+        ),
+      ]),
+    );
+    notifier.startEdit('old');
+
+    final ends = container.read(lineUpProvider).movableEnds;
+    expect(ends, hasLength(2));
+    notifier.moveEndsFrom(ends, const Offset(10, 20));
+    notifier.saveEdit();
+
+    final state = container.read(lineUpProvider);
+    expect(
+      state.originById('old')!.agent.position,
+      const Offset(110, 120),
+    );
+    expect(
+      state.landingById('old')!.ability.position,
+      const Offset(410, 420),
+    );
+  });
+
   group('deletion and undo', () {
     test('deleting the last link through a node removes the node', () {
       final container = _createContainer();

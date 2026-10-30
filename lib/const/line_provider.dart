@@ -595,6 +595,14 @@ class LineUpPlacement {
 /// [landingIds] are their ends. Only the ends the user drags take a draft
 /// position; the rest stay wherever the page has them, an undo included, so
 /// saving writes exactly what was dragged.
+/// What the selection calls an origin being edited. A lineup migrated from an
+/// old save has its origin and landing under one id, so the selection and
+/// [LineUpState.movableEnds] can't tell the two ends apart by that id alone.
+String originEndId(String originId) => 'origin:$originId';
+
+/// What the selection calls a landing being edited (see [originEndId]).
+String landingEndId(String landingId) => 'landing:$landingId';
+
 class LineUpPlacementEdit {
   const LineUpPlacementEdit({
     required this.linkIds,
@@ -691,7 +699,8 @@ class LineUpState {
     return pairs;
   }
 
-  /// The ends being placed or edited, by id, and where each is now.
+  /// The ends being placed or edited, by selection id (see [originEndId]),
+  /// and where each is now.
   Map<String, Offset> get movableEnds {
     final edit = this.edit;
     return {
@@ -701,10 +710,11 @@ class LineUpState {
       if (edit != null) ...{
         for (final origin in origins)
           if (edit.originIds.contains(origin.id))
-            origin.id: edit.movedOrigins[origin.id] ?? origin.agent.position,
+            originEndId(origin.id):
+                edit.movedOrigins[origin.id] ?? origin.agent.position,
         for (final landing in landings)
           if (edit.landingIds.contains(landing.id))
-            landing.id:
+            landingEndId(landing.id):
                 edit.movedLandings[landing.id] ?? landing.ability.position,
       },
     };
@@ -1185,15 +1195,23 @@ class LineUpProvider extends Notifier<LineUpState> {
   /// Moves the ends in [from], a [LineUpState.movableEnds], to [by] away from
   /// where it has them.
   void moveEndsFrom(Map<String, Offset> from, Offset by) {
-    for (final MapEntry(key: id, value: position) in from.entries) {
-      final moved = position + by;
-      if (id == state.placement?.draftAgent?.id) {
-        updateDraftAgentPosition(moved);
-      } else if (id == state.placement?.draftAbility?.id) {
-        updateDraftAbilityPosition(moved);
-      } else {
-        moveEditedOrigin(id, moved);
-        moveEditedLanding(id, moved);
+    final placement = state.placement;
+    if (from[placement?.draftAgent?.id] case final position?) {
+      updateDraftAgentPosition(position + by);
+    }
+    if (from[placement?.draftAbility?.id] case final position?) {
+      updateDraftAbilityPosition(position + by);
+    }
+    final edit = state.edit;
+    if (edit == null) return;
+    for (final id in edit.originIds) {
+      if (from[originEndId(id)] case final position?) {
+        moveEditedOrigin(id, position + by);
+      }
+    }
+    for (final id in edit.landingIds) {
+      if (from[landingEndId(id)] case final position?) {
+        moveEditedLanding(id, position + by);
       }
     }
   }
