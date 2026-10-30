@@ -1,0 +1,20 @@
+{
+  "version": "5.1.1+108",
+  "shortVersion": 108,
+  "title": "5.1.1 Update",
+  "description": "Drag to select with a tool open, and move a lineup's two ends together.",
+  "date": "2026-10-30",
+  "mandatory": false,
+  "channels": ["desktop", "stable"],
+  "platforms": ["windows"],
+  "changes": [
+    {
+      "message": "Dragging on the map to select now works with the text, vision cone, custom shape and agent role tools open. Before, you had to close the tool first. While one of these is open, a drag selects instead of moving the map, so hold Space and drag to move it.",
+      "type": "fix"
+    },
+    {
+      "message": "While placing or editing a lineup, drag a box around its agent and ability to select them, then drag either one to move them together. The rest of the page stays locked.",
+      "type": "feat"
+    }
+  ]
+}
