@@ -1,0 +1,16 @@
+{
+  "version": "5.1.2+109",
+  "shortVersion": 109,
+  "title": "5.1.2 Update",
+  "description": "A fix for undoing a lineup while adding another to it.",
+  "date": "2026-10-30",
+  "mandatory": false,
+  "channels": ["desktop", "stable"],
+  "platforms": ["windows"],
+  "changes": [
+    {
+      "message": "Undoing a lineup while you add another one to it now ends placing. Before, pressing Next and Done showed an error and left the Create Lineup window stuck.",
+      "type": "fix"
+    }
+  ]
+}
