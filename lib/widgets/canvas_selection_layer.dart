@@ -463,10 +463,13 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     final canvas = _canvas;
     if (canvas == null) return null;
     if (heldIds.isNotEmpty) {
-      for (final (:item, corners: _) in _registry.itemsIn(canvas)) {
-        if (heldIds.contains(item.id)) return item;
-      }
-      return null;
+      // The newest of them, which is drawn on top: a locked item's press can
+      // land on several.
+      return _registry
+          .itemsIn(canvas)
+          .map((entry) => entry.item)
+          .where((item) => heldIds.contains(item.id))
+          .lastOrNull;
     }
     return _drawingAt(event.position);
   }
