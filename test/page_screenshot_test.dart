@@ -148,7 +148,7 @@ class _NoSupabase extends Fake implements AuthProviderSupabaseApi {
 
 /// A save dialog the test closes when it chooses.
 class _PendingPicker extends FilePicker {
-  final saves = <Uint8List?>[];
+  final saves = <String?>[];
   final closed = Completer<String?>();
 
   @override
@@ -161,7 +161,7 @@ class _PendingPicker extends FilePicker {
     Uint8List? bytes,
     bool lockParentWindow = false,
   }) {
-    saves.add(bytes);
+    saves.add(fileName);
     return closed.future;
   }
 }
@@ -526,7 +526,7 @@ void main() {
       await tester.pump();
     }
     expect(picker.saves, hasLength(1));
-    expect(picker.saves.single, isNotEmpty);
+    expect(picker.saves.single, endsWith('.png'));
     // The capture is done, but the dialog waits for the panel, and nothing
     // but the panel closes it.
     expect(find.text('Saving screenshot'), findsOneWidget);

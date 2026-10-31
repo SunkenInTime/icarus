@@ -7,11 +7,6 @@ import 'package:icarus/services/video_export/quicktime_animation_encoder.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/services/video_export/video_frame_sink.dart';
 
-/// Windows' save dialog does not guarantee that the selected extension is
-/// appended, even when FilePicker is restricted to .mov files.
-String ensureMovExtension(String path) =>
-    path.toLowerCase().endsWith('.mov') ? path : '$path.mov';
-
 /// Transparent video, on desktop and in the browser alike: frames become a
 /// lossless QuickTime Animation .mov (see [QuickTimeAnimationEncoder]),
 /// encoded in Dart as they arrive.

@@ -1,0 +1,11 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"newLocal": "ascent", "name": "Types {run}"},
+  {"wait": 4},
+  {"tapText": "Types {run}", "optional": true},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"addAgent": "a1-{run}", "at": [640, 420]},
+  {"wait": 2}
+]
