@@ -29,7 +29,7 @@ Strategy/page/lineup payloads store image IDs and local metadata only. Public re
 
 - Expired upload URL: the client does not persist the signed URL. A retry requests a fresh pending upload intent.
 - MIME mismatch: `Content-Type` is signed for PUT and completion verifies R2 metadata against the file extension.
-- Oversized image: completion rejects and deletes the uploaded R2 object if it exceeds `R2_MAX_IMAGE_BYTES`.
+- Oversized image: `images:generateUploadUrl` refuses a stated size over `R2_MAX_IMAGE_BYTES`, or no exact size at all, and signs the stated size into the PUT URL. R2 answers `403 SignatureDoesNotMatch` to a body of any other length and stores nothing. Completion still rejects and deletes an object over the limit, which covers a lowered limit and URLs signed before this check.
 - PUT succeeds but completion fails: the pending row and object key remain available for retry. The hourly `mark-stale-image-uploads-deleted` job reclaims old pending and failed uploads without user authentication.
 - Content lands before its upload: a placed image or lineup image and its upload reach Convex independently. When `ops:applyBatch` accepts content that newly shows an image with no asset row, it inserts a pending placeholder row (no object key). Readers then see the image as on its way rather than missing, and a duplicate waits for it. `images:generateUploadUrl` adopts the placeholder instead of adding a second row. Deleting the image element drops its placeholder unless a lineup still shows that image (no other element can: a placed image's id is its element's own id). Restoring a deleted element (undo) expects its image again only if the element was first placed within the stale-upload window (24h); an older one would have uploaded or been swept by then. A placeholder whose upload never comes is swept with other stale pending rows, after which the image shows as unavailable. Moving the image later does not bring the placeholder back.
 - Pending upload never completed: pending/failed rows are indexed by `uploadStatus` and `updatedAt`. The cron job marks them for cleanup after 24 hours.
@@ -67,7 +67,7 @@ In the Cloudflare dashboard: R2 > the media bucket > Settings > CORS Policy > Ad
 ]
 ```
 
-- `PUT` with `Content-Type` is the presigned upload; `Content-Type` is the only header the client sends and the only one signed besides `host`.
+- `PUT` with `Content-Type` is the presigned upload; `Content-Type` is the only header the client sets. The URL also signs `host` and `content-length`, which the browser fills in itself, so neither needs a CORS entry.
 - `GET`/`HEAD` let the web app fetch images from the public custom domain to paint them.
 - `ETag` is exposed so the client can pass it to `images:completeUpload`. Completion reads the ETag from R2 itself first, so this is informational.
 - Desktop is not a browser and ignores CORS; this rule changes nothing for it.
