@@ -1,0 +1,20 @@
+{
+  "version": "5.1.3+110",
+  "shortVersion": 110,
+  "title": "5.1.3 Update",
+  "description": "Replays from VALORANT patch 13.09 open again.",
+  "date": "2026-10-31",
+  "mandatory": false,
+  "channels": ["desktop", "stable"],
+  "platforms": ["windows"],
+  "changes": [
+    {
+      "message": "Icarus now reads replays from VALORANT patch 13.09. Matches played since the patch showed greyed out in Replays and wouldn't open. Hush's abilities show up in them too.",
+      "type": "fix"
+    },
+    {
+      "message": "A round the timer ended now shows the timer icon in the round strip.",
+      "type": "fix"
+    }
+  ]
+}
