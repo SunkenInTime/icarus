@@ -13,8 +13,8 @@ use crate::error::{ErrorCode, ReplayError};
 
 /// Changes whenever the decoded output could: our version plus vrfkit's tag.
 /// The Dart cache keys decoded replays by it.
-pub const DECODER_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "+vrfkit.0.2.5");
-pub const VRFKIT_VERSION: &str = "0.2.5";
+pub const DECODER_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "+vrfkit.0.4.0");
+pub const VRFKIT_VERSION: &str = "0.4.0";
 
 /// The facts the probe returns (docs/replay-format.md, "Probe").
 #[derive(Debug, Clone, Serialize)]
@@ -188,7 +188,8 @@ mod tests {
 
     #[test]
     fn decoder_version_names_both_versions() {
-        assert_eq!(DECODER_VERSION, "0.3.1+vrfkit.0.2.5");
+        assert_eq!(DECODER_VERSION, "0.3.2+vrfkit.0.4.0");
+        assert!(DECODER_VERSION.ends_with(VRFKIT_VERSION));
     }
 
     #[test]

@@ -3,7 +3,7 @@ name = "icarus_replay"
 # Bump whenever the decoded output could change: Icarus keys its cache of
 # decoded replays by it (header::DECODER_VERSION), so an unchanged version
 # serves the old output.
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 rust-version = "1.86"
 license = "Apache-2.0"
@@ -23,18 +23,18 @@ dev-vectors = ["dep:sha2"]
 name = "icarus-replay-dump"
 path = "src/bin/icarus-replay-dump.rs"
 
-# vrfkit v0.2.5 (c4d6cc0). `vrf-container` keeps its `oodle` feature off so the
+# vrfkit v0.4.0 (b9ba3f7). `vrf-container` keeps its `oodle` feature off so the
 # GPL-derived oozextract never enters the build; decompression is ours (src/oodle.rs).
 [dependencies]
-vrf-bitio = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
-vrf-container = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5", default-features = false, features = ["event"] }
-vrf-schema = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5", default-features = false }
-vrf-net = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
-vrf-frame = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
-vrf-movement = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
-vrf-decode = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
-vrf-transform = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
-vrf-export = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5", default-features = false }
+vrf-bitio = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.4.0" }
+vrf-container = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.4.0", default-features = false, features = ["event"] }
+vrf-schema = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.4.0", default-features = false }
+vrf-net = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.4.0" }
+vrf-frame = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.4.0" }
+vrf-movement = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.4.0" }
+vrf-decode = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.4.0" }
+vrf-transform = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.4.0" }
+vrf-export = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.4.0", default-features = false }
 smallvec = { version = "1", features = ["union"] }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
@@ -42,12 +42,7 @@ serde_json = "1"
 sha2 = { version = "0.10", optional = true }
 
 [dev-dependencies]
-vrf-testkit = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.2.5" }
-
-# vrfkit v0.2.5 stops at VALORANT 13.06. Our copy of vrf-transform adds 13.08
-# (patches/vrf-transform/NOTICE.md); drop it once a vrfkit release has that build.
-[patch."https://github.com/yakisoba0728/vrfkit"]
-vrf-transform = { path = "patches/vrf-transform" }
+vrf-testkit = { git = "https://github.com/yakisoba0728/vrfkit", tag = "v0.4.0" }
 
 [profile.release]
 opt-level = 3

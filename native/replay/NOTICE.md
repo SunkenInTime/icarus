@@ -1,10 +1,9 @@
 # Notices
 
 `native/replay` depends on the vrfkit library crates
-(<https://github.com/yakisoba0728/vrfkit>, tag v0.2.5, commit c4d6cc0) and
+(<https://github.com/yakisoba0728/vrfkit>, tag v0.4.0, commit b9ba3f7) and
 vendors code from its CLI crate into `src/vendor/` (each file names its
-source). `patches/vrf-transform/` is vrfkit's vrf-transform crate with the
-VALORANT 13.08 transform added (its NOTICE.md says what changed). vrfkit's NOTICE.md follows verbatim; the full Apache License 2.0 text
+source). vrfkit's NOTICE.md follows verbatim; the full Apache License 2.0 text
 is the repository's `LICENSE`, the same as vrfkit's.
 
 ---

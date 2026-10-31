@@ -1,4 +1,4 @@
-// Vendored from vrfkit v0.2.5 (c4d6cc0), crates/vrfkit/src/sink/measured_routes.rs. Apache-2.0;
+// Vendored from vrfkit v0.4.0 (b9ba3f7), crates/vrfkit/src/sink/measured_routes.rs. Apache-2.0;
 // see native/replay/NOTICE.md. Local edits: listed in src/vendor/mod.rs.
 
 //! Which checksum-gated structured-array routes a replay branch admits.
@@ -142,9 +142,6 @@ impl MeasuredArrayRoutes {
             | "++Ares-Core+release-13.04"
             | "++Ares-Core+release-13.05"
             | "++Ares-Core+release-13.06" => Self::ALL,
-            // 13.08 (Icarus): no route has had its children re-parsed
-            // independently, and Icarus's output does not depend on them.
-            "++Ares-Core+release-13.08" => Self::NONE,
             _ => Self::NONE,
         }
     }
@@ -243,6 +240,7 @@ mod tests {
         ("++Ares-Core+release-13.05", ALL),
         ("++Ares-Core+release-13.06", ALL),
         ("++Ares-Core+release-13.08", &[]),
+        ("++Ares-Core+release-13.09", &[]),
     ];
 
     #[test]

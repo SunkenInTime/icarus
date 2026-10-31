@@ -58,7 +58,7 @@ dependencies = [
 
 [[package]]
 name = "icarus_replay"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -224,13 +224,13 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vrf-bitio"
-version = "0.2.5"
-source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.2.5#c4d6cc0e5ec3904fdb64b350b2656b8e3ff33d53"
+version = "0.4.0"
+source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.4.0#b9ba3f70735c7219fef41ba61a80626a4bb88757"
 
 [[package]]
 name = "vrf-container"
-version = "0.2.5"
-source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.2.5#c4d6cc0e5ec3904fdb64b350b2656b8e3ff33d53"
+version = "0.4.0"
+source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.4.0#b9ba3f70735c7219fef41ba61a80626a4bb88757"
 dependencies = [
  "thiserror",
  "vrf-bitio",
@@ -238,8 +238,8 @@ dependencies = [
 
 [[package]]
 name = "vrf-decode"
-version = "0.2.5"
-source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.2.5#c4d6cc0e5ec3904fdb64b350b2656b8e3ff33d53"
+version = "0.4.0"
+source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.4.0#b9ba3f70735c7219fef41ba61a80626a4bb88757"
 dependencies = [
  "thiserror",
  "vrf-bitio",
@@ -247,8 +247,8 @@ dependencies = [
 
 [[package]]
 name = "vrf-export"
-version = "0.2.5"
-source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.2.5#c4d6cc0e5ec3904fdb64b350b2656b8e3ff33d53"
+version = "0.4.0"
+source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.4.0#b9ba3f70735c7219fef41ba61a80626a4bb88757"
 dependencies = [
  "smallvec",
  "thiserror",
@@ -256,8 +256,8 @@ dependencies = [
 
 [[package]]
 name = "vrf-frame"
-version = "0.2.5"
-source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.2.5#c4d6cc0e5ec3904fdb64b350b2656b8e3ff33d53"
+version = "0.4.0"
+source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.4.0#b9ba3f70735c7219fef41ba61a80626a4bb88757"
 dependencies = [
  "thiserror",
  "vrf-bitio",
@@ -266,8 +266,8 @@ dependencies = [
 
 [[package]]
 name = "vrf-movement"
-version = "0.2.5"
-source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.2.5#c4d6cc0e5ec3904fdb64b350b2656b8e3ff33d53"
+version = "0.4.0"
+source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.4.0#b9ba3f70735c7219fef41ba61a80626a4bb88757"
 dependencies = [
  "thiserror",
  "vrf-bitio",
@@ -275,8 +275,8 @@ dependencies = [
 
 [[package]]
 name = "vrf-net"
-version = "0.2.5"
-source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.2.5#c4d6cc0e5ec3904fdb64b350b2656b8e3ff33d53"
+version = "0.4.0"
+source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.4.0#b9ba3f70735c7219fef41ba61a80626a4bb88757"
 dependencies = [
  "thiserror",
  "vrf-bitio",
@@ -286,8 +286,8 @@ dependencies = [
 
 [[package]]
 name = "vrf-schema"
-version = "0.2.5"
-source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.2.5#c4d6cc0e5ec3904fdb64b350b2656b8e3ff33d53"
+version = "0.4.0"
+source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.4.0#b9ba3f70735c7219fef41ba61a80626a4bb88757"
 dependencies = [
  "thiserror",
  "vrf-bitio",
@@ -296,11 +296,12 @@ dependencies = [
 [[package]]
 name = "vrf-testkit"
 version = "0.0.0"
-source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.2.5#c4d6cc0e5ec3904fdb64b350b2656b8e3ff33d53"
+source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.4.0#b9ba3f70735c7219fef41ba61a80626a4bb88757"
 
 [[package]]
 name = "vrf-transform"
-version = "0.2.5"
+version = "0.4.0"
+source = "git+https://github.com/yakisoba0728/vrfkit?tag=v0.4.0#b9ba3f70735c7219fef41ba61a80626a4bb88757"
 dependencies = [
  "vrf-bitio",
 ]
