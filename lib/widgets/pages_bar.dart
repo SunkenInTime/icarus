@@ -1060,6 +1060,10 @@ class _PageRow extends StatefulWidget {
 class _PageRowState extends State<_PageRow> {
   bool _hovered = false;
 
+  void _rename() => widget.onRename?.call(widget.page);
+
+  void _delete() => widget.onDelete?.call(widget.page, widget.pageCount);
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1067,7 +1071,7 @@ class _PageRowState extends State<_PageRow> {
     final showActions =
         _hovered || widget.active || widget.transitionProgress != null;
     final isRaised = widget.active && fillProgress == null;
-    return MouseRegion(
+    final row = MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: Material(
@@ -1165,9 +1169,7 @@ class _PageRowState extends State<_PageRow> {
                                     : Colors.white24,
                                 icon: const Icon(LucideIcons.pen,
                                     size: 18, color: Colors.white),
-                                onPressed: widget.canRename
-                                    ? () => widget.onRename?.call(widget.page)
-                                    : null,
+                                onPressed: widget.canRename ? _rename : null,
                               ),
                             ),
                             const SizedBox(width: 2),
@@ -1185,10 +1187,8 @@ class _PageRowState extends State<_PageRow> {
                                   LucideIcons.trash,
                                   size: 18,
                                 ),
-                                onPressed: widget.disableDelete
-                                    ? null
-                                    : () => widget.onDelete
-                                        ?.call(widget.page, widget.pageCount),
+                                onPressed:
+                                    widget.disableDelete ? null : _delete,
                               ),
                             ),
                           ],
@@ -1203,6 +1203,30 @@ class _PageRowState extends State<_PageRow> {
         ),
       ),
     );
+
+    // What the row's buttons do, for whoever may use them. The last page
+    // keeps a greyed Delete, as its button does.
+    final menuItems = [
+      if (widget.onRename != null)
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.pencil, size: 16),
+          onPressed: _rename,
+          child: const Text('Rename'),
+        ),
+      if (widget.onDelete != null)
+        ShadContextMenuItem(
+          leading: Icon(
+            LucideIcons.trash2,
+            size: 16,
+            color: Settings.tacticalVioletTheme.destructive,
+          ),
+          enabled: !widget.disableDelete,
+          onPressed: widget.disableDelete ? null : _delete,
+          child: const Text('Delete'),
+        ),
+    ];
+    if (menuItems.isEmpty) return row;
+    return ShadContextMenuRegion(items: menuItems, child: row);
   }
 }
 

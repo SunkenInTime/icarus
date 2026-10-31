@@ -22,6 +22,7 @@ import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
+import 'package:icarus/widgets/delete_helpers.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/sightline_report_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
@@ -268,11 +269,14 @@ class AgentWidget extends ConsumerWidget {
             : placedAgentNode != null
                 ? buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id)
                 : const <ShadContextMenuItem>[];
+    // A lineup draft can carry the id of the placed agent it started from.
+    final canDeleteHere = placedAgentNode != null && onWeaponSelected == null;
     final hasContextMenuItemsBelow = canInteract &&
         (lineUpId != null ||
             (plainAgent != null && plainAgent.id.isNotEmpty) ||
             viewConeAgent != null ||
-            adjacentPageCopyItems.isNotEmpty);
+            adjacentPageCopyItems.isNotEmpty ||
+            canDeleteHere);
     final contextMenuItems = <ShadContextMenuItem>[
       if (canInteract)
         ShadContextMenuItem.raw(
@@ -418,6 +422,16 @@ class AgentWidget extends ConsumerWidget {
           },
         ),
       ...adjacentPageCopyItems,
+      if (canDeleteHere)
+        ShadContextMenuItem(
+          leading: Icon(
+            LucideIcons.trash2,
+            size: 16,
+            color: Settings.tacticalVioletTheme.destructive,
+          ),
+          child: const Text('Delete'),
+          onPressed: () => deleteAgentFromMenu(ref, placedAgentNode.id),
+        ),
     ];
 
     Widget agentCard;
