@@ -31,21 +31,21 @@ class VisionGeometryAlignment {
 class Maps {
   static List<MapValue> availableMaps = [
     MapValue.abyss,
-    MapValue.ascent,
+    MapValue.bind,
+    MapValue.corrode,
     MapValue.haven,
     MapValue.lotus,
-    MapValue.split,
     MapValue.sunset,
     MapValue.summit,
   ];
 
   static List<MapValue> outofplayMaps = [
-    MapValue.bind,
+    MapValue.ascent,
     MapValue.breeze,
-    MapValue.corrode,
     MapValue.fracture,
     MapValue.icebox,
     MapValue.pearl,
+    MapValue.split,
   ];
 
   /// The map's name as users read it: "Ascent", "Icebox".
