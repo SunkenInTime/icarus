@@ -218,17 +218,41 @@ class AgentData implements DraggableData {
         abilityData:
             ImageAbility(imagePath: 'assets/agents/Jett/Smoke.webp', size: 30),
       ),
-    AgentType.raze: AgentData(
-      type: AgentType.raze,
-      role: AgentRole.duelist,
-      name: "Raze",
-      abilityNames: const [
-        "Boom Bot",
-        "Blast Pack",
-        "Paint Shells",
-        "Showstopper",
-      ],
-    ),
+    AgentType.raze: (() {
+      final agent = AgentData(
+        type: AgentType.raze,
+        role: AgentRole.duelist,
+        name: "Raze",
+        abilityNames: const [
+          "Boom Bot",
+          "Blast Pack",
+          "Paint Shells",
+          "Showstopper",
+        ],
+      );
+
+      // Outer damage radii from the Valorant 13.09 files: 500, 550 (the main
+      // shell; its four bomblets reach 525) and 700.
+      agent.abilities[1].abilityData = RangedIconAbility(
+        iconPath: agent.abilities[1].iconPath,
+        size: 5,
+        rangeOutlineColor: Colors.orangeAccent,
+      );
+
+      agent.abilities[2].abilityData = RangedIconAbility(
+        iconPath: agent.abilities[2].iconPath,
+        size: 5.5,
+        rangeOutlineColor: Colors.orangeAccent,
+      );
+
+      agent.abilities[3].abilityData = RangedIconAbility(
+        iconPath: agent.abilities[3].iconPath,
+        size: 7,
+        rangeOutlineColor: Colors.orangeAccent,
+      );
+
+      return agent;
+    })(),
     AgentType.pheonix: (() {
       final agent = AgentData(
         type: AgentType.pheonix,
@@ -455,6 +479,13 @@ class AgentData implements DraggableData {
         size: 18,
         rangeOutlineColor: Colors.green,
         hasCenterDot: true,
+      );
+
+      // Where it pops: ConcussionRange 350 in the Valorant 13.09 files.
+      agent.abilities[1].abilityData = RangedIconAbility(
+        iconPath: agent.abilities[1].iconPath,
+        size: 3.5,
+        rangeOutlineColor: Colors.green,
       );
 
       return agent;
@@ -919,6 +950,13 @@ class AgentData implements DraggableData {
         hasCenterDot: true,
       );
 
+      // Who it detains: Detain Radius 500 in the Valorant 13.09 files.
+      agent.abilities[3].abilityData = RangedIconAbility(
+        iconPath: agent.abilities[3].iconPath,
+        size: 5,
+        rangeOutlineColor: Colors.greenAccent,
+      );
+
       return agent;
     })(),
     AgentType.harbor: (() {
@@ -999,6 +1037,15 @@ class AgentData implements DraggableData {
         size: 6.25,
         rangeOutlineColor: Colors.deepPurple,
         hasCenterDot: true,
+      );
+
+      // Enemies inside this see it: Stealth Reveal Range 1000 in the
+      // Valorant 13.09 files. It isn't the flash's reach, so it has no fill.
+      agent.abilities[2].abilityData = RangedIconAbility(
+        iconPath: agent.abilities[2].iconPath,
+        size: 10,
+        rangeOutlineColor: Colors.deepPurple,
+        rangeFillColor: Colors.transparent,
       );
 
       // 28 m since patch 12.00. Saved Steel Gardens were placed at 32.5 m.
@@ -1105,9 +1152,15 @@ class AgentData implements DraggableData {
         hasCenterDot: true,
       );
 
+      // From the Valorant 13.09 files: enemies inside the inner ring set it
+      // off (ActivationSphere 658) and enemies inside the outer ring see it
+      // (Stealth Reveal Range 900). Saved Chokeholds were placed at 6.58 m.
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
-        size: 6.58,
+        size: 9,
+        storedSize: 6.58,
+        innerRangeSize: 6.58,
+        innerRangeColor: Colors.lightBlueAccent,
         rangeOutlineColor: Colors.lightBlueAccent,
         hasCenterDot: true,
       );

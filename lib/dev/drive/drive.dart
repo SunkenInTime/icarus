@@ -39,6 +39,7 @@
 // Editor content
 //   {"addAgent": id, "at": [x, y], "agent": "jett"?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
+//   {"addAbility": id, "at": [x, y], "agent": a, "index": n}
 //   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?}  two lineups, ids
 //                                      lo1{n}, lo2{n}; legacy ones share one id per lineup
 //   {"dragAgent": id, "by": [dx, dy]}  {"hoverAgent": id}
@@ -721,11 +722,14 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
       await _place(id, _point(step, 'at'), (p) => agents.updatePosition(p, id));
     case 'addSmoke':
+    case 'addAbility':
       final id = value as String;
       final abilities = c.read(abilityProvider.notifier);
+      final agent = (step['agent'] ?? 'brimstone') as String;
       abilities.addAbility(
         PlacedAbility(
-          data: AgentData.agents[AgentType.brimstone]!.abilities[2],
+          data: AgentData.agents[AgentType.values.byName(agent)]!
+              .abilities[(step['index'] ?? 2) as int],
           position: const Offset(500, 500),
           id: id,
           isAlly: true,

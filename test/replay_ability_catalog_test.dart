@@ -63,6 +63,26 @@ void main() {
         mapScale: mapScaleOf(projection),
       );
 
+  test('a plain icon with a range stays a plain icon in a replay', () {
+    // Each flies or rolls; a circle around it would follow it across the map.
+    for (final classPath in const [
+      '/Game/Characters/Clay/S0/Ability_Q/Projectile_Clay_Q_Satchel_Arming.Projectile_Clay_Q_Satchel_Arming_C',
+      '/Game/Characters/Clay/S0/Ability_4/Projectile_Clay_4_Projectile_Primary.Projectile_Clay_4_Projectile_Primary_C',
+      '/Game/Characters/Clay/S0/Ability_X/Projectile_Clay_X_Rocket.Projectile_Clay_X_Rocket_C',
+      '/Game/Characters/Guide/S0/Ability_Q/Pawn_Guide_Q_PossessableScout.Pawn_Guide_Q_PossessableScout_C',
+      '/Game/Characters/AggroBot/S0/Ability_X/Pawn_Aggrobot_RollyPolly.Pawn_Aggrobot_RollyPolly_C',
+      '/Game/Characters/Nox/S0/Ability_E/GameObject_Nox_StealthingTrap_Flash_2.GameObject_Nox_StealthingTrap_Flash_2_C',
+    ]) {
+      final placed = place(
+        utility(classPath, position: const ReplayVector(0, 0, 0)),
+        ReplayMapProjection.forMap(MapValue.ascent),
+      );
+      expect(placed.data.abilityData, isA<RangedIconAbility>());
+      expect(placed.visualState.showRangeOutline, isFalse, reason: classPath);
+      expect(placed.visualState.showRangeFill, isFalse, reason: classPath);
+    }
+  });
+
   Offset screenOf(ReplayMapProjection projection, ReplayVector point) =>
       coordinates.coordinateToScreen(projection.toWorld(point.x, point.y));
 

@@ -23,6 +23,7 @@ bool supportsAbilityVisibilityMenu(Ability? ability) {
       ability is CenterSquareAbility ||
       ability is CircleAbility ||
       ability is SectorCircleAbility ||
+      ability is RangedIconAbility ||
       ability is DeadlockBarrierMeshAbility;
 }
 
@@ -189,7 +190,9 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
     ];
   }
 
-  if (abilityData is CircleAbility || abilityData is SectorCircleAbility) {
+  if (abilityData is CircleAbility ||
+      abilityData is SectorCircleAbility ||
+      abilityData is RangedIconAbility) {
     if (_hasInnerRange(abilityData)) {
       return [
         _AbilityVisibilityControl(
@@ -278,6 +281,11 @@ bool _hasVisibleRangeFill(Ability? ability) {
         opacity: ability.opacity,
       ),
     SectorCircleAbility() => hasVisibleAbilityRangeFill(
+        rangeOutlineColor: ability.rangeOutlineColor,
+        rangeFillColor: ability.rangeFillColor,
+        opacity: ability.opacity,
+      ),
+    RangedIconAbility() => hasVisibleAbilityRangeFill(
         rangeOutlineColor: ability.rangeOutlineColor,
         rangeFillColor: ability.rangeFillColor,
         opacity: ability.opacity,

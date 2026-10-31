@@ -204,6 +204,14 @@ class ReplayAbilityEntry {
       rotation: geometry.rotation,
       length: geometry.length,
       armLengthsMeters: geometry.armLengthsMeters,
+      // These fly or roll, and their range is where they go off, not where
+      // they are now. A replay shows the icon, as it always has.
+      visualState: shape is RangedIconAbility
+          ? const AbilityVisualState(
+              showRangeOutline: false,
+              showRangeFill: false,
+            )
+          : const AbilityVisualState(),
     );
   }
 

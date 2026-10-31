@@ -137,6 +137,54 @@ class BaseAbility extends Ability {
   }
 }
 
+/// A plain icon with a range around it. A saved icon's position is the
+/// top-left of the icon's box, so the box stays the icon's and the circle
+/// spills out of it, centered: adding a range moves nothing already placed.
+class RangedIconAbility extends BaseAbility {
+  RangedIconAbility({
+    required super.iconPath,
+    required double size,
+    required this.rangeOutlineColor,
+    this.rangeFillColor,
+    this.opacity,
+  }) : size = size * AgentData.inGameMetersDiameter;
+
+  final double size;
+  final Color rangeOutlineColor;
+  final Color? rangeFillColor;
+  final int? opacity;
+
+  @override
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
+    String? landingId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
+  }) {
+    return CustomCircleWidget(
+      iconPath: iconPath,
+      size: size * mapScale,
+      rangeOutlineColor: rangeOutlineColor,
+      hasCenterDot: true,
+      opacity: opacity,
+      rangeFillColor: rangeFillColor,
+      iconRotation: rotation,
+      id: id,
+      isAlly: isAlly,
+      landingId: landingId,
+      visualState: visualState,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
+    );
+  }
+}
+
 class ImageAbility extends Ability {
   final String imagePath;
   final double size;
@@ -216,7 +264,8 @@ class CircleAbility extends Ability {
   /// The size saved positions were placed at. A saved circle's position is
   /// the top-left of a box this big, so when Riot changes the radius, this
   /// keeps the old one: the circle is drawn at [size], centered in the box,
-  /// and stays centered where the user put it.
+  /// and stays centered where the user put it. A circle bigger than the box
+  /// spills out of it the same way.
   final double storedSize;
   final Color rangeOutlineColor;
   final String iconPath;
