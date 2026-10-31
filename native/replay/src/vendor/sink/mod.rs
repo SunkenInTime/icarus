@@ -1,4 +1,4 @@
-// Vendored from vrfkit v0.2.5 (c4d6cc0), crates/vrfkit/src/sink/mod.rs. Apache-2.0;
+// Vendored from vrfkit v0.4.0 (b9ba3f7), crates/vrfkit/src/sink/mod.rs. Apache-2.0;
 // see native/replay/NOTICE.md. Local edits: listed in src/vendor/mod.rs.
 
 //! Sink implementation connecting `vrf-net` events to `vrf-export` records.
@@ -215,6 +215,10 @@ pub struct ExportStats {
     /// what follows may be other data: kept apart, never summed with the above.
     pub movement_open_section_tails: u64,
     pub movement_open_section_tail_bits: u64,
+    /// Components with bits after a fitting, nonzero movement window, and
+    /// those bits. Neither inside-section tails nor outside-envelope trailers.
+    pub movement_sized_section_trailers: u64,
+    pub movement_sized_section_trailer_bits: u64,
     /// Byte-wrapped movement streams and the bits after their envelopes,
     /// which nothing reads (`vrf_movement::RpcDecodeResult::envelope_trailer_bits`):
     /// 24 per stream on every measured replay. A soft tally like the tails.
@@ -299,6 +303,7 @@ export_counters! {
         rep_layout_cnc_tails_decoded, rep_layout_cnc_tails_preserved, struct_blobs_failed,
         movement_rpc_errors, movement_sized_section_tails, movement_sized_section_tail_bits,
         movement_open_section_tails, movement_open_section_tail_bits, movement_envelope_trailers,
+        movement_sized_section_trailers, movement_sized_section_trailer_bits,
         movement_envelope_trailer_bits, truncated_rpcs, rpc_param_walks, rpc_suffix_bits_dropped,
         array_leaf_decode_errors, targeting_world_locations_decoded,
         route_children_player_information, route_children_tracked_rewards,
@@ -355,6 +360,8 @@ impl ExportStats {
                     sized_section_tail_bits,
                     open_section_tails,
                     open_section_tail_bits,
+                    sized_section_trailers,
+                    sized_section_trailer_bits,
                     envelope_trailer_streams,
                     envelope_trailer_bits,
                 } = *r;
@@ -362,6 +369,8 @@ impl ExportStats {
                 self.movement_sized_section_tail_bits += sized_section_tail_bits;
                 self.movement_open_section_tails += u64::from(open_section_tails);
                 self.movement_open_section_tail_bits += open_section_tail_bits;
+                self.movement_sized_section_trailers += u64::from(sized_section_trailers);
+                self.movement_sized_section_trailer_bits += sized_section_trailer_bits;
                 self.movement_envelope_trailers += u64::from(envelope_trailer_streams);
                 self.movement_envelope_trailer_bits += envelope_trailer_bits;
                 if error_count > 0 {
@@ -387,9 +396,46 @@ mod stats_tests {
     use super::ExportStats;
     use vrf_movement::{MovementError, RpcDecodeResult};
 
-    /// A clean-framed batch with `error_count` soft errors and the six tallies
-    /// (sized tails, bits, open tails, bits, envelope trailers, bits).
-    fn batch(error_count: u32, t: [u32; 6]) -> Result<RpcDecodeResult, MovementError> {
+    #[test]
+    fn movement_missing_array_terminator_preserves_raw_rpc_evidence() {
+        use super::test_fixtures::Rig;
+        use std::sync::Arc;
+        use vrf_net::field::FieldSink;
+
+        // Given: the recorded 33-bit RPC and its declared movement field.
+        let data = [0x08, 0x20, 0x04, 0, 0];
+        let path = "/Script/Test.Movement_ClassNetCache";
+        let mut rig = Rig::default();
+        rig.cache
+            .add_export_group(vrf_schema::NetFieldExportGroup::new(path.into(), 7, 1))
+            .unwrap();
+        assert!(rig.cache.set_field_on_group(
+            7,
+            vrf_schema::NetFieldExport {
+                handle: 0,
+                compatible_checksum: 0,
+                name: "ReplaysClientReceiveRemoteCharacterUpdatesSingleArrayNoAutonomous".into(),
+            },
+        ));
+        let mut sink = rig.sink();
+        sink.set_current_group_path(Arc::from(path));
+        let reader = vrf_bitio::BitReader::with_bit_len(&data, 33).unwrap();
+
+        // When: the actual RPC callback routes the bounded payload.
+        sink.on_rpc(0, 33, reader);
+
+        // Then: one loss retains the full raw input and exact length.
+        assert_eq!(sink.stats.movement_rpc_errors, 1);
+        assert_eq!(rig.records.fields.len(), 1);
+        assert_eq!(rig.records.fields[0].bit_count, 33);
+        assert_eq!(
+            rig.records.fields[0].raw_bits.as_deref(),
+            Some(data.as_slice())
+        );
+    }
+
+    /// A clean-framed batch with soft errors and independent movement tallies.
+    fn batch(error_count: u32, t: [u32; 8]) -> Result<RpcDecodeResult, MovementError> {
         Ok(RpcDecodeResult {
             error_count,
             sized_section_tails: t[0],
@@ -398,6 +444,8 @@ mod stats_tests {
             open_section_tail_bits: t[3].into(),
             envelope_trailer_streams: t[4],
             envelope_trailer_bits: t[5].into(),
+            sized_section_trailers: t[6],
+            sized_section_trailer_bits: t[7].into(),
             ..Default::default()
         })
     }
@@ -408,8 +456,8 @@ mod stats_tests {
     #[test]
     fn tallies_sum_field_by_field_and_are_not_errors() {
         let mut s = ExportStats::default();
-        s.record_movement_decode(batch(0, [1, 2, 3, 4, 5, 6]).as_ref());
-        s.record_movement_decode(batch(1, [10, 20, 30, 40, 50, 60]).as_ref());
+        s.record_movement_decode(batch(0, [1, 2, 3, 4, 5, 6, 7, 8]).as_ref());
+        s.record_movement_decode(batch(1, [10, 20, 30, 40, 50, 60, 70, 80]).as_ref());
         s.record_movement_decode(Err(MovementError::ErrorSentinel).as_ref());
         let tallies = [
             s.movement_sized_section_tails,
@@ -418,8 +466,13 @@ mod stats_tests {
             s.movement_open_section_tail_bits,
             s.movement_envelope_trailers,
             s.movement_envelope_trailer_bits,
+            s.movement_sized_section_trailers,
+            s.movement_sized_section_trailer_bits,
         ];
-        assert_eq!(tallies, [11, 22, 33, 44, 55, 66]);
+        assert_eq!(tallies, [11, 22, 33, 44, 55, 66, 77, 88]);
+        let counters = s.counters();
+        assert!(counters.contains(&("movement_sized_section_trailers", 77)));
+        assert!(counters.contains(&("movement_sized_section_trailer_bits", 88)));
         assert_eq!(s.movement_rpc_errors, 2, "the soft error and the Err");
     }
 
@@ -429,10 +482,10 @@ mod stats_tests {
     #[test]
     fn movement_errors_count_every_occurrence_and_keep_the_first() {
         let mut s = ExportStats::default();
-        s.record_movement_decode(batch(0, [0; 6]).as_ref());
+        s.record_movement_decode(batch(0, [0; 8]).as_ref());
         assert_eq!(s.movement_rpc_errors, 0);
         assert!(s.movement_first_error.is_none());
-        s.record_movement_decode(batch(3, [0; 6]).as_ref());
+        s.record_movement_decode(batch(3, [0; 8]).as_ref());
         s.record_movement_decode(Err(MovementError::InvalidMagic(0x00)).as_ref());
         assert_eq!(s.movement_rpc_errors, 4);
         assert_eq!(

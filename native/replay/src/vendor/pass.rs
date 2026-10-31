@@ -1,4 +1,4 @@
-// Vendored from vrfkit v0.2.5 (c4d6cc0), crates/vrfkit/src/pass.rs. Apache-2.0;
+// Vendored from vrfkit v0.4.0 (b9ba3f7), crates/vrfkit/src/pass.rs. Apache-2.0;
 // see native/replay/NOTICE.md. Local edits: `Replay`, `for_each_chunk` and the
 // checkpoint block scope are dropped (crate::decode walks the chunks), the
 // CLI error type is replaced by `vrf_frame::FrameError`, and `walk` runs our

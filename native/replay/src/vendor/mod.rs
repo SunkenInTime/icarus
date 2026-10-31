@@ -1,11 +1,10 @@
-//! Code vendored from vrfkit v0.2.5 (c4d6cc0, Apache-2.0; NOTICE.md), kept
+//! Code vendored from vrfkit v0.4.0 (b9ba3f7, Apache-2.0; NOTICE.md), kept
 //! apart from ours so a vrfkit bump is a readable diff: re-copy the source
 //! files over these and re-apply the edits listed here.
 //!
 //! - `sink/*.rs`: `crates/vrfkit/src/sink/`, verbatim except `crate::sink::`
 //!   paths spelled `crate::vendor::sink::` and the CLI's `export` feature gates
-//!   removed (we always want `ChannelState::players`), and 13.08 pinned (to no
-//!   routes) in `sink/measured_routes.rs`.
+//!   removed (we always want `ChannelState::players`).
 //! - `pass.rs`: `crates/vrfkit/src/pass.rs`, cut to the per-packet walk; the
 //!   chunk loop, checkpoint scope and helper thread are ours (`crate::decode`).
 //! - `frame.rs`: `crates/vrf-frame/src/lib.rs` and `sections.rs`'s

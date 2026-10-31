@@ -1,4 +1,4 @@
-// Vendored from vrfkit v0.2.5 (c4d6cc0), crates/vrfkit/src/sink/paths.rs. Apache-2.0;
+// Vendored from vrfkit v0.4.0 (b9ba3f7), crates/vrfkit/src/sink/paths.rs. Apache-2.0;
 // see native/replay/NOTICE.md. Local edits: listed in src/vendor/mod.rs.
 
 //! Content-block group-path resolution.

@@ -334,13 +334,14 @@ fn other_team(team: &str) -> Option<&'static str> {
 
 /// `RoundResults[].RoundResult` -> the contract's end reasons. The wire
 /// strings seen on 13.00: "elimination", "defuse", "detonate", "timeout",
-/// "surrendered" (the last from extract_rounds.py's `AWARDED`).
+/// "surrendered" (the last from extract_rounds.py's `AWARDED`). vrfkit's
+/// struct decoder names the timer's end "time_expired" (a 13.09 round).
 fn end_reason(raw: &str) -> Option<&'static str> {
     Some(match raw {
         "elimination" => "elimination",
         "detonate" | "bomb detonated" => "detonated",
         "defuse" | "bomb defused" => "defused",
-        "timeout" | "round timer expired" => "time",
+        "timeout" | "round timer expired" | "time_expired" => "time",
         "surrendered" => "surrender",
         _ => return None,
     })
@@ -563,6 +564,7 @@ mod tests {
         assert_eq!(site_letter(2), Some("C"));
         assert_eq!(site_letter(3), None);
         assert_eq!(end_reason("defuse"), Some("defused"));
+        assert_eq!(end_reason("time_expired"), Some("time"));
         assert_eq!(end_reason("something new"), None);
         assert_eq!(
             armor_points("/Game/Gear/HeavyArmorItem.HeavyArmorItem_C"),
