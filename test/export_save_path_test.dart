@@ -80,14 +80,15 @@ void main() {
         expect(dialog.folders, [null, folder.path]);
       },
     );
+  });
 
-    test('backing out of replacing a taken name saves nothing', () async {
-      File(inFolder('retakes.ica')).writeAsStringSync('mine');
-      FilePicker.platform = _SaveDialog([inFolder('retakes'), null]);
+  test('backing out of replacing a taken name keeps the file', () async {
+    File(inFolder('retakes.png')).writeAsStringSync('mine');
+    FilePicker.platform = _SaveDialog([inFolder('retakes'), null]);
 
-      expect(await chooseExportPath('Plan.ica'), isNull);
-      expect(File(inFolder('retakes.ica')).readAsStringSync(), 'mine');
-    });
+    await saveExportBytes('Plan.png', Uint8List.fromList([1, 2, 3]));
+
+    expect(File(inFolder('retakes.png')).readAsStringSync(), 'mine');
   });
 
   test('saveExportBytes writes under the corrected name alone', () async {
