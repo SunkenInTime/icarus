@@ -34,6 +34,7 @@ import 'package:icarus/widgets/touch_strategy_viewer.dart';
 import 'package:icarus/widgets/turn_phone_notice.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
+import 'package:icarus/widgets/phone_editor_layout.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -322,7 +323,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       );
     }
 
-    final editor = Scaffold(
+    final window = MediaQuery.sizeOf(context);
+    final upright = window.height > window.width;
+    final phone = formFactor == FormFactor.phone;
+    final desktopEditor = Scaffold(
       body: Column(
         children: [
           // The same 40px strip as the library, so the traffic lights never
@@ -423,15 +427,21 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         ],
       ),
     );
-    final window = MediaQuery.sizeOf(context);
     return StrategyAccessWatcher(
       onLeave: _leaveToLibrary,
       // The same tree either way up, so turning the phone keeps the editor.
       child: Stack(
         fit: StackFit.expand,
         children: [
-          editor,
-          if (formFactor == FormFactor.phone && window.height > window.width)
+          if (phone)
+            PhoneEditorLayout(
+              onLeave: _leaveToLibrary,
+              showPanel: !upright,
+              toolsInColumn: Uri.base.queryParameters['panel'] == 'f',
+            )
+          else
+            desktopEditor,
+          if (phone && upright)
             TurnPhoneNotice(
               onLeave: _leaveToLibrary,
               backTooltip: widget.backTooltip,

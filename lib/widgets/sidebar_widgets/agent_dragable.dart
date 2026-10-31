@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
@@ -153,6 +154,9 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
           ref.watch(dragNotifier) == true || shouldDisableForLockedAddItem,
       child: Draggable(
         data: agent,
+        // In a phone's panel a finger going up or down scrolls the agents,
+        // and only one going sideways takes an agent out to the map.
+        affinity: FormFactor.of(context).isTouch ? Axis.horizontal : null,
         onDragStarted: () {
           clearHoveredMapItemNameIfCurrent(ref, agent.name);
           if (ref.read(interactionStateProvider) == InteractionState.drawing ||

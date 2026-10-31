@@ -92,7 +92,11 @@ class BottomContextBar extends ConsumerWidget {
 }
 
 class ToolGrid extends ConsumerWidget {
-  const ToolGrid({super.key});
+  const ToolGrid({super.key, this.dense = false, this.columns = 5});
+
+  /// For a phone: no heading, no margins, and keyboard hints left out.
+  final bool dense;
+  final int columns;
   static const double _defaultImageSpawnWidth = 200;
 
   @override
@@ -101,7 +105,9 @@ class ToolGrid extends ConsumerWidget {
     final shortcutBindings =
         ref.watch(appPreferencesProvider).customShortcutBindings;
     String shortcutLabel(IcarusShortcutAction action) {
-      return ShortcutInfo.displayLabelFor(action.name, shortcutBindings);
+      return dense
+          ? ''
+          : ShortcutInfo.displayLabelFor(action.name, shortcutBindings);
     }
 
     // void showImageDialog() {
@@ -116,20 +122,22 @@ class ToolGrid extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Text(
-            "Tools",
-            style: TextStyle(fontSize: 20),
+        if (!dense)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              "Tools",
+              style: TextStyle(fontSize: 20),
+            ),
           ),
-        ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          padding: EdgeInsets.symmetric(horizontal: dense ? 0 : 16.0),
           child: GridView.count(
             shrinkWrap: true,
-            crossAxisCount: 5,
-            mainAxisSpacing: 5,
-            crossAxisSpacing: 5,
+            physics: dense ? const NeverScrollableScrollPhysics() : null,
+            crossAxisCount: columns,
+            mainAxisSpacing: dense ? 3 : 5,
+            crossAxisSpacing: dense ? 3 : 5,
             children: [
               SelectableIconButton(
                 icon: const Icon(LucideIcons.pencil, size: 22),
