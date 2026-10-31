@@ -7,5 +7,21 @@
   {"wait": 6},
   {"tapIcon": "x", "optional": true},
   {"addAgent": "a1-{run}", "at": [640, 420]},
-  {"wait": 2}
+  {"wait": 2},
+  {"fakeSaveDir": "{out}/saved", "as": "renamed"},
+  {"tapAt": [60, 142]},
+  {"waitFile": "{out}/saved/renamed.ica", "seconds": 20},
+  {"tapAt": [124, 142]},
+  {"wait": 2},
+  {"tapAt": [835, 618]},
+  {"waitFile": "{out}/saved/renamed.png", "seconds": 20},
+  {"wait": 2},
+  {"tapAt": [92, 142]},
+  {"wait": 2},
+  {"tapText": "Transparent background"},
+  {"wait": 1},
+  {"tapText": "Export"},
+  {"waitFile": "{out}/saved/renamed.mov", "seconds": 60},
+  {"waitText": "Exporting video", "gone": true, "seconds": 60},
+  {"exit": 1}
 ]
