@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
@@ -268,7 +269,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
             data: _isCloud
                 ? StrategyItem.cloud(_strategyId)
                 : StrategyItem.local(widget.strategyData!),
-            maxSimultaneousDrags: widget.canMove && !isMoving ? null : 0,
+            // A finger on a card scrolls the library; it never picks the card up.
+            maxSimultaneousDrags:
+                widget.canMove && !isMoving && !FormFactor.of(context).isTouch
+                    ? null
+                    : 0,
             dragAnchorStrategy: pointerDragAnchorStrategy,
             onDragUpdate: (details) =>
                 _dragTiltController.addDelta(details.delta.dx),

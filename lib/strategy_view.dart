@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart'
     show isShareLinkRevokedError;
 import 'package:icarus/const/custom_icons.dart';
+import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart';
@@ -24,10 +25,12 @@ import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/delete_capture.dart';
+import 'package:icarus/widgets/dot_matrix_loaders.dart';
 import 'package:icarus/widgets/strategy_access_watcher.dart';
 import 'package:icarus/widgets/strategy_view_skeleton.dart';
 import 'package:icarus/widgets/strategy_edit_boundary.dart';
 import 'package:icarus/widgets/strategy_quick_switcher.dart';
+import 'package:icarus/widgets/touch_strategy_viewer.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
@@ -288,16 +291,31 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             (!strategyState.isOpen ||
                 strategyState.strategyId != initialStrategyId));
 
+    final touch = FormFactor.of(context).isTouch;
+
     if (showSkeleton) {
       // Watched from the first frame: opening can be refused outright.
       return StrategyAccessWatcher(
         onLeave: _leaveToLibrary,
         child: Scaffold(
-          body: StrategyViewSkeleton(
-            strategyName: widget.initialStrategyName,
-            mapValue: widget.initialMapValue,
-            isAttack: widget.initialIsAttack,
-          ),
+          // The skeleton is the desktop editor's shape, panels and all.
+          body: touch
+              ? const Center(child: WingDotLoader())
+              : StrategyViewSkeleton(
+                  strategyName: widget.initialStrategyName,
+                  mapValue: widget.initialMapValue,
+                  isAttack: widget.initialIsAttack,
+                ),
+        ),
+      );
+    }
+
+    if (viewOnly && touch) {
+      return StrategyAccessWatcher(
+        onLeave: _leaveToLibrary,
+        child: TouchStrategyViewer(
+          onLeave: _leaveToLibrary,
+          backTooltip: widget.backTooltip,
         ),
       );
     }
