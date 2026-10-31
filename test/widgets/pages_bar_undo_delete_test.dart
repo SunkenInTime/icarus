@@ -422,6 +422,13 @@ void main() {
       await harness.pump(tester);
 
       await harness.rightClick(tester, 'Page 1');
+      final delete = tester.widget<ShadContextMenuItem>(
+        find.ancestor(
+          of: find.text('Delete'),
+          matching: find.byType(ShadContextMenuItem),
+        ),
+      );
+      expect(delete.enabled, isFalse);
       await tester.tap(find.text('Delete'), warnIfMissed: false);
       await tester.pumpAndSettle();
       expect(find.text("Delete 'Page 1'?"), findsNothing);
