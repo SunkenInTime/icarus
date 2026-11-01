@@ -199,12 +199,12 @@ describe("a caption and the builds that don't know it", () => {
   test("a rejected op doesn't hand a shipped build the field", async () => {
     const { owner } = await seed();
 
-    const [stale] = await send(owner, oldBuild, "old", [
+    const results = await send(owner, oldBuild, "old", [
       patch("stale", "jett", 99, agentData("jett", { position: { dx: 1, dy: 1 } })),
     ]);
 
-    expect(stale.reason).toBe("revision_mismatch");
-    expect(stale.current.value.data).toEqual(agentData("jett"));
+    expect(results[0]!.reason).toBe("revision_mismatch");
+    expect(results[0]!.current.value.data).toEqual(agentData("jett"));
   });
 
   test("a move merged by field leaves the caption", async () => {
