@@ -19,12 +19,15 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/screenshot/caption_export_layout.dart';
+import 'package:icarus/screenshot/caption_export_overlay.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/canonical_map_artwork.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class ScreenshotView extends ConsumerWidget {
   const ScreenshotView({
@@ -50,6 +53,9 @@ class ScreenshotView extends ConsumerWidget {
     this.placedWidgetsOverride,
     this.drawingsOpacity = 1.0,
     this.transparentBackground = false,
+    this.includeCaptions = false,
+    this.onCaptionLayout,
+    this.fadingCaptions = const [],
   });
 
   /// [page] of a saved [strategy] as a capture draws it, with the map layers
@@ -61,6 +67,9 @@ class ScreenshotView extends ConsumerWidget {
     required MapState mapState,
     required double backgroundDotOpacity,
     bool transparentBackground = false,
+    bool includeCaptions = false,
+    ValueChanged<CaptionExportLayout>? onCaptionLayout,
+    List<FadingCaptions> fadingCaptions = const [],
     Widget? placedWidgetsOverride,
     double drawingsOpacity = 1.0,
   }) =>
@@ -86,6 +95,9 @@ class ScreenshotView extends ConsumerWidget {
         placedWidgetsOverride: placedWidgetsOverride,
         drawingsOpacity: drawingsOpacity,
         transparentBackground: transparentBackground,
+        includeCaptions: includeCaptions,
+        onCaptionLayout: onCaptionLayout,
+        fadingCaptions: fadingCaptions,
       );
   final StrategyState strategyState;
   final MapValue mapValue;
@@ -116,6 +128,54 @@ class ScreenshotView extends ConsumerWidget {
   /// Leaves out the backdrop (the gradient and the dot grid), so everything
   /// around the map is transparent.
   final bool transparentBackground;
+
+  /// Prints the page's captions (see [CaptionExportOverlay]).
+  final bool includeCaptions;
+
+  /// Hears what [includeCaptions] worked out for the page.
+  final ValueChanged<CaptionExportLayout>? onCaptionLayout;
+
+  /// Video export draws these over a transition frame instead, since neither
+  /// page's items are in place on it.
+  final List<FadingCaptions> fadingCaptions;
+
+  static const _pageNameStyle = TextStyle(
+    color: Color(0xffb8b8c2),
+    decoration: TextDecoration.none,
+    fontSize: 28,
+    fontWeight: FontWeight.w600,
+    shadows: [
+      Shadow(
+        color: Color(0xaa000000),
+        offset: Offset(0, 1),
+        blurRadius: 4,
+      ),
+    ],
+  );
+  static const double _pageNameLeft = 28;
+  static const double _pageNameBottom = 22;
+
+  /// Where [name] prints on a capture.
+  Rect _pageNameRect(BuildContext context, String name) {
+    const frame = CoordinateSystem.screenShotSize;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: name,
+        style: DefaultTextStyle.of(context).style.merge(_pageNameStyle),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: frame.width - 2 * _pageNameLeft);
+    final size = painter.size;
+    painter.dispose();
+    return Rect.fromLTWH(
+      _pageNameLeft,
+      frame.height - _pageNameBottom - size.height,
+      size.width,
+      size.height,
+    );
+  }
 
   /// Loads this frame into the isolated providers used for offscreen capture.
   /// Call it inside [CoordinateSystem.runInCapture], as the whole capture
@@ -168,6 +228,15 @@ class ScreenshotView extends ConsumerWidget {
     final mapWidth = CoordinateSystem.screenShotSize.height *
         CoordinateSystem.instance.mapAspectRatio;
     final mapLeft = (CoordinateSystem.screenShotSize.width - mapWidth) / 2;
+    // The map's box is wider than most maps, so the margins start at its art.
+    final artWidth = applyBoxFit(
+      BoxFit.contain,
+      Maps.mapViewBox[mapValue]!,
+      Size(mapWidth, CoordinateSystem.screenShotSize.height),
+    ).destination.width;
+    final artLeft = (CoordinateSystem.screenShotSize.width - artWidth) / 2;
+    final name = pageName?.trim();
+    final hasName = name?.isNotEmpty ?? false;
 
     return SizedBox(
       height: CoordinateSystem.screenShotSize.height,
@@ -269,7 +338,11 @@ class ScreenshotView extends ConsumerWidget {
           Positioned.fill(
             child: ConeCoverageScope(
               coverage: cones,
-              child: placedWidgetsOverride ?? const PlacedWidgetBuilder(),
+              // Lets the captions find the items by their drawn outlines.
+              child: CanvasItemRegistryScope(
+                registry: ref.read(canvasItemRegistryProvider),
+                child: placedWidgetsOverride ?? const PlacedWidgetBuilder(),
+              ),
             ),
           ),
 
@@ -288,31 +361,42 @@ class ScreenshotView extends ConsumerWidget {
               ),
             ),
           ),
-          if (pageName?.trim().isNotEmpty ?? false)
+          if (hasName)
             Positioned(
-              left: 28,
-              bottom: 22,
+              left: _pageNameLeft,
+              bottom: _pageNameBottom,
               child: SizedBox(
-                width: CoordinateSystem.screenShotSize.width - 56,
+                width:
+                    CoordinateSystem.screenShotSize.width - 2 * _pageNameLeft,
                 child: Text(
-                  pageName!.trim(),
+                  name!,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xffb8b8c2),
-                    decoration: TextDecoration.none,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w600,
-                    shadows: [
-                      Shadow(
-                        color: Color(0xaa000000),
-                        offset: Offset(0, 1),
-                        blurRadius: 4,
-                      ),
-                    ],
-                  ),
+                  style: _pageNameStyle,
                 ),
               ),
+            ),
+          if (includeCaptions)
+            Positioned.fill(
+              child: CaptionExportOverlay(
+                items: captionExportItems([
+                  ...agents,
+                  ...abilities,
+                  ...text,
+                  ...images,
+                  ...utilities,
+                ]),
+                drawings: drawings,
+                isAttack: isAttack,
+                mapLeft: artLeft,
+                mapRight: artLeft + artWidth,
+                pageName: hasName ? _pageNameRect(context, name!) : null,
+                onLayout: onCaptionLayout,
+              ),
+            ),
+          if (fadingCaptions.isNotEmpty)
+            Positioned.fill(
+              child: FadingCaptionsLayer(captions: fadingCaptions),
             ),
         ],
       ),

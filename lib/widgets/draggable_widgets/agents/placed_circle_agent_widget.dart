@@ -99,6 +99,7 @@ class CircleAgentComposite extends ConsumerWidget {
               opacityPercent: agent.opacityPercent,
               mapScale: mapScale,
               showCenterMarker: false,
+              outlinesCircle: false,
             ),
           ),
           Positioned(

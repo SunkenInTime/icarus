@@ -16,12 +16,14 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/screenshot/caption_export_layout.dart';
 import 'package:icarus/screenshot/page_screenshot.dart';
 import 'package:icarus/screenshot/save_screenshots.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
@@ -159,6 +161,8 @@ Future<void> _noThumbnails(
   required void Function(String pageId, ui.Image image) onThumbnail,
   required void Function(Set<String> pageIds, Object error) onUnavailable,
   required bool Function() isCancelled,
+  bool includeCaptions = false,
+  void Function(String pageId, CaptionExportLayout layout)? onCaptions,
 }) async {}
 
 PageScreenshot _shot(int number, String name) =>
@@ -263,6 +267,192 @@ void main() {
       expect(png.getPixel(png.width ~/ 2, png.height ~/ 2).a, 255);
     }
     expect(CoordinateSystem.instance.isScreenshot, isFalse);
+  });
+
+  testWidgets('captions print on a real page, and a page they overfill refuses',
+      (tester) async {
+    CoordinateSystem(playAreaSize: const Size(1600, 900));
+    StrategyPage captioned(String id, int sortIndex, String note, int count) =>
+        StrategyPage(
+          id: id,
+          name: id,
+          drawingData: const [],
+          agentData: [
+            for (var i = 0; i < count; i++)
+              PlacedAgent(
+                id: '$id-agent-$i',
+                type: AgentType.jett,
+                position: Offset(250.0 + i * 120, 300),
+                isAlly: true,
+              )..caption = note,
+          ],
+          abilityData: const [],
+          textData: const [],
+          imageData: const [],
+          utilityData: const [],
+          sortIndex: sortIndex,
+          isAttack: true,
+          settings: StrategySettings(),
+        );
+    await tester.runAsync(
+      () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+        _strategyId,
+        StrategyData(
+          id: _strategyId,
+          name: 'Retakes',
+          mapData: MapValue.ascent,
+          versionNumber: 1,
+          lastEdited: DateTime(2026),
+          folderID: null,
+          pages: [
+            captioned('short', 0, 'Smoke heaven first.', 2),
+            captioned('long', 1, 'Hold this angle. ' * 80, 6),
+          ],
+        ),
+      ),
+    );
+    late WidgetRef ref;
+    await tester.pumpWidget(ProviderScope(
+      overrides: [strategyProvider.overrideWith(_OpenLocalStrategy.new)],
+      child: Consumer(builder: (context, widgetRef, _) {
+        ref = widgetRef;
+        return const SizedBox.shrink();
+      }),
+    ));
+
+    Future<Object?> capture(String pageId, bool includeCaptions) async {
+      Object? outcome;
+      var done = false;
+      await tester.runAsync(() async {
+        unawaited(
+          captureStrategyPages(
+            ref,
+            pageIds: {pageId},
+            transparentBackground: true,
+            includeCaptions: includeCaptions,
+          )
+              .then<void>((shots) => outcome = shots,
+                  onError: (Object error) => outcome = error)
+              .whenComplete(() => done = true),
+        );
+      });
+      while (!done) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 16)),
+        );
+        await tester.pump();
+      }
+      return outcome;
+    }
+
+    final without = await capture('short', false);
+    final printed = await capture('short', true);
+    expect(printed, isA<List<PageScreenshot>>());
+
+    // Only the notes tell these two apart, and they print in the margin.
+    final plain = img.decodePng((without! as List<PageScreenshot>).single.png)!;
+    final notes = img.decodePng((printed! as List<PageScreenshot>).single.png)!;
+    var inked = 0;
+    for (var y = 0; y < plain.height; y++) {
+      for (var x = 0; x < 300; x++) {
+        if (notes.getPixel(x, y) != plain.getPixel(x, y)) inked++;
+      }
+    }
+    expect(inked, greaterThan(1000));
+
+    final refused = await capture('long', true);
+    expect(refused, isA<CaptionsDontFit>());
+    expect((refused! as CaptionsDontFit).page, 2);
+  });
+
+  testWidgets("a circle's number sits on the circle, in its own margin",
+      (tester) async {
+    CoordinateSystem(playAreaSize: const Size(1600, 900));
+    const center = Offset(250, 300);
+    final mapScale = Maps.mapScale[MapValue.ascent]!;
+    final box = CustomCircleUtility.maxDiameterInVirtual(mapScale);
+    final diameter = CustomCircleUtility.diameterInVirtual(
+      diameterMeters: 10,
+      mapScale: mapScale,
+    );
+    await tester.runAsync(
+      () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+        _strategyId,
+        StrategyData(
+          id: _strategyId,
+          name: 'Retakes',
+          mapData: MapValue.ascent,
+          versionNumber: 1,
+          lastEdited: DateTime(2026),
+          folderID: null,
+          pages: [
+            StrategyPage(
+              id: 'circle',
+              name: 'circle',
+              drawingData: const [],
+              agentData: const [],
+              abilityData: const [],
+              textData: const [],
+              imageData: const [],
+              utilityData: [
+                PlacedUtility(
+                  id: 'circle-item',
+                  type: UtilityType.customCircle,
+                  position: center - Offset(box / 2, box / 2),
+                  customDiameter: 10,
+                  customColorValue: 0xFF22C55E,
+                  customOpacityPercent: 30,
+                )..caption = 'Post plant circle.',
+              ],
+              sortIndex: 0,
+              isAttack: true,
+              settings: StrategySettings(),
+            ),
+          ],
+        ),
+      ),
+    );
+    late WidgetRef ref;
+    await tester.pumpWidget(ProviderScope(
+      overrides: [strategyProvider.overrideWith(_OpenLocalStrategy.new)],
+      child: Consumer(builder: (context, widgetRef, _) {
+        ref = widgetRef;
+        return const SizedBox.shrink();
+      }),
+    ));
+
+    CaptionExportLayout? layout;
+    var done = false;
+    await tester.runAsync(() async {
+      unawaited(
+        renderPageThumbnails(
+          ref,
+          pageIds: {'circle'},
+          includeCaptions: true,
+          onCaptions: (_, captions) => layout = captions,
+          onThumbnail: (_, image) => image.dispose(),
+          onUnavailable: (_, error) => fail('$error'),
+          isCancelled: () => false,
+        ).whenComplete(() => done = true),
+      );
+    });
+    while (!done) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 16)),
+      );
+      await tester.pump();
+    }
+
+    final entry = layout!.entries.single;
+    final capture = CoordinateSystem(
+      playAreaSize: CoordinateSystem.screenShotSize,
+    );
+    final half = capture.scale(box) / 2;
+    final drawn = capture.coordinateToScreen(center - Offset(box / 2, box / 2)) +
+        Offset(half, half);
+    final radius = capture.scale(diameter) / 2;
+    expect((entry.dot - drawn).distance, closeTo(radius, 1));
+    expect(entry.card.right, lessThan(CoordinateSystem.screenShotSize.width / 2));
   });
 
   testWidgets('thumbnails show the open page first, small and see-through',

@@ -504,6 +504,7 @@ const _keys = {
   'keyA': (LogicalKeyboardKey.keyA, PhysicalKeyboardKey.keyA, 'a'),
   'keyC': (LogicalKeyboardKey.keyC, PhysicalKeyboardKey.keyC, 'c'),
   'keyE': (LogicalKeyboardKey.keyE, PhysicalKeyboardKey.keyE, 'e'),
+  'keyF': (LogicalKeyboardKey.keyF, PhysicalKeyboardKey.keyF, 'f'),
   'keyQ': (LogicalKeyboardKey.keyQ, PhysicalKeyboardKey.keyQ, 'q'),
   'keyS': (LogicalKeyboardKey.keyS, PhysicalKeyboardKey.keyS, 's'),
   'keyV': (LogicalKeyboardKey.keyV, PhysicalKeyboardKey.keyV, 'v'),

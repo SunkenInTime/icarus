@@ -1123,6 +1123,9 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
           fields[21] == null ? false : fields[21] as bool,
       transparentVideoBackground:
           fields[22] == null ? false : fields[22] as bool,
+      includeScreenshotCaptions:
+          fields[26] == null ? false : fields[26] as bool,
+      includeVideoCaptions: fields[27] == null ? false : fields[27] as bool,
       canvasSelectionHintSeen: fields[23] == null ? false : fields[23] as bool,
     );
   }
@@ -1130,7 +1133,7 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(25)
+      ..writeByte(27)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
@@ -1180,7 +1183,11 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       ..writeByte(24)
       ..write(obj.viewConeOpacity)
       ..writeByte(25)
-      ..write(obj.showCaptions);
+      ..write(obj.showCaptions)
+      ..writeByte(26)
+      ..write(obj.includeScreenshotCaptions)
+      ..writeByte(27)
+      ..write(obj.includeVideoCaptions);
   }
 
   @override

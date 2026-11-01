@@ -27,6 +27,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/screenshot/caption_export_layout.dart';
 import 'package:icarus/screenshot/capture_geometry.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/screenshot/offscreen_capture.dart';
@@ -58,20 +59,31 @@ const double pageThumbnailPixelRatio = 0.2;
 /// The capture reads the editor's live state rather than a saved copy, so a
 /// cloud strategy captures exactly like a local one and nothing waits on a
 /// save or a sync. Throws [CaptureImagesUnavailable] rather than return a
-/// picture with an image missing.
-Future<Uint8List> captureEditorPage(WidgetRef ref) => _renderEditorPage(
-      ref,
-      transparentBackground:
-          ref.read(appPreferencesProvider).transparentScreenshotBackground,
-      pixelRatio: 1,
-      read: _png,
-    );
+/// picture with an image missing, and [CaptionsDontFit] rather than one with a
+/// caption missing.
+Future<Uint8List> captureEditorPage(WidgetRef ref) async {
+  final preferences = ref.read(appPreferencesProvider);
+  final includeCaptions = preferences.includeScreenshotCaptions;
+  CaptionExportLayout? captions;
+  final png = await _renderEditorPage(
+    ref,
+    transparentBackground: preferences.transparentScreenshotBackground,
+    includeCaptions: includeCaptions,
+    onCaptionLayout: (layout) => captions = layout,
+    pixelRatio: 1,
+    read: _png,
+  );
+  if (includeCaptions && captions?.fits != true) throw const CaptionsDontFit();
+  return png;
+}
 
 Future<T> _renderEditorPage<T>(
   WidgetRef ref, {
   required bool transparentBackground,
   required double pixelRatio,
   required _ReadFrame<T> read,
+  bool includeCaptions = false,
+  ValueChanged<CaptionExportLayout>? onCaptionLayout,
   bool settleUntilQuiet = false,
 }) async {
   final strategyState = ref.read(strategyProvider);
@@ -124,6 +136,8 @@ Future<T> _renderEditorPage<T>(
     showUltOrbs: mapState.showUltOrbs,
     backgroundDotOpacity: preferences.backgroundDotOpacity,
     transparentBackground: transparentBackground,
+    includeCaptions: includeCaptions,
+    onCaptionLayout: onCaptionLayout,
     agents: page.agentData,
     abilities: page.abilityData,
     text: page.textData,
@@ -193,11 +207,13 @@ typedef PageScreenshot = ({int number, String name, Uint8List png});
 /// [loadVideoExportSource], whose errors this throws).
 ///
 /// [onPage] hears each page as it starts (1-based, of the total). Throws
-/// [VideoExportCancelled] once [isCancelled] turns true.
+/// [VideoExportCancelled] once [isCancelled] turns true, and [CaptionsDontFit]
+/// for a page whose captions it was asked for and can't place.
 Future<List<PageScreenshot>> captureStrategyPages(
   WidgetRef ref, {
   required Set<String> pageIds,
   required bool transparentBackground,
+  bool includeCaptions = false,
   void Function(int page, int total)? onPage,
   bool Function() isCancelled = _never,
 }) async {
@@ -208,6 +224,7 @@ Future<List<PageScreenshot>> captureStrategyPages(
     isCancelled: isCancelled,
   );
   final shots = <PageScreenshot>[];
+  final captions = <String, CaptionExportLayout>{};
   try {
     await _renderPages(
       ref,
@@ -215,11 +232,17 @@ Future<List<PageScreenshot>> captureStrategyPages(
       pages: _numbered(source.strategy, pageIds),
       images: source.images.sources,
       transparentBackground: transparentBackground,
+      includeCaptions: includeCaptions,
+      onCaptionLayout: (page, layout) => captions[page.id] = layout,
       pixelRatio: 1,
       read: _png,
       onPage: onPage,
-      onRendered: (number, page, png) =>
-          shots.add((number: number, name: page.name, png: png)),
+      onRendered: (number, page, png) {
+        if (includeCaptions && captions[page.id]?.fits != true) {
+          throw CaptionsDontFit(number);
+        }
+        shots.add((number: number, name: page.name, png: png));
+      },
       isCancelled: isCancelled,
     );
   } finally {
@@ -242,24 +265,37 @@ Future<List<PageScreenshot>> captureStrategyPages(
 /// A page that cannot be drawn, say for an image that won't load, is
 /// reported to [onUnavailable] with why, and the others still render.
 /// Stops quietly once [isCancelled] turns true.
+///
+/// With [includeCaptions] the pictures print the captions, and [onCaptions]
+/// hears what each page worked out, as [onThumbnail] is about to.
 Future<void> renderPageThumbnails(
   WidgetRef ref, {
   required Set<String> pageIds,
   required void Function(String pageId, ui.Image image) onThumbnail,
   required void Function(Set<String> pageIds, Object error) onUnavailable,
   required bool Function() isCancelled,
+  bool includeCaptions = false,
+  void Function(String pageId, CaptionExportLayout layout)? onCaptions,
 }) async {
   final openPageId = ref.read(strategyPageSessionProvider).activePageId;
+  final captions = <String, CaptionExportLayout>{};
+  void hearCaptions(String pageId) {
+    if (captions[pageId] case final layout?) onCaptions?.call(pageId, layout);
+  }
+
   if (pageIds.contains(openPageId)) {
     try {
       final image = await _renderEditorPage(
         ref,
         transparentBackground: true,
+        includeCaptions: includeCaptions,
+        onCaptionLayout: (layout) => captions[openPageId!] = layout,
         pixelRatio: pageThumbnailPixelRatio,
         read: _image,
         settleUntilQuiet: true,
       );
-      onThumbnail(openPageId!, image);
+      hearCaptions(openPageId!);
+      onThumbnail(openPageId, image);
     } catch (error) {
       onUnavailable({openPageId!}, error);
     }
@@ -315,9 +351,14 @@ Future<void> renderPageThumbnails(
       pages: ready,
       images: {for (final images in held) ...images.sources},
       transparentBackground: true,
+      includeCaptions: includeCaptions,
+      onCaptionLayout: (page, layout) => captions[page.id] = layout,
       pixelRatio: pageThumbnailPixelRatio,
       read: _image,
-      onRendered: (_, page, image) => onThumbnail(page.id, image),
+      onRendered: (_, page, image) {
+        hearCaptions(page.id);
+        onThumbnail(page.id, image);
+      },
       onPageFailed: (page, error) => onUnavailable({page.id}, error),
       isCancelled: isCancelled,
       settleUntilQuiet: true,
@@ -362,6 +403,8 @@ Future<void> _renderPages<T>(
   required double pixelRatio,
   required _ReadFrame<T> read,
   required void Function(int number, StrategyPage page, T frame) onRendered,
+  bool includeCaptions = false,
+  void Function(StrategyPage page, CaptionExportLayout layout)? onCaptionLayout,
   void Function(StrategyPage page, Object error)? onPageFailed,
   void Function(int page, int total)? onPage,
   bool Function() isCancelled = _never,
@@ -407,6 +450,9 @@ Future<void> _renderPages<T>(
               mapState: mapState,
               backgroundDotOpacity: dotOpacity,
               transparentBackground: transparentBackground,
+              includeCaptions: includeCaptions,
+              onCaptionLayout: (layout) =>
+                  onCaptionLayout?.call(entry.page, layout),
             );
             view.hydrateProviders(container);
             if (settleUntilQuiet) {

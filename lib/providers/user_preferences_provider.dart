@@ -154,6 +154,12 @@ class AppPreferences extends HiveObject {
   /// is a lossless .mov for editing, not an MP4 to share.
   final bool transparentVideoBackground;
 
+  /// Whether a screenshot prints the page's captions.
+  final bool includeScreenshotCaptions;
+
+  /// Whether a video prints each page's captions.
+  final bool includeVideoCaptions;
+
   /// Whether this install has said that a drag on the map selects and Space
   /// moves the map. Stores written before selection existed read false, so
   /// updating users are told once.
@@ -184,6 +190,8 @@ class AppPreferences extends HiveObject {
     this.welcomeTourSeen = false,
     this.transparentScreenshotBackground = false,
     this.transparentVideoBackground = false,
+    this.includeScreenshotCaptions = false,
+    this.includeVideoCaptions = false,
     this.canvasSelectionHintSeen = false,
   })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
         customShortcutBindings =
@@ -214,6 +222,8 @@ class AppPreferences extends HiveObject {
     bool? welcomeTourSeen,
     bool? transparentScreenshotBackground,
     bool? transparentVideoBackground,
+    bool? includeScreenshotCaptions,
+    bool? includeVideoCaptions,
     bool? canvasSelectionHintSeen,
   }) {
     return AppPreferences(
@@ -253,6 +263,9 @@ class AppPreferences extends HiveObject {
           this.transparentScreenshotBackground,
       transparentVideoBackground:
           transparentVideoBackground ?? this.transparentVideoBackground,
+      includeScreenshotCaptions:
+          includeScreenshotCaptions ?? this.includeScreenshotCaptions,
+      includeVideoCaptions: includeVideoCaptions ?? this.includeVideoCaptions,
       canvasSelectionHintSeen:
           canvasSelectionHintSeen ?? this.canvasSelectionHintSeen,
     );
@@ -761,6 +774,18 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
       (current) => current.copyWith(
         transparentScreenshotBackground: transparent,
       ),
+    );
+  }
+
+  Future<void> setIncludeScreenshotCaptions(bool include) {
+    return _updatePreferences(
+      (current) => current.copyWith(includeScreenshotCaptions: include),
+    );
+  }
+
+  Future<void> setIncludeVideoCaptions(bool include) {
+    return _updatePreferences(
+      (current) => current.copyWith(includeVideoCaptions: include),
     );
   }
 

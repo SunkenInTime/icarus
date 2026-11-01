@@ -12,6 +12,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/providers/navigation_geometry_provider.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
+import 'package:icarus/screenshot/caption_export_layout.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/export_save_path.dart';
 import 'package:icarus/screenshot/capture_images.dart';
@@ -25,6 +26,7 @@ import 'package:icarus/services/video_export/video_exporter.dart';
 import 'package:icarus/services/video_export/video_frame_sink.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
+import 'package:icarus/widgets/dialogs/screenshot_dialog.dart';
 import 'package:icarus/widgets/page_choice_list.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -53,6 +55,15 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
 
   /// Starts as the last export left it.
   bool _transparent = false;
+
+  /// Starts as the last export left it.
+  bool _includeCaptions = false;
+
+  /// What each page's captions work out to, once measured. The check draws
+  /// each page small, so it runs behind the dialog.
+  final Map<String, CaptionExportLayout> _captions = {};
+  int _captionRun = 0;
+  Future<void> _captionCheck = Future.value();
 
   /// Saving, syncing, and loading images, before any frame renders.
   bool _preparing = false;
@@ -84,8 +95,81 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         .videoExportStepDurationSeconds
         .clamp(1.0, 15.0);
     _transparent = ref.read(appPreferencesProvider).transparentVideoBackground;
+    _includeCaptions = ref.read(appPreferencesProvider).includeVideoCaptions;
     _pages = videoExportPageChoices(ref);
     _selectedPageIds.addAll(_pages.map((p) => p.id));
+    _measureCaptions();
+  }
+
+  /// Works out every page's captions, once any older check has stopped:
+  /// captures run one at a time.
+  void _measureCaptions() {
+    final run = ++_captionRun;
+    _captions.clear();
+    if (!_includeCaptions) return;
+    bool stale() => !mounted || run != _captionRun;
+    bool cancelled() => stale() || _isExporting;
+    final thumbnailer = ref.read(pageThumbnailerProvider);
+    _captionCheck = _captionCheck.whenComplete(() {
+      if (cancelled()) return null;
+      return thumbnailer(
+        ref,
+        pageIds: {for (final page in _pages) page.id},
+        includeCaptions: true,
+        onThumbnail: (_, image) => image.dispose(),
+        onUnavailable: (_, __) {},
+        onCaptions: (pageId, layout) {
+          if (!stale()) setState(() => _captions[pageId] = layout);
+        },
+        isCancelled: cancelled,
+      );
+    });
+    unawaited(_captionCheck);
+  }
+
+  void _setIncludeCaptions(bool value) {
+    setState(() {
+      _includeCaptions = value;
+      _measureCaptions();
+    });
+    unawaited(
+      ref.read(appPreferencesProvider.notifier).setIncludeVideoCaptions(value),
+    );
+  }
+
+  /// Why Export is off: the first selected page whose captions can't be
+  /// placed.
+  String? get _captionRefusal {
+    if (!_includeCaptions) return null;
+    for (final (index, page) in _pages.indexed) {
+      if (_selectedPageIds.contains(page.id) &&
+          _captions[page.id]?.fits == false) {
+        return captionsDontFitMessage(index + 1);
+      }
+    }
+    return null;
+  }
+
+  /// What the Include captions box says: the selected page that takes longest
+  /// to read, when that is longer than a step holds.
+  String get _captionHint {
+    var slowestPage = 0;
+    var slowestSeconds = 0;
+    for (final (index, page) in _pages.indexed) {
+      final layout = _captions[page.id];
+      if (layout == null || !_selectedPageIds.contains(page.id)) continue;
+      final seconds = captionReadSeconds(layout);
+      if (seconds > slowestSeconds) {
+        slowestPage = index + 1;
+        slowestSeconds = seconds;
+      }
+    }
+    final step = _stepDurationSeconds.round();
+    if (slowestSeconds <= step) {
+      return 'Numbers on the map, notes in the side margins.';
+    }
+    return 'Page $slowestPage needs about $slowestSeconds s to read. '
+        'Each step holds for $step s.';
   }
 
   void _setTransparent(bool value) {
@@ -111,6 +195,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
 
   Future<void> _runExport() async {
     final transparent = _transparent;
+    final includeCaptions = _includeCaptions;
     final quality = _exportQuality;
     final extension = transparent ? 'mov' : 'mp4';
     final pageIds = {..._selectedPageIds};
@@ -224,6 +309,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
             ref.read(appPreferencesProvider).backgroundDotOpacity,
         geometry: geometry,
         transparentBackground: transparent,
+        includeCaptions: includeCaptions,
         imageSources: images.sources,
         navigation: navigation,
         requireNavigation: requireNavigation,
@@ -304,6 +390,11 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         message: error.userMessage,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
+    } on CaptionsDontFit catch (error) {
+      Settings.showToast(
+        message: error.userMessage,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
     } on Object catch (error) {
       Settings.showToast(
         // Closing the dialog mid-preparation can fail the work it cut
@@ -337,7 +428,8 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     );
   }
 
-  bool get _canExport => _selectedPageIds.isNotEmpty;
+  bool get _canExport =>
+      _selectedPageIds.isNotEmpty && _captionRefusal == null;
 
   /// The preset the export runs at. A transparent video is lossless, so the
   /// presets' size targets don't apply; it plays at Social's 30 fps.
@@ -427,6 +519,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     final colors = ShadTheme.of(context).colorScheme;
     final selectedCount = _selectedPageIds.length;
     final estimatedSeconds = selectedCount == 0 ? null : _estimatedVideoSeconds;
+    final captionRefusal = _captionRefusal;
 
     return ShadDialog(
       constraints: const BoxConstraints(maxWidth: _dialogWidth),
@@ -480,6 +573,18 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                     'Leave out the background and dots. Saves a lossless .mov '
                     'that keeps the transparency, for video editors.',
                   ),
+                ),
+                const SizedBox(height: 12),
+                ShadCheckbox(
+                  value: _includeCaptions,
+                  onChanged: _setIncludeCaptions,
+                  label: const Text('Include captions'),
+                  sublabel: captionRefusal == null
+                      ? Text(_captionHint)
+                      : Text(
+                          captionRefusal,
+                          style: TextStyle(color: colors.destructive),
+                        ),
                 ),
                 const SizedBox(height: 24),
                 const _SectionLabel(text: 'Quality'),
@@ -587,7 +692,8 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                     ),
                     const SizedBox(width: 8),
                     ShadButton(
-                      onPressed: _canExport ? _export : null,
+                      enabled: _canExport,
+                      onPressed: _export,
                       child: const Text('Export'),
                     ),
                   ],
