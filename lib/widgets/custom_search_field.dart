@@ -65,7 +65,11 @@ class StrategySearchQueryNotifier extends AutoDisposeNotifier<String> {
 }
 
 class _SearchTextFieldState extends ConsumerState<SearchTextField> {
-  late final TextEditingController _controller = TextEditingController();
+  // Starts from the search in force: the library goes on filtering by it
+  // when a rotation rebuilds this field.
+  late final TextEditingController _controller = TextEditingController(
+    text: ref.read(strategySearchQueryProvider),
+  );
   late final FocusNode _focusNode = FocusNode();
   bool _hovering = false;
 

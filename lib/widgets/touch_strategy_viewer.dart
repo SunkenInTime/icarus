@@ -54,10 +54,23 @@ class TouchStrategyViewer extends ConsumerWidget {
               builder: (context, constraints) {
                 const map = RepaintBoundary(child: InteractiveMap());
                 const pages = _ViewerPages();
+                // The map is laid out by its height, so fitting its width
+                // into the space it has is a matter of giving it less height.
+                final art = Maps.mapViewBox[currentMap]!;
+                double heightToFit(double width) =>
+                    (width - _mapSideGap) * art.height / art.width;
                 if (constraints.maxWidth > constraints.maxHeight) {
+                  final mapHeight = math.min(
+                    constraints.maxHeight,
+                    heightToFit(constraints.maxWidth - _sidePagesWidth),
+                  );
                   return Row(
                     children: [
-                      const Expanded(child: map),
+                      Expanded(
+                        child: Center(
+                          child: SizedBox(height: mapHeight, child: map),
+                        ),
+                      ),
                       Container(
                         width: _sidePagesWidth,
                         decoration: BoxDecoration(
@@ -72,11 +85,8 @@ class TouchStrategyViewer extends ConsumerWidget {
                     ],
                   );
                 }
-                // The map is laid out by its height, so fitting its width
-                // into the screen's is a matter of giving it less height.
-                final art = Maps.mapViewBox[currentMap]!;
                 final mapHeight = math.min(
-                  (constraints.maxWidth - _mapSideGap) * art.height / art.width,
+                  heightToFit(constraints.maxWidth),
                   constraints.maxHeight - _minPagesHeight,
                 );
                 return Column(
