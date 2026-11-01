@@ -11,6 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/bounding_box.dart';
+import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -29,6 +31,7 @@ import 'package:icarus/screenshot/save_screenshots.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/dialogs/screenshot_dialog.dart';
+import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
@@ -164,6 +167,58 @@ Future<void> _noThumbnails(
   bool includeCaptions = false,
   void Function(String pageId, CaptionExportLayout layout)? onCaptions,
 }) async {}
+
+/// What [page] of a one-page strategy works out to, from a real render.
+Future<CaptionExportLayout> _captionLayout(
+  WidgetTester tester,
+  StrategyPage page,
+) async {
+  await tester.runAsync(
+    () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+      _strategyId,
+      StrategyData(
+        id: _strategyId,
+        name: 'Retakes',
+        mapData: MapValue.ascent,
+        versionNumber: 1,
+        lastEdited: DateTime(2026),
+        folderID: null,
+        pages: [page],
+      ),
+    ),
+  );
+  late WidgetRef ref;
+  await tester.pumpWidget(ProviderScope(
+    overrides: [strategyProvider.overrideWith(_OpenLocalStrategy.new)],
+    child: Consumer(builder: (context, widgetRef, _) {
+      ref = widgetRef;
+      return const SizedBox.shrink();
+    }),
+  ));
+
+  CaptionExportLayout? layout;
+  var done = false;
+  await tester.runAsync(() async {
+    unawaited(
+      renderPageThumbnails(
+        ref,
+        pageIds: {page.id},
+        includeCaptions: true,
+        onCaptions: (_, captions) => layout = captions,
+        onThumbnail: (_, image) => image.dispose(),
+        onUnavailable: (_, error) => fail('$error'),
+        isCancelled: () => false,
+      ).whenComplete(() => done = true),
+    );
+  });
+  while (!done) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 16)),
+    );
+    await tester.pump();
+  }
+  return layout!;
+}
 
 PageScreenshot _shot(int number, String name) =>
     (number: number, name: name, png: Uint8List.fromList([number]));
@@ -307,6 +362,7 @@ void main() {
           pages: [
             captioned('short', 0, 'Smoke heaven first.', 2),
             captioned('long', 1, 'Hold this angle. ' * 80, 6),
+            captioned('other', 2, 'Wait for the rotate.', 2),
           ],
         ),
       ),
@@ -360,6 +416,18 @@ void main() {
     }
     expect(inked, greaterThan(1000));
 
+    // Other words, same cards: only the printed text can tell these apart.
+    final otherWords = img.decodePng(
+      ((await capture('other', true))! as List<PageScreenshot>).single.png,
+    )!;
+    var worded = 0;
+    for (var y = 0; y < 1000; y++) {
+      for (var x = 0; x < 300; x++) {
+        if (notes.getPixel(x, y) != otherWords.getPixel(x, y)) worded++;
+      }
+    }
+    expect(worded, greaterThan(100));
+
     final refused = await capture('long', true);
     expect(refused, isA<CaptionsDontFit>());
     expect((refused! as CaptionsDontFit).page, 2);
@@ -375,75 +443,33 @@ void main() {
       diameterMeters: 10,
       mapScale: mapScale,
     );
-    await tester.runAsync(
-      () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
-        _strategyId,
-        StrategyData(
-          id: _strategyId,
-          name: 'Retakes',
-          mapData: MapValue.ascent,
-          versionNumber: 1,
-          lastEdited: DateTime(2026),
-          folderID: null,
-          pages: [
-            StrategyPage(
-              id: 'circle',
-              name: 'circle',
-              drawingData: const [],
-              agentData: const [],
-              abilityData: const [],
-              textData: const [],
-              imageData: const [],
-              utilityData: [
-                PlacedUtility(
-                  id: 'circle-item',
-                  type: UtilityType.customCircle,
-                  position: center - Offset(box / 2, box / 2),
-                  customDiameter: 10,
-                  customColorValue: 0xFF22C55E,
-                  customOpacityPercent: 30,
-                )..caption = 'Post plant circle.',
-              ],
-              sortIndex: 0,
-              isAttack: true,
-              settings: StrategySettings(),
-            ),
-          ],
-        ),
+    final layout = await _captionLayout(
+      tester,
+      StrategyPage(
+        id: 'circle',
+        name: 'circle',
+        drawingData: const [],
+        agentData: const [],
+        abilityData: const [],
+        textData: const [],
+        imageData: const [],
+        utilityData: [
+          PlacedUtility(
+            id: 'circle-item',
+            type: UtilityType.customCircle,
+            position: center - Offset(box / 2, box / 2),
+            customDiameter: 10,
+            customColorValue: 0xFF22C55E,
+            customOpacityPercent: 30,
+          )..caption = 'Post plant circle.',
+        ],
+        sortIndex: 0,
+        isAttack: true,
+        settings: StrategySettings(),
       ),
     );
-    late WidgetRef ref;
-    await tester.pumpWidget(ProviderScope(
-      overrides: [strategyProvider.overrideWith(_OpenLocalStrategy.new)],
-      child: Consumer(builder: (context, widgetRef, _) {
-        ref = widgetRef;
-        return const SizedBox.shrink();
-      }),
-    ));
 
-    CaptionExportLayout? layout;
-    var done = false;
-    await tester.runAsync(() async {
-      unawaited(
-        renderPageThumbnails(
-          ref,
-          pageIds: {'circle'},
-          includeCaptions: true,
-          onCaptions: (_, captions) => layout = captions,
-          onThumbnail: (_, image) => image.dispose(),
-          onUnavailable: (_, error) => fail('$error'),
-          isCancelled: () => false,
-        ).whenComplete(() => done = true),
-      );
-    });
-    while (!done) {
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 16)),
-      );
-      await tester.pump();
-    }
-
-    final entry = layout!.entries.single;
+    final entry = layout.entries.single;
     final capture = CoordinateSystem(
       playAreaSize: CoordinateSystem.screenShotSize,
     );
@@ -454,6 +480,75 @@ void main() {
     expect((entry.dot - drawn).distance, closeTo(radius, 1));
     expect(entry.card.right, lessThan(CoordinateSystem.screenShotSize.width / 2));
   });
+
+  for (final isAttack in [true, false]) {
+    final side = isAttack ? 'attack' : 'defense';
+    testWidgets('a card steps past a timed drawing in the margin on $side',
+        (tester) async {
+      CoordinateSystem(playAreaSize: const Size(1600, 900));
+      final capture = CoordinateSystem(
+        playAreaSize: CoordinateSystem.screenShotSize,
+      );
+      const frame = CoordinateSystem.screenShotSize;
+      // Drawings are saved unflipped, and the page flips them for defense.
+      Offset saved(Offset onScreen) => capture.screenToCoordinate(
+            isAttack
+                ? onScreen
+                : Offset(frame.width - onScreen.dx, frame.height - onScreen.dy),
+          );
+      const lineStart = Offset(150, 500);
+      const lineEnd = Offset(350, 560);
+      final start = saved(lineStart);
+      final end = saved(lineEnd);
+      final page = StrategyPage(
+        id: 'route',
+        name: 'route',
+        drawingData: [
+          Line(
+            id: 'route-line',
+            lineStart: start,
+            lineEnd: end,
+            colorValue: 0xFFFFFFFF,
+            isDotted: false,
+            hasArrow: false,
+            showTraversalTime: true,
+            boundingBox: BoundingBox(
+              min: Offset(
+                start.dx < end.dx ? start.dx : end.dx,
+                start.dy < end.dy ? start.dy : end.dy,
+              ),
+              max: Offset(
+                start.dx > end.dx ? start.dx : end.dx,
+                start.dy > end.dy ? start.dy : end.dy,
+              ),
+            ),
+          ),
+        ],
+        agentData: [
+          PlacedAgent(
+            id: 'route-agent',
+            type: AgentType.jett,
+            position: saved(const Offset(600, 530)),
+            isAlly: true,
+          )..caption = 'Walk this route.',
+        ],
+        abilityData: const [],
+        textData: const [],
+        imageData: const [],
+        utilityData: const [],
+        sortIndex: 0,
+        isAttack: isAttack,
+        settings: StrategySettings(),
+      );
+
+      final layout = await _captionLayout(tester, page);
+
+      final reserved = Rect.fromPoints(lineStart, lineEnd)
+          .inflate(capture.scale(traversalCardWidth));
+      expect(layout.fits, isTrue);
+      expect(layout.entries.single.card.overlaps(reserved), isFalse);
+    });
+  }
 
   testWidgets('thumbnails show the open page first, small and see-through',
       (tester) async {

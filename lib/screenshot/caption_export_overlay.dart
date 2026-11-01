@@ -8,6 +8,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/screenshot/caption_export_layout.dart';
 import 'package:icarus/widgets/caption_markers.dart';
+import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 
 /// A placed item a page prints the caption of.
@@ -207,7 +208,8 @@ class _PageCaptionsPainter extends CustomPainter {
   final RenderStack? stack;
   final TextStyle style;
 
-  /// The box [element] is drawn in. The page draws defense flipped, around the
+  /// The box [element] is drawn in, with room for its traversal-time card,
+  /// which sits past its end. The page draws defense flipped, around the
   /// middle of the frame.
   Rect? _drawn(DrawingElement element, Size frame) {
     final box = element.boundingBox;
@@ -216,6 +218,8 @@ class _PageCaptionsPainter extends CustomPainter {
     final rect = Rect.fromPoints(
       coordinates.coordinateToScreen(box.min),
       coordinates.coordinateToScreen(box.max),
+    ).inflate(
+      showsTraversalTime(element) ? coordinates.scale(traversalCardWidth) : 0,
     );
     if (overlay.isAttack) return rect;
     return Rect.fromLTRB(

@@ -333,14 +333,14 @@ class TraversalTimeOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final cards = <Widget>[
       for (final element in elements)
-        if (_showsTraversalTime(element))
+        if (showsTraversalTime(element))
           _buildTraversalCard(
             element: element,
             coordinateSystem: coordinateSystem,
             mapScale: mapScale,
             isAttack: isAttack,
           ),
-      if (currentLine != null && _showsTraversalTime(currentLine!))
+      if (currentLine != null && showsTraversalTime(currentLine!))
         _buildTraversalCard(
           element: currentLine!,
           coordinateSystem: coordinateSystem,
@@ -358,6 +358,9 @@ class TraversalTimeOverlay extends StatelessWidget {
   }
 }
 
+/// How wide a drawing's traversal-time card is, in the coordinates' units.
+const traversalCardWidth = 8.0 * 7;
+
 Widget _buildTraversalCard({
   required DrawingElement element,
   required CoordinateSystem coordinateSystem,
@@ -370,12 +373,11 @@ Widget _buildTraversalCard({
   final unitsPerMeter = AgentData.inGameMeters * mapScale;
   if (unitsPerMeter <= 0) return const SizedBox.shrink();
 
-  const cardWidthMeters = 8.0 * 7;
   const cardHeightMeters = 3.5 * 7;
   const xOffsetMeters = 0.8;
   const yOffsetMeters = 0.8;
 
-  final cardWidthScreen = coordinateSystem.scale(cardWidthMeters);
+  final cardWidthScreen = coordinateSystem.scale(traversalCardWidth);
   final cardHeightScreen = coordinateSystem.scale(cardHeightMeters);
   final cardTopLeft = anchor.translate(
     xOffsetMeters * unitsPerMeter,
@@ -505,7 +507,7 @@ double _calculateTraversalTime({
   return distanceMeters / speed;
 }
 
-bool _showsTraversalTime(DrawingElement element) {
+bool showsTraversalTime(DrawingElement element) {
   return switch (element) {
     FreeDrawing drawing => drawing.showTraversalTime,
     Line line => line.showTraversalTime,
