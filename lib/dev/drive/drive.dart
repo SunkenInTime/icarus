@@ -490,6 +490,37 @@ const _keys = {
 var _keyTime = 0;
 
 /// Presses [names] in order and lets go in reverse, as hands do.
+/// Keeps a key step from silently doing nothing. When any other window takes
+/// the foreground, Flutter parks keyboard focus at the root of the focus tree
+/// and a key sent then reaches no widget, which is common on a desktop shared
+/// with other driver runs. This tells Flutter its window is back, so focus
+/// returns to the widget that had it, and fails the step if it doesn't.
+///
+/// It never touches the OS foreground: the driver sends keys inside its own
+/// process, so it doesn't need the foreground, and taking it would drop the
+/// keys of whichever run has it.
+Future<void> _ensureKeyFocus() async {
+  bool held() => FocusManager.instance.primaryFocus?.context != null;
+  final binding = WidgetsBinding.instance;
+  if (held() && binding.lifecycleState == AppLifecycleState.resumed) return;
+  binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  binding.handleViewFocusChanged(
+    ui.ViewFocusEvent(
+      viewId: binding.platformDispatcher.views.first.viewId,
+      state: ui.ViewFocusState.focused,
+      direction: ui.ViewFocusDirection.undefined,
+    ),
+  );
+  try {
+    await _waitFor(held, 2);
+  } on TimeoutException {
+    throw StateError(
+      'no keyboard focus for this key: ${FocusManager.instance.primaryFocus}',
+    );
+  }
+  _log('FOCUS restored to ${FocusManager.instance.primaryFocus}');
+}
+
 void _press(List<String> names) {
   final events = <KeyEvent>[
     for (final name in names)
@@ -706,10 +737,12 @@ Future<void> _run(Map<String, dynamic> step) async {
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await _frames();
     case 'key':
+      await _ensureKeyFocus();
       _press([value as String]);
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await _frames();
     case 'keyCombo':
+      await _ensureKeyFocus();
       _press((value as List).cast<String>());
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await _frames();
