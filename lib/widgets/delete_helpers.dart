@@ -3,6 +3,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
@@ -35,6 +36,18 @@ void deleteHoveredTarget(WidgetRef ref, HoveredDeleteTarget target) {
       }
       return;
   }
+}
+
+/// The Delete in a placed agent's menu. An agent in the selection goes with
+/// the rest of it, as the delete key does; any other agent goes alone, since
+/// the menu was opened on it, and the selection stays.
+void deleteAgentFromMenu(WidgetRef ref, String id) {
+  final selection = ref.read(canvasSelectionProvider);
+  if (selection.contains((kind: SelectableKind.agent, id: id))) {
+    ref.read(canvasSelectionProvider.notifier).deleteSelected();
+    return;
+  }
+  ref.read(agentProvider.notifier).removeAgentAsAction(id);
 }
 
 void deletePlacedWidget(WidgetRef ref, PlacedWidget placedData) {

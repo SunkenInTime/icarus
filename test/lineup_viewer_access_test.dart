@@ -14,14 +14,18 @@ import 'package:icarus/const/weapons.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/dialogs/lineup_panel_dialog.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/placed_lineup_agent_widget.dart';
 import 'package:icarus/widgets/line_up_media_carousel.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
@@ -152,6 +156,33 @@ Finder _landingIcon() => find.descendant(
 
 Finder _originAgent() =>
     find.byKey(const ValueKey('lineup-agent-breach-group'));
+
+Finder _placedAgent() => find.byWidgetPredicate(
+      (widget) => widget is AgentWidget && widget.id == 'jett-agent',
+    );
+
+Future<void> _rightClick(WidgetTester tester, Finder finder) async {
+  await tester.tapAt(
+    tester.getCenter(finder),
+    buttons: kSecondaryButton,
+    kind: PointerDeviceKind.mouse,
+  );
+  await tester.pumpAndSettle();
+}
+
+/// A second agent on the page [_pumpMap] drew.
+Future<void> _addSova(WidgetTester tester, ProviderContainer container) async {
+  container.read(agentProvider.notifier).fromHive([
+    ...container.read(agentProvider),
+    PlacedAgent(
+      id: 'sova-agent',
+      type: AgentType.sova,
+      position: const Offset(1000, 500),
+      isAlly: true,
+    ),
+  ]);
+  await tester.pumpAndSettle();
+}
 
 Future<void> _hover(WidgetTester tester, Finder finder) async {
   final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
@@ -312,6 +343,69 @@ void main() {
     expect(find.text('Delete origin'), findsNothing);
     expect(container.read(lineUpProvider), same(lineUpsBefore));
     expect(container.read(agentProvider), same(agentsBefore));
+
+    await _rightClick(tester, _placedAgent());
+    expect(find.text('Delete'), findsNothing);
+  });
+
+  group("a placed agent's menu", () {
+    testWidgets('Delete removes the agent, and undo brings it back',
+        (tester) async {
+      final container = await _pumpMap(tester, 'editor');
+
+      await _rightClick(tester, _placedAgent());
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(container.read(agentProvider), isEmpty);
+
+      container.read(actionProvider.notifier).undoAction();
+      await tester.pumpAndSettle();
+      expect(container.read(agentProvider).single.id, 'jett-agent');
+    });
+
+    testWidgets('Delete on a selected agent deletes the selection',
+        (tester) async {
+      final container = await _pumpMap(tester, 'editor');
+      await _addSova(tester, container);
+      container.read(canvasSelectionProvider.notifier).selectAll();
+
+      await _rightClick(tester, _placedAgent());
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(container.read(agentProvider), isEmpty);
+      expect(container.read(canvasSelectionProvider), isEmpty);
+    });
+
+    testWidgets('Delete on an agent outside the selection leaves the selection',
+        (tester) async {
+      final container = await _pumpMap(tester, 'editor');
+      await _addSova(tester, container);
+      const sova = (kind: SelectableKind.agent, id: 'sova-agent');
+      container.read(canvasSelectionProvider.notifier).select({sova});
+
+      await _rightClick(tester, _placedAgent());
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(container.read(agentProvider).single.id, 'sova-agent');
+      expect(container.read(canvasSelectionProvider), {sova});
+    });
+
+    testWidgets('a lineup draft made from an agent cannot delete that agent',
+        (tester) async {
+      final container = await _pumpMap(tester, 'editor');
+      final agent = container.read(agentProvider).single as PlacedAgent;
+      container.read(lineUpProvider.notifier)
+        ..startFresh()
+        ..setDraftAgent(agent);
+      container
+          .read(interactionStateProvider.notifier)
+          .update(InteractionState.lineUpPlacing);
+      await tester.pumpAndSettle();
+
+      await _rightClick(tester, find.byType(PlacedLineupAgentWidget).last);
+      expect(find.text('Weapon'), findsOneWidget);
+      expect(find.text('Delete'), findsNothing);
+    });
   });
 
   testWidgets('an editor keeps the lineup edit controls', (tester) async {

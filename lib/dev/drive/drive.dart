@@ -36,6 +36,7 @@
 //   {"dragAt": [x1, y1, x2, y2]}       {"path": [[x, y], ...]}
 //   {"scrollAt": [x, y, dy]}           {"key": name}  {"keyCombo": [names]}
 //   {"resize": [w, h]}                 the window
+//   {"typeText": t}                    replaces the text in the last text field
 // Editor content
 //   {"addAgent": id, "at": [x, y], "agent": "jett"?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
@@ -46,6 +47,9 @@
 //   {"signIn": true}                   ICARUS_DRIVE_EMAIL / ICARUS_DRIVE_PASSWORD
 //   {"newLocal": map, "name": n}       {"newCloud": name, "map": m?}
 //   {"newCloudFolder": name}           {"openCloudFolder": name}
+//   {"shareLink": role, "file": path}  makes a link to the open strategy and
+//                                      writes its code to the file
+//   {"openShareLink": path}            opens the link whose code is in the file
 //   {"importReplay": path}             {"fakeSaveDir": dir}  answers save dialogs
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
@@ -91,8 +95,10 @@ import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -514,6 +520,7 @@ const _icons = {
   'x': LucideIcons.x,
   'house300': LucideIcons.house300,
   'chevronLeft300': LucideIcons.chevronLeft300,
+  'chevronDown': LucideIcons.chevronDown,
   'pencil': LucideIcons.pencil,
   'eye': LucideIcons.eye,
   'square': LucideIcons.square,
@@ -705,6 +712,24 @@ Future<void> _run(Map<String, dynamic> step) async {
       _press((value as List).cast<String>());
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await _frames();
+    case 'typeText':
+      EditableTextState? field;
+      void visit(Element element) {
+        if (element case StatefulElement(:final EditableTextState state)) {
+          field = state;
+        }
+        element.visitChildElements(visit);
+      }
+      WidgetsBinding.instance.rootElement?.visitChildElements(visit);
+      final text = value as String;
+      field!.userUpdateTextEditingValue(
+        TextEditingValue(
+          text: text,
+          selection: TextSelection.collapsed(offset: text.length),
+        ),
+        SelectionChangedCause.keyboard,
+      );
+      await _frames();
     case 'resize':
       final wh = (value as List).cast<num>();
       await windowManager.setSize(Size(wh[0].toDouble(), wh[1].toDouble()));
@@ -864,6 +889,23 @@ Future<void> _run(Map<String, dynamic> step) async {
           .openFolder(folderId: folder.id, store: LibraryWorkspace.cloud);
       await Future<void>.delayed(const Duration(milliseconds: 500));
       await _frames();
+    case 'shareLink':
+      final code = generateIcarusShareCode();
+      await c.read(convexStrategyRepositoryProvider).createShareLink(
+            targetType: 'strategy',
+            targetPublicId: c.read(strategyProvider).strategyId!,
+            token: code,
+            role: value as String,
+          );
+      await File(step['file'] as String).writeAsString(code);
+    case 'openShareLink':
+      final code = (await File(value as String).readAsString()).trim();
+      await c.read(shareLinkControllerProvider.notifier).handleIncomingUri(
+            Uri.parse(
+              buildIcarusShareLink(code, origin: icarusProductionShareOrigin),
+            ),
+            source: 'drive',
+          );
     case 'importReplay':
       await c.read(replayLibraryProvider.notifier).import(value as String);
     case 'fakeSaveDir':

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -49,11 +50,11 @@ RemoteEditorSnapshot _snapshot(List<RemotePage> pages) => RemoteEditorSnapshot(
 /// [afterRefresh].
 class _Remote extends RemoteEditorSnapshotNotifier {
   Completer<void>? refreshGate;
+  List<RemotePage> pages = [_page('page-1', 0), _page('page-2', 1)];
   List<RemotePage> afterRefresh = [_page('page-1', 0), _page('page-2', 1)];
 
   @override
-  Future<RemoteEditorSnapshot?> build() async =>
-      _snapshot([_page('page-1', 0), _page('page-2', 1)]);
+  Future<RemoteEditorSnapshot?> build() async => _snapshot(pages);
 
   @override
   Future<void> refresh() async {
@@ -65,6 +66,7 @@ class _Remote extends RemoteEditorSnapshotNotifier {
 /// A cloud strategy whose deletes the server accepts, after [deleteGate].
 class _CloudStrategy extends StrategyProvider {
   final List<String> deleted = [];
+  final List<String> renamed = [];
   Completer<void>? deleteGate;
 
   @override
@@ -80,6 +82,11 @@ class _CloudStrategy extends StrategyProvider {
     deleted.add(pageId);
     await deleteGate?.future;
     return true;
+  }
+
+  @override
+  Future<void> renamePage(String pageId, String newName) async {
+    renamed.add('$pageId: $newName');
   }
 
   void switchTo(String strategyId) =>
@@ -152,6 +159,7 @@ class _Harness {
   final session = _Session();
   final remote = _Remote();
   final showBar = ValueNotifier(true);
+  StrategyCapabilities caps = _caps;
 
   Future<void> pump(WidgetTester tester) async {
     await tester.pumpWidget(ProviderScope(
@@ -170,7 +178,7 @@ class _Harness {
         strategyProvider.overrideWith(() => strategy),
         strategyPageSessionProvider.overrideWith(() => session),
         appPreferencesProvider.overrideWith(_Preferences.new),
-        currentStrategyCapabilitiesProvider.overrideWithValue(_caps),
+        currentStrategyCapabilitiesProvider.overrideWithValue(caps),
       ],
       child: ToastificationWrapper(
         child: ShadApp(
@@ -188,6 +196,15 @@ class _Harness {
     ));
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(LucideIcons.chevronDown));
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> rightClick(WidgetTester tester, String text) async {
+    await tester.tapAt(
+      tester.getCenter(find.text(text).last),
+      buttons: kSecondaryButton,
+      kind: PointerDeviceKind.mouse,
+    );
     await tester.pumpAndSettle();
   }
 
@@ -363,6 +380,70 @@ void main() {
       findsOneWidget,
     );
     await _letToastsClose(tester);
+  });
+
+  group('right-clicking a page', () {
+    testWidgets('Delete asks first, then offers Undo like the button',
+        (tester) async {
+      final harness = _Harness();
+      await harness.pump(tester);
+
+      await harness.rightClick(tester, 'Page 1');
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(harness.strategy.deleted, isEmpty);
+      expect(find.text("Delete 'Page 1'?"), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('confirm-alert-confirm')));
+      await tester.pumpAndSettle();
+      expect(harness.strategy.deleted, ['page-1']);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(harness.session.restored, ['page-1']);
+    });
+
+    testWidgets('Rename opens the rename dialog for that page', (tester) async {
+      final harness = _Harness();
+      await harness.pump(tester);
+
+      await harness.rightClick(tester, 'Page 1');
+      await tester.tap(find.text('Rename'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(EditableText), 'Mid control');
+      await tester.tap(find.widgetWithText(ShadButton, 'Rename'));
+      await tester.pumpAndSettle();
+      expect(harness.strategy.renamed, ['page-1: Mid control']);
+    });
+
+    testWidgets('the last page cannot be deleted', (tester) async {
+      final harness = _Harness();
+      harness.remote.pages = [_page('page-2', 0)];
+      await harness.pump(tester);
+
+      await harness.rightClick(tester, 'Page 1');
+      final delete = tester.widget<ShadContextMenuItem>(
+        find.ancestor(
+          of: find.text('Delete'),
+          matching: find.byType(ShadContextMenuItem),
+        ),
+      );
+      expect(delete.enabled, isFalse);
+      await tester.tap(find.text('Delete'), warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(find.text("Delete 'Page 1'?"), findsNothing);
+      expect(harness.strategy.deleted, isEmpty);
+    });
+
+    testWidgets('a viewer gets no menu', (tester) async {
+      final harness = _Harness()
+        ..caps = StrategyCapabilities.fromCloudRole('viewer');
+      await harness.pump(tester);
+
+      await harness.rightClick(tester, 'Page 1');
+      expect(find.text('Rename'), findsNothing);
+      expect(find.text('Delete'), findsNothing);
+    });
   });
 
   testWidgets('a page that can no longer come back says so', (tester) async {
