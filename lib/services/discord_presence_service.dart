@@ -5,6 +5,7 @@ import 'dart:isolate';
 
 import 'package:discord_rich_presence/discord_rich_presence.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -13,6 +14,11 @@ import 'package:icarus/providers/strategy_provider.dart';
 ///
 /// Strategy and page names are intentionally excluded because Discord Rich
 /// Presence is public profile data.
+/// Override to exercise either answer in tests, whatever they run on.
+final discordPresenceSupportedProvider = Provider<bool>(
+  (ref) => DiscordPresenceService.isSupported,
+);
+
 class DiscordPresenceData {
   const DiscordPresenceData({
     required this.details,

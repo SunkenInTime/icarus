@@ -17,6 +17,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
@@ -312,6 +313,8 @@ class _GlobalSettingsSections extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final allowsLocalLibrary =
         ref.watch(platformPolicyProvider).allowsLocalLibrary;
+    final discordPresenceSupported =
+        ref.watch(discordPresenceSupportedProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,46 +383,49 @@ class _GlobalSettingsSections extends ConsumerWidget {
             ],
           ),
         ),
-        const SizedBox(height: 28),
-        SettingsScopeCard(
-          key: sectionKeys[_SettingsSection.globalSaving],
-          title: "Workspace behavior",
-          child: Column(
-            children: [
-              // Autosave only covers strategies on this device.
-              if (allowsLocalLibrary)
-                _SettingsToggleTile(
-                  icon: LucideIcons.save,
-                  iconColor: Settings.settingsPersistenceAccent,
-                  title: "Autosave",
-                  description:
-                      "Save strategies on this device after 15 seconds idle. When off, Icarus asks before you leave unsaved work. Cloud strategies sync either way.",
-                  value: appPreferences.autosaveEnabled,
-                  onChanged: (value) async {
-                    await ref
-                        .read(appPreferencesProvider.notifier)
-                        .setAutosaveEnabled(value);
-                    ref
-                        .read(strategyProvider.notifier)
-                        .refreshAutosaveScheduling();
-                  },
-                ),
-              _SettingsToggleTile(
-                icon: LucideIcons.gamepad2,
-                iconColor: Settings.settingsDiscordAccent,
-                title: "Discord Rich Presence",
-                description:
-                    "Show the current map and attack or defense side on your Discord profile. Strategy names are never shared.",
-                value: appPreferences.discordPresenceEnabled,
-                onChanged: (value) {
-                  ref
-                      .read(appPreferencesProvider.notifier)
-                      .setDiscordPresenceEnabled(value);
-                },
-              ),
-            ],
+        if (allowsLocalLibrary || discordPresenceSupported) ...[
+          const SizedBox(height: 28),
+          SettingsScopeCard(
+            key: sectionKeys[_SettingsSection.globalSaving],
+            title: "Workspace behavior",
+            child: Column(
+              children: [
+                // Autosave only covers strategies on this device.
+                if (allowsLocalLibrary)
+                  _SettingsToggleTile(
+                    icon: LucideIcons.save,
+                    iconColor: Settings.settingsPersistenceAccent,
+                    title: "Autosave",
+                    description:
+                        "Save strategies on this device after 15 seconds idle. When off, Icarus asks before you leave unsaved work. Cloud strategies sync either way.",
+                    value: appPreferences.autosaveEnabled,
+                    onChanged: (value) async {
+                      await ref
+                          .read(appPreferencesProvider.notifier)
+                          .setAutosaveEnabled(value);
+                      ref
+                          .read(strategyProvider.notifier)
+                          .refreshAutosaveScheduling();
+                    },
+                  ),
+                if (discordPresenceSupported)
+                  _SettingsToggleTile(
+                    icon: LucideIcons.gamepad2,
+                    iconColor: Settings.settingsDiscordAccent,
+                    title: "Discord Rich Presence",
+                    description:
+                        "Show the current map and attack or defense side on your Discord profile. Strategy names are never shared.",
+                    value: appPreferences.discordPresenceEnabled,
+                    onChanged: (value) {
+                      ref
+                          .read(appPreferencesProvider.notifier)
+                          .setDiscordPresenceEnabled(value);
+                    },
+                  ),
+              ],
+            ),
           ),
-        ),
+        ],
         const SizedBox(height: 28),
         SettingsScopeCard(
           key: sectionKeys[_SettingsSection.globalMapVisibility],
