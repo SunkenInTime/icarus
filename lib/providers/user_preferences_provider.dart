@@ -133,6 +133,13 @@ class AppPreferences extends HiveObject {
   /// (hidden) to 1 (the original look).
   final double backgroundDotOpacity;
 
+  /// How strongly view cones show on the map, from [minViewConeOpacity] to 1
+  /// (the original look).
+  final double viewConeOpacity;
+
+  /// Never 0: a cone that can't be seen looks like a cone that's broken.
+  static const double minViewConeOpacity = 0.1;
+
   /// Whether this install has shown the welcome tour, the card that
   /// introduces accounts, the cloud, and replays. Stores written before the
   /// tour existed read false, so updating users see it once.
@@ -171,6 +178,7 @@ class AppPreferences extends HiveObject {
     this.discordPresenceEnabled = true,
     this.videoExportStepDurationSeconds = 3.0,
     this.backgroundDotOpacity = 1.0,
+    this.viewConeOpacity = 1.0,
     this.welcomeTourSeen = false,
     this.transparentScreenshotBackground = false,
     this.transparentVideoBackground = false,
@@ -199,6 +207,7 @@ class AppPreferences extends HiveObject {
     bool? discordPresenceEnabled,
     double? videoExportStepDurationSeconds,
     double? backgroundDotOpacity,
+    double? viewConeOpacity,
     bool? welcomeTourSeen,
     bool? transparentScreenshotBackground,
     bool? transparentVideoBackground,
@@ -234,6 +243,7 @@ class AppPreferences extends HiveObject {
       videoExportStepDurationSeconds:
           videoExportStepDurationSeconds ?? this.videoExportStepDurationSeconds,
       backgroundDotOpacity: backgroundDotOpacity ?? this.backgroundDotOpacity,
+      viewConeOpacity: viewConeOpacity ?? this.viewConeOpacity,
       welcomeTourSeen: welcomeTourSeen ?? this.welcomeTourSeen,
       transparentScreenshotBackground: transparentScreenshotBackground ??
           this.transparentScreenshotBackground,
@@ -721,6 +731,17 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
     return _updatePreferences(
       (current) => current.copyWith(
         backgroundDotOpacity: opacity.clamp(0.0, 1.0),
+      ),
+    );
+  }
+
+  Future<void> setViewConeOpacity(double opacity) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        viewConeOpacity: opacity.clamp(
+          AppPreferences.minViewConeOpacity,
+          1.0,
+        ),
       ),
     );
   }

@@ -469,6 +469,24 @@ class _GlobalSettingsSections extends ConsumerWidget {
                       .setBackgroundDotOpacity(value);
                 },
               ),
+              _SettingsSliderTile(
+                icon: LucideIcons.eye,
+                iconColor: Settings.settingsMapAccent,
+                title: "View cones",
+                description:
+                    "How strongly view cones show on the map, here and in screenshots and videos.",
+                value: appPreferences.viewConeOpacity,
+                min: AppPreferences.minViewConeOpacity,
+                max: 1,
+                divisions: 18,
+                accentColor: Settings.accentInk,
+                valueLabel: (value) => "${(value * 100).round()}%",
+                onChanged: (value) {
+                  ref
+                      .read(appPreferencesProvider.notifier)
+                      .setViewConeOpacity(value);
+                },
+              ),
             ],
           ),
         ),

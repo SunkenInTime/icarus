@@ -337,11 +337,19 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                         child: ConeCoverageLayer(
                                           coverage: _cones,
                                           floor: _revealedFloor(isAttack),
-                                          opacity: ref
-                                                  .watch(interactionStateProvider)
-                                                  .isLineUpMode
-                                              ? 0.2
-                                              : 1.0,
+                                          opacity: ref.watch(
+                                                appPreferencesProvider.select(
+                                                  (preferences) =>
+                                                      preferences
+                                                          .viewConeOpacity,
+                                                ),
+                                              ) *
+                                              (ref
+                                                      .watch(
+                                                          interactionStateProvider)
+                                                      .isLineUpMode
+                                                  ? 0.2
+                                                  : 1.0),
                                           child: Stack(
                                             children: [
                                               Positioned(
