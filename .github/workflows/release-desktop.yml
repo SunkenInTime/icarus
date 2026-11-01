@@ -348,6 +348,12 @@ jobs:
     if: ${{ !cancelled() && needs.build.result == 'success' && inputs.publish_pages && (needs.web.result == 'success' || (inputs.channel == 'prerelease' && needs.web.result == 'skipped')) }}
     # Windows, because the publish scripts check Authenticode signatures.
     runs-on: windows-latest
+    # One at a time, so that the script's refusal of a superseded release sees
+    # everything published before it.
+    concurrency:
+      group: publish-desktop-${{ inputs.channel }}
+      cancel-in-progress: false
+      queue: max
     env:
       # release_desktop.ps1 resolves the cloud build configuration on every phase.
       ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}

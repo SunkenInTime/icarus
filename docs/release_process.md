@@ -143,10 +143,10 @@ to try server changes by hand; never test on production.
   report the same version. See "Releasing web and desktop together".
 - For a hotfix or redeploy: `Actions` > `Deploy Web` > `Run workflow` on `main`.
   Leave `ref` empty to rebuild the latest `desktop-stable-v...` tag, or name a
-  tag or commit. Run it from `main`; the ref must be a commit on `main`, no
-  older than the latest stable release. Naming a newer commit ships it to web
-  ahead of desktop, so do that on purpose. The server deploys first, always from
-  the tip of `main`.
+  tag or commit. Run it from `main`; the ref must be a commit on `main` that
+  contains the latest stable release. Naming a newer commit ships it to web ahead
+  of desktop, so do that on purpose. The server deploys first, always from the
+  tip of `main`.
 - The run summary links the deployment and names the version. To roll back,
   promote an earlier deployment in the Cloudflare dashboard under the project's
   `Deployments`. It stays rolled back until the next release or manual run.
@@ -224,8 +224,11 @@ and the signed files the run already made, and it works for 30 days. Don't use
 `main` already has it.
 
 Only the newest release can be finished this way. Once a newer release is public,
-re-running an older run stops at web or at `publish`, before anything changes, so
-it can't take users backwards. Abandon the old run; the newer release replaced it.
+re-running an older run stops at web or at `publish` without changing the web
+build or the update feed. The server still deploys the tip of `main`, which is
+harmless. Abandon the old run; the newer release replaced it. Don't re-run an old
+run while another release is in progress, because the newer one isn't public yet
+and web won't refuse.
 
 | What failed | What users have | What to do |
 | --- | --- | --- |
