@@ -1998,6 +1998,7 @@ class StrategyImportExportService {
     log('Is ZIP file: $isZip');
     final bytes = await file.readAsBytes();
     String jsonData = '';
+    var saved = false;
 
     try {
       if (isZip) {
@@ -2167,11 +2168,20 @@ class StrategyImportExportService {
 
       await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
           .put(newStrategy.id, newStrategy);
+      saved = true;
     } finally {
       if (isZip) {
         try {
           await cleanUpTempDirectory(newID);
         } catch (_) {}
+      }
+      if (!saved) {
+        try {
+          final images = await PlacedImageProvider.getImageFolder(newID);
+          await images.parent.delete(recursive: true);
+        } catch (_) {
+          // Only disk space; no strategy points at this folder.
+        }
       }
     }
   }
