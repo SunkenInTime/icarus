@@ -76,6 +76,8 @@
 //                                      them: p50, p90, p99, worst, in ms
 //   {"expectSelected": n}              fails unless n items are selected
 //   {"expectAgents": n}                fails unless n agents are on the page
+//   {"expectImages": n, "lineups": m?} fails unless n pictures are on the page,
+//                                      and m in its lineups
 //   {"exit": 1}
 import 'dart:async';
 import 'dart:convert';
@@ -1112,6 +1114,17 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'expectAgents':
       final agents = c.read(agentProvider).length;
       if (agents != value) throw StateError('$agents agents, expected $value');
+    case 'expectImages':
+      final images = c.read(placedImageProvider).images.length;
+      final inLineups = [
+        for (final link in c.read(lineUpProvider).links) ...link.images,
+      ].length;
+      if (images != value) {
+        throw StateError('$images pictures, expected $value');
+      }
+      if (step['lineups'] case final int lineups when inLineups != lineups) {
+        throw StateError('$inLineups lineup pictures, expected $lineups');
+      }
     case 'probe':
       _log('PROBE $value ${_probe()}');
     case 'texts':
