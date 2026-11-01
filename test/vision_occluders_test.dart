@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -67,6 +68,59 @@ void main() {
       isNull,
       reason: 'a wall seen edge on',
     );
+  });
+
+  group('a cone sees only part of a wall', () {
+    // A ring of short segments all round the eye.
+    final ring = LineOccluder([
+      for (var i = 0; i <= 72; i++)
+        Offset.fromDirection(i * math.pi / 36, 30),
+    ]);
+    const spread = 50 * math.pi / 180;
+
+    for (final heading in [0.0, 1.0, math.pi, -math.pi, 3.0, -2.5, 7.0]) {
+      test('a cone facing $heading loses none of it', () {
+        final view = (heading: heading, spread: spread);
+        final hidden = occluderShadows(Offset.zero, 100, [ring], view: view)!;
+        for (var a = -spread + 0.001; a <= spread; a += spread / 40) {
+          final direction = Offset.fromDirection(heading + a);
+          expect(hidden.contains(direction * 60), isTrue, reason: '$a');
+          expect(hidden.contains(direction * 20), isFalse, reason: '$a');
+        }
+      });
+
+      test('a cone facing $heading skips what lies behind it', () {
+        final view = (heading: heading, spread: spread);
+        final all = ring.shadows(Offset.zero, 100);
+        final seen = ring.shadows(Offset.zero, 100, view: view);
+        expect(all, hasLength(72));
+        // 100 degrees of 360, and a segment either end.
+        expect(seen.length, inInclusiveRange(20, 23));
+      });
+    }
+
+    test('a wall spanning the view with both ends outside it is seen', () {
+      const across = LineOccluder([Offset(30, -60), Offset(30, 60)]);
+      expect(
+        across.shadows(Offset.zero, 100,
+            view: (heading: 0.0, spread: 10 * math.pi / 180)),
+        hasLength(1),
+      );
+    });
+
+    test('a wall out of view casts nothing, so the cone needs no layer', () {
+      expect(
+        occluderShadows(
+          Offset.zero,
+          100,
+          const [
+            LineOccluder([Offset(-30, -10), Offset(-30, 10)]),
+          ],
+          view: (heading: 0.0, spread: spread),
+        ),
+        isNull,
+      );
+    });
   });
 
   test('only occluders within reach reach the cone', () {

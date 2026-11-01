@@ -1,13 +1,14 @@
 import 'dart:typed_data';
 import 'dart:io';
 import 'dart:convert';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/replay/replay_cone_cuts.dart';
 import 'package:icarus/replay/replay_cone_worker.dart';
@@ -453,6 +454,214 @@ void main() {
         mapScale: Maps.mapScale[projection.map]!,
       ));
       expect((circle.position + anchor - landed).distance, lessThan(1e-6));
+    });
+
+    // Harbor's High Tide: a head run from the origin along +x, then up +y,
+    // and the actor that holds the wall up for 15 s after.
+    const highTide = '/Game/Characters/Mage/S0/Ability_Q/'
+        'Projectile_Mage_Q_Wall.Projectile_Mage_Q_Wall_C';
+    const wallManager = '/Game/Characters/Mage/S0/Ability_Q/'
+        'GameObject_Mage_Q_WallManager.GameObject_Mage_Q_WallManager_C';
+    const harbor = '95b78ed7-4637-86d9-7e41-71ba8c293152';
+    final harborPlayers = [
+      {'subject': 'a', 'agentId': jett, 'team': 'Red'},
+      {'subject': 'b', 'agentId': harbor, 'team': 'Blue'},
+    ];
+    Map<String, Object?> head(int id, int spawnMs, {String? owner = 'b'}) => {
+          'id': id,
+          'classPath': highTide,
+          'owner': owner,
+          'spawnMs': spawnMs,
+          'endMs': spawnMs + 2000,
+          'position': [0, 0, 100],
+          'path': [
+            [spawnMs + 1000, 2000, 0, 100],
+            [spawnMs + 2000, 2000, 2000, 100],
+          ],
+        };
+    Map<String, Object?> holder(int id, int spawnMs, {String? owner = 'b'}) => {
+          'id': id,
+          'classPath': wallManager,
+          'owner': owner,
+          'spawnMs': spawnMs,
+          'endMs': spawnMs + 16000,
+          'position': [0, 0, 100],
+        };
+    final corner = projection.toWorld(2000, 0);
+    final end = projection.toWorld(2000, 2000);
+
+    test('High Tide grows behind its head, and blocks what is drawn', () {
+      final frames = builder(document(
+        players: harborPlayers,
+        utility: [head(5, 1000), holder(6, 1002)],
+      ));
+      final frame = frames.frameAt(2500, perspective: ReplayTeam.red);
+
+      final wall = frame.effects.whereType<ReplayGuidedWall>().single;
+      expect(wall.points.first, projection.toWorld(0, 0));
+      expect(wall.points[1], corner);
+      expect((wall.points.last - projection.toWorld(2000, 1000)).distance,
+          lessThan(1e-6));
+      expect(wall.opacity, 1);
+      expect(wall.isAlly, isFalse);
+
+      // The cones are cut along exactly the line drawn.
+      expect((frame.occluders.single as LineOccluder).points, wall.points);
+
+      // The icon rides the head.
+      final placed = frame.abilities.single;
+      expect((placed.data.type, placed.data.index), (AgentType.harbor, 1));
+      final anchor = CoordinateSystem.virtualToWorld(storedAbilityAnchor(
+        ability: placed.data.abilityData!,
+        mapScale: Maps.mapScale[projection.map]!,
+      ));
+      expect((placed.position + anchor - wall.points.last).distance,
+          lessThan(1e-6));
+    });
+
+    test('High Tide stands after its head stops, until its holder closes', () {
+      final frames = builder(document(
+        players: harborPlayers,
+        utility: [head(5, 1000), holder(6, 1002)],
+      ));
+      ReplayFrame at(int t) => frames.frameAt(t, perspective: ReplayTeam.red);
+
+      // The head's actor closed at 3000; the wall came down at 17002.
+      for (final t in [3000, 10000, 17001]) {
+        final frame = at(t);
+        final wall = frame.effects.whereType<ReplayGuidedWall>().single;
+        expect(wall.points.last, end, reason: '$t');
+        expect(wall.opacity, 1, reason: '$t');
+        expect((frame.occluders.single as LineOccluder).points, wall.points,
+            reason: '$t');
+        expect(frame.abilities.single.id, 'replay-utility-5', reason: '$t');
+      }
+
+      // Coming down: it fades where it stood, and hides nothing any more.
+      final leaving = at(17252);
+      expect(leaving.abilities, isEmpty);
+      expect(leaving.occluders, isEmpty);
+      final wall = leaving.effects.whereType<ReplayGuidedWall>().single;
+      expect(wall.points.last, end);
+      expect(wall.opacity, closeTo(0.5, 1e-9));
+      expect(leaving.effects.whereType<ReplayExit>().single.progress,
+          closeTo(0.5, 1e-9));
+
+      expect(at(17600).effects, isEmpty);
+    });
+
+    test('High Tide with no holder goes when its head does', () {
+      final frames = builder(document(
+        players: harborPlayers,
+        utility: [head(5, 1000)],
+      ));
+      ReplayFrame at(int t) => frames.frameAt(t, perspective: ReplayTeam.red);
+      expect(at(2999).occluders, hasLength(1));
+      expect(at(3000).occluders, isEmpty);
+      expect(at(3000).effects.whereType<ReplayGuidedWall>().single.opacity, 1);
+      expect(at(3600).effects, isEmpty);
+    });
+
+    test('each High Tide takes the holder its own caster opened', () {
+      const other = 'c';
+      final frames = builder(document(
+        players: [
+          ...harborPlayers,
+          {'subject': other, 'agentId': harbor, 'team': 'Red'},
+        ],
+        utility: [
+          head(5, 1000),
+          // The other Harbor's wall comes down first, and a later cast by
+          // the first Harbor has a holder of its own.
+          head(7, 1050, owner: other),
+          holder(8, 1060, owner: other)..['endMs'] = 9000,
+          holder(6, 1100),
+          head(9, 30000),
+          holder(10, 30100),
+        ],
+      ));
+      ReplayFrame at(int t) => frames.frameAt(t, perspective: ReplayTeam.red);
+      expect(at(9500).abilities.map((a) => a.id), ['replay-utility-5']);
+      expect(at(30500).abilities.map((a) => a.id), ['replay-utility-9']);
+      expect(at(46000).abilities.map((a) => a.id), ['replay-utility-9']);
+    });
+
+    test("a High Tide leaves a later cast's holder alone", () {
+      final frames = builder(document(
+        players: harborPlayers,
+        utility: [head(5, 1000), head(9, 30000), holder(10, 30100)],
+      ));
+      ReplayFrame at(int t) => frames.frameAt(t, perspective: ReplayTeam.red);
+      expect(at(4000).abilities, isEmpty);
+      expect(at(30500).abilities.map((a) => a.id), ['replay-utility-9']);
+    });
+
+    test('a holder opening just before its head still holds it', () {
+      final frames = builder(document(
+        players: harborPlayers,
+        utility: [holder(6, 998), head(5, 1000)],
+      ));
+      final frame = frames.frameAt(9000, perspective: ReplayTeam.red);
+      expect(frame.abilities.map((a) => a.id), ['replay-utility-5']);
+    });
+
+    test('a capture of High Tide saves its icon and nothing new', () {
+      final frames = builder(document(
+        players: harborPlayers,
+        utility: [head(5, 1000), holder(6, 1002)],
+      ));
+      final frame = frames.frameAt(9000, perspective: ReplayTeam.red);
+      expect(frame.widgets.whereType<PlacedAbility>().single.data.name,
+          'High Tide');
+      // The wall itself is an effect, which a page never holds.
+      expect(frame.effects.whereType<ReplayGuidedWall>(), hasLength(1));
+    });
+
+    test('a wall is stroked along its line, in its colour over its team', () {
+      CoordinateSystem(playAreaSize: const Size(1600, 900));
+      const wall = ReplayGuidedWall(
+        points: [Offset(100, 100), Offset(200, 100), Offset(200, 200)],
+        opacity: 1,
+        isAlly: true,
+      );
+      final scale = CoordinateSystem.instance.scale(1);
+      for (final isAttack in [true, false]) {
+        final painter =
+            ReplayWallPainter(walls: const [wall], isAttack: isAttack, width: 5);
+        void draw(Canvas canvas) => painter.paint(canvas, Size.zero);
+        // The line runs through its points as this side draws them.
+        final corners = Rect.fromPoints(
+          replayScreenPoint(const Offset(100, 100), isAttack: isAttack),
+          replayScreenPoint(const Offset(200, 200), isAttack: isAttack),
+        );
+        bool stroke(
+          Symbol method,
+          List<dynamic> arguments, {
+          required Color color,
+          required double width,
+        }) {
+          if (method != #drawPath) return false;
+          final bounds = (arguments[0] as Path).getBounds();
+          final paint = arguments[1] as Paint;
+          expect(paint.style, PaintingStyle.stroke);
+          expect(paint.color.toARGB32(), color.toARGB32());
+          expect(paint.strokeWidth, closeTo(width * scale, 1e-3));
+          expect((bounds.topLeft - corners.topLeft).distance, lessThan(1e-3));
+          expect((bounds.bottomRight - corners.bottomRight).distance,
+              lessThan(1e-3));
+          return true;
+        }
+
+        expect(
+          draw,
+          paints
+            ..something((method, arguments) => stroke(method, arguments,
+                color: Settings.allyOutlineColor, width: 8))
+            ..something((method, arguments) => stroke(method, arguments,
+                color: Colors.lightBlueAccent, width: 5)),
+          reason: '$isAttack',
+        );
+      }
     });
 
     // Omen's Paranoia, cast from the origin along +x.

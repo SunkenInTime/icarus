@@ -13,6 +13,9 @@ sealed class VisionOccluder {
   bool reaches(Offset origin, double reach);
 }
 
+/// The directions a cone shows: within [spread] radians of [heading].
+typedef ConeView = ({double heading, double spread});
+
 /// A smoke: a sphere seen from above.
 @immutable
 class CircleOccluder extends VisionOccluder {
@@ -96,8 +99,10 @@ class LineOccluder extends VisionOccluder {
     return false;
   }
 
-  /// What each segment hides from [origin], within [reach] of it.
-  List<List<Offset>> shadows(Offset origin, double reach) {
+  /// What each segment hides from [origin], within [reach] of it. With
+  /// [view], only the segments it can see: a long wall has many, and each
+  /// costs raster time for every cone near it.
+  List<List<Offset>> shadows(Offset origin, double reach, {ConeView? view}) {
     final out = <List<Offset>>[];
     for (var i = 0; i + 1 < points.length; i++) {
       final a = points[i], b = points[i + 1];
@@ -112,6 +117,7 @@ class LineOccluder extends VisionOccluder {
       var sweep = math.atan2(toB.dy, toB.dx) - fromAngle;
       if (sweep > math.pi) sweep -= 2 * math.pi;
       if (sweep < -math.pi) sweep += 2 * math.pi;
+      if (view != null && !_inView(view, fromAngle, sweep)) continue;
       final steps = math.max(1, (sweep.abs() / (math.pi / 36)).ceil());
       out.add([
         a,
@@ -124,6 +130,16 @@ class LineOccluder extends VisionOccluder {
       ]);
     }
     return out;
+  }
+
+  /// Whether the directions from [angle] through [sweep] meet [view].
+  static bool _inView(ConeView view, double angle, double sweep) {
+    final from = angle - view.heading;
+    final low = math.min(from, from + sweep);
+    final high = math.max(from, from + sweep);
+    // Angles repeat: try the arc a turn either way as well.
+    final turns = ((view.spread - low) / (2 * math.pi)).floor();
+    return high + turns * 2 * math.pi >= -view.spread;
   }
 
   @override
@@ -142,18 +158,20 @@ bool standsInsideSmoke(Offset origin, List<VisionOccluder> occluders) =>
 /// What [occluders] hide from [origin], within [reach] of it: one path, in
 /// the space [origin] is in, for the cone painter to erase. Null when they
 /// hide nothing. Erasing at paint time keeps path operations, which cost a
-/// millisecond or more against a cone's wall cut, off the UI thread.
+/// millisecond or more against a cone's wall cut, off the UI thread. With
+/// [view], walls leave out what the cone can't see of them.
 Path? occluderShadows(
   Offset origin,
   double reach,
-  List<VisionOccluder> occluders,
-) {
+  List<VisionOccluder> occluders, {
+  ConeView? view,
+}) {
   final shadows = Path()..fillType = PathFillType.nonZero;
   var any = false;
   for (final occluder in occluders) {
     final polygons = switch (occluder) {
       CircleOccluder() => [occluder.shadow(origin, reach)],
-      LineOccluder() => occluder.shadows(origin, reach),
+      LineOccluder() => occluder.shadows(origin, reach, view: view),
     };
     for (final polygon in polygons) {
       if (polygon == null) continue;

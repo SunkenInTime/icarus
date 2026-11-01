@@ -64,8 +64,20 @@ class ReplayConesPainter extends CustomPainter {
       // Where the agent stands now, in height-model space. Smokes do not
       // move with a lagging cut, so they are judged from here.
       final standing = _source(aim.origin, transform);
-      final shadows =
-          occluders.isEmpty ? null : _shadows(standing, reach, transform);
+      final facing =
+          coordinates.rotationForSide(aim.rotation, isAttack: isAttack) -
+              math.pi / 2;
+      final shadows = occluders.isEmpty
+          ? null
+          : _shadows(
+              standing,
+              reach,
+              transform,
+              (
+                heading: facing,
+                spread: apertureDegrees * math.pi / 360,
+              ),
+            );
       if (shadows == _blind) continue;
       // The cut's origin lands on the agent, as the editor draws a cone,
       // whose apex is the agent even when its cut was made from a point
@@ -73,15 +85,12 @@ class ReplayConesPainter extends CustomPainter {
       // the agent faces is cut from it here, so turning is never stale.
       final apex = toScreen(standing);
       final from = toScreen(origin);
-      final facing =
-          coordinates.rotationForSide(aim.rotation, isAttack: isAttack) -
-              math.pi / 2;
+      final wedge = _wedge(apex, facing, reach * scale);
       if (shadows != null) {
-        canvas.saveLayer(
-            Rect.fromCircle(center: apex, radius: reach * scale), Paint());
+        canvas.saveLayer(wedge.getBounds().inflate(1), Paint());
       }
       canvas.save();
-      canvas.clipPath(_wedge(apex, facing, reach * scale));
+      canvas.clipPath(wedge);
       canvas.translate(apex.dx - from.dx, apex.dy - from.dy);
       canvas.transform(sourceToScreen);
       // The wedge clip already stops the cut at reach.
@@ -136,8 +145,15 @@ class ReplayConesPainter extends CustomPainter {
   static final _blind = Path();
 
   /// What the occluders within reach hide from [origin], in height-model
-  /// space; [_blind] when [origin] stands in a smoke.
-  Path? _shadows(Offset origin, double reach, SvgHeightMapTransform transform) {
+  /// space, for a cone showing [view]; [_blind] when [origin] stands in a
+  /// smoke. Height-model space and the screen differ by a scale and an
+  /// offset, so a direction is the same in both.
+  Path? _shadows(
+    Offset origin,
+    double reach,
+    SvgHeightMapTransform transform,
+    ConeView view,
+  ) {
     final near = [
       for (final occluder in occluders)
         switch (occluder) {
@@ -148,7 +164,7 @@ class ReplayConesPainter extends CustomPainter {
     ].where((occluder) => occluder.reaches(origin, reach)).toList();
     if (near.isEmpty) return null;
     if (standsInsideSmoke(origin, near)) return _blind;
-    return occluderShadows(origin, reach, near);
+    return occluderShadows(origin, reach, near, view: view);
   }
 
   @override

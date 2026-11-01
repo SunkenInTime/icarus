@@ -118,8 +118,13 @@ enum ReplayUtilityKind {
   rectangle,
 
   /// Utility in flight whose effect has no lasting actor of its own
-  /// (flashes, High Tide, Showstopper's rocket).
+  /// (flashes, Showstopper's rocket).
   projectile,
+
+  /// A guided head with a wall rising along the way it went (Harbor's High
+  /// Tide). The icon rides the head; the wall stays after the head has
+  /// stopped, for as long as its holder is open ([replayWallHolder]).
+  guidedWall,
 
   /// A directed area a projectile sweeps out from where it was cast (Omen's
   /// Paranoia, Iso's Undercut). The ability stays where it was cast, and its
@@ -141,10 +146,18 @@ enum ReplayVisionBlock {
   /// A smoke, as wide as the ability draws it.
   sphere,
 
-  /// A wall of smoke or fire along the utility's shape points, or along its
-  /// path when it has none (Harbor's High Tide is where its head went).
+  /// A wall of smoke, fire or water along the utility's shape points, or
+  /// along its path when it has none (Harbor's High Tide is where its head
+  /// went).
   line,
 }
+
+/// Whether [classPath] is the actor that keeps a
+/// [ReplayUtilityKind.guidedWall] standing once its head has stopped. The
+/// same cast opens it and it closes when the wall comes down; it draws
+/// nothing of its own, so it isn't in the catalog.
+bool replayWallHolder(String classPath) =>
+    replayAssetName(classPath) == 'GameObject_Mage_Q_WallManager';
 
 class ReplayAbilityEntry {
   const ReplayAbilityEntry._(
@@ -535,11 +548,12 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'Projectile_E_Aggrobot_DiscTurret_PowerWave': _projectile(AgentType.gekko, 2),
   'Pawn_Aggrobot_RollyPolly': _marker(AgentType.gekko, 3),
 
-  // Harbor (Mage), asset index. Icarus draws High Tide as its icon, so it
-  // follows the wall's guided head (Giehl's MageWallDescriptor).
+  // Harbor (Mage), asset index. High Tide's projectile is the guided head
+  // (Giehl's MageWallDescriptor); GameObject_Mage_Q_WallManager holds the
+  // wall up after it stops, 15 s in the 13.09 blueprints.
   'GameObject_Mage_4_SplashGrenade': _area(AgentType.harbor, 0),
   'Projectile_Mage_Q_Wall': const ReplayAbilityEntry._(
-      AgentType.harbor, 1, ReplayUtilityKind.projectile, _point,
+      AgentType.harbor, 1, ReplayUtilityKind.guidedWall, _point,
       blocks: ReplayVisionBlock.line),
   'GameObject_Mage_E_WorldSmoke': _smoke(AgentType.harbor, 2),
   'GameObject_Mage_X_TidalWave': _rectangle(AgentType.harbor, 3),

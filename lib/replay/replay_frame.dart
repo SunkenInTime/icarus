@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:collection/collection.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -193,6 +194,22 @@ class ReplaySweep extends ReplayEffect {
   final double opacity;
 }
 
+/// A guided wall (High Tide) as far as its head has run. A saved page has no
+/// way to hold a curved wall, so a capture keeps only the ability's icon.
+class ReplayGuidedWall extends ReplayEffect {
+  const ReplayGuidedWall({
+    required this.points,
+    required this.opacity,
+    required super.isAlly,
+  });
+
+  /// Along the wall, from where it starts to where its head is.
+  final List<Offset> points;
+
+  /// 1 while the wall is up, falling to 0 as it fades out.
+  final double opacity;
+}
+
 /// How a player stands at one moment.
 class ReplayPlayerState {
   const ReplayPlayerState({
@@ -240,6 +257,44 @@ class ReplayFrameBuilder {
   late final List<ReplayAbilityEntry?> _entries = [
     for (final utility in document.utility) replayAbilityFor(utility.classPath),
   ];
+
+  /// How far from a guided wall's head running its holder may open.
+  static const _wallHolderGraceMs = 1000;
+
+  /// The actor holding up each guided wall, by the wall's index in the
+  /// utility list.
+  late final Map<int, ReplayUtility> _wallHolders = {
+    for (var i = 0; i < document.utility.length; i++)
+      if (_entries[i] case final entry?
+          when entry.kind == ReplayUtilityKind.guidedWall)
+        if (_holderOf(document.utility[i], entry) case final holder?)
+          i: holder,
+  };
+
+  /// The holder [head]'s caster opened while it ran. A caster has one wall
+  /// going at a time, so that is its own.
+  ReplayUtility? _holderOf(ReplayUtility head, ReplayAbilityEntry entry) {
+    final caster = ownerOf(head, entry);
+    final headEndMs = head.endMs;
+    return document.utility.firstWhereOrNull(
+      (utility) =>
+          replayWallHolder(utility.classPath) &&
+          utility.spawnMs >= head.spawnMs - _wallHolderGraceMs &&
+          (headEndMs == null ||
+              utility.spawnMs <= headEndMs + _wallHolderGraceMs) &&
+          ownerOf(utility, entry) == caster,
+    );
+  }
+
+  /// When the utility at [index] comes off the map: when its actor closes,
+  /// or later for a guided wall its holder keeps up. Null means never.
+  int? _endOf(int index) {
+    final endMs = document.utility[index].endMs;
+    final holder = _wallHolders[index];
+    if (endMs == null || holder == null) return endMs;
+    final heldUntil = holder.endMs;
+    return heldUntil == null ? null : math.max(endMs, heldUntil);
+  }
 
   /// Whether [player] is alive at [timeMs]: whichever came last this round
   /// of the round starting (alive), a health reading (alive above 0, which
@@ -443,10 +498,10 @@ class ReplayFrameBuilder {
     for (var i = 0; i < document.utility.length; i++) {
       final utility = document.utility[i];
       if (utility.spawnMs > timeMs) break;
-      final endMs = utility.endMs;
-      final active = utility.isActiveAt(timeMs);
+      final endMs = _endOf(i);
+      final active = endMs == null || timeMs < endMs;
       // An ending utility lingers a moment to fade out.
-      final leaving = !active && endMs != null && timeMs - endMs < exitMs;
+      final leaving = !active && timeMs - endMs < exitMs;
       if (!active && !leaving) continue;
       final entry = _entries[i];
       if (entry == null) continue;
@@ -472,7 +527,7 @@ class ReplayFrameBuilder {
       }
 
       // Where it last stood, for one that has just ended.
-      final shownAt = active ? timeMs : endMs! - 1;
+      final shownAt = active ? timeMs : endMs - 1;
       final ability = entry.place(
         utility: utility,
         projection: projection,
@@ -499,9 +554,19 @@ class ReplayFrameBuilder {
               (entry.ability.abilityData as SquareAbility).width *
                   mapScale /
                   2),
-          opacity: active ? 1 : 1 - (timeMs - endMs!) / exitMs,
+          opacity: active ? 1 : 1 - (timeMs - endMs) / exitMs,
           isAlly: isAlly,
         ));
+      }
+      if (entry.kind == ReplayUtilityKind.guidedWall) {
+        final wall = _linePoints(utility, shownAt);
+        if (wall != null) {
+          effects.add(ReplayGuidedWall(
+            points: wall,
+            opacity: active ? 1 : 1 - (timeMs - endMs) / exitMs,
+            isAlly: isAlly,
+          ));
+        }
       }
       final placed = sweeps
           ? PlacedAbility(
@@ -522,7 +587,7 @@ class ReplayFrameBuilder {
           ability: placed,
           centre: centre,
           radius: radius,
-          progress: (timeMs - endMs!) / exitMs,
+          progress: (timeMs - endMs) / exitMs,
           dimmed: faint,
           isAlly: isAlly,
         ));
@@ -607,15 +672,21 @@ class ReplayFrameBuilder {
       case ReplayVisionBlock.sphere:
         return CircleOccluder(centre, radius);
       case ReplayVisionBlock.line:
-        // A wall raised point by point stands along its points; a guided
-        // one (High Tide) along where its head has been.
-        final points = utility.points.length >= 2
-            ? utility.points
-            : utility.trail(utility.spawnMs, timeMs);
-        if (points.length < 2) return null;
-        return LineOccluder([
-          for (final point in points) projection.toWorld(point.x, point.y),
-        ]);
+        final points = _linePoints(utility, timeMs);
+        return points == null ? null : LineOccluder(points);
     }
+  }
+
+  /// The line [utility] stands along at [timeMs], in world units: its points
+  /// for a wall raised point by point, where its head has been for a guided
+  /// one (High Tide). Null while that is too short to be a line.
+  List<Offset>? _linePoints(ReplayUtility utility, int timeMs) {
+    final points = utility.points.length >= 2
+        ? utility.points
+        : utility.trail(utility.spawnMs, timeMs);
+    if (points.length < 2) return null;
+    return [
+      for (final point in points) projection.toWorld(point.x, point.y),
+    ];
   }
 }
