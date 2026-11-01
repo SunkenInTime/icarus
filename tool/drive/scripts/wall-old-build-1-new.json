@@ -1,0 +1,14 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"newLocal": "lotus", "name": "Wall old build"},
+  {"wait": 4},
+  {"tapText": "Wall old build"},
+  {"wait": 5},
+  {"addHighTide": "walled", "at": [470, 520], "wall": [[40, -80], [130, -100], [190, -150]]},
+  {"addHighTide": "icon", "at": [640, 520]},
+  {"logWalls": "written"},
+  {"shot": "{out}/1-new.png"},
+  {"wait": 25},
+  {"exit": 1}
+]

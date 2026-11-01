@@ -53,6 +53,9 @@ _Avoid_: This Computer, workspace (in user-facing copy)
 A saved ability setup (position/aim reference) attached to a page, grouped
 into lineup groups.
 
+**Wall path**:
+The points of a High Tide's wall, saved on the ability and measured from its icon. Moving the icon moves the wall. A High Tide without one is just the icon.
+
 **Caption**:
 A note a user keeps on one placed item, hidden until someone hovers it. Every
 placed item can hold one; lineups have their own notes, and drawings have none.

@@ -144,8 +144,8 @@ class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
 /// Writes the record desktop 4.6.3 writes, visual state in field 9. Cloud
 /// builds before the main merge kept it as primitives in fields 10-14 instead;
 /// reading prefers those when present. Field 15, the caption, is written only
-/// when set, so an ability without one stays the record 4.6.3 writes. Older
-/// builds read it and ignore it.
+/// when set, and so is field 16, the wall path, so an ability with neither
+/// stays the record 4.6.3 writes. Older builds read both and ignore them.
 class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
   @override
   final typeId = placedAbilityAdapterTypeId;
@@ -180,6 +180,7 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       rotation: fields[2] == null ? 0.0 : (fields[2] as num).toDouble(),
       visualState: visualState,
       armLengthsMeters: (fields[8] as List?)?.cast<double>(),
+      wallPath: (fields[16] as List?)?.cast<Offset>(),
     )
       ..isDeleted = fields[4] as bool
       ..caption = fields[15] as String?;
@@ -188,8 +189,9 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
   @override
   void write(BinaryWriter writer, PlacedAbility obj) {
     final caption = obj.caption;
+    final wallPath = obj.wallPath;
     writer
-      ..writeByte(caption == null ? 10 : 11)
+      ..writeByte(10 + (caption == null ? 0 : 1) + (wallPath == null ? 0 : 1))
       ..writeByte(0)
       ..write(obj.data)
       ..writeByte(1)
@@ -214,6 +216,11 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       writer
         ..writeByte(15)
         ..write(caption);
+    }
+    if (wallPath != null) {
+      writer
+        ..writeByte(16)
+        ..write(wallPath);
     }
   }
 }

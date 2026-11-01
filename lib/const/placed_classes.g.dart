@@ -222,6 +222,8 @@ PlacedAbility _$PlacedAbilityFromJson(Map<String, dynamic> json) =>
               ?.map((e) => (e as num).toDouble())
               .toList() ??
           [10.0, 10.0, 10.0, 10.0],
+      wallPath: _$JsonConverterFromJson<List<dynamic>, List<Offset>>(
+          json['wallPath'], const OffsetListConverter().fromJson),
     )
       ..isDeleted = json['isDeleted'] as bool? ?? false
       ..caption = json['caption'] as String?;
@@ -239,7 +241,23 @@ Map<String, dynamic> _$PlacedAbilityToJson(PlacedAbility instance) =>
       'lineUpID': instance.lineUpID,
       'visualState': _abilityVisualStateToJson(instance.visualState),
       'armLengthsMeters': instance.armLengthsMeters,
+      if (_$JsonConverterToJson<List<dynamic>, List<Offset>>(
+              instance.wallPath, const OffsetListConverter().toJson)
+          case final value?)
+        'wallPath': value,
     };
+
+Value? _$JsonConverterFromJson<Json, Value>(
+  Object? json,
+  Value? Function(Json json) fromJson,
+) =>
+    json == null ? null : fromJson(json as Json);
+
+Json? _$JsonConverterToJson<Json, Value>(
+  Value? value,
+  Json? Function(Value value) toJson,
+) =>
+    value == null ? null : toJson(value);
 
 AbilityVisualState _$AbilityVisualStateFromJson(Map<String, dynamic> json) =>
     AbilityVisualState(
