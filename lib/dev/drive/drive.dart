@@ -50,7 +50,8 @@
 //   {"shareLink": role, "file": path}  makes a link to the open strategy and
 //                                      writes its code to the file
 //   {"openShareLink": path}            opens the link whose code is in the file
-//   {"importReplay": path}             {"fakeSaveDir": dir}  answers save dialogs
+//   {"importReplay": path}             {"fakeSaveDir": dir, "as": name?}
+//                                      answers save dialogs, typing name if given
 //   {"dropFiles": [paths], "at": [x, y]}  dropped from Explorer
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
@@ -531,11 +532,13 @@ const _icons = {
   'pause': LucideIcons.pause,
 };
 
-// Stands in for the OS save dialog: answers with dir/fileName and writes the
-// bytes when given, as FilePicker does on desktop.
+// Stands in for the OS save dialog: answers with dir/fileName, or dir/typedName
+// as a user who renamed the file would, and writes the bytes when given, as
+// FilePicker does on desktop.
 class _FakeSaver extends FilePicker {
-  _FakeSaver(this.dir);
+  _FakeSaver(this.dir, this.typedName);
   final String dir;
+  final String? typedName;
 
   @override
   Future<String?> saveFile({
@@ -548,7 +551,7 @@ class _FakeSaver extends FilePicker {
     bool lockParentWindow = false,
   }) async {
     await Directory(dir).create(recursive: true);
-    final path = '$dir${Platform.pathSeparator}$fileName';
+    final path = '$dir${Platform.pathSeparator}${typedName ?? fileName}';
     if (bytes != null) await File(path).writeAsBytes(bytes);
     _log('SAVE $path bytes=${bytes?.length}');
     return path;
@@ -923,7 +926,7 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _frames();
       send('performOperation', (value as List).cast<String>());
     case 'fakeSaveDir':
-      FilePicker.platform = _FakeSaver(value as String);
+      FilePicker.platform = _FakeSaver(value as String, step['as'] as String?);
     case 'shot':
       await _frames();
       final view = RendererBinding.instance.renderViews.first;

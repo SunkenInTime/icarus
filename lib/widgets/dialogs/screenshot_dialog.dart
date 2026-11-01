@@ -15,6 +15,7 @@ import 'package:icarus/screenshot/page_screenshot.dart';
 import 'package:icarus/screenshot/save_screenshots.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/export_save_path.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -187,12 +188,9 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
         if (mounted) setState(() => _captured = 1);
         // Desktop asks where to save and writes the bytes there; the
         // browser downloads them.
-        await FilePicker.platform.saveFile(
-          type: FileType.custom,
-          dialogTitle: 'Please select an output file:',
-          fileName: '${sanitizeStrategyFileName(strategyName)}.png',
-          allowedExtensions: ['png'],
-          bytes: png,
+        await saveExportBytes(
+          '${sanitizeStrategyFileName(strategyName)}.png',
+          png,
         );
         return;
       }
@@ -210,12 +208,9 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
       if (_stopping) throw VideoExportCancelled();
       if (mounted) setState(() => _captured = shots.length);
       if (shots.length == 1) {
-        await FilePicker.platform.saveFile(
-          type: FileType.custom,
-          dialogTitle: 'Please select an output file:',
-          fileName: pageScreenshotFileName(strategyName, shots.single),
-          allowedExtensions: ['png'],
-          bytes: shots.single.png,
+        await saveExportBytes(
+          pageScreenshotFileName(strategyName, shots.single),
+          shots.single.png,
         );
       } else if (folder != null) {
         await writeScreenshotsToFolder(folder, strategyName, shots);

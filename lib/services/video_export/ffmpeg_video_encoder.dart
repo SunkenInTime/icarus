@@ -9,11 +9,6 @@ import 'package:path/path.dart' as p;
 
 export 'package:icarus/services/video_export/video_export_errors.dart';
 
-/// Windows' save dialog does not guarantee that the selected extension is
-/// appended, even when FilePicker is restricted to MP4 files.
-String ensureMp4Extension(String path) =>
-    path.toLowerCase().endsWith('.mp4') ? path : '$path.mp4';
-
 /// Maps one FFmpeg invocation's progress into its share of the full encode.
 ///
 /// A Social size retry is invocation 1 of 2, so its raw 0...1 progress becomes

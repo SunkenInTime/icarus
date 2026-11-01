@@ -147,7 +147,7 @@ class _NamingPicker extends FilePicker {
     bool lockParentWindow = false,
   }) async {
     names.add(fileName);
-    return fileName;
+    return null;
   }
 }
 
