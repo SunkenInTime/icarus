@@ -23,6 +23,7 @@ bool supportsAbilityVisibilityMenu(Ability? ability) {
       ability is CenterSquareAbility ||
       ability is CircleAbility ||
       ability is SectorCircleAbility ||
+      ability is RangedIconAbility ||
       ability is DeadlockBarrierMeshAbility;
 }
 
@@ -189,6 +190,10 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
     ];
   }
 
+  if (abilityData is RangedIconAbility) {
+    return [_optionalRangeControl(abilityData.rangeLabel, visualState)];
+  }
+
   if (abilityData is CircleAbility || abilityData is SectorCircleAbility) {
     if (_hasInnerRange(abilityData)) {
       return [
@@ -232,6 +237,8 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
             showRangeFill: !state.showRangeFill,
           ),
         ),
+      if (abilityData case CircleAbility(:final String optionalRangeLabel))
+        _optionalRangeControl(optionalRangeLabel, visualState),
     ];
   }
 
@@ -260,6 +267,19 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
   }
 
   return const [];
+}
+
+_AbilityVisibilityControl _optionalRangeControl(
+  String label,
+  AbilityVisualState visualState,
+) {
+  return _AbilityVisibilityControl(
+    label: label,
+    isEnabled: visualState.showOptionalRange,
+    toggle: (state) => state.copyWith(
+      showInnerOutline: !state.showInnerOutline,
+    ),
+  );
 }
 
 bool _hasInnerRange(Ability? ability) {

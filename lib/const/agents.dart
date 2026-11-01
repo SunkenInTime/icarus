@@ -218,17 +218,28 @@ class AgentData implements DraggableData {
         abilityData:
             ImageAbility(imagePath: 'assets/agents/Jett/Smoke.webp', size: 30),
       ),
-    AgentType.raze: AgentData(
-      type: AgentType.raze,
-      role: AgentRole.duelist,
-      name: "Raze",
-      abilityNames: const [
-        "Boom Bot",
-        "Blast Pack",
-        "Paint Shells",
-        "Showstopper",
-      ],
-    ),
+    AgentType.raze: (() {
+      final agent = AgentData(
+        type: AgentType.raze,
+        role: AgentRole.duelist,
+        name: "Raze",
+        abilityNames: const [
+          "Boom Bot",
+          "Blast Pack",
+          "Paint Shells",
+          "Showstopper",
+        ],
+      );
+
+      // ExplosionRadius 700 in the Valorant 13.09 files.
+      agent.abilities[3].abilityData = RangedIconAbility(
+        iconPath: agent.abilities[3].iconPath,
+        size: 7,
+        rangeOutlineColor: Colors.orangeAccent,
+      );
+
+      return agent;
+    })(),
     AgentType.pheonix: (() {
       final agent = AgentData(
         type: AgentType.pheonix,
@@ -919,6 +930,13 @@ class AgentData implements DraggableData {
         hasCenterDot: true,
       );
 
+      // Who it detains: Detain Radius 500 in the Valorant 13.09 files.
+      agent.abilities[3].abilityData = RangedIconAbility(
+        iconPath: agent.abilities[3].iconPath,
+        size: 5,
+        rangeOutlineColor: Colors.greenAccent,
+      );
+
       return agent;
     })(),
     AgentType.harbor: (() {
@@ -999,6 +1017,16 @@ class AgentData implements DraggableData {
         size: 6.25,
         rangeOutlineColor: Colors.deepPurple,
         hasCenterDot: true,
+      );
+
+      // Enemies inside this see it: Stealth Reveal Range 1000 in the
+      // Valorant 13.09 files. It isn't the flash's reach, so it has no fill.
+      agent.abilities[2].abilityData = RangedIconAbility(
+        iconPath: agent.abilities[2].iconPath,
+        size: 10,
+        rangeOutlineColor: Colors.deepPurple,
+        rangeFillColor: Colors.transparent,
+        rangeLabel: 'Stealth Range',
       );
 
       // 28 m since patch 12.00. Saved Steel Gardens were placed at 32.5 m.
@@ -1105,11 +1133,16 @@ class AgentData implements DraggableData {
         hasCenterDot: true,
       );
 
+      // From the Valorant 13.09 files: enemies inside the circle set it off
+      // (ActivationSphere 658), and enemies inside the optional ring see it
+      // (Stealth Reveal Range 900).
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 6.58,
         rangeOutlineColor: Colors.lightBlueAccent,
         hasCenterDot: true,
+        optionalRangeSize: 9,
+        optionalRangeLabel: 'Stealth Range',
       );
 
       agent.abilities[2].abilityData = CircleAbility(

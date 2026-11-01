@@ -137,6 +137,58 @@ class BaseAbility extends Ability {
   }
 }
 
+/// A plain icon with a range the user can turn on. A saved icon's position
+/// is the top-left of the icon's box, so the box stays the icon's and the
+/// circle spills out of it, centered: nothing already placed moves.
+class RangedIconAbility extends BaseAbility {
+  RangedIconAbility({
+    required super.iconPath,
+    required double size,
+    required this.rangeOutlineColor,
+    this.rangeFillColor,
+    this.rangeLabel = 'Range',
+  }) : size = size * AgentData.inGameMetersDiameter;
+
+  final double size;
+  final Color rangeOutlineColor;
+  final Color? rangeFillColor;
+  final String rangeLabel;
+
+  @override
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
+    String? landingId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
+  }) {
+    final showRange =
+        (visualState ?? const AbilityVisualState()).showOptionalRange;
+    return CustomCircleWidget(
+      iconPath: iconPath,
+      size: size * mapScale,
+      rangeOutlineColor: rangeOutlineColor,
+      hasCenterDot: true,
+      rangeFillColor: rangeFillColor,
+      iconRotation: rotation,
+      id: id,
+      isAlly: isAlly,
+      landingId: landingId,
+      visualState: AbilityVisualState(
+        showRangeOutline: showRange,
+        showRangeFill: showRange,
+      ),
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
+    );
+  }
+}
+
 class ImageAbility extends Ability {
   final String imagePath;
   final double size;
@@ -201,11 +253,21 @@ class CircleAbility extends Ability {
     this.opacity,
     double? innerRangeSize,
     double? storedSize,
+    double? optionalRangeSize,
+    this.optionalRangeLabel,
   })  : assert(
           innerRangeSize == null || innerRangeColor != null,
           'innerRangeColor is required when innerRangeSize is set',
         ),
+        assert(
+          optionalRangeSize == null ||
+              (innerRangeSize == null && optionalRangeLabel != null),
+          'an optional range needs a label and borrows the inner outline flag',
+        ),
         size = size * AgentData.inGameMetersDiameter,
+        optionalRangeSize = optionalRangeSize != null
+            ? optionalRangeSize * AgentData.inGameMetersDiameter
+            : null,
         storedSize = (storedSize ?? size) * AgentData.inGameMetersDiameter,
         innerRangeSize = innerRangeSize != null
             ? innerRangeSize * AgentData.inGameMetersDiameter
@@ -226,6 +288,11 @@ class CircleAbility extends Ability {
   final Color? innerRangeColor;
   final int? opacity;
   final double? innerRangeSize;
+
+  /// A second ring the user can turn on, off until they do. It spills out of
+  /// the box the circle is saved in.
+  final double? optionalRangeSize;
+  final String? optionalRangeLabel;
 
   bool get hasInnerRange => innerRangeSize != null;
 
@@ -269,6 +336,8 @@ class CircleAbility extends Ability {
       innerRangeColor: innerRangeColor,
       innerRangeSize:
           innerRangeSize != null ? innerRangeSize! * mapScale : null,
+      optionalRangeSize:
+          optionalRangeSize != null ? optionalRangeSize! * mapScale : null,
       id: id,
       isAlly: isAlly,
       landingId: landingId,

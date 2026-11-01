@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_fill.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
@@ -12,20 +13,22 @@ class CustomCircleWidget extends ConsumerWidget {
     super.key,
     required this.iconPath,
     required this.size,
-    double? boxSize,
+    this.boxSize,
     required this.rangeOutlineColor,
     required this.hasCenterDot,
     this.opacity = 70,
     this.rangeFillColor,
     this.innerRangeColor,
     this.innerRangeSize,
+    this.optionalRangeSize,
+    this.iconRotation,
     required this.id,
     required this.isAlly,
     this.landingId,
     this.visualState,
     this.watchMouse = true,
     this.contextMenuItems,
-  }) : boxSize = boxSize ?? size;
+  });
 
   final String? landingId;
   final bool isAlly;
@@ -34,13 +37,20 @@ class CustomCircleWidget extends ConsumerWidget {
   final double size;
 
   /// The square the circle is centered in; see [CircleAbility.storedSize].
-  final double boxSize;
+  /// Without one it is the icon's own box; see [RangedIconAbility].
+  final double? boxSize;
   final Color rangeOutlineColor;
   final bool hasCenterDot;
   final int? opacity;
   final Color? rangeFillColor;
   final Color? innerRangeColor;
   final double? innerRangeSize;
+
+  /// See [CircleAbility.optionalRangeSize].
+  final double? optionalRangeSize;
+
+  /// See [AbilityWidget.rotation].
+  final double? iconRotation;
   final AbilityVisualState? visualState;
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
@@ -55,12 +65,15 @@ class CustomCircleWidget extends ConsumerWidget {
     final resolvedVisualState = visualState ?? const AbilityVisualState();
     final rangeOpacity = AbilityRangeOpacity.of(context);
 
-    final scaledBoxSize = coordinateSystem.scale(boxSize);
+    final scaledBoxSize = coordinateSystem.scale(
+      boxSize ?? ref.watch(strategySettingsProvider).abilitySize,
+    );
 
     return SizedBox(
       width: scaledBoxSize,
       height: scaledBoxSize,
       child: Stack(
+        clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
           _buildRangeFill(
@@ -87,6 +100,13 @@ class CustomCircleWidget extends ConsumerWidget {
               rangeOpacity: rangeOpacity,
             ),
           ],
+          if (optionalRangeSize != null &&
+              resolvedVisualState.showOptionalRange)
+            _buildOptionalRange(
+              coordinateSystem,
+              coordinateSystem.scale(optionalRangeSize!),
+              rangeOpacity: rangeOpacity,
+            ),
           if (hasCenterDot) _buildCenterIcon(),
         ],
       ),
@@ -103,16 +123,17 @@ class CustomCircleWidget extends ConsumerWidget {
       rangeFillColor: rangeFillColor,
       opacity: opacity,
     );
-    return Opacity(
-      key: const ValueKey('circle-range-fill-layer'),
-      opacity: showRangeFill ? rangeOpacity : 0,
-      child: IgnorePointer(
-        child: Container(
-          width: scaledSize,
-          height: scaledSize,
-          decoration: BoxDecoration(
-            color: fillColor,
-            shape: BoxShape.circle,
+    return _centeredOnBox(
+      scaledSize,
+      child: Opacity(
+        key: const ValueKey('circle-range-fill-layer'),
+        opacity: showRangeFill ? rangeOpacity : 0,
+        child: IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: fillColor,
+              shape: BoxShape.circle,
+            ),
           ),
         ),
       ),
@@ -125,25 +146,63 @@ class CustomCircleWidget extends ConsumerWidget {
     required bool showRangeOutline,
     required double rangeOpacity,
   }) {
-    return Opacity(
-      key: const ValueKey('circle-range-outline-layer'),
-      opacity: showRangeOutline ? rangeOpacity : 0,
-      child: IgnorePointer(
-        child: Container(
-          width: scaledSize,
-          height: scaledSize,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: hasInnerRange
-                  ? rangeOutlineColor.withAlpha(100)
-                  : rangeOutlineColor,
-              width:
-                  coordinateSystem.scale(hasInnerRange || hasCenterDot ? 2 : 5),
+    return _centeredOnBox(
+      scaledSize,
+      child: Opacity(
+        key: const ValueKey('circle-range-outline-layer'),
+        opacity: showRangeOutline ? rangeOpacity : 0,
+        child: IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: hasInnerRange
+                    ? rangeOutlineColor.withAlpha(100)
+                    : rangeOutlineColor,
+                width: coordinateSystem
+                    .scale(hasInnerRange || hasCenterDot ? 2 : 5),
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildOptionalRange(
+    CoordinateSystem coordinateSystem,
+    double scaledSize, {
+    required double rangeOpacity,
+  }) {
+    return _centeredOnBox(
+      scaledSize,
+      child: Opacity(
+        key: const ValueKey('circle-optional-range-layer'),
+        opacity: rangeOpacity,
+        child: IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: rangeOutlineColor.withAlpha(100),
+                width: coordinateSystem.scale(2),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Lets a range bigger than the box draw past it. The box is where the
+  /// item is saved, so it keeps its size.
+  Widget _centeredOnBox(double size, {required Widget child}) {
+    return OverflowBox(
+      minWidth: size,
+      maxWidth: size,
+      minHeight: size,
+      maxHeight: size,
+      child: child,
     );
   }
 
@@ -210,6 +269,7 @@ class CustomCircleWidget extends ConsumerWidget {
         child: AbilityWidget(
           landingId: landingId,
           iconPath: iconPath,
+          rotation: iconRotation,
           id: id,
           isAlly: isAlly,
           watchMouse: watchMouse,
