@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
@@ -20,6 +21,10 @@ import 'package:icarus/widgets/window_chrome.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _controlHeight = 28;
+// A fingertip's worth: the strip's 28px controls are for a mouse.
+const double _phoneControlHeight = 36;
+// Wide enough for tabs and actions on one row, as on a phone held sideways.
+const double _phoneOneRowWidth = 660;
 // Tabs sit apart so a selected and a hovered background never touch.
 const double _tabGap = 4;
 // Matches the ghost button's own radius so the rim hugs its hover shape.
@@ -60,6 +65,12 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
   final ShadPopoverController _sortController = ShadPopoverController();
   final ShadPopoverController _newController = ShadPopoverController();
   final ShadPopoverController _accountController = ShadPopoverController();
+  bool _phoneSearchOpen = false;
+
+  void _closePhoneSearch() {
+    ref.read(strategySearchQueryProvider.notifier).update('');
+    setState(() => _phoneSearchOpen = false);
+  }
 
   @override
   void dispose() {
@@ -78,6 +89,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
 
   @override
   Widget build(BuildContext context) {
+    if (FormFactor.of(context) == FormFactor.phone) return _buildPhone(context);
     final tab = ref.watch(libraryTabProvider);
     final cloudBrowsable = ref.watch(isCloudLibraryBrowsableProvider);
     final isWebBeta = ref.watch(platformPolicyProvider).isWebBeta;
@@ -120,16 +132,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             semanticsLabel: 'Shared library',
             selected: tab == LibraryTab.shared,
             dimmed: !cloudBrowsable,
-            onTap: () {
-              if (navigation.showShared()) return;
-              // Signed in but the cloud is unreachable: My Library carries
-              // the retry. Never ask for a login over an existing session.
-              if (ref.read(authProvider).isAuthenticated) {
-                navigation.showLibrary();
-              } else {
-                _showAuthDialog();
-              }
-            },
+            onTap: _showSharedTab,
           ),
           const SizedBox(width: _tabGap),
           _TabButton(
@@ -198,6 +201,250 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
     );
   }
 
+  void _showSharedTab() {
+    final navigation = ref.read(libraryNavigationProvider);
+    if (navigation.showShared()) return;
+    // Signed in but the cloud is unreachable: My Library carries the retry.
+    // Never ask for a login over an existing session.
+    if (ref.read(authProvider).isAuthenticated) {
+      navigation.showLibrary();
+    } else {
+      _showAuthDialog();
+    }
+  }
+
+  /// The strip's contents for a phone, with bigger targets: a row of actions
+  /// over a row of tabs, or the two side by side when the phone is held
+  /// sideways. Search takes the actions' row while it's open, since there's
+  /// no room for it to slide out beside them.
+  Widget _buildPhone(BuildContext context) {
+    final tab = ref.watch(libraryTabProvider);
+    final navigation = ref.read(libraryNavigationProvider);
+    final cloudBrowsable = ref.watch(isCloudLibraryBrowsableProvider);
+    final signInRequired = ref.watch(librarySignInRequiredProvider);
+    final isWebBeta = ref.watch(platformPolicyProvider).isWebBeta;
+    final canSearch = tab != LibraryTab.replays &&
+        tab != LibraryTab.community &&
+        !signInRequired;
+    final searching = _phoneSearchOpen && canSearch;
+
+    final tabs = Row(
+      children: [
+        Expanded(
+          child: _TabButton(
+            key: const ValueKey('library-tab-library'),
+            label: 'My Library',
+            semanticsLabel: 'My Library',
+            selected: tab == LibraryTab.library,
+            height: _phoneControlHeight,
+            onTap: navigation.showLibrary,
+          ),
+        ),
+        const SizedBox(width: _tabGap),
+        Expanded(
+          child: _TabButton(
+            key: const ValueKey('library-tab-shared'),
+            label: 'Shared',
+            semanticsLabel: 'Shared library',
+            selected: tab == LibraryTab.shared,
+            dimmed: !cloudBrowsable,
+            height: _phoneControlHeight,
+            onTap: _showSharedTab,
+          ),
+        ),
+        const SizedBox(width: _tabGap),
+        Expanded(
+          child: _TabButton(
+            key: const ValueKey('library-tab-community'),
+            label: 'Community',
+            semanticsLabel: 'Community library',
+            selected: tab == LibraryTab.community,
+            height: _phoneControlHeight,
+            onTap: navigation.showCommunity,
+          ),
+        ),
+      ],
+    );
+
+    final brand = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SvgPicture.asset(
+          'assets/brand/icarus-wordmark.svg',
+          height: 14,
+          semanticsLabel: 'Icarus',
+        ),
+        if (isWebBeta) ...[
+          const SizedBox(width: 8),
+          const WebBetaTag(),
+        ],
+      ],
+    );
+
+    final Widget actions = searching
+        ? Row(
+            children: [
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) => SizedBox(
+                    height: _phoneControlHeight,
+                    child: SearchTextField(
+                      key: const ValueKey('library-search'),
+                      collapsedWidth: constraints.maxWidth,
+                      expandedWidth: constraints.maxWidth,
+                      compact: true,
+                      autofocus: true,
+                      hintText: 'Search',
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              ShadIconButton.ghost(
+                key: const ValueKey('library-search-close'),
+                width: _phoneControlHeight,
+                height: _phoneControlHeight,
+                foregroundColor: Settings.tacticalVioletTheme.mutedForeground,
+                onPressed: _closePhoneSearch,
+                icon: const Icon(LucideIcons.x, size: 18),
+              ),
+            ],
+          )
+        : Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (canSearch) ...[
+                ShadIconButton.ghost(
+                  key: const ValueKey('library-search-open'),
+                  width: _phoneControlHeight,
+                  height: _phoneControlHeight,
+                  foregroundColor: Settings.tacticalVioletTheme.mutedForeground,
+                  onPressed: () => setState(() => _phoneSearchOpen = true),
+                  icon: const Icon(LucideIcons.search, size: 18),
+                ),
+                _buildSortMenu(size: _phoneControlHeight),
+                const SizedBox(width: 4),
+                if (tab == LibraryTab.shared)
+                  ShadIconButton.secondary(
+                    key: const ValueKey('cloud-add-shared-item'),
+                    width: _phoneControlHeight,
+                    height: _phoneControlHeight,
+                    padding: EdgeInsets.zero,
+                    onPressed: () {
+                      if (refuseCloudChangeWhileOffline(
+                        ref.read(cloudLibraryShowsCopyProvider),
+                      )) {
+                        return;
+                      }
+                      showAddSharedItemDialog(context);
+                    },
+                    icon: const Icon(LucideIcons.link, size: 16),
+                  )
+                else
+                  _buildPhoneNewMenu(),
+                const SizedBox(width: 8),
+              ],
+              _buildAccount(size: _phoneControlHeight),
+            ],
+          );
+
+    return DecoratedBox(
+      key: const ValueKey('app-window-strip'),
+      decoration: BoxDecoration(
+        color: Settings.tacticalVioletTheme.card,
+        border: Border(
+          bottom: BorderSide(color: Settings.tacticalVioletTheme.border),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth >= _phoneOneRowWidth) {
+              return SizedBox(
+                height: _phoneControlHeight,
+                child: Row(
+                  children: [
+                    brand,
+                    const SizedBox(width: 16),
+                    SizedBox(width: 280, child: tabs),
+                    const SizedBox(width: 16),
+                    Expanded(child: actions),
+                  ],
+                ),
+              );
+            }
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  height: _phoneControlHeight,
+                  child: Row(
+                    children: [
+                      if (!searching) ...[brand, const SizedBox(width: 8)],
+                      Expanded(child: actions),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SizedBox(height: _phoneControlHeight, child: tabs),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// New is one button on a phone: the strategy goes in the menu with the
+  /// folder, since there's no room for its label.
+  Widget _buildPhoneNewMenu() {
+    return ShadPopover(
+      controller: _newController,
+      padding: const EdgeInsets.all(6),
+      anchor: const ShadAnchor(
+        offset: Offset(0, 6),
+        childAlignment: Alignment.topRight,
+        overlayAlignment: Alignment.bottomRight,
+      ),
+      popover: (context) => SizedBox(
+        width: _newMenuWidth + 24,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _MenuItem(
+              menu: _newController,
+              key: const ValueKey('library-new-strategy'),
+              icon: LucideIcons.filePlus,
+              label: 'New Strategy',
+              onPressed: widget.onCreateStrategy,
+            ),
+            _MenuItem(
+              menu: _newController,
+              key: const ValueKey('library-new-folder'),
+              icon: LucideIcons.folderPlus,
+              label: 'New Folder',
+              onPressed: widget.onCreateFolder,
+            ),
+          ],
+        ),
+      ),
+      child: Semantics(
+        label: 'New',
+        button: true,
+        child: ShadIconButton(
+          key: const ValueKey('library-new-menu'),
+          width: _phoneControlHeight,
+          height: _phoneControlHeight,
+          padding: EdgeInsets.zero,
+          onPressed: _newController.toggle,
+          icon: const Icon(LucideIcons.plus, size: 18),
+        ),
+      ),
+    );
+  }
+
   /// Replays Valorant downloads list themselves; this brings in one saved
   /// anywhere else.
   Widget _buildAddReplayButton() {
@@ -222,7 +469,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
     );
   }
 
-  Widget _buildSortMenu() {
+  Widget _buildSortMenu({double size = _controlHeight}) {
     final filter = ref.watch(strategyFilterProvider);
     final isAscending = filter.sortOrder == SortOrder.ascending;
     return ShadPopover(
@@ -269,8 +516,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         message: 'Sort',
         child: ShadIconButton.ghost(
           key: const ValueKey('library-sort-menu'),
-          width: _controlHeight,
-          height: _controlHeight,
+          width: size,
+          height: size,
           foregroundColor: Settings.tacticalVioletTheme.mutedForeground,
           onPressed: _sortController.toggle,
           icon: Icon(
@@ -384,14 +631,14 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
     );
   }
 
-  Widget _buildAccount() {
+  Widget _buildAccount({double size = _controlHeight}) {
     final auth = ref.watch(authProvider);
     if (auth.isLoading) {
-      return const SizedBox(
-        key: ValueKey('library-account-action'),
-        width: _controlHeight,
-        height: _controlHeight,
-        child: Center(
+      return SizedBox(
+        key: const ValueKey('library-account-action'),
+        width: size,
+        height: size,
+        child: const Center(
           child: SizedBox(
             width: 14,
             height: 14,
@@ -407,7 +654,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         onTap: _showAuthDialog,
         child: ShadButton.secondary(
           key: const ValueKey('library-account-action'),
-          height: _controlHeight,
+          height: size,
           padding: const EdgeInsets.symmetric(horizontal: 10),
           onPressed: _showAuthDialog,
           child: const Text('Log In'),
@@ -466,8 +713,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         onTap: _accountController.toggle,
         child: ShadButton.ghost(
           key: const ValueKey('library-account-action'),
-          width: _controlHeight,
-          height: _controlHeight,
+          width: size,
+          height: size,
           padding: EdgeInsets.zero,
           onPressed: _accountController.toggle,
           child: AccountAvatar(
@@ -489,15 +736,18 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
 class _TabButton extends StatelessWidget {
   const _TabButton({
     super.key,
-    required this.icon,
+    this.icon,
     required this.label,
     required this.semanticsLabel,
     required this.selected,
     required this.onTap,
     this.dimmed = false,
+    this.height = _controlHeight,
   });
 
-  final IconData icon;
+  /// Left out on a phone, where three labels only just fit.
+  final IconData? icon;
+  final double height;
   final String label;
   final String semanticsLabel;
   final bool selected;
@@ -524,7 +774,7 @@ class _TabButton extends StatelessWidget {
               ? Settings.raisedSurface(_tabRadius)
               : const BoxDecoration(),
           child: ShadButton.ghost(
-            height: _controlHeight,
+            height: height,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             gap: 6,
             backgroundColor: selected ? Colors.transparent : null,
@@ -532,7 +782,7 @@ class _TabButton extends StatelessWidget {
             foregroundColor: foreground,
             hoverForegroundColor: theme.foreground,
             onPressed: onTap,
-            leading: Icon(icon, size: 15),
+            leading: icon == null ? null : Icon(icon, size: 15),
             child: Text(
               label,
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
@@ -562,7 +812,7 @@ class _MenuItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ShadButton.ghost(
-      height: 32,
+      height: FormFactor.of(context).isTouch ? 40 : 32,
       mainAxisAlignment: MainAxisAlignment.start,
       padding: const EdgeInsets.symmetric(
         horizontal: _menuItemHorizontalPadding,

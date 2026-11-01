@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -36,61 +37,68 @@ class LibraryBreadcrumb extends ConsumerWidget {
 
     // Same card as the editor toolbar, so the path reads as hardware on the
     // bench instead of text floating on the dot grid.
+    final path = Container(
+      key: const ValueKey('library-breadcrumb'),
+      height: 36,
+      padding: const EdgeInsets.fromLTRB(4, 0, 12, 0),
+      decoration: BoxDecoration(
+        color: Settings.tacticalVioletTheme.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Settings.tacticalVioletTheme.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ShadIconButton.ghost(
+            width: 28,
+            height: 28,
+            foregroundColor: Settings.tacticalVioletTheme.mutedForeground,
+            hoverForegroundColor: Settings.tacticalVioletTheme.foreground,
+            onPressed: () {
+              if (parent == null) {
+                goToRoot();
+              } else {
+                ref.read(folderProvider.notifier).updateID(parent.id);
+              }
+            },
+            icon: const Icon(LucideIcons.chevronLeft300, size: 18),
+          ),
+          const SizedBox(width: 4),
+          ShadBreadcrumb(
+            lastItemTextColor: Settings.tacticalVioletTheme.foreground,
+            textStyle: ShadTheme.of(context).textTheme.small,
+            children: [
+              FolderTab(
+                folder: null,
+                label:
+                    tab == LibraryTab.shared ? 'Shared with Me' : 'My Library',
+                store: store,
+                onOpen: goToRoot,
+              ),
+              for (int i = 0; i < pathFolders.length; i++)
+                FolderTab(
+                  folder: pathFolders[i],
+                  store: store,
+                  isActive: i == pathFolders.length - 1,
+                  onOpen: () => ref
+                      .read(folderProvider.notifier)
+                      .updateID(pathFolders[i].id),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
     return Align(
       alignment: Alignment.centerLeft,
-      child: Container(
-        key: const ValueKey('library-breadcrumb'),
-        height: 36,
-        padding: const EdgeInsets.fromLTRB(4, 0, 12, 0),
-        decoration: BoxDecoration(
-          color: Settings.tacticalVioletTheme.card,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Settings.tacticalVioletTheme.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ShadIconButton.ghost(
-              width: 28,
-              height: 28,
-              foregroundColor: Settings.tacticalVioletTheme.mutedForeground,
-              hoverForegroundColor: Settings.tacticalVioletTheme.foreground,
-              onPressed: () {
-                if (parent == null) {
-                  goToRoot();
-                } else {
-                  ref.read(folderProvider.notifier).updateID(parent.id);
-                }
-              },
-              icon: const Icon(LucideIcons.chevronLeft300, size: 18),
-            ),
-            const SizedBox(width: 4),
-            ShadBreadcrumb(
-              lastItemTextColor: Settings.tacticalVioletTheme.foreground,
-              textStyle: ShadTheme.of(context).textTheme.small,
-              children: [
-                FolderTab(
-                  folder: null,
-                  label: tab == LibraryTab.shared
-                      ? 'Shared with Me'
-                      : 'My Library',
-                  store: store,
-                  onOpen: goToRoot,
-                ),
-                for (int i = 0; i < pathFolders.length; i++)
-                  FolderTab(
-                    folder: pathFolders[i],
-                    store: store,
-                    isActive: i == pathFolders.length - 1,
-                    onOpen: () => ref
-                        .read(folderProvider.notifier)
-                        .updateID(pathFolders[i].id),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
+      // A deep path outruns a phone: it scrolls, resting on the open folder.
+      child: FormFactor.of(context).isTouch
+          ? SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              reverse: true,
+              child: path,
+            )
+          : path,
     );
   }
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -393,7 +394,9 @@ class _FolderCardState extends ConsumerState<FolderCard>
             onDragUpdate: (details) =>
                 _dragTiltController.addDelta(details.delta.dx),
             data: FolderItem(_folder, store: widget.store),
-            maxSimultaneousDrags: _isMovingToCloud ? 0 : null,
+            // A finger on a card scrolls the library; it never picks the card up.
+            maxSimultaneousDrags:
+                _isMovingToCloud || FormFactor.of(context).isTouch ? 0 : null,
             child: AbsorbPointer(
               absorbing: _isMovingToCloud,
               child: MouseRegion(

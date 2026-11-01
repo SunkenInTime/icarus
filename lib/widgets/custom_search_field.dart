@@ -29,6 +29,7 @@ class SearchTextField extends ConsumerStatefulWidget {
     this.curve = Curves.easeOutCubic,
     this.compact = false,
     this.onChanged,
+    this.autofocus = false,
   });
 
   final TextEditingController? controller;
@@ -40,6 +41,10 @@ class SearchTextField extends ConsumerStatefulWidget {
   final Curve curve;
   final bool compact;
   final ValueChanged<String>? onChanged;
+
+  /// Takes focus on the first frame, for a field opened to be typed in.
+  final bool autofocus;
+
   @override
   ConsumerState<SearchTextField> createState() => _SearchTextFieldState();
 }
@@ -60,7 +65,11 @@ class StrategySearchQueryNotifier extends AutoDisposeNotifier<String> {
 }
 
 class _SearchTextFieldState extends ConsumerState<SearchTextField> {
-  late final TextEditingController _controller = TextEditingController();
+  // Starts from the search in force: the library goes on filtering by it
+  // when a rotation rebuilds this field.
+  late final TextEditingController _controller = TextEditingController(
+    text: ref.read(strategySearchQueryProvider),
+  );
   late final FocusNode _focusNode = FocusNode();
   bool _hovering = false;
 
@@ -136,6 +145,7 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
     return TextField(
       controller: _controller,
       focusNode: _focusNode,
+      autofocus: widget.autofocus,
       textInputAction: TextInputAction.search,
       // onChanged: (String value) {
       //   ref.read(strategySearchQueryProvider.notifier).update(value);
