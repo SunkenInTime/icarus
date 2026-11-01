@@ -12,6 +12,7 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/wall_path.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
@@ -387,6 +388,21 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       expect(dot(0), findsOneWidget, reason: 'time to reach a dot');
       await tester.pump(const Duration(milliseconds: 200));
+      expect(dot(0), findsNothing);
+    });
+
+    testWidgets('selecting the icon shows its dots, for touch', (tester) async {
+      final container = await pumpWall(tester, const [Offset(0, -300)]);
+      expect(dot(0), findsNothing);
+
+      container
+          .read(canvasSelectionProvider.notifier)
+          .select({(kind: SelectableKind.ability, id: 'tide')});
+      await tester.pump();
+      expect(dot(0), findsOneWidget);
+
+      container.read(canvasSelectionProvider.notifier).clear();
+      await tester.pump();
       expect(dot(0), findsNothing);
     });
 

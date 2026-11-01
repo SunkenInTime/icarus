@@ -415,8 +415,8 @@ class WallFeedback extends ConsumerWidget {
   }
 }
 
-/// The dots that shape [ability]'s wall, shown while it's hovered: white on
-/// each point, pale between them, and the wall's length at its end.
+/// The dots that shape [ability]'s wall, shown while it's hovered or selected:
+/// white on each point, pale between them, and the wall's length at its end.
 class PlacedWallHandles extends ConsumerStatefulWidget {
   const PlacedWallHandles({super.key, required this.ability});
 
@@ -562,10 +562,16 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles> {
   Widget build(BuildContext context) {
     final draft = ref.watch(wallDraftProvider);
     final hovered = ref.watch(wallHoverProvider) == _id;
+    // Touch has no hover: selecting the wall's icon shows its dots.
+    final selected = ref.watch(
+      canvasSelectionProvider.select(
+        (selection) => selection.length == 1 && selection.single.id == _id,
+      ),
+    );
     final carried = ref.watch(wallCarriedProvider) == _id;
     final path = draft?.id == _id ? draft!.path : widget.ability.wallPath;
     // A dot being dragged has to stay: taking it away would end the drag.
-    if ((!hovered && _dragged == null) ||
+    if ((!hovered && !selected && _dragged == null) ||
         carried ||
         path == null ||
         path.isEmpty ||
