@@ -10,6 +10,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/shared/framed_ability_icon_shell.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/utility_widget_builder.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class _FixedMapProvider extends MapProvider {
   _FixedMapProvider({
@@ -60,7 +61,7 @@ Future<void> _pumpHarness(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: MaterialApp(
+      child: ShadApp(
         home: Scaffold(
           body: Center(child: child),
         ),
