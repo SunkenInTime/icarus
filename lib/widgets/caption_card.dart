@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -247,7 +249,7 @@ class _CaptionCardLayout extends SingleChildLayoutDelegate {
     final around = obstacles;
     final left = (item.center.dx - childSize.width / 2).clamp(
       _margin,
-      size.width - childSize.width - _margin,
+      math.max<double>(_margin, size.width - childSize.width - _margin),
     );
     final aboveTop = item.top - childSize.height;
     final belowTop = item.bottom;
@@ -323,19 +325,14 @@ class _CaptionCardState extends State<_CaptionCard> {
 
   @override
   Widget build(BuildContext context) {
-    const border = BorderSide(color: _edge, width: 2);
+    final edge = Settings.tacticalVioletTheme.border;
+    final border = BorderSide(color: edge, width: 2);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Settings.abilityBGColor,
         border: Border.fromBorderSide(border),
         borderRadius: BorderRadius.circular(4),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x8A000000),
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-        ],
+        boxShadow: const [Settings.cardForegroundBackdrop],
       ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 240),
@@ -345,8 +342,8 @@ class _CaptionCardState extends State<_CaptionCard> {
           children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: _edge)),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: edge)),
               ),
               child: Row(
                 children: [
@@ -389,7 +386,6 @@ class _CaptionCardState extends State<_CaptionCard> {
     );
   }
 
-  static const _edge = Color(0xFF27272A);
 }
 
 class _CaptionGlyphPainter extends CustomPainter {
