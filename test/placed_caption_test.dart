@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -328,6 +329,8 @@ void main() {
     expect(payload.containsKey('link'), isFalse);
   });
 
+  // Images are left out: a real export needs the picture's file. An image's
+  // caption is held by the JSON and Hive tests above, which export reads.
   test('Hive reopen, a real .ica and a library backup round-trip it', () async {
     final directory = await Directory.systemTemp.createTemp('icarus-caption-');
     Hive.init(directory.path);
@@ -360,6 +363,19 @@ void main() {
     expect(result.issues, isEmpty);
     expect(result.strategiesImported, 1);
     expect(box.length, 2);
+    box.values.forEach(_expectCaptions);
+
+    final backup = await service.buildLibraryExportDirectoryForTest();
+    addTearDown(() => backup.delete(recursive: true));
+    final backupFile = '${directory.path}/library.zip';
+    final encoder = ZipFileEncoder()..create(backupFile);
+    await encoder.addDirectory(backup, includeDirName: false);
+    await encoder.close();
+    final imported = await service.loadFromFileDrop([XFile(backupFile)]);
+
+    expect(imported.issues, isEmpty);
+    expect(imported.strategiesImported, 2);
+    expect(box.length, 4);
     box.values.forEach(_expectCaptions);
   });
 }

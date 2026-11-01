@@ -114,6 +114,7 @@ class StrategyCopyRefresher extends Notifier<void> {
         final read = store.lastFullRefresh(scope, id);
         if (read == null ||
             now.difference(read) > strategyCopyFullReadMaxAge ||
+            store.missesLaterFields(scope, id) ||
             !store.keepsStrategy(scope, id)) {
           toRead.add(id);
           continue;

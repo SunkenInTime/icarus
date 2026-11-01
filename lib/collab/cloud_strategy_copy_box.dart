@@ -113,14 +113,19 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
     final header = entry?['header'];
     final contentVersion = entry?['contentVersion'];
     if (header is! String || contentVersion is! num) return null;
-    // A read by an older build left out fields this one keeps, so that copy
-    // isn't current whatever its content version says. It is read again, not
-    // thrown away: it still opens offline until then.
-    final fieldLevel = entry?['elementFieldLevel'];
-    if ((fieldLevel is num ? fieldLevel : 0) < currentElementFieldLevel) {
-      return null;
-    }
+    if (missesLaterFields(scope, strategyId)) return null;
     return (header: header, contentVersion: contentVersion.toInt());
+  }
+
+  /// Whether an older build made the last full read of [strategyId], leaving
+  /// out fields this one keeps, so that copy isn't current whatever its age or
+  /// content version says. It is read again, not thrown away: it still opens
+  /// offline until then.
+  bool missesLaterFields(CloudCopyScope scope, String strategyId) {
+    final entry = _entry(readEntry(_refreshKey(scope, strategyId)));
+    if (entry == null) return false;
+    final level = entry['elementFieldLevel'];
+    return (level is num ? level : 0) < currentElementFieldLevel;
   }
 
   /// The strategies [scope] keeps anything of.
@@ -245,10 +250,10 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
       jsonEncode({
         'copyVersion': cloudStrategyCopyVersion,
         'fullRefreshAt': at.millisecondsSinceEpoch,
+        'elementFieldLevel': currentElementFieldLevel,
         if (version != null) ...{
           'header': version.header,
           'contentVersion': version.contentVersion,
-          'elementFieldLevel': currentElementFieldLevel,
         },
       }),
     );

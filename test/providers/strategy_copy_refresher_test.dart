@@ -284,13 +284,13 @@ void main() {
     test('copied by a build that keeps fewer fields is read whole, once',
         () async {
       repository.owned = {'one'};
-      await keepOld('one');
+      await keepOld('one', age: const Duration(hours: 1));
       await store.writeEntry(
         store.entryKeys.singleWhere((key) => key.endsWith('refresh')),
         jsonEncode({
           'copyVersion': cloudStrategyCopyVersion,
           'fullRefreshAt': DateTime.now()
-              .subtract(const Duration(hours: 25))
+              .subtract(const Duration(hours: 1))
               .millisecondsSinceEpoch,
           'header': 'header',
           'contentVersion': 1,
@@ -298,12 +298,19 @@ void main() {
       );
       expect(store.copiedVersion(_scope, 'one'), isNull);
 
-      start();
+      final container = start();
       await _settle();
 
-      expect(repository.versionChecks, isEmpty);
       expect(repository.fullReads, ['one']);
+      expect(store.missesLaterFields(_scope, 'one'), isFalse);
       expect(store.copiedVersion(_scope, 'one'), isNotNull);
+
+      await container
+          .read(strategyCopyRefresherProvider.notifier)
+          .refreshLibrary();
+      await _settle();
+
+      expect(repository.fullReads, ['one']);
     });
 
     test('a fresh one is not asked about', () async {
