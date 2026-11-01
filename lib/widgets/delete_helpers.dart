@@ -5,13 +5,14 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 
 void deleteHoveredTarget(WidgetRef ref, HoveredDeleteTarget target) {
   switch (target.type) {
     case DeleteTargetType.agent:
-      ref.read(agentProvider.notifier).removeAgentAsAction(target.id);
+      _removePlacedAgent(ref, target.id);
       return;
     case DeleteTargetType.ability:
       ref.read(abilityProvider.notifier).removeAbilityAsAction(target.id);
@@ -38,7 +39,7 @@ void deleteHoveredTarget(WidgetRef ref, HoveredDeleteTarget target) {
 
 void deletePlacedWidget(WidgetRef ref, PlacedWidget placedData) {
   if (placedData is PlacedAgentNode) {
-    ref.read(agentProvider.notifier).removeAgentAsAction(placedData.id);
+    _removePlacedAgent(ref, placedData.id);
   } else if (placedData is PlacedAbility) {
     ref.read(abilityProvider.notifier).removeAbilityAsAction(placedData.id);
   } else if (placedData is PlacedText) {
@@ -48,4 +49,12 @@ void deletePlacedWidget(WidgetRef ref, PlacedWidget placedData) {
   } else if (placedData is PlacedUtility) {
     ref.read(utilityProvider.notifier).removeUtilityAsAction(placedData.id);
   }
+}
+
+/// Removes a placed agent from the page. A lineup mode keeps the page out of
+/// reach, so an agent acted on there is a draft, and a draft from Create Lineup
+/// has the id of the placed agent it started from.
+void _removePlacedAgent(WidgetRef ref, String id) {
+  if (ref.read(interactionStateProvider).isLineUpMode) return;
+  ref.read(agentProvider.notifier).removeAgentAsAction(id);
 }
