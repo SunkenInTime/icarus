@@ -127,8 +127,6 @@ class ReplayWallPainter extends CustomPainter {
   /// The wall's width in virtual units.
   final double width;
 
-  static const _color = Colors.lightBlueAccent;
-
   /// How far the team's colour shows either side, in virtual units.
   static const _edge = 1.5;
 
@@ -157,7 +155,7 @@ class ReplayWallPainter extends CustomPainter {
         line,
         stroke
           ..strokeWidth = coordinates.scale(width)
-          ..color = _color.withValues(alpha: wall.opacity),
+          ..color = Settings.replayTideWall.withValues(alpha: wall.opacity),
       );
     }
   }
