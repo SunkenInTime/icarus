@@ -49,6 +49,7 @@ import 'package:icarus/providers/welcome_tour_provider.dart';
 import 'package:icarus/share/current_share_origin.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
+import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/services/browser_url.dart';
 import 'package:icarus/services/app_assets.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -439,6 +440,7 @@ class _MyAppState extends ConsumerState<MyApp> {
   ProviderSubscription<List<PlacedAbility>>? _discordAbilitySub;
   ProviderSubscription<bool>? _cloudOutOfReachSub;
   ProviderSubscription<bool>? _passwordRecoverySub;
+  ProviderSubscription<AuthLinkNotice?>? _authLinkNoticeSub;
   Timer? _discordSyncDebounce;
 
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
@@ -574,6 +576,12 @@ class _MyAppState extends ConsumerState<MyApp> {
         if (next && previous != true) _askForNewPassword();
       },
     );
+    _authLinkNoticeSub = ref.listenManual(
+      authLinkNoticeProvider,
+      (_, next) {
+        if (next != null) _askToSignIn(next);
+      },
+    );
 
     unawaited(_syncDiscordPresence());
 
@@ -638,6 +646,7 @@ class _MyAppState extends ConsumerState<MyApp> {
     _discordAbilitySub?.close();
     _cloudOutOfReachSub?.close();
     _passwordRecoverySub?.close();
+    _authLinkNoticeSub?.close();
     _discordPreferencesSub?.close();
     unawaited(_discordPresence.dispose());
     super.dispose();
@@ -655,6 +664,22 @@ class _MyAppState extends ConsumerState<MyApp> {
         builder: (_) => const SetPasswordDialog(),
       );
       if (mounted) ref.read(passwordRecoveryProvider.notifier).finish();
+    });
+  }
+
+  /// An email link couldn't finish here: say why and offer sign-in. After a
+  /// frame, because a link read at startup can land before the first one.
+  void _askToSignIn(AuthLinkNotice notice) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(authLinkNoticeProvider.notifier).clear();
+      final navigatorContext = appNavigatorKey.currentContext;
+      if (navigatorContext == null || AuthDialog.isOpen) return;
+      unawaited(
+        showDialog<void>(
+          context: navigatorContext,
+          builder: (_) => AuthDialog(notice: notice),
+        ),
+      );
     });
   }
 

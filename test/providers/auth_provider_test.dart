@@ -21,6 +21,7 @@ import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -821,6 +822,24 @@ void main() {
     );
   });
 
+  test('signing up again within the minute points at the email already sent',
+      () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    supabaseApi.signUpError = const AuthApiException(
+      'For security purposes, you can only request this after 47 seconds.',
+      statusCode: '429',
+      code: 'over_email_send_rate_limit',
+    );
+    expect(
+      await container
+          .read(authProvider.notifier)
+          .signUpWithEmailPassword(email: 'a@b.co', password: 'secret'),
+      startsWith('We already sent a confirmation email'),
+    );
+  });
+
   test('a sign-up for an email that already has an account says so',
       () async {
     final container = ProviderContainer();
@@ -896,6 +915,66 @@ void main() {
     expect(await auth.setNewPassword('new-secret'), isNull);
     expect(supabaseApi.updatedPassword, 'new-secret');
     expect(container.read(passwordRecoveryProvider), isFalse);
+  });
+
+  test('a confirmation link opened in another browser asks for sign-in',
+      () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(authProvider);
+    await pumpMicrotasks();
+
+    supabaseApi.sessionFromUrlError = const AuthException(
+      'Code verifier could not be found in local storage.',
+    );
+    final handled =
+        await container.read(authProvider.notifier).handleAuthCallbackUri(
+              Uri.parse('icarus://auth/callback?code=confirm-code'),
+              source: 'test',
+            );
+
+    expect(handled, isTrue, reason: 'handled, so the caller scrubs the URL');
+    expect(
+      container.read(authLinkNoticeProvider),
+      AuthLinkNotice.emailConfirmed,
+    );
+    final state = container.read(authProvider);
+    expect(state.isLoading, isFalse);
+    expect(state.errorMessage, isNull);
+    expect(state.convexAuthStatus, ConvexAuthStatus.signedOut);
+    expect(
+      appProviderContainer
+          .read(inAppDebugProvider)
+          .where((entry) => entry.level == DebugLogLevel.error),
+      isEmpty,
+      reason: 'an error entry is what raises the red toast',
+    );
+  });
+
+  test('a link that fails for a real reason is reported without the link',
+      () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(authProvider);
+    await pumpMicrotasks();
+
+    supabaseApi.sessionFromUrlError =
+        AuthRetryableFetchException(statusCode: '503');
+    await container.read(authProvider.notifier).handleAuthCallbackUri(
+          Uri.parse('icarus://auth/callback?code=confirm-code'),
+          source: 'test',
+        );
+
+    expect(container.read(authLinkNoticeProvider), isNull);
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.incident,
+    );
+    final error = appProviderContainer
+        .read(inAppDebugProvider)
+        .lastWhere((entry) => entry.level == DebugLogLevel.error);
+    expect(error.message, isNot(contains('://')));
+    expect(error.errorText, contains('icarus://auth/callback'));
   });
 
   test('a link opened while signed in leaves the session alone', () async {
@@ -1918,6 +1997,7 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   bool emitSignedInEventOnPasswordSignIn = false;
   Session? sessionFromUrlSession;
   Object? sessionFromUrlError;
+  bool resetPending = false;
   Object? signUpError;
   User? signUpUser;
   AuthChangeEvent sessionFromUrlEvent = AuthChangeEvent.signedIn;
@@ -1960,6 +2040,9 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
       }
     }
   }
+
+  @override
+  Future<bool> passwordResetPending() async => resetPending;
 
   @override
   Future<void> resetPasswordForEmail(

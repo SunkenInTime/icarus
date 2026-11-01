@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -14,19 +15,33 @@ enum _AuthField { email, password, confirm }
 
 const _bannerDuration = Duration(milliseconds: 180);
 
+/// Supabase takes an address like `foo@bar`, then can't send to it and
+/// answers as if its mail server had failed, so stop it here.
+final _emailShape = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s.]+$');
+
 class AuthDialog extends ConsumerStatefulWidget {
   const AuthDialog({
     super.key,
     this.initialMode = AuthDialogMode.signIn,
+    this.notice,
   });
 
   final AuthDialogMode initialMode;
+
+  /// Why the dialog opened by itself, shown until the user moves on.
+  final AuthLinkNotice? notice;
+
+  /// Whether one is on screen, so that an email link landing now speaks
+  /// through it rather than stacking a second one.
+  static bool get isOpen => _AuthDialogState._open > 0;
 
   @override
   ConsumerState<AuthDialog> createState() => _AuthDialogState();
 }
 
 class _AuthDialogState extends ConsumerState<AuthDialog> {
+  static int _open = 0;
+
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmController = TextEditingController();
@@ -43,13 +58,26 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
   @override
   void initState() {
     super.initState();
+    _open++;
     _view = widget.initialMode == AuthDialogMode.signUp
         ? _AuthView.signUp
         : _AuthView.signIn;
+    if (widget.notice case final notice?) _applyNotice(notice);
+  }
+
+  void _applyNotice(AuthLinkNotice notice) {
+    // The dialog that sent the email may still be on the create-account form.
+    _view = notice == AuthLinkNotice.resetLinkTimedOut
+        ? _AuthView.resetPassword
+        : _AuthView.signIn;
+    _message = notice.message;
+    _messageIsInfo = notice.isInfo;
+    _errorField = null;
   }
 
   @override
   void dispose() {
+    _open--;
     _emailController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
@@ -85,7 +113,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
     final password = _passwordController.text;
     final confirm = _confirmController.text;
 
-    if (email.isEmpty || !email.contains('@')) {
+    if (!_emailShape.hasMatch(email)) {
       _setValidationError('Enter a valid email address.', _AuthField.email);
       return;
     }
@@ -129,9 +157,11 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
     setState(() {
       _submitting = false;
       _message = error;
-      // The "account created" outcome comes back through the error channel
-      // but is good news — present it as info, not failure.
-      _messageIsInfo = error != null && error.startsWith('Account created');
+      // These outcomes come back through the error channel but are good
+      // news — present them as info, not failure.
+      _messageIsInfo = error != null &&
+          (error.startsWith('Account created') ||
+              error.startsWith('We already sent'));
     });
   }
 
@@ -190,6 +220,21 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
           _messageIsInfo = false;
         });
       }
+    });
+
+    // While Discord is out, a link failing here is that sign-in coming back
+    // and failing, not an email.
+    ref.listen(authLinkNoticeProvider, (_, notice) {
+      if (notice == null) return;
+      setState(() {
+        if (_waitingForDiscord) {
+          _waitingForDiscord = false;
+          _message = 'Failed to complete login. Please try again.';
+          _messageIsInfo = false;
+        } else {
+          _applyNotice(notice);
+        }
+      });
     });
 
     final resetting = _view == _AuthView.resetPassword;
