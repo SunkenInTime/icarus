@@ -164,6 +164,19 @@ void main() {
     expect(find.text('Settings page'), findsOneWidget);
   });
 
+  testWidgets('an address with no domain ending is caught before Supabase',
+      (tester) async {
+    await _openDialogOverPage(tester);
+
+    await tester.enterText(_field('auth-email-field'), 'foo@bar');
+    await tester.enterText(_field('auth-password-field'), 'secret');
+    await tester.tap(find.byKey(const ValueKey('auth-submit-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter a valid email address.'), findsOneWidget);
+    expect(find.text('Settings page'), findsOneWidget);
+  });
+
   testWidgets('a plain password sign-in closes the dialog', (tester) async {
     await _openDialogOverPage(tester);
 
