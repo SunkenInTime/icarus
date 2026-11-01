@@ -15,6 +15,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/delete_page_dialog.dart';
 import 'package:icarus/widgets/dialogs/recently_deleted_dialog.dart';
@@ -1226,7 +1227,7 @@ class _PageRowState extends State<_PageRow> {
         ),
     ];
     if (menuItems.isEmpty) return row;
-    return ShadContextMenuRegion(items: menuItems, child: row);
+    return ContextMenuRegion(items: menuItems, child: row);
   }
 }
 

@@ -80,6 +80,7 @@
 //   {"logLineups": tag}                {"logImages": tag}
 //   {"framesStart": 1} / {"framesLog": tag}   frame build and raster times between
 //                                      them: p50, p90, p99, worst, in ms
+//   {"expectText": t, "count": n}      fails unless t is on screen n times
 //   {"expectSelected": n}              fails unless n items are selected
 //   {"expectAgents": n}                fails unless n agents are on the page
 //   {"expectDead": n}                  fails unless n agents on the page are dead
@@ -322,6 +323,21 @@ bool _isText(Widget widget, String text) =>
     (widget is RichText && widget.text.toPlainText() == text);
 
 bool _hasKey(Widget widget, String key) => widget.key == ValueKey<String>(key);
+
+/// How many widgets passing [test] are laid out.
+int _countOf(bool Function(Widget) test) {
+  var count = 0;
+  void visit(Element element) {
+    if (test(element.widget)) {
+      final box = element.findRenderObject();
+      if (box is RenderBox && box.hasSize && box.attached) count++;
+    }
+    element.visitChildElements(visit);
+  }
+
+  WidgetsBinding.instance.rootElement!.visitChildElements(visit);
+  return count;
+}
 
 /// The middle of the [nth] widget passing [test] that is laid out, in the
 /// order the tree holds them: a screen under another comes first.
@@ -1260,6 +1276,13 @@ Future<void> _run(Map<String, dynamic> step) async {
       final selected = c.read(canvasSelectionProvider).length;
       if (selected != value) {
         throw StateError('$selected selected, expected $value');
+      }
+    case 'expectText':
+      final count = _countOf(
+        (widget) => widget is RichText && _isText(widget, value as String),
+      );
+      if (count != step['count']) {
+        throw StateError('"$value" $count times, expected ${step['count']}');
       }
     case 'expectAgents':
       final agents = c.read(agentProvider).length;

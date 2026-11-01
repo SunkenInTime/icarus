@@ -15,6 +15,7 @@ import 'package:icarus/replay/replay_files.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay_view.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/hover_dot_grid.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
@@ -294,7 +295,7 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
         cursor: SystemMouseCursors.click,
         onEnter: (_) => _setHovered(true),
         onExit: (_) => _setHovered(false),
-        child: ShadContextMenuRegion(
+        child: ContextMenuRegion(
           items: [
             if (listing.file.source == ReplaySource.valorant)
               ShadContextMenuItem(

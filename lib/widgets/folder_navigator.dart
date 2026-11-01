@@ -21,6 +21,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
@@ -270,7 +271,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 onExportLibrary: handleExportLibrary,
               ),
               Expanded(
-                child: ShadContextMenuRegion(
+                child: ContextMenuRegion(
                   controller: _backgroundMenuController,
                   items: !canCreate
                       ? const []

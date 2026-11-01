@@ -9,6 +9,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/map_theme_profile_code.dart';
 import 'package:icarus/widgets/canonical_map_artwork.dart';
+import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/map_theme_editor_dialog.dart';
@@ -303,7 +304,7 @@ class _ProfileContextMenuButtonState
 
   @override
   Widget build(BuildContext context) {
-    return ShadContextMenuRegion(
+    return ContextMenuRegion(
       controller: _contextMenuController,
       items: _buildMenuItems(),
       child: ShadIconButton.secondary(

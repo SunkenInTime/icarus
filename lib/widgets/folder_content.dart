@@ -13,7 +13,6 @@ import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
@@ -717,49 +716,45 @@ class FolderContent extends ConsumerWidget {
         : DropInsertionIndicatorScope(child: content);
     final currentFolder = folder;
 
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => dismissLibraryContextMenus(ref),
-      child: Stack(
-        children: [
-          const Positioned.fill(
-            child: Padding(
-              padding: EdgeInsets.all(4.0),
-              child: HoverDotGrid(),
-            ),
+    return Stack(
+      children: [
+        const Positioned.fill(
+          child: Padding(
+            padding: EdgeInsets.all(4.0),
+            child: HoverDotGrid(),
           ),
-          Positioned.fill(
-            child: Column(
-              children: [
-                if (currentFolder != null)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                    child: LibraryBreadcrumb(folder: currentFolder),
-                  ),
-                if (banner != null) banner,
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeOutCubic,
-                    child: (folders.isEmpty && !hasStrategies)
-                        ? KeyedSubtree(
-                            key: const ValueKey('library-empty'),
-                            child: acceptsIcaDrops
-                                ? IcaDropTarget(child: emptyState)
-                                : emptyState,
-                          )
-                        : KeyedSubtree(
-                            key: const ValueKey('library-content'),
-                            child: wrappedContent,
-                          ),
-                  ),
+        ),
+        Positioned.fill(
+          child: Column(
+            children: [
+              if (currentFolder != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: LibraryBreadcrumb(folder: currentFolder),
                 ),
-              ],
-            ),
+              if (banner != null) banner,
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeOutCubic,
+                  child: (folders.isEmpty && !hasStrategies)
+                      ? KeyedSubtree(
+                          key: const ValueKey('library-empty'),
+                          child: acceptsIcaDrops
+                              ? IcaDropTarget(child: emptyState)
+                              : emptyState,
+                        )
+                      : KeyedSubtree(
+                          key: const ValueKey('library-content'),
+                          child: wrappedContent,
+                        ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

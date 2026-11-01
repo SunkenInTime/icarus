@@ -7,6 +7,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
+import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/lineup_ability_stack_selector.dart';
 import 'package:icarus/widgets/dialogs/lineup_panel_dialog.dart';
@@ -375,7 +376,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
       );
     }
     if (!_isLanding && menuItems != null && menuItems.isNotEmpty) {
-      interactiveChild = ShadContextMenuRegion(
+      interactiveChild = ContextMenuRegion(
         items: menuItems,
         child: interactiveChild,
       );
