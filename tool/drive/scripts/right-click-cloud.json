@@ -29,10 +29,12 @@
   {"tapText": "Delete"},
   {"wait": 1},
   {"logPage": "cloud-agent-deleted"},
+  {"expectAgents": 1},
   {"waitSettled": 60},
   {"keyCombo": ["controlLeft", "keyZ"]},
   {"wait": 1},
   {"logPage": "cloud-delete-undone"},
+  {"expectAgents": 2},
   {"waitSettled": 60},
 
   {"tapText": "Page 3", "button": "secondary"},
@@ -63,5 +65,6 @@
 
   {"shareLink": "viewer", "file": "{out}/../view-code.txt"},
   {"logPage": "end"},
+  {"expectAgents": 2},
   {"exit": 1}
 ]

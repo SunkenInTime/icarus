@@ -56,6 +56,7 @@
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
 //   {"logLineups": tag}
 //   {"expectSelected": n}              fails unless n items are selected
+//   {"expectAgents": n}                fails unless n agents are on the page
 //   {"exit": 1}
 import 'dart:async';
 import 'dart:convert';
@@ -455,6 +456,7 @@ const _keys = {
   'digit3': (LogicalKeyboardKey.digit3, PhysicalKeyboardKey.digit3, '3'),
   'keyA': (LogicalKeyboardKey.keyA, PhysicalKeyboardKey.keyA, 'a'),
   'keyC': (LogicalKeyboardKey.keyC, PhysicalKeyboardKey.keyC, 'c'),
+  'keyE': (LogicalKeyboardKey.keyE, PhysicalKeyboardKey.keyE, 'e'),
   'keyQ': (LogicalKeyboardKey.keyQ, PhysicalKeyboardKey.keyQ, 'q'),
   'keyS': (LogicalKeyboardKey.keyS, PhysicalKeyboardKey.keyS, 's'),
   'keyV': (LogicalKeyboardKey.keyV, PhysicalKeyboardKey.keyV, 'v'),
@@ -965,6 +967,9 @@ Future<void> _run(Map<String, dynamic> step) async {
       if (selected != value) {
         throw StateError('$selected selected, expected $value');
       }
+    case 'expectAgents':
+      final agents = c.read(agentProvider).length;
+      if (agents != value) throw StateError('$agents agents, expected $value');
     case 'probe':
       _log('PROBE $value ${_probe()}');
     case 'texts':
