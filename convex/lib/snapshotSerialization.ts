@@ -1,4 +1,5 @@
 import type { Doc } from "../_generated/dataModel";
+import { withoutLaterFields } from "./elementFields";
 import { withoutPictureId } from "./imageAssets";
 
 export function serializeStrategyHeader(
@@ -46,22 +47,36 @@ export function serializePageContent(pageContent: Doc<"pageContents">) {
   };
 }
 
-/// [element] as a client sees it. One that doesn't [acceptsPictureIds]
-/// gets its payload without the picture id (see withoutPictureId).
+/// [payload] as a client holds it: without the picture id unless it
+/// [acceptsPictureIds] (see withoutPictureId), and without the fields past its
+/// [elementFieldLevel] (see withoutLaterFields).
+export function elementPayloadForClient(
+  payload: Doc<"elements">["payload"],
+  acceptsPictureIds: boolean,
+  elementFieldLevel: number | undefined,
+): Doc<"elements">["payload"] {
+  const known = withoutLaterFields(payload, elementFieldLevel);
+  return acceptsPictureIds ? known : withoutPictureId(known);
+}
+
+/// [element] as a client sees it (see elementPayloadForClient).
 export function serializeElement(
   strategyPublicId: string,
   pagePublicId: string,
   element: Doc<"elements">,
   acceptsPictureIds: boolean,
+  elementFieldLevel: number | undefined,
 ) {
   return {
     publicId: element.publicId,
     strategyPublicId,
     pagePublicId,
     elementType: element.elementType,
-    payload: acceptsPictureIds
-      ? element.payload
-      : withoutPictureId(element.payload),
+    payload: elementPayloadForClient(
+      element.payload,
+      acceptsPictureIds,
+      elementFieldLevel,
+    ),
     sortIndex: element.sortIndex,
     revision: element.revision,
     deleted: element.deleted,

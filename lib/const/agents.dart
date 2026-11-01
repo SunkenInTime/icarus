@@ -250,7 +250,8 @@ class AgentData implements DraggableData {
       );
       agent.abilities[2].abilityData = CircleAbility(
         iconPath: agent.abilities[2].iconPath,
-        size: 4.5,
+        size: 4.75,
+        storedSize: 4.5,
         rangeOutlineColor: Colors.redAccent,
         hasCenterDot: true,
       );
@@ -616,7 +617,8 @@ class AgentData implements DraggableData {
       );
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
-        size: 3.72,
+        size: 3.45,
+        storedSize: 3.72,
         rangeOutlineColor: Colors.white,
         hasCenterDot: true,
       );

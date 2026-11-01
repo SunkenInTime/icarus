@@ -22,6 +22,8 @@ import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/canonical_map_artwork.dart';
 import 'package:icarus/widgets/canvas_coordinates.dart';
+import 'package:icarus/widgets/caption_card.dart';
+import 'package:icarus/widgets/caption_markers.dart';
 import 'package:icarus/widgets/canvas_selection_layer.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
@@ -172,6 +174,12 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
     );
     // A view-only reader has no sidebar, so the map takes its width.
     final viewOnly = ref.watch(isViewOnlyStrategyProvider);
+    final showCaptionMarkers = !transitionPresentation.hideView &&
+        !transitionPresentation.active &&
+        !ref.watch(interactionStateProvider).isLineUpMode &&
+        ref.watch(
+          appPreferencesProvider.select((p) => p.showCaptions),
+        );
     final double sideBarWidth = viewOnly ? 0 : Settings.sideBarReservedWidth;
     final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
     final mapColorMapper = MapSvgColorMapper.forPalette(effectivePalette);
@@ -337,11 +345,19 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                         child: ConeCoverageLayer(
                                           coverage: _cones,
                                           floor: _revealedFloor(isAttack),
-                                          opacity: ref
-                                                  .watch(interactionStateProvider)
-                                                  .isLineUpMode
-                                              ? 0.2
-                                              : 1.0,
+                                          opacity: ref.watch(
+                                                appPreferencesProvider.select(
+                                                  (preferences) =>
+                                                      preferences
+                                                          .viewConeOpacity,
+                                                ),
+                                              ) *
+                                              (ref
+                                                      .watch(
+                                                          interactionStateProvider)
+                                                      .isLineUpMode
+                                                  ? 0.2
+                                                  : 1.0),
                                           child: Stack(
                                             children: [
                                               Positioned(
@@ -432,6 +448,12 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                               ),
                                       ),
                                     ),
+                                    if (showCaptionMarkers)
+                                      Positioned.fill(
+                                        child: CaptionMarkers(
+                                          transformation: controller,
+                                        ),
+                                      ),
                                     Positioned.fill(
                                       child: transitionPresentation.hideView
                                           ? IgnorePointer(
@@ -528,9 +550,11 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                           children: [
                             const HoveredMapItemNameCard(),
                             if (!viewOnly)
-                              IgnorePointer(
-                                ignoring: !canEditPages,
-                                child: const DeleteArea(),
+                              CanvasChrome(
+                                child: IgnorePointer(
+                                  ignoring: !canEditPages,
+                                  child: const DeleteArea(),
+                                ),
                               ),
                           ],
                         ),
@@ -541,6 +565,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                           ignoring: !canEditPages,
                           child: const LineupControlButtons(),
                         ),
+                      ),
+                      Positioned.fill(
+                        child: CaptionCardLayer(transformation: controller),
                       ),
                       // Watches the pointer without taking it from anything.
                       Positioned.fill(

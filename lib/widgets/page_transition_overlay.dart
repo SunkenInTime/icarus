@@ -788,7 +788,7 @@ class PlacedWidgetPreview {
         final resolvedPosition = coordinatePosition ?? w.position;
         return ViewConeWidget(
           id: null,
-          angle: UtilityData.getViewConeAngle(w.type),
+          angle: w.viewCone.angle,
           rotation: rotation ?? w.rotation,
           length: length ?? w.length,
           worldOrigin: resolvedPosition +

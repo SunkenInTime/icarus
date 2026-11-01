@@ -33,13 +33,16 @@
 //   {"tapText": t, "nth": n?, "button": "secondary"?}
 //   {"tapKey": valueKey, "nth": n?}    {"tapIcon": name, "nth": n?}
 //   {"tapAt": [x, y]}                  {"hoverAt": [x, y]}
-//   {"dragAt": [x1, y1, x2, y2]}       {"path": [[x, y], ...]}
+//   {"dragAt": [x1, y1, x2, y2]}       {"path": [[x, y], ...], "held": png?}
+//                                      held: a shot before letting go
 //   {"scrollAt": [x, y, dy]}           {"key": name}  {"keyCombo": [names]}
 //   {"resize": [w, h]}                 the window
 //   {"typeText": t}                    replaces the text in the last text field
 // Editor content
 //   {"addAgent": id, "at": [x, y], "agent": "jett"?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
+//   {"setCaption": id, "text": t}      what the caption dialog's Done does
+//   {"addUtility": id, "type": name, "at": [x, y]}  spike, customRectangle, customCircle
 //   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?}  two lineups, ids
 //                                      lo1{n}, lo2{n}; legacy ones share one id per lineup
 //   {"dragAgent": id, "by": [dx, dy]}  {"hoverAgent": id}
@@ -50,14 +53,35 @@
 //   {"shareLink": role, "file": path}  makes a link to the open strategy and
 //                                      writes its code to the file
 //   {"openShareLink": path}            opens the link whose code is in the file
-//   {"importReplay": path}             {"fakeSaveDir": dir}  answers save dialogs
+//   {"importReplay": path}             {"fakeSaveDir": dir, "as": name?}
+//                                      answers save dialogs, typing name if given
 //   {"dropFiles": [paths], "at": [x, y]}  dropped from Explorer
+//   {"exportIca": path}                {"importIca": path}
+// Pictures
+//   {"clipboard": path, "file": b?}    puts a bitmap on the Windows clipboard as
+//                                      a screenshot does; with file, copies the
+//                                      file as Explorer does
+//   {"openLineup": linkId}             the lineup's media dialog
+//   {"mark": name}                     starts a clock
+//   {"watchPicture": name, "gone": t?} logs the time since mark name when a
+//                                      pasted picture is first drawn, once text
+//                                      t has left the screen; runs behind the
+//                                      next steps
+//   {"watchFrames": true}  {"watchFrames": false, "tag": t}
+//                                      keeps frames coming, then logs the worst
+//                                      gap between two of them
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
-//   {"logLineups": tag}
+//   {"logCaptions": tag}               every placed item's caption
+//   {"logCard": tag}                   the caption card that's open, and where
+//   {"logLineups": tag}                {"logImages": tag}
+//   {"framesStart": 1} / {"framesLog": tag}   frame build and raster times between
+//                                      them: p50, p90, p99, worst, in ms
 //   {"expectSelected": n}              fails unless n items are selected
 //   {"expectAgents": n}                fails unless n agents are on the page
+//   {"expectImages": n, "lineups": m?} fails unless n pictures are on the page,
+//                                      and m in its lineups
 //   {"exit": 1}
 import 'dart:async';
 import 'dart:convert';
@@ -66,6 +90,7 @@ import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart' show showDialog;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -78,6 +103,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -91,7 +117,10 @@ import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/caption_card_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
@@ -99,10 +128,17 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/share/share_link_format.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
-import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+// The driver alone swaps the platform's launcher; the app uses url_launcher.
+// ignore: depend_on_referenced_packages
+import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
+// ignore: depend_on_referenced_packages
+import 'package:url_launcher_platform_interface/link.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import 'package:window_manager/window_manager.dart';
 
@@ -112,6 +148,8 @@ void startDrive() {
   final env = Platform.environment;
   final script = env['ICARUS_DRIVE_SCRIPT'];
   if (script == null) return;
+  _ignoreOsFocus();
+  UrlLauncherPlatform.instance = _RecordingUrlLauncher();
   _logPath = env['ICARUS_DRIVE_LOG'];
   _runId = env['ICARUS_DRIVE_RUN'] ??
       DateTime.now().microsecondsSinceEpoch.toRadixString(36);
@@ -140,6 +178,7 @@ var _flutterErrors = 0;
 var _failedSteps = 0;
 var _steps = 0;
 final _misplaced = <String>{};
+final _frameTimings = <ui.FrameTiming>[];
 
 void _log(String line) =>
     _entries.add('${DateTime.now().toIso8601String().substring(11, 23)} $line');
@@ -208,6 +247,7 @@ Future<void> _play(String script) async {
     }
     await _flush();
   }
+  await Future.wait(_pictureWatches);
   final problems = _flutterErrors + _failedSteps + _misplaced.length;
   _log(
     'SUMMARY steps=$_steps failed=$_failedSteps '
@@ -397,7 +437,11 @@ Future<void> _tap(Offset at, {bool secondary = false}) async {
 }
 
 /// Presses at the first point, moves through the rest, and lets go.
-Future<void> _drag(List<Offset> points, {int stepsPerLeg = 30}) async {
+Future<void> _drag(
+  List<Offset> points, {
+  int stepsPerLeg = 30,
+  String? shotWhileHeld,
+}) async {
   final pointer = _pointer++;
   final binding = GestureBinding.instance;
   _addMouse(pointer, points.first);
@@ -437,6 +481,7 @@ Future<void> _drag(List<Offset> points, {int stepsPerLeg = 30}) async {
     }
   }
   await Future<void>.delayed(const Duration(milliseconds: 300));
+  if (shotWhileHeld != null) await _run({'shot': shotWhileHeld});
   binding.handlePointerEvent(
     PointerUpEvent(
       pointer: pointer,
@@ -490,6 +535,32 @@ const _keys = {
 var _keyTime = 0;
 
 /// Presses [names] in order and lets go in reverse, as hands do.
+/// Keeps other windows from changing what the script is testing. When one
+/// takes the foreground, Flutter parks keyboard focus at the root of the focus
+/// tree: a text field blurs and a driver key reaches no widget. On a desktop
+/// shared with other driver runs that happens all the time, so a driver run
+/// ignores OS focus. It needs none: its input is sent inside the process.
+void _ignoreOsFocus() {
+  final binding = WidgetsBinding.instance;
+  binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  binding.platformDispatcher.onViewFocusChange = (_) {};
+  SystemChannels.lifecycle.setMessageHandler((_) async => null);
+}
+
+/// Fails a key step that would reach no widget, instead of logging ok.
+Future<void> _expectKeyFocus() async {
+  try {
+    await _waitFor(
+      () => FocusManager.instance.primaryFocus?.context != null,
+      2,
+    );
+  } on TimeoutException {
+    throw StateError(
+      'no keyboard focus for this key: ${FocusManager.instance.primaryFocus}',
+    );
+  }
+}
+
 void _press(List<String> names) {
   final events = <KeyEvent>[
     for (final name in names)
@@ -524,18 +595,24 @@ const _icons = {
   'chevronDown': LucideIcons.chevronDown,
   'pencil': LucideIcons.pencil,
   'eye': LucideIcons.eye,
+  'radar': LucideIcons.radar,
   'square': LucideIcons.square,
   'type': LucideIcons.type,
   'camera': LucideIcons.camera,
   'play': LucideIcons.play,
   'pause': LucideIcons.pause,
+  'image': LucideIcons.image,
+  'clipboard': LucideIcons.clipboard,
+  'plus': LucideIcons.plus,
 };
 
-// Stands in for the OS save dialog: answers with dir/fileName and writes the
-// bytes when given, as FilePicker does on desktop.
+// Stands in for the OS save dialog: answers with dir/fileName, or dir/typedName
+// as a user who renamed the file would, and writes the bytes when given, as
+// FilePicker does on desktop.
 class _FakeSaver extends FilePicker {
-  _FakeSaver(this.dir);
+  _FakeSaver(this.dir, this.typedName);
   final String dir;
+  final String? typedName;
 
   @override
   Future<String?> saveFile({
@@ -548,7 +625,7 @@ class _FakeSaver extends FilePicker {
     bool lockParentWindow = false,
   }) async {
     await Directory(dir).create(recursive: true);
-    final path = '$dir${Platform.pathSeparator}$fileName';
+    final path = '$dir${Platform.pathSeparator}${typedName ?? fileName}';
     if (bytes != null) await File(path).writeAsBytes(bytes);
     _log('SAVE $path bytes=${bytes?.length}');
     return path;
@@ -566,6 +643,51 @@ class _FakeSaver extends FilePicker {
 }
 
 // Cloud state.
+
+/// The links opened, kept here so a run never opens a browser on the desktop
+/// it shares.
+final _openedLinks = <String>[];
+
+class _RecordingUrlLauncher extends UrlLauncherPlatform {
+  @override
+  LinkDelegate? get linkDelegate => null;
+
+  @override
+  Future<bool> canLaunch(String url) async => true;
+
+  @override
+  Future<bool> launchUrl(String url, LaunchOptions options) async {
+    _openedLinks.add(url);
+    return true;
+  }
+
+  @override
+  Future<bool> launch(
+    String url, {
+    required bool useSafariVC,
+    required bool useWebView,
+    required bool enableJavaScript,
+    required bool enableDomStorage,
+    required bool universalLinksOnly,
+    required Map<String, String> headers,
+    String? webOnlyWindowName,
+  }) async {
+    _openedLinks.add(url);
+    return true;
+  }
+}
+
+/// Every item on the open page that takes a caption.
+List<PlacedWidget> _placedItems() {
+  final c = appProviderContainer;
+  return [
+    ...c.read(agentProvider),
+    ...c.read(abilityProvider),
+    ...c.read(textProvider),
+    ...c.read(placedImageProvider).images,
+    ...c.read(utilityProvider),
+  ];
+}
 
 bool _settled() {
   final c = appProviderContainer;
@@ -693,7 +815,7 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _drag([
         for (final p in (value as List).cast<List>())
           Offset((p[0] as num).toDouble(), (p[1] as num).toDouble()),
-      ], stepsPerLeg: 6);
+      ], stepsPerLeg: 6, shotWhileHeld: step['held'] as String?);
     case 'scrollAt':
       final xy = (value as List).cast<num>();
       GestureBinding.instance.handlePointerEvent(
@@ -706,10 +828,12 @@ Future<void> _run(Map<String, dynamic> step) async {
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await _frames();
     case 'key':
+      await _expectKeyFocus();
       _press([value as String]);
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await _frames();
     case 'keyCombo':
+      await _expectKeyFocus();
       _press((value as List).cast<String>());
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await _frames();
@@ -763,6 +887,32 @@ Future<void> _run(Map<String, dynamic> step) async {
         id,
         _point(step, 'at'),
         (p) => abilities.updatePosition(p, id),
+      );
+    case 'addUtility':
+      final id = value as String;
+      final utilities = c.read(utilityProvider.notifier);
+      final type = UtilityType.values.byName(step['type'] as String);
+      utilities.addUtility(
+        PlacedUtility(
+          type: type,
+          position: const Offset(500, 500),
+          id: id,
+          customWidth: type == UtilityType.customRectangle
+              ? ((step['size'] ?? 2) as num).toDouble()
+              : null,
+          customLength: type == UtilityType.customRectangle
+              ? ((step['size'] ?? 2) as num).toDouble()
+              : null,
+          customDiameter: type == UtilityType.customCircle ? 10 : null,
+          customColorValue:
+              type == UtilityType.spike ? null : 0xFF22C55E,
+          customOpacityPercent: type == UtilityType.spike ? null : 30,
+        ),
+      );
+      await _place(
+        id,
+        _point(step, 'at'),
+        (p) => utilities.updatePosition(p, id),
       );
     case 'addText':
       final id = value as String;
@@ -923,7 +1073,54 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _frames();
       send('performOperation', (value as List).cast<String>());
     case 'fakeSaveDir':
-      FilePicker.platform = _FakeSaver(value as String);
+      FilePicker.platform = _FakeSaver(value as String, step['as'] as String?);
+    case 'exportIca':
+      final id = c.read(strategyProvider).strategyId!;
+      await c.read(strategyProvider.notifier).forceSaveNow(id);
+      await StrategyImportExportService(c)
+          .zipStrategy(id: id, outputFilePath: value as String);
+    case 'importIca':
+      await StrategyImportExportService(c).loadFromFilePath(value as String);
+    case 'clipboard':
+      final result = await Process.run('pwsh', [
+        '-NoProfile',
+        '-STA',
+        '-File',
+        Platform.environment['ICARUS_DRIVE_SET_CLIPBOARD']!,
+        value as String,
+        if (step['file'] == true) '-File',
+      ]);
+      if (result.exitCode != 0) throw StateError('${result.stderr}');
+    case 'openLineup':
+      unawaited(
+        showDialog<void>(
+          context: _elementOf((w) => w is InteractiveMap),
+          builder: (_) => CreateLineupDialog(linkId: value as String),
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await _frames();
+    case 'mark':
+      _marks[value as String] = Stopwatch()..start();
+    case 'watchPicture':
+      _pictureWatches.add(
+        _watchPicture(value as String, step['gone'] as String?),
+      );
+    case 'watchFrames':
+      if (value == true) {
+        _watchingFrames = true;
+        unawaited(_watchFrames());
+      } else {
+        _watchingFrames = false;
+        await _frames();
+        _log(
+          'FRAMES ${step['tag']} frames=$_framesSeen '
+          'worstGap=${_worstFrameGap.inMilliseconds} ms '
+          'over50ms=$_gapsOver50',
+        );
+      }
+    case 'logImages':
+      await _logImages(value as String);
     case 'shot':
       await _frames();
       final view = RendererBinding.instance.renderViews.first;
@@ -936,6 +1133,21 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
       final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
       await File(value as String).writeAsBytes(bytes!.buffer.asUint8List());
+    case 'framesStart':
+      _frameTimings.clear();
+      SchedulerBinding.instance.addTimingsCallback(_frameTimings.addAll);
+    case 'framesLog':
+      SchedulerBinding.instance.removeTimingsCallback(_frameTimings.addAll);
+      String times(Iterable<Duration> durations) {
+        final ms = [for (final d in durations) d.inMicroseconds / 1000]..sort();
+        if (ms.isEmpty) return 'none';
+        String at(double share) =>
+            ms[((ms.length - 1) * share).round()].toStringAsFixed(2);
+        return 'p50 ${at(.5)} p90 ${at(.9)} p99 ${at(.99)} worst ${at(1)}';
+      }
+      _log('FRAMES $value n=${_frameTimings.length} '
+          'build ${times(_frameTimings.map((t) => t.buildDuration))} '
+          'raster ${times(_frameTimings.map((t) => t.rasterDuration))}');
     case 'burst':
       for (var i = 0; i < ((step['count'] ?? 10) as int); i++) {
         await _run({'shot': '$value-${i.toString().padLeft(3, '0')}.png'});
@@ -965,6 +1177,21 @@ Future<void> _run(Map<String, dynamic> step) async {
                 '${a.position.dy.toStringAsFixed(1)})'
         ]}',
       );
+    case 'setCaption':
+      setCaption(c, value as String, step['text'] as String);
+    case 'logCard':
+      final root = RendererBinding.instance.renderViews.first.child;
+      _log('CARD $value ${c.read(captionCardProvider)} '
+          'zoom=${c.read(screenZoomProvider)} links=$_openedLinks chrome=${[
+        if (root is RenderBox)
+          for (final rect in c.read(canvasItemRegistryProvider).chromeIn(root))
+            '${rect.left.round()},${rect.top.round()},'
+                '${rect.right.round()},${rect.bottom.round()}',
+      ]}');
+    case 'logCaptions':
+      _log('CAPTIONS $value ${jsonEncode({
+            for (final item in _placedItems()) item.id: item.caption,
+          })}');
     case 'logPage':
       _log(
         'PAGE $value strategy=${c.read(strategyProvider).strategyName} '
@@ -973,6 +1200,12 @@ Future<void> _run(Map<String, dynamic> step) async {
         'texts=${c.read(textProvider).length} '
         'drawings=${c.read(drawingProvider).elements.length} '
         'images=${c.read(placedImageProvider).images.length} '
+        'utilities=${[
+          for (final u in c.read(utilityProvider))
+            '${u.type.name}/${u.angle}@'
+                '${u.position.dx.toStringAsFixed(1)},'
+                '${u.position.dy.toStringAsFixed(1)}',
+        ]} '
         'lineups=${c.read(lineUpProvider).graph.links.length} '
         'selected=${c.read(canvasSelectionProvider).length}',
       );
@@ -984,6 +1217,17 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'expectAgents':
       final agents = c.read(agentProvider).length;
       if (agents != value) throw StateError('$agents agents, expected $value');
+    case 'expectImages':
+      final images = c.read(placedImageProvider).images.length;
+      final inLineups = [
+        for (final link in c.read(lineUpProvider).links) ...link.images,
+      ].length;
+      if (images != value) {
+        throw StateError('$images pictures, expected $value');
+      }
+      if (step['lineups'] case final int lineups when inLineups != lineups) {
+        throw StateError('$inLineups lineup pictures, expected $lineups');
+      }
     case 'probe':
       _log('PROBE $value ${_probe()}');
     case 'texts':
@@ -1001,6 +1245,126 @@ Future<void> _run(Map<String, dynamic> step) async {
       throw ArgumentError('no step called $name');
   }
 }
+
+final _marks = <String, Stopwatch>{};
+final _pictureWatches = <Future<void>>[];
+
+/// Waits for a pasted picture to be drawn: the only image this large on
+/// screen, whether in a dialog or on the canvas.
+Future<void> _watchPicture(String mark, String? gone) async {
+  bool drawn() =>
+      _elementOrNull((w) => w is RawImage && (w.image?.width ?? 0) >= 500) !=
+      null;
+
+  bool left() {
+    if (gone == null) return true;
+    return _elementOrNull((w) => _isText(w, gone)) == null;
+  }
+
+  final deadline = DateTime.now().add(const Duration(seconds: 60));
+  while (!(left() && drawn())) {
+    if (DateTime.now().isAfter(deadline)) {
+      _failedSteps++;
+      _log('FAIL $mark: the picture was never drawn');
+      return;
+    }
+    SchedulerBinding.instance.scheduleFrame();
+    await SchedulerBinding.instance.endOfFrame;
+  }
+  _log('TIMED $mark drawn after ${_marks[mark]!.elapsedMilliseconds} ms');
+}
+
+var _watchingFrames = false;
+var _framesSeen = 0;
+var _gapsOver50 = 0;
+var _worstFrameGap = Duration.zero;
+
+/// Asks for frames without a pause and times each from its start to the end
+/// of its raster, so a stall on either thread shows.
+Future<void> _watchFrames() async {
+  _framesSeen = 0;
+  _gapsOver50 = 0;
+  _worstFrameGap = Duration.zero;
+  void note(List<ui.FrameTiming> timings) {
+    for (final timing in timings) {
+      final took = timing.totalSpan;
+      _framesSeen++;
+      if (took > _worstFrameGap) _worstFrameGap = took;
+      if (took.inMilliseconds > 50) _gapsOver50++;
+    }
+  }
+
+  SchedulerBinding.instance.addTimingsCallback(note);
+  var last = Stopwatch()..start();
+  while (_watchingFrames) {
+    SchedulerBinding.instance.scheduleFrame();
+    await SchedulerBinding.instance.endOfFrame;
+    final gap = last.elapsed;
+    last = Stopwatch()..start();
+    if (gap > _worstFrameGap) _worstFrameGap = gap;
+    if (gap.inMilliseconds > 50) _gapsOver50++;
+  }
+  SchedulerBinding.instance.removeTimingsCallback(note);
+}
+
+/// Every picture on the page and in its lineups, with the file it saved and
+/// the box it draws in.
+Future<void> _logImages(String tag) async {
+  final c = appProviderContainer;
+  final strategy = c.read(strategyProvider);
+  Future<String> file(String id, String? extension) async {
+    final saved = File(
+      PlacedImageProvider.buildImageFilePath(
+        (await PlacedImageProvider.getImageFolder(strategy.strategyId!)).path,
+        id,
+        extension ?? '',
+      ),
+    );
+    return saved.existsSync() ? '${saved.lengthSync()} bytes' : 'no file';
+  }
+
+  for (final image in c.read(placedImageProvider).images) {
+    final box = _elementOrNull((w) => w.key == ValueKey('entity-${image.id}'))
+        ?.findRenderObject();
+    _log(
+      'IMAGE $tag id=${image.id} picture=${image.pictureId} '
+      'ext=${image.fileExtension} aspect=${image.aspectRatio} '
+      'scale=${image.scale} '
+      'at=(${image.position.dx}, ${image.position.dy}) '
+      'box=${box is RenderBox ? _size(box.size) : 'none'} '
+      'file=${await file(image.pictureId, image.fileExtension)}',
+    );
+  }
+  for (final link in c.read(lineUpProvider).links) {
+    for (final image in link.images) {
+      _log(
+        'LINEUP-IMAGE $tag link=${link.id} id=${image.id} '
+        'ext=${image.fileExtension} '
+        'file=${await file(image.id, image.fileExtension)}',
+      );
+    }
+  }
+  for (final job in c.read(cloudMediaUploadQueueProvider).jobs) {
+    _log(
+      'JOB $tag ${job.assetPublicId} ${job.state.name} ${job.mimeType} '
+      'bytes=${job.byteSize} attempts=${job.attempts} error=${job.lastError}',
+    );
+  }
+}
+
+Element? _elementOrNull(bool Function(Widget) test) {
+  Element? found;
+  void visit(Element element) {
+    if (test(element.widget)) found = element;
+    if (found == null) element.visitChildElements(visit);
+  }
+
+  WidgetsBinding.instance.rootElement?.visitChildElements(visit);
+  return found;
+}
+
+Element _elementOf(bool Function(Widget) test) =>
+    _elementOrNull(test) ?? (throw StateError('nothing on screen matches'));
 
 Size? _canvasSize() {
   Size? size;

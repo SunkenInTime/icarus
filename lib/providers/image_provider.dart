@@ -309,6 +309,30 @@ class PlacedImageProvider extends Notifier<ImageState> {
     state = state.copyWith(images: [...newImages, temp]);
   }
 
+  void setCaption(String id, String caption) {
+    if (!ref.canEditPages) return;
+    final newImages = [...state.images];
+    final index = PlacedWidget.getIndexByID(id, newImages);
+    if (index < 0 || (newImages[index].caption ?? '') == caption) return;
+    // Written empty before the snapshot, so undoing a first caption sends "":
+    // a write that left the field out would keep it on the server.
+    final item = newImages[index]..caption ??= '';
+    final before = ActionObjectState.image(item);
+    item.caption = caption;
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.image,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.image(item),
+            ),
+          ),
+        );
+    state = state.copyWith(images: newImages);
+  }
+
   void updateTagColor(String id, int? colorValue) {
     if (!ref.canEditPages) return;
     final newImages = [...state.images];

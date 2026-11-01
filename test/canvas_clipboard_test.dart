@@ -344,7 +344,9 @@ void main() {
   test("a picture gone from its strategy comes back from the copy's bytes",
       () async {
     final container = _container();
-    container.read(placedImageProvider.notifier).fromHive([_image()]);
+    container
+        .read(placedImageProvider.notifier)
+        .fromHive([_image()..caption = 'Smoke from here']);
     container.read(canvasSelectionProvider.notifier).selectAll();
     container
         .read(canvasClipboardProvider.notifier)
@@ -359,6 +361,7 @@ void main() {
     final pasted = container.read(placedImageProvider).images.last;
     expect(pasted.pictureId, isNot('img'));
     expect(pasted.id, pasted.pictureId);
+    expect(pasted.caption, 'Smoke from here');
   });
 
   test('an item with a very long imported id pastes under a plain id',

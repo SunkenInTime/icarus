@@ -435,27 +435,33 @@ class RevealedFloor extends SingleChildRenderObjectWidget {
   RevealedFloor({
     super.key,
     required this.cones,
+    this.opacity = 1,
     Path? floor,
     required Widget child,
   }) : super(child: _cachedMap(floor, child));
 
   final CustomPainter cones;
 
+  /// How strongly the cones show.
+  final double opacity;
+
   @override
   RenderRevealedFloor createRenderObject(BuildContext context) =>
-      RenderRevealedFloor(cones);
+      RenderRevealedFloor(cones, opacity);
 
   @override
   void updateRenderObject(
     BuildContext context,
     RenderRevealedFloor renderObject,
   ) {
-    renderObject.cones = cones;
+    renderObject
+      ..cones = cones
+      ..opacity = opacity;
   }
 }
 
 class RenderRevealedFloor extends RenderProxyBox {
-  RenderRevealedFloor(this._cones);
+  RenderRevealedFloor(this._cones, this._opacity);
 
   CustomPainter _cones;
   set cones(CustomPainter value) {
@@ -465,6 +471,13 @@ class RenderRevealedFloor extends RenderProxyBox {
     if (value.runtimeType != old.runtimeType || value.shouldRepaint(old)) {
       markNeedsPaint();
     }
+  }
+
+  double _opacity;
+  set opacity(double value) {
+    if (value == _opacity) return;
+    _opacity = value;
+    markNeedsPaint();
   }
 
   @override
@@ -482,7 +495,18 @@ class RenderRevealedFloor extends RenderProxyBox {
       return;
     }
     layer = _paintRevealed(context, needsCompositing, offset, size, child,
-        layer as ClipRectLayer?, (canvas) => _cones.paint(canvas, size));
+        layer as ClipRectLayer?, (canvas) {
+      if (_opacity >= 1) {
+        _cones.paint(canvas, size);
+        return;
+      }
+      canvas.saveLayer(
+        null,
+        Paint()..color = Color.from(alpha: _opacity, red: 0, green: 0, blue: 0),
+      );
+      _cones.paint(canvas, size);
+      canvas.restore();
+    });
   }
 }
 

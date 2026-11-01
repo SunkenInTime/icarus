@@ -11,12 +11,13 @@ PlacedWidget _$PlacedWidgetFromJson(Map<String, dynamic> json) => PlacedWidget(
           .fromJson(json['position'] as Map<String, dynamic>),
       id: json['id'] as String,
       isDeleted: json['isDeleted'] as bool? ?? false,
-    );
+    )..caption = json['caption'] as String?;
 
 Map<String, dynamic> _$PlacedWidgetToJson(PlacedWidget instance) =>
     <String, dynamic>{
       'id': instance.id,
       'isDeleted': instance.isDeleted,
+      if (instance.caption case final value?) 'caption': value,
       'position': const OffsetConverter().toJson(instance.position),
     };
 
@@ -30,12 +31,14 @@ PlacedText _$PlacedTextFromJson(Map<String, dynamic> json) => PlacedText(
       tagColorValue: (json['tagColorValue'] as num?)?.toInt(),
     )
       ..isDeleted = json['isDeleted'] as bool? ?? false
+      ..caption = json['caption'] as String?
       ..text = json['text'] as String;
 
 Map<String, dynamic> _$PlacedTextToJson(PlacedText instance) =>
     <String, dynamic>{
       'id': instance.id,
       'isDeleted': instance.isDeleted,
+      if (instance.caption case final value?) 'caption': value,
       'position': const OffsetConverter().toJson(instance.position),
       'text': instance.text,
       'size': instance.size,
@@ -55,12 +58,15 @@ PlacedImage _$PlacedImageFromJson(Map<String, dynamic> json) => PlacedImage(
       tagColorValue: (json['tagColorValue'] as num?)?.toInt(),
       link: json['link'] as String? ?? '',
       assetId: json['assetId'] as String?,
-    )..isDeleted = json['isDeleted'] as bool? ?? false;
+    )
+      ..isDeleted = json['isDeleted'] as bool? ?? false
+      ..caption = json['caption'] as String?;
 
 Map<String, dynamic> _$PlacedImageToJson(PlacedImage instance) =>
     <String, dynamic>{
       'id': instance.id,
       'isDeleted': instance.isDeleted,
+      if (instance.caption case final value?) 'caption': value,
       'position': const OffsetConverter().toJson(instance.position),
       'aspectRatio': instance.aspectRatio,
       if (instance.assetId case final value?) 'assetId': value,
@@ -83,12 +89,15 @@ PlacedAgent _$PlacedAgentFromJson(Map<String, dynamic> json) => PlacedAgent(
           : const AgentStateCompatConverter().fromJson(json['state']),
       weapon: $enumDecodeNullable(_$WeaponTypeEnumMap, json['weapon']) ??
           WeaponType.none,
-    )..isDeleted = json['isDeleted'] as bool? ?? false;
+    )
+      ..isDeleted = json['isDeleted'] as bool? ?? false
+      ..caption = json['caption'] as String?;
 
 Map<String, dynamic> _$PlacedAgentToJson(PlacedAgent instance) =>
     <String, dynamic>{
       'id': instance.id,
       'isDeleted': instance.isDeleted,
+      if (instance.caption case final value?) 'caption': value,
       'position': const OffsetConverter().toJson(instance.position),
       'type': const AgentTypeCompatConverter().toJson(instance.type),
       'isAlly': instance.isAlly,
@@ -138,13 +147,16 @@ PlacedViewConeAgent _$PlacedViewConeAgentFromJson(Map<String, dynamic> json) =>
           : const AgentStateCompatConverter().fromJson(json['state']),
       weapon: $enumDecodeNullable(_$WeaponTypeEnumMap, json['weapon']) ??
           WeaponType.none,
-    )..isDeleted = json['isDeleted'] as bool? ?? false;
+    )
+      ..isDeleted = json['isDeleted'] as bool? ?? false
+      ..caption = json['caption'] as String?;
 
 Map<String, dynamic> _$PlacedViewConeAgentToJson(
         PlacedViewConeAgent instance) =>
     <String, dynamic>{
       'id': instance.id,
       'isDeleted': instance.isDeleted,
+      if (instance.caption case final value?) 'caption': value,
       'position': const OffsetConverter().toJson(instance.position),
       'type': const AgentTypeCompatConverter().toJson(instance.type),
       'isAlly': instance.isAlly,
@@ -172,12 +184,15 @@ PlacedCircleAgent _$PlacedCircleAgentFromJson(Map<String, dynamic> json) =>
           : const AgentStateCompatConverter().fromJson(json['state']),
       weapon: $enumDecodeNullable(_$WeaponTypeEnumMap, json['weapon']) ??
           WeaponType.none,
-    )..isDeleted = json['isDeleted'] as bool? ?? false;
+    )
+      ..isDeleted = json['isDeleted'] as bool? ?? false
+      ..caption = json['caption'] as String?;
 
 Map<String, dynamic> _$PlacedCircleAgentToJson(PlacedCircleAgent instance) =>
     <String, dynamic>{
       'id': instance.id,
       'isDeleted': instance.isDeleted,
+      if (instance.caption case final value?) 'caption': value,
       'position': const OffsetConverter().toJson(instance.position),
       'type': const AgentTypeCompatConverter().toJson(instance.type),
       'isAlly': instance.isAlly,
@@ -207,12 +222,15 @@ PlacedAbility _$PlacedAbilityFromJson(Map<String, dynamic> json) =>
               ?.map((e) => (e as num).toDouble())
               .toList() ??
           [10.0, 10.0, 10.0, 10.0],
-    )..isDeleted = json['isDeleted'] as bool? ?? false;
+    )
+      ..isDeleted = json['isDeleted'] as bool? ?? false
+      ..caption = json['caption'] as String?;
 
 Map<String, dynamic> _$PlacedAbilityToJson(PlacedAbility instance) =>
     <String, dynamic>{
       'id': instance.id,
       'isDeleted': instance.isDeleted,
+      if (instance.caption case final value?) 'caption': value,
       'position': const OffsetConverter().toJson(instance.position),
       'data': const AbilityInfoConverter().toJson(instance.data),
       'isAlly': instance.isAlly,
@@ -257,6 +275,7 @@ PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>
       customOpacityPercent: (json['customOpacityPercent'] as num?)?.toInt(),
     )
       ..isDeleted = json['isDeleted'] as bool? ?? false
+      ..caption = json['caption'] as String?
       ..rotation = (json['rotation'] as num).toDouble()
       ..length = (json['length'] as num).toDouble();
 
@@ -264,6 +283,7 @@ Map<String, dynamic> _$PlacedUtilityToJson(PlacedUtility instance) =>
     <String, dynamic>{
       'id': instance.id,
       'isDeleted': instance.isDeleted,
+      if (instance.caption case final value?) 'caption': value,
       'position': const OffsetConverter().toJson(instance.position),
       'type': const UtilityTypeCompatConverter().toJson(instance.type),
       'rotation': instance.rotation,

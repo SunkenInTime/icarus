@@ -118,6 +118,7 @@ class AppPreferences extends HiveObject {
   final bool showSpawnBarrier;
   final bool showUltOrbs;
   final bool showRegionNames;
+  final bool showCaptions;
   final double pagesBarExpandedHeight;
   final double pagesBarWidth;
   final List<int> customColorValues;
@@ -132,6 +133,13 @@ class AppPreferences extends HiveObject {
   /// How strongly the dot grid behind maps and the library draws, from 0
   /// (hidden) to 1 (the original look).
   final double backgroundDotOpacity;
+
+  /// How strongly view cones show on the map, from [minViewConeOpacity] to 1
+  /// (the original look).
+  final double viewConeOpacity;
+
+  /// Never 0: a cone that can't be seen looks like a cone that's broken.
+  static const double minViewConeOpacity = 0.1;
 
   /// Whether this install has shown the welcome tour, the card that
   /// introduces accounts, the cloud, and replays. Stores written before the
@@ -160,6 +168,7 @@ class AppPreferences extends HiveObject {
     this.showSpawnBarrier = false,
     this.showUltOrbs = false,
     this.showRegionNames = false,
+    this.showCaptions = true,
     this.pagesBarExpandedHeight = 310.0,
     this.pagesBarWidth = 224.0,
     List<int>? customColorValues,
@@ -171,6 +180,7 @@ class AppPreferences extends HiveObject {
     this.discordPresenceEnabled = true,
     this.videoExportStepDurationSeconds = 3.0,
     this.backgroundDotOpacity = 1.0,
+    this.viewConeOpacity = 1.0,
     this.welcomeTourSeen = false,
     this.transparentScreenshotBackground = false,
     this.transparentVideoBackground = false,
@@ -188,6 +198,7 @@ class AppPreferences extends HiveObject {
     bool? showSpawnBarrier,
     bool? showUltOrbs,
     bool? showRegionNames,
+    bool? showCaptions,
     double? pagesBarExpandedHeight,
     double? pagesBarWidth,
     List<int>? customColorValues,
@@ -199,6 +210,7 @@ class AppPreferences extends HiveObject {
     bool? discordPresenceEnabled,
     double? videoExportStepDurationSeconds,
     double? backgroundDotOpacity,
+    double? viewConeOpacity,
     bool? welcomeTourSeen,
     bool? transparentScreenshotBackground,
     bool? transparentVideoBackground,
@@ -219,6 +231,7 @@ class AppPreferences extends HiveObject {
       showSpawnBarrier: showSpawnBarrier ?? this.showSpawnBarrier,
       showUltOrbs: showUltOrbs ?? this.showUltOrbs,
       showRegionNames: showRegionNames ?? this.showRegionNames,
+      showCaptions: showCaptions ?? this.showCaptions,
       pagesBarExpandedHeight:
           pagesBarExpandedHeight ?? this.pagesBarExpandedHeight,
       pagesBarWidth: pagesBarWidth ?? this.pagesBarWidth,
@@ -234,6 +247,7 @@ class AppPreferences extends HiveObject {
       videoExportStepDurationSeconds:
           videoExportStepDurationSeconds ?? this.videoExportStepDurationSeconds,
       backgroundDotOpacity: backgroundDotOpacity ?? this.backgroundDotOpacity,
+      viewConeOpacity: viewConeOpacity ?? this.viewConeOpacity,
       welcomeTourSeen: welcomeTourSeen ?? this.welcomeTourSeen,
       transparentScreenshotBackground: transparentScreenshotBackground ??
           this.transparentScreenshotBackground,
@@ -647,6 +661,12 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
     );
   }
 
+  Future<void> setShowCaptions(bool visible) {
+    return _updatePreferences(
+      (current) => current.copyWith(showCaptions: visible),
+    );
+  }
+
   Future<void> setShowRegionNames(bool visible) {
     return _updatePreferences(
       (current) => current.copyWith(showRegionNames: visible),
@@ -721,6 +741,17 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
     return _updatePreferences(
       (current) => current.copyWith(
         backgroundDotOpacity: opacity.clamp(0.0, 1.0),
+      ),
+    );
+  }
+
+  Future<void> setViewConeOpacity(double opacity) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        viewConeOpacity: opacity.clamp(
+          AppPreferences.minViewConeOpacity,
+          1.0,
+        ),
       ),
     );
   }

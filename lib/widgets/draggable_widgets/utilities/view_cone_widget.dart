@@ -17,6 +17,7 @@ import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/sightline_report_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
@@ -84,10 +85,14 @@ class ViewConeWidget extends ConsumerWidget {
     );
     final scaledIconSize = Settings.utilityIconSize * coord.scaleFactor;
 
-    // Container size: width = 2*length (cone can extend left/right), height = length (cone extends up)
-    // The apex (anchor point) is at the bottom center
+    // Container size: width = 2*length (cone can extend left/right), height =
+    // length (cone extends up). A full circle extends down as well, past the
+    // box its position is saved by. The apex (anchor point) is one length
+    // below the container's top, in the middle.
     final containerWidth = scaledLength * 2;
-    final containerHeight = scaledLength;
+    final containerHeight = angle >= ViewConeUtility.fullCircleDegrees
+        ? containerWidth
+        : scaledLength;
 
     final totalHeight = totalHeightVirtual * coord.scaleFactor;
     final totalWidth = totalWidthVirtual * coord.scaleFactor;
@@ -190,7 +195,7 @@ class ViewConeWidget extends ConsumerWidget {
         final inverseRotation = -effectiveRotation;
         final cosine = cos(inverseRotation);
         final sine = sin(inverseRotation);
-        final apex = Offset(containerWidth / 2, containerHeight);
+        final apex = Offset(containerWidth / 2, scaledLength);
         Offset toLocal(Offset point) {
           final delta = point - sideWorldOrigin;
           final local = Offset(
@@ -298,6 +303,7 @@ class ViewConeWidget extends ConsumerWidget {
                     .updateViewConeElevation(placedUtility!.id, elevation),
               ),
             if (sightlineReportItem != null) sightlineReportItem,
+            ...buildCaptionMenuItems(context, ref, placedUtility.id),
             ...buildAdjacentPageCopyMenuItems(ref, placedUtility.id),
           ];
 
@@ -311,10 +317,12 @@ class ViewConeWidget extends ConsumerWidget {
         children: [
           Positioned.fill(
             child: Stack(
+              // A full circle reaches past the bottom of the box.
+              clipBehavior: Clip.none,
               children: [
                 const Positioned.fill(child: IgnorePointer(child: SizedBox())),
                 Positioned(
-                  top: scaledAnchor.dy - containerHeight,
+                  top: scaledAnchor.dy - scaledLength,
                   left: scaledAnchor.dx - (containerWidth / 2),
                   child: IgnorePointer(
                     child: SizedBox(
@@ -419,27 +427,28 @@ class ViewConePainter extends CustomPainter {
     // Start angle should be at "up" (-pi/2) minus half of the cone, so it centers
     final startAngle = -pi / 2 - angleRad / 2;
 
-    // The apex (origin point) is at bottom center of the container
-    // Container: width = 2*length, height = length
-    // Apex position: (width/2, height) = (length, length)
-    final apex = Offset(size.width / 2, size.height);
-
-    // Create clipping path for the wedge
-    final clipPath = Path();
-    clipPath.moveTo(apex.dx, apex.dy);
-    clipPath.arcTo(
-      Rect.fromCircle(center: apex, radius: length),
-      startAngle,
-      angleRad,
-      false,
-    );
-    clipPath.close();
+    // The apex (origin point) is in the middle of the container, one length
+    // below its top.
+    final apex = Offset(size.width / 2, length);
 
     // Save canvas state and apply clip
     canvas.save();
-    // World polygons already contain the physical FOV and range. Applying a
-    // second circular screen-space clip would trim them on stretched maps.
-    canvas.clipPath(clipPath);
+    // A full circle is the gradient's own circle, with no wedge to cut.
+    if (angle < ViewConeUtility.fullCircleDegrees) {
+      // Create clipping path for the wedge
+      final clipPath = Path();
+      clipPath.moveTo(apex.dx, apex.dy);
+      clipPath.arcTo(
+        Rect.fromCircle(center: apex, radius: length),
+        startAngle,
+        angleRad,
+        false,
+      );
+      clipPath.close();
+      // World polygons already contain the physical FOV and range. Applying a
+      // second circular screen-space clip would trim them on stretched maps.
+      canvas.clipPath(clipPath);
+    }
     if (visibilityPolygon != null && visibilityPolygon!.length >= 3) {
       canvas.clipPath(Path()..addPolygon(visibilityPolygon!, true));
     }
@@ -498,7 +507,7 @@ class ViewConePainter extends CustomPainter {
       canvas.drawLine(segment.start, segment.end, rejectedPaint);
     }
     canvas.drawCircle(
-      Offset(size.width / 2, size.height),
+      Offset(size.width / 2, length),
       3,
       Paint()..color = const Color(0xFF4ADE80),
     );
@@ -519,7 +528,7 @@ class ViewConePainter extends CustomPainter {
       )..layout(maxWidth: max(0.0, size.width - 12));
       textPainter.paint(
         canvas,
-        Offset(6, max(4.0, size.height - textPainter.height - 8)),
+        Offset(6, max(4.0, length - textPainter.height - 8)),
       );
     }
     canvas.restore();

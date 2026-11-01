@@ -8,6 +8,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/canonical_positioned.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_scale_controller.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
@@ -275,6 +276,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
           },
         ),
       ),
+      ...buildCaptionMenuItems(context, ref, widget.placedText.id),
       ...buildAdjacentPageCopyMenuItems(ref, widget.placedText.id),
     ];
   }

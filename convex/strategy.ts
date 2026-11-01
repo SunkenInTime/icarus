@@ -19,6 +19,7 @@ import {
   listLivePages,
   sortByNumberField,
 } from "./lib/entities";
+import { elementFieldLevelArg } from "./lib/elementFields";
 import {
   collectReferencedAssetIds,
   getViewerAssetForStrategy,
@@ -93,6 +94,7 @@ export const getFullSnapshot = query({
     // without it, as they would write them, and find pictures under each
     // image's own id (withPictureAliases).
     acceptsPictureIds: v.optional(v.boolean()),
+    elementFieldLevel: elementFieldLevelArg,
     // Set by clients that keep an offline copy: the answer then carries the
     // strategy's content version, to compare with listContentVersions.
     includeContentVersion: v.optional(v.boolean()),
@@ -162,6 +164,7 @@ export const getFullSnapshot = query({
             pagePublicIds.get(element.pageId)!,
             element,
             args.acceptsPictureIds === true,
+            args.elementFieldLevel,
           ),
         ),
       lineups: visibleLineups

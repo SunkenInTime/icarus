@@ -2,6 +2,7 @@ import { query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { assertStrategyReadable } from "./lib/auth";
+import { elementFieldLevelArg } from "./lib/elementFields";
 import { getPageByPublicId, getStrategyByPublicId } from "./lib/entities";
 import { errorWithCode, internalError } from "./lib/errors";
 import {
@@ -92,6 +93,7 @@ export const getSnapshot = query({
     // without it, as they would write them, and find pictures under each
     // image's own id (withPictureAliases).
     acceptsPictureIds: v.optional(v.boolean()),
+    elementFieldLevel: elementFieldLevelArg,
   },
   returns: pageSnapshotValidator,
   handler: async (ctx, args) => {
@@ -122,6 +124,7 @@ export const getSnapshot = query({
             page.publicId,
             element,
             args.acceptsPictureIds === true,
+            args.elementFieldLevel,
           ),
         ),
       lineups: lineups
@@ -175,6 +178,7 @@ export const getElementSlice = query({
     ...pageArgs,
     fromPublicId: v.string(),
     toPublicId: v.optional(v.string()),
+    elementFieldLevel: elementFieldLevelArg,
   },
   returns: pageElementSliceValidator,
   handler: async (ctx, args) => {
@@ -194,6 +198,7 @@ export const getElementSlice = query({
           page.publicId,
           element,
           true,
+          args.elementFieldLevel,
         ),
       ),
       assets: await viewerAssets(ctx, strategy, elements, []),

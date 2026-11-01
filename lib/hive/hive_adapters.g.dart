@@ -118,19 +118,21 @@ class PlacedWidgetAdapter extends TypeAdapter<PlacedWidget> {
       position: fields[2] as Offset,
       id: fields[0] as String,
       isDeleted: fields[1] == null ? false : fields[1] as bool,
-    );
+    )..caption = fields[3] as String?;
   }
 
   @override
   void write(BinaryWriter writer, PlacedWidget obj) {
     writer
-      ..writeByte(3)
+      ..writeByte(4)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
       ..write(obj.isDeleted)
       ..writeByte(2)
-      ..write(obj.position);
+      ..write(obj.position)
+      ..writeByte(3)
+      ..write(obj.caption);
   }
 
   @override
@@ -163,13 +165,14 @@ class PlacedTextAdapter extends TypeAdapter<PlacedText> {
       tagColorValue: (fields[5] as num?)?.toInt(),
     )
       ..text = fields[0] as String
-      ..isDeleted = fields[3] as bool;
+      ..isDeleted = fields[3] as bool
+      ..caption = fields[9] as String?;
   }
 
   @override
   void write(BinaryWriter writer, PlacedText obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.text)
       ..writeByte(1)
@@ -185,7 +188,9 @@ class PlacedTextAdapter extends TypeAdapter<PlacedText> {
       ..writeByte(6)
       ..write(obj.fontSize)
       ..writeByte(7)
-      ..write(obj.sizeVersion);
+      ..write(obj.sizeVersion)
+      ..writeByte(9)
+      ..write(obj.caption);
   }
 
   @override
@@ -219,13 +224,15 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       tagColorValue: (fields[9] as num?)?.toInt(),
       link: fields[3] == null ? '' : fields[3] as String,
       assetId: fields[11] as String?,
-    )..isDeleted = fields[5] as bool;
+    )
+      ..isDeleted = fields[5] as bool
+      ..caption = fields[12] as String?;
   }
 
   @override
   void write(BinaryWriter writer, PlacedImage obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(1)
       ..write(obj.aspectRatio)
       ..writeByte(2)
@@ -245,7 +252,9 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       ..writeByte(10)
       ..write(obj.sizeVersion)
       ..writeByte(11)
-      ..write(obj.assetId);
+      ..write(obj.assetId)
+      ..writeByte(12)
+      ..write(obj.caption);
   }
 
   @override
@@ -632,13 +641,14 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
     )
       ..rotation = (fields[1] as num).toDouble()
       ..length = (fields[2] as num).toDouble()
-      ..isDeleted = fields[4] as bool;
+      ..isDeleted = fields[4] as bool
+      ..caption = fields[16] as String?;
   }
 
   @override
   void write(BinaryWriter writer, PlacedUtility obj) {
     writer
-      ..writeByte(14)
+      ..writeByte(15)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -666,7 +676,9 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       ..writeByte(14)
       ..write(obj.isAlly)
       ..writeByte(15)
-      ..write(obj.visionElevation);
+      ..write(obj.visionElevation)
+      ..writeByte(16)
+      ..write(obj.caption);
   }
 
   @override
@@ -1084,6 +1096,7 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       showSpawnBarrier: fields[9] == null ? false : fields[9] as bool,
       showUltOrbs: fields[10] == null ? false : fields[10] as bool,
       showRegionNames: fields[11] == null ? false : fields[11] as bool,
+      showCaptions: fields[25] == null ? true : fields[25] as bool,
       pagesBarExpandedHeight:
           fields[2] == null ? 310.0 : (fields[2] as num).toDouble(),
       pagesBarWidth: fields[7] == null ? 224.0 : (fields[7] as num).toDouble(),
@@ -1103,6 +1116,8 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
           fields[18] == null ? 3.0 : (fields[18] as num).toDouble(),
       backgroundDotOpacity:
           fields[19] == null ? 1.0 : (fields[19] as num).toDouble(),
+      viewConeOpacity:
+          fields[24] == null ? 1.0 : (fields[24] as num).toDouble(),
       welcomeTourSeen: fields[20] == null ? false : fields[20] as bool,
       transparentScreenshotBackground:
           fields[21] == null ? false : fields[21] as bool,
@@ -1115,7 +1130,7 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(23)
+      ..writeByte(25)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
@@ -1161,7 +1176,11 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       ..writeByte(22)
       ..write(obj.transparentVideoBackground)
       ..writeByte(23)
-      ..write(obj.canvasSelectionHintSeen);
+      ..write(obj.canvasSelectionHintSeen)
+      ..writeByte(24)
+      ..write(obj.viewConeOpacity)
+      ..writeByte(25)
+      ..write(obj.showCaptions);
   }
 
   @override
@@ -1196,13 +1215,15 @@ class PlacedViewConeAgentAdapter extends TypeAdapter<PlacedViewConeAgent> {
       isAlly: fields[4] == null ? true : fields[4] as bool,
       state: fields[5] == null ? AgentState.none : fields[5] as AgentState,
       weapon: fields[10] == null ? WeaponType.none : fields[10] as WeaponType,
-    )..isDeleted = fields[7] as bool;
+    )
+      ..isDeleted = fields[7] as bool
+      ..caption = fields[11] as String?;
   }
 
   @override
   void write(BinaryWriter writer, PlacedViewConeAgent obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.presetType)
       ..writeByte(1)
@@ -1224,7 +1245,9 @@ class PlacedViewConeAgentAdapter extends TypeAdapter<PlacedViewConeAgent> {
       ..writeByte(9)
       ..write(obj.visionElevation)
       ..writeByte(10)
-      ..write(obj.weapon);
+      ..write(obj.weapon)
+      ..writeByte(11)
+      ..write(obj.caption);
   }
 
   @override
@@ -1258,13 +1281,15 @@ class PlacedCircleAgentAdapter extends TypeAdapter<PlacedCircleAgent> {
       isAlly: fields[4] == null ? true : fields[4] as bool,
       state: fields[5] == null ? AgentState.none : fields[5] as AgentState,
       weapon: fields[9] == null ? WeaponType.none : fields[9] as WeaponType,
-    )..isDeleted = fields[7] as bool;
+    )
+      ..isDeleted = fields[7] as bool
+      ..caption = fields[10] as String?;
   }
 
   @override
   void write(BinaryWriter writer, PlacedCircleAgent obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.diameterMeters)
       ..writeByte(1)
@@ -1284,7 +1309,9 @@ class PlacedCircleAgentAdapter extends TypeAdapter<PlacedCircleAgent> {
       ..writeByte(8)
       ..write(obj.position)
       ..writeByte(9)
-      ..write(obj.weapon);
+      ..write(obj.weapon)
+      ..writeByte(10)
+      ..write(obj.caption);
   }
 
   @override

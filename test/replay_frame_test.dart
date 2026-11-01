@@ -358,6 +358,22 @@ void main() {
           frames.frameAt(9600, perspective: ReplayTeam.red).occluders, isEmpty);
     });
 
+    test('a Cyber Cage blocks sight from the circle drawn, not its box', () {
+      const cage =
+          '/Game/Characters/Gumshoe/S0/Ability_4/Zone_Gumshoe_4_Cage.Zone_Gumshoe_4_Cage_C';
+      final frames =
+          builder(document(utility: [smoke()..['classPath'] = cage]));
+      final up = frames.frameAt(2000, perspective: ReplayTeam.red);
+      final circle = up.abilities.single.data.abilityData! as CircleAbility;
+      expect(circle.size, lessThan(circle.storedSize));
+      expect(
+          (up.occluders.single as CircleOccluder).radius,
+          closeTo(
+              CoordinateSystem.virtualLengthInWorld(
+                  circle.size * Maps.mapScale[projection.map]! / 2),
+              1e-9));
+    });
+
     test('a utility rings as it activates and fades out as it ends', () {
       final frames = builder(document(utility: [smoke()]));
       ReplayFrame at(int t) => frames.frameAt(t, perspective: ReplayTeam.red);

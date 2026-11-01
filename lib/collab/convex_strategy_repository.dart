@@ -35,6 +35,10 @@ class ConvexStrategyRepository {
 
   final IcarusConvexApi _api;
 
+  static final _elementFieldLevel = ConvexOptional.present(
+    currentElementFieldLevel.toDouble(),
+  );
+
   /// Permission to join [strategyPublicId]'s presence room, or null when this
   /// deployment has no presence service.
   Future<RoomPass?> issueRoomPass(String strategyPublicId) async {
@@ -241,6 +245,7 @@ class ConvexStrategyRepository {
         shareToken: _optional(shareToken),
         // This client keeps an image's picture id (PlacedImage.assetId).
         acceptsPictureIds: const ConvexOptional.present(true),
+        elementFieldLevel: _elementFieldLevel,
       );
 
   /// The frame and the slices starting at [starts] (see page_slices.dart).
@@ -273,6 +278,7 @@ class ConvexStrategyRepository {
             toPublicId: index + 1 < starts.length
                 ? ConvexOptional.present(starts[index + 1])
                 : const ConvexOptional.absent(),
+            elementFieldLevel: _elementFieldLevel,
           ),
       ],
     );
@@ -445,6 +451,7 @@ class ConvexStrategyRepository {
             // snapshot without the pages in the server's trash.
             acceptsTrashedPagesLeftOut: const ConvexOptional.present(true),
             acceptsPictureIds: const ConvexOptional.present(true),
+            elementFieldLevel: _elementFieldLevel,
             includeContentVersion: forOfflineCopy
                 ? const ConvexOptional.present(true)
                 : const ConvexOptional.absent(),
@@ -607,6 +614,7 @@ class ConvexStrategyRepository {
       checkTrashedPageDeletes: const ConvexOptional.present(true),
       // This client keeps an image's picture id (PlacedImage.assetId).
       acceptsPictureIds: const ConvexOptional.present(true),
+      elementFieldLevel: _elementFieldLevel,
     );
     return result.results.map(_opAck).toList(growable: false);
   }

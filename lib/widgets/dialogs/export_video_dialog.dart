@@ -13,6 +13,7 @@ import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/providers/navigation_geometry_provider.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/services/export_save_path.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/services/video_export/browser_video_sink.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
@@ -132,14 +133,8 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
       // encoder. The browser downloads the finished file.
       String? outputPath;
       if (!kIsWeb) {
-        final selectedOutputPath = await FilePicker.platform.saveFile(
-          type: FileType.custom,
-          dialogTitle: 'Please select an output file:',
-          fileName: fileName,
-          allowedExtensions: [extension],
-        );
-        if (selectedOutputPath == null) return;
-        outputPath = ensureMovExtension(selectedOutputPath);
+        outputPath = await chooseExportPath(fileName);
+        if (outputPath == null) return;
       }
       sink = QuickTimeAnimationSink(fps: quality.fps, outputPath: outputPath);
     } else if (kIsWeb) {
@@ -170,16 +165,11 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         );
         return;
       }
-      final selectedOutputPath = await FilePicker.platform.saveFile(
-        type: FileType.custom,
-        dialogTitle: 'Please select an output file:',
-        fileName: fileName,
-        allowedExtensions: [extension],
-      );
-      if (selectedOutputPath == null) return;
+      final outputPath = await chooseExportPath(fileName);
+      if (outputPath == null) return;
       sink = FfmpegVideoSink(
         binary: ffmpegBinary,
-        outputPath: ensureMp4Extension(selectedOutputPath),
+        outputPath: outputPath,
         quality: quality,
       );
     }

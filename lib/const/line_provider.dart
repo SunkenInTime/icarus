@@ -1273,7 +1273,10 @@ class LineUpProvider extends Notifier<LineUpState> {
       origins.add(
         LineUpOrigin(
           id: originId,
-          agent: placement.draftAgent!.copyWith(lineUpID: originId),
+          // A lineup has notes of its own, and items in a lineup take no
+          // caption.
+          agent: placement.draftAgent!.copyWith(lineUpID: originId)
+            ..caption = null,
         ),
       );
     }
@@ -1281,7 +1284,8 @@ class LineUpProvider extends Notifier<LineUpState> {
       landings.add(
         LineUpLanding(
           id: landingId,
-          ability: placement.draftAbility!.copyWith(lineUpID: landingId),
+          ability: placement.draftAbility!.copyWith(lineUpID: landingId)
+            ..caption = null,
         ),
       );
     }

@@ -42,6 +42,7 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/services/cloud_work_sent.dart';
+import 'package:icarus/services/export_save_path.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/services/image_file_name.dart';
 import 'package:path/path.dart' as path;
@@ -1955,6 +1956,9 @@ class StrategyImportExportService {
             globals.showRegionNames ?? currentPreferences.showRegionNames,
         backgroundDotOpacity: globals.backgroundDotOpacity?.clamp(0.0, 1.0) ??
             currentPreferences.backgroundDotOpacity,
+        viewConeOpacity: globals.viewConeOpacity
+                ?.clamp(AppPreferences.minViewConeOpacity, 1.0) ??
+            currentPreferences.viewConeOpacity,
         // Written straight to storage, past the colour library that limits
         // what the colour pickers have to draw, so the limit applies here.
         customColorValues: globals.hasCustomColorValues
@@ -2216,11 +2220,8 @@ class StrategyImportExportService {
     try {
       // The staging directory holds one directory, named for the folder.
       final folderDirectory = stagingDirectory.listSync().single;
-      final outputFile = await FilePicker.platform.saveFile(
-        type: FileType.custom,
-        dialogTitle: 'Please select an output file:',
-        fileName: '${path.basename(folderDirectory.path)}.zip',
-        allowedExtensions: ['zip'],
+      final outputFile = await chooseExportPath(
+        '${path.basename(folderDirectory.path)}.zip',
       );
 
       if (outputFile == null) return;
@@ -2243,11 +2244,8 @@ class StrategyImportExportService {
     final stagingDirectory = await buildLibraryExportDirectoryForTest();
 
     try {
-      final outputFile = await FilePicker.platform.saveFile(
-        type: FileType.custom,
-        dialogTitle: 'Please select an output file:',
-        fileName: buildLibraryBackupFileName(DateTime.now()),
-        allowedExtensions: ['zip'],
+      final outputFile = await chooseExportPath(
+        buildLibraryBackupFileName(DateTime.now()),
       );
 
       if (outputFile == null) return;
@@ -2706,6 +2704,7 @@ class StrategyImportExportService {
       showUltOrbs: appPreferences?.showUltOrbs,
       showRegionNames: appPreferences?.showRegionNames,
       backgroundDotOpacity: appPreferences?.backgroundDotOpacity,
+      viewConeOpacity: appPreferences?.viewConeOpacity,
       customColorValues: appPreferences?.customColorValues ?? const [],
       favoriteAgents: favoriteAgents,
     );
@@ -2881,11 +2880,8 @@ class StrategyImportExportService {
     sameAccount();
     await _ensureRemoteAssetsCached(snapshot);
     final strategy = strategyDataFromRemoteSnapshot(snapshot);
-    final outputFile = await FilePicker.platform.saveFile(
-      type: FileType.custom,
-      dialogTitle: 'Please select an output file:',
-      fileName: '${sanitizeStrategyFileName(strategy.name)}.ica',
-      allowedExtensions: ['ica'],
+    final outputFile = await chooseExportPath(
+      '${sanitizeStrategyFileName(strategy.name)}.ica',
     );
     if (outputFile == null) return false;
     await zipStrategyData(strategy: strategy, outputFilePath: outputFile);
@@ -2895,12 +2891,8 @@ class StrategyImportExportService {
   Future<void> exportFile(String id) async {
     await ref.read(strategyProvider.notifier).forceSaveNow(id);
 
-    final outputFile = await FilePicker.platform.saveFile(
-      type: FileType.custom,
-      dialogTitle: 'Please select an output file:',
-      fileName:
-          '${sanitizeStrategyFileName(ref.read(strategyProvider).strategyName ?? "new strategy")}.ica',
-      allowedExtensions: ['ica'],
+    final outputFile = await chooseExportPath(
+      '${sanitizeStrategyFileName(ref.read(strategyProvider).strategyName ?? "new strategy")}.ica',
     );
 
     if (outputFile == null) return;

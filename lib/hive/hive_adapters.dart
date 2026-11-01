@@ -86,7 +86,9 @@ const int ellipseDrawingAdapterTypeId = 31;
 
 /// Writes the record desktop 4.6.3 writes, so a library rolled back to that
 /// release keeps every agent and firearm. Cloud builds before the main merge
-/// left out field 7 when there was no firearm; reading defaults it.
+/// left out field 7 when there was no firearm; reading defaults it. Field 8,
+/// the caption, is written only when set, so an agent without one stays the
+/// record 4.6.3 writes. Older builds read it and ignore it.
 class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
   @override
   final typeId = placedAgentAdapterTypeId;
@@ -105,13 +107,16 @@ class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
       lineUpID: fields[5] as String?,
       state: fields[6] == null ? AgentState.none : fields[6] as AgentState,
       weapon: fields[7] == null ? WeaponType.none : fields[7] as WeaponType,
-    )..isDeleted = fields[3] as bool;
+    )
+      ..isDeleted = fields[3] as bool
+      ..caption = fields[8] as String?;
   }
 
   @override
   void write(BinaryWriter writer, PlacedAgent obj) {
+    final caption = obj.caption;
     writer
-      ..writeByte(8)
+      ..writeByte(caption == null ? 8 : 9)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -128,12 +133,19 @@ class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
       ..write(obj.state)
       ..writeByte(7)
       ..write(obj.weapon);
+    if (caption != null) {
+      writer
+        ..writeByte(8)
+        ..write(caption);
+    }
   }
 }
 
 /// Writes the record desktop 4.6.3 writes, visual state in field 9. Cloud
 /// builds before the main merge kept it as primitives in fields 10-14 instead;
-/// reading prefers those when present.
+/// reading prefers those when present. Field 15, the caption, is written only
+/// when set, so an ability without one stays the record 4.6.3 writes. Older
+/// builds read it and ignore it.
 class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
   @override
   final typeId = placedAbilityAdapterTypeId;
@@ -168,13 +180,16 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       rotation: fields[2] == null ? 0.0 : (fields[2] as num).toDouble(),
       visualState: visualState,
       armLengthsMeters: (fields[8] as List?)?.cast<double>(),
-    )..isDeleted = fields[4] as bool;
+    )
+      ..isDeleted = fields[4] as bool
+      ..caption = fields[15] as String?;
   }
 
   @override
   void write(BinaryWriter writer, PlacedAbility obj) {
+    final caption = obj.caption;
     writer
-      ..writeByte(10)
+      ..writeByte(caption == null ? 10 : 11)
       ..writeByte(0)
       ..write(obj.data)
       ..writeByte(1)
@@ -195,6 +210,11 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       ..write(obj.armLengthsMeters)
       ..writeByte(9)
       ..write(obj.visualState);
+    if (caption != null) {
+      writer
+        ..writeByte(15)
+        ..write(caption);
+    }
   }
 }
 

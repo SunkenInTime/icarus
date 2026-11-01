@@ -199,9 +199,12 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
           supportId: support?.id,
         );
 
+    final radius = coordinates.worldHeightToScreen(widget.range);
+    // A full circle's area reaches below its apex too, and a cone's area is
+    // all the coverage layer lets it paint.
     final size = Size(
-      coordinates.worldHeightToScreen(widget.range) * 2,
-      coordinates.worldHeightToScreen(widget.range),
+      radius * 2,
+      widget.angle >= 2 * math.pi ? radius * 2 : radius,
     );
     final paintInputs = (
       result.cone,
@@ -215,7 +218,7 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
     if (_paintInputs == paintInputs) {
       return ConeArea(size: size, painter: _painter!, fallback: _painter!);
     }
-    final apex = Offset(size.width / 2, size.height);
+    final apex = Offset(radius, radius);
     final inverse = -widget.rotation;
     final cosine = math.cos(inverse), sine = math.sin(inverse);
 
@@ -257,7 +260,7 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
       receiver: _rotatedReceiver!,
       receiverOffset: Offset(transform[12], transform[13]),
       apex: apex,
-      radius: coordinates.worldHeightToScreen(widget.range),
+      radius: radius,
       opacity: widget.opacity,
       floors: result.cone.floors.isEmpty
           ? null

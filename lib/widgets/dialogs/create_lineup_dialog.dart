@@ -13,6 +13,7 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/clipboard_service.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
@@ -117,6 +118,48 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
 
   // While Save queues the images, the dialog cannot be closed.
   bool _saving = false;
+
+  /// Pastes on their way to becoming drafts. Done waits for them.
+  final Set<Future<void>> _pastes = {};
+
+  void _startPaste() {
+    if (_saving) return;
+    late final Future<void> paste;
+    paste = _pasteImage().catchError((Object error, StackTrace stackTrace) {
+      AppErrorReporter.reportError(
+        'Could not add a pasted image: $error',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'create_lineup_dialog.paste',
+      );
+    }).whenComplete(() {
+      if (mounted) setState(() => _pastes.remove(paste));
+    });
+    setState(() => _pastes.add(paste));
+  }
+
+  Future<void> _pasteImage() async {
+    final image = await ClipboardService.trySelectImageFromClipboard();
+    if (image == null) {
+      Settings.showToast(
+        message: 'No image found in clipboard',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+
+    final bytes = await image.saved;
+    final fileExtension = PlacedImageSerializer.detectImageFormat(bytes);
+    if (fileExtension == null) {
+      Settings.showToast(
+        message: 'Clipboard image type not supported',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+
+    await _addDraftImage(bytes, fileExtension);
+  }
 
   Future<void> _addDraftImage(Uint8List bytes, String fileExtension) async {
     final SimpleImageData? image;
@@ -264,13 +307,16 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       return;
     }
 
+    setState(() => _saving = true);
+    await Future.wait(_pastes.toList());
+    if (_closedForLostEditAccess()) return;
+
     // Cloud images are queued before the lineup references them, so a
     // lineup never points at an image the server will not receive.
     final imagesNeedingUpload = _imagePaths
         .where((image) => !_initialImageIds.contains(image.id))
         .toList(growable: false);
     // The queue owns these images from here, before their jobs are written.
-    setState(() => _saving = true);
     final handedOver = _drafts.handOver();
     try {
       await _enqueueLineupMediaJobs(images: imagesNeedingUpload);
@@ -385,6 +431,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
             notesController: _notesController,
             youtubeLinkController: _youtubeLinkController,
             images: _imagePaths,
+            pasting: _pastes.isNotEmpty,
             onAddImage: () async {
               FilePickerResult? result = await FilePicker.platform.pickFiles(
                 allowMultiple: false,
@@ -401,30 +448,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                   picked.bytes ?? await picked.xFile.readAsBytes();
               await _addDraftImage(imageBytes, fileExtension);
             },
-            onPasteImage: () async {
-              final (bytes, _) =
-                  await ClipboardService.trySelectImageFromClipboard();
-              if (bytes == null) {
-                Settings.showToast(
-                  message: 'No image found in clipboard',
-                  backgroundColor: Settings.tacticalVioletTheme.destructive,
-                );
-                return;
-              }
-
-              final fileExtension =
-                  PlacedImageSerializer.detectImageFormat(bytes);
-
-              if (fileExtension == null) {
-                Settings.showToast(
-                  message: 'Clipboard image type not supported',
-                  backgroundColor: Settings.tacticalVioletTheme.destructive,
-                );
-                return;
-              }
-
-              await _addDraftImage(bytes, fileExtension);
-            },
+            onPasteImage: _startPaste,
             onRemoveImage: (index) {
               final removed = _imagePaths[index];
               setState(() => _imagePaths.removeAt(index));

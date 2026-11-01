@@ -210,6 +210,7 @@ class ArchiveGlobals {
     required this.showUltOrbs,
     required this.showRegionNames,
     required this.backgroundDotOpacity,
+    this.viewConeOpacity,
     required this.customColorValues,
     this.hasCustomColorValues = true,
     required this.favoriteAgents,
@@ -221,6 +222,7 @@ class ArchiveGlobals {
   final bool? showUltOrbs;
   final bool? showRegionNames;
   final double? backgroundDotOpacity;
+  final double? viewConeOpacity;
   final List<int> customColorValues;
   final bool hasCustomColorValues;
   final List<String> favoriteAgents;
@@ -236,6 +238,7 @@ class ArchiveGlobals {
         'showUltOrbs': showUltOrbs,
         'showRegionNames': showRegionNames,
         'backgroundDotOpacity': backgroundDotOpacity,
+        'viewConeOpacity': viewConeOpacity,
         'customColorValues': customColorValues,
       },
       'favoriteAgents': favoriteAgents,
@@ -273,6 +276,9 @@ class ArchiveGlobals {
       backgroundDotOpacity: appPreferencesMap == null
           ? null
           : _readNullableDouble(appPreferencesMap, 'backgroundDotOpacity'),
+      viewConeOpacity: appPreferencesMap == null
+          ? null
+          : _readNullableDouble(appPreferencesMap, 'viewConeOpacity'),
       customColorValues: appPreferencesMap == null
           ? const []
           : _readOptionalList(appPreferencesMap, 'customColorValues')

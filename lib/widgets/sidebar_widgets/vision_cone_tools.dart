@@ -43,6 +43,11 @@ class VisionConeTools extends ConsumerWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      _VisionConePresetTile.fullCircle(
+                        label: '360',
+                        icon: LucideIcons.radar,
+                      ),
+                      SizedBox(width: 2),
                       _VisionConePresetTile(
                         type: UtilityType.viewCone180,
                         label: '103',
@@ -85,19 +90,30 @@ class VisionConeTools extends ConsumerWidget {
 
 class _VisionConePresetTile extends ConsumerWidget {
   const _VisionConePresetTile({
-    required this.type,
+    required UtilityType this.type,
     required this.label,
     required this.icon,
   });
 
-  final UtilityType type;
+  const _VisionConePresetTile.fullCircle({
+    required this.label,
+    required this.icon,
+  }) : type = null;
+
+  /// The preset placed, or null for the full circle.
+  final UtilityType? type;
   final String label;
   final IconData icon;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final viewConeUtility = UtilityData.getViewConePreset(type);
-    final data = VisionConeToolData.fromType(type);
+    final type = this.type;
+    final viewConeUtility = type == null
+        ? UtilityData.fullCircleCone
+        : UtilityData.getViewConePreset(type);
+    final data = type == null
+        ? VisionConeToolData.fullCircle()
+        : VisionConeToolData.fromType(type);
 
     return Draggable<VisionConeToolData>(
       data: data,
@@ -146,9 +162,9 @@ class _VisionConePresetTile extends ConsumerWidget {
                   PlacedUtility(
                     position: centeredTopLeft,
                     id: uuid.v4(),
-                    type: type,
+                    type: data.type,
                     angle: data.angle,
-                  ),
+                  )..length = data.length,
                 );
           },
         ),

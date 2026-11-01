@@ -19,6 +19,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
+import 'package:icarus/providers/caption_card_provider.dart';
 
 enum _RectangleResizeHandle { none, left, right, top, bottom }
 
@@ -43,6 +44,15 @@ class PlacedCustomRectangleWidget extends ConsumerStatefulWidget {
 
 class _PlacedCustomRectangleWidgetState
     extends ConsumerState<PlacedCustomRectangleWidget> {
+  late final CaptionCardNotifier _captionCard;
+  final _captionRegion = Object();
+
+  @override
+  void dispose() {
+    _captionCard.itemExited(_captionRegion);
+    super.dispose();
+  }
+
   static const double _minWidthMeters = 0.5;
   static const double _maxWidthMeters = 30.0;
   static const double _minLengthMeters = 1.0;
@@ -85,6 +95,7 @@ class _PlacedCustomRectangleWidgetState
   @override
   void initState() {
     super.initState();
+    _captionCard = ref.read(captionCardProvider.notifier);
     _localWidthMeters = widget.utility.customWidth;
     _localLengthMeters = widget.utility.customLength;
     _localRotation = CoordinateSystem.instance.rotationForSide(
@@ -264,11 +275,13 @@ class _PlacedCustomRectangleWidgetState
                       child: MouseRegion(
                         opaque: false,
                         onEnter: (_) {
+                          _captionCard.itemEntered(widget.id, _captionRegion);
                           setState(() {
                             _isShapeHovered = true;
                           });
                         },
                         onExit: (_) {
+                          _captionCard.itemExited(_captionRegion);
                           setState(() {
                             _isShapeHovered = false;
                           });
@@ -496,38 +509,41 @@ class _PlacedCustomRectangleWidgetState
     return Positioned(
       left: insetX + handleCenter.dx - (hitSize / 2),
       top: insetY + handleCenter.dy - (hitSize / 2),
-      child: ShapeIndicatorFade(
-        visible: showIndicators,
-        child: MouseRegion(
-          cursor: shapeRotationMouseCursor(active: _isRotating),
-          onEnter: (_) {
-            setState(() {
-              _isRotationHandleHovered = true;
-            });
-          },
-          onExit: (_) {
-            setState(() {
-              _isRotationHandleHovered = false;
-            });
-          },
-          child: GestureDetector(
-            key: const ValueKey('custom-rectangle-rotate-top-center'),
-            behavior: HitTestBehavior.opaque,
-            onPanStart: (details) => _startRotationDrag(details.globalPosition),
-            onPanUpdate: (details) =>
-                _updateRotationDrag(details.globalPosition),
-            onPanEnd: (_) => _commitRotation(),
-            onPanCancel: _cancelRotation,
-            child: SizedBox(
-              width: hitSize,
-              height: hitSize,
-              child: Center(
-                child: Transform.rotate(
-                  angle: -rotation,
-                  child: _RotationBadge(
-                    size: badgeSize,
-                    isActive: _isRotating,
-                    isEmphasized: _isRotating || _isRotationHandleHovered,
+      child: EditorItemHandle(
+        child: ShapeIndicatorFade(
+          visible: showIndicators,
+          child: MouseRegion(
+            cursor: shapeRotationMouseCursor(active: _isRotating),
+            onEnter: (_) {
+              setState(() {
+                _isRotationHandleHovered = true;
+              });
+            },
+            onExit: (_) {
+              setState(() {
+                _isRotationHandleHovered = false;
+              });
+            },
+            child: GestureDetector(
+              key: const ValueKey('custom-rectangle-rotate-top-center'),
+              behavior: HitTestBehavior.opaque,
+              onPanStart: (details) =>
+                  _startRotationDrag(details.globalPosition),
+              onPanUpdate: (details) =>
+                  _updateRotationDrag(details.globalPosition),
+              onPanEnd: (_) => _commitRotation(),
+              onPanCancel: _cancelRotation,
+              child: SizedBox(
+                width: hitSize,
+                height: hitSize,
+                child: Center(
+                  child: Transform.rotate(
+                    angle: -rotation,
+                    child: _RotationBadge(
+                      size: badgeSize,
+                      isActive: _isRotating,
+                      isEmphasized: _isRotating || _isRotationHandleHovered,
+                    ),
                   ),
                 ),
               ),
