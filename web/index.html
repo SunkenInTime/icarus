@@ -171,6 +171,18 @@
         loading.removeAttribute('role');
       }, true);
 
+      // shadcn_ui turns the browser's menu off only while a right-click lands on
+      // something with its own menu, so a right-click on an open menu or the
+      // empty map got Back, Refresh and Save as over the app. Only the app's
+      // drawn surface goes: text fields and selectable text are real elements
+      // on top of it, and they keep Cut, Copy and Paste.
+      window.addEventListener('contextmenu', function (event) {
+        var surface = event.composedPath()[0].tagName;
+        if (surface === 'FLUTTER-VIEW' || surface === 'FLT-SEMANTICS') {
+          event.preventDefault();
+        }
+      });
+
       window.addEventListener('flutter-first-frame', function () {
         loading.classList.add('done');
         setTimeout(function () {
