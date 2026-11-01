@@ -40,7 +40,15 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 class InteractiveMap extends ConsumerStatefulWidget {
   const InteractiveMap({
     super.key,
+    this.sideBarWidth,
+    this.showDeleteArea = true,
   });
+
+  /// What to leave free on the right for the panel over the map. Null is the
+  /// desktop's panel, or nothing for a view-only reader.
+  final double? sideBarWidth;
+
+  final bool showDeleteArea;
 
   @override
   ConsumerState<ConsumerStatefulWidget> createState() => _InteractiveMapState();
@@ -172,7 +180,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
     );
     // A view-only reader has no sidebar, so the map takes its width.
     final viewOnly = ref.watch(isViewOnlyStrategyProvider);
-    final double sideBarWidth = viewOnly ? 0 : Settings.sideBarReservedWidth;
+    final double sideBarWidth =
+        widget.sideBarWidth ?? (viewOnly ? 0 : Settings.sideBarReservedWidth);
     final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
     final mapColorMapper = MapSvgColorMapper.forPalette(effectivePalette);
 
@@ -527,7 +536,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const HoveredMapItemNameCard(),
-                            if (!viewOnly)
+                            if (!viewOnly && widget.showDeleteArea)
                               IgnorePointer(
                                 ignoring: !canEditPages,
                                 child: const DeleteArea(),

@@ -34,6 +34,7 @@ import 'package:icarus/widgets/touch_strategy_viewer.dart';
 import 'package:icarus/widgets/turn_phone_notice.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
+import 'package:icarus/widgets/phone_directions.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -424,6 +425,13 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       ),
     );
     final window = MediaQuery.sizeOf(context);
+    final mockDir = Uri.base.queryParameters['dir'];
+    if (mockDir != null && window.width > window.height) {
+      return PhoneDirectionMock(
+        dir: mockDir,
+        state: Uri.base.queryParameters['state'] ?? 'open',
+      );
+    }
     return StrategyAccessWatcher(
       onLeave: _leaveToLibrary,
       // The same tree either way up, so turning the phone keeps the editor.
