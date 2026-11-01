@@ -117,6 +117,7 @@ void startDrive() {
   final env = Platform.environment;
   final script = env['ICARUS_DRIVE_SCRIPT'];
   if (script == null) return;
+  _ignoreOsFocus();
   _logPath = env['ICARUS_DRIVE_LOG'];
   _runId = env['ICARUS_DRIVE_RUN'] ??
       DateTime.now().microsecondsSinceEpoch.toRadixString(36);
@@ -501,6 +502,32 @@ const _keys = {
 var _keyTime = 0;
 
 /// Presses [names] in order and lets go in reverse, as hands do.
+/// Keeps other windows from changing what the script is testing. When one
+/// takes the foreground, Flutter parks keyboard focus at the root of the focus
+/// tree: a text field blurs and a driver key reaches no widget. On a desktop
+/// shared with other driver runs that happens all the time, so a driver run
+/// ignores OS focus. It needs none: its input is sent inside the process.
+void _ignoreOsFocus() {
+  final binding = WidgetsBinding.instance;
+  binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  binding.platformDispatcher.onViewFocusChange = (_) {};
+  SystemChannels.lifecycle.setMessageHandler((_) async => null);
+}
+
+/// Fails a key step that would reach no widget, instead of logging ok.
+Future<void> _expectKeyFocus() async {
+  try {
+    await _waitFor(
+      () => FocusManager.instance.primaryFocus?.context != null,
+      2,
+    );
+  } on TimeoutException {
+    throw StateError(
+      'no keyboard focus for this key: ${FocusManager.instance.primaryFocus}',
+    );
+  }
+}
+
 void _press(List<String> names) {
   final events = <KeyEvent>[
     for (final name in names)
@@ -720,10 +747,12 @@ Future<void> _run(Map<String, dynamic> step) async {
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await _frames();
     case 'key':
+      await _expectKeyFocus();
       _press([value as String]);
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await _frames();
     case 'keyCombo':
+      await _expectKeyFocus();
       _press((value as List).cast<String>());
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await _frames();
