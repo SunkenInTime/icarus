@@ -387,7 +387,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
                 iconColor: Settings.settingsPersistenceAccent,
                 title: "Autosave",
                 description:
-                    "Save strategies on this device after 15 seconds idle. When off, Icarus asks before you leave unsaved work. Cloud strategies always sync.",
+                    "Save strategies on this device after 15 seconds idle. When off, Icarus asks before you leave unsaved work. Cloud strategies sync either way.",
                 value: appPreferences.autosaveEnabled,
                 onChanged: (value) async {
                   await ref
