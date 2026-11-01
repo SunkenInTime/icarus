@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/maps.dart';
@@ -104,7 +105,8 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
       notice = Settings.showToast(
         message: 'Adding picture…',
         backgroundColor: Settings.tacticalVioletTheme.secondary,
-        autoCloseDuration: null,
+        // Past pngOfBitmap's limit, so no notice outlasts what it describes.
+        autoCloseDuration: const Duration(seconds: 20),
       );
     });
     try {
@@ -122,8 +124,16 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
       if (!added && mounted) _refuse('Clipboard image type not supported');
     } finally {
       slow.cancel();
-      if (notice case final item?) toastification.dismiss(item);
+      if (notice case final item?) _dismissAfterItShows(item);
     }
+  }
+
+  /// A toast joins the screen on the next frame, and dismissing it before
+  /// then does nothing: it would show afterwards and stay.
+  void _dismissAfterItShows(ToastificationItem toast) {
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) => toastification.dismiss(toast))
+      ..ensureVisualUpdate();
   }
 
   Future<void> _pasteItems() async {

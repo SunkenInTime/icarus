@@ -230,6 +230,27 @@ void main() {
     expect(find.text('Adding picture…'), findsNothing);
   });
 
+  testWidgets('a picture ready as the notice appears leaves no notice behind',
+      (tester) async {
+    final saved = Completer<Uint8List>();
+    await pumpEditor(
+      tester,
+      onClipboard: true,
+      holdsItems: false,
+      saved: saved.future,
+    );
+
+    await pressPaste(tester);
+    // Due with the notice, so it finishes before the notice's first frame.
+    Timer(const Duration(milliseconds: 200), () => saved.complete(picture));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(images.added, [picture]);
+    expect(find.text('Adding picture…'), findsNothing);
+  });
+
   testWidgets('a lineup started meanwhile keeps the picture off the page',
       (tester) async {
     final saved = Completer<Uint8List>();
