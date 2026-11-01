@@ -19,6 +19,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
+import 'package:icarus/providers/caption_card_provider.dart';
 
 enum _RectangleResizeHandle { none, left, right, top, bottom }
 
@@ -264,11 +265,17 @@ class _PlacedCustomRectangleWidgetState
                       child: MouseRegion(
                         opaque: false,
                         onEnter: (_) {
+                          ref
+                              .read(captionCardProvider.notifier)
+                              .itemEntered(widget.id);
                           setState(() {
                             _isShapeHovered = true;
                           });
                         },
                         onExit: (_) {
+                          ref
+                              .read(captionCardProvider.notifier)
+                              .itemExited(widget.id);
                           setState(() {
                             _isShapeHovered = false;
                           });

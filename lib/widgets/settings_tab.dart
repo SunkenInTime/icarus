@@ -451,6 +451,19 @@ class _GlobalSettingsSections extends ConsumerWidget {
                   ref.read(mapProvider.notifier).updateUltOrbs(value);
                 },
               ),
+              _SettingsToggleTile(
+                icon: LucideIcons.messageSquareText,
+                iconColor: Settings.settingsMapAccent,
+                title: "Captions",
+                description:
+                    "Show the notes kept on placed items. This device only.",
+                value: appPreferences.showCaptions,
+                onChanged: (value) {
+                  ref
+                      .read(appPreferencesProvider.notifier)
+                      .setShowCaptions(value);
+                },
+              ),
               _SettingsSliderTile(
                 icon: LucideIcons.grip,
                 iconColor: Settings.settingsMapAccent,

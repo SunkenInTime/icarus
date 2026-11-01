@@ -7,6 +7,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/caption_card_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/hovered_map_item_name_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
@@ -52,6 +53,9 @@ class _HoveredMapItemNameCardState
       ref.listenManual(screenshotProvider, (_, __) {
         _syncVisibleName();
       }),
+      ref.listenManual(captionCardProvider, (_, __) {
+        _syncVisibleName();
+      }),
     ];
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -83,6 +87,8 @@ class _HoveredMapItemNameCardState
   }
 
   String? _resolveHoveredName() {
+    // A caption card names its item, so the name doesn't show twice.
+    if (ref.read(captionCardProvider) != null) return null;
     final lineUpTarget = ref.read(hoveredLineUpTargetProvider);
     if (lineUpTarget != null) {
       return _resolveLineUpName(lineUpTarget);

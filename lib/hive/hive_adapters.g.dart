@@ -1096,6 +1096,7 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       showSpawnBarrier: fields[9] == null ? false : fields[9] as bool,
       showUltOrbs: fields[10] == null ? false : fields[10] as bool,
       showRegionNames: fields[11] == null ? false : fields[11] as bool,
+      showCaptions: fields[25] == null ? true : fields[25] as bool,
       pagesBarExpandedHeight:
           fields[2] == null ? 310.0 : (fields[2] as num).toDouble(),
       pagesBarWidth: fields[7] == null ? 224.0 : (fields[7] as num).toDouble(),
@@ -1129,7 +1130,7 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(24)
+      ..writeByte(25)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
@@ -1177,7 +1178,9 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       ..writeByte(23)
       ..write(obj.canvasSelectionHintSeen)
       ..writeByte(24)
-      ..write(obj.viewConeOpacity);
+      ..write(obj.viewConeOpacity)
+      ..writeByte(25)
+      ..write(obj.showCaptions);
   }
 
   @override

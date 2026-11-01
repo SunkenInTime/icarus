@@ -11,6 +11,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_cont
 import 'package:icarus/widgets/draggable_widgets/ability/lineup_ability_stack_selector.dart';
 import 'package:icarus/widgets/dialogs/lineup_panel_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/providers/caption_card_provider.dart';
 
 class MouseWatch extends ConsumerStatefulWidget {
   const MouseWatch({
@@ -337,9 +338,15 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
           );
         }
         if (canEdit) _publishHoveredDeleteTarget();
+        if (widget.deleteTarget?.id case final id?) {
+          ref.read(captionCardProvider.notifier).itemEntered(id);
+        }
         _updateLineUpHoverState(true);
       },
       onExit: (_) {
+        if (widget.deleteTarget?.id case final id?) {
+          ref.read(captionCardProvider.notifier).itemExited(id);
+        }
         _scheduleHoverCleanup();
         _updateLineUpHoverState(false);
       },

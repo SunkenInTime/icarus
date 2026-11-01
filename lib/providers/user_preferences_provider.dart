@@ -118,6 +118,7 @@ class AppPreferences extends HiveObject {
   final bool showSpawnBarrier;
   final bool showUltOrbs;
   final bool showRegionNames;
+  final bool showCaptions;
   final double pagesBarExpandedHeight;
   final double pagesBarWidth;
   final List<int> customColorValues;
@@ -167,6 +168,7 @@ class AppPreferences extends HiveObject {
     this.showSpawnBarrier = false,
     this.showUltOrbs = false,
     this.showRegionNames = false,
+    this.showCaptions = true,
     this.pagesBarExpandedHeight = 310.0,
     this.pagesBarWidth = 224.0,
     List<int>? customColorValues,
@@ -196,6 +198,7 @@ class AppPreferences extends HiveObject {
     bool? showSpawnBarrier,
     bool? showUltOrbs,
     bool? showRegionNames,
+    bool? showCaptions,
     double? pagesBarExpandedHeight,
     double? pagesBarWidth,
     List<int>? customColorValues,
@@ -228,6 +231,7 @@ class AppPreferences extends HiveObject {
       showSpawnBarrier: showSpawnBarrier ?? this.showSpawnBarrier,
       showUltOrbs: showUltOrbs ?? this.showUltOrbs,
       showRegionNames: showRegionNames ?? this.showRegionNames,
+      showCaptions: showCaptions ?? this.showCaptions,
       pagesBarExpandedHeight:
           pagesBarExpandedHeight ?? this.pagesBarExpandedHeight,
       pagesBarWidth: pagesBarWidth ?? this.pagesBarWidth,
@@ -654,6 +658,12 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
   Future<void> setShowUltOrbs(bool visible) {
     return _updatePreferences(
       (current) => current.copyWith(showUltOrbs: visible),
+    );
+  }
+
+  Future<void> setShowCaptions(bool visible) {
+    return _updatePreferences(
+      (current) => current.copyWith(showCaptions: visible),
     );
   }
 

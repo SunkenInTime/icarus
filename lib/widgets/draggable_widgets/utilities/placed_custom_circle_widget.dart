@@ -18,6 +18,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/marker_hit_hole.dart'
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
+import 'package:icarus/providers/caption_card_provider.dart';
 
 class PlacedCustomCircleWidget extends ConsumerStatefulWidget {
   const PlacedCustomCircleWidget({
@@ -195,11 +196,13 @@ class _PlacedCustomCircleWidgetState
               opaque: false,
               hitTestBehavior: HitTestBehavior.translucent,
               onEnter: (_) {
+                ref.read(captionCardProvider.notifier).itemEntered(widget.id);
                 setState(() {
                   _isShapeHovered = true;
                 });
               },
               onExit: (_) {
+                ref.read(captionCardProvider.notifier).itemExited(widget.id);
                 setState(() {
                   _isShapeHovered = false;
                 });
