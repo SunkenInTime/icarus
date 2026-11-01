@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
@@ -83,14 +84,22 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
   @override
   Widget build(BuildContext context) {
     final capabilities = ref.watch(currentStrategyCapabilitiesProvider);
+    // Nobody should delete what they can't see, with a keyboard attached to
+    // a phone and the editor under the turn-your-phone notice.
+    final editorCovered =
+        FormFactor.of(context).coversEditor(MediaQuery.sizeOf(context)) &&
+            ref.watch(strategyProvider.select((value) => value.isOpen)) &&
+            !ref.watch(isViewOnlyStrategyProvider);
 
     // The focus node sits inside Shortcuts, so shortcuts still fire when
     // the node itself holds focus. With the web semantics tree on, a click
     // on an empty part of the page focuses it.
     return Shortcuts(
-      shortcuts: ShortcutInfo.globalShortcutsFor(
-        ref.watch(appPreferencesProvider).customShortcutBindings,
-      ),
+      shortcuts: editorCovered
+          ? const {}
+          : ShortcutInfo.globalShortcutsFor(
+              ref.watch(appPreferencesProvider).customShortcutBindings,
+            ),
       child: Actions(
         actions: {
           NavigationActionIntent: CallbackAction<NavigationActionIntent>(

@@ -423,9 +423,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         ],
       ),
     );
-    final window = MediaQuery.sizeOf(context);
-    final covered =
-        formFactor == FormFactor.phone && window.height > window.width;
+    final covered = formFactor.coversEditor(MediaQuery.sizeOf(context));
     return StrategyAccessWatcher(
       onLeave: _leaveToLibrary,
       // The same tree either way up, so turning the phone keeps the editor.
