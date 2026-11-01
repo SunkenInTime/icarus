@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/weapons.dart';
@@ -494,7 +495,7 @@ class _FilterChip extends StatelessWidget {
             leading: switch (filter) {
               ReplayEventFilter.kills =>
                 const Icon(LucideIcons.crosshair, size: 14),
-              ReplayEventFilter.spike => SvgPicture.asset(
+              ReplayEventFilter.spike => AssetSvg(
                   replaySpikeAsset,
                   height: 13,
                   colorFilter: ColorFilter.mode(ink, BlendMode.srcIn),

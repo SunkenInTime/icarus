@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_drawing.dart';
@@ -1548,7 +1549,7 @@ class _SpikeMark extends StatelessWidget {
             size: 14,
             color: theme.foreground,
           ),
-        _ => SvgPicture.asset(
+        _ => AssetSvg(
             replaySpikeAsset,
             height: 12,
             colorFilter: ColorFilter.mode(theme.foreground, BlendMode.srcIn),

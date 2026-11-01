@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/weapons.dart';
@@ -508,7 +509,7 @@ class ReplayEventLine extends StatelessWidget {
       );
 
   /// The spike, in the muted ink of the other event glyphs.
-  static Widget _spike(_LineSizes sizes) => SvgPicture.asset(
+  static Widget _spike(_LineSizes sizes) => AssetSvg(
         replaySpikeAsset,
         height: sizes.glyph,
         colorFilter: ColorFilter.mode(

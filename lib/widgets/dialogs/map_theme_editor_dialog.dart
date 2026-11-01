@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -156,7 +157,7 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
               child: CanonicalMapArtwork(
                 map: ref.watch(mapProvider).currentMap,
                 isAttack: ref.watch(mapProvider).isAttack,
-                child: SvgPicture.asset(
+                child: AssetSvg(
                   mapAsset,
                   colorMapper: MapSvgColorMapper.forPalette(_palette),
                   fit: BoxFit.contain,

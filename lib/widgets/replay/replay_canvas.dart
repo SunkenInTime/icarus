@@ -4,6 +4,7 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -493,7 +494,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                         child: CanonicalMapArtwork(
                           map: widget.map,
                           isAttack: isAttack,
-                          child: SvgPicture.asset(
+                          child: AssetSvg(
                             'assets/maps/${mapName}_map'
                             '${isAttack ? '' : '_defense'}.svg',
                             colorMapper: MapSvgColorMapper.revealed(palette),
@@ -521,13 +522,23 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                           child: CanonicalMapArtwork(
                             map: widget.map,
                             isAttack: isAttack,
-                            child: SvgPicture.asset(
+                            child: AssetSvg(
                               'assets/maps/${mapName}_map'
                               '${isAttack ? '' : '_defense'}.svg',
                               colorMapper: MapSvgColorMapper.forPalette(palette),
                               fit: BoxFit.contain,
                             ),
                           ),
+                        ),
+                      ),
+                      Positioned(
+                        left: mapLeft,
+                        top: 0,
+                        width: mapWidth,
+                        height: height,
+                        child: MissingMapNotice(
+                          'assets/maps/${mapName}_map'
+                          '${isAttack ? '' : '_defense'}.svg',
                         ),
                       ),
                       // View cones: the map as they reveal it, shown
@@ -580,7 +591,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                               child: Transform.flip(
                                 flipX: !isAttack,
                                 flipY: !isAttack,
-                                child: SvgPicture.asset(
+                                child: AssetSvg(
                                   'assets/maps/${mapName}_spawn_walls.svg',
                                   semanticsLabel: 'Barrier',
                                   fit: BoxFit.contain,

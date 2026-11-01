@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
@@ -840,7 +841,7 @@ class _ProfileCodePreview extends ConsumerWidget {
                       child: CanonicalMapArtwork(
                         map: mapState.currentMap,
                         isAttack: mapState.isAttack,
-                        child: SvgPicture.asset(
+                        child: AssetSvg(
                           mapAsset,
                           colorMapper:
                               MapSvgColorMapper.forPalette(code.toPalette()),

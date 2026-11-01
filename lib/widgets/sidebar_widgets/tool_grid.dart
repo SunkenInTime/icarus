@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/default_placement.dart';
@@ -385,7 +386,7 @@ class ToolGrid extends ConsumerWidget {
                             ),
                           );
                     },
-                    icon: SvgPicture.asset(
+                    icon: const AssetSvg(
                       "assets/spike.svg",
                       width: 20,
                       height: 20,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/maps.dart';
@@ -350,7 +351,7 @@ class _MapCanvasSkeleton extends StatelessWidget {
                                   child: CanonicalMapArtwork(
                                     map: mapValue,
                                     isAttack: isAttack,
-                                    child: SvgPicture.asset(
+                                    child: AssetSvg(
                                       assetName,
                                       semanticsLabel: 'Map',
                                       fit: BoxFit.contain,
