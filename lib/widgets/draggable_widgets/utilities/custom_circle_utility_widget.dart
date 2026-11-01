@@ -20,6 +20,7 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
     this.mapScale,
     this.showCenterMarker = true,
     this.centerMarkerVisible = true,
+    this.outlinesCircle = true,
   });
 
   final String? id;
@@ -32,6 +33,11 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
   /// When false the center marker fades out but keeps its hit area, so the
   /// shape can still be grabbed the moment hover reveals it.
   final bool centerMarkerVisible;
+
+  /// Whether this circle is an item on its own, laid out for the largest
+  /// circle, so it outlines the one drawn. One around an agent leaves that to
+  /// the agent's icon.
+  final bool outlinesCircle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -85,11 +91,7 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
         children: [
           Center(
             child: IgnorePointer(
-              // A circle with its own center marker is an item on its own,
-              // laid out for the largest circle, so it outlines the one
-              // drawn. One around an agent leaves that to the agent's icon.
-              child:
-                  showCenterMarker ? EditorItemOutline(child: circle) : circle,
+              child: outlinesCircle ? EditorItemOutline(child: circle) : circle,
             ),
           ),
           if (showCenterMarker)

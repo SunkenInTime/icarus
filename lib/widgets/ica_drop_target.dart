@@ -7,7 +7,29 @@ import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/widgets/replay/open_replays.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+/// Says what came in and what didn't. Updating is the one thing a user can do
+/// about files from a newer Icarus, so the summary always asks for it.
 String buildImportSummaryMessage(ImportBatchResult result) {
+  final newerCount = result.issues
+      .where((issue) => issue.code == ImportIssueCode.newerVersion)
+      .length;
+  if (!result.hasImports &&
+      newerCount > 0 &&
+      newerCount == result.issues.length) {
+    return newerCount == 1
+        ? NewerVersionImportException.userMessage
+        : 'These strategies were created in a newer version of Icarus. '
+            'Please update the app and try again.';
+  }
+
+  final summary = _countedImportSummary(result);
+  if (newerCount == 0) return summary;
+  final wasLabel = newerCount == 1 ? 'was' : 'were';
+  return '$summary $newerCount $wasLabel created in a newer version of Icarus. '
+      'Please update the app and try again.';
+}
+
+String _countedImportSummary(ImportBatchResult result) {
   final skippedCount = result.issues.length;
   final skippedLabel = skippedCount == 1 ? 'file' : 'files';
   final extraSegments = <String>[];

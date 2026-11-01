@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -33,6 +34,7 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:path/path.dart' as p;
 
@@ -180,6 +182,50 @@ void main() {
     await imageFile(id, '$id-image').create(recursive: true);
     await imageFile(id, '$id-image').writeAsBytes([1, 2, 3]);
   }
+
+  group('Import .ica inside a cloud folder', () {
+    final fixture = File('test/fixtures/strategy_integrity/base-test.ica');
+
+    setUp(() => FilePicker.platform = _PickedFile(fixture.absolute.path));
+
+    Future<void> importInto(String cloudFolderId) async {
+      await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
+      cloud.folders[cloudFolderId] =
+          _CloudFolder(cloudFolderId, 'Plays', null, null);
+      open();
+      container
+          .read(folderProvider.notifier)
+          .openFolder(folderId: cloudFolderId, store: LibraryWorkspace.cloud);
+      await StrategyImportExportService(container).importFromFilePicker();
+    }
+
+    test('lands in that folder and leaves nothing on this device', () async {
+      await importInto('plays');
+
+      final created = cloud.strategies.values.single;
+      expect(created.name, 'base-test');
+      expect(created.folderId, 'plays');
+      expect(created.unfinished, isFalse);
+      expect(strategies().values, isEmpty);
+      expect(
+        messages,
+        [('Importing "base-test" to the cloud…', false)],
+        reason: 'the import itself says it worked',
+      );
+    });
+
+    test('stays on this device when it cannot reach the folder', () async {
+      cloud.refuseBatchesOf = {'base-test'};
+
+      await importInto('plays');
+
+      expect(cloud.strategies, isEmpty);
+      expect(strategies().values.single.name, 'base-test');
+      expect(strategies().values.single.folderID, isNull,
+          reason: 'never a cloud id in the local library');
+      expect(messages.last.$2, isTrue, reason: 'the user is told');
+    });
+  });
 
   test('a strategy lands whole in the cloud, then leaves this device',
       () async {
@@ -928,6 +974,36 @@ class _CloudStrategy {
   var madeUnfinished = false;
   String? themeProfileId;
   Map<String, dynamic>? themePalette;
+}
+
+class _PickedFile extends FilePicker {
+  _PickedFile(this.filePath);
+
+  final String filePath;
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = true,
+    int compressionQuality = 0,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) async {
+    return FilePickerResult([
+      PlatformFile(
+        path: filePath,
+        name: p.basename(filePath),
+        size: File(filePath).lengthSync(),
+      ),
+    ]);
+  }
 }
 
 /// The server, as far as moving uses it.

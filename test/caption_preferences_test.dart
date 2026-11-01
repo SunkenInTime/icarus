@@ -63,5 +63,7 @@ void main() {
 
     expect(read.defaultThemeProfileIdForNewStrategies, 'old-profile');
     expect(read.showCaptions, isTrue);
+    expect(read.includeScreenshotCaptions, isFalse);
+    expect(read.includeVideoCaptions, isFalse);
   });
 }

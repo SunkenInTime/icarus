@@ -851,6 +851,17 @@ void main() {
     expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, isEmpty);
   });
 
+  test('Import .ica lands in the local folder on screen', () async {
+    final file = File(path.join(tempDir.path, 'Picked.ica'));
+    await _writeStrategyFile(file);
+    final current = await _createCurrentFolder(container, name: 'Current');
+    FilePicker.platform = _PickedFile(file.path);
+
+    await StrategyImportExportService(container).importFromFilePicker();
+
+    expect(_strategyByName('Picked').folderID, current.id);
+  });
+
   test('a library backup restored inside a folder keeps its top level',
       () async {
     final zipFile = await _libraryBackupZip(container, tempDir);
@@ -1007,8 +1018,8 @@ void main() {
       await file.writeAsBytes(_zipOf({'renamed-ica.json': _strategyJson()}));
       FilePicker.platform = _PickedFile(file.path);
 
-      final result = await StrategyImportExportService(container)
-          .importBackupFromFilePicker();
+      final result =
+          await StrategyImportExportService(container).importFromFilePicker();
 
       expect(result.strategiesImported, 1);
       expect(result.foldersCreated, 0);
@@ -1020,7 +1031,7 @@ void main() {
       FilePicker.platform = _PickedFile(backup.path);
 
       final result =
-          await StrategyImportExportService(container).loadFromFilePicker();
+          await StrategyImportExportService(container).importFromFilePicker();
 
       expect(result.strategiesImported, 2);
       expect(result.foldersCreated, 1);
@@ -1057,8 +1068,8 @@ void main() {
         expectNothingCreated();
 
         FilePicker.platform = _PickedFile(file.path);
-        final picked = await StrategyImportExportService(container)
-            .importBackupFromFilePicker();
+        final picked =
+            await StrategyImportExportService(container).importFromFilePicker();
         expect(picked.hasImports, isFalse);
         expect(picked.issues.single.code, ImportIssueCode.unsupportedFile);
         expectNothingCreated();
@@ -1083,6 +1094,34 @@ void main() {
     });
 
     tearDown(() => cloudContainer.dispose());
+
+    test('Import .ica at the cloud top level stays in the local library',
+        () async {
+      final file = File(path.join(tempDir.path, 'Picked.ica'));
+      await _writeStrategyFile(file);
+      FilePicker.platform = _PickedFile(file.path);
+
+      await StrategyImportExportService(cloudContainer).importFromFilePicker();
+
+      expect(_strategyByName('Picked').folderID, isNull);
+    });
+
+    test('a folder archive picked inside a cloud folder keeps no cloud parent',
+        () async {
+      final archive = File(path.join(tempDir.path, 'Team Strats.zip'));
+      await archive.writeAsBytes(
+        _zipOf({'Team Strats/default.ica': _strategyJson()}),
+      );
+      cloudContainer.read(folderProvider.notifier).updateID('cloud-plays');
+      FilePicker.platform = _PickedFile(archive.path);
+
+      final result = await StrategyImportExportService(cloudContainer)
+          .importFromFilePicker();
+
+      expect(result.strategiesImported, 1);
+      expect(repository.createdFolders, isEmpty);
+      expect(_folderByName('Team Strats').parentID, isNull);
+    });
 
     test('a dropped folder lands whole in the local library', () async {
       final sourceRoot =
