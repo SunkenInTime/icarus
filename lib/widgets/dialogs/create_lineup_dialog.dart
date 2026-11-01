@@ -143,10 +143,12 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     try {
       image = await ClipboardService.trySelectImageFromClipboard();
     } on ClipboardBusyException {
-      Settings.showToast(
-        message: ClipboardService.busyMessage,
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
-      );
+      if (mounted) {
+        Settings.showToast(
+          message: ClipboardService.busyMessage,
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+      }
       return;
     }
     if (image == null) {

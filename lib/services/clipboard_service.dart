@@ -129,9 +129,9 @@ class ClipboardService {
     }
   }
 
-  /// The clear in progress, if any: a paste right after a copy waits for it,
-  /// or it could find the picture the copy replaced.
-  static Future<void> _cleared = Future.value();
+  /// The latest clear and whether it worked: a paste right after a copy waits
+  /// for it, or it could find the picture the copy replaced.
+  static Future<bool> _cleared = Future.value(true);
 
   static const Set<String> _supportedImageExtensions = {
     'gif',
@@ -171,8 +171,11 @@ class ClipboardService {
   /// a paste, it's read from the clipboard.
   static Future<ClipboardImage?> readPastedImage() async {
     final browserPaste = nextBrowserPaste();
-    await _cleared;
+    final cleared = await _cleared;
+    _cleared = Future.value(true);
     final paste = await browserPaste;
+    // Whatever is there is what the copy failed to replace.
+    if (!cleared) return null;
     if (paste == null) return trySelectImageFromClipboard();
     final picture = paste.picture;
     return picture == null ? null : ClipboardImage(picture, name: _name);
@@ -182,11 +185,12 @@ class ClipboardService {
   /// matters to a later paste.
   static Future<void> clear() => _cleared = _clear();
 
-  static Future<void> _clear() async {
+  static Future<bool> _clear() async {
     try {
       await _whenFree(
         () => Clipboard.setData(const ClipboardData(text: '')),
       );
+      return true;
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
         'Could not clear the clipboard: $error',
@@ -195,6 +199,7 @@ class ClipboardService {
         source: 'clipboard_service.clear',
         promptUser: false,
       );
+      return false;
     }
   }
 

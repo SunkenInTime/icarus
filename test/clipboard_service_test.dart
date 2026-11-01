@@ -79,6 +79,30 @@ void main() {
     expect(calls, ['image', 'files']);
   });
 
+  test('a clear that gave up keeps the picture it missed from pasting',
+      () async {
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') throw refused;
+        return null;
+      },
+    );
+    addTearDown(
+      () => binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    answer((_) => onClipboard());
+
+    await ClipboardService.clear();
+
+    expect(await ClipboardService.readPastedImage(), isNull);
+    expect(calls, isEmpty);
+
+    // Only that paste: a later picture is read as usual.
+    expect((await ClipboardService.readPastedImage())?.bytes, picture);
+  });
+
   test('a paste waits for the clear a copy started', () async {
     final log = <String>[];
     var refusals = 2;

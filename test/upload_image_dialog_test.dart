@@ -10,6 +10,50 @@ import 'package:image/image.dart' as img;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 void main() {
+  testWidgets('a file chosen during a slow clipboard read stays', (
+    tester,
+  ) async {
+    final read = Completer<ClipboardImage?>();
+    final first = img.encodePng(img.Image(width: 4, height: 4));
+    final second = img.encodePng(img.Image(width: 8, height: 8));
+    var reads = 0;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: ShadApp(
+          home: UploadImageDialog(
+            readClipboard: () {
+              reads++;
+              return reads == 1
+                  ? read.future
+                  : Future.value(ClipboardImage(first, name: 'first'));
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(reads, 1);
+
+    // The second read stands for the user choosing a file meanwhile.
+    tester
+        .widget<ShadIconButton>(
+          find.ancestor(
+            of: find.byIcon(LucideIcons.clipboard),
+            matching: find.byType(ShadIconButton),
+          ),
+        )
+        .onPressed!();
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('first'), findsOneWidget);
+    read.complete(ClipboardImage(second, name: 'late'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('first'), findsOneWidget);
+    expect(find.text('late'), findsNothing);
+  });
+
   late Completer<Uint8List> saved;
   late Uint8List shown;
   late List<UploadImageResult?> results;
