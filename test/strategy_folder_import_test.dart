@@ -989,6 +989,19 @@ void main() {
       expect(_strategyByName('renamed').folderID, _folderByName('Mine').id);
     });
 
+    test('a strategy saved under the manifest file\'s name', () async {
+      final file = File(path.join(tempDir.path, 'icarus-metadata.ica'));
+      await file.writeAsBytes(
+        _zipOf({archiveMetadataFileName: _strategyJson()}),
+      );
+
+      final result = await drop(file);
+
+      expect(result.strategiesImported, 1);
+      expect(result.foldersCreated, 0);
+      expect(_strategyByName('icarus-metadata').folderID, isNull);
+    });
+
     test('Import Backup takes an .ica without making a folder', () async {
       final file = File(path.join(tempDir.path, 'renamed-ica'));
       await file.writeAsBytes(_zipOf({'renamed-ica.json': _strategyJson()}));
@@ -1243,6 +1256,9 @@ class _PickedFile extends FilePicker {
     bool lockParentWindow = false,
     bool readSequential = false,
   }) async {
+    // A filter would hide the files that lost their extension.
+    expect(type, FileType.any);
+    expect(allowedExtensions, isNull);
     final file = File(filePath);
     return FilePickerResult([
       PlatformFile(

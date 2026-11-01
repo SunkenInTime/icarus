@@ -107,21 +107,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   }) async {
     if (!ensureFeatureAvailable(ref, PlatformFeature.importFiles)) return;
     try {
-      final result = await import();
-      if (result.hasImports || result.issues.isNotEmpty) {
-        final message = buildImportSummaryMessage(result);
-        if (result.hasImports) {
-          Settings.showToast(
-            message: message,
-            backgroundColor: Settings.tacticalVioletTheme.primary,
-          );
-          if (result.issues.isNotEmpty) {
-            AppErrorReporter.reportWarning(message, source: source);
-          }
-        } else {
-          AppErrorReporter.reportError(message, source: source);
-        }
-      }
+      showImportResult(await import(), source: source);
     } on NewerVersionImportException catch (error, stackTrace) {
       AppErrorReporter.reportError(
         NewerVersionImportException.userMessage,

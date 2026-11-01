@@ -64,6 +64,7 @@ import 'package:icarus/startup/cloud_bootstrap.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
+import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/widgets/replay/open_replays.dart';
@@ -438,7 +439,10 @@ class _MyAppState extends ConsumerState<MyApp> {
 
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
     try {
-      await StrategyImportExportService(ref).loadFromFilePath(filePath);
+      showImportResult(
+        await StrategyImportExportService(ref).loadFromFilePath(filePath),
+        source: 'MyApp._loadFromFilePathWithWarning',
+      );
     } on NewerVersionImportException catch (error, stackTrace) {
       AppErrorReporter.reportError(
         NewerVersionImportException.userMessage,

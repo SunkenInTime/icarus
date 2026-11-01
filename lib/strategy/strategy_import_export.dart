@@ -335,15 +335,10 @@ class StrategyImportExportService {
     );
   }
 
-  Future<void> loadFromFilePath(String filePath) async {
-    final result = await _importFile(
-      file: XFile(filePath),
-      targetFolderId: null,
-    );
-    if (!result.hasImports) {
-      throw FormatException('Not an Icarus strategy or backup: $filePath');
-    }
-  }
+  Future<ImportBatchResult> loadFromFilePath(String filePath) => _importFile(
+        file: XFile(filePath),
+        targetFolderId: null,
+      );
 
   Future<ImportBatchResult> loadFromFilePicker() =>
       _importPickedFile(targetFolderId: null);
@@ -501,7 +496,7 @@ class StrategyImportExportService {
       // folder can hold thousands of files that are neither.
       final head = await file.openRead(0, 64).expand((bytes) => bytes).toList();
       if (String.fromCharCodes(head).trimLeft().startsWith('{') &&
-          _isStrategyJson(await file.readAsString())) {
+          _isStrategyJson(await file.readAsBytes())) {
         return _ImportFileKind.strategy;
       }
     } catch (_) {
@@ -512,34 +507,35 @@ class StrategyImportExportService {
 
   _ImportFileKind? _zipImportKind(Archive archive) {
     final files = archive.where((entry) => entry.isFile);
-    final names = files.map((entry) => normalizeArchivePath(entry.name));
-    if (names.any(
-      (name) => path.posix.basename(name) == archiveMetadataFileName,
-    )) {
-      return _ImportFileKind.archive;
-    }
 
-    // Where and how [_importStrategyFile] looks for a strategy's JSON.
+    // Before the manifest: a strategy saved as "icarus-metadata" holds a file
+    // of that name. Where and how [_importStrategyFile] looks for its JSON.
     final isStrategy = files.any((entry) {
       final name = normalizeArchivePath(entry.name);
       return !name.contains('/') &&
           path.extension(name) == '.json' &&
-          _isStrategyJson(utf8.decode(_archiveFileBytes(entry)));
+          _isStrategyJson(_archiveFileBytes(entry));
     });
     if (isStrategy) return _ImportFileKind.strategy;
 
-    final holdsStrategyFile = names.any((name) {
+    final names = files.map((entry) => normalizeArchivePath(entry.name));
+    final holdsArchiveFile = names.any((name) {
       final baseName = path.posix.basename(name);
-      return !_shouldIgnoreImportedEntityName(baseName) &&
-          path.extension(baseName).toLowerCase() == '.ica';
+      return baseName == archiveMetadataFileName ||
+          (!_shouldIgnoreImportedEntityName(baseName) &&
+              path.extension(baseName).toLowerCase() == '.ica');
     });
-    return holdsStrategyFile ? _ImportFileKind.archive : null;
+    return holdsArchiveFile ? _ImportFileKind.archive : null;
   }
 
   /// The one thing [_importStrategyFile] can't do without is the map.
-  bool _isStrategyJson(String text) {
-    final json = jsonDecode(text);
-    return json is Map<String, dynamic> && json.containsKey('mapData');
+  bool _isStrategyJson(List<int> bytes) {
+    try {
+      final json = jsonDecode(utf8.decode(bytes));
+      return json is Map<String, dynamic> && json.containsKey('mapData');
+    } on FormatException {
+      return false;
+    }
   }
 
   /// Imports [file] as what it is. Throws when a strategy fails to import;
