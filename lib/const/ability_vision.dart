@@ -30,6 +30,12 @@ class AbilityVisionConeSpec {
       angleDegrees: 40,
       maxRangeMeters: 15,
     ),
+    // Prowler: the game files give 60 degrees to each side, and a sight
+    // radius of 15 m. It holds a target it has seen out to 20 m.
+    (AgentType.fade, 0): AbilityVisionConeSpec(
+      angleDegrees: 120,
+      maxRangeMeters: 15,
+    ),
   };
 
   static AbilityVisionConeSpec? forAbility(AbilityInfo ability) {

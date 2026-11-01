@@ -17,12 +17,13 @@ void main() {
   });
 
   group('AbilityVisionConeSpec', () {
-    test('only the four directional abilities have vision cones', () {
+    test('only the five directional abilities have vision cones', () {
       final expected = <(AgentType, int), double>{
         (AgentType.killjoy, 2): 100,
         (AgentType.cypher, 2): 103,
         (AgentType.raze, 0): 40,
         (AgentType.gekko, 1): 40,
+        (AgentType.fade, 0): 120,
       };
 
       for (final agent in AgentData.agents.values) {
@@ -38,10 +39,11 @@ void main() {
       }
     });
 
-    test('Boom Bot and Wingman default to and clamp at 15 meters', () {
+    test('Boom Bot, Wingman and Prowler default to and clamp at 15 meters', () {
       for (final (agentType, index) in [
         (AgentType.raze, 0),
         (AgentType.gekko, 1),
+        (AgentType.fade, 0),
       ]) {
         final ability = AgentData.agents[agentType]!.abilities[index];
         final spec = AbilityVisionConeSpec.forAbility(ability)!;
