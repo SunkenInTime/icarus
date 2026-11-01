@@ -1106,6 +1106,23 @@ void main() {
       expect(_strategyByName('Picked').folderID, isNull);
     });
 
+    test('a folder archive picked inside a cloud folder keeps no cloud parent',
+        () async {
+      final archive = File(path.join(tempDir.path, 'Team Strats.zip'));
+      await archive.writeAsBytes(
+        _zipOf({'Team Strats/default.ica': _strategyJson()}),
+      );
+      cloudContainer.read(folderProvider.notifier).updateID('cloud-plays');
+      FilePicker.platform = _PickedFile(archive.path);
+
+      final result = await StrategyImportExportService(cloudContainer)
+          .importFromFilePicker();
+
+      expect(result.strategiesImported, 1);
+      expect(repository.createdFolders, isEmpty);
+      expect(_folderByName('Team Strats').parentID, isNull);
+    });
+
     test('a dropped folder lands whole in the local library', () async {
       final sourceRoot =
           await Directory(path.join(tempDir.path, 'source', 'Team Strats'))
