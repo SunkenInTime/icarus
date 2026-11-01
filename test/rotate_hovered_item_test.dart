@@ -139,10 +139,10 @@ double _glyphAngle(WidgetTester tester) {
 }
 
 PlacedAbility _plainIcon({double rotation = 0}) {
-  final info = AgentData.agents[AgentType.fade]!.abilities.first;
+  final info = AgentData.agents[AgentType.sova]!.abilities.first;
   expect(info.abilityData, isA<BaseAbility>());
   return PlacedAbility(
-    id: 'prowler',
+    id: 'plain-icon',
     data: info,
     position: const Offset(300, 300),
     rotation: rotation,
@@ -459,15 +459,15 @@ void main() {
     lineUps.setDraftAgent(
       PlacedAgent(
         id: 'draft-agent',
-        type: AgentType.fade,
+        type: AgentType.sova,
         position: const Offset(180, 220),
       ),
     );
-    // Nightfall, turned by its handle before being swapped out.
+    // Hunter's Fury, turned by its handle before being swapped out.
     lineUps.setDraftAbility(
       PlacedAbility(
-        id: 'nightfall',
-        data: AgentData.agents[AgentType.fade]!.abilities.last,
+        id: 'hunters-fury',
+        data: AgentData.agents[AgentType.sova]!.abilities.last,
         position: const Offset(300, 300),
         rotation: math.pi / 4,
       ),
@@ -482,7 +482,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    lineUps.setDraftAbility(_plainIcon().copyWith(id: 'prowler-draft'));
+    lineUps.setDraftAbility(_plainIcon().copyWith(id: 'plain-icon-draft'));
     await tester.pumpAndSettle();
 
     expect(find.byType(AbilityWidget), findsOneWidget);
