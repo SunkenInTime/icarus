@@ -387,19 +387,19 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   alignment: Alignment.topLeft,
                   child: Padding(
                     padding: EdgeInsets.all(8),
-                    child: CanvasChrome(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          StrategyEditBoundary(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CanvasChrome(
+                          child: StrategyEditBoundary(
                             disabledOpacity: 0.55,
                             child: MapSelector(),
                           ),
-                          SizedBox(height: 8),
-                          EditorToolbar(),
-                        ],
-                      ),
+                        ),
+                        SizedBox(height: 8),
+                        EditorToolbar(),
+                      ],
                     ),
                   ),
                 ),

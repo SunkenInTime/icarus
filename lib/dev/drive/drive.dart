@@ -120,6 +120,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/caption_card_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
@@ -132,7 +133,6 @@ import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
-import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 // The driver alone swaps the platform's launcher; the app uses url_launcher.
 // ignore: depend_on_referenced_packages
@@ -897,8 +897,12 @@ Future<void> _run(Map<String, dynamic> step) async {
           type: type,
           position: const Offset(500, 500),
           id: id,
-          customWidth: type == UtilityType.customRectangle ? 2 : null,
-          customLength: type == UtilityType.customRectangle ? 2 : null,
+          customWidth: type == UtilityType.customRectangle
+              ? ((step['size'] ?? 2) as num).toDouble()
+              : null,
+          customLength: type == UtilityType.customRectangle
+              ? ((step['size'] ?? 2) as num).toDouble()
+              : null,
           customDiameter: type == UtilityType.customCircle ? 10 : null,
           customColorValue:
               type == UtilityType.spike ? null : 0xFF22C55E,
@@ -1176,8 +1180,14 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'setCaption':
       setCaption(c, value as String, step['text'] as String);
     case 'logCard':
+      final root = RendererBinding.instance.renderViews.first.child;
       _log('CARD $value ${c.read(captionCardProvider)} '
-          'zoom=${c.read(screenZoomProvider)} links=$_openedLinks');
+          'zoom=${c.read(screenZoomProvider)} links=$_openedLinks chrome=${[
+        if (root is RenderBox)
+          for (final rect in c.read(canvasItemRegistryProvider).chromeIn(root))
+            '${rect.left.round()},${rect.top.round()},'
+                '${rect.right.round()},${rect.bottom.round()}',
+      ]}');
     case 'logCaptions':
       _log('CAPTIONS $value ${jsonEncode({
             for (final item in _placedItems()) item.id: item.caption,

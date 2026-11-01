@@ -18,6 +18,7 @@ import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 /// Geometry shared by every control in the editor's floating toolbar, so the
 /// save button (which swaps between local and cloud variants) matches its
@@ -65,71 +66,73 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     // with the map card above it.
     return Row(
       children: [
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: Settings.tacticalVioletTheme.card,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Settings.tacticalVioletTheme.border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (viewingThroughLink && !signedIn)
+        CanvasChrome(
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Settings.tacticalVioletTheme.card,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Settings.tacticalVioletTheme.border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (viewingThroughLink && !signedIn)
+                  EditorToolbarButton(
+                    style: style,
+                    tooltip: 'View only · Sign in to add it to your library',
+                    onPressed: () => showDialog<void>(
+                      context: context,
+                      builder: (_) => const AuthDialog(),
+                    ),
+                    icon: const Icon(LucideIcons.logIn200),
+                  )
+                else if (viewingThroughLink)
+                  EditorToolbarButton(
+                    key: const ValueKey('editor-add-to-library'),
+                    style: style,
+                    tooltip: 'View only · Add to my library',
+                    onPressed: () => ref
+                        .read(shareLinkControllerProvider.notifier)
+                        .addViewedLinkToLibrary(),
+                    icon: const Icon(LucideIcons.bookmarkPlus200),
+                  )
+                else if (isCloud)
+                  const CloudSyncButton(style: style)
+                else if (allowsLocalSave)
+                  const AutoSaveButton(style: style),
                 EditorToolbarButton(
                   style: style,
-                  tooltip: 'View only · Sign in to add it to your library',
-                  onPressed: () => showDialog<void>(
-                    context: context,
-                    builder: (_) => const AuthDialog(),
-                  ),
-                  icon: const Icon(LucideIcons.logIn200),
-                )
-              else if (viewingThroughLink)
+                  tooltip: 'Export .ica',
+                  onPressed: _exportStrategy,
+                  icon: const Icon(LucideIcons.upload200),
+                ),
                 EditorToolbarButton(
-                  key: const ValueKey('editor-add-to-library'),
                   style: style,
-                  tooltip: 'View only · Add to my library',
-                  onPressed: () => ref
-                      .read(shareLinkControllerProvider.notifier)
-                      .addViewedLinkToLibrary(),
-                  icon: const Icon(LucideIcons.bookmarkPlus200),
-                )
-              else if (isCloud)
-                const CloudSyncButton(style: style)
-              else if (allowsLocalSave)
-                const AutoSaveButton(style: style),
-              EditorToolbarButton(
-                style: style,
-                tooltip: 'Export .ica',
-                onPressed: _exportStrategy,
-                icon: const Icon(LucideIcons.upload200),
-              ),
-              EditorToolbarButton(
-                style: style,
-                tooltip: 'Export video',
-                onPressed: _exportVideo,
-                icon: const Icon(LucideIcons.clapperboard200),
-              ),
-              EditorToolbarButton(
-                style: style,
-                tooltip: 'Screenshot',
-                onPressed: _openScreenshotDialog,
-                icon: const Icon(LucideIcons.camera200),
-              ),
-              const EditorToolbarDivider(),
-              EditorToolbarButton(
-                style: style,
-                tooltip: 'Settings',
-                onPressed: () {
-                  showShadDialog(
-                    context: context,
-                    builder: (context) => const SettingsTab(),
-                  );
-                },
-                icon: const Icon(LucideIcons.settings200),
-              ),
-            ],
+                  tooltip: 'Export video',
+                  onPressed: _exportVideo,
+                  icon: const Icon(LucideIcons.clapperboard200),
+                ),
+                EditorToolbarButton(
+                  style: style,
+                  tooltip: 'Screenshot',
+                  onPressed: _openScreenshotDialog,
+                  icon: const Icon(LucideIcons.camera200),
+                ),
+                const EditorToolbarDivider(),
+                EditorToolbarButton(
+                  style: style,
+                  tooltip: 'Settings',
+                  onPressed: () {
+                    showShadDialog(
+                      context: context,
+                      builder: (context) => const SettingsTab(),
+                    );
+                  },
+                  icon: const Icon(LucideIcons.settings200),
+                ),
+              ],
+            ),
           ),
         ),
       ],

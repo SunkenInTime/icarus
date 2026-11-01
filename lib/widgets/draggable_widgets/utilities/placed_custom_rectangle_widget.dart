@@ -503,38 +503,41 @@ class _PlacedCustomRectangleWidgetState
     return Positioned(
       left: insetX + handleCenter.dx - (hitSize / 2),
       top: insetY + handleCenter.dy - (hitSize / 2),
-      child: ShapeIndicatorFade(
-        visible: showIndicators,
-        child: MouseRegion(
-          cursor: shapeRotationMouseCursor(active: _isRotating),
-          onEnter: (_) {
-            setState(() {
-              _isRotationHandleHovered = true;
-            });
-          },
-          onExit: (_) {
-            setState(() {
-              _isRotationHandleHovered = false;
-            });
-          },
-          child: GestureDetector(
-            key: const ValueKey('custom-rectangle-rotate-top-center'),
-            behavior: HitTestBehavior.opaque,
-            onPanStart: (details) => _startRotationDrag(details.globalPosition),
-            onPanUpdate: (details) =>
-                _updateRotationDrag(details.globalPosition),
-            onPanEnd: (_) => _commitRotation(),
-            onPanCancel: _cancelRotation,
-            child: SizedBox(
-              width: hitSize,
-              height: hitSize,
-              child: Center(
-                child: Transform.rotate(
-                  angle: -rotation,
-                  child: _RotationBadge(
-                    size: badgeSize,
-                    isActive: _isRotating,
-                    isEmphasized: _isRotating || _isRotationHandleHovered,
+      child: EditorItemHandle(
+        child: ShapeIndicatorFade(
+          visible: showIndicators,
+          child: MouseRegion(
+            cursor: shapeRotationMouseCursor(active: _isRotating),
+            onEnter: (_) {
+              setState(() {
+                _isRotationHandleHovered = true;
+              });
+            },
+            onExit: (_) {
+              setState(() {
+                _isRotationHandleHovered = false;
+              });
+            },
+            child: GestureDetector(
+              key: const ValueKey('custom-rectangle-rotate-top-center'),
+              behavior: HitTestBehavior.opaque,
+              onPanStart: (details) =>
+                  _startRotationDrag(details.globalPosition),
+              onPanUpdate: (details) =>
+                  _updateRotationDrag(details.globalPosition),
+              onPanEnd: (_) => _commitRotation(),
+              onPanCancel: _cancelRotation,
+              child: SizedBox(
+                width: hitSize,
+                height: hitSize,
+                child: Center(
+                  child: Transform.rotate(
+                    angle: -rotation,
+                    child: _RotationBadge(
+                      size: badgeSize,
+                      isActive: _isRotating,
+                      isEmphasized: _isRotating || _isRotationHandleHovered,
+                    ),
                   ),
                 ),
               ),
