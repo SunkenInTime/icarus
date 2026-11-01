@@ -146,6 +146,7 @@
   {"shot": "{out}/round-20.png"},
   {"wait": 3.2},
   {"logImages": "round-20", "optional": true},
+  {"waitText": "Adding picture…", "gone": true, "seconds": 3},
   {"expectImages": 20},
   {"addLineup": "{run}"},
   {"wait": 1},
