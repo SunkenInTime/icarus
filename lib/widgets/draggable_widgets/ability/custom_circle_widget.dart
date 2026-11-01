@@ -61,6 +61,7 @@ class CustomCircleWidget extends ConsumerWidget {
       width: scaledBoxSize,
       height: scaledBoxSize,
       child: Stack(
+        clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
           _buildRangeFill(
@@ -103,16 +104,17 @@ class CustomCircleWidget extends ConsumerWidget {
       rangeFillColor: rangeFillColor,
       opacity: opacity,
     );
-    return Opacity(
-      key: const ValueKey('circle-range-fill-layer'),
-      opacity: showRangeFill ? rangeOpacity : 0,
-      child: IgnorePointer(
-        child: Container(
-          width: scaledSize,
-          height: scaledSize,
-          decoration: BoxDecoration(
-            color: fillColor,
-            shape: BoxShape.circle,
+    return _centeredOnBox(
+      scaledSize,
+      child: Opacity(
+        key: const ValueKey('circle-range-fill-layer'),
+        opacity: showRangeFill ? rangeOpacity : 0,
+        child: IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: fillColor,
+              shape: BoxShape.circle,
+            ),
           ),
         ),
       ),
@@ -125,25 +127,38 @@ class CustomCircleWidget extends ConsumerWidget {
     required bool showRangeOutline,
     required double rangeOpacity,
   }) {
-    return Opacity(
-      key: const ValueKey('circle-range-outline-layer'),
-      opacity: showRangeOutline ? rangeOpacity : 0,
-      child: IgnorePointer(
-        child: Container(
-          width: scaledSize,
-          height: scaledSize,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: hasInnerRange
-                  ? rangeOutlineColor.withAlpha(100)
-                  : rangeOutlineColor,
-              width:
-                  coordinateSystem.scale(hasInnerRange || hasCenterDot ? 2 : 5),
+    return _centeredOnBox(
+      scaledSize,
+      child: Opacity(
+        key: const ValueKey('circle-range-outline-layer'),
+        opacity: showRangeOutline ? rangeOpacity : 0,
+        child: IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: hasInnerRange
+                    ? rangeOutlineColor.withAlpha(100)
+                    : rangeOutlineColor,
+                width: coordinateSystem
+                    .scale(hasInnerRange || hasCenterDot ? 2 : 5),
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// Lets a range bigger than the box draw past it. The box is where the
+  /// item is saved, so it keeps its size.
+  Widget _centeredOnBox(double size, {required Widget child}) {
+    return OverflowBox(
+      minWidth: size,
+      maxWidth: size,
+      minHeight: size,
+      maxHeight: size,
+      child: child,
     );
   }
 
