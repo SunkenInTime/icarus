@@ -10,6 +10,7 @@ import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/canvas_clipboard_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/clipboard_service.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -87,6 +88,7 @@ void main() {
     required bool holdsItems,
     Widget? content,
     Future<Uint8List>? saved,
+    Future<void>? readDone,
   }) async {
     images = _Images();
     items = _Items(holdsItems: holdsItems);
@@ -109,6 +111,7 @@ void main() {
               child: CanvasPaste(
                 readPicture: () async {
                   reads++;
+                  await readDone;
                   return onClipboard
                       ? ClipboardImage(picture, name: 'p', saved: saved)
                       : null;
@@ -237,6 +240,45 @@ void main() {
     );
     await tester.pump(const Duration(seconds: 4));
   });
+
+  for (final onClipboard in [true, false]) {
+    testWidgets(
+        'a page left during the read keeps '
+        '${onClipboard ? 'the picture' : 'copied items'} off the next one',
+        (tester) async {
+      final read = Completer<void>();
+      await pumpEditor(
+        tester,
+        onClipboard: onClipboard,
+        holdsItems: true,
+        readDone: read.future,
+      );
+      final pages = container.read(strategyPageSessionProvider.notifier);
+      void showPage(String id) => pages.setStateForTest(
+            container
+                .read(strategyPageSessionProvider)
+                .copyWith(activePageId: id),
+          );
+      showPage('page-a');
+
+      await pressPaste(tester);
+      showPage('page-b');
+      read.complete();
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(images.added, isEmpty);
+      expect(items.pastes, 0);
+      expect(
+        find.text(
+          'The page changed before the paste finished, so nothing was pasted.',
+        ),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 4));
+    });
+  }
 
   testWidgets('a lineup being placed keeps the clipboard out', (tester) async {
     await pumpEditor(tester, onClipboard: true, holdsItems: true);

@@ -54,12 +54,23 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
     if (_pasting) return;
     _pasting = true;
     try {
+      // Reading can take a moment: the paste belongs to the page it was
+      // pressed on, or to none.
+      final strategyId = ref.read(strategyProvider).strategyId;
+      final pageId = ref.read(strategyPageSessionProvider).activePageId;
+      bool stillThere() =>
+          ref.read(strategyProvider).strategyId == strategyId &&
+          ref.read(strategyPageSessionProvider).activePageId == pageId &&
+          _canPaste();
+
       final picture = await widget.readPicture();
       if (!mounted) return;
       if (picture != null) {
-        await _placePicture(picture);
+        await _placePicture(picture, stillThere);
       } else if (ref.read(canvasClipboardProvider) == null) {
         _refuse('No image found in clipboard');
+      } else if (!stillThere()) {
+        _refuse(_pageChanged);
       } else if (ref.read(interactionStateProvider).itemsInReach) {
         await _pasteItems();
       }
@@ -79,10 +90,11 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
 
   /// Puts the picture in the middle of the screen. A drawing tool in hand
   /// goes down first, as it does for the Add Image button.
-  Future<void> _placePicture(ClipboardImage picture) async {
+  Future<void> _placePicture(
+    ClipboardImage picture,
+    bool Function() stillThere,
+  ) async {
     if (!ensureFeatureAvailable(ref, PlatformFeature.addImages)) return;
-    final strategyId = ref.read(strategyProvider).strategyId;
-    final pageId = ref.read(strategyPageSessionProvider).activePageId;
     // The map shows nothing until the picture is ready, half a second for
     // a 1080p Windows screenshot and a few at 4K: see pngOfBitmap.
     ToastificationItem? notice;
@@ -96,9 +108,7 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
     try {
       final bytes = await picture.saved;
       if (!mounted) return;
-      if (ref.read(strategyProvider).strategyId != strategyId ||
-          ref.read(strategyPageSessionProvider).activePageId != pageId ||
-          !_canPaste()) {
+      if (!stillThere()) {
         _refuse(_pageChanged);
         return;
       }
