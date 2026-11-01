@@ -1231,7 +1231,9 @@ Future<void> _run(Map<String, dynamic> step) async {
         throw StateError('$selected selected, expected $value');
       }
     case 'expectText':
-      final count = _countOf((widget) => _isText(widget, value as String));
+      final count = _countOf(
+        (widget) => widget is RichText && _isText(widget, value as String),
+      );
       if (count != step['count']) {
         throw StateError('"$value" $count times, expected ${step['count']}');
       }
