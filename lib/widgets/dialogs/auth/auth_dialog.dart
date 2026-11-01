@@ -62,9 +62,10 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
   }
 
   void _applyNotice(AuthLinkNotice notice) {
-    if (notice == AuthLinkNotice.resetLinkTimedOut) {
-      _view = _AuthView.resetPassword;
-    }
+    // The dialog that sent the email may still be on the create-account form.
+    _view = notice == AuthLinkNotice.resetLinkTimedOut
+        ? _AuthView.resetPassword
+        : _AuthView.signIn;
     _message = notice.message;
     _messageIsInfo = notice.isInfo;
     _errorField = null;

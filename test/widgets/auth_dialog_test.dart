@@ -82,6 +82,27 @@ void main() {
     expect(find.byType(AuthDialog), findsOneWidget);
   });
 
+  testWidgets('a link confirming the email moves the create form to sign-in',
+      (tester) async {
+    await _openDialogOverPage(tester);
+    await tester.tap(find.byKey(const ValueKey('auth-mode-switch')));
+    await tester.pumpAndSettle();
+    await tester.enterText(_field('auth-email-field'), 'a@b.co');
+
+    _container(tester)
+        .read(authLinkNoticeProvider.notifier)
+        .show(AuthLinkNotice.emailConfirmed);
+    await tester.pumpAndSettle();
+
+    expect(find.text(AuthLinkNotice.emailConfirmed.message), findsOneWidget);
+    expect(find.text('Create account'), findsNothing);
+    expect(find.text('a@b.co'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('auth-confirm-password-field')),
+      findsNothing,
+    );
+  });
+
   testWidgets('a failed return while waiting for Discord is that sign-in failed',
       (tester) async {
     await _openDialogOverPage(tester);
