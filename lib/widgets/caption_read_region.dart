@@ -22,8 +22,15 @@ class _CaptionReadRegionState extends ConsumerState<CaptionReadRegion> {
 
   String? _hovered;
   Offset? _pressedAt;
+  final _region = Object();
 
-  CaptionCardNotifier get _card => ref.read(captionCardProvider.notifier);
+  late final CaptionCardNotifier _card;
+
+  @override
+  void initState() {
+    super.initState();
+    _card = ref.read(captionCardProvider.notifier);
+  }
 
   /// The topmost captioned item at [position], reaching [target] across.
   String? _itemAt(Offset position, {double target = 0}) {
@@ -50,15 +57,14 @@ class _CaptionReadRegionState extends ConsumerState<CaptionReadRegion> {
 
   void _setHovered(String? id) {
     if (id == _hovered) return;
-    if (_hovered case final left?) _card.itemExited(left);
+    if (_hovered != null) _card.itemExited(_region);
     _hovered = id;
-    if (id != null) _card.itemEntered(id);
+    if (id != null) _card.itemEntered(id, _region);
   }
 
   @override
   void dispose() {
-    final left = _hovered;
-    if (left != null) _card.itemExited(left);
+    _card.itemExited(_region);
     super.dispose();
   }
 

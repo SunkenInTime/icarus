@@ -44,6 +44,15 @@ class PlacedCustomRectangleWidget extends ConsumerStatefulWidget {
 
 class _PlacedCustomRectangleWidgetState
     extends ConsumerState<PlacedCustomRectangleWidget> {
+  late final CaptionCardNotifier _captionCard;
+  final _captionRegion = Object();
+
+  @override
+  void dispose() {
+    _captionCard.itemExited(_captionRegion);
+    super.dispose();
+  }
+
   static const double _minWidthMeters = 0.5;
   static const double _maxWidthMeters = 30.0;
   static const double _minLengthMeters = 1.0;
@@ -86,6 +95,7 @@ class _PlacedCustomRectangleWidgetState
   @override
   void initState() {
     super.initState();
+    _captionCard = ref.read(captionCardProvider.notifier);
     _localWidthMeters = widget.utility.customWidth;
     _localLengthMeters = widget.utility.customLength;
     _localRotation = CoordinateSystem.instance.rotationForSide(
@@ -265,17 +275,13 @@ class _PlacedCustomRectangleWidgetState
                       child: MouseRegion(
                         opaque: false,
                         onEnter: (_) {
-                          ref
-                              .read(captionCardProvider.notifier)
-                              .itemEntered(widget.id);
+                          _captionCard.itemEntered(widget.id, _captionRegion);
                           setState(() {
                             _isShapeHovered = true;
                           });
                         },
                         onExit: (_) {
-                          ref
-                              .read(captionCardProvider.notifier)
-                              .itemExited(widget.id);
+                          _captionCard.itemExited(_captionRegion);
                           setState(() {
                             _isShapeHovered = false;
                           });

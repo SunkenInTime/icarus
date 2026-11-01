@@ -39,6 +39,15 @@ class PlacedCustomCircleWidget extends ConsumerStatefulWidget {
 
 class _PlacedCustomCircleWidgetState
     extends ConsumerState<PlacedCustomCircleWidget> {
+  late final CaptionCardNotifier _captionCard;
+  final _captionRegion = Object();
+
+  @override
+  void dispose() {
+    _captionCard.itemExited(_captionRegion);
+    super.dispose();
+  }
+
   static const double _minDiameterMeters = 1.0;
   static const double _maxDiameterMeters =
       CustomCircleUtility.maxDiameterMeters;
@@ -59,6 +68,7 @@ class _PlacedCustomCircleWidgetState
   @override
   void initState() {
     super.initState();
+    _captionCard = ref.read(captionCardProvider.notifier);
     _localDiameterMeters = widget.utility.customDiameter;
   }
 
@@ -196,13 +206,13 @@ class _PlacedCustomCircleWidgetState
               opaque: false,
               hitTestBehavior: HitTestBehavior.translucent,
               onEnter: (_) {
-                ref.read(captionCardProvider.notifier).itemEntered(widget.id);
+                _captionCard.itemEntered(widget.id, _captionRegion);
                 setState(() {
                   _isShapeHovered = true;
                 });
               },
               onExit: (_) {
-                ref.read(captionCardProvider.notifier).itemExited(widget.id);
+                _captionCard.itemExited(_captionRegion);
                 setState(() {
                   _isShapeHovered = false;
                 });

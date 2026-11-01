@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/editing_presence_provider.dart';
@@ -48,8 +50,33 @@ void setCaption(ProviderContainer container, String id, String caption) {
   container.read(strategyProvider.notifier).setUnsaved();
 }
 
-/// Create caption, or Edit caption on an item that has one. An item a
-/// teammate deleted while the dialog was open stays gone.
+/// Where the caption dialog of an item opened.
+typedef CaptionPlace = ({String? strategyId, String? pageId});
+
+CaptionPlace currentCaptionPlace(ProviderContainer container) => (
+      strategyId: container.read(strategyProvider).strategyId,
+      pageId: container.read(strategyPageSessionProvider).activePageId,
+    );
+
+/// Writes [caption] onto the item [id] opened at [place], and says whether it
+/// did. A teammate can delete the item, or its page, while the dialog is open,
+/// and an item copied to another page keeps its id, so a note is only ever
+/// written where it was started.
+bool finishCaption(
+  ProviderContainer container,
+  String id,
+  CaptionPlace place,
+  String caption,
+) {
+  if (currentCaptionPlace(container) != place ||
+      placedItemById(container, id) == null) {
+    return false;
+  }
+  setCaption(container, id, caption);
+  return true;
+}
+
+/// Create caption, or Edit caption on an item that has one.
 List<ShadContextMenuItem> buildCaptionMenuItems(
   BuildContext context,
   WidgetRef ref,
@@ -65,14 +92,19 @@ List<ShadContextMenuItem> buildCaptionMenuItems(
       onPressed: () async {
         final start = placedItemById(container, id)?.caption ?? '';
         final opened = container.read(openCaptionItemProvider.notifier);
-        opened.state = (
-          pageId: container.read(strategyPageSessionProvider).activePageId,
-          id: id,
-        );
+        final place = currentCaptionPlace(container);
+        opened.state = (pageId: place.pageId, id: id);
         final next = await showCaptionDialog(context, initial: start);
         opened.state = null;
         // The menu's widget may be gone by now, and the note is still wanted.
-        if (next != null) setCaption(container, id, next);
+        if (next == null || finishCaption(container, id, place, next)) return;
+        if (next == start) return;
+        await Clipboard.setData(ClipboardData(text: next));
+        Settings.showToast(
+          message: "That item is gone, so your note wasn't saved. "
+              "It's on your clipboard.",
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
       },
     ),
   ];

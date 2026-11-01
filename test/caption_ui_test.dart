@@ -1,5 +1,6 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
@@ -15,6 +16,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/widgets/caption_card.dart';
 import 'package:icarus/widgets/caption_markers.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 
@@ -141,14 +143,14 @@ void main() {
         _place(container, caption: 'Note');
         final card = container.read(captionCardProvider.notifier);
 
-        card.itemEntered('agent');
+        card.itemEntered('agent', 'region');
         async.elapse(const Duration(milliseconds: 299));
         expect(container.read(captionCardProvider), isNull);
-        card.itemExited('agent');
+        card.itemExited('region');
         async.elapse(const Duration(seconds: 1));
         expect(container.read(captionCardProvider), isNull);
 
-        card.itemEntered('agent');
+        card.itemEntered('agent', 'region');
         async.elapse(CaptionCardNotifier.openDelay);
         expect(container.read(captionCardProvider), 'agent');
       });
@@ -158,7 +160,9 @@ void main() {
       fakeAsync((async) {
         final container = _container();
         _place(container, caption: '');
-        container.read(captionCardProvider.notifier).itemEntered('agent');
+        container
+            .read(captionCardProvider.notifier)
+            .itemEntered('agent', 'region');
         async.elapse(const Duration(seconds: 1));
         expect(container.read(captionCardProvider), isNull);
       });
@@ -170,7 +174,7 @@ void main() {
         _place(container, caption: 'Note');
         final card = container.read(captionCardProvider.notifier);
 
-        card.itemEntered('agent');
+        card.itemEntered('agent', 'region');
         async.elapse(const Duration(seconds: 1));
         card.openNow('agent');
 
@@ -183,10 +187,10 @@ void main() {
         final container = _container();
         _place(container, caption: 'Note');
         final card = container.read(captionCardProvider.notifier);
-        card.itemEntered('agent');
+        card.itemEntered('agent', 'region');
         async.elapse(CaptionCardNotifier.openDelay);
 
-        card.itemExited('agent');
+        card.itemExited('region');
         async.elapse(const Duration(milliseconds: 100));
         card.cardEntered();
         async.elapse(const Duration(seconds: 1));
@@ -203,27 +207,100 @@ void main() {
         final container = _container();
         _place(container, caption: 'Note');
         final card = container.read(captionCardProvider.notifier);
-        card.itemEntered('agent');
-        card.itemEntered('agent');
+        card.itemEntered('agent', 'shape');
+        card.itemEntered('agent', 'center marker');
         async.elapse(CaptionCardNotifier.openDelay);
 
-        card.itemExited('agent');
+        card.itemExited('center marker');
         async.elapse(const Duration(seconds: 1));
         expect(container.read(captionCardProvider), 'agent');
       });
     });
 
-    test('a press cancels a card that was about to open', () {
+    test('a region removed under the pointer leaves nothing behind', () {
       fakeAsync((async) {
         final container = _container();
         _place(container, caption: 'Note');
         final card = container.read(captionCardProvider.notifier);
-        card.itemEntered('agent');
-        async.elapse(const Duration(milliseconds: 100));
-        card.closeNow();
-        async.elapse(const Duration(seconds: 1));
+        // Deleted while hovered: Flutter reports no exit.
+        card.itemEntered('agent', 'deleted region');
+        card.itemExited('deleted region');
+
+        // Undone, then hovered and left as usual.
+        card.itemEntered('agent', 'new region');
+        async.elapse(CaptionCardNotifier.openDelay);
+        card.itemExited('new region');
+        async.elapse(CaptionCardNotifier.closeDelay);
+
         expect(container.read(captionCardProvider), isNull);
       });
+    });
+
+    Future<ProviderContainer> pumpLayer(WidgetTester tester) async {
+      final container = _container();
+      _place(container, caption: 'Note');
+      final controller = TransformationController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Stack(
+              children: [
+                Positioned.fill(
+                  child: CaptionCardLayer(transformation: controller),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      return container;
+    }
+
+    testWidgets('a real press cancels a card that was about to open',
+        (tester) async {
+      final container = await pumpLayer(tester);
+      container
+          .read(captionCardProvider.notifier)
+          .itemEntered('agent', 'region');
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final press = await tester.startGesture(const Offset(50, 50));
+      await tester.pump(const Duration(seconds: 1));
+      await press.up();
+      await tester.pump();
+
+      expect(container.read(captionCardProvider), isNull);
+    });
+
+    testWidgets('nothing opens under a held press, a marquee passing over',
+        (tester) async {
+      final container = await pumpLayer(tester);
+      final press = await tester.startGesture(const Offset(50, 50));
+      await tester.pump();
+
+      container
+          .read(captionCardProvider.notifier)
+          .itemEntered('agent', 'region');
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(container.read(captionCardProvider), isNull);
+      await press.up();
+      await tester.pump();
+    });
+
+    testWidgets('Escape cancels a card that was about to open', (tester) async {
+      final container = await pumpLayer(tester);
+      container
+          .read(captionCardProvider.notifier)
+          .itemEntered('agent', 'region');
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(container.read(captionCardProvider), isNull);
     });
   });
 
@@ -280,6 +357,23 @@ void main() {
         expect(placedItemById(container, id)!.caption, 'Note');
       });
     }
+
+    test("a note finished after its page changed isn't written", () {
+      const elsewhere = (strategyId: 'other', pageId: 'other-page');
+
+      final saved = finishCaption(container, 'agent', elsewhere, 'Note');
+
+      expect(saved, isFalse);
+      expect(placedItemById(container, 'agent')!.caption, isNull);
+    });
+
+    test("a note finished after its item was deleted isn't written", () {
+      final here = currentCaptionPlace(container);
+
+      expect(finishCaption(container, 'gone', here, 'Note'), isFalse);
+      expect(finishCaption(container, 'agent', here, 'Note'), isTrue);
+      expect(placedItemById(container, 'agent')!.caption, 'Note');
+    });
 
     test('an edit that changes nothing leaves nothing to undo', () {
       final before = container.read(actionProvider).length;

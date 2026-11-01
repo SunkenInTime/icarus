@@ -52,11 +52,13 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
   final _card = GlobalKey();
   _Placement? _placement;
 
-  CaptionCardNotifier get _notifier => ref.read(captionCardProvider.notifier);
+  late final CaptionCardNotifier _notifier =
+      ref.read(captionCardProvider.notifier);
 
   @override
   void initState() {
     super.initState();
+    _notifier.clearPointers();
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
     HardwareKeyboard.instance.addHandler(_onKey);
     WidgetsBinding.instance.addObserver(this);
@@ -81,6 +83,10 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
   }
 
   void _onPointer(PointerEvent event) {
+    if (event is PointerDownEvent) _notifier.pointerDown(event.pointer);
+    if (event is PointerUpEvent || event is PointerCancelEvent) {
+      _notifier.pointerUp(event.pointer);
+    }
     if ((event is PointerDownEvent || event is PointerSignalEvent) &&
         !_onCard(event.position)) {
       _notifier.closeNow();
@@ -89,8 +95,7 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
 
   bool _onKey(KeyEvent event) {
     if (event is KeyDownEvent &&
-        event.logicalKey == LogicalKeyboardKey.escape &&
-        ref.read(captionCardProvider) != null) {
+        event.logicalKey == LogicalKeyboardKey.escape) {
       _notifier.closeNow();
     }
     return false;
