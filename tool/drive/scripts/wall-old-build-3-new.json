@@ -1,0 +1,10 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"tapText": "Wall old build"},
+  {"wait": 5},
+  {"logWalls": "reopened"},
+  {"logPage": "reopened"},
+  {"shot": "{out}/4-reopened.png"},
+  {"exit": 1}
+]
