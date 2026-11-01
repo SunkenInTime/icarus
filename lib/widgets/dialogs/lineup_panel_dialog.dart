@@ -7,6 +7,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/editing_presence_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
+import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/line_up_media_carousel.dart';
@@ -425,7 +426,7 @@ class _LineUpRowState extends State<_LineUpRow> {
     );
     if (!widget.canEdit) return row;
 
-    return ShadContextMenuRegion(
+    return ContextMenuRegion(
       items: [
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.pencil),

@@ -7,12 +7,12 @@ import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/services/cloud_needs_connection.dart';
-import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -223,7 +223,6 @@ class _FolderCardState extends ConsumerState<FolderCard>
       return;
     }
 
-    dismissLibraryContextMenus(ref);
     _contextMenuController.show();
   }
 
@@ -270,11 +269,6 @@ class _FolderCardState extends ConsumerState<FolderCard>
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<int>(
-      libraryContextMenuDismissalProvider,
-      (_, __) => _closeMenus(),
-    );
-
     final pinned = ref.watch(pinnedItemsProvider);
     final id = _folder.id;
     final isPinned = pinned.containsKey(id);
@@ -409,7 +403,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
                   if (candidateData.isEmpty) _openController.reverse();
                 },
                 cursor: SystemMouseCursors.click,
-                child: ShadContextMenuRegion(
+                child: ContextMenuRegion(
                   controller: _rightClickMenuController,
                   items: _buildMenuItems(isPinned: isPinned),
                   child: GestureDetector(
@@ -718,7 +712,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
     final backgroundAlpha = _isMenuButtonHovered ? 0.16 : 0.04;
     final iconAlpha = _isMenuButtonHovered ? 0.96 : 0.74;
 
-    return ShadContextMenuRegion(
+    return ContextMenuRegion(
       controller: _contextMenuController,
       items: _buildMenuItems(isPinned: isPinned),
       child: MouseRegion(

@@ -9,6 +9,7 @@ import 'package:icarus/providers/image_provider.dart';
 
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/canonical_positioned.dart';
@@ -212,7 +213,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
               });
             },
             child: EditorItemOutline(
-              child: ShadContextMenuRegion(
+              child: ContextMenuRegion(
                 items: _buildTagColorItems(ref),
                 child: MouseWatch(
                   cursor: SystemMouseCursors.click,

@@ -10,13 +10,13 @@ import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_copy_provider.dart';
-import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/cloud_strategy_export.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/delete_strategy_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/rename_strategy_dialog.dart';
@@ -183,17 +183,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       return;
     }
 
-    dismissLibraryContextMenus(ref);
     _menuButtonController.show();
   }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<int>(
-      libraryContextMenuDismissalProvider,
-      (_, __) => _closeMenus(),
-    );
-
     final viewData = _viewData;
     final pinned = ref.watch(pinnedItemsProvider);
     final id = _strategyId;
@@ -287,7 +281,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
               onExit: (_) => setState(() => _isHovered = false),
               child: AbsorbPointer(
                 absorbing: _isLoading || isMoving,
-                child: ShadContextMenuRegion(
+                child: ContextMenuRegion(
                   controller: _rightClickMenuController,
                   items: _buildMenuItems(),
                   child: GestureDetector(
@@ -380,7 +374,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                               alignment: Alignment.topRight,
                               child: Padding(
                                 padding: const EdgeInsets.all(16),
-                                child: ShadContextMenuRegion(
+                                child: ContextMenuRegion(
                                   controller: _menuButtonController,
                                   items: _buildMenuItems(),
                                   child: Listener(

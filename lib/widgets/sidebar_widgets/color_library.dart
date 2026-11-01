@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/widgets/better_color_picker.dart';
+import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/icarus_color_picker_style.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -45,7 +46,7 @@ class ColorLibrary extends ConsumerWidget {
         for (final entry in entries)
           _SwatchPadding(
             child: entry.isCustom
-                ? ShadContextMenuRegion(
+                ? ContextMenuRegion(
                     items: [
                       ShadContextMenuItem(
                         leading: const Icon(LucideIcons.pencil, size: 14),
