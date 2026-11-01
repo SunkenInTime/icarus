@@ -1,3 +1,6 @@
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show AuthChangeEvent, AuthException, ErrorCode;
+
 /// Where Supabase sends desktop builds back after Discord sign-in.
 final Uri nativeAuthRedirectUri = Uri(
   scheme: 'icarus',
@@ -63,6 +66,88 @@ AuthCallback classifyAuthCallbackUri(Uri uri, {required Uri redirectUri}) {
   }
   return AuthCallback.none;
 }
+
+/// Why a link from an auth email can't finish here, in the words the sign-in
+/// dialog opens with.
+enum AuthLinkNotice {
+  emailConfirmed('Your email is confirmed. Sign in to continue.', isInfo: true),
+  linkExpired(
+    'This link has expired or was already used. Try signing in. If your email '
+    "isn't confirmed yet, create your account again to get a new link.",
+    isInfo: false,
+  ),
+  resetLinkTimedOut(
+    'This reset link took too long to open. Send a new one and open it within '
+    '5 minutes.',
+    isInfo: false,
+  );
+
+  const AuthLinkNotice(this.message, {required this.isInfo});
+
+  final String message;
+  final bool isInfo;
+}
+
+/// What the person holding [uri] should be told when `getSessionFromUrl`
+/// failed with [error], or null when this is a real failure to report.
+/// [resetPending] is whether this device last asked for a password reset.
+///
+/// Supabase checks an email link before it comes back here, so a `code` proves
+/// the email is confirmed even when the code can't become a session. It can't
+/// say which email link this was: a password reset opened in another browser
+/// lands the same way, and it confirmed the address too. A marker on the
+/// redirect can't say either, because the allowlist turns a redirect with a
+/// query into the Site URL. Only a reset that timed out where it was asked
+/// for can be told apart. `otp_expired` proves nothing about the email: it is
+/// the same answer for a link never used and one used a minute ago.
+AuthLinkNotice? authLinkNoticeFor(
+  Uri uri,
+  Object error, {
+  required bool resetPending,
+}) {
+  final Map<String, String> query;
+  final Map<String, String> fragment;
+  try {
+    query = uri.queryParameters;
+    fragment = Uri.splitQueryString(uri.fragment);
+  } on FormatException {
+    return null;
+  }
+
+  if ((query['error_code'] ?? fragment['error_code']) == 'otp_expired') {
+    return AuthLinkNotice.linkExpired;
+  }
+  if (query.containsKey('code') && _codeCannotFinishHere(error)) {
+    return resetPending && _isCode(error, ErrorCode.flowStateExpired)
+        ? AuthLinkNotice.resetLinkTimedOut
+        : AuthLinkNotice.emailConfirmed;
+  }
+  return null;
+}
+
+/// Supabase issued the code, but this browser can't turn it into a session:
+/// it isn't the browser that asked, or the request is over five minutes old,
+/// which is how long a code lasts counted from the sign-up. A verifier that
+/// doesn't match isn't here: a second Discord tab causes that too, and there
+/// a code proves nothing about an email.
+bool _codeCannotFinishHere(Object error) {
+  return _isCode(error, ErrorCode.flowStateExpired) ||
+      (error is AuthException && error.message.contains(_noVerifierMessage));
+}
+
+bool _isCode(Object error, ErrorCode code) =>
+    error is AuthException && error.code == code.code;
+
+/// GoTrue throws this before calling the server, so it has no error code.
+const _noVerifierMessage = 'Code verifier could not be found';
+
+/// Where GoTrue keeps the verifier for the last link this device asked for.
+const pkceVerifierStorageKey = 'supabase.auth.token-code-verifier';
+
+/// Whether [stored], the value at [pkceVerifierStorageKey], belongs to a
+/// password reset. GoTrue keeps which request it was after a slash.
+bool isPasswordResetVerifier(String? stored) =>
+    stored?.endsWith('/${AuthChangeEvent.passwordRecovery.name}') ?? false;
 
 const _sessionTokenParameters = {
   'access_token',

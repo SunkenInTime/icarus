@@ -18,6 +18,7 @@ import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/services/product_metrics.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 final authProvider =
@@ -350,6 +351,9 @@ abstract class AuthProviderSupabaseApi {
 
   Future<void> signOut();
   Future<void> getSessionFromUrl(Uri uri);
+
+  /// Whether the last link this device asked for was a password reset.
+  Future<bool> passwordResetPending();
   Future<AuthResponse> refreshSession();
 }
 
@@ -471,6 +475,14 @@ class _DefaultAuthProviderSupabaseApi implements AuthProviderSupabaseApi {
       _client.auth.getSessionFromUrl(uri);
 
   @override
+  Future<bool> passwordResetPending() async {
+    final preferences = await SharedPreferences.getInstance();
+    return isPasswordResetVerifier(
+      preferences.getString(pkceVerifierStorageKey),
+    );
+  }
+
+  @override
   Future<AuthResponse> refreshSession() => _client.auth.refreshSession();
 }
 
@@ -529,6 +541,9 @@ class _UnavailableAuthProviderSupabaseApi implements AuthProviderSupabaseApi {
   Future<void> getSessionFromUrl(Uri uri) => _refuse();
 
   @override
+  Future<bool> passwordResetPending() async => false;
+
+  @override
   Future<AuthResponse> refreshSession() => _refuse();
 }
 
@@ -552,6 +567,22 @@ class PasswordRecoveryNotifier extends Notifier<bool> {
   void start() => state = true;
 
   void finish() => state = false;
+}
+
+/// A link from an auth email that couldn't finish here and what to say about
+/// it. The app opens the sign-in dialog with it, then clears it.
+final authLinkNoticeProvider =
+    NotifierProvider<AuthLinkNoticeNotifier, AuthLinkNotice?>(
+  AuthLinkNoticeNotifier.new,
+);
+
+class AuthLinkNoticeNotifier extends Notifier<AuthLinkNotice?> {
+  @override
+  AuthLinkNotice? build() => null;
+
+  void show(AuthLinkNotice notice) => state = notice;
+
+  void clear() => state = null;
 }
 
 class AuthProvider extends Notifier<AppAuthState> {
@@ -1375,17 +1406,43 @@ class AuthProvider extends Notifier<AppAuthState> {
         error: safeError,
         stackTrace: safeStackTrace,
       );
+      final detail = 'Failed auth callback [$source]: '
+          '${redactDeepLinkUri(uri)}: $safeError';
+
+      final notice = authLinkNoticeFor(
+        uri,
+        error,
+        resetPending: await _supabaseApi.passwordResetPending(),
+      );
+      if (notice != null) {
+        AppErrorReporter.reportInfo(
+          'Auth link could not finish here (${notice.name})',
+          source: 'auth',
+          error: detail,
+        );
+        state = state.copyWith(
+          isLoading: false,
+          isConvexUserReady: false,
+          convexAuthStatus: ConvexAuthStatus.signedOut,
+          clearError: true,
+        );
+        ref.read(authLinkNoticeProvider.notifier).show(notice);
+        return true;
+      }
+
+      // The toast is what the user reads, so the link stays in the logs.
+      const message = 'Failed to complete login. Please try again.';
       AppErrorReporter.reportError(
-        'Failed auth callback [$source]: ${redactDeepLinkUri(uri)}',
+        message,
         source: 'auth',
-        error: safeError,
+        error: detail,
         stackTrace: safeStackTrace,
       );
       state = state.copyWith(
         isLoading: false,
         isConvexUserReady: false,
         convexAuthStatus: ConvexAuthStatus.incident,
-        errorMessage: 'Failed to complete login. Please try again.',
+        errorMessage: message,
       );
       ProductMetrics.instance.signIn(method: 'discord', succeeded: false);
       return true;
