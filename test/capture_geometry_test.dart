@@ -13,6 +13,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/screenshot/capture_geometry.dart';
+import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 
 StrategyPage _page(
@@ -200,7 +201,7 @@ void main() {
     );
     await tester.pump(captureGeometryWait);
     await tester.pump();
-    expect(stopped, isA<TimeoutException>());
+    expect(stopped, isA<CaptureImagesUnavailable>());
   });
 
   test('pages without sightlines do not request geometry', () async {

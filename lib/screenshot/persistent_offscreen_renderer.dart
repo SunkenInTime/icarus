@@ -3,7 +3,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
+import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/services/app_assets.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 
 /// Renders a sequence of widgets through one detached Flutter render tree.
 ///
@@ -171,7 +173,28 @@ class PersistentOffscreenRenderer {
     await _flushPendingFrames();
     await waitForFrameData?.call();
     await _flushPendingFrames();
+    _checkAssetsArrived();
     return _repaintBoundary.toImage(pixelRatio: pixelRatio);
+  }
+
+  /// A picture still waiting for the connection throws no error of its own, so
+  /// a capture has to look, or it would save a page with the picture missing.
+  void _checkAssetsArrived() {
+    final missing = appAssets.missing.value;
+    if (missing.isEmpty) return;
+    void visit(Element element) {
+      final name = switch (element.widget) {
+        AssetSvg(:final assetName) => assetName,
+        Image(image: AssetImage(:final keyName)) => keyName,
+        _ => null,
+      };
+      if (missing.contains(name)) {
+        throw CaptureImagesUnavailable.fetchFailed('$name has not loaded');
+      }
+      element.visitChildren(visit);
+    }
+
+    _rootElement?.visitChildren(visit);
   }
 
   void _updateWidget(Widget widget) {

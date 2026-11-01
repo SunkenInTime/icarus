@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/screenshot/capture_images.dart';
+import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
 import 'package:icarus/services/app_assets.dart';
 
 // A 1x1 PNG.
@@ -82,6 +84,28 @@ void main() {
     expect(painted(tester), isTrue);
     expect(appAssets.missing.value, isNot(contains('ability.png')));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a capture stops rather than save a page missing a picture', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      final renderer = PersistentOffscreenRenderer(
+        targetSize: const Size(16, 16),
+        pixelRatio: 1,
+      );
+      final page = Image.asset('placed_ability.png', width: 8, height: 8);
+      await renderer.prepare(
+        page,
+        settleDuration: const Duration(milliseconds: 50),
+      );
+
+      await expectLater(
+        renderer.capture(page),
+        throwsA(isA<CaptureImagesUnavailable>()),
+      );
+      await renderer.dispose();
+    });
   });
 
   testWidgets('a string that failed is read again, not remembered', (

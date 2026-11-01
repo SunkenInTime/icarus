@@ -172,11 +172,16 @@ final svgHeightRuntimeProvider = FutureProvider.autoDispose
     final defenseModelFuture = dependencies.loadModel(registration, false);
     final attackArtworkFuture = dependencies.loadArtwork(registration, true);
     final defenseArtworkFuture = dependencies.loadArtwork(registration, false);
-    final attack = await _loadSide(
-        await attackModelFuture, await attackArtworkFuture,
+    final attackModel = await attackModelFuture;
+    final attackArtwork = await attackArtworkFuture;
+    final defenseModel = await defenseModelFuture;
+    final defenseArtwork = await defenseArtworkFuture;
+    // These can land long after the user left the map, offline. Don't decode
+    // a map nobody is on.
+    if (disposed) return null;
+    final attack = await _loadSide(attackModel, attackArtwork,
         registration: registration, expectedSide: 'attack');
-    final defense = await _loadSide(
-        await defenseModelFuture, await defenseArtworkFuture,
+    final defense = await _loadSide(defenseModel, defenseArtwork,
         registration: registration, expectedSide: 'defense');
     if (disposed) return null;
     final runtime = SplitSvgHeightRuntime.forMap(map, attack, defense);

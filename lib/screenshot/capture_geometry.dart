@@ -6,10 +6,11 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
+import 'package:icarus/screenshot/capture_images.dart';
 
 /// How long a capture waits for sightlines. The read behind them waits for the
 /// connection, so a capture needs its own limit to stop rather than hang.
-const captureGeometryWait = Duration(seconds: 20);
+const captureGeometryWait = Duration(seconds: 10);
 
 bool pageNeedsCaptureGeometry(StrategyPage page) =>
     page.agentData.any((agent) => agent is PlacedViewConeAgent) ||
@@ -32,8 +33,12 @@ Future<CaptureGeometryLease?> prepareCaptureGeometry(
     final provider = svgHeightRuntimeProvider(map);
     final subscription = container.listen(provider, (_, __) {});
     try {
-      final runtime =
-          await container.read(provider.future).timeout(captureGeometryWait);
+      final runtime = await container.read(provider.future).timeout(
+            captureGeometryWait,
+            onTimeout: () => throw const CaptureImagesUnavailable.fetchFailed(
+              'Sightlines have not loaded.',
+            ),
+          );
       if (runtime == null) {
         throw StateError('Sightline geometry is unavailable for ${map.name}.');
       }
