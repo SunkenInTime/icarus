@@ -46,6 +46,15 @@ void main() {
       );
     });
 
+    test('only an upright phone covers the editor', () {
+      const upright = Size(390, 664);
+      const sideways = Size(750, 340);
+      expect(FormFactor.phone.coversEditor(upright), isTrue);
+      expect(FormFactor.phone.coversEditor(sideways), isFalse);
+      expect(FormFactor.tablet.coversEditor(upright), isFalse);
+      expect(FormFactor.desktop.coversEditor(upright), isFalse);
+    });
+
     test('a tablet is a tablet either way up', () {
       expect(
         formFactorOn(TargetPlatform.iOS, const Size(768, 1024)),

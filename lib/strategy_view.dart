@@ -31,6 +31,7 @@ import 'package:icarus/widgets/strategy_view_skeleton.dart';
 import 'package:icarus/widgets/strategy_edit_boundary.dart';
 import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/touch_strategy_viewer.dart';
+import 'package:icarus/widgets/turn_phone_notice.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
@@ -207,8 +208,8 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       // Refused: the access-lost dialog says so over the skeleton, and
       // leads out (see StrategyAccessWatcher).
       if (ref.read(strategyAccessLostProvider)) return;
-      final notKept =
-          ref.read(remoteEditorSnapshotProvider).error is StrategyNotKeptOffline;
+      final notKept = ref.read(remoteEditorSnapshotProvider).error
+          is StrategyNotKeptOffline;
       if (mounted) {
         Settings.showToast(
           message: notKept
@@ -291,7 +292,8 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             (!strategyState.isOpen ||
                 strategyState.strategyId != initialStrategyId));
 
-    final touch = FormFactor.of(context).isTouch;
+    final formFactor = FormFactor.of(context);
+    final touch = formFactor.isTouch;
 
     if (showSkeleton) {
       // Watched from the first frame: opening can be refused outright.
@@ -421,7 +423,25 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         ],
       ),
     );
-    return StrategyAccessWatcher(onLeave: _leaveToLibrary, child: editor);
+    final covered = formFactor.coversEditor(MediaQuery.sizeOf(context));
+    return StrategyAccessWatcher(
+      onLeave: _leaveToLibrary,
+      // The same tree either way up, so turning the phone keeps the editor.
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ExcludeFocus(
+            excluding: covered,
+            child: ExcludeSemantics(excluding: covered, child: editor),
+          ),
+          if (covered)
+            TurnPhoneNotice(
+              onLeave: _leaveToLibrary,
+              backTooltip: widget.backTooltip,
+            ),
+        ],
+      ),
+    );
   }
 
   @override

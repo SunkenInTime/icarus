@@ -37,4 +37,9 @@ enum FormFactor {
 
   /// Fingers, not a mouse: nothing here can hover, and a drag means scroll.
   bool get isTouch => this != desktop;
+
+  /// An upright phone is too narrow to edit on, so the editor waits under a
+  /// notice to turn sideways.
+  bool coversEditor(Size window) =>
+      this == phone && window.height > window.width;
 }
