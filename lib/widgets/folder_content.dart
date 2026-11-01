@@ -364,8 +364,7 @@ class FolderContent extends ConsumerWidget {
                 emptyStateIcon: LucideIcons.folder,
                 emptyStateTitle: 'Your library is empty',
                 emptyStateSubtitle: cloudAvailable
-                    ? 'Create your first strategy to keep it available '
-                        'across your Icarus clients.'
+                    ? 'Strategies you make are saved to your account.'
                     : 'Create a new strategy or drop strategies, folders, '
                         'or .zip archives here.',
                 emptyStateAction: ShadButton(
