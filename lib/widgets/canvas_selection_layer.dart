@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
-import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/canvas_clipboard_provider.dart';
@@ -20,7 +19,7 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
-import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/clipboard_service.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 
 /// Whether Space is held to move the map: while it is, a drag anywhere on
@@ -37,6 +36,15 @@ class _CanvasPanKeyHeld extends Notifier<bool> {
   }
 }
 
+/// Whether the keyboard is in a text field (a text item being written, say),
+/// where every key keeps its usual meaning.
+bool isTypingInTextField() {
+  final context = FocusManager.instance.primaryFocus?.context;
+  return context != null &&
+      (context.widget is EditableText ||
+          context.findAncestorStateOfType<EditableTextState>() != null);
+}
+
 /// The strategy canvas as a whiteboard: a drag on an empty part of the map
 /// draws a box that selects what it covers, a click selects an item (Shift
 /// adds or removes it), and holding Space turns every drag into moving the
@@ -48,8 +56,9 @@ class _CanvasPanKeyHeld extends Notifier<bool> {
 /// middle-button drag and the scroll wheel move and zoom the map as before.
 ///
 /// A press on the canvas gives it the keyboard, so the selection's keys
-/// (Escape, Delete, Backspace, select all, copy, cut, paste) and Space
-/// reach it, and never fire from a dialog, a menu or the library.
+/// (Escape, Delete, Backspace, select all, copy, cut) and Space reach it, and
+/// never fire from a dialog, a menu or the library. Paste belongs to the
+/// whole editor: see CanvasPaste.
 class CanvasSelectionLayer extends ConsumerStatefulWidget {
   const CanvasSelectionLayer({
     required this.enabled,
@@ -129,17 +138,8 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     return false;
   }
 
-  /// Whether the key goes to a text field on the canvas (a text item being
-  /// written), where every key keeps its usual meaning.
-  static bool _typing() {
-    final context = FocusManager.instance.primaryFocus?.context;
-    return context != null &&
-        (context.widget is EditableText ||
-            context.findAncestorStateOfType<EditableTextState>() != null);
-  }
-
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (_typing()) return KeyEventResult.ignored;
+    if (isTypingInTextField()) return KeyEventResult.ignored;
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.space) {
       if (event is! KeyUpEvent) {
@@ -196,11 +196,6 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
       unawaited(_cut());
       return KeyEventResult.handled;
     }
-    if (primaryWith(LogicalKeyboardKey.keyV) &&
-        ref.read(canvasClipboardProvider) != null) {
-      unawaited(_paste());
-      return KeyEventResult.handled;
-    }
     return KeyEventResult.ignored;
   }
 
@@ -209,7 +204,11 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     final copied = clipboard.copySelection(
       (pictures) => readCopiedPictures(ref, pictures),
     );
-    return copied == 0 ? null : ref.read(canvasClipboardProvider);
+    if (copied == 0) return null;
+    // A copy replaces what the system clipboard held, as it does anywhere
+    // else, so a picture found there later was copied after this.
+    unawaited(ClipboardService.clear());
+    return ref.read(canvasClipboardProvider);
   }
 
   /// Copies the selection, then deletes it once its pictures are read: a
@@ -226,53 +225,6 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
       return;
     }
     ref.read(canvasSelectionProvider.notifier).deleteItems(cut);
-  }
-
-  bool _pasting = false;
-
-  Future<void> _paste() async {
-    if (_pasting) return;
-    _pasting = true;
-    try {
-      final refusal = await ref.read(canvasClipboardProvider.notifier).paste();
-      if (refusal == null || !mounted) return;
-      final copiedOn = ref.read(canvasClipboardProvider)?.map;
-      Settings.showToast(
-        message: switch (refusal) {
-          PasteRefusal.otherMap => copiedOn == null
-              ? 'What you copied is from another map.'
-              : 'What you copied is from ${Maps.displayName(copiedOn)}. Paste '
-                  'it into a strategy on ${Maps.displayName(copiedOn)}.',
-          PasteRefusal.picturesMissing =>
-            "A picture in what you copied couldn't be read when you copied "
-                'it, so nothing was pasted. Check your connection and copy '
-                'it again.',
-          PasteRefusal.pageChanged =>
-            'The page changed before the paste finished, so nothing was '
-                'pasted.',
-          PasteRefusal.pictureTooLarge =>
-            'A picture in what you copied is over 15 MB, more than a cloud '
-                'strategy takes, so nothing was pasted.',
-        },
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
-      );
-    } catch (error, stackTrace) {
-      AppErrorReporter.reportError(
-        'Paste failed: $error',
-        error: error,
-        stackTrace: stackTrace,
-        source: 'canvas_selection_layer.paste',
-        promptUser: false,
-      );
-      if (mounted) {
-        Settings.showToast(
-          message: "Couldn't paste what you copied.",
-          backgroundColor: Settings.tacticalVioletTheme.destructive,
-        );
-      }
-    } finally {
-      _pasting = false;
-    }
   }
 
   /// The first time a drag on the map draws a box instead of moving the map,

@@ -2,7 +2,9 @@ import 'dart:ui' as ui;
 
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/browser_paste.dart';
 import 'package:image/image.dart' as img;
 import 'package:pasteboard/pasteboard.dart';
 
@@ -98,6 +100,8 @@ Uint8List _pngOfPixels(({int width, int height, Uint8List rgba}) picture) {
 }
 
 class ClipboardService {
+  static const _name = 'Clipboard File';
+
   static const Set<String> _supportedImageExtensions = {
     'gif',
     'webp',
@@ -130,20 +134,47 @@ class ClipboardService {
     return _supportedImageExtensions.contains(ext);
   }
 
+  /// The picture the paste shortcut was just pressed for, if there is one.
+  /// A browser hands it to the page with the key press, without asking for
+  /// permission. Everywhere else, and for a key the browser doesn't take for
+  /// a paste, it's read from the clipboard.
+  static Future<ClipboardImage?> readPastedImage() async {
+    final paste = await nextBrowserPaste();
+    if (paste == null) return trySelectImageFromClipboard();
+    final picture = paste.picture;
+    return picture == null ? null : ClipboardImage(picture, name: _name);
+  }
+
+  /// Empties the system clipboard. It never throws: what's left behind only
+  /// matters to a later paste.
+  static Future<void> clear() async {
+    try {
+      await Clipboard.setData(const ClipboardData(text: ''));
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Could not clear the clipboard: $error',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'clipboard_service.clear',
+        promptUser: false,
+      );
+    }
+  }
+
   static Future<ClipboardImage?> trySelectImageFromClipboard() async {
     try {
       final clipBoardImages = await Pasteboard.image;
       final clipBoardFiles = await Pasteboard.files();
 
       if (clipBoardImages != null) {
-        return ClipboardImage(clipBoardImages, name: 'Clipboard File');
+        return ClipboardImage(clipBoardImages, name: _name);
       } else if (clipBoardFiles.isNotEmpty) {
         final file = clipBoardFiles.first;
         if (!isSupportedImageClipboardFile(file)) {
           return null;
         }
         final bytes = await XFile(file).readAsBytes();
-        return ClipboardImage(bytes, name: 'Clipboard File');
+        return ClipboardImage(bytes, name: _name);
       } else {
         return null;
       }
