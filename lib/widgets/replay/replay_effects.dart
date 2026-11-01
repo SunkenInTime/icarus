@@ -81,6 +81,9 @@ class ReplayEffectsPainter extends CustomPainter {
         case ReplaySweep():
           // Drawn under the utility, clipped by [ReplaySweepClipper].
           continue;
+        case ReplayGuidedWall():
+          // Drawn under the utility, by [ReplayWallPainter].
+          continue;
         case ReplayFlight(:final trail):
           // The path just flown, fading toward its tail.
           if (trail.length < 2) continue;
@@ -106,6 +109,59 @@ class ReplayEffectsPainter extends CustomPainter {
   @override
   bool shouldRepaint(ReplayEffectsPainter oldDelegate) =>
       oldDelegate.effects != effects || oldDelegate.isAttack != isAttack;
+}
+
+/// Guided walls as far as they have run: a line in the wall's colour along
+/// each, edged in its team's. Stroked rather than clipped: on Windows a clip
+/// this shape costs a mask drawn on the CPU, every frame.
+class ReplayWallPainter extends CustomPainter {
+  ReplayWallPainter({
+    required this.walls,
+    required this.isAttack,
+    required this.width,
+  });
+
+  final Iterable<ReplayGuidedWall> walls;
+  final bool isAttack;
+
+  /// The wall's width in virtual units.
+  final double width;
+
+  /// How far the team's colour shows either side, in virtual units.
+  static const _edge = 1.5;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final coordinates = CoordinateSystem.instance;
+    for (final wall in walls) {
+      final line = Path()
+        ..addPolygon([
+          for (final point in wall.points)
+            replayScreenPoint(point, isAttack: isAttack),
+        ], false);
+      final team =
+          wall.isAlly ? Settings.allyOutlineColor : Settings.enemyOutlineColor;
+      final stroke = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+      canvas.drawPath(
+        line,
+        stroke
+          ..strokeWidth = coordinates.scale(width + _edge * 2)
+          ..color = team.withValues(alpha: team.a * wall.opacity),
+      );
+      canvas.drawPath(
+        line,
+        stroke
+          ..strokeWidth = coordinates.scale(width)
+          ..color = Settings.replayTideWall.withValues(alpha: wall.opacity),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(ReplayWallPainter oldDelegate) => true;
 }
 
 /// Keeps the part of a sweep's area swept so far: from where it was cast to

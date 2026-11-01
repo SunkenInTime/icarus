@@ -609,6 +609,20 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                             ),
                           ),
                         ),
+                      // Guided walls, under the icons at their heads.
+                      if (frame.effects.whereType<ReplayGuidedWall>()
+                          case final walls when walls.isNotEmpty)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              painter: ReplayWallPainter(
+                                walls: walls,
+                                isAttack: isAttack,
+                                width: 5 * mapScale,
+                              ),
+                            ),
+                          ),
+                        ),
                       // Utility moves far less than players do: its own
                       // layer, rebuilt only when it changes, so its
                       // picture (faded ranges and all) is drawn from cache.

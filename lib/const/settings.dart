@@ -107,6 +107,9 @@ class Settings {
 
   /// The crossed-out eye on a flashed agent's washed icon in replays.
   static const Color flashedEyeInk = Color(0xE6141418);
+
+  /// High Tide's wall in the replay viewer.
+  static const Color replayTideWall = Colors.lightBlueAccent;
   static Color get attackColor => tacticalVioletTheme.destructive;
 
   /// Defend-side label color. Deliberately NOT the violet primary (reserved
