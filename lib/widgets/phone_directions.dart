@@ -10,13 +10,14 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 const _theme = Settings.tacticalVioletTheme;
 const _pages = ['Default', 'Take A', 'Retake'];
+const _allyInk = Color(0xFF69F0AE);
 
 class PhoneDirectionMock extends ConsumerWidget {
   const PhoneDirectionMock({super.key, required this.dir, required this.state});
 
   final String dir;
 
-  /// open, place, draw or pages.
+  /// open, choose, placed, add, draw, pages or pick.
   final String state;
 
   @override
@@ -33,22 +34,27 @@ class PhoneDirectionMock extends ConsumerWidget {
     final five = comp.take(5).toList();
     return Scaffold(
       backgroundColor: _theme.background,
-      body: switch (dir) {
-        '1' => _Roster(state: state, comp: five),
-        '2' => _Tray(state: state, comp: five),
-        '3' => _Team(state: state, comp: five),
-        _ => _Spot(state: state, comp: five),
-      },
+      body: dir == '3'
+          ? _Rail(state: state, comp: five)
+          : _Tray(state: state, comp: five),
     );
   }
 }
 
 class _Btn extends StatelessWidget {
-  const _Btn(this.icon,
-      {this.active = false, this.size = 44, this.dim = false});
+  const _Btn(
+    this.icon, {
+    this.active = false,
+    this.primary = false,
+    this.size = 44,
+    this.dim = false,
+  });
 
   final IconData icon;
   final bool active;
+
+  /// The one command this screen is for.
+  final bool primary;
   final double size;
   final bool dim;
 
@@ -57,13 +63,13 @@ class _Btn extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      decoration: active
-          ? Settings.raisedPrimary(10)
-          : BoxDecoration(borderRadius: BorderRadius.circular(10)),
+      decoration: active || primary
+          ? Settings.raisedPrimary(12)
+          : BoxDecoration(borderRadius: BorderRadius.circular(12)),
       child: Icon(
         icon,
-        size: 20,
-        color: active
+        size: primary ? 24 : 20,
+        color: active || primary
             ? Colors.white
             : dim
                 ? _theme.mutedForeground.withValues(alpha: 0.45)
@@ -88,7 +94,7 @@ class _Agent extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: active ? _theme.primary : _theme.secondary,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Image.asset(AgentData.agents[type]!.iconPath, fit: BoxFit.cover),
     );
@@ -96,7 +102,7 @@ class _Agent extends StatelessWidget {
 }
 
 class _Ability extends StatelessWidget {
-  const _Ability(this.type, this.index, {this.size = 34, this.active = false});
+  const _Ability(this.type, this.index, {this.size = 44, this.active = false});
 
   final AgentType type;
   final int index;
@@ -109,12 +115,12 @@ class _Ability extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      padding: const EdgeInsets.all(5),
+      padding: EdgeInsets.all(size * 0.15),
       decoration: active
-          ? Settings.raisedPrimary(6)
+          ? Settings.raisedPrimary(8)
           : BoxDecoration(
               color: _theme.secondary,
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(8),
             ),
       child: index < abilities.length
           ? Image.asset(abilities[index].iconPath, fit: BoxFit.contain)
@@ -123,65 +129,72 @@ class _Ability extends StatelessWidget {
   }
 }
 
-/// Small enough to sit in a corner: where you are, and a thumb's step either
-/// way. The number opens the list.
-class _Pager extends StatelessWidget {
-  const _Pager({this.vertical = false});
-
-  final bool vertical;
-
-  @override
-  Widget build(BuildContext context) {
-    final count = Text(
-      '2/3',
-      style: TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-        color: _theme.foreground,
-      ),
+BoxDecoration _card() => BoxDecoration(
+      color: _theme.card,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: _theme.border),
     );
-    final children = [
-      _Btn(
-        vertical ? LucideIcons.chevronUp : LucideIcons.chevronLeft,
-        size: 40,
-      ),
-      SizedBox(
-        width: vertical ? 40 : 30,
-        height: vertical ? 24 : 40,
-        child: Center(child: count),
-      ),
-      _Btn(
-        vertical ? LucideIcons.chevronDown : LucideIcons.chevronRight,
-        size: 40,
-      ),
-    ];
-    return vertical
-        ? Column(mainAxisSize: MainAxisSize.min, children: children)
-        : Row(mainAxisSize: MainAxisSize.min, children: children);
-  }
-}
 
-class _PageList extends StatelessWidget {
-  const _PageList({this.width = 170});
-
-  final double width;
+/// The page you're on by name, and a thumb's step either way. The name opens
+/// the list.
+class _Pager extends StatelessWidget {
+  const _Pager();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: width,
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: _theme.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _theme.border),
+      height: 44,
+      decoration: _card(),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const _Btn(LucideIcons.chevronLeft, size: 42),
+          SizedBox(
+            width: 84,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Take A',
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: _theme.foreground,
+                  ),
+                ),
+                Text(
+                  '2 of 3',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: _theme.mutedForeground,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const _Btn(LucideIcons.chevronRight, size: 42),
+        ],
       ),
+    );
+  }
+}
+
+class _PageList extends StatelessWidget {
+  const _PageList();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 172,
+      padding: const EdgeInsets.all(6),
+      decoration: _card(),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           for (final (i, name) in _pages.indexed)
             Container(
-              height: 40,
+              height: 44,
               padding: const EdgeInsets.symmetric(horizontal: 10),
               alignment: Alignment.centerLeft,
               decoration: i == 1 ? Settings.raisedSurface(8) : null,
@@ -210,7 +223,7 @@ class _PageList extends StatelessWidget {
               ),
             ),
           Container(
-            height: 40,
+            height: 44,
             padding: const EdgeInsets.symmetric(horizontal: 10),
             alignment: Alignment.centerLeft,
             child: Row(
@@ -233,107 +246,246 @@ class _PageList extends StatelessWidget {
   }
 }
 
-/// Five colours and how the line ends: all a quick drawing needs.
-class _DrawOptions extends StatelessWidget {
-  const _DrawOptions({this.vertical = false});
+/// A button that holds its own on the map: a card behind it, a full thumb's
+/// size.
+class _CardBtn extends StatelessWidget {
+  const _CardBtn(this.icon,
+      {this.width = 52, this.height = 52, this.danger = false});
 
-  final bool vertical;
-
-  @override
-  Widget build(BuildContext context) {
-    final dots = [
-      for (final (i, option) in Settings.penColors.indexed)
-        Container(
-          width: 32,
-          height: 32,
-          margin: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: option.color,
-            shape: BoxShape.circle,
-            border: i == 0 ? Border.all(color: _theme.primary, width: 3) : null,
-          ),
-        ),
-    ];
-    final strokes = [
-      const _Btn(LucideIcons.moveUpRight, active: true, size: 40),
-      const _Btn(LucideIcons.spline, size: 40),
-      const _Btn(LucideIcons.type, size: 40),
-      const _Btn(LucideIcons.eraser, size: 40),
-    ];
-    if (vertical) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Column(mainAxisSize: MainAxisSize.min, children: dots),
-          const SizedBox(width: 6),
-          Column(mainAxisSize: MainAxisSize.min, children: strokes),
-        ],
-      );
-    }
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Wrap(alignment: WrapAlignment.center, children: dots),
-        const SizedBox(height: 8),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: strokes),
-      ],
-    );
-  }
-}
-
-class _Panel extends StatelessWidget {
-  const _Panel({required this.width, required this.child});
-
+  final IconData icon;
   final double width;
-  final Widget child;
+  final double height;
+  final bool danger;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: width,
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: _theme.card,
-        border: Border.all(color: _theme.border),
+      height: height,
+      decoration: _card(),
+      child: Icon(
+        icon,
+        size: 22,
+        color: danger ? _theme.destructive : _theme.foreground,
       ),
-      child: child,
     );
   }
 }
 
-/// A sample of what the state is doing on the map.
-class _Ghost extends StatelessWidget {
-  const _Ghost(this.left, this.top, this.child);
-
-  final double left;
-  final double top;
-  final Widget child;
+/// Drawing's kit, packed into the right thumb's corner. One tool lit at a
+/// time, and Done is always the way back.
+class _DrawKit extends StatelessWidget {
+  const _DrawKit();
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      left: left,
-      top: top,
-      child: Container(
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _theme.primary.withValues(alpha: 0.35),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Container(
+              width: 52,
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              decoration: _card(),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final (i, option) in Settings.penColors.indexed)
+                    SizedBox(
+                      height: 42,
+                      child: Center(
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: option.color,
+                            shape: BoxShape.circle,
+                            border: i == 0
+                                ? Border.all(color: _theme.primary, width: 3)
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              width: 52,
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              decoration: _card(),
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _Btn(LucideIcons.type),
+                  _Btn(LucideIcons.eraser),
+                  _Btn(LucideIcons.spline),
+                  _Btn(LucideIcons.moveUpRight, active: true),
+                ],
+              ),
+            ),
+          ],
         ),
-        child: child,
+        const SizedBox(height: 6),
+        Container(
+          width: 110,
+          height: 52,
+          alignment: Alignment.center,
+          decoration: _card(),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(LucideIcons.check, size: 18, color: _theme.foreground),
+              const SizedBox(width: 6),
+              Text(
+                'Done',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: _theme.foreground,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+Widget _sideSwitch() {
+  Widget side(String label, bool on) => Expanded(
+        child: Container(
+          height: 34,
+          alignment: Alignment.center,
+          decoration: on ? Settings.raisedSurface(8) : null,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: on ? _allyInk : _theme.mutedForeground,
+            ),
+          ),
+        ),
+      );
+  return Row(children: [side('Ally', true), side('Enemy', false)]);
+}
+
+/// Every agent, small enough that none needs scrolling. Already on the team
+/// is lit.
+class _Roster extends StatelessWidget {
+  const _Roster({required this.comp});
+
+  final List<AgentType> comp;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 192,
+      padding: const EdgeInsets.all(6),
+      decoration: _card(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Wrap(
+            spacing: 3,
+            runSpacing: 3,
+            children: [
+              for (final type in AgentData.agents.keys)
+                _Agent(type, size: 33, active: comp.contains(type)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          _sideSwitch(),
+        ],
       ),
     );
   }
 }
 
-class _Stroke extends StatelessWidget {
-  const _Stroke();
+/// This strategy's team, each row the agent then its abilities, all of them
+/// tiles that place. The agent you used last sits at the foot, by the thumb.
+class _TeamGrid extends StatelessWidget {
+  const _TeamGrid({required this.comp});
+
+  final List<AgentType> comp;
 
   @override
   Widget build(BuildContext context) {
-    return Positioned.fill(
-      child: IgnorePointer(child: CustomPaint(painter: _StrokePainter())),
+    final recent = comp[3];
+    return Container(
+      width: 216,
+      padding: const EdgeInsets.all(5),
+      decoration: _card(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final type in comp)
+            if (type != recent)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Opacity(
+                  opacity: 0.7,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _Agent(type, size: 39),
+                      for (var a = 0; a < 4; a++) _Ability(type, a, size: 39),
+                    ],
+                  ),
+                ),
+              ),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            decoration: BoxDecoration(
+              color: _theme.accent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _Agent(recent, size: 39),
+                for (var a = 0; a < 4; a++) _Ability(recent, a, size: 39),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(child: _sideSwitch()),
+              const SizedBox(width: 4),
+              Container(
+                height: 34,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: _theme.secondary,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(LucideIcons.plus, size: 14, color: _theme.foreground),
+                    const SizedBox(width: 3),
+                    Text(
+                      'Agent',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _theme.foreground,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -362,141 +514,163 @@ class _StrokePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-Widget _map({bool stroke = false, Widget? ghost}) {
-  return Stack(
-    children: [
-      const Positioned.fill(
-        child: RepaintBoundary(
-          child: InteractiveMap(sideBarWidth: 0, showDeleteArea: false),
-        ),
-      ),
-      if (stroke) const _Stroke(),
-      if (ghost != null) ghost,
-    ],
-  );
-}
-
-Widget _allyEnemy() {
-  Widget side(String label, bool on) => Expanded(
-        child: Container(
-          height: 30,
-          alignment: Alignment.center,
-          decoration: on ? Settings.raisedSurface(6) : null,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: on ? const Color(0xFF69F0AE) : _theme.mutedForeground,
-            ),
-          ),
-        ),
-      );
-  return Row(children: [side('Ally', true), side('Enemy', false)]);
-}
-
-/// Every agent on screen at once, at a size that fits them all, for building
-/// fast with both thumbs.
-class _Roster extends StatelessWidget {
-  const _Roster({required this.state, required this.comp});
+/// What every direction shares: the map, full bleed, and on the left thumb's
+/// side the way out, the sync state, undo and pages.
+class _Bench extends StatelessWidget {
+  const _Bench({required this.state, required this.comp, required this.child});
 
   final String state;
   final List<AgentType> comp;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final drawing = state == 'draw';
-    final placing = state == 'place';
-    final picked = comp.first;
-    final grid = Wrap(
-      spacing: 3,
-      runSpacing: 3,
+    final mapCentre = MediaQuery.sizeOf(context).center(Offset.zero);
+    final cluster = mapCentre + const Offset(94, 30);
+    return Stack(
       children: [
-        for (final type in AgentData.agents.keys)
-          _Agent(type, size: 32, active: placing && type == picked),
-      ],
-    );
-    final abilities = Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        for (var i = 0; i < 4; i++)
-          _Ability(picked, i, size: 40, active: placing && i == 1),
-      ],
-    );
-    return Row(
-      children: [
-        Container(
-          width: 56,
-          decoration: BoxDecoration(
-            color: _theme.card,
-            border: Border(right: BorderSide(color: _theme.border)),
+        const Positioned.fill(
+          child: RepaintBoundary(
+            child: InteractiveMap(sideBarWidth: 0, showDeleteArea: false),
           ),
+        ),
+        if (state == 'draw')
+          Positioned.fill(
+            child: IgnorePointer(child: CustomPaint(painter: _StrokePainter())),
+          ),
+        if (state == 'placed')
+          Positioned(
+            left: mapCentre.dx - 34,
+            top: mapCentre.dy - 34,
+            child: Container(
+              width: 68,
+              height: 68,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _theme.primary.withValues(alpha: 0.28),
+                border: Border.all(color: _theme.primary, width: 2),
+              ),
+              child: _Ability(comp[3], 1, size: 34),
+            ),
+          ),
+        if (state == 'pick')
+          Positioned(
+            left: cluster.dx - 30,
+            top: cluster.dy - 30,
+            child: Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+            ),
+          ),
+        const Positioned(
+          left: 6,
+          top: 6,
           child: Column(
             children: [
-              const _Btn(LucideIcons.house200),
-              const _Btn(LucideIcons.cloudCheck200),
-              _Btn(LucideIcons.pencil200, active: drawing),
-              const Spacer(),
-              const _Btn(LucideIcons.undo2200),
-              const _Btn(LucideIcons.redo2200, dim: true),
+              _Btn(LucideIcons.house200),
+              _Btn(LucideIcons.cloudCheck200),
             ],
           ),
         ),
-        Expanded(
-          child: Stack(
+        Positioned(
+          left: 6,
+          bottom: 6,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              _map(
-                stroke: drawing,
-                ghost: placing
-                    ? _Ghost(
-                        250,
-                        120,
-                        _Ability(picked, 1, size: 32, active: true),
-                      )
-                    : null,
-              ),
-              Positioned(
-                left: 8,
-                bottom: 8,
-                child: state == 'pages'
-                    ? const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _PageList(),
-                          SizedBox(height: 6),
-                          _Pager(),
-                        ],
-                      )
-                    : const _Pager(),
-              ),
-            ],
-          ),
-        ),
-        _Panel(
-          width: 186,
-          child: drawing
-              ? const Align(
-                  alignment: Alignment.bottomCenter,
-                  child: _DrawOptions(),
-                )
-              : Column(
+              if (state == 'pages')
+                const _PageList()
+              else
+                Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _allyEnemy(),
-                    const SizedBox(height: 6),
-                    grid,
-                    const Spacer(),
-                    abilities,
+                    const _CardBtn(LucideIcons.undo2, width: 85, height: 44),
+                    const SizedBox(width: 6),
+                    Opacity(
+                      opacity: 0.5,
+                      child: const _CardBtn(
+                        LucideIcons.redo2,
+                        width: 85,
+                        height: 44,
+                      ),
+                    ),
                   ],
                 ),
+              const SizedBox(height: 6),
+              const _Pager(),
+            ],
+          ),
         ),
+        if (state == 'draw')
+          const Positioned(right: 6, bottom: 6, child: _DrawKit())
+        else
+          Positioned.fill(child: child),
       ],
     );
   }
 }
 
-/// Just the map until asked: four buttons on one edge, and a tray that opens
-/// over the empty margin beside the map.
+/// The pieces under a finger, pulled apart, when a touch lands on a stack.
+class _PickCard extends StatelessWidget {
+  const _PickCard({required this.comp});
+
+  final List<AgentType> comp;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: _card(),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final (i, type) in comp.take(3).indexed)
+            Padding(
+              padding: EdgeInsets.only(left: i == 0 ? 0 : 4),
+              child: _Agent(type, size: 46),
+            ),
+          const SizedBox(width: 4),
+          _Ability(comp[3], 1, size: 46),
+        ],
+      ),
+    );
+  }
+}
+
+/// Another of the same, a touch away, with the bin beside the thumb while
+/// something is picked up.
+class _Recent extends StatelessWidget {
+  const _Recent({required this.comp});
+
+  final List<AgentType> comp;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: _card(),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < 4; i++)
+            Padding(
+              padding: EdgeInsets.only(left: i == 0 ? 0 : 3),
+              child: _Ability(comp[3], i, size: 44),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Just the map until asked. One button opens the team's abilities, and what
+/// you used last stays one touch away after you place it.
 class _Tray extends StatelessWidget {
   const _Tray({required this.state, required this.comp});
 
@@ -505,320 +679,162 @@ class _Tray extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final drawing = state == 'draw';
-    final placing = state == 'place';
-    final paging = state == 'pages';
-    final picked = comp.first;
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: _map(
-            stroke: drawing,
-            ghost: placing
-                ? _Ghost(420, 110, _Ability(picked, 1, size: 32, active: true))
-                : null,
-          ),
-        ),
-        const Positioned(left: 6, top: 6, child: _Btn(LucideIcons.house200)),
-        const Positioned(
-          left: 6,
-          top: 50,
-          child: _Btn(LucideIcons.cloudCheck200),
-        ),
-        const Positioned(
-          left: 6,
-          bottom: 6,
-          child: Column(
-            children: [
-              _Btn(LucideIcons.redo2200, dim: true),
-              _Btn(LucideIcons.undo2200),
-            ],
-          ),
-        ),
-        Positioned(
-          right: 6,
-          bottom: 6,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _Btn(LucideIcons.layers200, active: paging),
-              _Btn(LucideIcons.pencil200, active: drawing),
-              _Btn(LucideIcons.usersRound200, active: placing),
-            ],
-          ),
-        ),
-        if (placing)
+    final open = state == 'choose' || state == 'add';
+    final holding = state == 'placed' || state == 'pick';
+    return _Bench(
+      state: state,
+      comp: comp,
+      child: Stack(
+        children: [
           Positioned(
-            right: 56,
-            top: 0,
-            bottom: 0,
-            child: _Panel(
-              width: 172,
-              child: Column(
-                children: [
-                  Wrap(
-                    spacing: 3,
-                    runSpacing: 3,
-                    children: [
-                      for (final type in AgentData.agents.keys)
-                        _Agent(type, size: 33, active: type == picked),
-                    ],
-                  ),
-                  const Spacer(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      for (var i = 0; i < 4; i++)
-                        _Ability(picked, i, size: 37, active: i == 1),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        if (drawing)
-          const Positioned(
-            right: 56,
+            right: 6,
             bottom: 6,
-            child: _DrawOptions(vertical: false),
-          ),
-        if (paging) const Positioned(right: 56, bottom: 6, child: _PageList()),
-      ],
-    );
-  }
-}
-
-/// This strategy's agents with their abilities in one block, one touch each,
-/// since abilities are what gets placed over and over.
-class _Team extends StatelessWidget {
-  const _Team({required this.state, required this.comp});
-
-  final String state;
-  final List<AgentType> comp;
-
-  @override
-  Widget build(BuildContext context) {
-    final drawing = state == 'draw';
-    final placing = state == 'place';
-    final paging = state == 'pages';
-    final picked = comp.first;
-    final team = Column(
-      children: [
-        _allyEnemy(),
-        const SizedBox(height: 6),
-        for (final type in comp)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _Agent(type, size: 40, active: placing && type == picked),
-                for (var i = 0; i < 4; i++)
-                  _Ability(
-                    type,
-                    i,
-                    size: 40,
-                    active: placing && type == picked && i == 1,
-                  ),
+                holding
+                    ? const _CardBtn(LucideIcons.trash2, danger: true)
+                    : const _CardBtn(LucideIcons.pencil),
+                const SizedBox(width: 8),
+                _Btn(
+                  open ? LucideIcons.x : LucideIcons.plus,
+                  primary: true,
+                  size: 52,
+                ),
               ],
             ),
           ),
-        const Spacer(),
-        Container(
-          height: 40,
-          decoration: BoxDecoration(
-            color: _theme.secondary,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(LucideIcons.plus, size: 16, color: _theme.foreground),
-              const SizedBox(width: 6),
-              Text(
-                'Add an agent',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: _theme.foreground,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-    return Row(
-      children: [
-        Container(
-          width: 56,
-          decoration: BoxDecoration(
-            color: _theme.card,
-            border: Border(right: BorderSide(color: _theme.border)),
-          ),
-          child: Column(
-            children: [
-              const _Btn(LucideIcons.house200),
-              const _Btn(LucideIcons.cloudCheck200),
-              const Spacer(),
-              _Btn(LucideIcons.pencil200, active: drawing),
-              const _Btn(LucideIcons.redo2200, dim: true),
-              const _Btn(LucideIcons.undo2200),
-            ],
-          ),
-        ),
-        Expanded(
-          child: Stack(
-            children: [
-              _map(
-                stroke: drawing,
-                ghost: placing
-                    ? _Ghost(
-                        230,
-                        120,
-                        _Ability(picked, 1, size: 32, active: true),
-                      )
-                    : null,
-              ),
-              Positioned(
-                left: 8,
-                bottom: 6,
-                child: paging
-                    ? const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _PageList(),
-                          SizedBox(height: 6),
-                          _Pager(vertical: false),
-                        ],
-                      )
-                    : const _Pager(vertical: false),
-              ),
-            ],
-          ),
-        ),
-        _Panel(
-          width: 232,
-          child: drawing
-              ? const Align(
-                  alignment: Alignment.bottomCenter,
-                  child: _DrawOptions(),
-                )
-              : team,
-        ),
-      ],
+          if (state == 'choose')
+            Positioned(right: 6, bottom: 64, child: _TeamGrid(comp: comp)),
+          if (state == 'add')
+            Positioned(right: 6, bottom: 64, child: _Roster(comp: comp)),
+          if (state == 'placed')
+            Positioned(right: 6, bottom: 64, child: _Recent(comp: comp)),
+          if (state == 'pick')
+            Positioned(right: 6, top: 96, child: _PickCard(comp: comp)),
+        ],
+      ),
     );
   }
 }
 
-/// No panels: touch the place on the map, then choose what goes there, so a
-/// finger never drags across the screen.
-class _Spot extends StatelessWidget {
-  const _Spot({required this.state, required this.comp});
+/// The team's faces stand on the right edge, always there. Touch one and its
+/// abilities stand beside it, off the map, until you touch another.
+class _Rail extends StatelessWidget {
+  const _Rail({required this.state, required this.comp});
 
   final String state;
   final List<AgentType> comp;
 
   @override
   Widget build(BuildContext context) {
-    final drawing = state == 'draw';
-    final placing = state == 'place';
-    final paging = state == 'pages';
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: _map(
-            stroke: drawing,
-            ghost: placing
-                ? Positioned(
-                    left: 330,
-                    top: 150,
-                    child: Container(
-                      width: 26,
-                      height: 26,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _theme.primary.withValues(alpha: 0.4),
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                    ),
-                  )
-                : null,
-          ),
-        ),
-        const Positioned(left: 6, top: 6, child: _Btn(LucideIcons.house200)),
-        const Positioned(
-          left: 6,
-          top: 50,
-          child: _Btn(LucideIcons.cloudCheck200),
-        ),
-        const Positioned(
-          left: 6,
-          bottom: 6,
-          child: Column(
-            children: [
-              _Btn(LucideIcons.redo2200, dim: true),
-              _Btn(LucideIcons.undo2200),
-            ],
-          ),
-        ),
-        Positioned(
-          right: 6,
-          top: 6,
-          child: _Btn(LucideIcons.pencil200, active: drawing),
-        ),
-        if (drawing)
-          const Positioned(
-            right: 8,
-            top: 54,
-            child: _DrawOptions(vertical: true),
-          ),
-        Positioned(
-            right: 6, bottom: 6, child: paging ? _pagesOpen() : const _Pager()),
-        if (placing)
+    final adding = state == 'add';
+    final working = state == 'choose' || state == 'placed';
+    final holding = state == 'placed' || state == 'pick';
+    return _Bench(
+      state: state,
+      comp: comp,
+      child: Stack(
+        children: [
           Positioned(
-            left: 372,
-            top: 40,
-            child: Container(
-              width: 232,
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: _theme.card,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _theme.border),
-                boxShadow: const [
-                  BoxShadow(blurRadius: 24, color: Color(0x47000000)),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final type in comp)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _Agent(type, size: 40),
-                          for (var i = 0; i < 4; i++)
-                            _Ability(type, i, size: 40),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
+            right: 6,
+            bottom: 6,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                holding
+                    ? const _CardBtn(LucideIcons.trash2, danger: true)
+                    : const _CardBtn(LucideIcons.pencil),
+                const SizedBox(width: 8),
+                _CardBtn(adding ? LucideIcons.x : LucideIcons.userPlus),
+              ],
             ),
           ),
-      ],
-    );
-  }
-
-  Widget _pagesOpen() {
-    return const Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      mainAxisSize: MainAxisSize.min,
-      children: [_PageList(), SizedBox(height: 6), _Pager()],
+          if (adding)
+            Positioned(right: 6, bottom: 64, child: _Roster(comp: comp))
+          else
+            Positioned(
+              right: 6,
+              bottom: 64,
+              child: Container(
+                width: 52,
+                padding: const EdgeInsets.all(4),
+                decoration: _card(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      height: 30,
+                      alignment: Alignment.center,
+                      decoration: Settings.raisedSurface(8),
+                      child: const Text(
+                        'Ally',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _allyInk,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    for (final (i, type) in comp.indexed)
+                      Padding(
+                        padding: EdgeInsets.only(top: i == 0 ? 0 : 3),
+                        child: _Agent(
+                          type,
+                          size: 44,
+                          active: working && i == 3,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          if (working)
+            Positioned(
+              right: 64,
+              bottom: 64,
+              child: Container(
+                width: 52,
+                padding: const EdgeInsets.all(4),
+                decoration: _card(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _Agent(comp[3], size: 44),
+                    for (var i = 0; i < 4; i++)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: _Ability(comp[3], i),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          if (state == 'pick')
+            Positioned(
+              right: 64,
+              bottom: 64,
+              child: Container(
+                width: 52,
+                padding: const EdgeInsets.all(4),
+                decoration: _card(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final (i, type) in comp.take(3).indexed)
+                      Padding(
+                        padding: EdgeInsets.only(top: i == 0 ? 0 : 3),
+                        child: _Agent(type, size: 44),
+                      ),
+                    const SizedBox(height: 3),
+                    _Ability(comp[3], 1),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
