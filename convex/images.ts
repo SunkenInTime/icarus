@@ -268,6 +268,7 @@ export const generateUploadUrl = action({
     assetPublicId: v.string(),
     mimeType: v.string(),
     fileExtension: v.string(),
+    // Required by the handler. Every client since May 2026 sends it.
     byteSize: v.optional(v.number()),
     width: v.optional(v.number()),
     height: v.optional(v.number()),
@@ -311,7 +312,7 @@ export const generateUploadUrl = action({
         uploadAttemptPublicId,
         mimeType: validated.mimeType,
         fileExtension: validated.fileExtension,
-        byteSize: args.byteSize,
+        byteSize: validated.byteSize,
         width: args.width,
         height: args.height,
       });
@@ -321,6 +322,7 @@ export const generateUploadUrl = action({
       config,
       objectKey: intent.objectKey,
       mimeType: validated.mimeType,
+      contentLength: validated.byteSize,
       now: new Date(intent.issuedAt),
     });
 

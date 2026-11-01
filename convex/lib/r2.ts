@@ -126,7 +126,7 @@ export function validateImageUploadMetadata(args: {
   mimeType?: string;
   byteSize?: number;
   maxImageBytes: number;
-}): { fileExtension: string; mimeType: string } {
+}): { fileExtension: string; mimeType: string; byteSize: number } {
   const fileExtension = normalizeImageExtension(args.fileExtension);
   const expectedMimeType = expectedMimeTypeForExtension(fileExtension);
   if (expectedMimeType === null) {
@@ -144,18 +144,22 @@ export function validateImageUploadMetadata(args: {
     );
   }
 
+  // The size is signed into the upload URL, so an upload with no exact size
+  // has no limit on what R2 would store.
   if (
-    args.byteSize !== undefined &&
-    (!Number.isFinite(args.byteSize) ||
-      args.byteSize <= 0 ||
-      args.byteSize > args.maxImageBytes)
+    args.byteSize === undefined ||
+    !Number.isSafeInteger(args.byteSize) ||
+    args.byteSize <= 0
   ) {
+    throw invalidPayloadError("An image upload must state its size in bytes.");
+  }
+  if (args.byteSize > args.maxImageBytes) {
     throw invalidPayloadError(
       `Image is too large. Maximum allowed size is ${args.maxImageBytes} bytes.`,
     );
   }
 
-  return { fileExtension, mimeType };
+  return { fileExtension, mimeType, byteSize: args.byteSize };
 }
 
 function encodeRfc3986(value: string): string {
@@ -299,17 +303,22 @@ async function signatureForCanonicalRequest(args: {
   );
 }
 
+/// R2 refuses a PUT that declares any length but [contentLength], so no URL can
+/// store more than that. Content-Length stays out of `requiredHeaders`: every
+/// client's HTTP stack already sends the real length, and browsers refuse to
+/// let a page set it.
 export async function presignR2PutUrl(args: {
   config: R2Config;
   objectKey: string;
   mimeType: string;
+  contentLength: number;
   now?: Date;
 }): Promise<{ uploadUrl: string; expiresAt: number; requiredHeaders: Record<string, string> }> {
   const now = args.now ?? new Date();
   const { amzDate, dateStamp } = toAmzDate(now);
   const url = objectUrl(args.config, args.objectKey);
   const credentialScope = `${dateStamp}/${r2Region}/${r2Service}/aws4_request`;
-  const signedHeaders = "content-type;host";
+  const signedHeaders = "content-length;content-type;host";
   const queryParams: Array<[string, string]> = [
     ["X-Amz-Algorithm", "AWS4-HMAC-SHA256"],
     ["X-Amz-Content-Sha256", unsignedPayload],
@@ -322,7 +331,7 @@ export async function presignR2PutUrl(args: {
     "PUT",
     url.pathname,
     canonicalQueryString(queryParams),
-    `content-type:${args.mimeType}\nhost:${url.host}\n`,
+    `content-length:${args.contentLength}\ncontent-type:${args.mimeType}\nhost:${url.host}\n`,
     signedHeaders,
     unsignedPayload,
   ].join("\n");

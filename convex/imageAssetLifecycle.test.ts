@@ -565,6 +565,7 @@ describe("image asset lifecycle", () => {
       assetPublicId: "in-flight",
       mimeType: "image/png",
       fileExtension: "png",
+      byteSize: 100,
     })) as { objectKey: string; expiresAt: number };
     expect(await allAssets(t)).toMatchObject([
       { uploadStatus: "pending", uploadUrlExpiresAt: upload.expiresAt },

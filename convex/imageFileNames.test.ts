@@ -137,6 +137,7 @@ describe("image file names", () => {
           assetPublicId,
           mimeType: "image/png",
           fileExtension: ".png",
+          byteSize: 68,
         }),
         JSON.stringify(assetPublicId),
       ).rejects.toThrow(/file name/);
@@ -154,6 +155,7 @@ describe("image file names", () => {
         assetPublicId,
         mimeType: "image/png",
         fileExtension: ".png",
+        byteSize: 68,
       })) as { uploadId: string };
 
     const renamed = await startUpload("renamed");
