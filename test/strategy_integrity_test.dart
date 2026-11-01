@@ -1075,6 +1075,71 @@ void main() {
       expect(harness.strategies.isEmpty, isTrue);
     });
 
+    group('a failed import leaves no image folder behind', () {
+      final image = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+      Future<void> expectNoFolderAfter(
+        Map<String, List<int>> files,
+        Matcher error,
+      ) async {
+        final harness = await _IcaHarness.open();
+        addTearDown(harness.close);
+        final archive = Archive();
+        files.forEach((name, bytes) {
+          archive.addFile(ArchiveFile(name, bytes.length, bytes));
+        });
+        final file = File(path.join(harness.directory.path, 'failed.ica'));
+        await file.writeAsBytes(ZipEncoder().encode(archive));
+
+        await expectLater(
+          StrategyImportExportService(harness.container)
+              .loadFromFilePath(file.path),
+          throwsA(error),
+        );
+
+        expect(harness.strategies.isEmpty, isTrue);
+        final folders = harness.directory
+            .listSync()
+            .whereType<Directory>()
+            .where((d) => path.basename(d.path) != 'xyz_icarus_strats');
+        expect(folders, isEmpty);
+      }
+
+      test('from a newer version', () async {
+        await expectNoFolderAfter(
+          {
+            'newer.json': utf8.encode(jsonEncode({
+              'versionNumber': Settings.versionNumber + 1,
+              'mapData': 'ascent',
+            })),
+            'picture.png': image,
+          },
+          isA<NewerVersionImportException>(),
+        );
+      });
+
+      test('with no strategy in it', () async {
+        await expectNoFolderAfter(
+          {'picture.png': image},
+          isA<Exception>(),
+        );
+      });
+
+      test('with a broken strategy', () async {
+        await expectNoFolderAfter(
+          {
+            'broken.json': utf8.encode(jsonEncode({
+              'versionNumber': '${Settings.versionNumber}',
+              'mapData': 'ascent',
+              'pages': 'not-a-list',
+            })),
+            'picture.png': image,
+          },
+          anyOf(isA<TypeError>(), isA<FormatException>()),
+        );
+      });
+    });
+
     test('corrupt pages shape fails loudly without saving', () async {
       final harness = await _IcaHarness.open();
       addTearDown(harness.close);

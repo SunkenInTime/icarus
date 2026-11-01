@@ -55,6 +55,7 @@
 //   {"openShareLink": path}            opens the link whose code is in the file
 //   {"importReplay": path}             {"fakeSaveDir": dir, "as": name?}
 //                                      answers save dialogs, typing name if given
+//   {"fakePick": path}                 answers open dialogs with this file
 //   {"dropFiles": [paths], "at": [x, y]}  dropped from Explorer
 //   {"exportIca": path}                {"importIca": path}
 // Pictures
@@ -658,6 +659,37 @@ class _FakeSaver extends FilePicker {
   }
 }
 
+class _FakeOpener extends FilePicker {
+  _FakeOpener(this.filePath);
+  final String filePath;
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = true,
+    int compressionQuality = 0,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) async {
+    final file = File(filePath);
+    _log('PICK $filePath');
+    return FilePickerResult([
+      PlatformFile(
+        path: filePath,
+        name: file.uri.pathSegments.last,
+        size: file.lengthSync(),
+      ),
+    ]);
+  }
+}
+
 // Cloud state.
 
 /// The links opened, kept here so a run never opens a browser on the desktop
@@ -1090,6 +1122,8 @@ Future<void> _run(Map<String, dynamic> step) async {
       send('performOperation', (value as List).cast<String>());
     case 'fakeSaveDir':
       FilePicker.platform = _FakeSaver(value as String, step['as'] as String?);
+    case 'fakePick':
+      FilePicker.platform = _FakeOpener(value as String);
     case 'exportIca':
       final id = c.read(strategyProvider).strategyId!;
       await c.read(strategyProvider.notifier).forceSaveNow(id);

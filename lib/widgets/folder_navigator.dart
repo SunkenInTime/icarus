@@ -90,13 +90,13 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   }
 
   Future<void> handleImportIca() => _importPicked(
-        StrategyImportExportService(ref).loadFromFilePicker,
+        StrategyImportExportService(ref).importFromFilePicker,
         failureMessage: 'Failed to import strategy file.',
         source: 'FolderNavigator.handleImportIca',
       );
 
   Future<void> handleImportBackup() => _importPicked(
-        StrategyImportExportService(ref).importBackupFromFilePicker,
+        StrategyImportExportService(ref).importFromFilePicker,
         failureMessage: 'Failed to import backup archive.',
         source: 'FolderNavigator.handleImportBackup',
       );
