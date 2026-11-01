@@ -138,7 +138,13 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
     );
   }
 
+  /// Counts edits marked unsaved. A save reads this before it snapshots the
+  /// canvas, and passes it to [markPersisted].
+  int get dirtyMarks => _dirtyMarks;
+  int _dirtyMarks = 0;
+
   void markDirty() {
+    _dirtyMarks++;
     state = state.copyWith(
       isDirty: true,
       clearCloudSyncError: true,
@@ -181,9 +187,13 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
     );
   }
 
-  void markPersisted() {
+  /// The library holds the canvas as of [dirtyMarksSaved]. An edit marked
+  /// after that isn't in what was written, so it stays unsaved.
+  void markPersisted({int? dirtyMarksSaved}) {
+    final editedSince =
+        dirtyMarksSaved != null && dirtyMarksSaved != _dirtyMarks;
     state = state.copyWith(
-      isDirty: false,
+      isDirty: editedSince,
       isSaving: false,
       hasPendingCloudSync: false,
       hasPendingMediaSync: false,

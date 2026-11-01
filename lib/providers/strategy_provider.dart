@@ -2504,6 +2504,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     // final mapData = ref.read(mapProvider);
     // final imageData = ref.read(placedImageProvider).images;
     // final utilityData = ref.read(utilityProvider);
+    final dirtyMarksSaved =
+        ref.read(strategySaveStateProvider.notifier).dirtyMarks;
     await _syncCurrentPageToHive();
 
     final StrategyData? savedStrat =
@@ -2524,8 +2526,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .put(currentStrategy.id, currentStrategy);
 
-    ref.read(strategySaveStateProvider.notifier).markPersisted();
-    state = state.copyWith(isSaved: true);
+    ref
+        .read(strategySaveStateProvider.notifier)
+        .markPersisted(dirtyMarksSaved: dirtyMarksSaved);
+    state = state.copyWith(
+      isSaved: !ref.read(strategySaveStateProvider).isDirty,
+    );
     log("Save to hive was called");
   }
 

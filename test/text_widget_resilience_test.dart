@@ -447,6 +447,92 @@ void main() {
     container.read(strategyProvider.notifier).cancelPendingSave();
   });
 
+  testWidgets('a character typed during a save stays unsaved', (tester) async {
+    final box = (await tester.runAsync(
+      () => openStrategyTestBoxes('icarus-text-widget-race-'),
+    ))!;
+    final page = StrategyPage(
+      id: 'page-1',
+      name: 'Page 1',
+      drawingData: const [],
+      agentData: const [],
+      abilityData: const [],
+      textData: [PlacedText(id: 'text-1', position: const Offset(10, 20))],
+      imageData: const [],
+      utilityData: const [],
+      sortIndex: 0,
+      isAttack: true,
+      settings: StrategySettings(),
+    );
+    final strategy = StrategyData(
+      id: 'strategy-1',
+      name: 'Strategy 1',
+      mapData: MapValue.ascent,
+      versionNumber: 1,
+      lastEdited: DateTime(2024),
+      folderID: null,
+      pages: [page],
+    );
+    await tester.runAsync(() => box.put(strategy.id, strategy));
+
+    final container = createContainer();
+    container.read(textProvider.notifier).fromHive(page.textData);
+    final strategyNotifier = container.read(strategyProvider.notifier);
+    strategyNotifier.setFromState(
+      StrategyState(
+        strategyId: strategy.id,
+        strategyName: strategy.name,
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+    );
+    container.read(strategyPageSessionProvider.notifier).setStateForTest(
+          const StrategyPageSessionState(
+            activePageId: 'page-1',
+            availablePageIds: ['page-1'],
+            transitionState: PageTransitionState.idle,
+            isApplyingPage: false,
+          ),
+        );
+
+    await tester.pumpWidget(buildTextHarness(container));
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), 'saved');
+    await tester.pump();
+
+    final controller =
+        tester.widget<TextField>(find.byType(TextField)).controller!;
+    await tester.runAsync(() async {
+      final save = strategyNotifier.saveToHive(strategy.id);
+      controller.text = 'saved and more';
+      await save;
+    });
+    await tester.pump();
+
+    expect(box.get(strategy.id)!.pages.single.textData.single.text, 'saved');
+    expect(container.read(strategySaveStateProvider).isDirty, isTrue);
+
+    await tester.runAsync(() => strategyNotifier.saveToHive(strategy.id));
+    await tester.pump();
+
+    expect(
+      box.get(strategy.id)!.pages.single.textData.single.text,
+      'saved and more',
+    );
+    expect(container.read(strategySaveStateProvider).isDirty, isFalse);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SizedBox.shrink()),
+      ),
+    );
+    await tester.pump();
+    strategyNotifier.cancelPendingSave();
+  });
+
   testWidgets('feedback widget matches editable widget size', (tester) async {
     await tester.pumpWidget(buildFeedbackParityHarness());
     await tester.pump();
