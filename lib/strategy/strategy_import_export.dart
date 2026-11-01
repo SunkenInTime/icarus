@@ -1885,6 +1885,9 @@ class StrategyImportExportService {
             globals.showRegionNames ?? currentPreferences.showRegionNames,
         backgroundDotOpacity: globals.backgroundDotOpacity?.clamp(0.0, 1.0) ??
             currentPreferences.backgroundDotOpacity,
+        viewConeOpacity: globals.viewConeOpacity
+                ?.clamp(AppPreferences.minViewConeOpacity, 1.0) ??
+            currentPreferences.viewConeOpacity,
         // Written straight to storage, past the colour library that limits
         // what the colour pickers have to draw, so the limit applies here.
         customColorValues: globals.hasCustomColorValues
@@ -2636,6 +2639,7 @@ class StrategyImportExportService {
       showUltOrbs: appPreferences?.showUltOrbs,
       showRegionNames: appPreferences?.showRegionNames,
       backgroundDotOpacity: appPreferences?.backgroundDotOpacity,
+      viewConeOpacity: appPreferences?.viewConeOpacity,
       customColorValues: appPreferences?.customColorValues ?? const [],
       favoriteAgents: favoriteAgents,
     );

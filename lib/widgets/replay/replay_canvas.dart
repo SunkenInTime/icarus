@@ -538,6 +538,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                         child: IgnorePointer(
                           child: switch (cuts) {
                             final cuts? => RevealedFloor(
+                                opacity: preferences.viewConeOpacity,
                                 cones: ReplayConesPainter(
                                   cones: frame.cones.values,
                                   occluders: frame.occluders,
@@ -560,6 +561,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                               ),
                             null => ConeCoverageLayer(
                                 coverage: _cones,
+                                opacity: preferences.viewConeOpacity,
                                 child: revealedMap,
                               ),
                           },

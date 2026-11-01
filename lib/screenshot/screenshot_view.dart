@@ -199,6 +199,7 @@ class ScreenshotView extends ConsumerWidget {
           Positioned.fill(
             child: ConeCoverageLayer(
               coverage: cones,
+              opacity: ref.watch(appPreferencesProvider).viewConeOpacity,
               child: Stack(
                 children: [
                   Positioned(
