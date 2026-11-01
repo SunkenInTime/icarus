@@ -185,11 +185,13 @@ final class _IcarusConvexApi implements IcarusConvexApi {
 abstract interface class ElementsModule {
   ConvexQuery<List<ElementsListForPageResultItem>> listForPage({
     required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required String pagePublicId,
     required String strategyPublicId,
   });
   ConvexQuery<List<ElementsListForPageResultItem>> listForStrategy({
     required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
 }
@@ -200,11 +202,13 @@ final class _ElementsModule implements ElementsModule {
   @override
   ConvexQuery<List<ElementsListForPageResultItem>> listForPage({
     required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required String pagePublicId,
     required String strategyPublicId,
   }) {
     final args = encodeElementsListForPageArgs(
       clientProtocolVersion: clientProtocolVersion,
+      elementFieldLevel: elementFieldLevel,
       pagePublicId: pagePublicId,
       strategyPublicId: strategyPublicId,
     );
@@ -219,10 +223,12 @@ final class _ElementsModule implements ElementsModule {
   @override
   ConvexQuery<List<ElementsListForPageResultItem>> listForStrategy({
     required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeElementsListForStrategyArgs(
       clientProtocolVersion: clientProtocolVersion,
+      elementFieldLevel: elementFieldLevel,
       strategyPublicId: strategyPublicId,
     );
     return ConvexQuery(
@@ -764,6 +770,7 @@ abstract interface class OpsModule {
         const ConvexOptional.absent(),
     required String clientId,
     required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required List<OpsApplyBatchArgsOpsItem> ops,
     required String strategyPublicId,
   });
@@ -782,6 +789,7 @@ final class _OpsModule implements OpsModule {
         const ConvexOptional.absent(),
     required String clientId,
     required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required List<OpsApplyBatchArgsOpsItem> ops,
     required String strategyPublicId,
   }) {
@@ -793,6 +801,7 @@ final class _OpsModule implements OpsModule {
       checkTrashedPageDeletes: checkTrashedPageDeletes,
       clientId: clientId,
       clientProtocolVersion: clientProtocolVersion,
+      elementFieldLevel: elementFieldLevel,
       ops: ops,
       strategyPublicId: strategyPublicId,
     );
@@ -806,6 +815,7 @@ final class _OpsModule implements OpsModule {
 abstract interface class PageModule {
   ConvexQuery<PageGetElementSliceResult> getElementSlice({
     required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required String fromPublicId,
     required String pagePublicId,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
@@ -821,6 +831,7 @@ abstract interface class PageModule {
   ConvexQuery<PageGetSnapshotResult> getSnapshot({
     ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required String pagePublicId,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
@@ -833,6 +844,7 @@ final class _PageModule implements PageModule {
   @override
   ConvexQuery<PageGetElementSliceResult> getElementSlice({
     required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required String fromPublicId,
     required String pagePublicId,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
@@ -841,6 +853,7 @@ final class _PageModule implements PageModule {
   }) {
     final args = encodePageGetElementSliceArgs(
       clientProtocolVersion: clientProtocolVersion,
+      elementFieldLevel: elementFieldLevel,
       fromPublicId: fromPublicId,
       pagePublicId: pagePublicId,
       shareToken: shareToken,
@@ -880,6 +893,7 @@ final class _PageModule implements PageModule {
   ConvexQuery<PageGetSnapshotResult> getSnapshot({
     ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required String pagePublicId,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
@@ -887,6 +901,7 @@ final class _PageModule implements PageModule {
     final args = encodePageGetSnapshotArgs(
       acceptsPictureIds: acceptsPictureIds,
       clientProtocolVersion: clientProtocolVersion,
+      elementFieldLevel: elementFieldLevel,
       pagePublicId: pagePublicId,
       shareToken: shareToken,
       strategyPublicId: strategyPublicId,
@@ -1742,6 +1757,7 @@ abstract interface class StrategyModule {
     ConvexOptional<bool> acceptsTrashedPagesLeftOut =
         const ConvexOptional.absent(),
     required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     ConvexOptional<bool> includeContentVersion = const ConvexOptional.absent(),
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
@@ -1766,6 +1782,7 @@ final class _StrategyModule implements StrategyModule {
     ConvexOptional<bool> acceptsTrashedPagesLeftOut =
         const ConvexOptional.absent(),
     required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     ConvexOptional<bool> includeContentVersion = const ConvexOptional.absent(),
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
@@ -1774,6 +1791,7 @@ final class _StrategyModule implements StrategyModule {
       acceptsPictureIds: acceptsPictureIds,
       acceptsTrashedPagesLeftOut: acceptsTrashedPagesLeftOut,
       clientProtocolVersion: clientProtocolVersion,
+      elementFieldLevel: elementFieldLevel,
       includeContentVersion: includeContentVersion,
       shareToken: shareToken,
       strategyPublicId: strategyPublicId,

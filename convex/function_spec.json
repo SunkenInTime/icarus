@@ -10,6 +10,12 @@
             },
             "optional": false
           },
+          "elementFieldLevel": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
           "pagePublicId": {
             "fieldType": {
               "type": "string"
@@ -19695,6 +19701,12 @@
               "type": "number"
             },
             "optional": false
+          },
+          "elementFieldLevel": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
           },
           "strategyPublicId": {
             "fieldType": {
@@ -48466,6 +48478,12 @@
               "type": "number"
             },
             "optional": false
+          },
+          "elementFieldLevel": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
           },
           "ops": {
             "fieldType": {
@@ -144233,6 +144251,12 @@
             },
             "optional": false
           },
+          "elementFieldLevel": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
           "fromPublicId": {
             "fieldType": {
               "type": "string"
@@ -167757,6 +167781,12 @@
               "type": "number"
             },
             "optional": false
+          },
+          "elementFieldLevel": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
           },
           "pagePublicId": {
             "fieldType": {
@@ -194141,6 +194171,12 @@
               "type": "number"
             },
             "optional": false
+          },
+          "elementFieldLevel": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
           },
           "includeContentVersion": {
             "fieldType": {

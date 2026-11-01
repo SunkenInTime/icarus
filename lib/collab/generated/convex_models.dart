@@ -6040,6 +6040,7 @@ bool _matchesRaw33(ConvexValue value) =>
 
 ConvexObject encodeElementsListForPageArgs({
   required double clientProtocolVersion,
+  ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
   required String pagePublicId,
   required String strategyPublicId,
 }) => ConvexObject({
@@ -6047,6 +6048,11 @@ ConvexObject encodeElementsListForPageArgs({
     clientProtocolVersion,
     'elements.js:listForPage.args.clientProtocolVersion',
   ),
+  if (elementFieldLevel.isPresent)
+    'elementFieldLevel': _encodeNumber(
+      elementFieldLevel.value,
+      'elements.js:listForPage.args.elementFieldLevel',
+    ),
   'pagePublicId': ConvexString(pagePublicId),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
@@ -6064,12 +6070,18 @@ List<ElementsListForPageResultItem> decodeElementsListForPageResult(
 
 ConvexObject encodeElementsListForStrategyArgs({
   required double clientProtocolVersion,
+  ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
     'elements.js:listForStrategy.args.clientProtocolVersion',
   ),
+  if (elementFieldLevel.isPresent)
+    'elementFieldLevel': _encodeNumber(
+      elementFieldLevel.value,
+      'elements.js:listForStrategy.args.elementFieldLevel',
+    ),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
 
@@ -6528,6 +6540,7 @@ ConvexObject encodeOpsApplyBatchArgs({
   ConvexOptional<bool> checkTrashedPageDeletes = const ConvexOptional.absent(),
   required String clientId,
   required double clientProtocolVersion,
+  ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
   required List<OpsApplyBatchArgsOpsItem> ops,
   required String strategyPublicId,
 }) => ConvexObject({
@@ -6546,6 +6559,11 @@ ConvexObject encodeOpsApplyBatchArgs({
     clientProtocolVersion,
     'ops.js:applyBatch.args.clientProtocolVersion',
   ),
+  if (elementFieldLevel.isPresent)
+    'elementFieldLevel': _encodeNumber(
+      elementFieldLevel.value,
+      'ops.js:applyBatch.args.elementFieldLevel',
+    ),
   'ops': ConvexArray(
     ops.indexed
         .map(
@@ -6563,6 +6581,7 @@ OpsApplyBatchResult decodeOpsApplyBatchResult(ConvexValue value) =>
 
 ConvexObject encodePageGetElementSliceArgs({
   required double clientProtocolVersion,
+  ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
   required String fromPublicId,
   required String pagePublicId,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
@@ -6573,6 +6592,11 @@ ConvexObject encodePageGetElementSliceArgs({
     clientProtocolVersion,
     'page.js:getElementSlice.args.clientProtocolVersion',
   ),
+  if (elementFieldLevel.isPresent)
+    'elementFieldLevel': _encodeNumber(
+      elementFieldLevel.value,
+      'page.js:getElementSlice.args.elementFieldLevel',
+    ),
   'fromPublicId': ConvexString(fromPublicId),
   'pagePublicId': ConvexString(pagePublicId),
   if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
@@ -6604,6 +6628,7 @@ PageGetFrameResult decodePageGetFrameResult(ConvexValue value) =>
 ConvexObject encodePageGetSnapshotArgs({
   ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
   required double clientProtocolVersion,
+  ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
   required String pagePublicId,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
@@ -6614,6 +6639,11 @@ ConvexObject encodePageGetSnapshotArgs({
     clientProtocolVersion,
     'page.js:getSnapshot.args.clientProtocolVersion',
   ),
+  if (elementFieldLevel.isPresent)
+    'elementFieldLevel': _encodeNumber(
+      elementFieldLevel.value,
+      'page.js:getSnapshot.args.elementFieldLevel',
+    ),
   'pagePublicId': ConvexString(pagePublicId),
   if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
   'strategyPublicId': ConvexString(strategyPublicId),
@@ -7281,6 +7311,7 @@ ConvexObject encodeStrategyGetFullSnapshotArgs({
   ConvexOptional<bool> acceptsTrashedPagesLeftOut =
       const ConvexOptional.absent(),
   required double clientProtocolVersion,
+  ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
   ConvexOptional<bool> includeContentVersion = const ConvexOptional.absent(),
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
@@ -7295,6 +7326,11 @@ ConvexObject encodeStrategyGetFullSnapshotArgs({
     clientProtocolVersion,
     'strategy.js:getFullSnapshot.args.clientProtocolVersion',
   ),
+  if (elementFieldLevel.isPresent)
+    'elementFieldLevel': _encodeNumber(
+      elementFieldLevel.value,
+      'strategy.js:getFullSnapshot.args.elementFieldLevel',
+    ),
   if (includeContentVersion.isPresent)
     'includeContentVersion': ConvexBoolean(includeContentVersion.value),
   if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),

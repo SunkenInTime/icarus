@@ -8,13 +8,14 @@ import {
   refreshStrategyAgentSummary,
   syncLineupAgents,
 } from "./lib/strategyAgentSummary";
+import { elementFieldLevelArg, keepLaterFields } from "./lib/elementFields";
 import {
   expectAssets,
   keepPictureId,
   referencedAssetIds,
-  withoutPictureId,
   staleUploadAgeMs,
 } from "./lib/imageAssets";
+import { elementPayloadForClient } from "./lib/snapshotSerialization";
 import {
   removeUploadPlaceholders,
   syncElementAssetReferences,
@@ -793,6 +794,7 @@ function toPublicResult(
   op: StrategyOp,
   result: OperationResult,
   acceptsPictureIds: boolean,
+  elementFieldLevel: number | undefined,
 ): PublicOperationResult {
   if (result.status === "failed") {
     return {
@@ -837,8 +839,12 @@ function toPublicResult(
             type: currentTargetForOp(op),
             revision: result.latestRevision,
             value:
-              op.entityType === "element" && !acceptsPictureIds
-                ? withoutPictureId(result.latestPayload as ElementPayload)
+              op.entityType === "element"
+                ? elementPayloadForClient(
+                    result.latestPayload as ElementPayload,
+                    acceptsPictureIds,
+                    elementFieldLevel,
+                  )
                 : result.latestPayload,
           } as Infer<typeof currentOpSnapshotValidator>,
         }),
@@ -1270,6 +1276,14 @@ async function applyPageContentOp(
   return { status: "ack", appliedRevision: revision, eventPageId: page._id };
 }
 
+/// [next] keeping what a write can't take from [current] by leaving it out.
+function keepStoredFields(
+  current: ElementPayload,
+  next: ElementPayload,
+): ElementPayload {
+  return keepLaterFields(current, keepPictureId(current, next));
+}
+
 async function applyElementOp(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
@@ -1289,7 +1303,7 @@ async function applyElementOp(
     const page = await requireTargetPage(ctx, strategy, op.pagePublicId);
     const sent = assertElementPayload(op.payload);
     const payload =
-      existing === null ? sent : keepPictureId(existing.payload, sent);
+      existing === null ? sent : keepStoredFields(existing.payload, sent);
     if (existing !== null) {
       if (existing.strategyId !== strategy._id) {
         return rejected("element_strategy_mismatch");
@@ -1437,7 +1451,7 @@ async function applyElementOp(
           checkRevision = true;
         }
       }
-      payload = keepPictureId(existing.payload, payload);
+      payload = keepStoredFields(existing.payload, payload);
       setIfChanged(patch, "payload", existing.payload, payload);
       setIfChanged(patch, "payloadKind", existing.payloadKind, payload.kind);
       setIfChanged(
@@ -1859,6 +1873,7 @@ export const applyBatch = mutation({
     // without it, as they would write them, and find pictures under each
     // image's own id (withPictureAliases).
     acceptsPictureIds: v.optional(v.boolean()),
+    elementFieldLevel: elementFieldLevelArg,
     // Sent by clients on protocol 4, which stored lineups as origin,
     // landing and link rows. Ignored: accepting them lets such a client
     // reach the protocol gate (CLIENT_UPGRADE_REQUIRED) instead of failing
@@ -1939,7 +1954,12 @@ export const applyBatch = mutation({
                 }
               : noop(existingEvent.appliedRevision);
         results.push(
-          toPublicResult(op, replayResult, args.acceptsPictureIds === true),
+          toPublicResult(
+            op,
+            replayResult,
+            args.acceptsPictureIds === true,
+            args.elementFieldLevel,
+          ),
         );
         continue;
       }
@@ -2054,6 +2074,7 @@ export const applyBatch = mutation({
         op,
         result,
         args.acceptsPictureIds === true,
+        args.elementFieldLevel,
       );
 
       await ctx.db.insert("operationEvents", {
