@@ -51,6 +51,7 @@
 //                                      writes its code to the file
 //   {"openShareLink": path}            opens the link whose code is in the file
 //   {"importReplay": path}             {"fakeSaveDir": dir}  answers save dialogs
+//   {"dropFiles": [paths], "at": [x, y]}  dropped from Explorer
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
@@ -908,6 +909,19 @@ Future<void> _run(Map<String, dynamic> step) async {
           );
     case 'importReplay':
       await c.read(replayLibraryProvider.notifier).import(value as String);
+    case 'dropFiles':
+      // The messages the native drop target sends, so the drop arrives where
+      // Windows delivers one.
+      final at = _point(step, 'at');
+      void send(String method, Object? arguments) => ui.channelBuffers.push(
+            'desktop_drop',
+            const StandardMethodCodec()
+                .encodeMethodCall(MethodCall(method, arguments)),
+            (_) {},
+          );
+      send('entered', [at.dx, at.dy]);
+      await _frames();
+      send('performOperation', (value as List).cast<String>());
     case 'fakeSaveDir':
       FilePicker.platform = _FakeSaver(value as String);
     case 'shot':

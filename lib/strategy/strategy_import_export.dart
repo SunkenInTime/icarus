@@ -204,6 +204,17 @@ class _ImportBatchTotal {
       );
 }
 
+/// What a file is by its contents, whatever it is named.
+enum _ImportFileKind {
+  /// An .ica: the strategy's JSON, alone (the oldest files) or zipped with
+  /// its images.
+  strategy,
+
+  /// A zip of .ica files: a backup, an exported folder, or one a user made.
+  archive,
+  unknown,
+}
+
 class _ImportEntityListing {
   const _ImportEntityListing({
     required this.entities,
@@ -324,50 +335,35 @@ class StrategyImportExportService {
     );
   }
 
-  Future<void> loadFromFilePath(String filePath) async {
-    await _importStrategyFile(
-      file: XFile(filePath),
-      targetFolderId: null,
-    );
-  }
-
-  Future<void> loadFromFilePicker() async {
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: false,
-      type: FileType.custom,
-      allowedExtensions: ['ica'],
-    );
-
-    if (result == null) return;
-
-    for (final file in result.files) {
-      await _importStrategyFile(
-        file: file.xFile,
+  Future<ImportBatchResult> loadFromFilePath(String filePath) => _importFile(
+        file: XFile(filePath),
         targetFolderId: null,
       );
-    }
-  }
 
-  Future<ImportBatchResult> importBackupFromFilePicker() async {
+  Future<ImportBatchResult> loadFromFilePicker() =>
+      _importPickedFile(targetFolderId: null);
+
+  Future<ImportBatchResult> importBackupFromFilePicker() =>
+      _importPickedFile(targetFolderId: _localFolderOnScreen());
+
+  /// The dialog lists every file: an export that lost its extension is
+  /// invisible to a filter on .ica or .zip, and [_importFile] goes by what a
+  /// file holds.
+  Future<ImportBatchResult> _importPickedFile({
+    required String? targetFolderId,
+  }) async {
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: false,
-      type: FileType.custom,
-      allowedExtensions: ['zip'],
+      type: FileType.any,
     );
-
-    if (result == null || result.files.isEmpty) {
-      return const ImportBatchResult.empty();
-    }
-
-    final pickedFile = result.files.single;
-    final filePath = pickedFile.path;
+    final filePath = result?.files.singleOrNull?.path;
     if (filePath == null || filePath.isEmpty) {
       return const ImportBatchResult.empty();
     }
 
-    return _importZipArchive(
-      zipFile: File(filePath),
-      parentFolderId: _localFolderOnScreen(),
+    return _importFile(
+      file: XFile(filePath),
+      targetFolderId: targetFolderId,
     );
   }
 
@@ -481,6 +477,114 @@ class StrategyImportExportService {
         header[3] == 0x04;
   }
 
+  /// Reads what [file] is from its contents. An export that lost its
+  /// extension is still an .ica, and an .ica is a zip, so neither a name nor a
+  /// zip header tells a strategy from a backup. A file named .ica that can't
+  /// be recognised goes to the strategy import, which says what's wrong with
+  /// it.
+  Future<_ImportFileKind> _importFileKind(File file) async {
+    final unrecognised = path.extension(file.path).toLowerCase() == '.ica'
+        ? _ImportFileKind.strategy
+        : _ImportFileKind.unknown;
+    try {
+      if (await isZipFile(file)) {
+        final archive = ZipDecoder().decodeBytes(await file.readAsBytes());
+        return _zipImportKind(archive) ?? unrecognised;
+      }
+
+      // The first bytes rule out most files without reading all of them; a
+      // folder can hold thousands of files that are neither.
+      final head = await file.openRead(0, 64).expand((bytes) => bytes).toList();
+      if (String.fromCharCodes(head).trimLeft().startsWith('{') &&
+          _isStrategyJson(await file.readAsBytes())) {
+        return _ImportFileKind.strategy;
+      }
+    } catch (_) {
+      // Unreadable, truncated or not really a zip.
+    }
+    return unrecognised;
+  }
+
+  _ImportFileKind? _zipImportKind(Archive archive) {
+    final files = archive.where((entry) => entry.isFile);
+
+    // Before the manifest: a strategy saved as "icarus-metadata" holds a file
+    // of that name. Where and how [_importStrategyFile] looks for its JSON.
+    final isStrategy = files.any((entry) {
+      final name = normalizeArchivePath(entry.name);
+      return !name.contains('/') &&
+          path.extension(name) == '.json' &&
+          _isStrategyJson(_archiveFileBytes(entry));
+    });
+    if (isStrategy) return _ImportFileKind.strategy;
+
+    final names = files.map((entry) => normalizeArchivePath(entry.name));
+    final holdsArchiveFile = names.any((name) {
+      final baseName = path.posix.basename(name);
+      return baseName == archiveMetadataFileName ||
+          (!_shouldIgnoreImportedEntityName(baseName) &&
+              path.extension(baseName).toLowerCase() == '.ica');
+    });
+    return holdsArchiveFile ? _ImportFileKind.archive : null;
+  }
+
+  /// The one thing [_importStrategyFile] can't do without is the map.
+  bool _isStrategyJson(List<int> bytes) {
+    try {
+      final json = jsonDecode(utf8.decode(bytes));
+      return json is Map<String, dynamic> && json.containsKey('mapData');
+    } on FormatException {
+      return false;
+    }
+  }
+
+  /// Imports [file] as what it is. Throws when a strategy fails to import;
+  /// a file that is neither a strategy nor an archive creates nothing and
+  /// comes back as an issue.
+  Future<ImportBatchResult> _importFile({
+    required XFile file,
+    required String? targetFolderId,
+  }) async {
+    final localFile = File(file.path);
+    switch (await _importFileKind(localFile)) {
+      case _ImportFileKind.strategy:
+        await _importStrategyFile(
+          file: file,
+          targetFolderId: targetFolderId,
+        );
+        return const ImportBatchResult(
+          strategiesImported: 1,
+          foldersCreated: 0,
+          issues: [],
+        );
+      case _ImportFileKind.archive:
+        return _importZipArchive(
+          zipFile: localFile,
+          parentFolderId: targetFolderId,
+        );
+      case _ImportFileKind.unknown:
+        return ImportBatchResult(
+          strategiesImported: 0,
+          foldersCreated: 0,
+          issues: [
+            ImportIssue(
+              path: file.path,
+              code: ImportIssueCode.unsupportedFile,
+            ),
+          ],
+        );
+    }
+  }
+
+  /// The name a file gives what's imported from it. Only an extension Icarus
+  /// reads comes off: "Bind v1.2" with its .ica lost is not named "Bind v1".
+  String _importedName(String fileName) {
+    const extensions = {'.ica', '.json', '.zip'};
+    return extensions.contains(path.extension(fileName).toLowerCase())
+        ? path.basenameWithoutExtension(fileName)
+        : path.basename(fileName);
+  }
+
   Future<ImportBatchResult> _importDroppedItem({
     required XFile file,
     required String? targetFolderId,
@@ -507,39 +611,9 @@ class StrategyImportExportService {
             parentFolderId: targetFolderId,
           );
         case FileSystemEntityType.file:
-          final extension = path.extension(file.path).toLowerCase();
-          if (extension == '.ica') {
-            await _importStrategyFile(
-              file: file,
-              targetFolderId: targetFolderId,
-            );
-            return const ImportBatchResult(
-              strategiesImported: 1,
-              foldersCreated: 0,
-              themeProfilesImported: 0,
-              globalStateRestored: false,
-              issues: [],
-            );
-          }
-
-          if (await isZipFile(File(file.path))) {
-            return await _importZipArchive(
-              zipFile: File(file.path),
-              parentFolderId: targetFolderId,
-            );
-          }
-
-          return ImportBatchResult(
-            strategiesImported: 0,
-            foldersCreated: 0,
-            themeProfilesImported: 0,
-            globalStateRestored: false,
-            issues: [
-              ImportIssue(
-                path: file.path,
-                code: ImportIssueCode.unsupportedFile,
-              ),
-            ],
+          return await _importFile(
+            file: file,
+            targetFolderId: targetFolderId,
           );
         case FileSystemEntityType.notFound:
         case FileSystemEntityType.link:
@@ -638,11 +712,6 @@ class StrategyImportExportService {
         name.startsWith('._');
   }
 
-  bool _isIcaFileEntity(FileSystemEntity entity) {
-    return entity is File &&
-        path.extension(entity.path).toLowerCase() == '.ica';
-  }
-
   Future<_ImportEntityListing> _listImportEntities(Directory directory) async {
     final issues = <ImportIssue>[];
     try {
@@ -698,7 +767,8 @@ class StrategyImportExportService {
         continue;
       }
 
-      if (_isIcaFileEntity(entity)) {
+      if (entity is File &&
+          await _importFileKind(entity) == _ImportFileKind.strategy) {
         try {
           await _importStrategyFile(
             file: XFile(entity.path),
@@ -898,7 +968,7 @@ class StrategyImportExportService {
         await _importLegacyZipArchiveFromEntries(
           archive: archive,
           parentFolderId: parentFolderId,
-          zipFileName: path.basenameWithoutExtension(zipFile.path),
+          zipFileName: _importedName(path.basename(zipFile.path)),
         ),
       );
     }
@@ -913,7 +983,7 @@ class StrategyImportExportService {
     return _importLegacyZipArchiveFromEntries(
       archive: archive,
       parentFolderId: parentFolderId,
-      zipFileName: path.basenameWithoutExtension(zipFile.path),
+      zipFileName: _importedName(path.basename(zipFile.path)),
     );
   }
 
@@ -2078,7 +2148,7 @@ class StrategyImportExportService {
         strategySettings: settingsData,
         pages: pages,
         id: newID,
-        name: displayNameOverride ?? path.basenameWithoutExtension(file.name),
+        name: displayNameOverride ?? _importedName(file.name),
         mapData: mapData,
         versionNumber: versionNumber,
         lastEdited: DateTime.now(),

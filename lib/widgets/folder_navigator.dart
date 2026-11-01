@@ -88,58 +88,39 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     );
   }
 
-  Future<void> handleImportIca() async {
+  Future<void> handleImportIca() => _importPicked(
+        StrategyImportExportService(ref).loadFromFilePicker,
+        failureMessage: 'Failed to import strategy file.',
+        source: 'FolderNavigator.handleImportIca',
+      );
+
+  Future<void> handleImportBackup() => _importPicked(
+        StrategyImportExportService(ref).importBackupFromFilePicker,
+        failureMessage: 'Failed to import backup archive.',
+        source: 'FolderNavigator.handleImportBackup',
+      );
+
+  Future<void> _importPicked(
+    Future<ImportBatchResult> Function() import, {
+    required String failureMessage,
+    required String source,
+  }) async {
     if (!ensureFeatureAvailable(ref, PlatformFeature.importFiles)) return;
     try {
-      await StrategyImportExportService(ref).loadFromFilePicker();
+      showImportResult(await import(), source: source);
     } on NewerVersionImportException catch (error, stackTrace) {
       AppErrorReporter.reportError(
         NewerVersionImportException.userMessage,
         error: error,
         stackTrace: stackTrace,
-        source: 'FolderNavigator.handleImportIca',
+        source: source,
       );
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
-        'Failed to import strategy file.',
+        failureMessage,
         error: error,
         stackTrace: stackTrace,
-        source: 'FolderNavigator.handleImportIca',
-      );
-    }
-  }
-
-  Future<void> handleImportBackup() async {
-    if (!ensureFeatureAvailable(ref, PlatformFeature.importFiles)) return;
-    try {
-      final result =
-          await StrategyImportExportService(ref).importBackupFromFilePicker();
-      if (result.hasImports || result.issues.isNotEmpty) {
-        final message = buildImportSummaryMessage(result);
-        if (result.hasImports) {
-          Settings.showToast(
-            message: message,
-            backgroundColor: Settings.tacticalVioletTheme.primary,
-          );
-          if (result.issues.isNotEmpty) {
-            AppErrorReporter.reportWarning(
-              message,
-              source: 'FolderNavigator.handleImportBackup',
-            );
-          }
-        } else {
-          AppErrorReporter.reportError(
-            message,
-            source: 'FolderNavigator.handleImportBackup',
-          );
-        }
-      }
-    } catch (error, stackTrace) {
-      AppErrorReporter.reportError(
-        'Failed to import backup archive.',
-        error: error,
-        stackTrace: stackTrace,
-        source: 'FolderNavigator.handleImportBackup',
+        source: source,
       );
     }
   }

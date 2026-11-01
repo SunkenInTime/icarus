@@ -64,6 +64,26 @@ String buildImportSummaryMessage(ImportBatchResult result) {
   return '$message$extraSuffix Skipped $skippedCount $skippedLabel.';
 }
 
+/// Tells the user how an import went: what came in, what was skipped, or that
+/// nothing did.
+void showImportResult(ImportBatchResult result, {required String source}) {
+  if (!result.hasImports && result.issues.isEmpty) return;
+
+  final message = buildImportSummaryMessage(result);
+  if (!result.hasImports) {
+    AppErrorReporter.reportError(message, source: source);
+    return;
+  }
+
+  Settings.showToast(
+    message: message,
+    backgroundColor: Settings.tacticalVioletTheme.primary,
+  );
+  if (result.issues.isNotEmpty) {
+    AppErrorReporter.reportWarning(message, source: source);
+  }
+}
+
 class IcaDropTarget extends ConsumerStatefulWidget {
   const IcaDropTarget({super.key, required this.child});
   final Widget child;
@@ -109,26 +129,7 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
           final result = await StrategyImportExportService(container)
               .loadFromFileDrop(files);
 
-          if (result.hasImports || result.issues.isNotEmpty) {
-            final message = buildImportSummaryMessage(result);
-            if (result.hasImports) {
-              Settings.showToast(
-                message: message,
-                backgroundColor: Settings.tacticalVioletTheme.primary,
-              );
-              if (result.issues.isNotEmpty) {
-                AppErrorReporter.reportWarning(
-                  message,
-                  source: 'IcaDropTarget.onDragDone',
-                );
-              }
-            } else {
-              AppErrorReporter.reportError(
-                message,
-                source: 'IcaDropTarget.onDragDone',
-              );
-            }
-          }
+          showImportResult(result, source: 'IcaDropTarget.onDragDone');
         } catch (error, stackTrace) {
           AppErrorReporter.reportError(
             'Failed to import dropped items.',
