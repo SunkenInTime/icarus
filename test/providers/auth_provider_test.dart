@@ -821,6 +821,24 @@ void main() {
     );
   });
 
+  test('signing up again within the minute points at the email already sent',
+      () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    supabaseApi.signUpError = const AuthApiException(
+      'For security purposes, you can only request this after 47 seconds.',
+      statusCode: '429',
+      code: 'over_email_send_rate_limit',
+    );
+    expect(
+      await container
+          .read(authProvider.notifier)
+          .signUpWithEmailPassword(email: 'a@b.co', password: 'secret'),
+      startsWith('We already sent a confirmation email'),
+    );
+  });
+
   test('a sign-up for an email that already has an account says so',
       () async {
     final container = ProviderContainer();

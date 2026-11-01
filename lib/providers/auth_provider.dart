@@ -966,6 +966,12 @@ class AuthProvider extends Notifier<AppAuthState> {
       return 'An account with this email already exists. Try signing in '
           'instead.';
     }
+    // Supabase lets each address ask once a minute, and this one just did:
+    // the email from that request is on its way or already there.
+    if (message.contains('for security purposes')) {
+      return 'We already sent a confirmation email to this address. Check '
+          'your inbox and spam, then open the link.';
+    }
     // Supabase hit its project-wide email limit or its mail server failed.
     // No account is created until the confirmation email goes out, and
     // waiting "a moment" doesn't bring the limit back, so say so.

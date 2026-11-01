@@ -14,6 +14,10 @@ enum _AuthField { email, password, confirm }
 
 const _bannerDuration = Duration(milliseconds: 180);
 
+/// Supabase takes an address like `foo@bar`, then can't send to it and
+/// answers as if its mail server had failed, so stop it here.
+final _emailShape = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s.]+$');
+
 class AuthDialog extends ConsumerStatefulWidget {
   const AuthDialog({
     super.key,
@@ -85,7 +89,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
     final password = _passwordController.text;
     final confirm = _confirmController.text;
 
-    if (email.isEmpty || !email.contains('@')) {
+    if (!_emailShape.hasMatch(email)) {
       _setValidationError('Enter a valid email address.', _AuthField.email);
       return;
     }
@@ -129,9 +133,11 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
     setState(() {
       _submitting = false;
       _message = error;
-      // The "account created" outcome comes back through the error channel
-      // but is good news — present it as info, not failure.
-      _messageIsInfo = error != null && error.startsWith('Account created');
+      // These outcomes come back through the error channel but are good
+      // news — present them as info, not failure.
+      _messageIsInfo = error != null &&
+          (error.startsWith('Account created') ||
+              error.startsWith('We already sent'));
     });
   }
 
