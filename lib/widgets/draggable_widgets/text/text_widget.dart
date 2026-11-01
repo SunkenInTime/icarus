@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/text/formatted_text_view.dart';
@@ -141,6 +142,7 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
     final nextText = _controller.text;
     if (nextText == _effectiveText()) return;
     _draftNotifier.setDraft(widget.id, nextText);
+    ref.read(strategyProvider.notifier).noteTextDraftChanged();
   }
 
   void _syncControllerWithExternalState() {
