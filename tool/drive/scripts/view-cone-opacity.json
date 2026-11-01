@@ -34,10 +34,5 @@
   {"wait": 8},
   {"shot": "{out}/6-after-save.png"},
   {"tapIcon": "x", "optional": true},
-  {"wait": 1},
-  {"wait": 3},
-  {"wait": 2},
-  {"wait": 4},
-  {"wait": 10},
   {"exit": 1}
 ]
