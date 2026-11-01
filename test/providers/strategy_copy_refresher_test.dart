@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -275,6 +276,31 @@ void main() {
       await keepOld('one', versioned: false);
       start();
       await _settle();
+      expect(repository.versionChecks, isEmpty);
+      expect(repository.fullReads, ['one']);
+      expect(store.copiedVersion(_scope, 'one'), isNotNull);
+    });
+
+    test('copied by a build that keeps fewer fields is read whole, once',
+        () async {
+      repository.owned = {'one'};
+      await keepOld('one');
+      await store.writeEntry(
+        store.entryKeys.singleWhere((key) => key.endsWith('refresh')),
+        jsonEncode({
+          'copyVersion': cloudStrategyCopyVersion,
+          'fullRefreshAt': DateTime.now()
+              .subtract(const Duration(hours: 25))
+              .millisecondsSinceEpoch,
+          'header': 'header',
+          'contentVersion': 1,
+        }),
+      );
+      expect(store.copiedVersion(_scope, 'one'), isNull);
+
+      start();
+      await _settle();
+
       expect(repository.versionChecks, isEmpty);
       expect(repository.fullReads, ['one']);
       expect(store.copiedVersion(_scope, 'one'), isNotNull);

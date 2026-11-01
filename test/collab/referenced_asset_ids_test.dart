@@ -74,6 +74,11 @@ void main() {
     for (final (name, args) in transport.calls) {
       expect((args.value['acceptsPictureIds'] as ConvexBoolean?)?.value, isTrue,
           reason: name);
+      expect(
+        (args.value['elementFieldLevel'] as ConvexFloat?)?.value,
+        currentElementFieldLevel,
+        reason: name,
+      );
     }
   });
 

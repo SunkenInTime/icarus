@@ -503,6 +503,7 @@ class StrategyMigrator {
             ..rotation = utility.rotation
             ..length = utility.length
             ..isDeleted = utility.isDeleted
+            ..caption = utility.caption
       ];
     }
 

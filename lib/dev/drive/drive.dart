@@ -41,6 +41,7 @@
 // Editor content
 //   {"addAgent": id, "at": [x, y], "agent": "jett"?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
+//   {"setCaption": id, "text": t}      as an edit would, before the app can make one
 //   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?}  two lineups, ids
 //                                      lo1{n}, lo2{n}; legacy ones share one id per lineup
 //   {"dragAgent": id, "by": [dx, dy]}  {"hoverAgent": id}
@@ -71,6 +72,7 @@
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
+//   {"logCaptions": tag}               every placed item's caption
 //   {"logLineups": tag}                {"logImages": tag}
 //   {"framesStart": 1} / {"framesLog": tag}   frame build and raster times between
 //                                      them: p50, p90, p99, worst, in ms
@@ -631,6 +633,18 @@ class _FakeSaver extends FilePicker {
 
 // Cloud state.
 
+/// Every item on the open page that takes a caption.
+List<PlacedWidget> _placedItems() {
+  final c = appProviderContainer;
+  return [
+    ...c.read(agentProvider),
+    ...c.read(abilityProvider),
+    ...c.read(textProvider),
+    ...c.read(placedImageProvider).images,
+    ...c.read(utilityProvider),
+  ];
+}
+
 bool _settled() {
   final c = appProviderContainer;
   return c.read(strategyOpQueueProvider).pending.isEmpty &&
@@ -1093,6 +1107,15 @@ Future<void> _run(Map<String, dynamic> step) async {
                 '${a.position.dy.toStringAsFixed(1)})'
         ]}',
       );
+    case 'setCaption':
+      final id = value as String;
+      _placedItems().singleWhere((item) => item.id == id).caption =
+          step['text'] as String;
+      c.read(strategyProvider.notifier).setUnsaved();
+    case 'logCaptions':
+      _log('CAPTIONS $value ${jsonEncode({
+            for (final item in _placedItems()) item.id: item.caption,
+          })}');
     case 'logPage':
       _log(
         'PAGE $value strategy=${c.read(strategyProvider).strategyName} '

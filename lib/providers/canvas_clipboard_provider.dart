@@ -392,7 +392,9 @@ class CanvasClipboardNotifier extends Notifier<CanvasClipboard?> {
         sizeVersion: image.sizeVersion,
         tagColorValue: image.tagColorValue,
         assetId: first ? null : picture,
-      )..link = image.link;
+      )
+        ..link = image.link
+        ..caption = image.caption;
     }
 
     final lineups = clipboard.lineups.copyOfLinks({

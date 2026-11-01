@@ -7,6 +7,11 @@ import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/sort_index_order.dart';
 
 const currentCloudProtocolVersion = 6;
+
+/// The later element fields this client keeps (LATER_ELEMENT_FIELDS in
+/// convex/lib/elementFields.ts). The server leaves fields past a client's
+/// level out of what it reads.
+const currentElementFieldLevel = 1;
 const currentCloudPayloadVersion = 1;
 const maxCloudOperationBytes = 900 * 1024;
 const maxCloudBatchBytes = 15 * 1024 * 1024;
