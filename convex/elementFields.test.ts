@@ -412,10 +412,36 @@ describe("a wall and the builds that don't know it", () => {
   test("a whole write by a build below the field's level leaves the wall", async () => {
     const { t, owner } = await seedWall();
 
-    await send(owner, captionsBuild, "old", [
+    const results = await send(owner, captionsBuild, "old", [
       patchAbility("whole", abilityData("tide", { length: 4 })),
     ]);
 
+    expect(results[0]!.status).toBe("applied");
+    const stored = (await row(t, "tide"))!.payload.data;
+    expect(stored.length).toBe(4);
+    expect(stored.wallPath).toEqual(wall);
+  });
+
+  test("a refused write doesn't hand a build below the field's level the wall", async () => {
+    const { t, owner } = await seedWall();
+    const offline = { position: { dx: 70, dy: 80 } };
+    await send(owner, wallBuild, "teammate", [
+      patchAbility("teammate", abilityData("tide", { position: { dx: 1, dy: 1 } }), {
+        fields: ["position"],
+      }),
+    ]);
+
+    const results = await send(owner, captionsBuild, "old", [
+      patchAbility("offline", abilityData("tide", offline), {
+        fields: ["position"],
+        base: [{ field: "position", value: { dx: 10, dy: 20 } }],
+      } as { fields: string[] }),
+    ]);
+
+    expect(results[0]!.reason).toBe("field_conflict");
+    expect(results[0]!.current.value.data).toEqual(
+      abilityData("tide", { position: { dx: 1, dy: 1 }, caption: note }),
+    );
     expect((await row(t, "tide"))!.payload.data.wallPath).toEqual(wall);
   });
 
