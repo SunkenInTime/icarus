@@ -1,0 +1,10 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"tapText": "High Tide menu", "optional": true},
+  {"wait": 5},
+  {"logWalls": "reopened"},
+  {"logPage": "reopened"},
+  {"shot": "{out}/6-reopened.png"},
+  {"exit": 1}
+]
