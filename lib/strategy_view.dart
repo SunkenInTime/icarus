@@ -424,14 +424,19 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       ),
     );
     final window = MediaQuery.sizeOf(context);
+    final covered =
+        formFactor == FormFactor.phone && window.height > window.width;
     return StrategyAccessWatcher(
       onLeave: _leaveToLibrary,
       // The same tree either way up, so turning the phone keeps the editor.
       child: Stack(
         fit: StackFit.expand,
         children: [
-          editor,
-          if (formFactor == FormFactor.phone && window.height > window.width)
+          ExcludeFocus(
+            excluding: covered,
+            child: ExcludeSemantics(excluding: covered, child: editor),
+          ),
+          if (covered)
             TurnPhoneNotice(
               onLeave: _leaveToLibrary,
               backTooltip: widget.backTooltip,
