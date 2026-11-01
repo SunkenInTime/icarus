@@ -7,7 +7,6 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
-import 'package:icarus/hive/hive_adapters.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
