@@ -605,7 +605,7 @@ void main() {
       expect(frame.abilities.map((a) => a.id), ['replay-utility-5']);
     });
 
-    test('a capture of High Tide saves its icon and nothing new', () {
+    test('High Tide places its icon, and its wall is only an effect', () {
       final frames = builder(document(
         players: harborPlayers,
         utility: [head(5, 1000), holder(6, 1002)],
@@ -641,8 +641,13 @@ void main() {
           required double width,
         }) {
           if (method != #drawPath) return false;
-          final bounds = (arguments[0] as Path).getBounds();
+          final line = arguments[0] as Path;
+          final bounds = line.getBounds();
           final paint = arguments[1] as Paint;
+          // Round the corner, not across it: the 100 + 100 world units of
+          // the line, which a straight cut between its ends would shorten.
+          expect(line.computeMetrics().single.length,
+              closeTo(CoordinateSystem.instance.worldHeightToScreen(200), 1e-2));
           expect(paint.style, PaintingStyle.stroke);
           expect(paint.color.toARGB32(), color.toARGB32());
           expect(paint.strokeWidth, closeTo(width * scale, 1e-3));
