@@ -202,9 +202,12 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
         ShadButton(
           onPressed: hasSelection && !_usingImage ? _useImage : null,
           leading: _usingImage
-              ? const SizedBox.square(
+              ? SizedBox.square(
                   dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Settings.tacticalVioletTheme.primaryForeground,
+                  ),
                 )
               : null,
           child: const Text('Use image'),
