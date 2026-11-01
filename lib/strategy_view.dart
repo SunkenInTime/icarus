@@ -24,6 +24,7 @@ import 'package:icarus/services/open_cloud_strategy_store.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/widgets/canvas_paste.dart';
 import 'package:icarus/widgets/delete_capture.dart';
 import 'package:icarus/widgets/dot_matrix_loaders.dart';
 import 'package:icarus/widgets/strategy_access_watcher.dart';
@@ -435,7 +436,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         children: [
           ExcludeFocus(
             excluding: covered,
-            child: ExcludeSemantics(excluding: covered, child: editor),
+            child: ExcludeSemantics(
+              excluding: covered,
+              child: CanvasPaste(child: editor),
+            ),
           ),
           if (covered)
             TurnPhoneNotice(

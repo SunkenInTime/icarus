@@ -346,7 +346,7 @@ class ShortcutInfo {
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.pasteImage,
-      title: 'Paste Image',
+      title: 'Paste',
       defaultBinding: IcarusKeyBinding(
         trigger: LogicalKeyboardKey.keyV,
         primary: true,
