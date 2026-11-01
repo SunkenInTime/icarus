@@ -1,0 +1,52 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"newLocal": "ascent", "name": "Draft identity {run}"},
+  {"wait": 4},
+  {"tapText": "Draft identity {run}", "optional": true},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"key": "keyC"},
+  {"wait": 2},
+  {"addAgent": "a1-{run}", "at": [640, 420]},
+  {"expectAgents": 1},
+
+  {"tapAt": [640, 420], "hold": 0.8},
+  {"wait": 1},
+  {"expectDead": 1},
+  {"tapAt": [640, 420], "hold": 0.8},
+  {"wait": 1},
+  {"expectDead": 0},
+
+  {"tapAt": [640, 420], "button": "secondary"},
+  {"wait": 1},
+  {"shot": "{out}/1-placed-agent-menu.png"},
+  {"waitText": "Copy to previous page", "seconds": 2},
+  {"waitText": "Delete", "seconds": 2},
+  {"tapText": "Create Lineup"},
+  {"wait": 1},
+
+  {"tapAt": [640, 420], "hold": 0.8},
+  {"wait": 1},
+  {"shot": "{out}/2-draft-after-long-press.png"},
+  {"expectDead": 0},
+
+  {"tapAt": [640, 420], "button": "secondary"},
+  {"wait": 1},
+  {"shot": "{out}/3-draft-menu.png"},
+  {"waitText": "Weapon", "seconds": 2},
+  {"waitText": "Create Lineup", "gone": true, "seconds": 2},
+  {"waitText": "Copy to previous page", "gone": true, "seconds": 2},
+  {"waitText": "Delete", "gone": true, "seconds": 2},
+  {"key": "escape"},
+  {"wait": 1},
+
+  {"tapIcon": "x"},
+  {"wait": 1},
+  {"shot": "{out}/4-cancelled.png"},
+  {"expectAgents": 1},
+  {"expectDead": 0},
+
+  {"logPage": "end"},
+  {"exit": 1}
+]

@@ -32,7 +32,8 @@
 // Input, the way a mouse and keyboard deliver it
 //   {"tapText": t, "nth": n?, "button": "secondary"?}
 //   {"tapKey": valueKey, "nth": n?}    {"tapIcon": name, "nth": n?}
-//   {"tapAt": [x, y]}                  {"hoverAt": [x, y]}
+//   {"tapAt": [x, y], "hold": s?}      {"hoverAt": [x, y]}
+//                                      hold: seconds down, for a long press
 //   {"dragAt": [x1, y1, x2, y2]}       {"path": [[x, y], ...], "held": png?}
 //                                      held: a shot before letting go
 //   {"scrollAt": [x, y, dy]}           {"key": name}  {"keyCombo": [names]}
@@ -81,6 +82,7 @@
 //                                      them: p50, p90, p99, worst, in ms
 //   {"expectSelected": n}              fails unless n items are selected
 //   {"expectAgents": n}                fails unless n agents are on the page
+//   {"expectDead": n}                  fails unless n agents on the page are dead
 //   {"expectImages": n, "lineups": m?} fails unless n pictures are on the page,
 //                                      and m in its lineups
 //   {"exit": 1}
@@ -405,7 +407,11 @@ Future<void> _hover(Offset at) async {
   await _frames();
 }
 
-Future<void> _tap(Offset at, {bool secondary = false}) async {
+Future<void> _tap(
+  Offset at, {
+  bool secondary = false,
+  Duration hold = const Duration(milliseconds: 60),
+}) async {
   final pointer = _pointer++;
   final binding = GestureBinding.instance;
   _addMouse(pointer, at);
@@ -425,7 +431,7 @@ Future<void> _tap(Offset at, {bool secondary = false}) async {
       position: at,
     ),
   );
-  await Future<void>.delayed(const Duration(milliseconds: 60));
+  await Future<void>.delayed(hold);
   binding.handlePointerEvent(
     PointerUpEvent(
       pointer: pointer,
@@ -839,7 +845,13 @@ Future<void> _run(Map<String, dynamic> step) async {
       final icon = _icons[value as String]!;
       await _tap(_centerOf((w) => w is Icon && w.icon == icon, nth: nth));
     case 'tapAt':
-      await _tap(_point(step, name), secondary: step['button'] == 'secondary');
+      await _tap(
+        _point(step, name),
+        secondary: step['button'] == 'secondary',
+        hold: Duration(
+          milliseconds: (((step['hold'] ?? 0.06) as num) * 1000).round(),
+        ),
+      );
     case 'hoverAt':
       await _hover(_point(step, name));
     case 'dragAt':
@@ -1252,6 +1264,12 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'expectAgents':
       final agents = c.read(agentProvider).length;
       if (agents != value) throw StateError('$agents agents, expected $value');
+    case 'expectDead':
+      final dead = c
+          .read(agentProvider)
+          .where((agent) => agent.state == AgentState.dead)
+          .length;
+      if (dead != value) throw StateError('$dead dead agents, expected $value');
     case 'expectImages':
       final images = c.read(placedImageProvider).images.length;
       final inLineups = [

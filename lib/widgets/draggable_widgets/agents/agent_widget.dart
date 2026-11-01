@@ -223,17 +223,22 @@ class AgentWidget extends ConsumerWidget {
             : (id?.isNotEmpty ?? false)
                 ? HoveredDeleteTarget.agent(id: id!, ownerToken: Object())
                 : null;
-    final placedAgentNode =
-        canInteract && lineUpId == null && (id?.isNotEmpty ?? false)
-            ? ref.watch(
-                agentProvider.select((agents) {
-                  for (final entry in agents) {
-                    if (entry.id == id) return entry;
-                  }
-                  return null;
-                }),
-              )
-            : null;
+    // A draft from Create Lineup has the id of the placed agent it started from
+    // and is not that agent, so nothing here may look that agent up.
+    final isLineUpDraft = onWeaponSelected != null;
+    final placedAgentNode = canInteract &&
+            !isLineUpDraft &&
+            lineUpId == null &&
+            (id?.isNotEmpty ?? false)
+        ? ref.watch(
+            agentProvider.select((agents) {
+              for (final entry in agents) {
+                if (entry.id == id) return entry;
+              }
+              return null;
+            }),
+          )
+        : null;
     final plainAgent = placedAgentNode is PlacedAgent ? placedAgentNode : null;
     final viewConeAgent =
         placedAgentNode is PlacedViewConeAgent ? placedAgentNode : null;
@@ -270,17 +275,11 @@ class AgentWidget extends ConsumerWidget {
             : placedAgentNode != null
                 ? buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id)
                 : const <ShadContextMenuItem>[];
-    // A lineup draft can carry the id of the placed agent it started from.
-    final canDeleteHere = placedAgentNode != null && onWeaponSelected == null;
-    final captionItems = canInteract && canDeleteHere && lineUpId == null
+    final captionItems = canInteract && placedAgentNode != null
         ? buildCaptionMenuItems(context, ref, placedAgentNode.id)
         : const <ShadContextMenuItem>[];
     final hasContextMenuItemsBelow = canInteract &&
-        (lineUpId != null ||
-            (plainAgent != null && plainAgent.id.isNotEmpty) ||
-            viewConeAgent != null ||
-            adjacentPageCopyItems.isNotEmpty ||
-            canDeleteHere);
+        (lineUpId != null || isLineUpDraft || placedAgentNode != null);
     final contextMenuItems = <ShadContextMenuItem>[
       if (canInteract)
         ShadContextMenuItem.raw(
@@ -427,7 +426,7 @@ class AgentWidget extends ConsumerWidget {
         ),
       ...captionItems,
       ...adjacentPageCopyItems,
-      if (canDeleteHere)
+      if (placedAgentNode != null)
         ShadContextMenuItem(
           leading: Icon(
             LucideIcons.trash2,
@@ -461,10 +460,12 @@ class AgentWidget extends ConsumerWidget {
             borderRadius: const BorderRadius.all(Radius.circular(3)),
             highlightColor: Colors.white.withValues(alpha: 0.2),
             splashColor: Colors.white.withValues(alpha: 0.3),
-            onLongPress: () {
-              if (id == null) return;
-              ref.read(agentProvider.notifier).toggleAgentState(id!);
-            },
+            onLongPress: isLineUpDraft
+                ? null
+                : () {
+                    if (id == null) return;
+                    ref.read(agentProvider.notifier).toggleAgentState(id!);
+                  },
             child: agentDisplay,
           ),
         ),

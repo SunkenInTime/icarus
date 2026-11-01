@@ -162,6 +162,46 @@ void main() {
     expect(container.read(lineUpProvider).placement?.draftAgent?.id, 'jett');
   });
 
+  testWidgets('a long press on a draft leaves the placed agent alive',
+      (tester) async {
+    final container = _container(tester);
+    await _pumpDraftOf(tester, container, _placed());
+
+    await tester.longPress(find.byType(AgentWidget));
+    await tester.pumpAndSettle();
+
+    expect(container.read(agentProvider).single.state, AgentState.none);
+  });
+
+  testWidgets('a long press on a placed agent still marks it dead',
+      (tester) async {
+    final container = _container(tester);
+    container.read(agentProvider.notifier).fromHive([_placed()]);
+    await _pump(tester, container, const PlacedWidgetBuilder());
+
+    await tester.longPress(find.byType(AgentWidget));
+    await tester.pumpAndSettle();
+
+    expect(container.read(agentProvider).single.state, AgentState.dead);
+  });
+
+  testWidgets('a draft menu offers nothing that acts on the placed agent',
+      (tester) async {
+    final container = _container(tester);
+    await _pumpDraftOf(tester, container, _placed());
+
+    await tester.tap(
+      find.byType(AgentWidget),
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Weapon'), findsOneWidget);
+    expect(find.text('Create Lineup'), findsNothing);
+    expect(find.text('Delete'), findsNothing);
+  });
+
   testWidgets('a draft dropped off the map leaves the placed agent',
       (tester) async {
     final container = _container(tester);
