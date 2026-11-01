@@ -7,6 +7,7 @@ import {
   getStrategyByPublicId,
   listLivePages,
 } from "./lib/entities";
+import { elementFieldLevelArg, withoutLaterFields } from "./lib/elementFields";
 import { errorWithCode } from "./lib/errors";
 import {
   assertSupportedCloudProtocol,
@@ -19,6 +20,7 @@ export const listForPage = query({
     ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     pagePublicId: v.string(),
+    elementFieldLevel: elementFieldLevelArg,
   },
   returns: v.array(elementValidator),
   handler: async (ctx, args) => {
@@ -43,7 +45,7 @@ export const listForPage = query({
         strategyPublicId: strategy.publicId,
         pagePublicId: page.publicId,
         elementType: element.elementType,
-        payload: element.payload,
+        payload: withoutLaterFields(element.payload, args.elementFieldLevel),
         sortIndex: element.sortIndex,
         revision: element.revision,
         deleted: element.deleted,
@@ -57,6 +59,7 @@ export const listForStrategy = query({
   args: {
     ...cloudProtocolArgs,
     strategyPublicId: v.string(),
+    elementFieldLevel: elementFieldLevelArg,
   },
   returns: v.array(elementValidator),
   handler: async (ctx, args) => {
@@ -80,7 +83,7 @@ export const listForStrategy = query({
         strategyPublicId: strategy.publicId,
         pagePublicId: pagePublicIds.get(element.pageId)!,
         elementType: element.elementType,
-        payload: element.payload,
+        payload: withoutLaterFields(element.payload, args.elementFieldLevel),
         sortIndex: element.sortIndex,
         revision: element.revision,
         deleted: element.deleted,

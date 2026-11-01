@@ -20,6 +20,7 @@ import type * as lib_canonicalValues from "../lib/canonicalValues.js";
 import type * as lib_cloudProtocol from "../lib/cloudProtocol.js";
 import type * as lib_contentCopy from "../lib/contentCopy.js";
 import type * as lib_contentVersions from "../lib/contentVersions.js";
+import type * as lib_elementFields from "../lib/elementFields.js";
 import type * as lib_entities from "../lib/entities.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_fieldMerge from "../lib/fieldMerge.js";
@@ -66,6 +67,7 @@ declare const fullApi: ApiFromModules<{
   "lib/cloudProtocol": typeof lib_cloudProtocol;
   "lib/contentCopy": typeof lib_contentCopy;
   "lib/contentVersions": typeof lib_contentVersions;
+  "lib/elementFields": typeof lib_elementFields;
   "lib/entities": typeof lib_entities;
   "lib/errors": typeof lib_errors;
   "lib/fieldMerge": typeof lib_fieldMerge;
