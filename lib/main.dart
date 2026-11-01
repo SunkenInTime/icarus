@@ -446,6 +446,13 @@ class _MyAppState extends ConsumerState<MyApp> {
         stackTrace: stackTrace,
         source: 'MyApp._loadFromFilePathWithWarning',
       );
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to import strategy file.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'MyApp._loadFromFilePathWithWarning',
+      );
     }
   }
 
