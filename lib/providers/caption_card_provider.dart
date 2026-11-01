@@ -68,6 +68,12 @@ class CaptionCardNotifier extends Notifier<String?> {
     if (id == state) _closeSoon();
   }
 
+  /// Opens the card of [id] at once: a tap has no pointer to wait on.
+  void openNow(String id) {
+    _cancelTimers();
+    if (_holdsCaption(id)) state = id;
+  }
+
   void cardEntered() {
     _onCard = true;
     _closing?.cancel();

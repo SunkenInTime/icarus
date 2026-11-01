@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/collab/editing_presence_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
@@ -62,7 +64,13 @@ List<ShadContextMenuItem> buildCaptionMenuItems(
       child: Text(current.isEmpty ? 'Create caption' : 'Edit caption'),
       onPressed: () async {
         final start = placedItemById(container, id)?.caption ?? '';
+        final opened = container.read(openCaptionItemProvider.notifier);
+        opened.state = (
+          pageId: container.read(strategyPageSessionProvider).activePageId,
+          id: id,
+        );
         final next = await showCaptionDialog(context, initial: start);
+        opened.state = null;
         // The menu's widget may be gone by now, and the note is still wanted.
         if (next != null) setCaption(container, id, next);
       },

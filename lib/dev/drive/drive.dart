@@ -41,7 +41,8 @@
 // Editor content
 //   {"addAgent": id, "at": [x, y], "agent": "jett"?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
-//   {"setCaption": id, "text": t}      as an edit would, before the app can make one
+//   {"setCaption": id, "text": t}      what the caption dialog's Done does
+//   {"addUtility": id, "type": name, "at": [x, y]}  spike, customRectangle, customCircle
 //   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?}  two lineups, ids
 //                                      lo1{n}, lo2{n}; legacy ones share one id per lineup
 //   {"dragAgent": id, "by": [dx, dy]}  {"hoverAgent": id}
@@ -73,6 +74,7 @@
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
 //   {"logCaptions": tag}               every placed item's caption
+//   {"logCard": tag}                   the caption card that's open, and where
 //   {"logLineups": tag}                {"logImages": tag}
 //   {"framesStart": 1} / {"framesLog": tag}   frame build and raster times between
 //                                      them: p50, p90, p99, worst, in ms
@@ -101,6 +103,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -114,7 +117,9 @@ import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/caption_card_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
@@ -129,6 +134,11 @@ import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+// The driver alone swaps the platform's launcher; the app uses url_launcher.
+// ignore: depend_on_referenced_packages
+import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
+// ignore: depend_on_referenced_packages
+import 'package:url_launcher_platform_interface/link.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import 'package:window_manager/window_manager.dart';
 
@@ -139,6 +149,7 @@ void startDrive() {
   final script = env['ICARUS_DRIVE_SCRIPT'];
   if (script == null) return;
   _ignoreOsFocus();
+  UrlLauncherPlatform.instance = _RecordingUrlLauncher();
   _logPath = env['ICARUS_DRIVE_LOG'];
   _runId = env['ICARUS_DRIVE_RUN'] ??
       DateTime.now().microsecondsSinceEpoch.toRadixString(36);
@@ -633,6 +644,39 @@ class _FakeSaver extends FilePicker {
 
 // Cloud state.
 
+/// The links opened, kept here so a run never opens a browser on the desktop
+/// it shares.
+final _openedLinks = <String>[];
+
+class _RecordingUrlLauncher extends UrlLauncherPlatform {
+  @override
+  LinkDelegate? get linkDelegate => null;
+
+  @override
+  Future<bool> canLaunch(String url) async => true;
+
+  @override
+  Future<bool> launchUrl(String url, LaunchOptions options) async {
+    _openedLinks.add(url);
+    return true;
+  }
+
+  @override
+  Future<bool> launch(
+    String url, {
+    required bool useSafariVC,
+    required bool useWebView,
+    required bool enableJavaScript,
+    required bool enableDomStorage,
+    required bool universalLinksOnly,
+    required Map<String, String> headers,
+    String? webOnlyWindowName,
+  }) async {
+    _openedLinks.add(url);
+    return true;
+  }
+}
+
 /// Every item on the open page that takes a caption.
 List<PlacedWidget> _placedItems() {
   final c = appProviderContainer;
@@ -843,6 +887,28 @@ Future<void> _run(Map<String, dynamic> step) async {
         id,
         _point(step, 'at'),
         (p) => abilities.updatePosition(p, id),
+      );
+    case 'addUtility':
+      final id = value as String;
+      final utilities = c.read(utilityProvider.notifier);
+      final type = UtilityType.values.byName(step['type'] as String);
+      utilities.addUtility(
+        PlacedUtility(
+          type: type,
+          position: const Offset(500, 500),
+          id: id,
+          customWidth: type == UtilityType.customRectangle ? 2 : null,
+          customLength: type == UtilityType.customRectangle ? 2 : null,
+          customDiameter: type == UtilityType.customCircle ? 10 : null,
+          customColorValue:
+              type == UtilityType.spike ? null : 0xFF22C55E,
+          customOpacityPercent: type == UtilityType.spike ? null : 30,
+        ),
+      );
+      await _place(
+        id,
+        _point(step, 'at'),
+        (p) => utilities.updatePosition(p, id),
       );
     case 'addText':
       final id = value as String;
@@ -1108,10 +1174,10 @@ Future<void> _run(Map<String, dynamic> step) async {
         ]}',
       );
     case 'setCaption':
-      final id = value as String;
-      _placedItems().singleWhere((item) => item.id == id).caption =
-          step['text'] as String;
-      c.read(strategyProvider.notifier).setUnsaved();
+      setCaption(c, value as String, step['text'] as String);
+    case 'logCard':
+      _log('CARD $value ${c.read(captionCardProvider)} '
+          'zoom=${c.read(screenZoomProvider)} links=$_openedLinks');
     case 'logCaptions':
       _log('CAPTIONS $value ${jsonEncode({
             for (final item in _placedItems()) item.id: item.caption,
