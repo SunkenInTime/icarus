@@ -689,6 +689,27 @@ class StrategyProvider extends Notifier<StrategyState> {
     refreshAutosaveScheduling();
   }
 
+  /// The open local strategy's text box has changed, and the change is only
+  /// a draft until the box loses focus. Marked unsaved so autosave covers it;
+  /// a timer already running stays, or steady typing would keep pushing the
+  /// save back. A cloud strategy shows drafts on its sync button instead, and
+  /// sends them when the box loses focus.
+  void noteTextDraftChanged() {
+    if (!state.isOpen || state.strategyId == null || state.source == null) {
+      return;
+    }
+    if (_currentStrategyIsCloud() ||
+        ref.read(strategyPageSessionProvider).isApplyingPage ||
+        !_currentStrategyCanEditPages()) {
+      return;
+    }
+
+    state = state.copyWith(isSaved: false);
+    ref.read(strategySaveStateProvider.notifier).markDirty();
+    if (_saveTimer?.isActive ?? false) return;
+    refreshAutosaveScheduling();
+  }
+
   Future<void> forceSaveNow(String id) async {
     if (!_currentStrategyCanEditPages()) {
       return;

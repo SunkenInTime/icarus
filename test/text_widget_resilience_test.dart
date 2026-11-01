@@ -10,7 +10,9 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/auto_save_notifier.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
@@ -18,6 +20,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -387,6 +390,52 @@ void main() {
     expect(container.read(textDraftProvider), {'text-1': 'before edited'});
     expect(savedStrategy, isNotNull);
     expect(savedStrategy!.pages.single.textData.single.text, 'before edited');
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SizedBox.shrink()),
+      ),
+    );
+    await tester.pump();
+    container.read(strategyProvider.notifier).cancelPendingSave();
+  });
+
+  testWidgets('steady typing in a text box reaches autosave on time',
+      (tester) async {
+    await tester.runAsync(
+      () => openStrategyTestBoxes('icarus-text-widget-typing-'),
+    );
+    final container = createContainer();
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'text-1', position: const Offset(10, 20))..text = '',
+    ]);
+    container.read(strategyProvider.notifier).setFromState(
+          StrategyState(
+            strategyId: 'strategy-1',
+            strategyName: 'Strategy 1',
+            source: StrategySource.local,
+            storageDirectory: null,
+            isOpen: true,
+          ),
+        );
+
+    await tester.pumpWidget(buildTextHarness(container));
+    await tester.tap(find.byType(FormattedTextView));
+    await tester.pump();
+
+    // Keeps typing, never pausing as long as the autosave delay.
+    final beat = Settings.autoSaveOffset ~/ 3;
+    final field = find.byType(TextField);
+    await tester.enterText(field, 'a');
+    await tester.pump(beat);
+    expect(container.read(strategySaveStateProvider).isDirty, isTrue);
+    await tester.enterText(field, 'ab');
+    await tester.pump(beat);
+    await tester.enterText(field, 'abc');
+    expect(container.read(autoSaveProvider), 0);
+    await tester.pump(beat);
+    expect(container.read(autoSaveProvider), 1);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
