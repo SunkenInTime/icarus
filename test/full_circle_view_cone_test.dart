@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
@@ -58,7 +57,7 @@ void main() {
   test('its aperture is one the cone query accepts', () {
     // The widget turns degrees into radians; a rounding up past two pi
     // would make the query refuse the cone.
-    final aperture = ViewConeUtility.fullCircleDegrees * math.pi / 180;
+    const aperture = ViewConeUtility.fullCircleDegrees * math.pi / 180;
     expect(aperture <= math.pi * 2, isTrue);
     expect(aperture >= 2 * math.pi, isTrue);
 
