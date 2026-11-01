@@ -13,6 +13,7 @@ import 'package:icarus/providers/caption_card_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/caption_markers.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
@@ -31,9 +32,22 @@ class _TestStrategyProvider extends StrategyProvider {
   void setUnsaved() => state = state.copyWith(isSaved: false);
 }
 
-ProviderContainer _container() {
+class _Preferences extends AppPreferencesNotifier {
+  _Preferences(this.showCaptions);
+
+  final bool showCaptions;
+
+  @override
+  AppPreferences build() => AppPreferences(
+        defaultThemeProfileIdForNewStrategies: 'theme',
+        showCaptions: showCaptions,
+      );
+}
+
+ProviderContainer _container({bool showCaptions = true}) {
   final container = ProviderContainer(overrides: [
     strategyProvider.overrideWith(_TestStrategyProvider.new),
+    appPreferencesProvider.overrideWith(() => _Preferences(showCaptions)),
   ]);
   addTearDown(container.dispose);
   return container;
@@ -146,6 +160,20 @@ void main() {
         _place(container, caption: '');
         container.read(captionCardProvider.notifier).itemEntered('agent');
         async.elapse(const Duration(seconds: 1));
+        expect(container.read(captionCardProvider), isNull);
+      });
+    });
+
+    test('opens nothing with Show captions off', () {
+      fakeAsync((async) {
+        final container = _container(showCaptions: false);
+        _place(container, caption: 'Note');
+        final card = container.read(captionCardProvider.notifier);
+
+        card.itemEntered('agent');
+        async.elapse(const Duration(seconds: 1));
+        card.openNow('agent');
+
         expect(container.read(captionCardProvider), isNull);
       });
     });

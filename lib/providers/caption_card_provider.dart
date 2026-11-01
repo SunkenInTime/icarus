@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 
 /// Which item's caption card is open, or null, for the pointer's journey from
@@ -36,7 +37,8 @@ class CaptionCardNotifier extends Notifier<String?> {
   }
 
   bool _holdsCaption(String id) =>
-      placedItemById(ref.container, id)?.caption?.isNotEmpty ?? false;
+      ref.read(appPreferencesProvider).showCaptions &&
+      (placedItemById(ref.container, id)?.caption?.isNotEmpty ?? false);
 
   void itemEntered(String id) {
     _regions[id] = (_regions[id] ?? 0) + 1;
