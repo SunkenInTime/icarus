@@ -11,6 +11,9 @@ class LineupMediaPage extends ConsumerStatefulWidget {
   final List<SimpleImageData> images; // Placeholder for actual image data
   final VoidCallback onAddImage;
   final VoidCallback onPasteImage;
+
+  /// A paste is on its way to becoming a picture here.
+  final bool pasting;
   final Function(int index) onRemoveImage;
   final TextEditingController notesController;
   final TextEditingController? nameController;
@@ -23,6 +26,7 @@ class LineupMediaPage extends ConsumerStatefulWidget {
     required this.images,
     required this.onAddImage,
     required this.onPasteImage,
+    this.pasting = false,
     required this.onRemoveImage,
     required this.notesController,
   });
@@ -183,6 +187,17 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
     );
   }
 
+  Widget _pasteGlyph({double? size}) {
+    final color = Settings.tacticalVioletTheme.secondaryForeground;
+    if (!widget.pasting) {
+      return Icon(LucideIcons.clipboardPaste, color: color, size: size);
+    }
+    return SizedBox.square(
+      dimension: size ?? IconTheme.of(context).size,
+      child: CircularProgressIndicator(strokeWidth: 2, color: color),
+    );
+  }
+
   Widget _buildPasteButton() {
     return GestureDetector(
       onTap: widget.onPasteImage,
@@ -197,10 +212,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                LucideIcons.clipboardPaste,
-                color: Settings.tacticalVioletTheme.secondaryForeground,
-              ),
+              _pasteGlyph(),
               const SizedBox(height: 4),
               Text(
                 "Paste",
@@ -231,11 +243,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                LucideIcons.clipboardPaste,
-                color: Settings.tacticalVioletTheme.secondaryForeground,
-                size: 16,
-              ),
+              _pasteGlyph(size: 16),
               const SizedBox(width: 6),
               Text(
                 "Paste from clipboard",

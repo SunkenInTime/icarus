@@ -54,14 +54,30 @@
 //   {"importReplay": path}             {"fakeSaveDir": dir, "as": name?}
 //                                      answers save dialogs, typing name if given
 //   {"dropFiles": [paths], "at": [x, y]}  dropped from Explorer
+//   {"exportIca": path}                {"importIca": path}
+// Pictures
+//   {"clipboard": path, "file": b?}    puts a bitmap on the Windows clipboard as
+//                                      a screenshot does; with file, copies the
+//                                      file as Explorer does
+//   {"openLineup": linkId}             the lineup's media dialog
+//   {"mark": name}                     starts a clock
+//   {"watchPicture": name, "gone": t?} logs the time since mark name when a
+//                                      pasted picture is first drawn, once text
+//                                      t has left the screen; runs behind the
+//                                      next steps
+//   {"watchFrames": true}  {"watchFrames": false, "tag": t}
+//                                      keeps frames coming, then logs the worst
+//                                      gap between two of them
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
-//   {"logLineups": tag}
+//   {"logLineups": tag}                {"logImages": tag}
 //   {"framesStart": 1} / {"framesLog": tag}   frame build and raster times between
 //                                      them: p50, p90, p99, worst, in ms
 //   {"expectSelected": n}              fails unless n items are selected
 //   {"expectAgents": n}                fails unless n agents are on the page
+//   {"expectImages": n, "lineups": m?} fails unless n pictures are on the page,
+//                                      and m in its lineups
 //   {"exit": 1}
 import 'dart:async';
 import 'dart:convert';
@@ -70,6 +86,7 @@ import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart' show showDialog;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -105,6 +122,8 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/share/share_link_format.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -215,6 +234,7 @@ Future<void> _play(String script) async {
     }
     await _flush();
   }
+  await Future.wait(_pictureWatches);
   final problems = _flutterErrors + _failedSteps + _misplaced.length;
   _log(
     'SUMMARY steps=$_steps failed=$_failedSteps '
@@ -568,6 +588,9 @@ const _icons = {
   'camera': LucideIcons.camera,
   'play': LucideIcons.play,
   'pause': LucideIcons.pause,
+  'image': LucideIcons.image,
+  'clipboard': LucideIcons.clipboard,
+  'plus': LucideIcons.plus,
 };
 
 // Stands in for the OS save dialog: answers with dir/fileName, or dir/typedName
@@ -967,6 +990,53 @@ Future<void> _run(Map<String, dynamic> step) async {
       send('performOperation', (value as List).cast<String>());
     case 'fakeSaveDir':
       FilePicker.platform = _FakeSaver(value as String, step['as'] as String?);
+    case 'exportIca':
+      final id = c.read(strategyProvider).strategyId!;
+      await c.read(strategyProvider.notifier).forceSaveNow(id);
+      await StrategyImportExportService(c)
+          .zipStrategy(id: id, outputFilePath: value as String);
+    case 'importIca':
+      await StrategyImportExportService(c).loadFromFilePath(value as String);
+    case 'clipboard':
+      final result = await Process.run('pwsh', [
+        '-NoProfile',
+        '-STA',
+        '-File',
+        Platform.environment['ICARUS_DRIVE_SET_CLIPBOARD']!,
+        value as String,
+        if (step['file'] == true) '-File',
+      ]);
+      if (result.exitCode != 0) throw StateError('${result.stderr}');
+    case 'openLineup':
+      unawaited(
+        showDialog<void>(
+          context: _elementOf((w) => w is InteractiveMap),
+          builder: (_) => CreateLineupDialog(linkId: value as String),
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await _frames();
+    case 'mark':
+      _marks[value as String] = Stopwatch()..start();
+    case 'watchPicture':
+      _pictureWatches.add(
+        _watchPicture(value as String, step['gone'] as String?),
+      );
+    case 'watchFrames':
+      if (value == true) {
+        _watchingFrames = true;
+        unawaited(_watchFrames());
+      } else {
+        _watchingFrames = false;
+        await _frames();
+        _log(
+          'FRAMES ${step['tag']} frames=$_framesSeen '
+          'worstGap=${_worstFrameGap.inMilliseconds} ms '
+          'over50ms=$_gapsOver50',
+        );
+      }
+    case 'logImages':
+      await _logImages(value as String);
     case 'shot':
       await _frames();
       final view = RendererBinding.instance.renderViews.first;
@@ -1048,6 +1118,17 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'expectAgents':
       final agents = c.read(agentProvider).length;
       if (agents != value) throw StateError('$agents agents, expected $value');
+    case 'expectImages':
+      final images = c.read(placedImageProvider).images.length;
+      final inLineups = [
+        for (final link in c.read(lineUpProvider).links) ...link.images,
+      ].length;
+      if (images != value) {
+        throw StateError('$images pictures, expected $value');
+      }
+      if (step['lineups'] case final int lineups when inLineups != lineups) {
+        throw StateError('$inLineups lineup pictures, expected $lineups');
+      }
     case 'probe':
       _log('PROBE $value ${_probe()}');
     case 'texts':
@@ -1065,6 +1146,126 @@ Future<void> _run(Map<String, dynamic> step) async {
       throw ArgumentError('no step called $name');
   }
 }
+
+final _marks = <String, Stopwatch>{};
+final _pictureWatches = <Future<void>>[];
+
+/// Waits for a pasted picture to be drawn: the only image this large on
+/// screen, whether in a dialog or on the canvas.
+Future<void> _watchPicture(String mark, String? gone) async {
+  bool drawn() =>
+      _elementOrNull((w) => w is RawImage && (w.image?.width ?? 0) >= 500) !=
+      null;
+
+  bool left() {
+    if (gone == null) return true;
+    return _elementOrNull((w) => _isText(w, gone)) == null;
+  }
+
+  final deadline = DateTime.now().add(const Duration(seconds: 60));
+  while (!(left() && drawn())) {
+    if (DateTime.now().isAfter(deadline)) {
+      _failedSteps++;
+      _log('FAIL $mark: the picture was never drawn');
+      return;
+    }
+    SchedulerBinding.instance.scheduleFrame();
+    await SchedulerBinding.instance.endOfFrame;
+  }
+  _log('TIMED $mark drawn after ${_marks[mark]!.elapsedMilliseconds} ms');
+}
+
+var _watchingFrames = false;
+var _framesSeen = 0;
+var _gapsOver50 = 0;
+var _worstFrameGap = Duration.zero;
+
+/// Asks for frames without a pause and times each from its start to the end
+/// of its raster, so a stall on either thread shows.
+Future<void> _watchFrames() async {
+  _framesSeen = 0;
+  _gapsOver50 = 0;
+  _worstFrameGap = Duration.zero;
+  void note(List<ui.FrameTiming> timings) {
+    for (final timing in timings) {
+      final took = timing.totalSpan;
+      _framesSeen++;
+      if (took > _worstFrameGap) _worstFrameGap = took;
+      if (took.inMilliseconds > 50) _gapsOver50++;
+    }
+  }
+
+  SchedulerBinding.instance.addTimingsCallback(note);
+  var last = Stopwatch()..start();
+  while (_watchingFrames) {
+    SchedulerBinding.instance.scheduleFrame();
+    await SchedulerBinding.instance.endOfFrame;
+    final gap = last.elapsed;
+    last = Stopwatch()..start();
+    if (gap > _worstFrameGap) _worstFrameGap = gap;
+    if (gap.inMilliseconds > 50) _gapsOver50++;
+  }
+  SchedulerBinding.instance.removeTimingsCallback(note);
+}
+
+/// Every picture on the page and in its lineups, with the file it saved and
+/// the box it draws in.
+Future<void> _logImages(String tag) async {
+  final c = appProviderContainer;
+  final strategy = c.read(strategyProvider);
+  Future<String> file(String id, String? extension) async {
+    final saved = File(
+      PlacedImageProvider.buildImageFilePath(
+        (await PlacedImageProvider.getImageFolder(strategy.strategyId!)).path,
+        id,
+        extension ?? '',
+      ),
+    );
+    return saved.existsSync() ? '${saved.lengthSync()} bytes' : 'no file';
+  }
+
+  for (final image in c.read(placedImageProvider).images) {
+    final box = _elementOrNull((w) => w.key == ValueKey('entity-${image.id}'))
+        ?.findRenderObject();
+    _log(
+      'IMAGE $tag id=${image.id} picture=${image.pictureId} '
+      'ext=${image.fileExtension} aspect=${image.aspectRatio} '
+      'scale=${image.scale} '
+      'at=(${image.position.dx}, ${image.position.dy}) '
+      'box=${box is RenderBox ? _size(box.size) : 'none'} '
+      'file=${await file(image.pictureId, image.fileExtension)}',
+    );
+  }
+  for (final link in c.read(lineUpProvider).links) {
+    for (final image in link.images) {
+      _log(
+        'LINEUP-IMAGE $tag link=${link.id} id=${image.id} '
+        'ext=${image.fileExtension} '
+        'file=${await file(image.id, image.fileExtension)}',
+      );
+    }
+  }
+  for (final job in c.read(cloudMediaUploadQueueProvider).jobs) {
+    _log(
+      'JOB $tag ${job.assetPublicId} ${job.state.name} ${job.mimeType} '
+      'bytes=${job.byteSize} attempts=${job.attempts} error=${job.lastError}',
+    );
+  }
+}
+
+Element? _elementOrNull(bool Function(Widget) test) {
+  Element? found;
+  void visit(Element element) {
+    if (test(element.widget)) found = element;
+    if (found == null) element.visitChildElements(visit);
+  }
+
+  WidgetsBinding.instance.rootElement?.visitChildElements(visit);
+  return found;
+}
+
+Element _elementOf(bool Function(Widget) test) =>
+    _elementOrNull(test) ?? (throw StateError('nothing on screen matches'));
 
 Size? _canvasSize() {
   Size? size;

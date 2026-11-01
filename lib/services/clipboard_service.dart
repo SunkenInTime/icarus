@@ -1,7 +1,101 @@
-import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:cross_file/cross_file.dart';
+import 'package:flutter/foundation.dart';
+import 'package:icarus/services/app_error_reporter.dart';
+import 'package:image/image.dart' as img;
 import 'package:pasteboard/pasteboard.dart';
+
+/// A picture read from the clipboard.
+class ClipboardImage {
+  ClipboardImage(this.bytes, {required this.name, Future<Uint8List>? saved})
+      : saved = saved ?? pngOfBitmap(bytes);
+
+  /// The clipboard's own bytes, ready to show straight away.
+  final Uint8List bytes;
+
+  /// The bytes to save: see [pngOfBitmap]. Show [bytes] rather than swap to
+  /// these, or the picture flashes when they arrive.
+  final Future<Uint8List> saved;
+
+  final String name;
+}
+
+/// The same picture as a PNG when [bytes] are a bitmap, and [bytes] themselves
+/// otherwise, or when they can't be made smaller. Never throws: the picture
+/// matters more than its size.
+///
+/// Windows hands clipboard pictures over as raw bitmaps, 8.3 MB for a 1080p
+/// screenshot and too large for a cloud strategy at 4K. The engine reads the
+/// bitmap, so the PNG holds exactly what the bitmap draws as: a 32-bit
+/// bitmap's fourth channel is usually padding, and the decoder knows when it
+/// is. Its own PNG encoder would be simpler, but on a GPU image it keeps an
+/// alpha channel an opaque picture doesn't need, and 4K screenshots are close
+/// enough to the cloud limit for that to matter.
+Future<Uint8List> pngOfBitmap(Uint8List bytes) async {
+  if (bytes.length < 2 || bytes[0] != 0x42 || bytes[1] != 0x4D) return bytes;
+  try {
+    final png = await _encodePng(bytes).timeout(const Duration(seconds: 15));
+    return png.length < bytes.length ? png : bytes;
+  } catch (error, stackTrace) {
+    AppErrorReporter.reportError(
+      'Could not make a PNG of a pasted bitmap: $error',
+      error: error,
+      stackTrace: stackTrace,
+      source: 'clipboard_service.png_of_bitmap',
+      promptUser: false,
+    );
+    return bytes;
+  }
+}
+
+Future<Uint8List> _encodePng(Uint8List bytes) async {
+  final codec = await ui.instantiateImageCodec(bytes);
+  final frame = await codec.getNextFrame();
+  codec.dispose();
+  final image = frame.image;
+  try {
+    final pixels = await image.toByteData(
+      format: ui.ImageByteFormat.rawStraightRgba,
+    );
+    return await compute(
+      _pngOfPixels,
+      (
+        width: image.width,
+        height: image.height,
+        rgba: pixels!.buffer.asUint8List(),
+      ),
+    );
+  } finally {
+    image.dispose();
+  }
+}
+
+Uint8List _pngOfPixels(({int width, int height, Uint8List rgba}) picture) {
+  final rgba = picture.rgba;
+  var opaque = true;
+  for (var i = 3; opaque && i < rgba.length; i += 4) {
+    opaque = rgba[i] == 255;
+  }
+  var pixels = rgba;
+  if (opaque) {
+    pixels = Uint8List(rgba.length ~/ 4 * 3);
+    for (var from = 0, to = 0; from < rgba.length; from += 4, to += 3) {
+      pixels[to] = rgba[from];
+      pixels[to + 1] = rgba[from + 1];
+      pixels[to + 2] = rgba[from + 2];
+    }
+  }
+  // Of PNG's single filters, average came out smallest on game screenshots.
+  return img.PngEncoder(filter: img.PngFilter.average).encode(
+    img.Image.fromBytes(
+      width: picture.width,
+      height: picture.height,
+      bytes: pixels.buffer,
+      numChannels: opaque ? 3 : 4,
+    ),
+  );
+}
 
 class ClipboardService {
   static const Set<String> _supportedImageExtensions = {
@@ -36,33 +130,25 @@ class ClipboardService {
     return _supportedImageExtensions.contains(ext);
   }
 
-  static Future<(Uint8List? bytes, String? name)>
-      trySelectImageFromClipboard() async {
-    Uint8List? selectedBytes;
-    String? selectedName;
-
+  static Future<ClipboardImage?> trySelectImageFromClipboard() async {
     try {
       final clipBoardImages = await Pasteboard.image;
       final clipBoardFiles = await Pasteboard.files();
 
       if (clipBoardImages != null) {
-        selectedBytes = clipBoardImages;
-        selectedName = 'Clipboard File';
-        return (selectedBytes, selectedName);
+        return ClipboardImage(clipBoardImages, name: 'Clipboard File');
       } else if (clipBoardFiles.isNotEmpty) {
         final file = clipBoardFiles.first;
         if (!isSupportedImageClipboardFile(file)) {
-          return (null, null);
+          return null;
         }
         final bytes = await XFile(file).readAsBytes();
-        selectedBytes = bytes;
-        selectedName = 'Clipboard File';
-        return (selectedBytes, selectedName);
+        return ClipboardImage(bytes, name: 'Clipboard File');
       } else {
-        return (null, null);
+        return null;
       }
     } catch (_) {
-      return (null, null);
+      return null;
     }
   }
 }

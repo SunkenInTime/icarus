@@ -53,6 +53,7 @@ function Start-Instance([string]$name, [string]$scriptPath) {
   $env:ICARUS_DRIVE_OUT = $Out
   $env:ICARUS_DRIVE_SIGNALS = Join-Path $Out 'signals'
   $env:ICARUS_DRIVE_SESSION = Join-Path $Out "session-$name.json"
+  $env:ICARUS_DRIVE_SET_CLIPBOARD = Join-Path $PSScriptRoot 'set-clipboard.ps1'
   $env:ICARUS_DRIVE_EMAIL = $Account
   $env:ICARUS_DRIVE_PASSWORD = $password
   try {
