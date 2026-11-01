@@ -885,7 +885,7 @@ void main() {
 
     final sent = await auth.sendPasswordReset('a@b.co');
     expect(sent.sent, isTrue);
-    expect(sent.message, endsWith('Open it on this computer.'));
+    expect(sent.message, endsWith('Open it on this computer within 5 minutes.'));
     // The link must come back to this app, which holds the code verifier.
     expect(supabaseApi.resetRedirectTo, 'icarus://auth/callback');
 
