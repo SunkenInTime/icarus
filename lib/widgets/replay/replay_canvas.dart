@@ -531,16 +531,6 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                           ),
                         ),
                       ),
-                      Positioned(
-                        left: mapLeft,
-                        top: 0,
-                        width: mapWidth,
-                        height: height,
-                        child: MissingMapNotice(
-                          'assets/maps/${mapName}_map'
-                          '${isAttack ? '' : '_defense'}.svg',
-                        ),
-                      ),
                       // View cones: the map as they reveal it, shown
                       // wherever one reaches, under everything placed (as in
                       // the editor). Without a worker, the agents' own cones
@@ -710,6 +700,16 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                               ),
                             ),
                         ],
+                      Positioned(
+                        left: mapLeft,
+                        top: 0,
+                        width: mapWidth,
+                        height: height,
+                        child: MissingMapNotice(
+                          'assets/maps/${mapName}_map'
+                          '${isAttack ? '' : '_defense'}.svg',
+                        ),
+                      ),
                       // What the user drew, above everything on the map.
                       Positioned.fill(child: strokes!),
                     ],

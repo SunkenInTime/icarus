@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -11,9 +9,9 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 /// forgets a failed load: `Cache.putIfAbsent` leaves it in `_pending`, every
 /// later request for that asset gets the same failure until the page reloads,
 /// and vector_graphics rethrows it as an unhandled error each time. So the read
-/// happens here, where a failure can be shown and tried again, and those
-/// packages are only ever handed bytes that arrived.
-class AssetSvg extends StatefulWidget {
+/// behind this picture doesn't fail. It waits until the bytes arrive, and those
+/// packages see a slow load that finishes by itself.
+class AssetSvg extends StatelessWidget {
   const AssetSvg(
     this.assetName, {
     super.key,
@@ -38,118 +36,64 @@ class AssetSvg extends StatefulWidget {
   final String? semanticsLabel;
 
   @override
-  State<AssetSvg> createState() => _AssetSvgState();
-}
-
-class _AssetSvgState extends State<AssetSvg> {
-  /// The bytes on screen. A new asset replaces them when it arrives, so
-  /// switching sides doesn't blank the map for the length of a request.
-  ({String name, ByteData bytes})? _loaded;
-  Timer? _retry;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
-  void didUpdateWidget(AssetSvg oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.assetName != widget.assetName) {
-      _retry?.cancel();
-      _load();
-    }
-  }
-
-  @override
-  void dispose() {
-    _retry?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _load() async {
-    final name = widget.assetName;
-    final arrived = _AssetSvgBytes.arrived[name];
-    if (arrived != null) {
-      _loaded = (name: name, bytes: arrived);
-      return;
-    }
-
-    try {
-      final bytes = await _AssetSvgBytes.load(name);
-      if (!mounted || name != widget.assetName) return;
-      setState(() => _loaded = (name: name, bytes: bytes));
-    } catch (_) {
-      if (!mounted || name != widget.assetName) return;
-      setState(() => _loaded = null);
-      _retry = Timer(AssetSvg.retryDelay, () {
-        if (mounted) _load();
-      });
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final loaded = _loaded;
-    if (loaded == null) {
-      return SizedBox(width: widget.width, height: widget.height);
-    }
     return SvgPicture(
-      _ArrivedSvgLoader(
-        loaded.name,
-        loaded.bytes,
-        colorMapper: widget.colorMapper,
-      ),
-      width: widget.width,
-      height: widget.height,
-      fit: widget.fit,
-      colorFilter: widget.colorFilter,
-      semanticsLabel: widget.semanticsLabel,
+      _WaitingSvgLoader(assetName, colorMapper: colorMapper),
+      // Keyed so a picture that's still on its way can't leave the last asset
+      // on screen, like the other side of the map under this side's items.
+      key: ValueKey(assetName),
+      width: width,
+      height: height,
+      fit: fit,
+      colorFilter: colorFilter,
+      semanticsLabel: semanticsLabel,
     );
   }
+}
+
+/// Caches under the asset's name like [SvgAssetLoader], but can't fail to read.
+class _WaitingSvgLoader extends SvgAssetLoader {
+  const _WaitingSvgLoader(super.assetName, {super.colorMapper});
+
+  @override
+  Future<ByteData?> prepareMessage(BuildContext? context) =>
+      _AssetSvgBytes.read(assetName);
 }
 
 /// Every SVG read so far, kept for the whole session. A strategy can go back to
 /// a side or recolor a map with no connection, and all the app's SVGs together
 /// are a few megabytes.
 abstract final class _AssetSvgBytes {
-  static final Map<String, ByteData> arrived = {};
+  static final Map<String, ByteData> _arrived = {};
   static final Map<String, Future<ByteData>> _reading = {};
 
-  /// Assets whose last read failed.
+  /// Assets whose last try failed and are still being tried.
   static final ValueNotifier<Set<String>> missing = ValueNotifier(const {});
 
-  static Future<ByteData> load(String name) {
-    return _reading[name] ??= _read(name).whenComplete(() {
-      _reading.remove(name);
-    });
+  static Future<ByteData> read(String name) {
+    final bytes = _arrived[name];
+    if (bytes != null) return SynchronousFuture(bytes);
+    return _reading[name] ??= _readUntilItArrives(name);
   }
 
-  static Future<ByteData> _read(String name) async {
-    try {
-      final bytes = await rootBundle.load(name);
-      arrived[name] = bytes;
-      if (missing.value.contains(name)) {
-        missing.value = {...missing.value}..remove(name);
+  static Future<ByteData> _readUntilItArrives(String name) async {
+    while (true) {
+      try {
+        final bytes = await rootBundle.load(name);
+        _arrived[name] = bytes;
+        _reading.remove(name);
+        if (missing.value.contains(name)) {
+          missing.value = {...missing.value}..remove(name);
+        }
+        return bytes;
+      } catch (_) {
+        if (!missing.value.contains(name)) {
+          missing.value = {...missing.value, name};
+        }
+        await Future<void>.delayed(AssetSvg.retryDelay);
       }
-      return bytes;
-    } catch (_) {
-      missing.value = {...missing.value, name};
-      rethrow;
     }
   }
-}
-
-/// Caches under the asset's name like [SvgAssetLoader], but can't fail to read.
-class _ArrivedSvgLoader extends SvgAssetLoader {
-  const _ArrivedSvgLoader(super.assetName, this.bytes, {super.colorMapper});
-
-  final ByteData bytes;
-
-  @override
-  Future<ByteData?> prepareMessage(BuildContext? context) =>
-      SynchronousFuture<ByteData?>(bytes);
 }
 
 /// Says so when the map at [assetName] couldn't be read. It sits above the
