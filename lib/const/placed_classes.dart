@@ -1211,8 +1211,17 @@ class PlacedUtility extends PlacedWidget {
     }
   }
 
+  /// The angle a view cone was placed with. Only a full circle is read back
+  /// ([UtilityData.fullCircleCone]); every other cone draws its preset's.
   @JsonKey(defaultValue: 0.0)
   double angle;
+
+  bool get isFullCircleCone => angle == ViewConeUtility.fullCircleDegrees;
+
+  /// The cone this view cone utility draws.
+  ViewConeUtility get viewCone => isFullCircleCone
+      ? UtilityData.fullCircleCone
+      : UtilityData.getViewConePreset(type);
 
   @JsonKey(defaultValue: null)
   double? visionElevation;

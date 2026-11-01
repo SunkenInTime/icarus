@@ -33,7 +33,8 @@
 //   {"tapText": t, "nth": n?, "button": "secondary"?}
 //   {"tapKey": valueKey, "nth": n?}    {"tapIcon": name, "nth": n?}
 //   {"tapAt": [x, y]}                  {"hoverAt": [x, y]}
-//   {"dragAt": [x1, y1, x2, y2]}       {"path": [[x, y], ...]}
+//   {"dragAt": [x1, y1, x2, y2]}       {"path": [[x, y], ...], "held": png?}
+//                                      held: a shot before letting go
 //   {"scrollAt": [x, y, dy]}           {"key": name}  {"keyCombo": [names]}
 //   {"resize": [w, h]}                 the window
 //   {"typeText": t}                    replaces the text in the last text field
@@ -57,6 +58,8 @@
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
 //   {"logLineups": tag}
+//   {"framesStart": 1} / {"framesLog": tag}   frame build and raster times between
+//                                      them: p50, p90, p99, worst, in ms
 //   {"expectSelected": n}              fails unless n items are selected
 //   {"expectAgents": n}                fails unless n agents are on the page
 //   {"exit": 1}
@@ -100,6 +103,7 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
@@ -141,6 +145,7 @@ var _flutterErrors = 0;
 var _failedSteps = 0;
 var _steps = 0;
 final _misplaced = <String>{};
+final _frameTimings = <ui.FrameTiming>[];
 
 void _log(String line) =>
     _entries.add('${DateTime.now().toIso8601String().substring(11, 23)} $line');
@@ -398,7 +403,11 @@ Future<void> _tap(Offset at, {bool secondary = false}) async {
 }
 
 /// Presses at the first point, moves through the rest, and lets go.
-Future<void> _drag(List<Offset> points, {int stepsPerLeg = 30}) async {
+Future<void> _drag(
+  List<Offset> points, {
+  int stepsPerLeg = 30,
+  String? shotWhileHeld,
+}) async {
   final pointer = _pointer++;
   final binding = GestureBinding.instance;
   _addMouse(pointer, points.first);
@@ -438,6 +447,7 @@ Future<void> _drag(List<Offset> points, {int stepsPerLeg = 30}) async {
     }
   }
   await Future<void>.delayed(const Duration(milliseconds: 300));
+  if (shotWhileHeld != null) await _run({'shot': shotWhileHeld});
   binding.handlePointerEvent(
     PointerUpEvent(
       pointer: pointer,
@@ -525,6 +535,7 @@ const _icons = {
   'chevronDown': LucideIcons.chevronDown,
   'pencil': LucideIcons.pencil,
   'eye': LucideIcons.eye,
+  'radar': LucideIcons.radar,
   'square': LucideIcons.square,
   'type': LucideIcons.type,
   'camera': LucideIcons.camera,
@@ -696,7 +707,7 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _drag([
         for (final p in (value as List).cast<List>())
           Offset((p[0] as num).toDouble(), (p[1] as num).toDouble()),
-      ], stepsPerLeg: 6);
+      ], stepsPerLeg: 6, shotWhileHeld: step['held'] as String?);
     case 'scrollAt':
       final xy = (value as List).cast<num>();
       GestureBinding.instance.handlePointerEvent(
@@ -939,6 +950,21 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
       final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
       await File(value as String).writeAsBytes(bytes!.buffer.asUint8List());
+    case 'framesStart':
+      _frameTimings.clear();
+      SchedulerBinding.instance.addTimingsCallback(_frameTimings.addAll);
+    case 'framesLog':
+      SchedulerBinding.instance.removeTimingsCallback(_frameTimings.addAll);
+      String times(Iterable<Duration> durations) {
+        final ms = [for (final d in durations) d.inMicroseconds / 1000]..sort();
+        if (ms.isEmpty) return 'none';
+        String at(double share) =>
+            ms[((ms.length - 1) * share).round()].toStringAsFixed(2);
+        return 'p50 ${at(.5)} p90 ${at(.9)} p99 ${at(.99)} worst ${at(1)}';
+      }
+      _log('FRAMES $value n=${_frameTimings.length} '
+          'build ${times(_frameTimings.map((t) => t.buildDuration))} '
+          'raster ${times(_frameTimings.map((t) => t.rasterDuration))}');
     case 'burst':
       for (var i = 0; i < ((step['count'] ?? 10) as int); i++) {
         await _run({'shot': '$value-${i.toString().padLeft(3, '0')}.png'});
@@ -976,6 +1002,12 @@ Future<void> _run(Map<String, dynamic> step) async {
         'texts=${c.read(textProvider).length} '
         'drawings=${c.read(drawingProvider).elements.length} '
         'images=${c.read(placedImageProvider).images.length} '
+        'utilities=${[
+          for (final u in c.read(utilityProvider))
+            '${u.type.name}/${u.angle}@'
+                '${u.position.dx.toStringAsFixed(1)},'
+                '${u.position.dy.toStringAsFixed(1)}',
+        ]} '
         'lineups=${c.read(lineUpProvider).graph.links.length} '
         'selected=${c.read(canvasSelectionProvider).length}',
       );
