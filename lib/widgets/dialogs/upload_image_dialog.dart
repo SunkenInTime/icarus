@@ -36,24 +36,43 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
   final bool _isCheckingClipboard = false;
   Uint8List? _selectedBytes;
   String? _selectedName;
+  // What Use image hands over for a pasted picture: see ClipboardImage.saved.
+  Future<Uint8List>? _selectedSaved;
   int? _selectedTagColorValue;
+  bool _usingImage = false;
 
   @override
   void initState() {
     super.initState();
     // Best-effort: if the clipboard contains an image (or an image data URI),
     // automatically select it.
-    Future<void>(() async {
-      final (bytes, name) =
-          await ClipboardService.trySelectImageFromClipboard();
-      if (bytes != null) {
-        if (!mounted) return;
-        setState(() {
-          _selectedBytes = bytes;
-          _selectedName = name;
-        });
-      }
+    Future<void>(_selectFromClipboard);
+  }
+
+  Future<void> _selectFromClipboard() async {
+    final image = await ClipboardService.trySelectImageFromClipboard();
+    if (image == null || !mounted) return;
+    setState(() {
+      _selectedBytes = image.bytes;
+      _selectedName = image.name;
+      _selectedSaved = image.saved;
     });
+  }
+
+  /// Closes with the picture on screen, once its saved bytes are ready. A
+  /// picture changed or cleared meanwhile takes the choice back.
+  Future<void> _useImage() async {
+    final chosen = _selectedBytes!;
+    setState(() => _usingImage = true);
+    final bytes = await _selectedSaved ?? chosen;
+    if (!mounted) return;
+    if (!identical(chosen, _selectedBytes)) {
+      setState(() => _usingImage = false);
+      return;
+    }
+    Navigator.of(context).pop<UploadImageResult?>(
+      UploadImageResult(bytes: bytes, tagColorValue: _selectedTagColorValue),
+    );
   }
 
   Future<void> _pickImage() async {
@@ -75,6 +94,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
     setState(() {
       _selectedBytes = bytes;
       _selectedName = file.name;
+      _selectedSaved = null;
     });
   }
 
@@ -116,6 +136,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
     setState(() {
       _selectedBytes = bytes;
       _selectedName = selectedFile.name;
+      _selectedSaved = null;
       _isDragging = false;
     });
   }
@@ -139,6 +160,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
               setState(() {
                 _selectedBytes = null;
                 _selectedName = null;
+                _selectedSaved = null;
               });
             }
           : null,
@@ -169,25 +191,15 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
         ),
         ShadIconButton.secondary(
           icon: const Icon(LucideIcons.clipboard),
-          onPressed: () async {
-            final (bytes, name) =
-                await ClipboardService.trySelectImageFromClipboard();
-            if (bytes != null) {
-              setState(() {
-                _selectedBytes = bytes;
-                _selectedName = name;
-              });
-            }
-          },
+          onPressed: _selectFromClipboard,
         ),
         ShadButton(
-          onPressed: hasSelection
-              ? () => Navigator.of(context).pop<UploadImageResult?>(
-                    UploadImageResult(
-                      bytes: _selectedBytes!,
-                      tagColorValue: _selectedTagColorValue,
-                    ),
-                  )
+          onPressed: hasSelection && !_usingImage ? _useImage : null,
+          leading: _usingImage
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : null,
           child: const Text('Use image'),
         ),
