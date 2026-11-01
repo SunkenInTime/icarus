@@ -68,6 +68,57 @@ void main() {
     expect(summary, 'Imported 10 strategies into 3 folders.');
   });
 
+  group('files from a newer Icarus ask for the update', () {
+    const newer = ImportIssue(
+      path: 'future.ica',
+      code: ImportIssueCode.newerVersion,
+    );
+    const unsupported = ImportIssue(
+      path: 'notes.txt',
+      code: ImportIssueCode.unsupportedFile,
+    );
+    ImportBatchResult resultOf(int strategies, List<ImportIssue> issues) =>
+        ImportBatchResult(
+          strategiesImported: strategies,
+          foldersCreated: 0,
+          issues: issues,
+        );
+
+    test('one file, and nothing else', () {
+      expect(
+        buildImportSummaryMessage(resultOf(0, const [newer])),
+        NewerVersionImportException.userMessage,
+      );
+    });
+
+    test('several files, and nothing else', () {
+      expect(
+        buildImportSummaryMessage(resultOf(0, const [newer, newer])),
+        'These strategies were created in a newer version of Icarus. '
+        'Please update the app and try again.',
+      );
+    });
+
+    test('beside files that did import', () {
+      expect(
+        buildImportSummaryMessage(resultOf(2, const [newer])),
+        'Imported 2 strategies. Skipped 1 file. 1 was created in a newer '
+        'version of Icarus. Please update the app and try again.',
+      );
+    });
+
+    test('beside files that could never import', () {
+      expect(
+        buildImportSummaryMessage(
+          resultOf(0, const [newer, newer, unsupported]),
+        ),
+        'No compatible strategies or folders were imported. Skipped 3 files. '
+        '2 were created in a newer version of Icarus. '
+        'Please update the app and try again.',
+      );
+    });
+  });
+
   test('summary mentions restored library globals', () {
     final summary = buildImportSummaryMessage(
       const ImportBatchResult(
