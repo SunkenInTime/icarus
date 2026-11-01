@@ -190,9 +190,11 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
     ];
   }
 
-  if (abilityData is CircleAbility ||
-      abilityData is SectorCircleAbility ||
-      abilityData is RangedIconAbility) {
+  if (abilityData is RangedIconAbility) {
+    return [_optionalRangeControl(abilityData.rangeLabel, visualState)];
+  }
+
+  if (abilityData is CircleAbility || abilityData is SectorCircleAbility) {
     if (_hasInnerRange(abilityData)) {
       return [
         _AbilityVisibilityControl(
@@ -235,6 +237,8 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
             showRangeFill: !state.showRangeFill,
           ),
         ),
+      if (abilityData case CircleAbility(:final String optionalRangeLabel))
+        _optionalRangeControl(optionalRangeLabel, visualState),
     ];
   }
 
@@ -265,6 +269,19 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
   return const [];
 }
 
+_AbilityVisibilityControl _optionalRangeControl(
+  String label,
+  AbilityVisualState visualState,
+) {
+  return _AbilityVisibilityControl(
+    label: label,
+    isEnabled: visualState.showOptionalRange,
+    toggle: (state) => state.copyWith(
+      showInnerOutline: !state.showInnerOutline,
+    ),
+  );
+}
+
 bool _hasInnerRange(Ability? ability) {
   return switch (ability) {
     CircleAbility() => ability.hasInnerRange,
@@ -281,11 +298,6 @@ bool _hasVisibleRangeFill(Ability? ability) {
         opacity: ability.opacity,
       ),
     SectorCircleAbility() => hasVisibleAbilityRangeFill(
-        rangeOutlineColor: ability.rangeOutlineColor,
-        rangeFillColor: ability.rangeFillColor,
-        opacity: ability.opacity,
-      ),
-    RangedIconAbility() => hasVisibleAbilityRangeFill(
         rangeOutlineColor: ability.rangeOutlineColor,
         rangeFillColor: ability.rangeFillColor,
         opacity: ability.opacity,

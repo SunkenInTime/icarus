@@ -231,20 +231,7 @@ class AgentData implements DraggableData {
         ],
       );
 
-      // Outer damage radii from the Valorant 13.09 files: 500, 550 (the main
-      // shell; its four bomblets reach 525) and 700.
-      agent.abilities[1].abilityData = RangedIconAbility(
-        iconPath: agent.abilities[1].iconPath,
-        size: 5,
-        rangeOutlineColor: Colors.orangeAccent,
-      );
-
-      agent.abilities[2].abilityData = RangedIconAbility(
-        iconPath: agent.abilities[2].iconPath,
-        size: 5.5,
-        rangeOutlineColor: Colors.orangeAccent,
-      );
-
+      // ExplosionRadius 700 in the Valorant 13.09 files.
       agent.abilities[3].abilityData = RangedIconAbility(
         iconPath: agent.abilities[3].iconPath,
         size: 7,
@@ -479,13 +466,6 @@ class AgentData implements DraggableData {
         size: 18,
         rangeOutlineColor: Colors.green,
         hasCenterDot: true,
-      );
-
-      // Where it pops: ConcussionRange 350 in the Valorant 13.09 files.
-      agent.abilities[1].abilityData = RangedIconAbility(
-        iconPath: agent.abilities[1].iconPath,
-        size: 3.5,
-        rangeOutlineColor: Colors.green,
       );
 
       return agent;
@@ -1046,6 +1026,7 @@ class AgentData implements DraggableData {
         size: 10,
         rangeOutlineColor: Colors.deepPurple,
         rangeFillColor: Colors.transparent,
+        rangeLabel: 'Stealth Range',
       );
 
       // 28 m since patch 12.00. Saved Steel Gardens were placed at 32.5 m.
@@ -1152,17 +1133,16 @@ class AgentData implements DraggableData {
         hasCenterDot: true,
       );
 
-      // From the Valorant 13.09 files: enemies inside the inner ring set it
-      // off (ActivationSphere 658) and enemies inside the outer ring see it
-      // (Stealth Reveal Range 900). Saved Chokeholds were placed at 6.58 m.
+      // From the Valorant 13.09 files: enemies inside the circle set it off
+      // (ActivationSphere 658), and enemies inside the optional ring see it
+      // (Stealth Reveal Range 900).
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
-        size: 9,
-        storedSize: 6.58,
-        innerRangeSize: 6.58,
-        innerRangeColor: Colors.lightBlueAccent,
+        size: 6.58,
         rangeOutlineColor: Colors.lightBlueAccent,
         hasCenterDot: true,
+        optionalRangeSize: 9,
+        optionalRangeLabel: 'Stealth Range',
       );
 
       agent.abilities[2].abilityData = CircleAbility(

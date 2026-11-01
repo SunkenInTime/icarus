@@ -20,6 +20,7 @@ class CustomCircleWidget extends ConsumerWidget {
     this.rangeFillColor,
     this.innerRangeColor,
     this.innerRangeSize,
+    this.optionalRangeSize,
     this.iconRotation,
     required this.id,
     required this.isAlly,
@@ -44,6 +45,9 @@ class CustomCircleWidget extends ConsumerWidget {
   final Color? rangeFillColor;
   final Color? innerRangeColor;
   final double? innerRangeSize;
+
+  /// See [CircleAbility.optionalRangeSize].
+  final double? optionalRangeSize;
 
   /// See [AbilityWidget.rotation].
   final double? iconRotation;
@@ -96,6 +100,13 @@ class CustomCircleWidget extends ConsumerWidget {
               rangeOpacity: rangeOpacity,
             ),
           ],
+          if (optionalRangeSize != null &&
+              resolvedVisualState.showOptionalRange)
+            _buildOptionalRange(
+              coordinateSystem,
+              coordinateSystem.scale(optionalRangeSize!),
+              rangeOpacity: rangeOpacity,
+            ),
           if (hasCenterDot) _buildCenterIcon(),
         ],
       ),
@@ -150,6 +161,31 @@ class CustomCircleWidget extends ConsumerWidget {
                     : rangeOutlineColor,
                 width: coordinateSystem
                     .scale(hasInnerRange || hasCenterDot ? 2 : 5),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOptionalRange(
+    CoordinateSystem coordinateSystem,
+    double scaledSize, {
+    required double rangeOpacity,
+  }) {
+    return _centeredOnBox(
+      scaledSize,
+      child: Opacity(
+        key: const ValueKey('circle-optional-range-layer'),
+        opacity: rangeOpacity,
+        child: IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: rangeOutlineColor.withAlpha(100),
+                width: coordinateSystem.scale(2),
               ),
             ),
           ),

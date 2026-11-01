@@ -14,7 +14,6 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
-import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class _Strategy extends StrategyProvider {
@@ -51,14 +50,12 @@ class _Settings extends StrategySettingsProvider {
 
 const _canvas = Size(1920, 1080);
 const _saved = Offset(600, 400);
+const _rangeOn = AbilityVisualState(showInnerOutline: false);
 
 /// Every ability this change drew a range on, as it was defined before.
 final Map<String, (AbilityInfo, Ability)> _changed = {
   for (final (agent, index) in const [
-    (AgentType.raze, 1),
-    (AgentType.raze, 2),
     (AgentType.raze, 3),
-    (AgentType.skye, 1),
     (AgentType.gekko, 3),
     (AgentType.vyse, 2),
   ])
@@ -175,7 +172,41 @@ void main() {
     });
   }
 
-  testWidgets('a ranged icon draws its range around the icon, past the box',
+  testWidgets('a saved item draws no range until it is turned on',
+      (tester) async {
+    tester.view.physicalSize = _canvas;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    for (final index in const [(AgentType.raze, 3), (AgentType.vyse, 2)]) {
+      await _pump(
+        tester,
+        AgentData.agents[index.$1]!.abilities[index.$2],
+        isAttack: true,
+        abilitySize: Settings.abilitySize,
+      );
+      for (final key in const [
+        'circle-range-outline-layer',
+        'circle-range-fill-layer',
+      ]) {
+        expect(tester.widget<Opacity>(find.byKey(ValueKey(key))).opacity, 0);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+
+    await _pump(
+      tester,
+      AgentData.agents[AgentType.veto]!.abilities[1],
+      isAttack: true,
+      abilitySize: Settings.abilitySize,
+    );
+    expect(
+      find.byKey(const ValueKey('circle-optional-range-layer')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('a range turned on draws around the icon, past the box',
       (tester) async {
     tester.view.physicalSize = _canvas;
     tester.view.devicePixelRatio = 1;
@@ -186,9 +217,11 @@ void main() {
       AgentData.agents[AgentType.raze]!.abilities[3],
       isAttack: true,
       abilitySize: Settings.abilitySize,
+      visualState: _rangeOn,
     );
 
     final outline = find.byKey(const ValueKey('circle-range-outline-layer'));
+    expect(tester.widget<Opacity>(outline).opacity, 1);
     expect(tester.getSize(outline).width, closeTo(_meters(7), 0.001));
     expect(
       tester.getCenter(outline),
@@ -207,79 +240,15 @@ void main() {
       AgentData.agents[AgentType.veto]!.abilities[1],
       isAttack: true,
       abilitySize: Settings.abilitySize,
+      visualState: _rangeOn,
     );
 
     final icon = tester.getCenter(find.byType(AbilityWidget));
-    final outer = find.byKey(const ValueKey('circle-range-outline-layer'));
-    expect(tester.getSize(outer).width, closeTo(_meters(9), 0.001));
-    expect(tester.getCenter(outer), offsetMoreOrLessEquals(icon));
-    final inner = find.descendant(
-      of: find.byKey(const ValueKey('circle-inner-outline-layer')),
-      matching: find.byType(Container),
-    );
-    expect(tester.getSize(inner.first).width, closeTo(_meters(6.58), 0.001));
-    expect(tester.getCenter(inner.first), offsetMoreOrLessEquals(icon));
-  });
-
-  testWidgets('hiding a ranged icon\'s range leaves the icon', (tester) async {
-    tester.view.physicalSize = _canvas;
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-
-    await _pump(
-      tester,
-      AgentData.agents[AgentType.raze]!.abilities[1],
-      isAttack: true,
-      abilitySize: Settings.abilitySize,
-      visualState: const AbilityVisualState(
-        showRangeOutline: false,
-        showRangeFill: false,
-      ),
-    );
-
-    for (final key in const [
-      'circle-range-outline-layer',
-      'circle-range-fill-layer',
-    ]) {
-      expect(tester.widget<Opacity>(find.byKey(ValueKey(key))).opacity, 0);
-    }
-    expect(find.byType(AbilityWidget), findsOneWidget);
-  });
-
-  testWidgets('a page transition draws the range around the moving icon',
-      (tester) async {
-    tester.view.physicalSize = _canvas;
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(ProviderScope(
-      child: ShadApp(
-        home: Material(
-          child: Stack(
-            children: [
-              staticPlacedWidgetView(
-                widget: PlacedAbility(
-                  id: 'moving',
-                  data: AgentData.agents[AgentType.raze]!.abilities[3],
-                  position: _saved,
-                ),
-                mapScale: Maps.mapScale[MapValue.ascent]!,
-                abilitySize: Settings.abilitySize,
-                agentSize: Settings.agentSize,
-                isAttack: true,
-              ),
-            ],
-          ),
-        ),
-      ),
-    ));
-
-    final outline = find.byKey(const ValueKey('circle-range-outline-layer'));
-    expect(tester.getSize(outline).width, closeTo(_meters(7), 0.001));
-    expect(
-      tester.getCenter(outline),
-      offsetMoreOrLessEquals(tester.getCenter(find.byType(AbilityWidget))),
-    );
+    final ring = find.byKey(const ValueKey('circle-optional-range-layer'));
+    expect(tester.getSize(ring).width, closeTo(_meters(9), 0.001));
+    expect(tester.getCenter(ring), offsetMoreOrLessEquals(icon));
+    final trigger = find.byKey(const ValueKey('circle-range-outline-layer'));
+    expect(tester.getSize(trigger).width, closeTo(_meters(6.58), 0.001));
   });
 
   test('a turned plain icon keeps turning once it has a range', () {

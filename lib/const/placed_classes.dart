@@ -888,6 +888,16 @@ class PlacedAbility extends PlacedWidget {
 
 abstract class WidgetAction {}
 
+/// An extension so the generated JSON code never picks it up as a field.
+extension OptionalAbilityRange on AbilityVisualState {
+  /// Whether an ability's optional range is on; see [RangedIconAbility] and
+  /// [CircleAbility.optionalRangeSize]. These start off, and every saved item
+  /// already stores true for all of its flags, so "on" has to be a stored
+  /// false. It borrows [AbilityVisualState.showInnerOutline], which an ability
+  /// without an inner range never reads.
+  bool get showOptionalRange => !showInnerOutline;
+}
+
 @JsonSerializable()
 class AbilityVisualState {
   const AbilityVisualState({
