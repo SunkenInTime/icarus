@@ -22,7 +22,6 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/domain/folder.dart';
-import 'package:icarus/hive/hive_adapters.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
