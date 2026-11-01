@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
@@ -32,7 +32,7 @@ class ImageUtilityWidget extends ConsumerWidget {
               ...buildAdjacentPageCopyMenuItems(ref, id!),
             ]
           : null,
-      child: SvgPicture.asset(
+      child: AssetSvg(
         imagePath,
         width: coordinateSystem.scale(size),
         height: coordinateSystem.scale(size),

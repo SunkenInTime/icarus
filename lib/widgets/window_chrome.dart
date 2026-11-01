@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/strip_status_icons.dart';
 import 'package:window_manager/window_manager.dart';
@@ -53,7 +53,7 @@ class IcarusWordmark extends StatelessWidget {
     }
     return Padding(
       padding: const EdgeInsets.only(left: 10, right: 6),
-      child: SvgPicture.asset(
+      child: const AssetSvg(
         'assets/brand/icarus-wordmark.svg',
         height: 14,
         semanticsLabel: 'Icarus',

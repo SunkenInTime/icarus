@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/svg.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -255,7 +255,7 @@ class ScreenshotView extends ConsumerWidget {
             child: CanonicalMapArtwork(
               map: mapValue,
               isAttack: isAttack,
-              child: SvgPicture.asset(
+              child: AssetSvg(
                 assetName,
                 colorMapper: mapColorMapper,
                 semanticsLabel: 'Map',
@@ -279,7 +279,7 @@ class ScreenshotView extends ConsumerWidget {
                     child: CanonicalMapArtwork(
                       map: mapValue,
                       isAttack: isAttack,
-                      child: SvgPicture.asset(
+                      child: AssetSvg(
                         assetName,
                         colorMapper:
                             MapSvgColorMapper.revealed(effectivePalette),
@@ -300,7 +300,7 @@ class ScreenshotView extends ConsumerWidget {
               child: Transform.flip(
                 flipX: !isAttack,
                 flipY: !isAttack,
-                child: SvgPicture.asset(
+                child: AssetSvg(
                   barrierAssetName,
                   semanticsLabel: 'Barrier',
                   fit: BoxFit.contain,
@@ -313,7 +313,7 @@ class ScreenshotView extends ConsumerWidget {
               top: 0,
               width: mapWidth,
               height: CoordinateSystem.screenShotSize.height,
-              child: SvgPicture.asset(
+              child: AssetSvg(
                 calloutsAssetName,
                 semanticsLabel: 'Callouts',
                 fit: BoxFit.contain,
@@ -328,7 +328,7 @@ class ScreenshotView extends ConsumerWidget {
               child: Transform.flip(
                 flipX: !isAttack,
                 flipY: !isAttack,
-                child: SvgPicture.asset(
+                child: AssetSvg(
                   ultOrbsAssetName,
                   semanticsLabel: 'Ult Orbs',
                   fit: BoxFit.contain,

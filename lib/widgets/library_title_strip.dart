@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/settings.dart';
@@ -269,7 +270,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
     final brand = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SvgPicture.asset(
+        const AssetSvg(
           'assets/brand/icarus-wordmark.svg',
           height: 14,
           semanticsLabel: 'Icarus',

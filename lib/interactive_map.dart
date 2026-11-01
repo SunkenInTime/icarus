@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
@@ -328,7 +329,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                             map:
                                                 ref.watch(mapProvider).currentMap,
                                             isAttack: isAttack,
-                                            child: SvgPicture.asset(
+                                            child: AssetSvg(
                                               assetName,
                                               colorMapper: mapColorMapper,
                                               semanticsLabel: 'Map',
@@ -370,7 +371,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                                       .watch(mapProvider)
                                                       .currentMap,
                                                   isAttack: isAttack,
-                                                  child: SvgPicture.asset(
+                                                  child: AssetSvg(
                                                     assetName,
                                                     colorMapper: MapSvgColorMapper
                                                         .revealed(
@@ -393,7 +394,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                         child: Transform.flip(
                                           flipX: !isAttack,
                                           flipY: !isAttack,
-                                          child: SvgPicture.asset(
+                                          child: AssetSvg(
                                             barrierAssetName,
                                             semanticsLabel: 'Barrier',
                                             fit: BoxFit.contain,
@@ -406,7 +407,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                         top: 0,
                                         width: mapWidth,
                                         height: height,
-                                        child: SvgPicture.asset(
+                                        child: AssetSvg(
                                           calloutsAssetName,
                                           semanticsLabel: 'Callouts',
                                           fit: BoxFit.contain,
@@ -421,7 +422,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                         child: Transform.flip(
                                           flipX: !isAttack,
                                           flipY: !isAttack,
-                                          child: SvgPicture.asset(
+                                          child: AssetSvg(
                                             ultOrbsAssetName,
                                             semanticsLabel: 'Ult Orbs',
                                             fit: BoxFit.contain,
@@ -454,6 +455,13 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                           transformation: controller,
                                         ),
                                       ),
+                                    Positioned(
+                                      left: mapLeft,
+                                      top: 0,
+                                      width: mapWidth,
+                                      height: height,
+                                      child: MissingMapNotice(assetName),
+                                    ),
                                     Positioned.fill(
                                       child: transitionPresentation.hideView
                                           ? IgnorePointer(
