@@ -28,6 +28,7 @@ import 'package:icarus/providers/team_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/widgets/caption_read_region.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_circle_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
@@ -181,6 +182,8 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                         ),
                       ),
                     ),
+                    if (!canEditPages)
+                      const Positioned.fill(child: CaptionReadRegion()),
                     const LineUpOverlay(),
                   ],
                 ),

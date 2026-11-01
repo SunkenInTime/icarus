@@ -18,6 +18,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/marker_hit_hole.dart'
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
+import 'package:icarus/providers/caption_card_provider.dart';
 
 class PlacedCustomCircleWidget extends ConsumerStatefulWidget {
   const PlacedCustomCircleWidget({
@@ -38,6 +39,15 @@ class PlacedCustomCircleWidget extends ConsumerStatefulWidget {
 
 class _PlacedCustomCircleWidgetState
     extends ConsumerState<PlacedCustomCircleWidget> {
+  late final CaptionCardNotifier _captionCard;
+  final _captionRegion = Object();
+
+  @override
+  void dispose() {
+    _captionCard.itemExited(_captionRegion);
+    super.dispose();
+  }
+
   static const double _minDiameterMeters = 1.0;
   static const double _maxDiameterMeters =
       CustomCircleUtility.maxDiameterMeters;
@@ -58,6 +68,7 @@ class _PlacedCustomCircleWidgetState
   @override
   void initState() {
     super.initState();
+    _captionCard = ref.read(captionCardProvider.notifier);
     _localDiameterMeters = widget.utility.customDiameter;
   }
 
@@ -195,11 +206,13 @@ class _PlacedCustomCircleWidgetState
               opaque: false,
               hitTestBehavior: HitTestBehavior.translucent,
               onEnter: (_) {
+                _captionCard.itemEntered(widget.id, _captionRegion);
                 setState(() {
                   _isShapeHovered = true;
                 });
               },
               onExit: (_) {
+                _captionCard.itemExited(_captionRegion);
                 setState(() {
                   _isShapeHovered = false;
                 });

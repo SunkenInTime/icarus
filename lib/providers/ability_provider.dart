@@ -222,6 +222,30 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     state = newState;
   }
 
+  void setCaption(String id, String caption) {
+    if (!ref.canEditPages) return;
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0 || (newState[index].caption ?? '') == caption) return;
+    // Written empty before the snapshot, so undoing a first caption sends "":
+    // a write that left the field out would keep it on the server.
+    final item = newState[index]..caption ??= '';
+    final before = ActionObjectState.ability(item);
+    item.caption = caption;
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.ability,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.ability(item),
+            ),
+          ),
+        );
+    state = newState;
+  }
+
   // void updateLength(int index, double length) {
   //   final newState = [...state];
   //   updateLengthHistory(index);

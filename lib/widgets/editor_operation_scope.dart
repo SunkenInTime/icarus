@@ -258,11 +258,43 @@ class _ItemOutlineStyle extends InheritedWidget {
       zoom != oldWidget.zoom;
 }
 
+/// The canvas's items, for what sits outside the canvas and needs to find
+/// them. Canvases that are open together tell theirs apart by their render
+/// tree.
+final canvasItemRegistryProvider = Provider((ref) => CanvasItemRegistry());
+
 /// The items drawn on the canvas, each measured by the outline of what it
 /// draws, so a selection box finds them where the user sees them: on either
 /// side of the map, at any agent or ability size, turned however far.
 class CanvasItemRegistry {
   final _outlines = <RenderEditorItemOutline>{};
+  final _handles = <_RenderEditorItemHandle>{};
+  final _chrome = <_RenderCanvasChrome>{};
+
+  /// Where the rotate handle of [id] is drawn, in the coordinates of
+  /// [canvas], or null when it has none showing.
+  Rect? handleIn(RenderBox canvas, String id) {
+    for (final handle in _handles) {
+      if (handle._item?.id != id || !handle.hasSize) continue;
+      if (!_isUnder(handle, canvas)) continue;
+      return MatrixUtils.transformRect(
+        handle.getTransformTo(canvas),
+        Offset.zero & handle.size,
+      );
+    }
+    return null;
+  }
+
+  /// The panels drawn above the canvas, in the coordinates of [canvas].
+  Iterable<Rect> chromeIn(RenderBox canvas) sync* {
+    for (final chrome in _chrome) {
+      if (!chrome.hasSize) continue;
+      yield MatrixUtils.transformRect(
+        chrome.getTransformTo(canvas),
+        Offset.zero & chrome.size,
+      );
+    }
+  }
 
   /// Each item on the canvas with its outline's corners in the coordinates
   /// of [canvas], in order around the outline (a turned item gives a turned
@@ -296,6 +328,90 @@ class CanvasItemRegistry {
       if (identical(at, ancestor)) return true;
     }
     return false;
+  }
+}
+
+/// Marks [child] as a canvas item's rotate handle, so a note on the item can
+/// stay clear of it.
+class EditorItemHandle extends SingleChildRenderObjectWidget {
+  const EditorItemHandle({required super.child, super.key});
+
+  static _RenderEditorItemHandle _configure(
+    BuildContext context,
+    _RenderEditorItemHandle renderObject,
+  ) =>
+      renderObject
+        ..item = context
+            .dependOnInheritedWidgetOfExactType<_ItemOutlineStyle>()
+            ?.item
+        ..registry = CanvasItemRegistryScope.maybeOf(context);
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _configure(context, _RenderEditorItemHandle());
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderEditorItemHandle renderObject,
+  ) =>
+      _configure(context, renderObject);
+}
+
+class _RenderEditorItemHandle extends RenderProxyBox {
+  SelectedItem? _item;
+  set item(SelectedItem? value) => _item = value;
+
+  CanvasItemRegistry? _registry;
+  set registry(CanvasItemRegistry? value) {
+    if (identical(value, _registry)) return;
+    if (attached) {
+      _registry?._handles.remove(this);
+      value?._handles.add(this);
+    }
+    _registry = value;
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _registry?._handles.add(this);
+  }
+
+  @override
+  void detach() {
+    _registry?._handles.remove(this);
+    super.detach();
+  }
+}
+
+/// Marks [child] as a panel drawn above the canvas, which a note on the canvas
+/// has to steer around.
+class CanvasChrome extends SingleChildRenderObjectWidget {
+  const CanvasChrome({required super.child, super.key});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderCanvasChrome(
+        ProviderScope.containerOf(context, listen: false)
+            .read(canvasItemRegistryProvider),
+      );
+}
+
+class _RenderCanvasChrome extends RenderProxyBox {
+  _RenderCanvasChrome(this._registry);
+
+  final CanvasItemRegistry _registry;
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _registry._chrome.add(this);
+  }
+
+  @override
+  void detach() {
+    _registry._chrome.remove(this);
+    super.detach();
   }
 }
 

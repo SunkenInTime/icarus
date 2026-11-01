@@ -13,6 +13,7 @@ import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/dialogs/lineup_panel_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_fill.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -59,8 +60,12 @@ List<ShadContextMenuItem>? buildAbilityContextMenuItems(
   final lineUpItems = landingId == null
       ? const <ShadContextMenuItem>[]
       : buildLandingLineUpMenuItems(ref, landingId, context: context);
+  final captionItems = landingId == null && context != null
+      ? buildCaptionMenuItems(context, ref, ability.id)
+      : const <ShadContextMenuItem>[];
 
   if (visibilityItems.isEmpty &&
+      captionItems.isEmpty &&
       adjacentPageItems.isEmpty &&
       lineUpItems.isEmpty) {
     return null;
@@ -69,6 +74,7 @@ List<ShadContextMenuItem>? buildAbilityContextMenuItems(
   return [
     ...lineUpItems,
     ...visibilityItems,
+    ...captionItems,
     ...adjacentPageItems,
   ];
 }

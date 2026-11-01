@@ -71,7 +71,7 @@ class CanvasSelectionLayer extends ConsumerStatefulWidget {
 
 class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     with WidgetsBindingObserver {
-  final _registry = CanvasItemRegistry();
+  CanvasItemRegistry get _registry => ref.read(canvasItemRegistryProvider);
   final _canvasKey = GlobalKey();
   final _focus = FocusNode(debugLabel: 'strategy-canvas', skipTraversal: true);
 

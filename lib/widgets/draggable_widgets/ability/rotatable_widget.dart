@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class RotatableWidget extends ConsumerStatefulWidget {
   final Widget child;
@@ -132,66 +133,68 @@ class _RotatableWidgetState extends ConsumerState<RotatableWidget>
                 top: coordinateSystem.scale((widget.buttonTop ?? 0)),
                 child: ShapeIndicatorFade(
                   visible: showHandle,
-                  child: MouseRegion(
-                    onEnter: (_) {
-                      _hoverExitTimer?.cancel();
-                      setState(() {
-                        _isExitGraceActive = false;
-                        _isHandleHovered = true;
-                      });
-                      _animationController.forward();
-                    },
-                    onExit: (_) {
-                      setState(() {
-                        _isHandleHovered = false;
-                      });
-                      if (!_isHandleDragging) {
-                        _animationController.reverse();
-                      }
-                    },
-                    child: SizedBox(
-                      width: buttonSize,
-                      height: buttonSize,
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onPanStart: (details) {
-                            setState(() {
-                              _isHandleDragging = true;
-                            });
-                            _animationController.forward();
-                            widget.onPanStart(details);
-                          },
-                          onPanUpdate: widget.onPanUpdate,
-                          onPanEnd: (details) {
-                            widget.onPanEnd(details);
-                            setState(() {
-                              _isHandleDragging = false;
-                            });
-                            if (!_isHandleHovered) {
-                              _animationController.reverse();
-                            }
-                          },
-                          onTap: () {},
-                          child: Center(
-                            child: AnimatedBuilder(
-                              animation: _scaleAnimation,
-                              builder: (context, child) {
-                                return Transform.scale(
-                                  scale: _scaleAnimation.value,
-                                  child: child,
-                                );
-                              },
-                              child: SizedBox(
-                                width: buttonSize,
-                                height: buttonSize,
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: _isHandleHovered
-                                        ? Colors.white
-                                        : Colors.white.withAlpha(200),
-                                    shape: BoxShape.circle,
+                  child: EditorItemHandle(
+                    child: MouseRegion(
+                      onEnter: (_) {
+                        _hoverExitTimer?.cancel();
+                        setState(() {
+                          _isExitGraceActive = false;
+                          _isHandleHovered = true;
+                        });
+                        _animationController.forward();
+                      },
+                      onExit: (_) {
+                        setState(() {
+                          _isHandleHovered = false;
+                        });
+                        if (!_isHandleDragging) {
+                          _animationController.reverse();
+                        }
+                      },
+                      child: SizedBox(
+                        width: buttonSize,
+                        height: buttonSize,
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onPanStart: (details) {
+                              setState(() {
+                                _isHandleDragging = true;
+                              });
+                              _animationController.forward();
+                              widget.onPanStart(details);
+                            },
+                            onPanUpdate: widget.onPanUpdate,
+                            onPanEnd: (details) {
+                              widget.onPanEnd(details);
+                              setState(() {
+                                _isHandleDragging = false;
+                              });
+                              if (!_isHandleHovered) {
+                                _animationController.reverse();
+                              }
+                            },
+                            onTap: () {},
+                            child: Center(
+                              child: AnimatedBuilder(
+                                animation: _scaleAnimation,
+                                builder: (context, child) {
+                                  return Transform.scale(
+                                    scale: _scaleAnimation.value,
+                                    child: child,
+                                  );
+                                },
+                                child: SizedBox(
+                                  width: buttonSize,
+                                  height: buttonSize,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: _isHandleHovered
+                                          ? Colors.white
+                                          : Colors.white.withAlpha(200),
+                                      shape: BoxShape.circle,
+                                    ),
                                   ),
                                 ),
                               ),

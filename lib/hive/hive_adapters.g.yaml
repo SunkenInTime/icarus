@@ -369,7 +369,7 @@ types:
         index: 4
   AppPreferences:
     typeId: 28
-    nextIndex: 25
+    nextIndex: 26
     fields:
       defaultThemeProfileIdForNewStrategies:
         index: 0
@@ -419,6 +419,8 @@ types:
         index: 23
       viewConeOpacity:
         index: 24
+      showCaptions:
+        index: 25
   PlacedViewConeAgent:
     typeId: 29
     nextIndex: 12

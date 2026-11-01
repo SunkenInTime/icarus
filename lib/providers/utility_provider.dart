@@ -197,6 +197,30 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     state = newState;
   }
 
+  void setCaption(String id, String caption) {
+    if (!ref.canEditPages) return;
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0 || (newState[index].caption ?? '') == caption) return;
+    // Written empty before the snapshot, so undoing a first caption sends "":
+    // a write that left the field out would keep it on the server.
+    final item = newState[index]..caption ??= '';
+    final before = ActionObjectState.utility(item);
+    item.caption = caption;
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.utility,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.utility(item),
+            ),
+          ),
+        );
+    state = newState;
+  }
+
   void updateCustomShapeColor({required String id, required int colorValue}) {
     if (!ref.canEditPages) return;
     final newState = [...state];

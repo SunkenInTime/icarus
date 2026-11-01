@@ -41,6 +41,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class StrategyView extends ConsumerStatefulWidget {
   const StrategyView({
@@ -390,9 +391,11 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        StrategyEditBoundary(
-                          disabledOpacity: 0.55,
-                          child: MapSelector(),
+                        CanvasChrome(
+                          child: StrategyEditBoundary(
+                            disabledOpacity: 0.55,
+                            child: MapSelector(),
+                          ),
                         ),
                         SizedBox(height: 8),
                         EditorToolbar(),
@@ -404,7 +407,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   alignment: Alignment.bottomLeft,
                   child: Padding(
                     padding: EdgeInsets.all(8.0),
-                    child: PagesBar(),
+                    child: CanvasChrome(child: PagesBar()),
                   ),
                 ),
                 // Tools and agents only place things; a view-only reader

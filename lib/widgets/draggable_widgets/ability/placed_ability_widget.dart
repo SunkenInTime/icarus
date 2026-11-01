@@ -154,8 +154,9 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             : widget.ability;
     final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1;
     final isAttack = ref.watch(mapProvider).isAttack;
-    final contextMenuItems =
-        widget.isLineUp ? null : buildAbilityContextMenuItems(ref, abilityRef);
+    final contextMenuItems = widget.isLineUp
+        ? null
+        : buildAbilityContextMenuItems(ref, abilityRef, context: context);
 
     if (abilityData is DeadlockBarrierMeshAbility) {
       return PlacedDeadlockBarrierMeshWidget(
