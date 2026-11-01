@@ -23,6 +23,7 @@ const PLACED_KINDS: readonly string[] = [
 /// means the writer doesn't know about it.
 export const LATER_ELEMENT_FIELDS = [
   { field: "caption", level: 1, kinds: PLACED_KINDS },
+  { field: "wallPath", level: 2, kinds: ["ability"] },
 ];
 
 /// Set by clients that keep later element fields: the highest level they know

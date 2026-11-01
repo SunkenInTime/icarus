@@ -11,7 +11,7 @@ import {
   CURRENT_CLOUD_PROTOCOL_VERSION,
   MAX_CLOUD_OPERATION_BYTES,
 } from "./lib/cloudProtocol";
-import { keepLaterFields } from "./lib/elementFields";
+import { keepLaterFields, withoutLaterFields } from "./lib/elementFields";
 import schema from "./schema";
 import { modules } from "./test.setup";
 
@@ -336,6 +336,157 @@ describe("a caption and the builds that don't know it", () => {
       .map((element) => element.payload.data.caption)
       .filter((caption) => caption !== undefined);
     expect(captions).toEqual([note]);
+  });
+});
+
+describe("a wall and the builds that don't know it", () => {
+  const wallBuild = { acceptsPictureIds: true, elementFieldLevel: 2 };
+  const wall = [
+    { dx: 40, dy: -30 },
+    { dx: 90, dy: -35 },
+  ];
+
+  function abilityData(id: string, fields: Record<string, unknown> = {}) {
+    return { id, position: { dx: 10, dy: 20 }, length: 0, ...fields };
+  }
+
+  function abilityPayload(data: Record<string, unknown>) {
+    return { kind: "ability", payloadVersion: 1, data };
+  }
+
+  /// [seed]'s strategy, plus "tide", an ability with a caption and a wall.
+  async function seedWall() {
+    const seeded = await seed();
+    await send(seeded.owner, wallBuild, "seed-wall", [
+      {
+        ...add("add-tide", abilityData("tide")),
+        payload: abilityPayload(
+          abilityData("tide", { caption: note, wallPath: wall }),
+        ),
+      },
+    ]);
+    return seeded;
+  }
+
+  function patchAbility(
+    opId: string,
+    data: Record<string, unknown>,
+    merge?: { fields: string[] },
+  ) {
+    return {
+      ...patch(opId, "tide", 1, data, merge),
+      payload: abilityPayload(data),
+    };
+  }
+
+  test("a build at each level reads the fields of its level and no later", async () => {
+    const { owner } = await seedWall();
+    const expected: [Record<string, unknown>, Record<string, unknown>][] = [
+      [oldBuild, abilityData("tide")],
+      [captionsBuild, abilityData("tide", { caption: note })],
+      [wallBuild, abilityData("tide", { caption: note, wallPath: wall })],
+    ];
+
+    for (const [client, data] of expected) {
+      for (const [name, elements] of await reads(owner, client)) {
+        expect(find(elements, "tide").payload.data, name).toEqual(data);
+      }
+    }
+  });
+
+  test("a move by a build below the field's level leaves the wall", async () => {
+    const { t, owner } = await seedWall();
+    const moved = { position: { dx: 50, dy: 60 } };
+
+    await send(owner, captionsBuild, "old", [
+      patchAbility("move", abilityData("tide", moved), {
+        fields: ["position"],
+      }),
+    ]);
+
+    expect((await row(t, "tide"))!.payload.data).toEqual(
+      abilityData("tide", { ...moved, caption: note, wallPath: wall }),
+    );
+  });
+
+  test("a whole write by a build below the field's level leaves the wall", async () => {
+    const { t, owner } = await seedWall();
+
+    await send(owner, captionsBuild, "old", [
+      patchAbility("whole", abilityData("tide", { length: 4 })),
+    ]);
+
+    expect((await row(t, "tide"))!.payload.data.wallPath).toEqual(wall);
+  });
+
+  test("an old build's undo of a delete brings the wall back", async () => {
+    const { t, owner } = await seedWall();
+
+    await send(owner, oldBuild, "old", [
+      {
+        opId: "delete",
+        type: "element.delete",
+        elementPublicId: "tide",
+        pagePublicId: page,
+        expectedElementRevision: 1,
+      },
+    ]);
+    const undo = await send(owner, oldBuild, "old", [
+      {
+        ...add("restore", abilityData("tide")),
+        payload: abilityPayload(abilityData("tide")),
+        expectedElementRevision: 2,
+      },
+    ]);
+
+    expect(undo[0]!.status).toBe("applied");
+    expect((await row(t, "tide"))!.payload.data.wallPath).toEqual(wall);
+  });
+
+  test("a build at the field's level removes the wall by writing it empty", async () => {
+    const { t, owner } = await seedWall();
+
+    await send(owner, wallBuild, "new", [
+      patchAbility("clear", abilityData("tide", { wallPath: [] }), {
+        fields: ["wallPath"],
+      }),
+    ]);
+
+    expect((await row(t, "tide"))!.payload.data.wallPath).toEqual([]);
+  });
+
+  test("a copy of the strategy keeps the wall", async () => {
+    const { owner } = await seedWall();
+
+    await owner.mutation(duplicateStrategy, {
+      ...protocol,
+      sourceStrategyPublicId: strategy,
+      publicId: "wall-copy",
+      name: "Walls (Copy)",
+    });
+
+    const copy = (await owner.query(getFullSnapshot, {
+      ...protocol,
+      ...wallBuild,
+      strategyPublicId: "wall-copy",
+    })) as { elements: Row[] };
+    const walls = copy.elements
+      .map((element) => element.payload.data.wallPath)
+      .filter((path) => path !== undefined);
+    expect(walls).toEqual([wall]);
+  });
+
+  test("only an ability's key of that name is the wall", () => {
+    const stray = { id: "jett", wallPath: wall };
+    const agent = { kind: "agent" as const, payloadVersion: 1 };
+
+    expect(
+      keepLaterFields(
+        { ...agent, data: stray },
+        { ...agent, data: { id: "jett" } },
+      ).data,
+    ).toEqual({ id: "jett" });
+    expect(withoutLaterFields({ ...agent, data: stray }, 0).data).toEqual(stray);
   });
 });
 
