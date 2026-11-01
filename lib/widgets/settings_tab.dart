@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -309,6 +310,9 @@ class _GlobalSettingsSections extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final allowsLocalLibrary =
+        ref.watch(platformPolicyProvider).allowsLocalLibrary;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -382,22 +386,24 @@ class _GlobalSettingsSections extends ConsumerWidget {
           title: "Workspace behavior",
           child: Column(
             children: [
-              _SettingsToggleTile(
-                icon: LucideIcons.save,
-                iconColor: Settings.settingsPersistenceAccent,
-                title: "Autosave",
-                description:
-                    "Save strategies on this device after 15 seconds idle. When off, Icarus asks before you leave unsaved work. Cloud strategies sync either way.",
-                value: appPreferences.autosaveEnabled,
-                onChanged: (value) async {
-                  await ref
-                      .read(appPreferencesProvider.notifier)
-                      .setAutosaveEnabled(value);
-                  ref
-                      .read(strategyProvider.notifier)
-                      .refreshAutosaveScheduling();
-                },
-              ),
+              // Autosave only covers strategies on this device.
+              if (allowsLocalLibrary)
+                _SettingsToggleTile(
+                  icon: LucideIcons.save,
+                  iconColor: Settings.settingsPersistenceAccent,
+                  title: "Autosave",
+                  description:
+                      "Save strategies on this device after 15 seconds idle. When off, Icarus asks before you leave unsaved work. Cloud strategies sync either way.",
+                  value: appPreferences.autosaveEnabled,
+                  onChanged: (value) async {
+                    await ref
+                        .read(appPreferencesProvider.notifier)
+                        .setAutosaveEnabled(value);
+                    ref
+                        .read(strategyProvider.notifier)
+                        .refreshAutosaveScheduling();
+                  },
+                ),
               _SettingsToggleTile(
                 icon: LucideIcons.gamepad2,
                 iconColor: Settings.settingsDiscordAccent,
@@ -1282,7 +1288,7 @@ class _SignedInAccountRow extends ConsumerWidget {
   }
 }
 
-class _SettingsNavigationRail extends StatelessWidget {
+class _SettingsNavigationRail extends ConsumerWidget {
   const _SettingsNavigationRail({
     required this.selectedSection,
     required this.onSectionSelected,
@@ -1292,7 +1298,10 @@ class _SettingsNavigationRail extends StatelessWidget {
   final ValueChanged<_SettingsSection> onSectionSelected;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final allowsLocalLibrary =
+        ref.watch(platformPolicyProvider).allowsLocalLibrary;
+
     return Container(
       width: SettingsTab._navigationWidth,
       color: Settings.tacticalVioletTheme.card.withValues(alpha: 0.72),
@@ -1337,12 +1346,13 @@ class _SettingsNavigationRail extends StatelessWidget {
             isSelected: selectedSection == _SettingsSection.globalDefaults,
             onTap: () => onSectionSelected(_SettingsSection.globalDefaults),
           ),
-          _SettingsNavItem(
-            icon: LucideIcons.save,
-            label: "Autosave",
-            isSelected: selectedSection == _SettingsSection.globalSaving,
-            onTap: () => onSectionSelected(_SettingsSection.globalSaving),
-          ),
+          if (allowsLocalLibrary)
+            _SettingsNavItem(
+              icon: LucideIcons.save,
+              label: "Autosave",
+              isSelected: selectedSection == _SettingsSection.globalSaving,
+              onTap: () => onSectionSelected(_SettingsSection.globalSaving),
+            ),
           _SettingsNavItem(
             icon: LucideIcons.map,
             label: "Map layers",
