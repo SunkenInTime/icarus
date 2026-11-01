@@ -1,0 +1,21 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"tapKey": "library-new-strategy"},
+  {"wait": 2},
+  {"hoverAt": [800, 120]},
+  {"wait": 1},
+  {"shot": "{out}/1-pick-a-map.png"},
+  {"tapKey": "create-strategy-out-of-rotation"},
+  {"hoverAt": [800, 120]},
+  {"wait": 1},
+  {"shot": "{out}/2-out-of-rotation.png"},
+  {"tapKey": "create-strategy-map-corrode"},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"shot": "{out}/3-opened-on-the-map.png"},
+  {"tapAt": [100, 80]},
+  {"wait": 2},
+  {"shot": "{out}/4-map-selector.png"},
+  {"exit": 1}
+]

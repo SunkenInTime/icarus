@@ -33,6 +33,12 @@ import 'package:toastification/toastification.dart';
 /// The library as a user reaches it: the real FolderNavigator, workspace,
 /// navigation, and create dialogs. Only auth and the Convex repository are
 /// stand-ins.
+/// A tile the dialog shows without opening Out of rotation, whichever maps
+/// are in the pool this act.
+Finder _tileInThePool() => find.byKey(
+      ValueKey('create-strategy-map-${Maps.mapNames[Maps.availableMaps.first]}'),
+    );
+
 void main() {
   late Directory tempDir;
 
@@ -160,7 +166,7 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('library-new-strategy')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('create-strategy-map-ascent')));
+      await tester.tap(_tileInThePool());
       await _settleToasts(tester);
       expect(app.repository.calls, ['createStrategyWithInitialPage']);
 
@@ -197,7 +203,7 @@ void main() {
       await tester.pump();
       expect(app.workspace, LibraryWorkspace.local);
 
-      await tester.tap(find.byKey(const ValueKey('create-strategy-map-ascent')));
+      await tester.tap(_tileInThePool());
       await tester.pumpAndSettle();
       // The local branch refused; the user is told, nothing is saved.
       expect(find.text("Couldn't create strategy right now."), findsOneWidget);
