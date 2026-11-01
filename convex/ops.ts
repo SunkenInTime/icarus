@@ -1277,11 +1277,16 @@ async function applyPageContentOp(
 }
 
 /// [next] keeping what a write can't take from [current] by leaving it out.
+/// A payload that grows too large by it fails as an oversized op does.
 function keepStoredFields(
   current: ElementPayload,
   next: ElementPayload,
 ): ElementPayload {
-  return keepLaterFields(current, keepPictureId(current, next));
+  const kept = keepLaterFields(current, keepPictureId(current, next));
+  if (kept !== next && cloudOperationExceedsPolicy(kept)) {
+    throw errorWithCode("INVALID_PAYLOAD", CLOUD_OPERATION_TOO_LARGE_MESSAGE);
+  }
+  return kept;
 }
 
 async function applyElementOp(

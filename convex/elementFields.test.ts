@@ -7,7 +7,10 @@ import { makeFunctionReference } from "convex/server";
 import { describe, expect, test } from "vitest";
 import type { DataModel } from "./_generated/dataModel";
 import { markAssetReferencesReady } from "./lib/assetReferences";
-import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
+import {
+  CURRENT_CLOUD_PROTOCOL_VERSION,
+  MAX_CLOUD_OPERATION_BYTES,
+} from "./lib/cloudProtocol";
 import { keepLaterFields } from "./lib/elementFields";
 import schema from "./schema";
 import { modules } from "./test.setup";
@@ -225,10 +228,11 @@ describe("a caption and the builds that don't know it", () => {
   test("a merge naming the field without a value leaves the caption", async () => {
     const { t, owner } = await seed();
 
-    await send(owner, oldBuild, "old", [
+    const results = await send(owner, oldBuild, "old", [
       patch("erase", "jett", 1, agentData("jett"), { fields: ["caption"] }),
     ]);
 
+    expect(results[0]!.status).toBe("noop");
     expect((await row(t, "jett"))!.payload.data.caption).toBe(note);
   });
 
@@ -248,7 +252,7 @@ describe("a caption and the builds that don't know it", () => {
   test("an old build's undo of a delete brings the caption back", async () => {
     const { t, owner } = await seed();
 
-    await send(owner, oldBuild, "old", [
+    const deletion = await send(owner, oldBuild, "old", [
       {
         opId: "delete",
         type: "element.delete",
@@ -257,10 +261,14 @@ describe("a caption and the builds that don't know it", () => {
         expectedElementRevision: 1,
       },
     ]);
-    await send(owner, oldBuild, "old", [
+    expect(deletion[0]!.status).toBe("applied");
+    expect((await row(t, "jett"))!.deleted).toBe(true);
+
+    const undo = await send(owner, oldBuild, "old", [
       { ...add("restore", agentData("jett")), expectedElementRevision: 2 },
     ]);
 
+    expect(undo[0]!.status).toBe("applied");
     const restored = (await row(t, "jett"))!;
     expect(restored.deleted).toBe(false);
     expect(restored.payload.data.caption).toBe(note);
@@ -269,11 +277,15 @@ describe("a caption and the builds that don't know it", () => {
   test("an op queued by an old build keeps the caption when an updated build sends it", async () => {
     const { t, owner } = await seed();
 
+    const changed = { state: "viewCone" };
+
     await send(owner, captionsBuild, "updated", [
-      patch("queued", "jett", 1, agentData("jett", { state: "viewCone" })),
+      patch("queued", "jett", 1, agentData("jett", changed)),
     ]);
 
-    expect((await row(t, "jett"))!.payload.data.caption).toBe(note);
+    expect((await row(t, "jett"))!.payload.data).toEqual(
+      agentData("jett", { ...changed, caption: note }),
+    );
   });
 
   test("a build at the field's level clears the caption by writing it empty", async () => {
@@ -286,6 +298,23 @@ describe("a caption and the builds that don't know it", () => {
     ]);
 
     expect((await row(t, "jett"))!.payload.data.caption).toBe("");
+  });
+
+  test("a write that keeping the caption makes too large fails as an oversized op", async () => {
+    const { t, owner } = await seed();
+    const nearLimit = "x".repeat(MAX_CLOUD_OPERATION_BYTES - 1024);
+    await send(owner, captionsBuild, "new", [
+      patch("long", "jett", 1, agentData("jett", { caption: "y".repeat(4096) }), {
+        fields: ["caption"],
+      }),
+    ]);
+
+    const results = await send(owner, oldBuild, "old", [
+      patch("big", "jett", 2, agentData("jett", { note: nearLimit })),
+    ]);
+
+    expect(results[0]).toMatchObject({ status: "failed", code: "INVALID_PAYLOAD" });
+    expect((await row(t, "jett"))!.payload.data.note).toBeUndefined();
   });
 
   test("the server's own copies keep the caption", async () => {
