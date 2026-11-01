@@ -746,6 +746,7 @@ class PlacedAbility extends PlacedWidget {
     this.rotation = 0,
     this.visualState = const AbilityVisualState(),
     List<double>? armLengthsMeters,
+    this.wallPath,
   }) : armLengthsMeters = DeadlockBarrierMeshAbility.normalizeArmLengths(
           armLengthsMeters,
         );
@@ -771,6 +772,16 @@ class PlacedAbility extends PlacedWidget {
   @JsonKey(defaultValue: <double>[10.0, 10.0, 10.0, 10.0])
   List<double> armLengthsMeters;
 
+  /// The wall this ability raises (High Tide): the points after the icon, in
+  /// order along the wall, each measured from the icon in canonical world
+  /// units, so moving the icon moves the wall. Null until an edit sets it,
+  /// then written for good: an empty path is a wall removed, because a write
+  /// that leaves the field out means the writer doesn't know about it (see
+  /// LATER_ELEMENT_FIELDS in convex/lib/elementFields.ts).
+  @JsonKey(includeIfNull: false)
+  @OffsetListConverter()
+  List<Offset>? wallPath;
+
   void updateRotation(double newRotation, double newLength) {
     updateGeometry(newRotation: newRotation, newLength: newLength);
   }
@@ -779,12 +790,14 @@ class PlacedAbility extends PlacedWidget {
     double? newRotation,
     double? newLength,
     List<double>? newArmLengthsMeters,
+    List<Offset>? newWallPath,
   }) {
     rotation = newRotation ?? rotation;
     length = newLength ?? length;
     armLengthsMeters = DeadlockBarrierMeshAbility.normalizeArmLengths(
       newArmLengthsMeters ?? armLengthsMeters,
     );
+    wallPath = newWallPath ?? wallPath;
   }
 
   void updateArmLengths(List<double> newArmLengthsMeters) {
@@ -805,6 +818,7 @@ class PlacedAbility extends PlacedWidget {
       length: length,
       visualState: visualState,
       armLengthsMeters: armLengthsMeters,
+      wallPath: wallPath,
     );
     _actionHistory.add(action);
   }
@@ -815,6 +829,7 @@ class PlacedAbility extends PlacedWidget {
       length: length,
       visualState: visualState,
       armLengthsMeters: armLengthsMeters,
+      wallPath: wallPath,
     );
 
     _poppedAction.add(action);
@@ -823,6 +838,7 @@ class PlacedAbility extends PlacedWidget {
     length = previous.length;
     visualState = previous.visualState;
     armLengthsMeters = List<double>.from(previous.armLengthsMeters);
+    wallPath = previous.wallPath;
     _actionHistory.removeLast();
   }
 
@@ -834,6 +850,7 @@ class PlacedAbility extends PlacedWidget {
       length: length,
       visualState: visualState,
       armLengthsMeters: armLengthsMeters,
+      wallPath: wallPath,
     );
 
     _actionHistory.add(action);
@@ -842,6 +859,7 @@ class PlacedAbility extends PlacedWidget {
     length = next.length;
     visualState = next.visualState;
     armLengthsMeters = List<double>.from(next.armLengthsMeters);
+    wallPath = next.wallPath;
     _poppedAction.removeLast();
   }
 
@@ -873,11 +891,13 @@ class PlacedAbility extends PlacedWidget {
     double? rotation,
     double? length,
     List<double>? armLengthsMeters,
+    List<Offset>? wallPath,
     AbilityVisualState? visualState,
     String? id,
     bool? isAlly,
     String? lineUpID,
   }) {
+    final path = wallPath ?? this.wallPath;
     return PlacedAbility(
       id: id ?? this.id,
       data: data ?? this.data,
@@ -890,6 +910,7 @@ class PlacedAbility extends PlacedWidget {
       armLengthsMeters: List<double>.from(
         armLengthsMeters ?? this.armLengthsMeters,
       ),
+      wallPath: path == null ? null : List<Offset>.of(path),
     )..caption = caption;
   }
 
@@ -953,25 +974,30 @@ class AbilityGeometryAction extends WidgetAction {
   final double length;
   final AbilityVisualState visualState;
   final List<double> armLengthsMeters;
+  final List<Offset>? wallPath;
 
   AbilityGeometryAction({
     required this.rotation,
     required this.length,
     required this.visualState,
     required List<double> armLengthsMeters,
-  }) : armLengthsMeters = List<double>.from(armLengthsMeters);
+    List<Offset>? wallPath,
+  })  : armLengthsMeters = List<double>.from(armLengthsMeters),
+        wallPath = wallPath == null ? null : List<Offset>.of(wallPath);
 
   AbilityGeometryAction copyWith({
     double? rotation,
     double? length,
     AbilityVisualState? visualState,
     List<double>? armLengthsMeters,
+    List<Offset>? wallPath,
   }) {
     return AbilityGeometryAction(
       rotation: rotation ?? this.rotation,
       length: length ?? this.length,
       visualState: visualState ?? this.visualState,
       armLengthsMeters: armLengthsMeters ?? this.armLengthsMeters,
+      wallPath: wallPath ?? this.wallPath,
     );
   }
 }

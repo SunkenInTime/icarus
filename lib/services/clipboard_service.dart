@@ -2,7 +2,9 @@ import 'dart:ui' as ui;
 
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/browser_paste.dart';
 import 'package:image/image.dart' as img;
 import 'package:pasteboard/pasteboard.dart';
 
@@ -97,7 +99,40 @@ Uint8List _pngOfPixels(({int width, int height, Uint8List rgba}) picture) {
   );
 }
 
+/// Another program kept the clipboard open for as long as we waited. Nothing
+/// is known about what's on it.
+class ClipboardBusyException implements Exception {}
+
 class ClipboardService {
+  static const _name = 'Clipboard File';
+
+  /// What to tell someone when the clipboard stayed busy.
+  static const busyMessage =
+      'Another program is using the clipboard. Try again in a moment.';
+
+  /// Programs open the clipboard for a moment whenever it changes: clipboard
+  /// managers, screen sharing, Deskflow. Windows then refuses everyone else.
+  static const _busyWait = Duration(seconds: 2);
+  static const _busyRetry = Duration(milliseconds: 100);
+
+  /// A clipboard refused by Windows is a [PlatformException], from Flutter's
+  /// clipboard and the pasteboard plugin alike.
+  static Future<T> _whenFree<T>(Future<T> Function() use) async {
+    final waited = Stopwatch()..start();
+    while (true) {
+      try {
+        return await use();
+      } on PlatformException {
+        if (waited.elapsed >= _busyWait) throw ClipboardBusyException();
+        await Future<void>.delayed(_busyRetry);
+      }
+    }
+  }
+
+  /// The latest clear and whether it worked: a paste right after a copy waits
+  /// for it, or it could find the picture the copy replaced.
+  static Future<bool> _cleared = Future.value(true);
+
   static const Set<String> _supportedImageExtensions = {
     'gif',
     'webp',
@@ -130,23 +165,59 @@ class ClipboardService {
     return _supportedImageExtensions.contains(ext);
   }
 
+  /// The picture the paste shortcut was just pressed for, if there is one.
+  /// A browser hands it to the page with the key press, without asking for
+  /// permission. Everywhere else, and for a key the browser doesn't take for
+  /// a paste, it's read from the clipboard.
+  static Future<ClipboardImage?> readPastedImage() async {
+    final browserPaste = nextBrowserPaste();
+    final cleared = await _cleared;
+    _cleared = Future.value(true);
+    final paste = await browserPaste;
+    // Whatever is there is what the copy failed to replace.
+    if (!cleared) return null;
+    if (paste == null) return trySelectImageFromClipboard();
+    final picture = paste.picture;
+    return picture == null ? null : ClipboardImage(picture, name: _name);
+  }
+
+  /// Empties the system clipboard. It never throws: what's left behind only
+  /// matters to a later paste.
+  static Future<void> clear() => _cleared = _clear();
+
+  static Future<bool> _clear() async {
+    try {
+      await _whenFree(
+        () => Clipboard.setData(const ClipboardData(text: '')),
+      );
+      return true;
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Could not clear the clipboard: $error',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'clipboard_service.clear',
+        promptUser: false,
+      );
+      return false;
+    }
+  }
+
+  /// The picture on the clipboard, or a copied picture file, or null when
+  /// there is neither. Throws [ClipboardBusyException] when it can't tell.
   static Future<ClipboardImage?> trySelectImageFromClipboard() async {
     try {
-      final clipBoardImages = await Pasteboard.image;
-      final clipBoardFiles = await Pasteboard.files();
+      final image = await _whenFree(() => Pasteboard.image);
+      if (image != null) return ClipboardImage(image, name: _name);
 
-      if (clipBoardImages != null) {
-        return ClipboardImage(clipBoardImages, name: 'Clipboard File');
-      } else if (clipBoardFiles.isNotEmpty) {
-        final file = clipBoardFiles.first;
-        if (!isSupportedImageClipboardFile(file)) {
-          return null;
-        }
-        final bytes = await XFile(file).readAsBytes();
-        return ClipboardImage(bytes, name: 'Clipboard File');
-      } else {
-        return null;
-      }
+      final files = await _whenFree(Pasteboard.files);
+      if (files.isEmpty) return null;
+      final file = files.first;
+      if (!isSupportedImageClipboardFile(file)) return null;
+      final bytes = await XFile(file).readAsBytes();
+      return ClipboardImage(bytes, name: _name);
+    } on ClipboardBusyException {
+      rethrow;
     } catch (_) {
       return null;
     }

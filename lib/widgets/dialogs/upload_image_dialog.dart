@@ -55,13 +55,29 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
   }
 
   Future<void> _selectFromClipboard() async {
-    final image = await widget.readClipboard();
-    if (image == null || !mounted) return;
+    final chosen = _selectedBytes;
+    final image = await _readClipboard();
+    // A busy clipboard can take a while, and a file chosen meanwhile stays.
+    if (image == null || !mounted || !identical(chosen, _selectedBytes)) return;
     setState(() {
       _selectedBytes = image.bytes;
       _selectedName = image.name;
       _selectedSaved = image.saved;
     });
+  }
+
+  Future<ClipboardImage?> _readClipboard() async {
+    try {
+      return await widget.readClipboard();
+    } on ClipboardBusyException {
+      if (mounted) {
+        Settings.showToast(
+          message: ClipboardService.busyMessage,
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+      }
+      return null;
+    }
   }
 
   /// Closes with the picture on screen, once its saved bytes are ready. A

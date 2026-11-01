@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/default_placement.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/collab/pending_media_bytes_store.dart';
 import 'package:icarus/const/settings.dart';
@@ -17,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
+import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -127,6 +129,33 @@ class PlacedImageProvider extends Notifier<ImageState> {
     );
     codec.dispose();
     return aspectRatio;
+  }
+
+  /// Puts a picture in the middle of what's on screen, at the width a new
+  /// picture has. Returns false when [imageBytes] aren't a picture format
+  /// Icarus can keep.
+  Future<bool> addImageOnScreen(
+    Uint8List imageBytes, {
+    int? tagColorValue,
+  }) async {
+    final fileExtension = PlacedImageSerializer.detectImageFormat(imageBytes);
+    if (fileExtension == null) return false;
+    final aspectRatio = await getImageAspectRatio(imageBytes);
+    final strategy = ref.read(strategyProvider);
+    const width = 200.0;
+    await addImage(
+      imageBytes: imageBytes,
+      strategyId: strategy.strategyId,
+      strategySource: strategy.source,
+      fileExtension: fileExtension,
+      aspectRatio: aspectRatio,
+      position: DefaultPlacement.topLeftFromVirtualAnchor(
+        viewportCenter: ref.read(placementCenterProvider),
+        anchorVirtual: Offset(width / 2, width / aspectRatio / 2),
+      ),
+      tagColorValue: tagColorValue,
+    );
+    return true;
   }
 
   Future<void> addImage(

@@ -1,0 +1,13 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"tapText": "Wall old build"},
+  {"wait": 5},
+  {"shot": "{out}/2-old.png"},
+  {"logPage": "old-build-opened"},
+  {"addAgent": "from-old", "at": [560, 620], "agent": "harbor"},
+  {"logPage": "old-build-edited"},
+  {"shot": "{out}/3-old-edited.png"},
+  {"wait": 25},
+  {"exit": 1}
+]

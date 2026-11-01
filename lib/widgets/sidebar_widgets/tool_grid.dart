@@ -14,7 +14,6 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/dialogs/upload_image_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -94,7 +93,6 @@ class BottomContextBar extends ConsumerWidget {
 
 class ToolGrid extends ConsumerWidget {
   const ToolGrid({super.key});
-  static const double _defaultImageSpawnWidth = 200;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -210,41 +208,19 @@ class ToolGrid extends ConsumerWidget {
                       builder: (context) => const UploadImageDialog(),
                     );
                     if (imageResult == null) return;
-                    final imageBytes = imageResult.bytes;
-
-                    final String? fileExtension =
-                        PlacedImageSerializer.detectImageFormat(imageBytes);
-                    if (fileExtension == null) {
+                    final added = await ref
+                        .read(placedImageProvider.notifier)
+                        .addImageOnScreen(
+                          imageResult.bytes,
+                          tagColorValue: imageResult.tagColorValue,
+                        );
+                    if (!added) {
                       Settings.showToast(
                         message: 'Upload failed',
                         backgroundColor:
                             Settings.tacticalVioletTheme.destructive,
                       );
-                      return;
                     }
-
-                    final aspectRatio = await ref
-                        .read(placedImageProvider.notifier)
-                        .getImageAspectRatio(imageBytes);
-                    final strategyState = ref.read(strategyProvider);
-                    final placementCenter = ref.read(placementCenterProvider);
-                    final imageHeight = _defaultImageSpawnWidth / aspectRatio;
-                    final centeredTopLeft =
-                        DefaultPlacement.topLeftFromVirtualAnchor(
-                      viewportCenter: placementCenter,
-                      anchorVirtual:
-                          Offset(_defaultImageSpawnWidth / 2, imageHeight / 2),
-                    );
-
-                    ref.read(placedImageProvider.notifier).addImage(
-                          imageBytes: imageBytes,
-                          strategyId: strategyState.strategyId,
-                          strategySource: strategyState.source,
-                          fileExtension: fileExtension,
-                          aspectRatio: aspectRatio,
-                          position: centeredTopLeft,
-                          tagColorValue: imageResult.tagColorValue,
-                        );
                   },
                   icon: const Icon(LucideIcons.image, size: 22),
                 ),

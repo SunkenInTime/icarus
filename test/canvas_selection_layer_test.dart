@@ -394,6 +394,39 @@ void main() {
     expect(container.read(canvasSelectionProvider), {_a, _b, _c});
   });
 
+  testWidgets('a copy replaces what the system clipboard held', (tester) async {
+    final written = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') written.add(call.arguments);
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    await pumpCanvas(tester);
+
+    // Nothing selected: nothing is copied, and the clipboard stays.
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(written, isEmpty);
+
+    await mouseDrag(tester, const Offset(50, 50), const Offset(250, 200));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+
+    expect(written, [
+      {'text': ''},
+    ]);
+  });
+
   Offset positionOf(String id) => container
       .read(agentProvider)
       .firstWhere((agent) => agent.id == id)

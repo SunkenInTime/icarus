@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ui' show Offset;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 
@@ -216,6 +217,34 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
             objectDelta: ObjectHistoryDelta(
               before: before,
               after: ActionObjectState.ability(newState[index]),
+            ),
+          ),
+        );
+    state = newState;
+  }
+
+  /// Saves [path] as the wall of the ability [id], as one undo step. An empty
+  /// path removes the wall.
+  void setWallPath(String id, List<Offset> path) {
+    if (!ref.canEditPages) return;
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0 || listEquals(newState[index].wallPath ?? const [], path)) {
+      return;
+    }
+    // Written empty before the snapshot, so undoing a first wall sends []:
+    // a write that left the field out would keep it on the server.
+    final item = newState[index]..wallPath ??= const [];
+    final before = ActionObjectState.ability(item);
+    item.wallPath = List<Offset>.of(path);
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.ability,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.ability(item),
             ),
           ),
         );

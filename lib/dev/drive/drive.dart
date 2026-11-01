@@ -41,6 +41,7 @@
 //   {"typeText": t}                    replaces the text in the last text field
 // Editor content
 //   {"addAgent": id, "at": [x, y], "agent": "jett"?}
+//   {"addHighTide": id, "at": [x, y], "wall": [[dx, dy], ...]?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
 //   {"setCaption": id, "text": t}      what the caption dialog's Done does
 //   {"addUtility": id, "type": name, "at": [x, y]}  spike, customRectangle, customCircle
@@ -74,6 +75,7 @@
 //                                      gap between two of them
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
+//   {"logWalls": tag}                  every ability's position and wall path
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
 //   {"logCaptions": tag}               every placed item's caption
 //   {"logCard": tag}                   the caption card that's open, and where
@@ -949,6 +951,31 @@ Future<void> _run(Map<String, dynamic> step) async {
         _point(step, 'at'),
         (p) => abilities.updatePosition(p, id),
       );
+    case 'addHighTide':
+      final id = value as String;
+      final abilities = c.read(abilityProvider.notifier);
+      abilities.addAbility(
+        PlacedAbility(
+          data: AgentData.agents[AgentType.harbor]!.abilities[1],
+          position: const Offset(500, 500),
+          id: id,
+          isAlly: true,
+          wallPath: step['wall'] == null
+              ? null
+              : [
+                  for (final point in step['wall'] as List)
+                    Offset(
+                      ((point as List)[0] as num).toDouble(),
+                      (point[1] as num).toDouble(),
+                    ),
+                ],
+        ),
+      );
+      await _place(
+        id,
+        _point(step, 'at'),
+        (p) => abilities.updatePosition(p, id),
+      );
     case 'addUtility':
       final id = value as String;
       final utilities = c.read(utilityProvider.notifier);
@@ -1255,6 +1282,13 @@ Future<void> _run(Map<String, dynamic> step) async {
       _log('CAPTIONS $value ${jsonEncode({
             for (final item in _placedItems()) item.id: item.caption,
           })}');
+    case 'logWalls':
+      _log('WALLS $value ${[
+        for (final ability in c.read(abilityProvider))
+          '${ability.id}@(${ability.position.dx.toStringAsFixed(1)}, '
+              '${ability.position.dy.toStringAsFixed(1)}) '
+              'wall=${ability.wallPath}',
+      ]}');
     case 'logPage':
       _log(
         'PAGE $value strategy=${c.read(strategyProvider).strategyName} '
