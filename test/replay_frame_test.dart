@@ -679,7 +679,7 @@ void main() {
             ..something((method, arguments) => stroke(method, arguments,
                 color: Settings.allyOutlineColor, width: 8))
             ..something((method, arguments) => stroke(method, arguments,
-                color: Settings.replayTideWall, width: 5)),
+                color: Settings.highTideWall, width: 5)),
           reason: '$isAttack',
         );
       }

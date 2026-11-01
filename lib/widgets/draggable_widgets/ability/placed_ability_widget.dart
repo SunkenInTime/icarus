@@ -16,6 +16,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_vision_cone_composite.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_deadlock_barrier_mesh_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/view_cone_drag_origin.dart';
@@ -480,14 +481,17 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
         feedback: Opacity(
           opacity: Settings.feedbackOpacity,
           child: ZoomTransform(
-            child: widget.ability.data.abilityData!.createWidget(
-              id: null,
-              isAlly: isAlly,
-              mapScale: mapScale,
-              rotation: glyphRotation,
-              armLengthsMeters: widget.ability.armLengthsMeters,
-              visualState: widget.ability.visualState,
-              watchMouse: false,
+            child: WallFeedback(
+              ability: abilityRef,
+              child: widget.ability.data.abilityData!.createWidget(
+                id: null,
+                isAlly: isAlly,
+                mapScale: mapScale,
+                rotation: glyphRotation,
+                armLengthsMeters: widget.ability.armLengthsMeters,
+                visualState: widget.ability.visualState,
+                watchMouse: false,
+              ),
             ),
           ),
         ),
@@ -504,6 +508,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           setState(() {
             _activeDragId = duplicateId ?? abilityRef.id;
           });
+          ref.read(wallCarriedProvider.notifier).set(_activeDragId);
         },
         onDragEnd: (details) {
           final dragId = _activeDragId ?? abilityRef.id;
@@ -511,6 +516,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             _activeDragId = null;
           });
           widget.onDragEnd(details, dragId);
+          ref.read(wallCarriedProvider.notifier).set(null);
         },
         child: EditorItemOutline(
           child: widget.ability.data.abilityData!.createWidget(

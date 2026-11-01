@@ -457,6 +457,11 @@ class PageTransitionEntry {
     return null;
   }
 
+  static List<Offset>? wallPathOf(PlacedWidget? w) {
+    final path = w is PlacedAbility ? w.wallPath : null;
+    return path == null || path.isEmpty ? null : path;
+  }
+
   static double? scaleOf(PlacedWidget w) {
     if (w is PlacedImage) return w.scale;
     return null;
@@ -511,7 +516,8 @@ class PageTransitionEntry {
   /// widget needs a move transition rather than a plain hold.
   static bool visualsDiffer(PlacedWidget from, PlacedWidget to) =>
       !listEquals(_tweenedPropsOf(from), _tweenedPropsOf(to)) ||
-      !listEquals(armLengthsOf(from), armLengthsOf(to));
+      !listEquals(armLengthsOf(from), armLengthsOf(to)) ||
+      !listEquals(wallPathOf(from), wallPathOf(to));
 
   double? get startRotation => from != null ? rotationOf(from!) : null;
   double? get endRotation => to != null ? rotationOf(to!) : null;
