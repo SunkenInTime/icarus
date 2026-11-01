@@ -171,8 +171,8 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
           builder: (context, _) => Padding(
             // Part of the card, so there's no gap to cross on the way to it.
             padding: placement.above
-                ? const EdgeInsets.only(bottom: _CaptionCardLayout.gap)
-                : const EdgeInsets.only(top: _CaptionCardLayout.gap),
+                ? const EdgeInsets.only(bottom: _CaptionCardLayout.gapAbove)
+                : const EdgeInsets.only(top: _CaptionCardLayout.gapBelow),
             child: _CaptionCard(
               name: captionItemName(item),
               caption: caption,
@@ -214,10 +214,9 @@ class _CaptionCardLayout extends SingleChildLayoutDelegate {
     required this.placement,
   });
 
-  static const gap = 8.0;
-
-  /// A card sits this far clear of the top of its item, past the marker.
-  static const _markerClearance = 10.0;
+  /// Above, the gap also clears the marker, so the note never hides it.
+  static const gapAbove = 10.0;
+  static const gapBelow = 8.0;
   static const width = 280.0;
   static const _margin = 8.0;
 
@@ -245,7 +244,7 @@ class _CaptionCardLayout extends SingleChildLayoutDelegate {
       _margin,
       size.width - childSize.width - _margin,
     );
-    final aboveTop = item.top - _markerClearance - childSize.height;
+    final aboveTop = item.top - childSize.height;
     final belowTop = item.bottom;
     Rect at(double top) => Offset(left, top) & childSize;
     if (!placement.chosen) {
