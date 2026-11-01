@@ -45,7 +45,7 @@ types:
         index: 17
   PlacedWidget:
     typeId: 1
-    nextIndex: 3
+    nextIndex: 4
     fields:
       id:
         index: 0
@@ -53,9 +53,11 @@ types:
         index: 1
       position:
         index: 2
+      caption:
+        index: 3
   PlacedText:
     typeId: 4
-    nextIndex: 9
+    nextIndex: 10
     fields:
       text:
         index: 0
@@ -73,9 +75,11 @@ types:
         index: 6
       sizeVersion:
         index: 7
+      caption:
+        index: 9
   PlacedImage:
     typeId: 5
-    nextIndex: 12
+    nextIndex: 13
     fields:
       aspectRatio:
         index: 1
@@ -97,6 +101,8 @@ types:
         index: 10
       assetId:
         index: 11
+      caption:
+        index: 12
   MapValue:
     typeId: 6
     nextIndex: 13
@@ -219,7 +225,7 @@ types:
         index: 2
   PlacedUtility:
     typeId: 15
-    nextIndex: 16
+    nextIndex: 17
     fields:
       type:
         index: 0
@@ -249,6 +255,8 @@ types:
         index: 14
       visionElevation:
         index: 15
+      caption:
+        index: 16
   UtilityType:
     typeId: 16
     nextIndex: 10
@@ -413,7 +421,7 @@ types:
         index: 24
   PlacedViewConeAgent:
     typeId: 29
-    nextIndex: 11
+    nextIndex: 12
     fields:
       presetType:
         index: 0
@@ -437,9 +445,11 @@ types:
         index: 9
       weapon:
         index: 10
+      caption:
+        index: 11
   PlacedCircleAgent:
     typeId: 30
-    nextIndex: 10
+    nextIndex: 11
     fields:
       diameterMeters:
         index: 0
@@ -461,6 +471,8 @@ types:
         index: 8
       weapon:
         index: 9
+      caption:
+        index: 10
   AbilityVisualState:
     typeId: 32
     nextIndex: 7

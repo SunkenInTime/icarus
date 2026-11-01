@@ -323,7 +323,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
       rotation: rotation,
       length: length,
       visionElevation: visionElevation,
-    )..isDeleted = node.isDeleted;
+    )
+      ..isDeleted = node.isDeleted
+      ..caption = node.caption;
 
     ref.read(actionProvider.notifier).addAction(
           UserAction(
@@ -356,7 +358,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
       isAlly: node.isAlly,
       state: node.state,
       weapon: node.weapon,
-    )..isDeleted = node.isDeleted;
+    )
+      ..isDeleted = node.isDeleted
+      ..caption = node.caption;
 
     ref.read(actionProvider.notifier).addAction(
           UserAction(
@@ -397,7 +401,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
       diameterMeters: diameterMeters,
       colorValue: colorValue,
       opacityPercent: opacityPercent,
-    )..isDeleted = node.isDeleted;
+    )
+      ..isDeleted = node.isDeleted
+      ..caption = node.caption;
 
     ref.read(actionProvider.notifier).addAction(
           UserAction(

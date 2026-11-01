@@ -53,6 +53,11 @@ _Avoid_: This Computer, workspace (in user-facing copy)
 A saved ability setup (position/aim reference) attached to a page, grouped
 into lineup groups.
 
+**Caption**:
+A note a user keeps on one placed item, hidden until someone hovers it. Every
+placed item can hold one; lineups have their own notes, and drawings have none.
+_Avoid_: comment, annotation, tooltip
+
 **.ica file**:
 Icarus's zip-based strategy interchange format for import/export of whole
 strategies. Unrelated to video export.

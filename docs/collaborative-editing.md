@@ -130,3 +130,12 @@ web build and any open tab keep working while a new build rolls out. The
 server only returns `field_conflict` and `merge_invalid` for ops that sent
 `merge`, so older clients, which can't decode those reasons, never see them.
 Stored rows keep their whole payloads, so every reader works as before.
+
+A field added to an element after clients shipped needs more, because an older
+build decodes an item into the fields it knows. Sent a caption, it would drop
+it, see a change it never made, and its next page save would delete it for
+everyone. So each such field is listed in `LATER_ELEMENT_FIELDS`
+(`convex/lib/elementFields.ts`) with a level. Reads leave out fields past the
+level a client sends, and a write that leaves a stored later field out keeps
+it. A client clears one by writing it empty, so absent always means the writer
+doesn't know about it.

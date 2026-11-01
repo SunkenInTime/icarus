@@ -38,6 +38,14 @@ class PlacedWidget extends HiveObject {
   @JsonKey(defaultValue: false)
   bool isDeleted;
 
+  /// The note the user keeps on this item. Null until an edit sets it, then
+  /// present for good: an empty note is written, because a write that leaves
+  /// the field out means the writer doesn't know about it (see
+  /// LATER_ELEMENT_FIELDS in convex/lib/elementFields.ts). A plain String,
+  /// since a build that meets an unknown Hive type id can't open the library.
+  @JsonKey(includeIfNull: false)
+  String? caption;
+
   @JsonKey(includeToJson: false, includeFromJson: false)
   final List<WidgetAction> _actionHistory = [];
 
@@ -201,6 +209,7 @@ class PlacedText extends PlacedWidget {
     );
     copied.text = text ?? this.text;
     copied.isDeleted = isDeleted ?? this.isDeleted;
+    copied.caption = caption;
     return copied;
   }
 }
@@ -290,6 +299,7 @@ class PlacedImage extends PlacedWidget {
     // Base class field
     // cloned.isDeleted = isDeleted ?? this.isDeleted;
     cloned.link = link ?? this.link;
+    cloned.caption = caption;
     return cloned;
   }
 
@@ -415,6 +425,7 @@ class PlacedAgent extends PlacedAgentNode {
       weapon: weapon ?? this.weapon,
     );
     copied.isDeleted = isDeleted;
+    copied.caption = caption;
     return copied;
   }
 }
@@ -590,6 +601,7 @@ class PlacedViewConeAgent extends PlacedAgentNode {
           : visionElevation as double?,
     );
     copied.isDeleted = isDeleted;
+    copied.caption = caption;
     return copied;
   }
 }
@@ -717,6 +729,7 @@ class PlacedCircleAgent extends PlacedAgentNode {
       opacityPercent: opacityPercent ?? this.opacityPercent,
     );
     copied.isDeleted = isDeleted;
+    copied.caption = caption;
     return copied;
   }
 }
@@ -877,7 +890,7 @@ class PlacedAbility extends PlacedWidget {
       armLengthsMeters: List<double>.from(
         armLengthsMeters ?? this.armLengthsMeters,
       ),
-    );
+    )..caption = caption;
   }
 
   factory PlacedAbility.fromJson(Map<String, dynamic> json) =>
@@ -1309,6 +1322,7 @@ class PlacedUtility extends PlacedWidget {
     copied.rotation = rotation ?? this.rotation;
     copied.length = length ?? this.length;
     copied.isDeleted = isDeleted ?? this.isDeleted;
+    copied.caption = caption;
     return copied;
   }
 }
