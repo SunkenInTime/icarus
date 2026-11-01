@@ -75,6 +75,31 @@ void main() {
     expect(results.single!.bytes, same(png));
   });
 
+  testWidgets('a route opened over the dialog during the wait is left alone',
+      (tester) async {
+    await openDialog(tester);
+    final png = Uint8List.fromList([1, 2, 3]);
+    await tester.tap(find.text('Use image'));
+    await tester.pump();
+
+    final navigator = Navigator.of(tester.element(find.text('Use image')));
+    navigator.push(
+      MaterialPageRoute<void>(builder: (_) => const Text('The color picker')),
+    );
+    await tester.pumpAndSettle();
+    saved.complete(png);
+    await tester.pumpAndSettle();
+    expect(find.text('The color picker'), findsOneWidget);
+    expect(results, isEmpty);
+
+    navigator.pop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Use image'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(results.single!.bytes, same(png));
+  });
+
   testWidgets('Cancel during the wait closes only the dialog', (tester) async {
     await openDialog(tester);
     await tester.tap(find.text('Use image'));

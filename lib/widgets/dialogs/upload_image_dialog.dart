@@ -65,14 +65,17 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
   }
 
   /// Closes with the picture on screen, once its saved bytes are ready. A
-  /// picture changed or cleared meanwhile takes the choice back, and a dialog
-  /// cancelled meanwhile is still closing, with some other route now on top.
+  /// picture changed or cleared meanwhile takes the choice back. So does a
+  /// route that isn't current: the dialog was cancelled and is animating away,
+  /// or the color picker is open over it, and popping would close that route
+  /// instead of this one.
   Future<void> _useImage() async {
     final chosen = _selectedBytes!;
     setState(() => _usingImage = true);
     final bytes = await _selectedSaved ?? chosen;
-    if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
-    if (!identical(chosen, _selectedBytes)) {
+    if (!mounted) return;
+    if (!identical(chosen, _selectedBytes) ||
+        ModalRoute.of(context)?.isCurrent != true) {
       setState(() => _usingImage = false);
       return;
     }

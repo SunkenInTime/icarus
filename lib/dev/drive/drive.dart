@@ -234,6 +234,7 @@ Future<void> _play(String script) async {
     }
     await _flush();
   }
+  await Future.wait(_pictureWatches);
   final problems = _flutterErrors + _failedSteps + _misplaced.length;
   _log(
     'SUMMARY steps=$_steps failed=$_failedSteps '
@@ -589,6 +590,7 @@ const _icons = {
   'pause': LucideIcons.pause,
   'image': LucideIcons.image,
   'clipboard': LucideIcons.clipboard,
+  'plus': LucideIcons.plus,
 };
 
 // Stands in for the OS save dialog: answers with dir/fileName, or dir/typedName
@@ -1017,7 +1019,9 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'mark':
       _marks[value as String] = Stopwatch()..start();
     case 'watchPicture':
-      unawaited(_watchPicture(value as String, step['gone'] as String?));
+      _pictureWatches.add(
+        _watchPicture(value as String, step['gone'] as String?),
+      );
     case 'watchFrames':
       if (value == true) {
         _watchingFrames = true;
@@ -1144,6 +1148,7 @@ Future<void> _run(Map<String, dynamic> step) async {
 }
 
 final _marks = <String, Stopwatch>{};
+final _pictureWatches = <Future<void>>[];
 
 /// Waits for a pasted picture to be drawn: the only image this large on
 /// screen, whether in a dialog or on the canvas.
