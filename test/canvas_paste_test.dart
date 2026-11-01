@@ -89,6 +89,7 @@ void main() {
     Widget? content,
     Future<Uint8List>? saved,
     Future<void>? readDone,
+    bool busy = false,
   }) async {
     images = _Images();
     items = _Items(holdsItems: holdsItems);
@@ -112,6 +113,7 @@ void main() {
                 readPicture: () async {
                   reads++;
                   await readDone;
+                  if (busy) throw ClipboardBusyException();
                   return onClipboard
                       ? ClipboardImage(picture, name: 'p', saved: saved)
                       : null;
@@ -170,6 +172,22 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
 
     expect(find.text('No image found in clipboard'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets('a busy clipboard says so and pastes nothing', (tester) async {
+    await pumpEditor(
+      tester,
+      onClipboard: true,
+      holdsItems: true,
+      busy: true,
+    );
+
+    await pressPaste(tester);
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text(ClipboardService.busyMessage), findsOneWidget);
+    expect(items.pastes, 0);
     await tester.pump(const Duration(seconds: 4));
   });
 

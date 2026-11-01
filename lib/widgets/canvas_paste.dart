@@ -75,6 +75,8 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
       } else if (ref.read(interactionStateProvider).itemsInReach) {
         await _pasteItems();
       }
+    } on ClipboardBusyException {
+      if (mounted) _refuse(ClipboardService.busyMessage);
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
         'Paste failed: $error',
