@@ -70,5 +70,6 @@ npm run typecheck
 npm run deploy:dev  # wrangler deploy --env dev
 ```
 
-The `Deploy Web` workflow deploys `--env production` on every push to
-`icarus-cloud`, before the web build. CI runs the tests and typecheck.
+The `Deploy Server` workflow deploys `--env production` on every push to `main`
+that touches `convex/`, `presence/`, `package.json` or `package-lock.json`, and
+again before every web deploy. CI runs the tests and typecheck.

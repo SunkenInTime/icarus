@@ -1,5 +1,18 @@
 name: Release Desktop
 
+# The one button for a release. A stable run with publish_pages ships web and
+# desktop together, in this order:
+#
+#   build    Build, sign and test. Upload what publish needs, then commit the
+#            version. Everything likely to fail comes before anything public.
+#   web      Deploy Web, on the version commit: server, then the web build.
+#   publish  The GitHub Release, then the updater manifest.
+#
+# Web goes before desktop because it is the easier one to roll back, and desktop
+# reaches users through the update feed. publish_pages=false stops after build.
+# The prerelease channel skips web. What to do when a job fails:
+# docs/release_process.md, "When a release fails".
+
 on:
   workflow_dispatch:
     inputs:
@@ -72,6 +85,8 @@ jobs:
     needs: production-approval
     if: ${{ always() && (inputs.channel == 'prerelease' || needs.production-approval.result == 'success') }}
     runs-on: windows-latest
+    outputs:
+      release_sha: ${{ steps.commit.outputs.sha }}
     env:
       # Every release_desktop.ps1 phase resolves the cloud build configuration,
       # so stable builds need the production Convex settings in each step.
@@ -93,6 +108,25 @@ jobs:
         run: >-
           powershell -ExecutionPolicy Bypass -File scripts/assert_release_preflight.ps1
           -ReleaseTarget "${{ inputs.channel == 'stable' && 'stable-desktop' || 'prerelease-desktop' }}"
+
+      # A rebuild never has the bytes of a public installer, so the publish
+      # step would refuse it, after web had already deployed. A version bump
+      # can't land here: main always holds the newest public build number.
+      - name: Refuse A Build Number Already Public
+        if: ${{ inputs.publish_pages && inputs.version_bump == 'none' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          . ./scripts/common_release.ps1
+          $version = Get-VersionInfo -RepoRoot (Get-Location).Path
+          $tag = "desktop-$env:CHANNEL-v$($version.FullVersion)"
+          $releases = gh release list --repo $env:GITHUB_REPOSITORY --limit 100 --json tagName,isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect existing GitHub releases.' }
+          if (@($releases | Where-Object { $_.tagName -ceq $tag -and -not $_.isDraft }).Count -gt 0) {
+            throw "$tag is already public. To finish a failed release, re-run its failed jobs. To ship something new, choose a version bump."
+          }
 
       - name: Sign In To Azure With OIDC
         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
@@ -244,36 +278,6 @@ jobs:
 
           & powershell @args
 
-      - name: Commit Version And Metadata Changes
-        if: ${{ inputs.publish_pages && github.ref_type == 'branch' }}
-        shell: pwsh
-        run: |
-          $changes = git status --porcelain -- pubspec.yaml lib/const/settings.dart release/metadata
-          if ([string]::IsNullOrWhiteSpace(($changes | Out-String))) {
-            Write-Host "No version or metadata changes to commit."
-            exit 0
-          }
-
-          $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+\+\d+)\b'
-          if ($null -eq $versionLine -or $versionLine.Matches.Count -eq 0) {
-            throw "Could not parse full version from pubspec.yaml"
-          }
-          $version = $versionLine.Matches[0].Groups[1].Value.Trim()
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pubspec.yaml lib/const/settings.dart release/metadata
-          git commit -m "chore(release): desktop $version"
-          git push origin HEAD:${{ github.ref_name }}
-
-      - name: Publish Signed Desktop Release
-        if: ${{ inputs.publish_pages }}
-        shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          powershell -ExecutionPolicy Bypass -File scripts/release_desktop.ps1 -Phase publish -Channel "${{ inputs.channel }}" -PublishPages -PagesPublishMode git-branch
-
       - name: Upload Desktop Artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -285,8 +289,90 @@ jobs:
             dist/**
           if-no-files-found: warn
 
-      - name: Print Published Download URLs
+      # Everything the publish job needs from this one, and no more: it runs
+      # after web, so its download belongs in the gap between the two. Re-running
+      # publish reuses these exact signed files, which is what lets a failed
+      # publish finish after a public installer. Hidden files stay in because
+      # the updater's hashes.json lists every file.
+      - name: Upload Files To Publish
         if: ${{ inputs.publish_pages }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-publish-${{ inputs.channel }}
+          path: |
+            release/out/desktop/*/icarus-setup.exe
+            release/out/gh-pages/updates/windows/${{ inputs.channel }}/**
+          if-no-files-found: error
+          include-hidden-files: true
+
+      # After the uploads, so that nothing but the jobs below follows it.
+      - name: Commit Version And Metadata Changes
+        id: commit
+        if: ${{ inputs.publish_pages && github.ref_type == 'branch' }}
+        shell: pwsh
+        run: |
+          $changes = git status --porcelain -- pubspec.yaml lib/const/settings.dart release/metadata
+          if ([string]::IsNullOrWhiteSpace(($changes | Out-String))) {
+            Write-Host "No version or metadata changes to commit."
+          }
+          else {
+            $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+\+\d+)\b'
+            if ($null -eq $versionLine -or $versionLine.Matches.Count -eq 0) {
+              throw "Could not parse full version from pubspec.yaml"
+            }
+            $version = $versionLine.Matches[0].Groups[1].Value.Trim()
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add pubspec.yaml lib/const/settings.dart release/metadata
+            git commit -m "chore(release): desktop $version"
+            # Refused if main moved during the build, so nothing goes public.
+            git push origin HEAD:${{ github.ref_name }}
+            if ($LASTEXITCODE -ne 0) { throw "Could not push the version commit." }
+          }
+          "sha=$(git rev-parse HEAD)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+  # Pushed by GITHUB_TOKEN, the version commit starts no workflow of its own,
+  # and it would not match Deploy Server's paths if it did.
+  web:
+    needs: build
+    if: ${{ inputs.channel == 'stable' && inputs.publish_pages }}
+    uses: ./.github/workflows/deploy-web.yml
+    with:
+      ref: ${{ needs.build.outputs.release_sha }}
+    secrets: inherit
+
+  publish:
+    needs: [build, web]
+    # web is skipped on the prerelease channel, which must not stop publish.
+    if: ${{ !cancelled() && needs.build.result == 'success' && inputs.publish_pages && (needs.web.result == 'success' || (inputs.channel == 'prerelease' && needs.web.result == 'skipped')) }}
+    # Windows, because the publish scripts check Authenticode signatures.
+    runs-on: windows-latest
+    env:
+      # release_desktop.ps1 resolves the cloud build configuration on every phase.
+      ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}
+      ICARUS_PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.build.outputs.release_sha }}
+
+      # The artifact's root is release/out, the folder its paths share.
+      - name: Download Files To Publish
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: desktop-publish-${{ inputs.channel }}
+          path: release/out
+
+      - name: Publish Signed Desktop Release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/release_desktop.ps1 -Phase publish -Channel "${{ inputs.channel }}" -PublishPages -PagesPublishMode git-branch
+
+      - name: Print Published Download URLs
         shell: pwsh
         run: |
           $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+)\+\d+\b'

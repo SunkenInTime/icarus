@@ -1,65 +1,45 @@
 name: Deploy Web
 
-# Publishes the web beta: first the Convex server to the production
-# deployment and the presence Worker, then the Flutter web build (built
-# against that deployment) to the Cloudflare Pages project `icarus-web`, served at
-# https://beta.icarusstrats.com. Every push to main that touches the
-# server or the web build deploys both, server first, so the site never runs
-# ahead of the backend it talks to. Actions > Deploy Web > Run workflow
-# redeploys.
+# Publishes the web beta: the Flutter web build, built against the production
+# Convex deployment, to the Cloudflare Pages project `icarus-web`, served at
+# https://beta.icarusstrats.com. The server goes first (Deploy Server), so the
+# site never runs ahead of the backend it talks to.
+#
+# A merge never runs this. Web ships with desktop: a stable Release Desktop run
+# calls this with its version commit. Actions > Deploy Web > Run workflow is for
+# a hotfix or a redeploy, and with no ref it rebuilds the latest stable desktop
+# tag, so it cannot ship merges nobody has released. To roll back, promote an
+# earlier deployment in Cloudflare instead.
 # Setup and secrets: docs/release_process.md, "Web beta deploy".
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - lib/**
-      - web/**
-      - assets/**
-      - shaders/**
-      # Path dependencies from pubspec.yaml compile into the web build.
-      - packages/**
-      - third_party/convex_flutter/**
-      - pubspec.yaml
-      - pubspec.lock
-      - .fvmrc
-      - convex/**
-      - presence/**
-      - package.json
-      - package-lock.json
-      - tool/prepare_web_fonts.dart
-      - .github/workflows/deploy-web.yml
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Tag or commit on main to deploy. Leave empty for the latest stable desktop tag.
+        type: string
+        required: false
+        default: ""
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit on main to deploy.
+        type: string
+        required: true
 
 permissions:
   contents: read
 
-# Deploys queue rather than cancel each other. A run cancelled after the
-# Convex deploy but before Pages would leave the live web build on a server
-# it may not speak to; the next run then publishes the newest build anyway.
-concurrency:
-  group: deploy-web
-  cancel-in-progress: false
-
 jobs:
-  deploy:
+  # Decides what ships before anything deploys.
+  resolve:
     runs-on: ubuntu-latest
-    # The production secrets belong in this environment, limited to main.
-    environment: Production
-    env:
-      FVM_HOME: ${{ github.workspace }}/.fvm_cache
-      PUB_CACHE: ${{ github.workspace }}/.pub-cache
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
 
     steps:
-      - name: Require main, secrets and production settings
+      - name: Require Main
         shell: bash
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CONVEX_PRODUCTION_DEPLOY_KEY: ${{ secrets.CONVEX_PRODUCTION_DEPLOY_KEY }}
-          ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}
-          ICARUS_PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
         run: |
           # Every run replaces the live beta, so a manual run from another
           # branch would ship unreviewed code to testers.
@@ -67,51 +47,88 @@ jobs:
             echo "::error::Deploy Web only runs from main. This run is on $GITHUB_REF."
             exit 1
           fi
+
+      # Full history for the tags and the check below. From main rather than
+      # this run's commit, because a release's version commit is newer than
+      # the commit that started the run.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/heads/main
+          fetch-depth: 0
+
+      - name: Resolve The Commit To Deploy
+        id: resolve
+        shell: bash
+        env:
+          REQUESTED_REF: ${{ inputs.ref }}
+        run: |
+          ref="$REQUESTED_REF"
+          if [[ -z "$ref" ]]; then
+            ref=$(git tag --list 'desktop-stable-v*' --sort=-v:refname | head -n 1)
+            if [[ -z "$ref" ]]; then
+              echo "::error::No desktop-stable-v tag found. Name a ref to deploy."
+              exit 1
+            fi
+          fi
+          if ! sha=$(git rev-parse --verify --quiet --end-of-options "$ref^{commit}"); then
+            echo "::error::$ref is not a tag or commit in this repository."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$sha" refs/remotes/origin/main; then
+            echo "::error::$ref ($sha) is not on main. Only commits on main can deploy."
+            exit 1
+          fi
+          echo "Deploying $ref ($sha)."
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  server:
+    needs: resolve
+    uses: ./.github/workflows/deploy-server.yml
+    with:
+      confirmation: deploy-production
+    secrets: inherit
+
+  web:
+    needs: [resolve, server]
+    runs-on: ubuntu-latest
+    # The production secrets belong in this environment, limited to main.
+    environment: Production
+    # queue: max, because the default keeps one pending run and cancels the
+    # rest, and a manual redeploy must not cancel a release waiting here.
+    concurrency:
+      group: deploy-web
+      cancel-in-progress: false
+      queue: max
+    env:
+      FVM_HOME: ${{ github.workspace }}/.fvm_cache
+      PUB_CACHE: ${{ github.workspace }}/.pub-cache
+
+    steps:
+      - name: Require Secrets And Production Settings
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}
+          ICARUS_PRODUCTION_CONVEX_CLIENT_ID: ${{ vars.ICARUS_PRODUCTION_CONVEX_CLIENT_ID }}
+        run: |
           missing=0
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CONVEX_PRODUCTION_DEPLOY_KEY ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL ICARUS_PRODUCTION_CONVEX_CLIENT_ID; do
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL ICARUS_PRODUCTION_CONVEX_CLIENT_ID; do
             if [[ -z "${!name}" ]]; then
               echo "::error::Add $name. docs/release_process.md, \"Web beta deploy\", says where each one goes."
               missing=1
             fi
           done
-          if [[ -n "$CONVEX_PRODUCTION_DEPLOY_KEY" && "$CONVEX_PRODUCTION_DEPLOY_KEY" != prod:* ]]; then
-            echo "::error::CONVEX_PRODUCTION_DEPLOY_KEY must be a production deploy key (prod: prefix)."
-            missing=1
-          fi
           exit $missing
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
 
-      # The server ships first. If it fails (type errors, schema that doesn't
-      # fit the data), nothing is published and the live site keeps working
-      # against the server it already knows.
+      # wrangler-action runs Wrangler on this Node.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-          cache: npm
-
-      - name: Install Convex Dependencies
-        run: npm ci
-
-      - name: Deploy Convex Production Backend
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PRODUCTION_DEPLOY_KEY }}
-        run: npx convex deploy --typecheck enable --message "Deploy Web $GITHUB_SHA"
-
-      # Live presence (who is on a strategy, their cursors) runs in its own
-      # Worker. It pairs with production Convex through PRESENCE_URL and
-      # PRESENCE_PASS_SECRET, set once on both sides (presence/README.md).
-      - name: Install Presence Worker Dependencies
-        working-directory: presence
-        run: npm ci
-
-      - name: Deploy Presence Worker
-        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: presence
-          command: deploy --env production
 
       # Flutter setup mirrors the linux job in ci.yml: FVM installs the
       # version pinned in .fvmrc.
@@ -148,7 +165,7 @@ jobs:
 
       # Same flags as "Build Web Client" in ci.yml; only the Convex target
       # differs. CI builds against development, the beta ships against the
-      # production deployment the step above just updated.
+      # production deployment the server job just updated.
       - name: Build Web Client
         env:
           ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL: ${{ vars.ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL }}
@@ -174,13 +191,14 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           # wrangler-action v4 installs Wrangler 4 by default.
-          command: pages deploy build/web --project-name=icarus-web --branch=main --commit-hash=${{ github.sha }}
+          command: pages deploy build/web --project-name=icarus-web --branch=main --commit-hash=${{ needs.resolve.outputs.sha }}
 
       - name: Summarize Deployment
         shell: bash
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
           PAGES_ENVIRONMENT: ${{ steps.deploy.outputs.pages-environment }}
+          DEPLOYED_SHA: ${{ needs.resolve.outputs.sha }}
         run: |
           {
             echo "### Web beta deployed (production Convex)"
@@ -188,5 +206,6 @@ jobs:
             echo "- Live: https://beta.icarusstrats.com"
             echo "- This deployment: ${DEPLOYMENT_URL:-see the Deploy to Cloudflare Pages log}"
             echo "- Pages environment: ${PAGES_ENVIRONMENT:-unknown} (production means the custom domain now serves it)"
-            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Version: $(sed -n 's/^version: *\([^ ]*\).*/\1/p' pubspec.yaml)"
+            echo "- Commit: \`$DEPLOYED_SHA\`"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -81,9 +81,9 @@ first production release:
    See the [Convex deploy-key documentation](https://docs.convex.dev/cli/deploy-key-types).
 3. Create a GitHub environment named `Production`. Restrict its deployment
    branches to `main`, add any required reviewers, and add the secret
-   `CONVEX_PRODUCTION_DEPLOY_KEY`. Deploy Web enters this environment on every
-   push to `main` that it deploys, so a required reviewer means approving each
-   web deploy.
+   `CONVEX_PRODUCTION_DEPLOY_KEY`. Deploy Server enters this environment on
+   every server merge, and a stable release enters it three times, so a required
+   reviewer means approving each of those, with a release held between its steps.
 4. Add the public production URL and a stable client identifier, such as the
    identifier chosen for the shipped Icarus client, to the two GitHub repository
    variables in the previous section.
@@ -91,12 +91,14 @@ first production release:
    testing cloud media. The backend reports the exact missing names if they are
    absent.
 
-Run the manual `Deploy Convex Production` workflow from `main` and type
+`Deploy Server` is the one way the backend reaches production. It runs on a
+merge (see "Server deploy"), and by hand: run it from `main` and type
 `deploy-production`. The workflow enters the GitHub `Production` environment,
 requires a `prod:` deploy key, installs locked dependencies, runs TypeScript and
-Convex tests, then runs `npx convex deploy --typecheck enable`. Convex documents
-that `CONVEX_DEPLOY_KEY` selects the deployment associated with that key. See
-the [`convex deploy` reference](https://docs.convex.dev/cli/reference/deploy).
+Convex tests, runs `npx convex deploy --typecheck enable`, then deploys the
+presence Worker. Convex documents that `CONVEX_DEPLOY_KEY` selects the deployment
+associated with that key. See the
+[`convex deploy` reference](https://docs.convex.dev/cli/reference/deploy).
 
 The production workflow never reads `CONVEX_PREVIEW_DEPLOY_KEY`. That secret is
 only for the isolated contract deployment in CI.
@@ -113,6 +115,21 @@ by hand, list the project's deployments with
 `~/.convex/config.json`. Then delete only `preview` deployments whose PR is
 closed. Never delete `majestic-eel-413` (dev) or the production deployment.
 
+## Server deploy
+
+A push to `main` that changes `convex/`, `presence/`, `package.json` or
+`package-lock.json` runs `Deploy Server`, so production always matches `main`.
+Markdown files don't count.
+It always deploys the tip of `main`, whichever run or commit started it, so a
+re-run of an old run or a slow release can't take production backwards.
+
+Because production updates on merge and clients do not, a PR that changes the
+Convex contract must stay compatible with the web build already live and with
+every shipped desktop build (additive first; see the deploy order in each server
+PR). A client change now waits for a release, so a server PR that depends on one
+(say, it starts refusing callers that lack a new flag) must wait until a release
+has carried the client half. Merging the client PR first is no longer enough.
+
 ## Web beta deploy
 
 The web beta lives at `https://beta.icarusstrats.com`, served by the Cloudflare
@@ -121,18 +138,17 @@ It runs against the **production** Convex deployment (`basic-dove-69`), because
 it is public. The development deployment (`majestic-eel-413`) stays the place
 to try server changes by hand; never test on production.
 
-- A push to `main` that changes `lib/`, `web/`, `assets/`, `shaders/`,
-  `convex/`, a path package (`packages/`, `third_party/convex_flutter/`),
-  `pubspec.yaml`, `pubspec.lock`, `package.json`, `package-lock.json`, or
-  `.fvmrc` deploys automatically: first the Convex server to production, then
-  the web build. If the server deploy fails, nothing is published.
-- Because production updates on merge, a PR that changes the Convex contract
-  must stay compatible with the web build already live (additive first; see
-  the deploy order in each server PR).
-- To redeploy by hand: `Actions` > `Deploy Web` > `Run workflow` on
-  `main`.
-- The run summary links the deployment. To roll back, promote an earlier
-  deployment in the Cloudflare dashboard under the project's `Deployments`.
+- A merge does not change the web beta. It ships in a stable `Release Desktop`
+  run with `publish_pages` on, built from the version commit, so web and desktop
+  report the same version. See "Releasing web and desktop together".
+- For a hotfix or redeploy: `Actions` > `Deploy Web` > `Run workflow` on `main`.
+  Leave `ref` empty to rebuild the latest `desktop-stable-v...` tag, or name a
+  tag or commit. Run it from `main`; the ref must be a commit on `main`. Naming
+  a newer commit ships it to web ahead of desktop, so do that on purpose. The
+  server deploys first, always from the tip of `main`.
+- The run summary links the deployment and names the version. To roll back,
+  promote an earlier deployment in the Cloudflare dashboard under the project's
+  `Deployments`. It stays rolled back until the next release or manual run.
 
 The workflow builds with the same flags as CI's `Build Web Client` step, but
 with `ICARUS_CLOUD_ENVIRONMENT=production` and the production URL and client ID
@@ -177,9 +193,55 @@ One-time Cloudflare setup:
    `beta.icarusstrats.com`, and activate it. Cloudflare adds the DNS record when
    `icarusstrats.com` is on the same account.
 
+## Releasing web and desktop together
+
+`Release Desktop` with `channel=stable` and `publish_pages=true` is the one
+button. It runs, in order:
+
+1. `build`: build, sign, and run the upgrade and rollback test. Upload the files
+   to publish, then push the version commit. Everything that tends to fail comes
+   first, and nothing is public until this job passes.
+2. `web / server`: `Deploy Server`, from the tip of `main`. This changes nothing
+   unless the deploy on merge failed.
+3. `web / web`: the web build from the version commit, deployed to Pages.
+4. `publish`: the GitHub Release and installer, then the updater manifest. This
+   job starts as soon as a Windows runner is free after web goes live, and takes
+   about two minutes, plus however long GitHub Pages takes to serve the manifest.
+
+Web goes first because it is the easier one to roll back, and desktop reaches
+users through the update feed. The version commit is pushed with `GITHUB_TOKEN`,
+so it starts no workflow.
+
+`channel=prerelease` and `publish_pages=false` never touch web. A
+`publish_pages=false` run stops after `build` with no version commit.
+
+### When a release fails
+
+`Re-run failed jobs` is the fix for anything after `build`. It keeps the commit
+and the signed files the run already made, and it works for 30 days. The files
+it needs last 90. Don't use `Re-run all jobs`: that rebuilds, and the version
+commit push is refused because `main` already has it.
+
+| What failed | What users have | What to do |
+| --- | --- | --- |
+| `build`, before the version commit | Nothing changed | Fix it and start a new run. |
+| Version commit push (`main` moved during the build) | Nothing changed | Start a new run. |
+| `web / server`, or `web / web` | Nothing changed, except any server deploy that finished. `main` has the version commit. | `Re-run failed jobs`. To abandon it, do nothing: the next release skips this version number, and no user ever saw it. |
+| `publish`, before the installer went public | New web, old desktop | `Re-run failed jobs`. If that can't work, start a new run with `version_bump=none`: it rebuilds from the tip of `main`, keeps the version, and redeploys web so both match. |
+| `publish`, after the installer went public (the manifest push failed) | New web, new installer download, but no update offered | `Re-run failed jobs` only. A new run with `version_bump=none` is refused at the start, because a rebuild can't match a public installer's bytes. |
+| A run with `version_bump=none` refused as "already public" | Nothing changed | Re-run the failed run, or use a real version bump. |
+
+If `publish` stays broken and web must not sit ahead of desktop, promote the
+previous web deployment in Cloudflare (see "Web beta deploy"), and fix forward
+with a new version.
+
+Web ahead of desktop costs little: it is what a merge used to do. Server and
+clients stay compatible either way, because of the rule in "Server deploy".
+
 ## Desktop Release Checklist
 
-Use this when you want to publish the direct installer channel.
+Use this when you want to publish the direct installer channel. On `stable` this
+also ships the web beta.
 
 1. Go to `Actions` in GitHub.
 2. Open `Release Desktop`.
@@ -196,8 +258,9 @@ Use this when you want to publish the direct installer channel.
    - `https://github.com/SunkenInTime/icarus/releases/latest/download/icarus-setup.exe`
 8. Open the published `app-archive.json` and confirm it contains the expected version and notes.
 9. Open the stable installer URL and confirm it downloads the current desktop installer.
-10. Install the direct desktop build on a test machine.
-11. Confirm the app detects the new desktop update and can download/restart successfully.
+10. Open `https://beta.icarusstrats.com/version.json` and confirm it reports the same version.
+11. Install the direct desktop build on a test machine.
+12. Confirm the app detects the new desktop update and can download/restart successfully.
 
 ## Desktop Prerelease Checklist
 
@@ -244,8 +307,10 @@ Use this when you want to publish the Microsoft Store channel.
 
 ## Common Release Patterns
 
-- Desktop-only update:
-  - Run `Release Desktop` only.
+- Web and desktop update:
+  - Run `Release Desktop` on `stable`. There is no stable desktop release without web.
+- Web-only hotfix:
+  - Run `Deploy Web` with the commit as `ref`. Web then runs ahead of desktop until the next release.
 - Desktop prerelease validation:
   - Use branch `main`.
   - Run `Release Desktop` with `channel=prerelease`.

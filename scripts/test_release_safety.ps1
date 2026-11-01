@@ -154,9 +154,19 @@ if ($productionConfig.Environment -ne "production" -or
 
 $desktopWorkflow = Get-Content (Join-Path $repoRoot ".github\workflows\release-desktop.yml") -Raw
 $storeWorkflow = Get-Content (Join-Path $repoRoot ".github\workflows\release-store.yml") -Raw
-$productionWorkflow = Get-Content (Join-Path $repoRoot ".github\workflows\deploy-convex-production.yml") -Raw
+$productionWorkflow = Get-Content (Join-Path $repoRoot ".github\workflows\deploy-server.yml") -Raw
+$webWorkflow = Get-Content (Join-Path $repoRoot ".github\workflows\deploy-web.yml") -Raw
 
 Assert-TextAppearsBefore -Text $desktopWorkflow -First "Run Release Preflight" -Second "Install FVM"
+# Web and desktop ship together: a merge must not start a web deploy, and desktop
+# must not publish before web has deployed.
+if ($webWorkflow -match '(?m)^\s+push:') {
+    throw "A push must not deploy the web build. Web ships from Release Desktop."
+}
+if ($desktopWorkflow -notmatch '(?m)^  publish:\s*\r?\n\s+needs:\s*\[build, web\]') {
+    throw "Desktop must publish after the web deploy."
+}
+Assert-TextAppearsBefore -Text $desktopWorkflow -First "Upload Files To Publish" -Second "Commit Version And Metadata Changes"
 if ($desktopWorkflow -notmatch 'production-approval:[\s\S]*environment:\s*Production' -or
     $desktopWorkflow -notmatch 'needs:\s*production-approval') {
     throw "Stable desktop publishing must pass the GitHub Production environment before the build job."
