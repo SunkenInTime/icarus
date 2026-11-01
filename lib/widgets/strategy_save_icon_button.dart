@@ -121,7 +121,9 @@ Future<void> saveStrategyNow(BuildContext context, WidgetRef ref) async {
 }
 
 /// The save button of a local strategy. Shows a spinner while an auto-save
-/// runs and a check when it lands, then rests on the save glyph.
+/// runs and a green check when it lands, then rests on what is true: a check
+/// when everything on the canvas is in the library, the save glyph when
+/// something is not.
 class AutoSaveButton extends ConsumerStatefulWidget {
   const AutoSaveButton({
     super.key,
@@ -176,6 +178,11 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton> {
         (capabilities) => capabilities.canEditPages,
       ),
     );
+    final unsaved = ref.watch(
+      strategySaveStateProvider.select(
+        (saveState) => saveState.isDirty || saveState.isSaving,
+      ),
+    );
 
     if (ping != _lastPing) {
       _lastPing = ping;
@@ -183,8 +190,11 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton> {
     }
 
     final size = widget.style.iconSize;
+    final Widget resting = unsaved || !canEditPages
+        ? const Icon(LucideIcons.save200, key: ValueKey('idle'))
+        : const Icon(LucideIcons.check200, key: ValueKey('saved'));
     final Widget icon = switch (_phase) {
-      _Phase.idle => const Icon(LucideIcons.save200, key: ValueKey('idle')),
+      _Phase.idle => resting,
       _Phase.loading => SizedBox(
           key: const ValueKey('loading'),
           width: size - 2,
@@ -196,6 +206,8 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton> {
             ),
           ),
         ),
+      // An edit made while the spinner ran has not been saved.
+      _Phase.success when unsaved => resting,
       _Phase.success => const Icon(
           LucideIcons.check200,
           key: ValueKey('success'),
