@@ -4,10 +4,12 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_library.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 List<ShadContextMenuItem> buildCustomShapeContextMenuItems(
+  BuildContext context,
   WidgetRef ref,
   PlacedUtility utility,
 ) {
@@ -23,6 +25,7 @@ List<ShadContextMenuItem> buildCustomShapeContextMenuItems(
       items: [_CustomShapeColorItems(utility: utility)],
       child: const Text('Color'),
     ),
+    ...buildCaptionMenuItems(context, ref, utility.id),
     ...buildAdjacentPageCopyMenuItems(ref, utility.id),
   ];
 }

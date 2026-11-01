@@ -121,6 +121,30 @@ class TextProvider extends Notifier<List<PlacedText>> {
     state = newState;
   }
 
+  void setCaption(String id, String caption) {
+    if (!ref.canEditPages) return;
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0 || (newState[index].caption ?? '') == caption) return;
+    // Written empty before the snapshot, so undoing a first caption sends "":
+    // a write that left the field out would keep it on the server.
+    final item = newState[index]..caption ??= '';
+    final before = ActionObjectState.text(item);
+    item.caption = caption;
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.text,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.text(item),
+            ),
+          ),
+        );
+    state = newState;
+  }
+
   void updateTagColor(String id, int? colorValue) {
     if (!ref.canEditPages) return;
     final newState = [...state];

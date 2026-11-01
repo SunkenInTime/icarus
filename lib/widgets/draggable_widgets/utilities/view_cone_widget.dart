@@ -17,6 +17,7 @@ import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/sightline_report_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
@@ -302,6 +303,7 @@ class ViewConeWidget extends ConsumerWidget {
                     .updateViewConeElevation(placedUtility!.id, elevation),
               ),
             if (sightlineReportItem != null) sightlineReportItem,
+            ...buildCaptionMenuItems(context, ref, placedUtility.id),
             ...buildAdjacentPageCopyMenuItems(ref, placedUtility.id),
           ];
 

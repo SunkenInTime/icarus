@@ -83,6 +83,30 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     removeAgent(id);
   }
 
+  void setCaption(String id, String caption) {
+    if (!ref.canEditPages) return;
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0 || (newState[index].caption ?? '') == caption) return;
+    // Written empty before the snapshot, so undoing a first caption sends "":
+    // a write that left the field out would keep it on the server.
+    final item = newState[index]..caption ??= '';
+    final before = ActionObjectState.agent(item);
+    item.caption = caption;
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.agent,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.agent(item),
+            ),
+          ),
+        );
+    state = newState;
+  }
+
   void toggleAgentState(String id) {
     if (!ref.canEditPages) return;
     final newState = [...state];

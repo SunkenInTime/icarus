@@ -100,7 +100,7 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
                     ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
                     : null,
                 contextMenuItems: (id?.isNotEmpty ?? false) && utility != null
-                    ? buildCustomShapeContextMenuItems(ref, utility)
+                    ? buildCustomShapeContextMenuItems(context, ref, utility)
                     : null,
                 child: AnimatedOpacity(
                   opacity: centerMarkerVisible ? 1.0 : 0.0,

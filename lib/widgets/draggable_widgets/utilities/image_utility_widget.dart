@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
 class ImageUtilityWidget extends ConsumerWidget {
@@ -26,7 +27,10 @@ class ImageUtilityWidget extends ConsumerWidget {
           ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
           : null,
       contextMenuItems: (id?.isNotEmpty ?? false)
-          ? buildAdjacentPageCopyMenuItems(ref, id!)
+          ? [
+              ...buildCaptionMenuItems(context, ref, id!),
+              ...buildAdjacentPageCopyMenuItems(ref, id!),
+            ]
           : null,
       child: SvgPicture.asset(
         imagePath,
