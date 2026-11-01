@@ -139,7 +139,16 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   }
 
   Future<void> _pasteImage() async {
-    final image = await ClipboardService.trySelectImageFromClipboard();
+    final ClipboardImage? image;
+    try {
+      image = await ClipboardService.trySelectImageFromClipboard();
+    } on ClipboardBusyException {
+      Settings.showToast(
+        message: ClipboardService.busyMessage,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
     if (image == null) {
       Settings.showToast(
         message: 'No image found in clipboard',
