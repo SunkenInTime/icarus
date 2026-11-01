@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/map_artwork_registration.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/services/app_assets.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/view_cone/svg_height_cone_cache.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
@@ -141,13 +142,13 @@ class SvgHeightRuntimeDependencies {
 
   Future<Uint8List> loadModel(
           SvgHeightMapRegistration registration, bool isAttack) =>
-      rootBundle
+      appAssets
           .load(registration.modelAsset(isAttack))
           .then((data) => Uint8List.sublistView(data));
 
   Future<List<int>> loadArtwork(
           SvgHeightMapRegistration registration, bool isAttack) =>
-      rootBundle.load(registration.artworkAsset(isAttack)).then((data) =>
+      appAssets.load(registration.artworkAsset(isAttack)).then((data) =>
           data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
 }
 

@@ -182,6 +182,27 @@ void main() {
     });
   }
 
+  testWidgets('a capture stops rather than hang while sightlines are missing',
+      (tester) async {
+    final container = ProviderContainer(overrides: [
+      svgHeightRuntimeProvider.overrideWith(
+        (ref, map) => Completer<SvgHeightRuntime?>().future,
+      ),
+    ]);
+    addTearDown(container.dispose);
+    Object? stopped;
+    unawaited(
+      prepareCaptureGeometry(container, MapValue.ascent, [_conePage()])
+          .catchError((Object error) {
+        stopped = error;
+        return null;
+      }),
+    );
+    await tester.pump(captureGeometryWait);
+    await tester.pump();
+    expect(stopped, isA<TimeoutException>());
+  });
+
   test('pages without sightlines do not request geometry', () async {
     var svgRequested = false, legacyRequested = false;
     final container = ProviderContainer(overrides: [

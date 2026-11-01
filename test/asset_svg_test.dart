@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/services/app_assets.dart';
 import 'package:icarus/widgets/asset_svg.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -75,12 +76,12 @@ void main() {
     expect(reads, ['a_failed_read.svg']);
 
     // Still offline: each try is a real read, not a remembered failure.
-    await settle(tester, AssetSvg.retryDelay);
+    await settle(tester, WaitingAssetBundle.retryDelay);
     expect(reads, hasLength(2));
     expect(find.text(_notice), findsOneWidget);
 
     online = true;
-    await settle(tester, AssetSvg.retryDelay);
+    await settle(tester, WaitingAssetBundle.retryDelay);
 
     expect(reads, hasLength(3));
     expect(find.text(_notice), findsNothing);
@@ -103,7 +104,7 @@ void main() {
     await settle(tester);
 
     online = true;
-    await settle(tester, AssetSvg.retryDelay);
+    await settle(tester, WaitingAssetBundle.retryDelay);
 
     expect(drawn, findsNWidgets(2));
     expect(find.text(_notice), findsNothing);
@@ -118,7 +119,7 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
     online = true;
-    await settle(tester, AssetSvg.retryDelay);
+    await settle(tester, WaitingAssetBundle.retryDelay);
 
     await tester.pumpWidget(app('left_and_back.svg'));
     await settle(tester);
@@ -160,6 +161,6 @@ void main() {
 
     // Let the read finish so its wait doesn't outlive the test.
     online = true;
-    await settle(tester, AssetSvg.retryDelay);
+    await settle(tester, WaitingAssetBundle.retryDelay);
   });
 }

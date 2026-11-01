@@ -37,6 +37,8 @@ final navigationGeometryProvider = FutureProvider.autoDispose
       stackTrace: stackTrace,
       source: 'navigationGeometryProvider.${map.name}',
     );
+    // Don't hold on to the failure, so the next page switch tries again.
+    retain.close();
     rethrow;
   } finally {
     loaded = true;

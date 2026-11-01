@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:icarus/services/app_assets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Shows an SVG asset. Use this instead of `SvgPicture.asset`.
@@ -9,8 +9,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 /// forgets a failed load: `Cache.putIfAbsent` leaves it in `_pending`, every
 /// later request for that asset gets the same failure until the page reloads,
 /// and vector_graphics rethrows it as an unhandled error each time. So the read
-/// behind this picture doesn't fail. It waits until the bytes arrive, and those
-/// packages see a slow load that finishes by itself.
+/// behind this picture goes through [appAssets] and doesn't fail: those packages
+/// see a slow load that finishes by itself.
 class AssetSvg extends StatelessWidget {
   const AssetSvg(
     this.assetName, {
@@ -22,10 +22,6 @@ class AssetSvg extends StatelessWidget {
     this.colorFilter,
     this.semanticsLabel,
   });
-
-  /// Time between tries while the asset can't be read. Short enough that the
-  /// picture comes back on its own moments after the connection does.
-  static const retryDelay = Duration(seconds: 3);
 
   final String assetName;
   final double? width;
@@ -65,34 +61,11 @@ class _WaitingSvgLoader extends SvgAssetLoader {
 /// are a few megabytes.
 abstract final class _AssetSvgBytes {
   static final Map<String, ByteData> _arrived = {};
-  static final Map<String, Future<ByteData>> _reading = {};
-
-  /// Assets whose last try failed and are still being tried.
-  static final ValueNotifier<Set<String>> missing = ValueNotifier(const {});
 
   static Future<ByteData> read(String name) {
     final bytes = _arrived[name];
     if (bytes != null) return SynchronousFuture(bytes);
-    return _reading[name] ??= _readUntilItArrives(name);
-  }
-
-  static Future<ByteData> _readUntilItArrives(String name) async {
-    while (true) {
-      try {
-        final bytes = await rootBundle.load(name);
-        _arrived[name] = bytes;
-        _reading.remove(name);
-        if (missing.value.contains(name)) {
-          missing.value = {...missing.value}..remove(name);
-        }
-        return bytes;
-      } catch (_) {
-        if (!missing.value.contains(name)) {
-          missing.value = {...missing.value, name};
-        }
-        await Future<void>.delayed(AssetSvg.retryDelay);
-      }
-    }
+    return appAssets.load(name).then((bytes) => _arrived[name] = bytes);
   }
 }
 
@@ -108,7 +81,7 @@ class MissingMapNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     return ValueListenableBuilder(
-      valueListenable: _AssetSvgBytes.missing,
+      valueListenable: appAssets.missing,
       builder: (context, missing, _) {
         if (!missing.contains(assetName)) return const SizedBox.shrink();
         return IgnorePointer(

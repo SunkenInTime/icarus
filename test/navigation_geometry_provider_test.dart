@@ -39,8 +39,12 @@ class _NavigationBundle extends CachingAssetBundle {
       {this.wrongMap = false,
       this.missingDefaults = false,
       this.damage,
-      this.catalogMatchesDamage = false});
+      this.catalogMatchesDamage = false,
+      this.failNextRead = false});
   final bool wrongMap, missingDefaults;
+
+  /// The first read fails the way a dropped connection does.
+  bool failNextRead;
   final String? damage;
 
   /// Lets damaged bytes pass the catalog check so the gzip footer must
@@ -50,6 +54,10 @@ class _NavigationBundle extends CachingAssetBundle {
   @override
   Future<ByteData> load(String key) async {
     requested.add(key);
+    if (failNextRead) {
+      failNextRead = false;
+      throw StateError('Unable to load asset: "$key".');
+    }
     if (key.endsWith('/navigation_catalog.json')) {
       final bytes = catalogMatchesDamage ? _assetBytes() : _navigationBytes();
       final hash = (await Sha256().hash(bytes))
@@ -190,6 +198,26 @@ void main() {
             reason: 'both sides use canonical navigation coordinates');
       }
     }
+  });
+  test('a failed read is tried again on the next page switch', () async {
+    final bundle = _NavigationBundle(failNextRead: true);
+    final container = ProviderContainer(overrides: [
+      mapProvider.overrideWith(_MapProvider.new),
+      worldGeometryEnabledProvider.overrideWith((ref, map) => true),
+      navigationGeometryBundleProvider.overrideWithValue(bundle),
+    ]);
+    addTearDown(container.dispose);
+    await expectLater(
+      container.read(navigationGeometryProvider(MapValue.split).future),
+      throwsA(anything),
+    );
+    await container.pump();
+    await Future<void>.delayed(Duration.zero);
+
+    final next =
+        await container.read(navigationGeometryProvider(MapValue.split).future);
+
+    expect(next, isNotNull);
   });
   test('current-map navigation survives page reads and releases on map change',
       () async {

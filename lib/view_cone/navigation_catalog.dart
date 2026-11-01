@@ -42,8 +42,11 @@ class NavigationCatalogEntry {
 
 Future<Map<MapValue, NavigationCatalogEntry>> loadNavigationCatalog(
     {AssetBundle? bundle}) async {
-  final json = jsonDecode(await (bundle ?? rootBundle)
-      .loadString('$navigationAssetDirectory/navigation_catalog.json'));
+  // cache: false, because a bundle's string cache keeps a failed read for good.
+  final json = jsonDecode(await (bundle ?? rootBundle).loadString(
+    '$navigationAssetDirectory/navigation_catalog.json',
+    cache: false,
+  ));
   if (json is! Map<String, dynamic> ||
       json['version'] != 1 ||
       json['format'] != 'icarus-navigation-catalog-v1' ||

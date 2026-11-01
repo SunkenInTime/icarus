@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
+import 'package:icarus/services/app_assets.dart';
 
 /// Renders a sequence of widgets through one detached Flutter render tree.
 ///
@@ -186,7 +187,8 @@ class PersistentOffscreenRenderer {
         debugShortDescription: '[Icarus video export root]',
         child: Directionality(
           textDirection: TextDirection.ltr,
-          child: rootWidget,
+          // The app's bundle, so a capture finds the images the editor decoded.
+          child: DefaultAssetBundle(bundle: appAssets, child: rootWidget),
         ),
       ).attachToRenderTree(_buildOwner);
     } else {
