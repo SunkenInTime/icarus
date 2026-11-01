@@ -1,0 +1,123 @@
+name: Deploy Server
+
+# Deploys the production backend: Convex to the production deployment, then
+# the presence Worker. Every push to main that touches either one runs this, so
+# production always matches main. Deploy Web runs it before every web deploy,
+# which makes a stable Release Desktop run deploy the server again; that changes
+# nothing unless the deploy on merge failed. Actions > Deploy Server > Run
+# workflow redeploys.
+# Setup and secrets: docs/release_process.md, "Web beta deploy".
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - convex/**
+      - presence/**
+      - package.json
+      - package-lock.json
+      # A README changes nothing that runs.
+      - "!**.md"
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type deploy-production to confirm this production backend deploy.
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      confirmation:
+        description: Must be deploy-production.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: Production
+    # queue: max, because the default keeps one pending run and cancels the
+    # rest, and a merge must not cancel a release waiting its turn here.
+    concurrency:
+      group: deploy-server
+      cancel-in-progress: false
+      queue: max
+
+    steps:
+      - name: Guard Production Deploy
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PRODUCTION_DEPLOY_KEY }}
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "The production backend can only deploy from branch main. Current ref: $GITHUB_REF"
+            exit 1
+          fi
+          # A merge is its own confirmation. Everything else has to say so.
+          if [[ "$GITHUB_EVENT_NAME" != "push" ]]; then
+            if [[ "$CONFIRMATION" != "deploy-production" ]]; then
+              echo "Confirmation must be exactly: deploy-production"
+              exit 1
+            fi
+          fi
+          missing=0
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CONVEX_DEPLOY_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Add $name. docs/release_process.md, \"Web beta deploy\", says where each one goes."
+              missing=1
+            fi
+          done
+          if [[ -n "$CONVEX_DEPLOY_KEY" && "$CONVEX_DEPLOY_KEY" != prod:* ]]; then
+            echo "::error::CONVEX_PRODUCTION_DEPLOY_KEY must be a production deploy key (prod: prefix)."
+            missing=1
+          fi
+          exit $missing
+
+      # The tip of main, whichever run this is. A release calling this minutes
+      # after its version commit, or someone re-running an old run, must not
+      # take production back past a server change merged since. The server
+      # keeps working with older clients, so newer is always safe.
+      - name: Checkout Production Source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/heads/main
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Convex Dependencies
+        run: npm ci
+
+      - name: Check Convex Types
+        run: npx tsc --noEmit
+
+      - name: Run Convex Tests
+        run: npm run test:convex
+
+      - name: Deploy Convex Production Backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PRODUCTION_DEPLOY_KEY }}
+        run: npx convex deploy --typecheck enable --message "Deploy Server $(git rev-parse HEAD)"
+
+      # Live presence (who is on a strategy, their cursors) runs in its own
+      # Worker. It pairs with production Convex through PRESENCE_URL and
+      # PRESENCE_PASS_SECRET, set once on both sides (presence/README.md).
+      - name: Install Presence Worker Dependencies
+        working-directory: presence
+        run: npm ci
+
+      - name: Deploy Presence Worker
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: presence
+          command: deploy --env production

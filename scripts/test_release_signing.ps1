@@ -113,10 +113,11 @@ try {
     Invoke-RepoCommand -WorkingDirectory $testRoot -Command 'git' -Arguments @('add', 'pubspec.yaml', 'release/metadata')
     Invoke-RepoCommand -WorkingDirectory $testRoot -Command 'git' -Arguments @('commit', '-m', 'Release metadata fixture')
     $global:releaseTestRemoteSource = $signedSource
+    $global:releaseTestList = '[{"tagName":"desktop-stable-v1.2.3+4","isDraft":false}]'
     function gh {
         $global:LASTEXITCODE = 0
         if ($args[0] -eq 'release' -and $args[1] -eq 'list') {
-            '[{"tagName":"desktop-stable-v1.2.3+4","isDraft":false}]'
+            $global:releaseTestList
         }
         elseif ($args[0] -eq 'release' -and $args[1] -eq 'download') {
             $directoryIndex = [Array]::IndexOf($args, '--dir') + 1
@@ -127,9 +128,13 @@ try {
     & (Join-Path $scripts 'publish_installer_release.ps1')
     $global:releaseTestRemoteSource = Join-Path $env:SystemRoot 'System32/cmd.exe'
     Assert-Rejected { & (Join-Path $scripts 'publish_installer_release.ps1') } 'different bytes'
+    # Build 10 is newer than build 4, though "1.2.10" sorts before "1.2.3" as text.
+    $global:releaseTestList = '[{"tagName":"desktop-stable-v1.2.10+10","isDraft":false},{"tagName":"desktop-stable-v1.2.3+4","isDraft":false}]'
+    Assert-Rejected { & (Join-Path $scripts 'publish_installer_release.ps1') } 'already public'
     Remove-Item Function:gh
     Remove-Variable releaseTestRemoteSource -Scope Global
-    Write-Host 'Release retry passed: identical signed asset accepted; different signed asset rejected without modifying the public release.'
+    Remove-Variable releaseTestList -Scope Global
+    Write-Host 'Release retry passed: identical signed asset accepted; different signed asset and a superseded release rejected without modifying the public release.'
     Write-Host 'Release signing tests passed: signed file accepted; missing, empty, nested unsigned DLL, unsigned installer, and direct unsigned publication rejected.'
 }
 finally {
