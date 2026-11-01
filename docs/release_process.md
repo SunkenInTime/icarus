@@ -143,9 +143,10 @@ to try server changes by hand; never test on production.
   report the same version. See "Releasing web and desktop together".
 - For a hotfix or redeploy: `Actions` > `Deploy Web` > `Run workflow` on `main`.
   Leave `ref` empty to rebuild the latest `desktop-stable-v...` tag, or name a
-  tag or commit. Run it from `main`; the ref must be a commit on `main`. Naming
-  a newer commit ships it to web ahead of desktop, so do that on purpose. The
-  server deploys first, always from the tip of `main`.
+  tag or commit. Run it from `main`; the ref must be a commit on `main`, no
+  older than the latest stable release. Naming a newer commit ships it to web
+  ahead of desktop, so do that on purpose. The server deploys first, always from
+  the tip of `main`.
 - The run summary links the deployment and names the version. To roll back,
   promote an earlier deployment in the Cloudflare dashboard under the project's
   `Deployments`. It stays rolled back until the next release or manual run.
@@ -218,15 +219,19 @@ so it starts no workflow.
 ### When a release fails
 
 `Re-run failed jobs` is the fix for anything after `build`. It keeps the commit
-and the signed files the run already made, and it works for 30 days. The files
-it needs last 90. Don't use `Re-run all jobs`: that rebuilds, and the version
-commit push is refused because `main` already has it.
+and the signed files the run already made, and it works for 30 days. Don't use
+`Re-run all jobs`: that rebuilds, and the version commit push is refused because
+`main` already has it.
+
+Only the newest release can be finished this way. Once a newer release is public,
+re-running an older run stops at web or at `publish`, before anything changes, so
+it can't take users backwards. Abandon the old run; the newer release replaced it.
 
 | What failed | What users have | What to do |
 | --- | --- | --- |
 | `build`, before the version commit | Nothing changed | Fix it and start a new run. |
 | Version commit push (`main` moved during the build) | Nothing changed | Start a new run. |
-| `web / server`, or `web / web` | Nothing changed, except any server deploy that finished. `main` has the version commit. | `Re-run failed jobs`. To abandon it, do nothing: the next release skips this version number, and no user ever saw it. |
+| `web / server`, or `web / web` | Usually nothing changed, except any server deploy that finished. `main` has the version commit. If the job failed after the Pages upload, web may be new. | Check `https://beta.icarusstrats.com/version.json`, then `Re-run failed jobs`. To abandon a run whose web never went live, do nothing: the next release skips this version number. If web did go live, treat it as the next row. |
 | `publish`, before the installer went public | New web, old desktop | `Re-run failed jobs`. If that can't work, start a new run with `version_bump=none`: it rebuilds from the tip of `main`, keeps the version, and redeploys web so both match. |
 | `publish`, after the installer went public (the manifest push failed) | New web, new installer download, but no update offered | `Re-run failed jobs` only. A new run with `version_bump=none` is refused at the start, because a rebuild can't match a public installer's bytes. |
 | A run with `version_bump=none` refused as "already public" | Nothing changed | Re-run the failed run, or use a real version bump. |

@@ -20,6 +20,15 @@ $tag = "desktop-$Channel-v$($version.FullVersion)"
 $releaseList = & gh release list --repo $Repository --limit 100 --json tagName,isDraft
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect existing GitHub releases.' }
 $releases = $releaseList | ConvertFrom-Json
+# Re-running an old failed release must not take the update feed backwards.
+$newer = @($releases | Where-Object {
+    -not $_.isDraft -and
+    $_.tagName -cmatch "^desktop-$Channel-v\d+\.\d+\.\d+\+(\d+)$" -and
+    [int]$Matches[1] -gt $version.BuildNumber
+})
+if ($newer.Count -gt 0) {
+    throw "$tag is older than $($newer[0].tagName), which is already public. Start a new release instead of re-running this one."
+}
 $existing = @($releases | Where-Object { $_.tagName -eq $tag })
 if ($existing.Count -gt 0 -and -not $existing[0].isDraft) {
     $retryDirectory = Join-Path ([IO.Path]::GetTempPath()) ('icarus-release-retry-' + [guid]::NewGuid())

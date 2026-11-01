@@ -166,6 +166,9 @@ if ($webWorkflow -match '(?m)^\s+push:') {
 if ($desktopWorkflow -notmatch '(?m)^  publish:\s*\r?\n\s+needs:\s*\[build, web\]') {
     throw "Desktop must publish after the web deploy."
 }
+if ($desktopWorkflow -notmatch "needs\.web\.result == 'success'") {
+    throw "Desktop must only publish on stable after the web deploy succeeded."
+}
 Assert-TextAppearsBefore -Text $desktopWorkflow -First "Upload Files To Publish" -Second "Commit Version And Metadata Changes"
 if ($desktopWorkflow -notmatch 'production-approval:[\s\S]*environment:\s*Production' -or
     $desktopWorkflow -notmatch 'needs:\s*production-approval') {

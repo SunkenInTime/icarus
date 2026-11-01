@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Tag or commit on main to deploy. Leave empty for the latest stable desktop tag.
+        description: Tag or commit on main to deploy, no older than the latest stable release. Leave empty for the latest stable desktop tag.
         type: string
         required: false
         default: ""
@@ -124,6 +124,19 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.resolve.outputs.sha }}
+
+      # In this job, not resolve, because re-running a failed web job re-runs
+      # only this one. Re-running an old release must not put its web build
+      # over a newer one. To go back on purpose, promote a deployment instead.
+      - name: Refuse To Replace A Newer Release
+        shell: bash
+        run: |
+          build=$(sed -n 's/^version: *[0-9.]*+\([0-9]*\).*/\1/p' pubspec.yaml)
+          latest=$(git ls-remote --tags origin 'desktop-stable-v*' | sed -n 's/.*+\([0-9]*\)$/\1/p' | sort -n | tail -n 1)
+          if (( ${latest:-0} > build )); then
+            echo "::error::This commit is build $build, older than the latest stable release, build $latest."
+            exit 1
+          fi
 
       # wrangler-action runs Wrangler on this Node.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
