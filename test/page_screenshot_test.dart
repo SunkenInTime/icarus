@@ -29,6 +29,7 @@ import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/screenshot/capture_images.dart';
+import 'package:icarus/screenshot/caption_export_layout.dart';
 import 'package:icarus/screenshot/page_screenshot.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/dialogs/screenshot_dialog.dart';
@@ -205,6 +206,8 @@ Future<void> _noThumbnails(
   required void Function(String pageId, ui.Image image) onThumbnail,
   required void Function(Set<String> pageIds, Object error) onUnavailable,
   required bool Function() isCancelled,
+  bool includeCaptions = false,
+  void Function(String pageId, CaptionExportLayout layout)? onCaptions,
 }) async {}
 
 /// The test font draws every glyph a full em wide, so labels that fit in the
@@ -557,7 +560,7 @@ void main() {
     Future<ShadCheckbox> transparentToggle() async {
       await openCamera(tester);
       // One page: nothing to tick but the background.
-      return tester.widget<ShadCheckbox>(find.byType(ShadCheckbox));
+      return tester.widget<ShadCheckbox>(find.byType(ShadCheckbox).first);
     }
 
     expect((await transparentToggle()).value, isFalse);

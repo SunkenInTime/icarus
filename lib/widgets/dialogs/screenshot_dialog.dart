@@ -10,6 +10,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/screenshot/caption_export_layout.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/screenshot/page_screenshot.dart';
 import 'package:icarus/screenshot/save_screenshots.dart';
@@ -31,6 +32,8 @@ typedef PageThumbnailer = Future<void> Function(
   required void Function(String pageId, ui.Image image) onThumbnail,
   required void Function(Set<String> pageIds, Object error) onUnavailable,
   required bool Function() isCancelled,
+  bool includeCaptions,
+  void Function(String pageId, CaptionExportLayout layout)? onCaptions,
 });
 
 final pageThumbnailerProvider =
@@ -60,6 +63,14 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
   final Set<String> _selected = {};
   final Map<String, ui.Image> _thumbnails = {};
   final Set<String> _unavailable = {};
+
+  /// Pages whose captions can't be placed, while they're included.
+  final Set<String> _captionMisfits = {};
+
+  /// Which round of previews is wanted. The Include captions box asks for a
+  /// new one, and what an older one still delivers is dropped.
+  int _previewRun = 0;
+  Future<void> _previews = Future.value();
 
   /// From the click on Save until the dialog closes, or the folder dialog is
   /// dismissed: a second press meanwhile would start a second save.
@@ -91,16 +102,62 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     if (_pages.any((page) => page.id == _openPageId)) {
       _selected.add(_openPageId!);
     }
-    unawaited(ref.read(pageThumbnailerProvider)(
-      ref,
-      pageIds: {for (final page in _pages) page.id},
-      onThumbnail: _showThumbnail,
-      onUnavailable: (pageIds, _) {
-        if (mounted) setState(() => _unavailable.addAll(pageIds));
-      },
-      // A save renders the pages again at full size; the previews give way.
-      isCancelled: () => !mounted || _saving != null,
-    ));
+    _renderPreviews(ref.read(appPreferencesProvider).includeScreenshotCaptions);
+  }
+
+  /// Draws every page's preview, once any older round has stopped: captures
+  /// run one at a time.
+  void _renderPreviews(bool includeCaptions) {
+    final run = ++_previewRun;
+    bool stale() => !mounted || run != _previewRun;
+    // A save renders the pages again at full size; the previews give way.
+    bool cancelled() => stale() || _saving != null;
+    final thumbnailer = ref.read(pageThumbnailerProvider);
+    _previews = _previews.whenComplete(() {
+      if (cancelled()) return null;
+      return thumbnailer(
+        ref,
+        pageIds: {for (final page in _pages) page.id},
+        includeCaptions: includeCaptions,
+        onThumbnail: (pageId, image) {
+          if (stale()) {
+            image.dispose();
+          } else {
+            _showThumbnail(pageId, image);
+          }
+        },
+        onCaptions: (pageId, layout) {
+          if (stale() || layout.fits) return;
+          setState(() => _captionMisfits.add(pageId));
+        },
+        onUnavailable: (pageIds, _) {
+          if (stale()) return;
+          setState(() => _unavailable.addAll(pageIds));
+        },
+        isCancelled: cancelled,
+      );
+    });
+    unawaited(_previews);
+  }
+
+  void _setIncludeCaptions(bool value) {
+    setState(_captionMisfits.clear);
+    _renderPreviews(value);
+    unawaited(
+      ref
+          .read(appPreferencesProvider.notifier)
+          .setIncludeScreenshotCaptions(value),
+    );
+  }
+
+  /// Why Save is off: the first ticked page whose captions can't be placed.
+  String? get _captionRefusal {
+    for (final (index, page) in _pages.indexed) {
+      if (_selected.contains(page.id) && _captionMisfits.contains(page.id)) {
+        return captionsDontFitMessage(_single ? null : index + 1);
+      }
+    }
+    return null;
   }
 
   @override
@@ -140,7 +197,7 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
   /// screen; several are read as saved and go into a folder the user picks
   /// (desktop) or one .zip download (the browser).
   Future<void> _save() async {
-    if (_busy || _selected.isEmpty) return;
+    if (_busy || _selected.isEmpty || _captionRefusal != null) return;
     final strategy = ref.read(strategyProvider);
     if (strategy.strategyId == null) return;
     final strategyName = strategy.strategyName ?? 'new image';
@@ -199,6 +256,8 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
         pageIds: pageIds,
         transparentBackground:
             ref.read(appPreferencesProvider).transparentScreenshotBackground,
+        includeCaptions:
+            ref.read(appPreferencesProvider).includeScreenshotCaptions,
         onPage: (page, _) {
           if (mounted) setState(() => _captured = page - 1);
         },
@@ -237,6 +296,8 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     } on VideoExportPagesChanged catch (error, stackTrace) {
       _reportWarning(error.userMessage, error, stackTrace);
     } on CaptureImagesUnavailable catch (error, stackTrace) {
+      _reportWarning(error.userMessage, error, stackTrace);
+    } on CaptionsDontFit catch (error, stackTrace) {
       _reportWarning(error.userMessage, error, stackTrace);
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
@@ -281,8 +342,11 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     final theme = ShadTheme.of(context);
     final transparent = ref.watch(appPreferencesProvider
         .select((value) => value.transparentScreenshotBackground));
+    final includeCaptions = ref.watch(appPreferencesProvider
+        .select((value) => value.includeScreenshotCaptions));
     final dotOpacity = ref.watch(
         appPreferencesProvider.select((value) => value.backgroundDotOpacity));
+    final refusal = _captionRefusal;
     final saving = _saving != null;
     final count = _selected.length;
 
@@ -323,13 +387,34 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
           .setTransparentScreenshotBackground(value),
       label: const Text('Transparent background'),
     );
+    final captionsToggle = ShadCheckbox(
+      value: includeCaptions,
+      enabled: !saving,
+      onChanged: _setIncludeCaptions,
+      label: const Text('Include captions'),
+      sublabel: refusal == null
+          ? const Text('Numbers on the map, notes in the side margins.')
+          : Text(
+              refusal,
+              style: TextStyle(color: theme.colorScheme.destructive),
+            ),
+    );
+    final toggles = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        transparentToggle,
+        const SizedBox(height: 12),
+        captionsToggle,
+      ],
+    );
     final cancel = ShadButton.secondary(
       onPressed: () => Navigator.of(context).maybePop(),
       child: const Text('Cancel'),
     );
     final save = ShadButton(
       autofocus: true,
-      enabled: count > 0,
+      enabled: count > 0 && refusal == null,
       onPressed: _save,
       leading: const Icon(LucideIcons.camera, size: 16),
       child: Text(count > 1 ? 'Save $count screenshots' : 'Save screenshot'),
@@ -361,7 +446,7 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
       footer = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          transparentToggle,
+          toggles,
           const SizedBox(height: 16),
           Row(
             children: [
@@ -375,7 +460,7 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     } else {
       footer = Row(
         children: [
-          Expanded(child: transparentToggle),
+          Expanded(child: toggles),
           const SizedBox(width: 16),
           cancel,
           const SizedBox(width: 8),

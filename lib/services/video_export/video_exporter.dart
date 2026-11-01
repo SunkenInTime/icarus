@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
@@ -14,6 +15,8 @@ import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
+import 'package:icarus/screenshot/caption_export_layout.dart';
+import 'package:icarus/screenshot/caption_export_overlay.dart';
 import 'package:icarus/screenshot/offscreen_capture.dart';
 import 'package:icarus/screenshot/capture_geometry.dart';
 import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
@@ -35,6 +38,7 @@ class VideoExporter {
     required this.backgroundDotOpacity,
     required this.geometry,
     this.transparentBackground = false,
+    this.includeCaptions = false,
     this.imageSources = const {},
     this.navigation,
     this.requireNavigation = false,
@@ -49,6 +53,14 @@ class VideoExporter {
   /// Leaves the backdrop out of every frame (see
   /// [ScreenshotView.transparentBackground]). The sink must keep alpha.
   final bool transparentBackground;
+
+  /// Prints each page's captions while it holds; they fade across
+  /// transitions. Throws [CaptionsDontFit] for a page that can't place them.
+  final bool includeCaptions;
+
+  /// What each page's captions worked out to, by page id, measured as the
+  /// page is first drawn. A transition frame has neither page in place.
+  final _captionLayouts = <String, CaptionExportLayout>{};
 
   /// What each image on the exported pages paints, by image id; see
   /// [captureImageSourcesProvider].
@@ -202,6 +214,7 @@ class VideoExporter {
         firstView,
         settleDuration: const Duration(milliseconds: 800),
       );
+      _checkCaptions(pages.first);
 
       for (var i = 0; i < pages.length; i++) {
         final page = pages[i];
@@ -231,8 +244,10 @@ class VideoExporter {
           nextView,
           settleDuration: const Duration(milliseconds: 120),
         );
+        _checkCaptions(nextPage);
         for (var f = 1; f <= transitionFrames; f++) {
-          final t = kPageTransitionCurve.transform(f / transitionFrames);
+          final progress = f / transitionFrames;
+          final t = kPageTransitionCurve.transform(progress);
           await renderFrame(
             _transitionView(
               from: page,
@@ -240,6 +255,7 @@ class VideoExporter {
               entries: entries,
               agentPaths: agentPaths,
               t: t,
+              elapsed: kPageTransitionDuration * progress,
               fadeDrawings: fadeDrawings,
             ),
             frameInterval,
@@ -267,7 +283,20 @@ class VideoExporter {
     }
   }
 
-  ScreenshotView _stillView(StrategyPage page) => _pageView(page);
+  void _checkCaptions(StrategyPage page) {
+    if (!includeCaptions || _captionLayouts[page.id]?.fits == true) return;
+    final ordered = [...strategy.pages]
+      ..sortBySortIndex((item) => item.sortIndex);
+    throw CaptionsDontFit(
+      ordered.indexWhere((item) => item.id == page.id) + 1,
+    );
+  }
+
+  ScreenshotView _stillView(StrategyPage page) => _pageView(
+        page,
+        includeCaptions: includeCaptions,
+        onCaptionLayout: (layout) => _captionLayouts[page.id] = layout,
+      );
 
   ScreenshotView _transitionView({
     required StrategyPage from,
@@ -275,9 +304,11 @@ class VideoExporter {
     required List<PageTransitionEntry> entries,
     required Map<String, AgentTransitionPath> agentPaths,
     required double t,
+    required Duration elapsed,
     required bool fadeDrawings,
   }) {
     double lerp(double a, double b) => a + (b - a) * t;
+    final fades = captionFades(elapsed, kPageTransitionDuration);
     return _pageView(
       to,
       placedWidgetsOverride: TransitionEntriesLayer(
@@ -289,6 +320,12 @@ class VideoExporter {
         abilitySize: lerp(from.settings.abilitySize, to.settings.abilitySize),
       ),
       drawingsOpacity: fadeDrawings ? earlyFadeInOpacity(t) : 1.0,
+      fadingCaptions: [
+        if (includeCaptions) ...[
+          (layout: _captionLayouts[from.id]!, opacity: fades.from),
+          (layout: _captionLayouts[to.id]!, opacity: fades.to),
+        ],
+      ],
     );
   }
 
@@ -296,6 +333,9 @@ class VideoExporter {
     StrategyPage page, {
     Widget? placedWidgetsOverride,
     double drawingsOpacity = 1.0,
+    bool includeCaptions = false,
+    ValueChanged<CaptionExportLayout>? onCaptionLayout,
+    List<FadingCaptions> fadingCaptions = const [],
   }) =>
       ScreenshotView.forPage(
         strategy,
@@ -304,6 +344,9 @@ class VideoExporter {
         mapState: mapState,
         backgroundDotOpacity: backgroundDotOpacity,
         transparentBackground: transparentBackground,
+        includeCaptions: includeCaptions,
+        onCaptionLayout: onCaptionLayout,
+        fadingCaptions: fadingCaptions,
         placedWidgetsOverride: placedWidgetsOverride,
         drawingsOpacity: drawingsOpacity,
       );
