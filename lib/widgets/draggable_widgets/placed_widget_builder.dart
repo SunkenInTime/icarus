@@ -276,7 +276,10 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
               ref.read(abilityProvider.notifier).addAbility(placedAbility);
             } else if (details.data is VisionConeToolData) {
               final visionConeData = details.data as VisionConeToolData;
-              final targetAgent = _hoveredAgentAttachmentTarget();
+              // An agent's cone saves a preset, which has no full circle.
+              final targetAgent = visionConeData.isFullCircle
+                  ? null
+                  : _hoveredAgentAttachmentTarget();
               if (targetAgent != null) {
                 _convertToolbarConeToComposite(
                   targetAgent: targetAgent,
@@ -288,7 +291,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                   type: visionConeData.type,
                   position: Offset.zero,
                   angle: visionConeData.angle,
-                );
+                )..length = visionConeData.length;
                 placedUtility.position =
                     storedUtilityPositionForRenderedScreenPosition(
                   utility: placedUtility,
@@ -428,7 +431,7 @@ bool _convertFreeUtilityToComposite({
   required PlacedUtility utility,
   required PlacedAgent targetAgent,
 }) {
-  if (UtilityData.isViewCone(utility.type)) {
+  if (UtilityData.isViewCone(utility.type) && !utility.isFullCircleCone) {
     ref.read(actionProvider.notifier).performTransaction(
       groups: const [ActionGroup.agent, ActionGroup.utility],
       mutation: () {

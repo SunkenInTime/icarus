@@ -105,8 +105,7 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
     }
 
     // Get the view cone utility to access its methods
-    final viewConeUtility =
-        UtilityData.utilityWidgets[widget.utility.type] as ViewConeUtility;
+    final viewConeUtility = widget.utility.viewCone;
     final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1.0;
     final settings = ref.watch(strategySettingsProvider);
     final displayRotation = coordinateSystem.rotationForSide(
@@ -118,8 +117,7 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
     // This is exactly like how abilities calculate their anchor points
     final anchorPoint = viewConeUtility.getAnchorPoint();
 
-    final utilityChild =
-        UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
+    final utilityChild = viewConeUtility.createWidget(
       id: widget.id,
       rotation: displayRotation,
       length: localLength,

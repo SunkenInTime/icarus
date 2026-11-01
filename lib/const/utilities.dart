@@ -46,6 +46,18 @@ class UtilityData {
     ),
   };
 
+  /// A view cone that sees all the way round, for finding where a flash would
+  /// be seen from.
+  ///
+  /// It has no [UtilityType]: a build without the type refuses the whole
+  /// strategy. It is saved as a [UtilityType.viewCone180] whose
+  /// [PlacedUtility.angle] says 360. Older builds keep that field and draw a
+  /// 103 degree cone.
+  static final fullCircleCone = ViewConeUtility(
+    angle: ViewConeUtility.fullCircleDegrees,
+    defaultLength: 150,
+  );
+
   /// Helper to check if a utility type is a view cone
   static bool isViewCone(UtilityType type) {
     return type == UtilityType.viewCone180 ||
@@ -115,11 +127,13 @@ class VisionConeToolData implements DraggableData {
   final UtilityType type;
   final double angle;
   final Offset centerPoint;
+  final double length;
 
   const VisionConeToolData({
     required this.type,
     required this.angle,
     required this.centerPoint,
+    required this.length,
   });
 
   factory VisionConeToolData.fromType(UtilityType type) {
@@ -128,8 +142,21 @@ class VisionConeToolData implements DraggableData {
       type: type,
       angle: UtilityData.getViewConeSpawnAngle(type),
       centerPoint: utility.getCenterPoint(),
+      length: utility.defaultLength,
     );
   }
+
+  factory VisionConeToolData.fullCircle() {
+    final utility = UtilityData.fullCircleCone;
+    return VisionConeToolData(
+      type: UtilityType.viewCone180,
+      angle: utility.angle,
+      centerPoint: utility.getCenterPoint(),
+      length: utility.defaultLength,
+    );
+  }
+
+  bool get isFullCircle => angle == ViewConeUtility.fullCircleDegrees;
 }
 
 class SpikeToolData implements DraggableData {
@@ -386,6 +413,7 @@ class ViewConeUtility extends Utilities {
   static const double maxLength = 300;
   static const double minLength = 40;
   static const double iconTopOffset = 7.5;
+  static const double fullCircleDegrees = 360;
 
   ViewConeUtility({
     required this.angle,
