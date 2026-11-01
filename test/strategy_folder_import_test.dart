@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -868,6 +869,190 @@ void main() {
     expect(_strategyByName('Folder Backup').folderID, restoredFolder.id);
   });
 
+  group('a file imports as what it holds, whatever its name', () {
+    Future<ImportBatchResult> drop(File file) =>
+        StrategyImportExportService(container)
+            .loadFromFileDrop([XFile(file.path)]);
+
+    void expectNothingCreated() {
+      expect(
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values,
+        isEmpty,
+      );
+      expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, isEmpty);
+    }
+
+    test('every historical .ica imports with its extension gone', () async {
+      final fixtures = Directory('test/fixtures/strategy_integrity')
+          .listSync()
+          .whereType<File>()
+          .where((file) => path.extension(file.path) == '.ica')
+          .toList();
+      expect(fixtures, hasLength(3));
+
+      for (final fixture in fixtures) {
+        final name = path.basenameWithoutExtension(fixture.path);
+        final renamed = await fixture.copy(path.join(tempDir.path, name));
+
+        final named = await drop(fixture);
+        final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+        final expectedPages = strategies.values.single.pages.length;
+        await strategies.clear();
+
+        final result = await drop(renamed);
+
+        expect(named.strategiesImported, 1);
+        expect(result.strategiesImported, 1);
+        expect(result.foldersCreated, 0);
+        expect(result.issues, isEmpty);
+        expect(_strategyByName(name).pages, hasLength(expectedPages));
+        await strategies.clear();
+      }
+    });
+
+    test('a bare JSON .ica from before they were zipped', () async {
+      final file = File(path.join(tempDir.path, 'oldest'));
+      await _writeStrategyFile(file, versionNumber: 1);
+
+      final result = await drop(file);
+
+      expect(result.strategiesImported, 1);
+      expect(result.foldersCreated, 0);
+      expect(result.issues, isEmpty);
+    });
+
+    test('a strategy from a newer Icarus still asks for the update', () async {
+      final file = File(path.join(tempDir.path, 'future'));
+      await _writeStrategyFile(
+        file,
+        versionNumber: Settings.versionNumber + 1,
+      );
+
+      final result = await drop(file);
+
+      expect(result.issues.single.code, ImportIssueCode.newerVersion);
+      expectNothingCreated();
+    });
+
+    test('a dot in the name is not taken for an extension', () async {
+      final file = File(path.join(tempDir.path, 'Bind v1.2'));
+      await _writeStrategyFile(file);
+
+      await drop(file);
+
+      expect(_strategyByName('Bind v1.2').folderID, isNull);
+    });
+
+    test('a library backup', () async {
+      final backup = await _libraryBackupZip(container, tempDir);
+      final renamed = await backup.rename(path.join(tempDir.path, 'backup'));
+
+      final result = await drop(renamed);
+
+      expect(result.strategiesImported, 2);
+      expect(result.foldersCreated, 1);
+      expect(result.issues, isEmpty);
+      expect(
+        _strategyByName('Folder Backup').folderID,
+        _folderByName('Plays').id,
+      );
+    });
+
+    test('a zip of .ica files with no manifest', () async {
+      final source = await Directory(path.join(tempDir.path, 'zip', 'Retakes'))
+          .create(recursive: true);
+      await _writeStrategyFile(File(path.join(source.path, 'a-site.ica')));
+      final zip = await _zipDirectory(
+        sourceDirectory: source,
+        zipPath: path.join(tempDir.path, 'retakes'),
+      );
+
+      final result = await drop(zip);
+
+      expect(result.strategiesImported, 1);
+      expect(result.foldersCreated, 1);
+      expect(
+        _strategyByName('a-site').folderID,
+        _folderByName('Retakes').id,
+      );
+    });
+
+    test('an .ica that lost its extension in a dropped folder', () async {
+      final folder = await Directory(path.join(tempDir.path, 'Mine')).create();
+      await _writeStrategyFile(File(path.join(folder.path, 'renamed')));
+
+      final result = await StrategyImportExportService(container)
+          .loadFromFileDrop([XFile(folder.path)]);
+
+      expect(result.strategiesImported, 1);
+      expect(result.issues, isEmpty);
+      expect(_strategyByName('renamed').folderID, _folderByName('Mine').id);
+    });
+
+    test('Import Backup takes an .ica without making a folder', () async {
+      final file = File(path.join(tempDir.path, 'renamed-ica'));
+      await file.writeAsBytes(_zipOf({'renamed-ica.json': _strategyJson()}));
+      FilePicker.platform = _PickedFile(file.path);
+
+      final result = await StrategyImportExportService(container)
+          .importBackupFromFilePicker();
+
+      expect(result.strategiesImported, 1);
+      expect(result.foldersCreated, 0);
+      expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, isEmpty);
+    });
+
+    test('Import .ica takes a backup', () async {
+      final backup = await _libraryBackupZip(container, tempDir);
+      FilePicker.platform = _PickedFile(backup.path);
+
+      final result =
+          await StrategyImportExportService(container).loadFromFilePicker();
+
+      expect(result.strategiesImported, 2);
+      expect(result.foldersCreated, 1);
+    });
+
+    final unrecognised = <String, List<int>>{
+      'a zip of something else': _zipOf({'notes.txt': 'notes'}),
+      'a zip with one folder of something else': _zipOf({
+        'renamed.json/notes.txt': 'notes',
+      }),
+      'a zip of JSON that is not a strategy': _zipOf({
+        'package.json': '{"name": "icarus"}',
+      }),
+      'a zip holding only macOS leftovers': _zipOf({
+        '__MACOSX/._strategy.ica': 'resource fork',
+      }),
+      'a zip cut off partway': _zipOf({
+        'renamed.json': _strategyJson(),
+      }).sublist(0, 40),
+      'JSON that is not a strategy': utf8.encode('{"name": "icarus"}'),
+      'broken JSON': utf8.encode('{"mapData": '),
+      'an empty file': const [],
+    };
+    for (final MapEntry(key: description, value: bytes)
+        in unrecognised.entries) {
+      test('$description creates nothing and is reported', () async {
+        final file = File(path.join(tempDir.path, 'renamed'));
+        await file.writeAsBytes(bytes);
+
+        final result = await drop(file);
+
+        expect(result.hasImports, isFalse);
+        expect(result.issues.single.code, ImportIssueCode.unsupportedFile);
+        expectNothingCreated();
+
+        FilePicker.platform = _PickedFile(file.path);
+        final picked = await StrategyImportExportService(container)
+            .importBackupFromFilePicker();
+        expect(picked.hasImports, isFalse);
+        expect(picked.issues.single.code, ImportIssueCode.unsupportedFile);
+        expectNothingCreated();
+      });
+    }
+  });
+
   // Imports write to the local library. Signed in, My Library opens on the
   // cloud store, and that must not pull an import's folders into the cloud.
   group('signed in, with the cloud store active', () {
@@ -1037,13 +1222,48 @@ class _UnusedTransport implements ConvexTransport {
       throw UnimplementedError();
 }
 
-Future<void> _writeStrategyFile(
-  File file, {
-  int? versionNumber,
-}) async {
-  await file.parent.create(recursive: true);
-  await file.writeAsString(
-    jsonEncode({
+/// Stands in for the open dialog, answering with [filePath].
+class _PickedFile extends FilePicker {
+  _PickedFile(this.filePath);
+
+  final String filePath;
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = true,
+    int compressionQuality = 0,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) async {
+    final file = File(filePath);
+    return FilePickerResult([
+      PlatformFile(
+        path: filePath,
+        name: path.basename(filePath),
+        size: file.lengthSync(),
+      ),
+    ]);
+  }
+}
+
+List<int> _zipOf(Map<String, String> files) {
+  final archive = Archive();
+  files.forEach((name, text) {
+    final bytes = utf8.encode(text);
+    archive.addFile(ArchiveFile(name, bytes.length, bytes));
+  });
+  return ZipEncoder().encodeBytes(archive);
+}
+
+String _strategyJson({int? versionNumber}) => jsonEncode({
       'versionNumber': versionNumber ?? Settings.versionNumber,
       'mapData': 'ascent',
       'drawingData': const [],
@@ -1053,8 +1273,14 @@ Future<void> _writeStrategyFile(
       'imageData': const [],
       'utilityData': const [],
       'pages': const [],
-    }),
-  );
+    });
+
+Future<void> _writeStrategyFile(
+  File file, {
+  int? versionNumber,
+}) async {
+  await file.parent.create(recursive: true);
+  await file.writeAsString(_strategyJson(versionNumber: versionNumber));
 }
 
 Future<File> _zipDirectory({

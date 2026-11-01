@@ -88,32 +88,26 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     );
   }
 
-  Future<void> handleImportIca() async {
-    if (!ensureFeatureAvailable(ref, PlatformFeature.importFiles)) return;
-    try {
-      await StrategyImportExportService(ref).loadFromFilePicker();
-    } on NewerVersionImportException catch (error, stackTrace) {
-      AppErrorReporter.reportError(
-        NewerVersionImportException.userMessage,
-        error: error,
-        stackTrace: stackTrace,
+  Future<void> handleImportIca() => _importPicked(
+        StrategyImportExportService(ref).loadFromFilePicker,
+        failureMessage: 'Failed to import strategy file.',
         source: 'FolderNavigator.handleImportIca',
       );
-    } catch (error, stackTrace) {
-      AppErrorReporter.reportError(
-        'Failed to import strategy file.',
-        error: error,
-        stackTrace: stackTrace,
-        source: 'FolderNavigator.handleImportIca',
-      );
-    }
-  }
 
-  Future<void> handleImportBackup() async {
+  Future<void> handleImportBackup() => _importPicked(
+        StrategyImportExportService(ref).importBackupFromFilePicker,
+        failureMessage: 'Failed to import backup archive.',
+        source: 'FolderNavigator.handleImportBackup',
+      );
+
+  Future<void> _importPicked(
+    Future<ImportBatchResult> Function() import, {
+    required String failureMessage,
+    required String source,
+  }) async {
     if (!ensureFeatureAvailable(ref, PlatformFeature.importFiles)) return;
     try {
-      final result =
-          await StrategyImportExportService(ref).importBackupFromFilePicker();
+      final result = await import();
       if (result.hasImports || result.issues.isNotEmpty) {
         final message = buildImportSummaryMessage(result);
         if (result.hasImports) {
@@ -122,24 +116,25 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
             backgroundColor: Settings.tacticalVioletTheme.primary,
           );
           if (result.issues.isNotEmpty) {
-            AppErrorReporter.reportWarning(
-              message,
-              source: 'FolderNavigator.handleImportBackup',
-            );
+            AppErrorReporter.reportWarning(message, source: source);
           }
         } else {
-          AppErrorReporter.reportError(
-            message,
-            source: 'FolderNavigator.handleImportBackup',
-          );
+          AppErrorReporter.reportError(message, source: source);
         }
       }
-    } catch (error, stackTrace) {
+    } on NewerVersionImportException catch (error, stackTrace) {
       AppErrorReporter.reportError(
-        'Failed to import backup archive.',
+        NewerVersionImportException.userMessage,
         error: error,
         stackTrace: stackTrace,
-        source: 'FolderNavigator.handleImportBackup',
+        source: source,
+      );
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        failureMessage,
+        error: error,
+        stackTrace: stackTrace,
+        source: source,
       );
     }
   }
