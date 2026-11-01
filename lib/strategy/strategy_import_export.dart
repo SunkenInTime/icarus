@@ -29,6 +29,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
@@ -341,18 +342,12 @@ class StrategyImportExportService {
         targetFolderId: null,
       );
 
-  Future<ImportBatchResult> loadFromFilePicker() =>
-      _importPickedFile(targetFolderId: null);
-
-  Future<ImportBatchResult> importBackupFromFilePicker() =>
-      _importPickedFile(targetFolderId: _localFolderOnScreen());
-
-  /// The dialog lists every file: an export that lost its extension is
-  /// invisible to a filter on .ica or .zip, and [_importFile] goes by what a
-  /// file holds.
-  Future<ImportBatchResult> _importPickedFile({
-    required String? targetFolderId,
-  }) async {
+  /// Import .ica and Import Backup. The dialog lists every file: an export
+  /// that lost its extension is invisible to a filter on .ica or .zip, and
+  /// [_importFile] goes by what a file holds.
+  Future<ImportBatchResult> importFromFilePicker() async {
+    final targetFolderId = _localFolderOnScreen();
+    final cloudFolderId = _cloudFolderOnScreen();
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: false,
       type: FileType.any,
@@ -365,6 +360,7 @@ class StrategyImportExportService {
     return _importFile(
       file: XFile(filePath),
       targetFolderId: targetFolderId,
+      cloudFolderId: cloudFolderId,
     );
   }
 
@@ -388,6 +384,13 @@ class StrategyImportExportService {
   /// the screen shows the top level or a cloud folder.
   String? _localFolderOnScreen() =>
       ref.read(libraryWorkspaceProvider) == LibraryWorkspace.local
+          ? ref.read(folderProvider)
+          : null;
+
+  /// The cloud folder on screen, or null at the top level or in the local
+  /// store.
+  String? _cloudFolderOnScreen() =>
+      ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud
           ? ref.read(folderProvider)
           : null;
 
@@ -542,17 +545,29 @@ class StrategyImportExportService {
   /// Imports [file] as what it is. Throws when a strategy fails to import;
   /// a file that is neither a strategy nor an archive creates nothing and
   /// comes back as an issue.
+  ///
+  /// A strategy goes on from the local library to [cloudFolderId] the way a
+  /// drag onto that folder moves it. When it can't, it stays in the local
+  /// library and the move says so.
   Future<ImportBatchResult> _importFile({
     required XFile file,
     required String? targetFolderId,
+    String? cloudFolderId,
   }) async {
     final localFile = File(file.path);
     switch (await _importFileKind(localFile)) {
       case _ImportFileKind.strategy:
-        await _importStrategyFile(
+        final strategyId = await _importStrategyFile(
           file: file,
           targetFolderId: targetFolderId,
         );
+        if (cloudFolderId != null) {
+          await ref.read(moveToCloudProvider.notifier).moveStrategy(
+                strategyId,
+                cloudFolderId: cloudFolderId,
+                importing: true,
+              );
+        }
         return const ImportBatchResult(
           strategiesImported: 1,
           foldersCreated: 0,
@@ -1986,7 +2001,8 @@ class StrategyImportExportService {
     );
   }
 
-  Future<void> _importStrategyFile({
+  /// Saves [file] to the local library and returns the new strategy's id.
+  Future<String> _importStrategyFile({
     required XFile file,
     required String? targetFolderId,
     String? displayNameOverride,
@@ -2184,6 +2200,7 @@ class StrategyImportExportService {
         }
       }
     }
+    return newID;
   }
 
   static bool isNewerVersionImportError(Object error) {

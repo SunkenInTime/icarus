@@ -149,7 +149,14 @@ class MoveToCloudNotifier extends Notifier<void> {
 
   /// Moves the local strategy [localId] into the cloud folder
   /// [cloudFolderId] (the top level when null) of the signed-in account.
-  Future<void> moveStrategy(String localId, {String? cloudFolderId}) {
+  /// When [importing], the user asked for an import and is looking at an
+  /// empty folder: the move says it has started, and leaves saying it worked
+  /// to the import. A move that doesn't work always says so.
+  Future<void> moveStrategy(
+    String localId, {
+    String? cloudFolderId,
+    bool importing = false,
+  }) {
     final strategy =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(localId);
     final accountId = ref.read(cloudMediaAccountIdProvider);
@@ -162,6 +169,7 @@ class MoveToCloudNotifier extends Notifier<void> {
     return _enqueue(() async {
       try {
         if (!_canMoveFor(accountId, name)) return;
+        if (importing) _showMessage('Importing "$name" to the cloud…');
         final outcome = await _moveOne(
           localId,
           cloudFolderId: cloudFolderId,
@@ -181,11 +189,13 @@ class MoveToCloudNotifier extends Notifier<void> {
         );
         switch (outcome) {
           case _Outcome.moved:
-            _showMessage(
-              leavesFolder
-                  ? 'Moved "$name" to the cloud. It\'s in My Library.'
-                  : 'Moved "$name" to the cloud.',
-            );
+            if (!importing) {
+              _showMessage(
+                leavesFolder
+                    ? 'Moved "$name" to the cloud. It\'s in My Library.'
+                    : 'Moved "$name" to the cloud.',
+              );
+            }
           case _Outcome.notMoved:
             _showFailure(
               "Couldn't move \"$name\" to the cloud. "
