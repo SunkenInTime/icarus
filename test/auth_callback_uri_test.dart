@@ -1,7 +1,136 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart';
+import 'package:http/testing.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
+  group('authLinkNoticeFor', () {
+    final codeLink = Uri.parse('https://beta.icarusstrats.com/?code=abc');
+
+    test('a code proves the email was confirmed when it cannot finish here',
+        () async {
+      // The real client, so an upgrade that rewords this is caught here.
+      final noVerifier = await GoTrueClient(
+        url: 'http://localhost:1',
+        asyncStorage: _EmptyStorage(),
+        flowType: AuthFlowType.pkce,
+      ).getSessionFromUrl(codeLink).then<Object>(
+            (_) => fail('Expected the exchange to fail'),
+            onError: (Object error) => error,
+          );
+      for (final error in [
+        noVerifier,
+        const AuthApiException(
+          'invalid flow state, flow state has expired',
+          statusCode: '400',
+          code: 'flow_state_expired',
+        ),
+      ]) {
+        expect(
+          authLinkNoticeFor(codeLink, error, resetPending: false),
+          AuthLinkNotice.emailConfirmed,
+          reason: '$error',
+        );
+      }
+    });
+
+    test('a reset that timed out where it was asked for says so', () {
+      const expired = AuthApiException(
+        'invalid flow state, flow state has expired',
+        statusCode: '422',
+        code: 'flow_state_expired',
+      );
+      expect(
+        authLinkNoticeFor(codeLink, expired, resetPending: true),
+        AuthLinkNotice.resetLinkTimedOut,
+      );
+    });
+
+    test('the verifier GoTrue saves for a reset is recognised', () async {
+      // The real client, so an upgrade that changes the format is caught here.
+      final storage = _EmptyStorage();
+      await GoTrueClient(
+        url: 'http://localhost:1',
+        asyncStorage: storage,
+        flowType: AuthFlowType.pkce,
+        httpClient: MockClient((_) async => Response('{}', 200)),
+      ).resetPasswordForEmail('a@b.co');
+      expect(
+        storage.saved.keys,
+        [pkceVerifierStorageKey],
+      );
+      expect(isPasswordResetVerifier(storage.saved.values.single), isTrue);
+
+      expect(isPasswordResetVerifier('plain-verifier'), isFalse);
+      expect(isPasswordResetVerifier(null), isFalse);
+    });
+
+    test('an expired or used link never says confirmed', () {
+      // What Supabase sent an old link back with, both halves of it.
+      const expired = AuthException(
+        'Email link is invalid or has expired',
+        statusCode: 'otp_expired',
+        code: 'access_denied',
+      );
+      for (final link in [
+        'https://beta.icarusstrats.com/?error=access_denied'
+            '&error_code=otp_expired'
+            '&error_description=Email+link+is+invalid+or+has+expired'
+            '#error=access_denied&error_code=otp_expired'
+            '&error_description=Email+link+is+invalid+or+has+expired&sb=',
+        'https://beta.icarusstrats.com/#error=access_denied'
+            '&error_code=otp_expired',
+      ]) {
+        expect(
+          authLinkNoticeFor(Uri.parse(link), expired, resetPending: false),
+          AuthLinkNotice.linkExpired,
+          reason: link,
+        );
+      }
+      expect(AuthLinkNotice.linkExpired.message, isNot(contains('confirmed.')));
+    });
+
+    test('anything else is a real failure', () {
+      for (final (link, error) in <(String, Object)>[
+        // The email was confirmed, but the exchange never got an answer.
+        (
+          'https://beta.icarusstrats.com/?code=abc',
+          AuthRetryableFetchException(statusCode: '503'),
+        ),
+        ('https://beta.icarusstrats.com/?code=abc', Exception('offline')),
+        // A second Discord tab replaced the verifier: no email involved.
+        (
+          'https://beta.icarusstrats.com/?code=abc',
+          const AuthApiException(
+            'code challenge does not match',
+            statusCode: '400',
+            code: 'bad_code_verifier',
+          ),
+        ),
+        (
+          'https://beta.icarusstrats.com/?code=spent',
+          const AuthApiException(
+            'invalid flow state, no valid flow state found',
+            statusCode: '404',
+            code: 'flow_state_not_found',
+          ),
+        ),
+        (
+          'https://beta.icarusstrats.com/?error=server_error'
+              '&error_description=Something+broke',
+          const AuthException('Something broke', code: 'server_error'),
+        ),
+      ]) {
+        expect(
+          authLinkNoticeFor(Uri.parse(link), error, resetPending: false),
+          isNull,
+          reason: link,
+        );
+      }
+    });
+  });
+
   group('webAuthRedirectUri', () {
     test('is the root of the page origin, whatever page is open', () {
       expect(
@@ -202,4 +331,21 @@ void main() {
       );
     });
   });
+}
+
+class _EmptyStorage implements GotrueAsyncStorage {
+  final saved = <String, String>{};
+
+  @override
+  Future<String?> getItem({required String key}) async => saved[key];
+
+  @override
+  Future<void> removeItem({required String key}) async {
+    saved.remove(key);
+  }
+
+  @override
+  Future<void> setItem({required String key, required String value}) async {
+    saved[key] = value;
+  }
 }

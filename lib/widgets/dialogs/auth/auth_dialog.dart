@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -18,15 +19,25 @@ class AuthDialog extends ConsumerStatefulWidget {
   const AuthDialog({
     super.key,
     this.initialMode = AuthDialogMode.signIn,
+    this.notice,
   });
 
   final AuthDialogMode initialMode;
+
+  /// Why the dialog opened by itself, shown until the user moves on.
+  final AuthLinkNotice? notice;
+
+  /// Whether one is on screen, so that an email link landing now speaks
+  /// through it rather than stacking a second one.
+  static bool get isOpen => _AuthDialogState._open > 0;
 
   @override
   ConsumerState<AuthDialog> createState() => _AuthDialogState();
 }
 
 class _AuthDialogState extends ConsumerState<AuthDialog> {
+  static int _open = 0;
+
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmController = TextEditingController();
@@ -43,13 +54,25 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
   @override
   void initState() {
     super.initState();
+    _open++;
     _view = widget.initialMode == AuthDialogMode.signUp
         ? _AuthView.signUp
         : _AuthView.signIn;
+    if (widget.notice case final notice?) _applyNotice(notice);
+  }
+
+  void _applyNotice(AuthLinkNotice notice) {
+    if (notice == AuthLinkNotice.resetLinkTimedOut) {
+      _view = _AuthView.resetPassword;
+    }
+    _message = notice.message;
+    _messageIsInfo = notice.isInfo;
+    _errorField = null;
   }
 
   @override
   void dispose() {
+    _open--;
     _emailController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
@@ -190,6 +213,21 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
           _messageIsInfo = false;
         });
       }
+    });
+
+    // While Discord is out, a link failing here is that sign-in coming back
+    // and failing, not an email.
+    ref.listen(authLinkNoticeProvider, (_, notice) {
+      if (notice == null) return;
+      setState(() {
+        if (_waitingForDiscord) {
+          _waitingForDiscord = false;
+          _message = 'Failed to complete login. Please try again.';
+          _messageIsInfo = false;
+        } else {
+          _applyNotice(notice);
+        }
+      });
     });
 
     final resetting = _view == _AuthView.resetPassword;
