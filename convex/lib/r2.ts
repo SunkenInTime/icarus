@@ -303,8 +303,8 @@ async function signatureForCanonicalRequest(args: {
   );
 }
 
-/// R2 answers 403 to a PUT whose length differs from [contentLength], before
-/// storing anything. Content-Length stays out of `requiredHeaders`: every
+/// R2 refuses a PUT that declares any length but [contentLength], so no URL can
+/// store more than that. Content-Length stays out of `requiredHeaders`: every
 /// client's HTTP stack already sends the real length, and browsers refuse to
 /// let a page set it.
 export async function presignR2PutUrl(args: {

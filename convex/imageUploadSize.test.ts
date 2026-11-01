@@ -82,9 +82,42 @@ describe("image upload size", () => {
     expect(small.get("X-Amz-SignedHeaders")).toBe(
       "content-length;content-type;host",
     );
+    // Worked out separately from the SigV4 steps with node:crypto, so a change
+    // to the canonical request fails here, not at users' uploads.
+    expect(small.get("X-Amz-Signature")).toBe(
+      "17ea1f74f485e001fc0ca018716dc08b1b39d9df2e4de39a4f6d47d31f0a0c4d",
+    );
     expect(small.get("X-Amz-Signature")).not.toBe(
       (await signedFor(101)).get("X-Amz-Signature"),
     );
+  });
+
+  test("the URL is signed for the size the upload stated", async () => {
+    const { owner } = await createHarness();
+    const upload = (await owner.action(generateUploadUrl, {
+      ...protocol,
+      strategyPublicId,
+      assetPublicId: "picture",
+      mimeType: "image/png",
+      fileExtension: ".png",
+      byteSize: 1234,
+    })) as { objectKey: string; uploadUrl: string };
+
+    const amzDate = new URL(upload.uploadUrl).searchParams.get("X-Amz-Date")!;
+    const signedAt = new Date(
+      amzDate.replace(
+        /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/,
+        "$1-$2-$3T$4:$5:$6Z",
+      ),
+    );
+    const expected = await presignR2PutUrl({
+      config: getR2Config(),
+      objectKey: upload.objectKey,
+      mimeType: "image/png",
+      contentLength: 1234,
+      now: signedAt,
+    });
+    expect(upload.uploadUrl).toBe(expected.uploadUrl);
   });
 
   test("an upload with no exact size within the limit gets no URL", async () => {
