@@ -135,6 +135,8 @@ void main() {
         4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 255, 255, 255, 0, 0x80, 0, 0, 0,
       ]);
+      // It really is a picture: only a real encode can reach the size check.
+      expect((await _drawn(tiny)).width, 1);
       expect(await pngOfBitmap(tiny), same(tiny));
     });
   });

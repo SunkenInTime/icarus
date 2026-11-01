@@ -1147,7 +1147,8 @@ Future<void> _watchPicture(String mark, String? gone) async {
   final deadline = DateTime.now().add(const Duration(seconds: 60));
   while (!(left() && drawn())) {
     if (DateTime.now().isAfter(deadline)) {
-      _log('TIMED $mark never drawn');
+      _failedSteps++;
+      _log('FAIL $mark: the picture was never drawn');
       return;
     }
     SchedulerBinding.instance.scheduleFrame();

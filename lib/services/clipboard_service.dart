@@ -8,7 +8,8 @@ import 'package:pasteboard/pasteboard.dart';
 
 /// A picture read from the clipboard.
 class ClipboardImage {
-  ClipboardImage(this.bytes, {required this.name}) : saved = pngOfBitmap(bytes);
+  ClipboardImage(this.bytes, {required this.name, Future<Uint8List>? saved})
+      : saved = saved ?? pngOfBitmap(bytes);
 
   /// The clipboard's own bytes, ready to show straight away.
   final Uint8List bytes;

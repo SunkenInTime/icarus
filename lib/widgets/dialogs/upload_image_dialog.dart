@@ -24,7 +24,12 @@ class UploadImageResult {
 }
 
 class UploadImageDialog extends ConsumerStatefulWidget {
-  const UploadImageDialog({super.key});
+  const UploadImageDialog({
+    super.key,
+    this.readClipboard = ClipboardService.trySelectImageFromClipboard,
+  });
+
+  final Future<ClipboardImage?> Function() readClipboard;
 
   @override
   ConsumerState<ConsumerStatefulWidget> createState() =>
@@ -50,7 +55,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
   }
 
   Future<void> _selectFromClipboard() async {
-    final image = await ClipboardService.trySelectImageFromClipboard();
+    final image = await widget.readClipboard();
     if (image == null || !mounted) return;
     setState(() {
       _selectedBytes = image.bytes;
@@ -60,12 +65,13 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
   }
 
   /// Closes with the picture on screen, once its saved bytes are ready. A
-  /// picture changed or cleared meanwhile takes the choice back.
+  /// picture changed or cleared meanwhile takes the choice back, and a dialog
+  /// cancelled meanwhile is still closing, with some other route now on top.
   Future<void> _useImage() async {
     final chosen = _selectedBytes!;
     setState(() => _usingImage = true);
     final bytes = await _selectedSaved ?? chosen;
-    if (!mounted) return;
+    if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
     if (!identical(chosen, _selectedBytes)) {
       setState(() => _usingImage = false);
       return;
