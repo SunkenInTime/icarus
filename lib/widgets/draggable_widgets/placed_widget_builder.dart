@@ -1174,17 +1174,20 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                           return;
                         }
 
-                        final width = widthMeters *
-                            AgentData.inGameMetersDiameter *
-                            mapScale;
-                        final length = lengthMeters *
-                            AgentData.inGameMetersDiameter *
-                            mapScale;
-                        final safeArea = Offset(length / 2, width / 2);
+                        // The anchor is in drawing units, so add it in
+                        // world units or a long rectangle with its center
+                        // still on the map reads as off it.
+                        final centre = virtualOffset +
+                            CoordinateSystem.virtualToWorld(
+                              UtilityData.utilityWidgets[placedUtility.type]!
+                                  .getAnchorPoint(
+                                mapScale: mapScale,
+                                widthMeters: widthMeters,
+                                rectLengthMeters: lengthMeters,
+                              ),
+                            );
 
-                        if (coordinateSystem.isOutOfBounds(
-                          virtualOffset.translate(safeArea.dx, safeArea.dy),
-                        )) {
+                        if (coordinateSystem.isOutOfBounds(centre)) {
                           ref
                               .read(utilityProvider.notifier)
                               .removeUtilityAsAction(placedUtility.id);

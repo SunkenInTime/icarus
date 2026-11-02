@@ -1304,7 +1304,8 @@ Future<void> _run(Map<String, dynamic> step) async {
           for (final u in c.read(utilityProvider))
             '${u.type.name}/${u.angle}@'
                 '${u.position.dx.toStringAsFixed(1)},'
-                '${u.position.dy.toStringAsFixed(1)}',
+                '${u.position.dy.toStringAsFixed(1)}'
+                '${u.customLength == null ? '' : ' ${u.customLength!.toStringAsFixed(1)}x${u.customWidth!.toStringAsFixed(1)}'}',
         ]} '
         'lineups=${c.read(lineUpProvider).graph.links.length} '
         'selected=${c.read(canvasSelectionProvider).length}',
