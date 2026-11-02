@@ -1099,6 +1099,8 @@ class AuthProvider extends Notifier<AppAuthState> {
   Future<({String message, bool sent})> sendPasswordReset(String email) async {
     // The link only works where the reset was asked for: it carries a code
     // that exchanges with the verifier this device saves with the request.
+    // Supabase drops that request after five minutes, however long the email
+    // link itself lasts.
     const where = kIsWeb ? 'in this browser' : 'on this computer';
     final address = email.toLowerCase();
     final lastSent = _lastPasswordReset;
@@ -1110,7 +1112,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         DateTime.now().difference(lastSent.at) < _passwordResetCooldown) {
       return (
         message: 'A link is already on its way. Check your inbox and spam, '
-            'and open it $where.',
+            'and open it $where within 5 minutes.',
         sent: true,
       );
     }
@@ -1142,7 +1144,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       _lastPasswordReset = (email: email.toLowerCase(), at: DateTime.now());
       return (
         message: 'If an account uses this email, a link to set a new '
-            'password is on its way. Open it $where.',
+            'password is on its way. Open it $where within 5 minutes.',
         sent: true,
       );
     } catch (error, stackTrace) {
