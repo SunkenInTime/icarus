@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/maps.dart';
@@ -7,10 +9,7 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/screenshot/capture_images.dart';
-
-/// How long a capture waits for sightlines. The read behind them waits for the
-/// connection, so a capture needs its own limit to stop rather than hang.
-const captureGeometryWait = Duration(seconds: 10);
+import 'package:icarus/services/app_assets.dart';
 
 bool pageNeedsCaptureGeometry(StrategyPage page) =>
     page.agentData.any((agent) => agent is PlacedViewConeAgent) ||
@@ -33,12 +32,10 @@ Future<CaptureGeometryLease?> prepareCaptureGeometry(
     final provider = svgHeightRuntimeProvider(map);
     final subscription = container.listen(provider, (_, __) {});
     try {
-      final runtime = await container.read(provider.future).timeout(
-            captureGeometryWait,
-            onTimeout: () => throw const CaptureImagesUnavailable.fetchFailed(
-              'Sightlines have not loaded.',
-            ),
-          );
+      final runtime = await _stopIfFilesGoMissing(
+        container.read(provider.future),
+        map,
+      );
       if (runtime == null) {
         throw StateError('Sightline geometry is unavailable for ${map.name}.');
       }
@@ -60,6 +57,35 @@ Future<CaptureGeometryLease?> prepareCaptureGeometry(
     subscription.close();
     rethrow;
   }
+}
+
+/// The read behind sightlines waits for the connection, so a capture watches
+/// for one of their files failing, or it would wait as long as the user is
+/// offline. A slow connection isn't a failure, so there's no time limit.
+Future<T> _stopIfFilesGoMissing<T>(Future<T> work, MapValue map) {
+  final registration = svgHeightRegistrationFor(map)!;
+  final files = {
+    for (final isAttack in [true, false]) ...[
+      registration.modelAsset(isAttack),
+      registration.artworkAsset(isAttack),
+    ],
+  };
+  final stopped = Completer<T>();
+  void check() {
+    if (!stopped.isCompleted && appAssets.missing.value.any(files.contains)) {
+      stopped.completeError(
+        const CaptureImagesUnavailable.fetchFailed(
+          'Sightlines have not loaded.',
+        ),
+      );
+    }
+  }
+
+  appAssets.missing.addListener(check);
+  check();
+  return Future.any([work, stopped.future]).whenComplete(() {
+    appAssets.missing.removeListener(check);
+  });
 }
 
 class CaptureGeometryLease {
