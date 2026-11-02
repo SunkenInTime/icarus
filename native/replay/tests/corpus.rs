@@ -140,7 +140,10 @@ fn check_doors(id: &str, doc: &Value, rounds: &[Value]) {
             .rev()
             .find(|r| r["startMs"].as_i64().unwrap() <= start)
             .expect("in a round");
-        assert!(start - round["startMs"].as_i64().unwrap() > 3000, "{id}: {door}");
+        assert!(
+            start - round["startMs"].as_i64().unwrap() > 3000,
+            "{id}: {door}"
+        );
         let lasts = end - start;
         match door["actor"].as_str().unwrap() {
             "RespawningWallPlate" => assert_eq!(lasts, 0, "{id}: {door}"),

@@ -269,8 +269,14 @@ mod tests {
             door_actor("DescentBox_v12_UAID_2C58B90EE7EFB17102_1686271982"),
             Some("DescentBox_v12"),
         );
-        assert_eq!(door_actor("Drawbridge_MinimapObject.Drawbridge_MinimapObject_C"), None);
-        assert_eq!(door_actor("DescentBox_v5.DescentBox_v5_C_ClassNetCache"), None);
+        assert_eq!(
+            door_actor("Drawbridge_MinimapObject.Drawbridge_MinimapObject_C"),
+            None
+        );
+        assert_eq!(
+            door_actor("DescentBox_v5.DescentBox_v5_C_ClassNetCache"),
+            None
+        );
     }
 
     #[test]

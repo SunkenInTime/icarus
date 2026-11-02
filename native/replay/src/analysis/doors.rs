@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::collect::{door_actor, Collector};
+use crate::collect::{Collector, door_actor};
 use crate::document::{DoorMove, Round};
 
 /// Writes this close together are one burst.
@@ -72,12 +72,16 @@ fn bursts(mut times: Vec<u32>) -> Vec<(u32, usize)> {
             _ => out.push((time, 1, time)),
         }
     }
-    out.into_iter().map(|(time, count, _)| (time, count)).collect()
+    out.into_iter()
+        .map(|(time, count, _)| (time, count))
+        .collect()
 }
 
 /// The round a time falls in, as an index into `starts`.
 fn round_of(time: i64, starts: &[i64]) -> Option<usize> {
-    starts.partition_point(|&start| start <= time).checked_sub(1)
+    starts
+        .partition_point(|&start| start <= time)
+        .checked_sub(1)
 }
 
 /// Whether a burst at `time` is a round's start putting the door back, which
