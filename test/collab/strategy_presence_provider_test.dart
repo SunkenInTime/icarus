@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
-import 'package:icarus/collab/presence/presence_models.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/strategy_presence_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
