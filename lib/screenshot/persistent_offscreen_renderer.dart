@@ -207,6 +207,7 @@ class PersistentOffscreenRenderer {
         throw const CaptureImagesUnavailable.stillLoading();
       }
       await Future<void>.delayed(const Duration(milliseconds: 16));
+      _rebuildLayoutBuilders();
       await _flushPendingFrames();
       final left = _picturesLoading();
       if (left.length < loading.length) sinceLastPicture.reset();
@@ -234,6 +235,21 @@ class PersistentOffscreenRenderer {
 
     _rootElement?.visitChildren(visit);
     return loading;
+  }
+
+  /// A picture under a [LayoutBuilder] can only rebuild once the builder runs,
+  /// and the builder leaves that to the app's next frame. A minimized window
+  /// has no next frame, so run them here, as that frame would.
+  void _rebuildLayoutBuilders() {
+    void visit(Element element) {
+      if (element case RenderObjectElement(:final renderObject)
+          when renderObject is RenderObjectWithLayoutCallbackMixin) {
+        renderObject.scheduleLayoutCallback();
+      }
+      element.visitChildren(visit);
+    }
+
+    _rootElement?.visitChildren(visit);
   }
 
   void _updateWidget(Widget widget) {

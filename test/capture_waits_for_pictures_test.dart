@@ -119,6 +119,33 @@ void main() {
     });
   });
 
+  // No test here pumps a frame, like a minimized window, and a LayoutBuilder
+  // leaves rebuilding what's under it to the next frame.
+  testWidgets('a picture under a LayoutBuilder arrives with no app frames', (
+    tester,
+  ) async {
+    heldBack = {'under_builder.svg'};
+    await tester.runAsync(() async {
+      final capture = renderer(
+        stallLimit: const Duration(milliseconds: 500),
+      );
+      final rgba = await takenLate(
+        capture,
+        LayoutBuilder(
+          builder: (context, constraints) => const AssetSvg(
+            'under_builder.svg',
+            width: 8,
+            height: 8,
+            fit: BoxFit.fill,
+          ),
+        ),
+        () => arrive('under_builder.svg'),
+      );
+      expect(rgba.sublist(0, 4), [255, 255, 255, 255]);
+      await capture.dispose(waitForFrame: () async {});
+    });
+  });
+
   testWidgets('a screenshot waits for an image still on its way', (
     tester,
   ) async {
