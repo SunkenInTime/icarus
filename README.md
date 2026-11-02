@@ -79,7 +79,8 @@ Or pass it directly to a built executable:
 ```
 
 Strategy media, debug logs, and WebView data still use the normal application
-support directory. Use a different absolute Hive directory for each instance.
+support directory; a driver build (`ICARUS_DRIVE=true`) keeps strategy media in
+the store too. Use a different absolute Hive directory for each instance.
 
 ## Build
 

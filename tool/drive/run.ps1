@@ -9,8 +9,9 @@
 #
 # -Companion runs a second instance at the same time, signed in to the same
 # account, like a second device; the two wait for each other with the
-# signal / waitSignal steps. Each instance keeps its library and its sign-in
-# under -Out, a new folder each run, so a run never signs the installed app
+# signal / waitSignal steps. Each instance keeps its library, its pictures and
+# its sign-in under -Out, a new folder each run, so a run never signs the
+# installed app
 # in or out, and driver builds leave icarus: links with the installed app.
 # The password comes from the test accounts file and only reaches the app's
 # environment.
