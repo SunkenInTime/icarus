@@ -8,6 +8,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
+import 'package:icarus/providers/map_doors_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
@@ -151,6 +152,7 @@ class ViewConeWidget extends ConsumerWidget {
             isAttack: mapState.isAttack,
             elevation: resolvedElevation,
             opacity: opacity,
+            changedDoors: ref.watch(changedMapDoorsProvider),
           );
         }
       } else {

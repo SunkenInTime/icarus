@@ -70,8 +70,9 @@ class MapDoor {
 
   /// The row that saves this door as changed. It's a real rectangle in the
   /// changed pose, so a build that doesn't know doors shows a mark on the door.
-  /// A broken wall is faint: a solid bar there would tell that build the
-  /// opposite of what happened.
+  /// A broken wall is the floor's colour: a rectangle's border is solid, so
+  /// any other colour on a bar this thin reads as a wall, the opposite of what
+  /// happened.
   PlacedUtility row({required String id}) {
     final (from, to) = worldLine(changed: 1);
     final along = to - from;
@@ -88,8 +89,12 @@ class MapDoor {
           Offset(along.distance, mapDoorBarWorldWidth) / 2,
       customWidth: widthMeters,
       customLength: lengthMeters,
-      customColorValue: kind == MapDoorKind.spin ? _mapWallColor : 0xFF000000,
-      customOpacityPercent: kind == MapDoorKind.breakable ? 25 : 100,
+      customColorValue: switch (kind) {
+        MapDoorKind.drop => 0xFF000000,
+        MapDoorKind.spin => _mapWallColor,
+        MapDoorKind.breakable => _mapFloorColor,
+      },
+      customOpacityPercent: 100,
       mapDoor: this.id,
     )..rotation = along.direction;
   }
@@ -97,6 +102,9 @@ class MapDoor {
 
 /// The walls' colour in the map art, for a row a build draws as a plain shape.
 const _mapWallColor = 0xFFB27C40;
+
+/// The floor's colour in the map art.
+const _mapFloorColor = 0xFF271406;
 
 /// How thick a door's bar is, in world units: about the map art's walls.
 const mapDoorBarWorldWidth = 4.0;

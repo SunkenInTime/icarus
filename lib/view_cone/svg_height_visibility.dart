@@ -20,13 +20,24 @@ class SvgHeightVisibility {
       this.requiresPhysicalGround,
       this.sightlineFloors,
       [List<SvgRuntimeWall>? runtimeWalls,
-      this._standable])
-      : runtimeWalls = runtimeWalls ??
+      this._standable,
+      List<SvgDoorWall> doorWalls = const []])
+      : doorWalls = List.unmodifiable(doorWalls),
+        runtimeWalls = runtimeWalls ??
             List.unmodifiable([
               for (var i = 0; i < walls.length; i++)
                 SvgRuntimeWall._(i, walls[i].rings, walls[i].evenOdd)
             ]) {
-    for (final shape in this.runtimeWalls) {
+    _doorFootprints = [
+      for (final door in this.doorWalls)
+        SvgHeightWall._(door.id, [door.ring], false,
+            const [SvgHeightBand(0, double.infinity)], false, null)
+    ];
+    for (final shape in [
+      ...this.runtimeWalls,
+      for (var i = 0; i < _doorFootprints.length; i++)
+        SvgRuntimeWall._(walls.length + i, _doorFootprints[i].rings, false)
+    ]) {
       final sides = shape.sides;
       var k = 0;
       for (final points in shape.edgeRings) {
@@ -48,7 +59,13 @@ class SvgHeightVisibility {
         : _EdgeNode.build(_edges, List.generate(_edges.length, (i) => i));
   }
 
-  factory SvgHeightVisibility.fromJson(Map<String, dynamic> json) {
+  /// The model in [json], with [doorWalls] added to what cones are cast
+  /// against. They go in here because edges and the native index are built
+  /// once.
+  factory SvgHeightVisibility.fromJson(
+    Map<String, dynamic> json, {
+    List<SvgDoorWall> doorWalls = const [],
+  }) {
     final physicalGround = json['version'] == 3;
     final sourceElevations = (json['version'] == 2 || physicalGround) &&
         json['verticalSpace'] == 'meters-source-elevation';
@@ -228,7 +245,8 @@ class SvgHeightVisibility {
         physicalGround,
         List.unmodifiable(sightlineFloors),
         runtimeWalls == null ? null : List.unmodifiable(runtimeWalls),
-        _standableFloor(json['standable']));
+        _standableFloor(json['standable']),
+        doorWalls);
   }
 
   static _Footprint? _standableFloor(Object? raw) {
@@ -264,6 +282,18 @@ class SvgHeightVisibility {
   /// pieces with the same heights merged into one outline each.
   final List<SvgRuntimeWall> runtimeWalls;
 
+  /// Walls a map door adds. Only cones cast against them: they aren't in
+  /// [walls], so nobody stands, steps or rests on them, and no map with doors
+  /// has sightline floors, so [_floorOccluders] needn't know them.
+  final List<SvgDoorWall> doorWalls;
+
+  /// [doorWalls] as walls, numbered after [walls] in the edges and the mask.
+  late final List<SvgHeightWall> _doorFootprints;
+
+  SvgHeightWall _wall(int index) => index < walls.length
+      ? walls[index]
+      : _doorFootprints[index - walls.length];
+
   late final _floorOccluders = [
     for (final shape in runtimeWalls)
       SvgFloorOccluder(shape.edgeRings, shape.evenOdd,
@@ -287,14 +317,32 @@ class SvgHeightVisibility {
   SvgHeightNative? _native;
 
   // A dragged cone asks for the same eye height frame after frame; the wall
-  // activity mask only depends on that height. Callers read it, never write.
+  // activity mask only depends on that height and the doors. Callers read it,
+  // never write.
   double? _activeEye;
   List<bool>? _activeWalls;
-  List<bool> _activeWallsAt(double eye) {
+  List<bool> _activeWallsAt(
+    double eye,
+    Set<String> changedDoors,
+    Offset origin,
+  ) {
     final previous = _activeWalls;
-    if (_activeEye == eye && previous != null) return previous;
+    // A door an eye stands in is no wall to it: nothing in the model stops
+    // someone standing there, and the eye would see nothing at all.
+    final doors = [
+      for (var i = 0; i < doorWalls.length; i++)
+        doorWalls[i].solidWhenChanged == changedDoors.contains(doorWalls[i].door) &&
+            !_doorFootprints[i].contains(origin)
+    ];
+    if (_activeEye == eye && previous != null) {
+      var same = true;
+      for (var i = 0; i < doors.length && same; i++) {
+        same = doors[i] == previous[walls.length + i];
+      }
+      if (same) return previous;
+    }
     _activeEye = eye;
-    final active = [for (final wall in walls) wall.blocks(eye)];
+    final active = [for (final wall in walls) wall.blocks(eye), ...doors];
     // On a ramp the eye moves every frame while the mask rarely changes;
     // keeping the same list keeps what is cached against it.
     if (previous != null) {
@@ -443,7 +491,10 @@ class SvgHeightVisibility {
     if (_native != null) return true;
     if (walls.any((wall) => wall.unknownHeight)) return false;
     _native = SvgHeightNative.tryOpen(
-        wallIds: [for (final wall in walls) wall.id],
+        wallIds: [
+          for (final wall in walls) wall.id,
+          for (final door in doorWalls) door.id,
+        ],
         interiorSides: Uint8List.fromList([
           for (final edge in _edges)
             switch (edge.interior) {
@@ -818,11 +869,12 @@ class SvgHeightVisibility {
     double supportHeightAboveFloorMeters = 0,
     String? supportId,
     double? absoluteEyeElevationMeters,
+    Set<String> changedDoors = const {},
   }) {
     _validateQuery(origin, directionRadians, range);
     final eye = _eye(origin, cameraHeightMeters, supportHeightAboveFloorMeters,
         supportId, absoluteEyeElevationMeters);
-    final active = _activeWallsAt(eye);
+    final active = _activeWallsAt(eye, changedDoors, origin);
     final stats = _Counters();
     final inside = _insideWall(origin, active);
     if (inside != null) return _hit(origin, Offset.zero, 0, inside);
@@ -846,6 +898,7 @@ class SvgHeightVisibility {
     String? supportId,
     double? absoluteEyeElevationMeters,
     int arcSteps = 96,
+    Set<String> changedDoors = const {},
   }) =>
       withSightlineFloors(
         horizontalCone(
@@ -857,7 +910,8 @@ class SvgHeightVisibility {
             supportHeightAboveFloorMeters: supportHeightAboveFloorMeters,
             supportId: supportId,
             absoluteEyeElevationMeters: absoluteEyeElevationMeters,
-            arcSteps: arcSteps),
+            arcSteps: arcSteps,
+            changedDoors: changedDoors),
         origin: origin,
         directionRadians: directionRadians,
         range: range,
@@ -943,6 +997,7 @@ class SvgHeightVisibility {
     String? supportId,
     double? absoluteEyeElevationMeters,
     int arcSteps = 96,
+    Set<String> changedDoors = const {},
   }) {
     _validateQuery(origin, directionRadians, range);
     if (!apertureRadians.isFinite ||
@@ -955,7 +1010,7 @@ class SvgHeightVisibility {
     final timer = Stopwatch()..start();
     final eye = _eye(origin, cameraHeightMeters, supportHeightAboveFloorMeters,
         supportId, absoluteEyeElevationMeters);
-    final active = _activeWallsAt(eye);
+    final active = _activeWallsAt(eye, changedDoors, origin);
     final stats = _Counters();
     final inside = _insideWall(origin, active);
     if (inside != null || range == 0) {
@@ -1175,8 +1230,8 @@ class SvgHeightVisibility {
   SvgVisibilityHit _hit(
           Offset origin, Offset direction, double distance, int wall,
           [int? edgeIndex]) =>
-      SvgVisibilityHit(origin + direction * distance, distance, walls[wall].id,
-          walls[wall].unknownHeight, edgeIndex);
+      SvgVisibilityHit(origin + direction * distance, distance, _wall(wall).id,
+          _wall(wall).unknownHeight, edgeIndex);
 
   SvgVisibilityHit? _cast(Offset origin, Offset direction, double range,
       List<bool> active, _Counters stats) {
@@ -1242,7 +1297,7 @@ class SvgHeightVisibility {
       }
     }
     if (wall == null) return null;
-    if (walls[wall].unknownHeight) stats.unknownHits++;
+    if (_wall(wall).unknownHeight) stats.unknownHits++;
     return _hit(origin, direction, best, wall, bestEdge);
   }
 }
@@ -1272,6 +1327,25 @@ List<Offset> _runtimeRing(List<Offset> ring) {
     }
   }
   return points;
+}
+
+/// A wall a map door adds to a model, solid at every height in one of the
+/// door's two states. A door that turns has one for each pose.
+class SvgDoorWall {
+  const SvgDoorWall({
+    required this.id,
+    required this.door,
+    required this.solidWhenChanged,
+    required this.ring,
+  });
+
+  /// Unique among the model's walls.
+  final String id;
+  final String door;
+
+  /// Whether it blocks while [door] is changed, or while it's at rest.
+  final bool solidWhenChanged;
+  final List<Offset> ring;
 }
 
 class SvgHeightBand {
@@ -2526,7 +2600,7 @@ class _ConeBins {
     }
     if (bestId < 0) return null;
     final wall = model._edges[bestId].wall;
-    if (model.walls[wall].unknownHeight) stats.unknownHits++;
+    if (model._wall(wall).unknownHeight) stats.unknownHits++;
     return model._hit(origin, direction, best, wall, bestId);
   }
 }

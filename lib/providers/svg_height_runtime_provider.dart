@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/map_artwork_registration.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/services/app_assets.dart';
+import 'package:icarus/view_cone/map_door_walls.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/view_cone/svg_height_cone_cache.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
@@ -256,7 +257,10 @@ Future<SvgHeightVisibility> _loadSide(Uint8List source, List<int> artworkBytes,
     throw FormatException(
         '$expectedMap $expectedSide artwork does not match its sightline data.');
   }
-  final model = SvgHeightVisibility.fromJson(decoded);
+  final model = SvgHeightVisibility.fromJson(
+    decoded,
+    doorWalls: mapDoorWalls(registration.map, isAttack: expectedSide == 'attack'),
+  );
   if (model.receivers.isEmpty) {
     throw FormatException(
         '$expectedMap $expectedSide must contain a receiver footprint.');

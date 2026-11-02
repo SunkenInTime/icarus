@@ -37,6 +37,7 @@ class SvgHeightConeCache {
     String? supportId,
     double? absoluteEyeElevationMeters,
     int arcSteps = 96,
+    Set<String> changedDoors = const {},
   }) {
     final inputs = (
       origin,
@@ -47,7 +48,8 @@ class SvgHeightConeCache {
       supportHeightAboveFloorMeters,
       supportId,
       absoluteEyeElevationMeters,
-      arcSteps
+      arcSteps,
+      (changedDoors.toList()..sort()).join(','),
     );
     final previous = _entries[observerId];
     if (previous != null && previous.$1 == inputs) {
@@ -63,7 +65,8 @@ class SvgHeightConeCache {
         supportHeightAboveFloorMeters: supportHeightAboveFloorMeters,
         supportId: supportId,
         absoluteEyeElevationMeters: absoluteEyeElevationMeters,
-        arcSteps: arcSteps);
+        arcSteps: arcSteps,
+        changedDoors: changedDoors);
     _entries[observerId] = (inputs, result);
     queryCount++;
     totalQueryMicroseconds += result.stats.elapsedMicroseconds;
@@ -81,7 +84,8 @@ typedef _ConeInputs = (
   double,
   String?,
   double?,
-  int
+  int,
+  String,
 );
 
 class SvgCachedCone {
