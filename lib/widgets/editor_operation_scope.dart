@@ -298,14 +298,15 @@ class CanvasItemRegistry {
 
   /// Each item on the canvas with its outline's corners in the coordinates
   /// of [canvas], in order around the outline (a turned item gives a turned
-  /// rectangle).
+  /// rectangle). With [under], only what is drawn below that render object.
   Iterable<({SelectedItem item, List<Offset> corners})> itemsIn(
-    RenderBox canvas,
-  ) sync* {
+    RenderBox canvas, {
+    RenderObject? under,
+  }) sync* {
     for (final outline in _outlines) {
       final item = outline._item;
       if (item == null || outline._inner > 0 || !outline.hasSize) continue;
-      if (!_isUnder(outline, canvas)) continue;
+      if (!_isUnder(outline, under ?? canvas)) continue;
       final transform = outline.getTransformTo(canvas);
       final rect = Offset.zero & outline.size;
       yield (

@@ -676,6 +676,52 @@ class _ShortcutSettingsSectionState
               ),
               const _SettingsItemDivider(),
             ],
+          if (_keepOnMapMatches) const _KeepOnMapRow(),
+        ],
+      ),
+    );
+  }
+
+  bool get _keepOnMapMatches {
+    final query = ShortcutInfo.normalizeSearch(_query);
+    return ShortcutInfo.normalizeSearch(
+      '${_KeepOnMapRow.title} ${_KeepOnMapRow.keys}',
+    ).contains(query);
+  }
+}
+
+/// Alt keeping a dragged item on the map. It changes a drag rather than
+/// doing anything itself, so it can't be rebound, but this is where people
+/// look for what a key does.
+class _KeepOnMapRow extends StatelessWidget {
+  const _KeepOnMapRow();
+
+  static const title = 'Keep item on the map while dragging';
+  static const keys = 'Hold Alt';
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: ShadTheme.of(context).textTheme.p.copyWith(
+                    color: Settings.tacticalVioletTheme.foreground,
+                    fontWeight: FontWeight.w400,
+                  ),
+            ),
+          ),
+          const SizedBox(width: 40),
+          const SizedBox(
+            width: 132,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: _ShortcutBindingPill(label: keys, isEditing: false),
+            ),
+          ),
         ],
       ),
     );

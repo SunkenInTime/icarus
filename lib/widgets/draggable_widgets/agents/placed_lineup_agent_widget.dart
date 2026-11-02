@@ -10,6 +10,7 @@ import 'package:icarus/providers/canvas_resize_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
@@ -43,7 +44,7 @@ class PlacedLineupAgentWidget extends ConsumerWidget {
       left: screenPosition.dx,
       top: screenPosition.dy,
       child: draggable
-          ? Draggable<PlacedWidget>(
+          ? CanvasDraggable<PlacedWidget>(
               maxSimultaneousDrags: itemDragLimit(context),
               data: agent,
               dragAnchorStrategy:

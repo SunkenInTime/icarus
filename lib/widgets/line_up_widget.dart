@@ -10,6 +10,7 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
@@ -238,7 +239,7 @@ class _MovableEnd extends StatelessWidget {
   Widget build(BuildContext context) {
     return MouseRegion(
       cursor: SystemMouseCursors.grab,
-      child: Draggable<_MovingLineUpEnd>(
+      child: CanvasDraggable<_MovingLineUpEnd>(
         maxSimultaneousDrags: itemDragLimit(context),
         data: const _MovingLineUpEnd(),
         feedback: const SizedBox.shrink(),

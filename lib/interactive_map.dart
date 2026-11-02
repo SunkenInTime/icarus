@@ -283,6 +283,12 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                           },
                           child: EditorCanvasRegion(
                             child: CanvasSelectionLayer(
+                              view: () => Rect.fromPoints(
+                                controller.toScene(Offset.zero),
+                                controller.toScene(
+                                  viewportSize.bottomRight(Offset.zero),
+                                ),
+                              ),
                               enabled: canEditPages &&
                                   !transitionPresentation.active &&
                                   !ref

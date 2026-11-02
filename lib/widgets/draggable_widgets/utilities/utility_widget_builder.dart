@@ -7,6 +7,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 
@@ -39,7 +40,7 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
         ref.watch(strategySettingsProvider.select((state) => state.agentSize));
     final abilitySize = ref
         .watch(strategySettingsProvider.select((state) => state.abilitySize));
-    return Draggable<PlacedUtility>(
+    return CanvasDraggable<PlacedUtility>(
       maxSimultaneousDrags: itemDragLimit(context),
       dragAnchorStrategy:
           ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,

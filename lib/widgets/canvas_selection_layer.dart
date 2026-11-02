@@ -60,11 +60,28 @@ bool isTypingInTextField() {
 /// never fire from a dialog, a menu or the library. Paste belongs to the
 /// whole editor: see CanvasPaste.
 class CanvasSelectionLayer extends ConsumerStatefulWidget {
+  /// See [_CanvasSelectionLayerState._keepOnMap]. Null when [pressed] isn't
+  /// on a canvas or draws no outline.
+  static ({RenderBox canvas, Offset Function(Offset by) keep})? keepOnMap(
+    BuildContext pressed,
+  ) {
+    final dragged = pressed.findRenderObject();
+    if (dragged is! RenderBox) return null;
+    return pressed
+        .findAncestorStateOfType<_CanvasSelectionLayerState>()
+        ?._keepOnMap(dragged);
+  }
+
   const CanvasSelectionLayer({
     required this.enabled,
     required this.child,
+    this.view,
     super.key,
   });
+
+  /// The part of the canvas on screen right now, in its pixels. Without one,
+  /// all of it is.
+  final Rect Function()? view;
 
   /// Selecting is possible: no tool takes the canvas's drags and the page
   /// can be edited. A lineup mode narrows it to the ends being placed or
@@ -568,21 +585,121 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
           ],
     ];
     if (points.isEmpty) return Rect.zero;
-    final coordinates = CoordinateSystem.instance;
     // Clear of the edge where a drop deletes (CoordinateSystem.isOutOfBounds).
-    final margin = coordinates.coordinateToScreen(const Offset(20, 0)).dx;
-    final size = coordinates.playAreaSize;
+    final margin = CoordinateSystem.instance
+        .coordinateToScreen(const Offset(20, 0))
+        .dx;
+    return _roomInside(_spreadOf(points), _map.deflate(margin));
+  }
+
+  /// The canvas, and where a drag of the item drawn under [dragged] by a
+  /// given distance in its pixels stops so the item stays in sight. That is
+  /// inside the part of the map on screen, since the canvas runs on past the
+  /// window and under the sidebar, and clear of the panels over it: they fill
+  /// three of the four corners, and hide what sits under them or, for the
+  /// trash, delete it. An item wider or taller than the view goes by its
+  /// middle that way. An item's anchor, which decides whether a drop deletes
+  /// it, is inside its outline, so an outline clear of that edge can't be
+  /// deleted.
+  ({RenderBox canvas, Offset Function(Offset by) keep})? _keepOnMap(
+    RenderBox dragged,
+  ) {
+    final canvas = _canvas;
+    if (canvas == null) return null;
+    final points = [
+      for (final (item: _, :corners)
+          in _registry.itemsIn(canvas, under: dragged))
+        ...corners,
+    ];
+    if (points.isEmpty) return null;
+    final coordinates = CoordinateSystem.instance;
+    const inset = CoordinateSystem.dropEdge + 2;
+    final margin = coordinates.coordinateToScreen(const Offset(inset, 0)).dx;
+    final area =
+        (widget.view?.call().intersect(_map) ?? _map).deflate(margin);
+    final drawn = _spreadOf(points);
+    final spread = Rect.fromCenter(
+      center: drawn.center,
+      width: drawn.width > area.width ? 0 : drawn.width,
+      height: drawn.height > area.height ? 0 : drawn.height,
+    );
+    final room = _roomInside(spread, area);
+    final panels = [
+      for (final panel in _registry.chromeIn(canvas)) panel.inflate(margin),
+    ];
+    return (
+      canvas: canvas,
+      keep: (by) => _nearestClear(
+        Offset(
+          by.dx.clamp(room.left, room.right),
+          by.dy.clamp(room.top, room.bottom),
+        ),
+        spread,
+        panels,
+        room,
+      ),
+    );
+  }
+
+  /// [by], or the nearest place to it inside [room] where [spread] touches
+  /// none of [panels]. That is always against a panel's side, so those are
+  /// the only places to try.
+  static Offset _nearestClear(
+    Offset by,
+    Rect spread,
+    List<Rect> panels,
+    Rect room,
+  ) {
+    bool clear(Offset at) => !panels.any(spread.shift(at).overlaps);
+    if (clear(by)) return by;
+    final across = [
+      by.dx,
+      for (final panel in panels) ...[
+        panel.left - spread.right,
+        panel.right - spread.left,
+      ],
+    ].where((x) => x >= room.left && x <= room.right);
+    final down = [
+      by.dy,
+      for (final panel in panels) ...[
+        panel.top - spread.bottom,
+        panel.bottom - spread.top,
+      ],
+    ].where((y) => y >= room.top && y <= room.bottom);
+    Offset? nearest;
+    for (final x in across) {
+      for (final y in down) {
+        final at = Offset(x, y);
+        if (!clear(at)) continue;
+        if (nearest == null || (at - by).distance < (nearest - by).distance) {
+          nearest = at;
+        }
+      }
+    }
+    return nearest ?? by;
+  }
+
+  Rect get _map => Offset.zero & CoordinateSystem.instance.playAreaSize;
+
+  static Rect _spreadOf(List<Offset> points) {
     var spread = Rect.fromPoints(points.first, points.first);
     for (final point in points.skip(1)) {
       spread = spread.expandToInclude(Rect.fromPoints(point, point));
     }
-    final left = math.min(0.0, margin - spread.left);
-    final top = math.min(0.0, margin - spread.top);
+    return spread;
+  }
+
+  /// How far [spread] can go each way, in canvas pixels, staying inside
+  /// [area]. What is past that line already can stay there: it only can't go
+  /// further out.
+  static Rect _roomInside(Rect spread, Rect area) {
+    final left = math.min(0.0, area.left - spread.left);
+    final top = math.min(0.0, area.top - spread.top);
     return Rect.fromLTRB(
       left,
       top,
-      math.max(left, size.width - margin - spread.right),
-      math.max(top, size.height - margin - spread.bottom),
+      math.max(left, area.right - spread.right),
+      math.max(top, area.bottom - spread.bottom),
     );
   }
 

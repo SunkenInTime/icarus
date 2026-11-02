@@ -95,6 +95,15 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
+    case WM_SYSCOMMAND:
+      // Alt on its own arrives here and would put the window in menu mode,
+      // where the next key goes to a menu this window doesn't show. Alt is
+      // for keeping items on the map. Alt+Space names a key, so it still
+      // opens the window menu.
+      if ((wparam & 0xFFF0) == SC_KEYMENU && lparam == 0) {
+        return 0;
+      }
+      break;
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);

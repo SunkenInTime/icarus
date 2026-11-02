@@ -9,6 +9,7 @@ import 'package:icarus/providers/image_provider.dart';
 
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
@@ -182,7 +183,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
             });
           },
           onPanEnd: (_) => _finishResize(ref),
-          child: Draggable<PlacedWidget>(
+          child: CanvasDraggable<PlacedWidget>(
             maxSimultaneousDrags: itemDragLimit(context),
             data: widget.placedImage,
             feedback: ZoomTransform(

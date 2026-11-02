@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -299,7 +300,7 @@ class _PlacedViewConeAgentWidgetState
             _rotationOrigin = Offset.zero;
           });
         },
-        child: Draggable<PlacedWidget>(
+        child: CanvasDraggable<PlacedWidget>(
           maxSimultaneousDrags: itemDragLimit(context),
           data: current,
           dragAnchorStrategy: (draggable, context, position) {

@@ -37,6 +37,7 @@
 //   {"dragAt": [x1, y1, x2, y2]}       {"path": [[x, y], ...], "held": png?}
 //                                      held: a shot before letting go
 //   {"scrollAt": [x, y, dy]}           {"key": name}  {"keyCombo": [names]}
+//   {"holdKey": name}  {"letGoKey": name}  a key held across other steps
 //   {"resize": [w, h]}                 the window
 //   {"typeText": t}                    replaces the text in the last text field
 // Editor content
@@ -88,6 +89,10 @@
 //   {"expectText": t, "count": n}      fails unless t is on screen n times
 //   {"expectSelected": n}              fails unless n items are selected
 //   {"expectAgents": n}                fails unless n agents are on the page
+//   {"expectInView": n, "only": id?}   fails unless n items are drawn, all of
+//                                      them in the map's view; logs their outlines.
+//                                      With only, checks that item, and the page
+//                                      can have more
 //   {"expectDead": n}                  fails unless n agents on the page are dead
 //   {"expectImages": n, "lineups": m?} fails unless n pictures are on the page,
 //                                      and m in its lineups
@@ -129,8 +134,10 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/caption_card_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
+import 'package:icarus/widgets/canvas_selection_layer.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -546,6 +553,11 @@ const _keys = {
     PhysicalKeyboardKey.shiftLeft,
     null,
   ),
+  'altLeft': (
+    LogicalKeyboardKey.altLeft,
+    PhysicalKeyboardKey.altLeft,
+    null,
+  ),
   'space': (LogicalKeyboardKey.space, PhysicalKeyboardKey.space, ' '),
   'escape': (LogicalKeyboardKey.escape, PhysicalKeyboardKey.escape, null),
   'delete': (LogicalKeyboardKey.delete, PhysicalKeyboardKey.delete, null),
@@ -591,21 +603,26 @@ Future<void> _expectKeyFocus() async {
 }
 
 void _press(List<String> names) {
-  final events = <KeyEvent>[
-    for (final name in names)
-      KeyDownEvent(
-        physicalKey: _keys[name]!.$2,
-        logicalKey: _keys[name]!.$1,
-        character: _keys[name]!.$3,
-        timeStamp: Duration(milliseconds: _keyTime += 20),
-      ),
-    for (final name in names.reversed)
-      KeyUpEvent(
-        physicalKey: _keys[name]!.$2,
-        logicalKey: _keys[name]!.$1,
-        timeStamp: Duration(milliseconds: _keyTime += 20),
-      ),
-  ];
+  _sendKeys([
+    for (final name in names) _keyDown(name),
+    for (final name in names.reversed) _keyUp(name),
+  ]);
+}
+
+KeyEvent _keyDown(String name) => KeyDownEvent(
+      physicalKey: _keys[name]!.$2,
+      logicalKey: _keys[name]!.$1,
+      character: _keys[name]!.$3,
+      timeStamp: Duration(milliseconds: _keyTime += 20),
+    );
+
+KeyEvent _keyUp(String name) => KeyUpEvent(
+      physicalKey: _keys[name]!.$2,
+      logicalKey: _keys[name]!.$1,
+      timeStamp: Duration(milliseconds: _keyTime += 20),
+    );
+
+void _sendKeys(List<KeyEvent> events) {
   for (final event in events) {
     HardwareKeyboard.instance.handleKeyEvent(event);
     // The app's shortcuts still listen here; the engine sends both.
@@ -902,6 +919,12 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _expectKeyFocus();
       _press((value as List).cast<String>());
       await Future<void>.delayed(const Duration(milliseconds: 300));
+      await _frames();
+    case 'holdKey':
+      _sendKeys([_keyDown(value as String)]);
+      await _frames();
+    case 'letGoKey':
+      _sendKeys([_keyUp(value as String)]);
       await _frames();
     case 'typeText':
       EditableTextState? field;
@@ -1333,7 +1356,8 @@ Future<void> _run(Map<String, dynamic> step) async {
                 '${u.customLength == null ? '' : ' ${u.customLength!.toStringAsFixed(1)}x${u.customWidth!.toStringAsFixed(1)}'}',
         ]} '
         'lineups=${c.read(lineUpProvider).graph.links.length} '
-        'selected=${c.read(canvasSelectionProvider).length}',
+        'selected=${c.read(canvasSelectionProvider).length} '
+        'tool=${c.read(interactionStateProvider).name}',
       );
     case 'expectSelected':
       final selected = c.read(canvasSelectionProvider).length;
@@ -1350,6 +1374,36 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'expectAgents':
       final agents = c.read(agentProvider).length;
       if (agents != value) throw StateError('$agents agents, expected $value');
+    case 'expectInView':
+      final canvas = _canvasLayer();
+      final viewer = _renderOf<InteractiveViewer>();
+      final view = viewer.localToGlobal(Offset.zero) & viewer.size;
+      final outlines = <String, Rect>{};
+      for (final (:item, :corners)
+          in c.read(canvasItemRegistryProvider).itemsIn(canvas)) {
+        final onScreen = corners.map(canvas.localToGlobal).toList();
+        var drawn = Rect.fromPoints(onScreen[0], onScreen[2]);
+        for (final corner in onScreen) {
+          drawn = drawn.expandToInclude(Rect.fromPoints(corner, corner));
+        }
+        outlines[item.id] = outlines[item.id]?.expandToInclude(drawn) ?? drawn;
+      }
+      _log('IN-VIEW view=${view.left},${view.top},${view.right},${view.bottom} ${{
+        for (final MapEntry(key: id, value: drawn) in outlines.entries)
+          id: '${drawn.left.toStringAsFixed(1)},'
+              '${drawn.top.toStringAsFixed(1)},'
+              '${drawn.right.toStringAsFixed(1)},'
+              '${drawn.bottom.toStringAsFixed(1)}',
+      }}');
+      if (outlines.length != value) {
+        throw StateError('${outlines.length} items, expected $value');
+      }
+      for (final MapEntry(key: id, value: drawn) in outlines.entries) {
+        if (step['only'] case final String only when only != id) continue;
+        if (view.intersect(drawn) != drawn) {
+          throw StateError('$id is out of view: $drawn');
+        }
+      }
     case 'expectDead':
       final dead = c
           .read(agentProvider)
@@ -1504,6 +1558,22 @@ Element? _elementOrNull(bool Function(Widget) test) {
 
 Element _elementOf(bool Function(Widget) test) =>
     _elementOrNull(test) ?? (throw StateError('nothing on screen matches'));
+
+RenderBox _canvasLayer() => _renderOf<CanvasSelectionLayer>();
+
+RenderBox _renderOf<T extends Widget>() {
+  RenderBox? box;
+  void visit(Element element) {
+    if (element.widget is T) {
+      box = element.findRenderObject() as RenderBox?;
+      return;
+    }
+    element.visitChildElements(visit);
+  }
+
+  WidgetsBinding.instance.rootElement?.visitChildElements(visit);
+  return box ?? (throw StateError('no $T on screen'));
+}
 
 Size? _canvasSize() {
   Size? size;
