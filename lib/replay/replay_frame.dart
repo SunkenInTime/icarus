@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:collection/collection.dart';
+import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -13,11 +14,13 @@ import 'package:icarus/replay/replay_ability_catalog.dart';
 import 'package:icarus/replay/replay_cone_cuts.dart';
 import 'package:icarus/replay/replay_agents.dart';
 import 'package:icarus/replay/replay_document.dart';
+import 'package:icarus/replay/replay_doors.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay/replay_weapons.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/view_cone/vision_occluders.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
+import 'package:uuid/uuid.dart';
 
 /// One moment of a replay as Icarus draws it: the same placed widgets a page
 /// holds. The viewer paints these, and capturing the moment saves them.
@@ -33,6 +36,7 @@ class ReplayFrame {
     this.cones = const {},
     this.dimmed = const {},
     this.effects = const [],
+    this.doors = const {},
   });
 
   final int timeMs;
@@ -59,6 +63,16 @@ class ReplayFrame {
   /// What the viewer animates around the placed widgets: utility arriving,
   /// leaving, and in flight. Never part of a capture.
   final List<ReplayEffect> effects;
+
+  /// The map's doors changed at this moment, by id, with how far (see
+  /// [ReplayDoors.at]).
+  final Map<String, double> doors;
+
+  /// What a capture saves for [doors]: a door at rest has no row.
+  List<PlacedUtility> get doorRows => [
+        for (final door in mapDoors)
+          if (doors.containsKey(door.id)) door.row(id: const Uuid().v4()),
+      ];
 
   List<PlacedWidget> get widgets => [...utilities, ...abilities, ...agents];
 }
@@ -238,6 +252,8 @@ class ReplayFrameBuilder {
   final ReplayDocument document;
   final ReplayMapProjection projection;
 
+  late final _doors = ReplayDoors(document, projection.map);
+
   /// The map's attack-side SVG height model, once loaded. Until then cones
   /// stand on the level they pick by themselves.
   SvgHeightVisibility? heightModel;
@@ -407,6 +423,7 @@ class ReplayFrameBuilder {
     final round = document.roundAt(timeMs);
     final isAttack = (round?.attackingTeam ?? ReplayTeam.red) == perspective;
     final agentAnchor = CoordinateSystem.virtualToWorld(storedAgentAnchor);
+    final doors = _doors.at(timeMs, round);
 
     final agents = <PlacedAgentNode>[];
     final cones = <String, ReplayConeSource>{};
@@ -453,6 +470,7 @@ class ReplayFrameBuilder {
           rotation: rotation,
           isAttack: isAttack,
           elevationCm: visionElevation,
+          doors: _doors.mask(doors),
         );
         cuts.want(player.subject, aim);
         final cut = cuts.latest(player.subject);
@@ -642,6 +660,7 @@ class ReplayFrameBuilder {
       cones: cones,
       dimmed: dimmed,
       effects: effects,
+      doors: doors,
     );
   }
 

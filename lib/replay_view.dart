@@ -170,6 +170,7 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     try {
       final dependencies = ref.read(svgHeightRuntimeDependenciesProvider);
       final worker = await ReplayConeWorker.start(
+        map: runtime.map,
         attackModel: await dependencies.loadModel(registration, true),
         defenseModel: await dependencies.loadModel(registration, false),
       );

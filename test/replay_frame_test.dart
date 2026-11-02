@@ -892,6 +892,7 @@ void main() {
       List<int> model(String side) =>
           File('assets/maps/sunset_svg_height_$side.json.gz').readAsBytesSync();
       final worker = await ReplayConeWorker.start(
+        map: projection.map,
         attackModel: Uint8List.fromList(model('attack')),
         defenseModel: Uint8List.fromList(model('defense')),
       );
@@ -949,6 +950,7 @@ void main() {
     test('a worker whose models do not load says so', () async {
       await expectLater(
         ReplayConeWorker.start(
+          map: projection.map,
           attackModel: Uint8List.fromList([1, 2, 3]),
           defenseModel: Uint8List.fromList([4, 5, 6]),
         ),

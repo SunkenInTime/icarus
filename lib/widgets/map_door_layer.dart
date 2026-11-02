@@ -166,6 +166,7 @@ class MapDoorBars extends ConsumerWidget {
     required this.isAttack,
     required this.changed,
     this.transition,
+    this.amounts,
   });
 
   final MapValue map;
@@ -173,11 +174,18 @@ class MapDoorBars extends ConsumerWidget {
   final Set<String> changed;
   final MapDoorTransition? transition;
 
+  /// How far each door is, for a replay: a door the game moves can stand part
+  /// way, and spin through 2. Doors not listed are at rest.
+  final Map<String, double>? amounts;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final doors = mapDoorsOf(map);
     if (doors.isEmpty) return const SizedBox.shrink();
     final wallColor = ref.watch(effectiveMapThemePaletteProvider).detailColor;
+    double amountOf(MapDoor door) =>
+        amounts?[door.id] ??
+        (amounts != null ? 0 : _changedAmount(door, changed, transition));
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -187,10 +195,10 @@ class MapDoorBars extends ConsumerWidget {
               kind: door.kind,
               line: _lineOnCanvas(
                 door,
-                changed: _changedAmount(door, changed, transition),
+                changed: amountOf(door),
                 isAttack: isAttack,
               ),
-              changed: _changedAmount(door, changed, transition),
+              changed: amountOf(door),
               wallColor: wallColor,
               thickness: _barThickness(),
             ),

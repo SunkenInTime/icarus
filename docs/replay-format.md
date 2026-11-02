@@ -108,6 +108,9 @@ first byte.
       "points?": [[x, y, z], …]             // shape points; see "Utility"
     }
   ],
+  "doors": [
+    { "actor": "Drawbridge6", "startMs": 46755, "endMs": 56749 } // see "Doors"
+  ],
   "casts": [
     {
       "timeMs": 60500,
@@ -180,6 +183,26 @@ wears off. The clear arrives a few milliseconds after the flash's seconds
 have passed, or sooner when the player dies or the round ends. Partial flashes
 are short: a player at the edge of one may be blind for 0.04 s. Players
 never flashed have no entry. Seconds are rounded to three decimals.
+
+## Doors
+
+One row per time a door on the map changes, in time order. `actor` is the
+door: `Drawbridge5` and `Drawbridge6` are Lotus's rotating doors,
+`DescentBox_v5`, `_v9` and `_v12` are Summit's dropping walls, and
+`RespawningWallPlate` is a breakable wall, Lotus's A Link and one on Abyss.
+
+A spin or a drop runs from `startMs` to `endMs`: 10 s and 1.75 s. A spin an
+actor starts as a round ends is cut short when the next round puts the door
+back. A wall breaking has both times the same. A dropped or broken door stays
+that way until the next round starts; a round's start resets every door, and
+that isn't a row.
+
+The door fields have no names and their numbers could shift in a patch, so
+none is read. A move is told from when the door's actor is written: a burst of
+several writes, away from a round's start, and a last lone write. The
+A Link wall's break is its named `OnDie`. On the corpus the rows match the named
+events they imply: a `MulticastPlayAnimation` on a Lotus switch for every spin,
+on 13.00 and 13.09.
 
 ## Utility
 

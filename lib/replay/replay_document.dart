@@ -15,6 +15,7 @@ class ReplayDocument {
     required this.utility,
     required this.vitals,
     required this.blinds,
+    required this.doors,
     required this.movement,
     required this.quality,
   });
@@ -33,6 +34,9 @@ class ReplayDocument {
 
   /// When each flashed player is blind, one row per change.
   final Map<String, ReplayBlindTrack> blinds;
+
+  /// When the map's doors moved, in time order.
+  final List<ReplayDoorMove> doors;
   final Map<String, ReplayMovementTrack> movement;
   final ReplayQuality quality;
 
@@ -105,6 +109,7 @@ class ReplayDocument {
         for (final entry in blindsJson.entries)
           entry.key: ReplayBlindTrack.fromJson(entry.value as List),
       },
+      doors: [for (final d in list('doors')) ReplayDoorMove.fromJson(d)],
       movement: {
         for (final entry in movementJson.entries)
           entry.key: ReplayMovementTrack.fromBlob(
@@ -438,6 +443,25 @@ class ReplayUtility {
             ReplayVector.fromJson(row as List),
         ],
       );
+}
+
+/// A door on the map changing. [startMs] equals [endMs] for a wall breaking.
+class ReplayDoorMove {
+  const ReplayDoorMove({
+    required this.actor,
+    required this.startMs,
+    required this.endMs,
+  });
+
+  factory ReplayDoorMove.fromJson(Map<String, dynamic> json) => ReplayDoorMove(
+        actor: json['actor'] as String,
+        startMs: json['startMs'] as int,
+        endMs: json['endMs'] as int,
+      );
+
+  final String actor;
+  final int startMs;
+  final int endMs;
 }
 
 class ReplayQuality {

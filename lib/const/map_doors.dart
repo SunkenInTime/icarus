@@ -30,6 +30,7 @@ class MapDoor {
     required this.kind,
     required this.start,
     required this.end,
+    required this.replayActor,
   });
 
   final String id;
@@ -37,6 +38,9 @@ class MapDoor {
   final MapDoorKind kind;
   final Offset start;
   final Offset end;
+
+  /// The name a decoded replay files this door's moves under.
+  final String replayActor;
 
   /// Tells a user what a click does.
   String tag({required bool changed}) => switch ((kind, changed)) {
@@ -116,6 +120,7 @@ const mapDoors = <MapDoor>[
     kind: MapDoorKind.drop,
     start: Offset(337.5, 154.2),
     end: Offset(359.8, 154.2),
+    replayActor: 'DescentBox_v12',
   ),
   MapDoor(
     id: 'summit-mid',
@@ -123,6 +128,7 @@ const mapDoors = <MapDoor>[
     kind: MapDoorKind.drop,
     start: Offset(191.3, 166.4),
     end: Offset(213.0, 166.4),
+    replayActor: 'DescentBox_v9',
   ),
   MapDoor(
     id: 'summit-b',
@@ -130,6 +136,7 @@ const mapDoors = <MapDoor>[
     kind: MapDoorKind.drop,
     start: Offset(34.3, 117.2),
     end: Offset(56.0, 117.2),
+    replayActor: 'DescentBox_v5',
   ),
   MapDoor(
     id: 'lotus-a',
@@ -137,6 +144,7 @@ const mapDoors = <MapDoor>[
     kind: MapDoorKind.spin,
     start: Offset(423.7, 241.2),
     end: Offset(448.2, 241.2),
+    replayActor: 'Drawbridge6',
   ),
   MapDoor(
     id: 'lotus-c',
@@ -144,6 +152,7 @@ const mapDoors = <MapDoor>[
     kind: MapDoorKind.spin,
     start: Offset(158.1, 259.8),
     end: Offset(158.1, 283.8),
+    replayActor: 'Drawbridge5',
   ),
   MapDoor(
     id: 'lotus-a-link',
@@ -151,6 +160,7 @@ const mapDoors = <MapDoor>[
     kind: MapDoorKind.breakable,
     start: Offset(338.4, 200.9),
     end: Offset(338.4, 210.7),
+    replayActor: 'RespawningWallPlate',
   ),
 ];
 
