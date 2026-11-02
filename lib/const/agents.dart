@@ -215,8 +215,11 @@ class AgentData implements DraggableData {
         index: 0,
         name: "Cloudburst",
         iconPath: 'assets/agents/Jett/1.webp',
-        abilityData:
-            ImageAbility(imagePath: 'assets/agents/Jett/Smoke.webp', size: 30),
+        abilityData: ImageAbility(
+          imagePath: 'assets/agents/Jett/Smoke.webp',
+          size: 30,
+          inactiveTraceColor: const Color(0xFFB8DDF5),
+        ),
       ),
     AgentType.raze: AgentData(
       type: AgentType.raze,
@@ -277,6 +280,7 @@ class AgentData implements DraggableData {
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Astra/Smoke.webp',
             size: 4.75 * inGameMetersDiameter,
+            inactiveTraceColor: const Color(0xFFD08CFF),
           ),
         );
 
@@ -566,6 +570,7 @@ class AgentData implements DraggableData {
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Brimstone/Smoke.webp',
             size: 4.15 * inGameMetersDiameter,
+            inactiveTraceColor: const Color(0xFFFFB37A),
           ),
         );
 
@@ -742,6 +747,7 @@ class AgentData implements DraggableData {
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Omen/Smoke.webp',
             size: 4.1 * inGameMetersDiameter,
+            inactiveTraceColor: const Color(0xFFB39DFF),
           ),
         );
 
@@ -817,6 +823,7 @@ class AgentData implements DraggableData {
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Clove/Smoke.webp',
             size: 4 * inGameMetersDiameter,
+            inactiveTraceColor: const Color(0xFFFF9EEA),
           ),
         );
 
@@ -942,6 +949,7 @@ class AgentData implements DraggableData {
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Harbor/Smoke.webp',
             size: 4.5 * inGameMetersDiameter,
+            inactiveTraceColor: const Color(0xFF4FE3D0),
           ),
         );
 
@@ -1173,8 +1181,10 @@ class AgentData implements DraggableData {
         name: "Waveform",
         iconPath: 'assets/agents/Miks/3.webp',
         abilityData: ImageAbility(
-            imagePath: 'assets/agents/Miks/Smoke.webp',
-            size: 4.1 * inGameMetersDiameter),
+          imagePath: 'assets/agents/Miks/Smoke.webp',
+          size: 4.1 * inGameMetersDiameter,
+          inactiveTraceColor: const Color(0xFF9BE8C4),
+        ),
       );
       final miksHarmonize = AbilityInfo(
         type: AgentType.miks,
