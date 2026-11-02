@@ -4,6 +4,10 @@ import 'dart:isolate';
 import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:icarus/const/map_doors.dart';
+import 'package:icarus/const/maps.dart';
+import 'package:icarus/replay/replay_doors.dart';
+import 'package:icarus/view_cone/map_door_walls.dart';
 import 'package:icarus/view_cone/svg_floor_visibility.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/view_cone/vision_world_gzip.dart';
@@ -17,6 +21,7 @@ class ReplayConeRequest {
     required this.range,
     required this.apertureRadians,
     this.elevationCm,
+    this.doors = 0,
   });
 
   final bool isAttack;
@@ -28,6 +33,9 @@ class ReplayConeRequest {
 
   /// The saved eye height choosing the level, as on a placed agent.
   final double? elevationCm;
+
+  /// The doors changed, as [ReplayDoors.mask] gives them.
+  final int doors;
 }
 
 /// A cut cone: where it stands (after any nudge out of wall ink) and what
@@ -58,9 +66,10 @@ class ReplayConeWorker {
   var _nextTicket = 0;
   var _closed = false;
 
-  /// Starts a worker on the gzip-compressed height models of a map's two
+  /// Starts a worker on the gzip-compressed height models of [map]'s two
   /// sides, as bundled.
   static Future<ReplayConeWorker> start({
+    required MapValue map,
     required Uint8List attackModel,
     required Uint8List defenseModel,
   }) async {
@@ -90,6 +99,7 @@ class ReplayConeWorker {
         responses.sendPort,
         TransferableTypedData.fromList([attackModel]),
         TransferableTypedData.fromList([defenseModel]),
+        map,
       ),
       errorsAreFatal: false,
       debugName: 'replay cone worker',
@@ -119,6 +129,7 @@ class ReplayConeWorker {
       request.range,
       request.apertureRadians,
       request.elevationCm ?? double.nan,
+      request.doors.toDouble(),
     ]));
     return completer.future;
   }
@@ -166,21 +177,28 @@ class ReplayConeWorker {
   }
 }
 
-SvgHeightVisibility _model(TransferableTypedData bytes) {
-  final model = SvgHeightVisibility.fromJson(jsonDecode(
-          utf8.decode(decodeWorldGzip(bytes.materialize().asUint8List())))
-      as Map<String, dynamic>);
+SvgHeightVisibility _model(
+  TransferableTypedData bytes,
+  MapValue map, {
+  required bool isAttack,
+}) {
+  final model = SvgHeightVisibility.fromJson(
+    jsonDecode(utf8.decode(decodeWorldGzip(bytes.materialize().asUint8List())))
+        as Map<String, dynamic>,
+    doorWalls: mapDoorWalls(map, isAttack: isAttack),
+  );
   model.enableNativeAcceleration();
   return model;
 }
 
 void _workerMain(
-    (SendPort, TransferableTypedData, TransferableTypedData) setup) {
-  final (replies, attackBytes, defenseBytes) = setup;
+    (SendPort, TransferableTypedData, TransferableTypedData, MapValue) setup) {
+  final (replies, attackBytes, defenseBytes, map) = setup;
+  final doorIds = [for (final door in mapDoorsOf(map)) door.id];
   final SvgHeightVisibility attack, defense;
   try {
-    attack = _model(attackBytes);
-    defense = _model(defenseBytes);
+    attack = _model(attackBytes, map, isAttack: true);
+    defense = _model(defenseBytes, map, isAttack: false);
   } catch (error) {
     replies.send('Could not load the height models: $error');
     return;
@@ -207,6 +225,7 @@ void _workerMain(
           range: request[5],
           apertureRadians: request[6],
           supportId: support?.id,
+          changedDoors: replayDoorsOfMask(doorIds, request[8].toInt()),
         ),
         origin: standing,
         directionRadians: request[4],

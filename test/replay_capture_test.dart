@@ -95,6 +95,28 @@ void main() {
       expect(agent.position, const Offset(500, 500));
     });
 
+    test('a captured page keeps the doors as they stood', () async {
+      final session = capture();
+
+      await session.capture(
+        ReplayFrame(
+          timeMs: 1000,
+          round: null,
+          isAttack: true,
+          agents: const [],
+          abilities: const [],
+          utilities: const [],
+          doors: const {'lotus-c': 0.5},
+        ),
+        pageName: 'Round 1 · 0:10',
+      );
+
+      expect(
+        box.values.single.pages.single.utilityData.map((row) => row.mapDoor),
+        ['lotus-c'],
+      );
+    });
+
     test('a deleted or re-mapped strategy is never written to again', () async {
       final session = capture();
       final first = await session.capture(frame(), pageName: 'one');

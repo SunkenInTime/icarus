@@ -19,6 +19,7 @@ import 'package:icarus/widgets/canonical_map_artwork.dart';
 import 'package:icarus/widgets/canvas_coordinates.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
+import 'package:icarus/widgets/map_door_layer.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
@@ -590,6 +591,17 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                             ),
                           ),
                         ),
+                      // The map's doors, as in the editor.
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: MapDoorBars(
+                            map: widget.map,
+                            isAttack: isAttack,
+                            changed: const {},
+                            amounts: frame.doors,
+                          ),
+                        ),
+                      ),
                       // Areas swept so far, under the icons they run from.
                       for (final sweep
                           in frame.effects.whereType<ReplaySweep>())

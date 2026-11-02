@@ -48,8 +48,15 @@ pub struct Collector {
     pub moves: Vec<Move>,
     pub events: Vec<EventRecord>,
     pub guard: GuardSample,
+    /// Every write on a map door's actor, `(time, group)`. Their fields have
+    /// no names, so they never reach `rows`.
+    pub door_writes: Vec<(u32, Arc<str>)>,
+    /// When the Lotus A Link wall reported `OnDie`.
+    pub wall_breaks: Vec<u32>,
     /// `wanted` per interned name; the `Arc` held here keeps its address unique.
     verdicts: std::collections::HashMap<usize, (Arc<str>, bool)>,
+    /// Whether a group is a door's, per interned group, the same way.
+    door_groups: std::collections::HashMap<usize, (Arc<str>, bool)>,
     /// Bytes of the records above, against [`MAX_RETAINED_BYTES`].
     retained: usize,
 }
@@ -105,6 +112,27 @@ impl Observer for Collector {
         for field in &records.fields {
             if let Some(raw) = &field.raw_bits {
                 self.guard.add(raw, field.bit_count);
+            }
+            let group_key = Arc::as_ptr(&field.group_path).cast::<u8>() as usize;
+            let door = self
+                .door_groups
+                .entry(group_key)
+                .or_insert_with(|| {
+                    let door = door_actor(&field.group_path).is_some()
+                        || field.group_path.ends_with(WALL_NET_CACHE);
+                    (Arc::clone(&field.group_path), door)
+                })
+                .1;
+            if door {
+                if field.group_path.ends_with(WALL_NET_CACHE) {
+                    if field.field_name.as_deref() == Some("OnDie") {
+                        self.wall_breaks.push(field.time_ms);
+                    }
+                } else {
+                    self.door_writes
+                        .push((field.time_ms, Arc::clone(&field.group_path)));
+                }
+                self.retain(size_of::<(u32, Arc<str>)>())?;
             }
             let Some(name) = &field.field_name else {
                 continue;
@@ -186,6 +214,20 @@ fn untyped_bytes(field: &FieldRecord) -> Option<Vec<u8>> {
         .flatten()
 }
 
+/// The Lotus A Link wall's calls.
+const WALL_NET_CACHE: &str = "RespawningWallPlate_C_ClassNetCache";
+
+/// The door a group of fields belongs to, without the suffix a level gives it:
+/// `Drawbridge5`, `DescentBox_v12`. None for anything else, such as
+/// `Drawbridge_MinimapObject`.
+pub fn door_actor(group: &str) -> Option<&str> {
+    let actor = group.split("_UAID").next()?;
+    let number = actor
+        .strip_prefix("Drawbridge")
+        .or_else(|| actor.strip_prefix("DescentBox_v"))?;
+    (!number.is_empty() && number.bytes().all(|b| b.is_ascii_digit())).then_some(actor)
+}
+
 fn wanted(name: &str) -> bool {
     if EXACT.contains(&name) {
         return true;
@@ -219,6 +261,23 @@ fn wanted(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_door_is_a_door_actor() {
+        assert_eq!(door_actor("Drawbridge5"), Some("Drawbridge5"));
+        assert_eq!(
+            door_actor("DescentBox_v12_UAID_2C58B90EE7EFB17102_1686271982"),
+            Some("DescentBox_v12"),
+        );
+        assert_eq!(
+            door_actor("Drawbridge_MinimapObject.Drawbridge_MinimapObject_C"),
+            None
+        );
+        assert_eq!(
+            door_actor("DescentBox_v5.DescentBox_v5_C_ClassNetCache"),
+            None
+        );
+    }
 
     #[test]
     fn records_past_the_retained_cap_are_refused() {

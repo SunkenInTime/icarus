@@ -32,6 +32,7 @@ pub struct Document {
     pub blinds: BTreeMap<String, Vec<BlindRow>>,
     pub utility: Vec<Utility>,
     pub casts: Vec<Cast>,
+    pub doors: Vec<DoorMove>,
     pub movement: BTreeMap<String, MovementSpan>,
     pub quality: Quality,
 }
@@ -161,6 +162,16 @@ pub struct Cast {
     pub class_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<Vec3>,
+}
+
+/// A door on the map changing: a spin or a drop from `start_ms` to `end_ms`,
+/// or a wall breaking, both at the same moment (docs/replay-format.md).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoorMove {
+    pub actor: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
 }
 
 #[derive(Debug, Serialize, Clone, Copy)]

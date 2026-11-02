@@ -16,6 +16,7 @@ class ReplayConeAim {
     required this.rotation,
     required this.isAttack,
     this.elevationCm,
+    this.doors = 0,
   });
 
   /// Canonical world units, where the cone's apex is drawn.
@@ -26,16 +27,21 @@ class ReplayConeAim {
   final bool isAttack;
   final double? elevationCm;
 
+  /// The doors changed where it's aimed, as [ReplayDoors.mask] gives them.
+  final int doors;
+
   @override
   bool operator ==(Object other) =>
       other is ReplayConeAim &&
       other.origin == origin &&
       other.rotation == rotation &&
       other.isAttack == isAttack &&
-      other.elevationCm == elevationCm;
+      other.elevationCm == elevationCm &&
+      other.doors == doors;
 
   @override
-  int get hashCode => Object.hash(origin, rotation, isAttack, elevationCm);
+  int get hashCode =>
+      Object.hash(origin, rotation, isAttack, elevationCm, doors);
 
   /// Everything a cut depends on. A cut sees all the way round, so where the
   /// player faces is applied when the cone is painted: turning never waits
@@ -44,7 +50,8 @@ class ReplayConeAim {
       origin: origin,
       rotation: 0,
       isAttack: isAttack,
-      elevationCm: elevationCm);
+      elevationCm: elevationCm,
+      doors: doors);
 }
 
 /// A finished cut: the [aim] it was made for, where the cone stands in
@@ -147,6 +154,7 @@ class ReplayConeCuts {
           CoordinateSystem.virtualLengthInWorld(coneLength) / transform.scale,
       apertureRadians: 2 * math.pi,
       elevationCm: aim.elevationCm,
+      doors: aim.doors,
     );
   }
 

@@ -105,6 +105,7 @@ fn every_replay_decodes_to_the_contract() {
         check_vitals(&id, &doc, rounds, kills, &team);
         check_movement(&id, &doc, parts.blob, &team);
         check_utility(&id, doc["utility"].as_array().unwrap());
+        check_doors(&id, &doc, rounds);
         flashes += check_blinds(&id, &doc, &team);
         for c in doc["casts"].as_array().unwrap() {
             assert!(
@@ -115,6 +116,56 @@ fn every_replay_decodes_to_the_contract() {
     }
     // Flashes are common: a corpus with none means they stopped decoding.
     assert!(replays == 0 || flashes > 0, "no flash in the whole corpus");
+}
+
+/// Door moves start a real while into a round and last no longer than that
+/// door takes. Lotus and Summit always have some, and a wall is all another
+/// map can have.
+fn check_doors(id: &str, doc: &Value, rounds: &[Value]) {
+    let map = doc["match"]["mapPath"].as_str().unwrap_or("");
+    let moves = doc["doors"].as_array().unwrap();
+    let wall = |door: &&Value| door["actor"] == "RespawningWallPlate";
+    if !map.contains("/Jam/") && !map.contains("/Plummet/") {
+        assert!(moves.iter().all(|door| wall(&door)), "{id}: doors on {map}");
+        return;
+    }
+    assert!(!moves.is_empty(), "{id}: no door moved on {map}");
+    for door in moves {
+        let (start, end) = (
+            door["startMs"].as_i64().unwrap(),
+            door["endMs"].as_i64().unwrap(),
+        );
+        let round = rounds
+            .iter()
+            .rev()
+            .find(|r| r["startMs"].as_i64().unwrap() <= start)
+            .expect("in a round");
+        // A move ends by the next round's reset, which may cut it short.
+        if let Some(next) = rounds
+            .iter()
+            .find(|r| r["startMs"].as_i64().unwrap() > start)
+        {
+            assert!(
+                end <= next["startMs"].as_i64().unwrap() + 3000,
+                "{id}: {door} runs into the next round"
+            );
+        }
+        assert!(
+            start - round["startMs"].as_i64().unwrap() > 3000,
+            "{id}: {door}"
+        );
+        let lasts = end - start;
+        match door["actor"].as_str().unwrap() {
+            "RespawningWallPlate" => assert_eq!(lasts, 0, "{id}: {door}"),
+            actor if actor.starts_with("Drawbridge") => {
+                assert!((1..=12_000).contains(&lasts), "{id}: {door}")
+            }
+            actor if actor.starts_with("DescentBox") => {
+                assert!((1..=3000).contains(&lasts), "{id}: {door}")
+            }
+            _ => panic!("{id}: unknown door {door}"),
+        }
+    }
 }
 
 /// Flashes belong to players, and each one wears off: a row of seconds is
