@@ -718,6 +718,15 @@ void main() {
           0,
           reason: agent.name,
         );
+        expect(
+          tester
+              .widget<AnimatedOpacity>(
+                find.byKey(const ValueKey('image-ability-inactive-layer')),
+              )
+              .opacity,
+          1,
+          reason: agent.name,
+        );
         expect(find.byType(InactiveCircleAbilityTrace), findsOneWidget,
             reason: agent.name);
 
