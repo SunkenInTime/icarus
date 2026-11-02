@@ -1,0 +1,14 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"newLocal": "summit", "name": "Door old build"},
+  {"wait": 4},
+  {"tapText": "Door old build"},
+  {"wait": 5},
+  {"addUtility": "door", "type": "customRectangle", "at": [520, 560], "size": 8, "door": "summit-mid"},
+  {"addUtility": "plain", "type": "customRectangle", "at": [760, 560], "size": 8},
+  {"logUtilities": "written"},
+  {"shot": "{out}/1-new.png"},
+  {"wait": 25},
+  {"exit": 1}
+]

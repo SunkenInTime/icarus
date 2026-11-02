@@ -1,0 +1,10 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"tapText": "Door old build"},
+  {"wait": 5},
+  {"logUtilities": "reopened"},
+  {"logPage": "reopened"},
+  {"shot": "{out}/4-reopened.png"},
+  {"exit": 1}
+]
