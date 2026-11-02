@@ -582,6 +582,10 @@ class CustomCircleUtility extends Utilities {
 }
 
 class CustomRectangleUtility extends Utilities {
+  // Bind is the widest map at 107 m, and the limit matches the largest circle.
+  // A rectangle is saved by its own top-left, so changing this moves nothing.
+  static const double maxSideMeters = 110.0;
+
   @override
   Widget createWidget(
       {String? id,

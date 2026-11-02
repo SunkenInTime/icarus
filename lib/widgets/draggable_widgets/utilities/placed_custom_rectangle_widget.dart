@@ -8,6 +8,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
@@ -54,9 +55,7 @@ class _PlacedCustomRectangleWidgetState
   }
 
   static const double _minWidthMeters = 0.5;
-  static const double _maxWidthMeters = 30.0;
   static const double _minLengthMeters = 1.0;
-  static const double _maxLengthMeters = 60.0;
   static const double _rectangleBorderStrokeVirtual = 2.0;
   static const double _rotationSnapStep = math.pi / 4;
   static const double _rotationSnapTolerance = 3 * math.pi / 180;
@@ -709,10 +708,10 @@ class _PlacedCustomRectangleWidgetState
         coordinateSystem.scale(_minWidthMeters * meterScale) *
             _resizeGlobalScale,
       ),
-      maximumSize: Size(
-        coordinateSystem.scale(_maxLengthMeters * meterScale) *
-            _resizeGlobalScale,
-        coordinateSystem.scale(_maxWidthMeters * meterScale) *
+      maximumSize: Size.square(
+        coordinateSystem.scale(
+              CustomRectangleUtility.maxSideMeters * meterScale,
+            ) *
             _resizeGlobalScale,
       ),
     );

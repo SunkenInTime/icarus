@@ -497,6 +497,113 @@ void main() {
     );
   });
 
+  testWidgets('a rectangle resizes to the limit on both sides and stops there',
+      (tester) async {
+    final utility = _rectangle();
+    final container = _containerWith(utility);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        container: container,
+        child: const SizedBox(
+          width: 800,
+          height: 600,
+          child: PlacedWidgetBuilder(),
+        ),
+      ),
+    );
+
+    Future<void> pullOut(String side, Offset by) async {
+      final shape = find.byType(CustomRectangleUtilityWidget);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: tester.getRect(shape).center);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      final handle = tester.getCenter(
+        find.byKey(ValueKey('custom-rectangle-resize-$side')),
+      );
+      await mouse.moveTo(handle);
+      await mouse.down(handle);
+      await mouse.moveTo(handle + by);
+      await tester.pump();
+      await mouse.up();
+      await tester.pump();
+      await mouse.removePointer();
+      await tester.pump();
+    }
+
+    await pullOut('right', const Offset(4000, 0));
+    await pullOut('bottom', const Offset(0, 4000));
+
+    final resized = container.read(utilityProvider).single;
+    expect(resized.customLength, closeTo(110, 0.001));
+    expect(resized.customWidth, closeTo(110, 0.001));
+  });
+
+  testWidgets('a large rectangle dropped near the top of the map is kept',
+      (tester) async {
+    final utility = _rectangle()
+      ..customLength = 100
+      ..customWidth = 100;
+    final container = _containerWith(utility);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        container: container,
+        child: const SizedBox(
+          width: 800,
+          height: 600,
+          child: PlacedWidgetBuilder(),
+        ),
+      ),
+    );
+
+    final middle =
+        tester.getRect(find.byType(CustomRectangleUtilityWidget)).center;
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: middle);
+    await tester.pump();
+    await mouse.down(middle);
+    await mouse.moveTo(Offset(middle.dx, 80));
+    await tester.pump();
+    await mouse.moveTo(Offset(middle.dx, 40));
+    await tester.pump();
+    await mouse.up();
+    await tester.pump();
+
+    expect(container.read(utilityProvider), hasLength(1));
+    final movedMiddle =
+        tester.getRect(find.byType(CustomRectangleUtilityWidget)).center;
+    expect(movedMiddle.dy, closeTo(40, 1));
+  });
+
+  testWidgets('a saved rectangle is drawn from its saved top-left',
+      (tester) async {
+    final utility = _rectangle()
+      ..customLength = 60
+      ..customWidth = 30;
+    final container = _containerWith(utility);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        container: container,
+        child: const SizedBox(
+          width: 800,
+          height: 600,
+          child: PlacedWidgetBuilder(),
+        ),
+      ),
+    );
+
+    final drawn = tester.getRect(find.byType(CustomRectangleUtilityWidget));
+    final expected =
+        CoordinateSystem.instance.coordinateToScreen(utility.position);
+    expect((drawn.topLeft - expected).distance, lessThan(0.01));
+  });
+
   testWidgets('shape center menu changes the placed shape color',
       (tester) async {
     final utility = _circle();
