@@ -19,11 +19,13 @@ const PLACED_KINDS: readonly string[] = [
 /// reads a later field only once its level says it keeps it, and a write that
 /// leaves one out never removes it.
 ///
-/// A field in this table is cleared by writing an empty value. An absent field
-/// means the writer doesn't know about it.
+/// A field in this table is cleared by writing an empty value, except mapDoor,
+/// which is never cleared: a door returns to rest by deleting its row. An
+/// absent field means the writer doesn't know about it.
 export const LATER_ELEMENT_FIELDS = [
   { field: "caption", level: 1, kinds: PLACED_KINDS },
   { field: "wallPath", level: 2, kinds: ["ability"] },
+  { field: "mapDoor", level: 3, kinds: ["utility"] },
 ];
 
 /// Set by clients that keep later element fields: the highest level they know
