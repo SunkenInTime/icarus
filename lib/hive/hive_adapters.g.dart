@@ -638,6 +638,7 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       customLength: (fields[10] as num?)?.toDouble(),
       customColorValue: (fields[11] as num?)?.toInt(),
       customOpacityPercent: (fields[12] as num?)?.toInt(),
+      mapDoor: fields[17] as String?,
     )
       ..rotation = (fields[1] as num).toDouble()
       ..length = (fields[2] as num).toDouble()
@@ -648,7 +649,7 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
   @override
   void write(BinaryWriter writer, PlacedUtility obj) {
     writer
-      ..writeByte(15)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -678,7 +679,9 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       ..writeByte(15)
       ..write(obj.visionElevation)
       ..writeByte(16)
-      ..write(obj.caption);
+      ..write(obj.caption)
+      ..writeByte(17)
+      ..write(obj.mapDoor);
   }
 
   @override

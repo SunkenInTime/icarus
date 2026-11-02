@@ -56,6 +56,10 @@ into lineup groups.
 **Wall path**:
 The points of a High Tide's wall, saved on the ability and measured from its icon. Moving the icon moves the wall. A High Tide without one is just the icon.
 
+**Map door**:
+A part of the map a player can change: Summit's three walls, Lotus's two rotating doors and its A Link wall. A door at rest has nothing saved. A changed door is one rectangle on the page, with `mapDoor` naming the door.
+_Avoid_: interactable
+
 **Caption**:
 A note a user keeps on one placed item, hidden until someone hovers it. Every
 placed item can hold one; lineups have their own notes, and drawings have none.

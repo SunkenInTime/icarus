@@ -225,7 +225,7 @@ types:
         index: 2
   PlacedUtility:
     typeId: 15
-    nextIndex: 17
+    nextIndex: 18
     fields:
       type:
         index: 0
@@ -257,6 +257,8 @@ types:
         index: 15
       caption:
         index: 16
+      mapDoor:
+        index: 17
   UtilityType:
     typeId: 16
     nextIndex: 10
