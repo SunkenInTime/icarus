@@ -35,6 +35,7 @@ import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_vision_cone_composite.dart';
 import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_circle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_rectangle_widget.dart';
@@ -155,6 +156,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                               coordinateSystem: coordinateSystem,
                               agentSize: agentSize,
                             ),
+                            const PlacedWallList(),
                             _AbilityList(
                               coordinateSystem: coordinateSystem,
                               mapScale: mapScale,
@@ -178,6 +180,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                               abilitySize: abilitySize,
                               mapScale: mapScale,
                             ),
+                            const PlacedWallHandleList(),
                           ],
                         ),
                       ),
@@ -249,6 +252,11 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 return;
               }
 
+              placedAbility.wallPath = defaultWallPath(
+                abilityData.ability.abilityData,
+                mapScale: mapScale,
+                isAttack: isAttack,
+              );
               ref.read(abilityProvider.notifier).addAbility(placedAbility);
             } else if (details.data is AbilityInfo) {
               final abilityInfo = details.data as AbilityInfo;
@@ -276,6 +284,11 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 return;
               }
 
+              placedAbility.wallPath = defaultWallPath(
+                abilityInfo.abilityData,
+                mapScale: mapScale,
+                isAttack: isAttack,
+              );
               ref.read(abilityProvider.notifier).addAbility(placedAbility);
             } else if (details.data is VisionConeToolData) {
               final visionConeData = details.data as VisionConeToolData;

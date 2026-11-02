@@ -952,6 +952,13 @@ class AgentData implements DraggableData {
         hasCenterDot: true,
       );
 
+      // 60 m is the blueprint's Max2D_Distance (13.09).
+      agent.abilities[1].abilityData = GuidedWallAbility(
+        iconPath: agent.abilities[1].iconPath,
+        maxLengthMeters: 60,
+        defaultLengthMeters: 30,
+      );
+
       // agent.abilities.first.abilityData = ResizableSquareAbility(
       //   width: 9.75 * inGameMeters,
       //   height: 35 * inGameMeters,

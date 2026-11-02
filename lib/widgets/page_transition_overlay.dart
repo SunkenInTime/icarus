@@ -10,16 +10,19 @@ import 'package:icarus/const/coordinate_system.dart';
 
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/wall_path.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_circle_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/canonical_positioned.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_vision_cone_composite.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
@@ -113,12 +116,20 @@ class TransitionEntriesLayer extends ConsumerWidget {
       t: t,
       isAttack: isAttack,
     );
+    final neutralTeamColors = ref.watch(
+      strategySettingsProvider.select((s) => s.useNeutralTeamColors),
+    );
 
     return IgnorePointer(
       ignoring: true,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
+          // Under every icon, as on the canvas.
+          for (final entry in orderedEntries)
+            if (renderer.buildWall(entry, neutralTeamColors: neutralTeamColors)
+                case final wall?)
+              wall,
           for (final entry in orderedEntries) renderer.buildEntry(entry),
         ],
       ),
@@ -176,6 +187,83 @@ class _EntryRenderer {
       screenTranslationX,
     );
     return isAttack ? worldTranslation : -worldTranslation;
+  }
+
+  /// [entry]'s wall at this moment, when it has one: it follows the icon,
+  /// morphs between two walls, and fades in or out when only one page has
+  /// it.
+  Widget? buildWall(
+    PageTransitionEntry entry, {
+    required bool neutralTeamColors,
+  }) {
+    final from = PageTransitionEntry.wallPathOf(entry.from);
+    final to = PageTransitionEntry.wallPathOf(entry.to);
+    if (from == null && to == null) return null;
+    final ability = (entry.to ?? entry.from)! as PlacedAbility;
+    // An item alone on one page slides as it fades; its wall goes with it.
+    final directionalOffset = coordinateSystem.scale(28) *
+        (direction == PageTransitionDirection.forward ? 1.0 : -1.0);
+    Offset slid(Offset position, double screenX) =>
+        position + Offset(_canonicalHorizontalTranslation(screenX), 0);
+    final (path, position, opacity) = switch (entry.kind) {
+      TransitionKind.none => (to, entry.endPos, 1.0),
+      TransitionKind.appear => (
+          to,
+          slid(entry.endPos, directionalOffset * (1 - t)),
+          t,
+        ),
+      TransitionKind.disappear => (
+          from,
+          slid(entry.startPos, -directionalOffset * t),
+          1 - t,
+        ),
+      TransitionKind.move => (
+          _morphedWall(from, to),
+          Offset.lerp(entry.startPos, entry.endPos, t) ?? entry.endPos,
+          from == null
+              ? t
+              : to == null
+                  ? 1 - t
+                  : 1.0,
+        ),
+    };
+    if (path == null) return null;
+    final wall = WallOnScreen.of(
+      ability,
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+      isAttack: isAttack,
+      coordinatePosition: position,
+    );
+    return Positioned.fill(
+      key: ValueKey('wall_${entry.id}'),
+      child: CustomPaint(
+        painter: WallPainter(
+          line: entry.kind == TransitionKind.move && from != null && to != null
+              ? path.map(wall.point).toList()
+              : smoothWallLine(wall.points(path)),
+          team: wallTeamColor(
+            ability.isAlly,
+            neutralTeamColors: neutralTeamColors,
+          ),
+          width: wallStrokeWidth(mapScale),
+          edge: wallStrokeEdge(),
+          opacity: opacity,
+        ),
+      ),
+    );
+  }
+
+  /// The two walls blended by [t], as a drawn line; just the one when only
+  /// one page has a wall.
+  List<Offset>? _morphedWall(List<Offset>? from, List<Offset>? to) {
+    if (from == null || to == null) return to ?? from;
+    const count = 48;
+    List<Offset> even(List<Offset> path) =>
+        resampleWallLine(smoothWallLine([Offset.zero, ...path]), count);
+    final a = even(from);
+    final b = even(to);
+    return [for (var i = 0; i < count; i++) Offset.lerp(a[i], b[i], t)!];
   }
 
   Widget buildEntry(PageTransitionEntry entry) {
@@ -832,11 +920,38 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
     final agentSize = state.startAgentSize;
     final orderedWidgets = [...state.allWidgets]
       ..sort(PageLayering.comparePlacedWidgets);
+    final neutralTeamColors = ref.watch(
+      strategySettingsProvider.select((s) => s.useNeutralTeamColors),
+    );
     return IgnorePointer(
       ignoring: true,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
+          for (final widget in orderedWidgets)
+            if (widget is PlacedAbility &&
+                PageTransitionEntry.wallPathOf(widget) != null)
+              Positioned.fill(
+                key: ValueKey('wall_${widget.id}'),
+                child: CustomPaint(
+                  painter: WallPainter(
+                    line: smoothWallLine(
+                      WallOnScreen.of(
+                        widget,
+                        mapScale: mapScale,
+                        abilitySize: abilitySize,
+                        isAttack: isAttack,
+                      ).points(widget.wallPath!),
+                    ),
+                    team: wallTeamColor(
+                      widget.isAlly,
+                      neutralTeamColors: neutralTeamColors,
+                    ),
+                    width: wallStrokeWidth(mapScale),
+                    edge: wallStrokeEdge(),
+                  ),
+                ),
+              ),
           for (final widget in orderedWidgets)
             staticPlacedWidgetView(
               widget: widget,

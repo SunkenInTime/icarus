@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/replay/replay_frame.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 import 'package:icarus/widgets/draggable_widgets/shared/framed_ability_icon_shell.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -111,9 +112,7 @@ class ReplayEffectsPainter extends CustomPainter {
       oldDelegate.effects != effects || oldDelegate.isAttack != isAttack;
 }
 
-/// Guided walls as far as they have run: a line in the wall's colour along
-/// each, edged in its team's. Stroked rather than clipped: on Windows a clip
-/// this shape costs a mask drawn on the CPU, every frame.
+/// Guided walls as far as they have run, as the canvas draws a wall.
 class ReplayWallPainter extends CustomPainter {
   ReplayWallPainter({
     required this.walls,
@@ -134,28 +133,18 @@ class ReplayWallPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final coordinates = CoordinateSystem.instance;
     for (final wall in walls) {
-      final line = Path()
-        ..addPolygon([
+      paintWallStroke(
+        canvas,
+        [
           for (final point in wall.points)
             replayScreenPoint(point, isAttack: isAttack),
-        ], false);
-      final team =
-          wall.isAlly ? Settings.allyOutlineColor : Settings.enemyOutlineColor;
-      final stroke = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round;
-      canvas.drawPath(
-        line,
-        stroke
-          ..strokeWidth = coordinates.scale(width + _edge * 2)
-          ..color = team.withValues(alpha: team.a * wall.opacity),
-      );
-      canvas.drawPath(
-        line,
-        stroke
-          ..strokeWidth = coordinates.scale(width)
-          ..color = Settings.replayTideWall.withValues(alpha: wall.opacity),
+        ],
+        width: coordinates.scale(width),
+        edge: coordinates.scale(_edge),
+        team: wall.isAlly
+            ? Settings.allyOutlineColor
+            : Settings.enemyOutlineColor,
+        opacity: wall.opacity,
       );
     }
   }

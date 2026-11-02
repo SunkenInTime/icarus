@@ -1,0 +1,19 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"tapText": "High Tide menu"},
+  {"wait": 5},
+  {"logWalls": "reopened"},
+  {"logPage": "reopened"},
+  {"shot": "{out}/6-reopened.png"},
+  {"hoverAt": [600, 470]},
+  {"wait": 0.5},
+  {"tapAt": [60, 700]},
+  {"hoverAt": [600, 470]},
+  {"wait": 0.5},
+  {"key": "keyE"},
+  {"wait": 0.7},
+  {"logPage": "pressed E on the wall"},
+  {"logWalls": "pressed E on the wall"},
+  {"exit": 1}
+]

@@ -4,14 +4,17 @@ import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/dialogs/lineup_panel_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_fill.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/config/platform_policy.dart';
@@ -63,8 +66,12 @@ List<ShadContextMenuItem>? buildAbilityContextMenuItems(
   final captionItems = landingId == null && context != null
       ? buildCaptionMenuItems(context, ref, ability.id)
       : const <ShadContextMenuItem>[];
+  final wallItems = landingId == null
+      ? _buildWallItems(ref, ability)
+      : const <ShadContextMenuItem>[];
 
   if (visibilityItems.isEmpty &&
+      wallItems.isEmpty &&
       captionItems.isEmpty &&
       adjacentPageItems.isEmpty &&
       lineUpItems.isEmpty) {
@@ -74,8 +81,38 @@ List<ShadContextMenuItem>? buildAbilityContextMenuItems(
   return [
     ...lineUpItems,
     ...visibilityItems,
+    ...wallItems,
     ...captionItems,
     ...adjacentPageItems,
+  ];
+}
+
+/// "Draw wall" on a guided wall that has none, "Remove wall" on one that has.
+List<ShadContextMenuItem> _buildWallItems(WidgetRef ref, PlacedAbility ability) {
+  final data = ability.data.abilityData;
+  if (data is! GuidedWallAbility) return const [];
+  final hasWall = ability.wallPath?.isNotEmpty ?? false;
+  return [
+    ShadContextMenuItem(
+      leading: Icon(
+        hasWall ? LucideIcons.eraser : LucideIcons.waves,
+        size: 16,
+      ),
+      child: Text(hasWall ? 'Remove wall' : 'Draw wall'),
+      onPressed: () {
+        final map = ref.read(mapProvider);
+        ref.read(abilityProvider.notifier).setWallPath(
+              ability.id,
+              hasWall
+                  ? const []
+                  : defaultWallPath(
+                      data,
+                      mapScale: Maps.mapScale[map.currentMap] ?? 1,
+                      isAttack: map.isAttack,
+                    )!,
+            );
+      },
+    ),
   ];
 }
 

@@ -1,0 +1,46 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"newLocal": "lotus", "name": "High Tide {run}"},
+  {"wait": 4},
+  {"tapText": "High Tide {run}"},
+  {"wait": 5},
+
+  {"dragAt": [1365, 530, 470, 600]},
+  {"wait": 1.5},
+  {"dragAt": [1186, 432, 520, 560]},
+  {"wait": 1},
+  {"logWalls": "dropped"},
+  {"hoverAt": [60, 700]},
+  {"wait": 0.5},
+  {"shot": "{out}/1-rest.png"},
+
+  {"hoverAt": [520, 500]},
+  {"wait": 0.5},
+  {"shot": "{out}/2-hover.png"},
+
+  {"dragAt": [520, 450, 600, 470]},
+  {"wait": 0.5},
+  {"logWalls": "bent"},
+  {"hoverAt": [520, 500]},
+  {"wait": 0.5},
+  {"shot": "{out}/3-bent.png"},
+
+  {"path": [[520, 341], [620, 300], [800, 200], [1000, 160]], "held": "{out}/4-limit-held.png"},
+  {"wait": 0.5},
+  {"logWalls": "at-the-limit"},
+
+  {"hoverAt": [60, 700]},
+  {"wait": 0.5},
+  {"path": [[520, 560], [530, 590], [560, 630]], "held": "{out}/5-icon-held.png"},
+  {"wait": 0.5},
+  {"logWalls": "icon-moved"},
+  {"shot": "{out}/6-moved.png"},
+
+  {"tapAt": [230, 80]},
+  {"wait": 2},
+  {"logWalls": "switched-side"},
+  {"shot": "{out}/7-defense.png"},
+
+  {"exit": 1}
+]

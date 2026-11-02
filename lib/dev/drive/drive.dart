@@ -1287,7 +1287,10 @@ Future<void> _run(Map<String, dynamic> step) async {
         for (final ability in c.read(abilityProvider))
           '${ability.id}@(${ability.position.dx.toStringAsFixed(1)}, '
               '${ability.position.dy.toStringAsFixed(1)}) '
-              'wall=${ability.wallPath}',
+              'wall=${ability.wallPath?.map(
+                    (p) => '(${p.dx.toStringAsFixed(1)}, '
+                        '${p.dy.toStringAsFixed(1)})',
+                  ).toList()}',
       ]}');
     case 'logPage':
       _log(

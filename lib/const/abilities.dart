@@ -137,6 +137,23 @@ class BaseAbility extends Ability {
   }
 }
 
+/// An icon with a wall the user shapes (Harbor's High Tide). The wall is
+/// drawn and hit on the canvas, not in this box, so the icon's box and the
+/// positions saved with it stay as they were before abilities had walls.
+class GuidedWallAbility extends BaseAbility {
+  GuidedWallAbility({
+    required super.iconPath,
+    required this.maxLengthMeters,
+    required this.defaultLengthMeters,
+  });
+
+  /// How far the wall can run along its path.
+  final double maxLengthMeters;
+
+  /// The straight wall a new one starts with.
+  final double defaultLengthMeters;
+}
+
 class ImageAbility extends Ability {
   final String imagePath;
   final double size;
