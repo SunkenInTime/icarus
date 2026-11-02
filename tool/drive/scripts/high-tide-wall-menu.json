@@ -1,9 +1,9 @@
 [
   {"wait": 8},
   {"tapIcon": "x", "optional": true},
-  {"newLocal": "lotus", "name": "High Tide menu {run}"},
+  {"newLocal": "lotus", "name": "High Tide menu"},
   {"wait": 4},
-  {"tapText": "High Tide menu {run}"},
+  {"tapText": "High Tide menu"},
   {"wait": 5},
 
   {"addHighTide": "saved-icon", "at": [520, 560]},
@@ -30,7 +30,7 @@
   {"logWalls": "removed the bend"},
 
   {"tapAt": [60, 700]},
-  {"keyCombo": ["control", "z"]},
+  {"keyCombo": ["controlLeft", "keyZ"]},
   {"wait": 0.7},
   {"logWalls": "undid, the bend is back"},
 
@@ -38,27 +38,30 @@
   {"wait": 2},
   {"logPage": "second page"},
   {"logWalls": "second page"},
-  {"hoverAt": [520, 500]},
+  {"hoverAt": [560, 400]},
   {"wait": 0.5},
+  {"shot": "{out}/3-page-2-hover.png"},
   {"dragAt": [520, 341, 300, 330]},
   {"wait": 0.7},
   {"logWalls": "second page reshaped"},
   {"shot": "{out}/3-page-2.png"},
 
-  {"tapAt": [206, 857]},
-  {"wait": 1},
-  {"tapText": "Page 1", "nth": 1, "optional": true},
-  {"burst": "{out}/4-transition", "count": 8, "every": 30},
-  {"wait": 1},
-  {"shot": "{out}/5-page-1.png"},
-
   {"fakeSaveDir": "{out}/saved", "as": "wall"},
   {"tapAt": [124, 142]},
   {"wait": 2},
+  {"shot": "{out}/4-picture-dialog.png"},
   {"tapAt": [835, 618]},
   {"waitFile": "{out}/saved/wall.png", "seconds": 20},
   {"wait": 2},
+  {"tapAt": [92, 142]},
+  {"wait": 2},
+  {"shot": "{out}/5-video-dialog.png"},
+  {"tapText": "Export"},
+  {"waitFile": "{out}/saved/wall.mp4", "seconds": 60},
+  {"waitText": "Exporting video", "gone": true, "seconds": 60},
+  {"wait": 1},
 
+  {"hoverAt": [300, 400]},
   {"wait": 22},
   {"exit": 1}
 ]
