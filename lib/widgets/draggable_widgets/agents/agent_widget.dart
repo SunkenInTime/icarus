@@ -25,6 +25,7 @@ import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/widgets/delete_helpers.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/detach_from_agent.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/sightline_report_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
@@ -242,6 +243,8 @@ class AgentWidget extends ConsumerWidget {
     final plainAgent = placedAgentNode is PlacedAgent ? placedAgentNode : null;
     final viewConeAgent =
         placedAgentNode is PlacedViewConeAgent ? placedAgentNode : null;
+    final circleAgent =
+        placedAgentNode is PlacedCircleAgent ? placedAgentNode : null;
     final svgHeightMap = mapState?.currentMap;
     final svgHeightRuntime = viewConeAgent != null &&
             svgHeightMap != null &&
@@ -375,6 +378,12 @@ class AgentWidget extends ConsumerWidget {
         ),
       if (canInteract && viewConeAgent != null)
         ShadContextMenuItem(
+          leading: const Icon(LucideIcons.unlink, size: 16),
+          child: const Text('Detach view cone'),
+          onPressed: () => detachFromAgent(ref.read, viewConeAgent),
+        ),
+      if (canInteract && viewConeAgent != null)
+        ShadContextMenuItem(
           leading: const Icon(LucideIcons.eyeOff, size: 16),
           child: const Text('Remove View Cone'),
           onPressed: () {
@@ -384,6 +393,27 @@ class AgentWidget extends ConsumerWidget {
                 ref
                     .read(agentProvider.notifier)
                     .convertViewConeAgentToPlain(id: viewConeAgent.id);
+              },
+            );
+          },
+        ),
+      if (canInteract && circleAgent != null)
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.unlink, size: 16),
+          child: const Text('Detach circle'),
+          onPressed: () => detachFromAgent(ref.read, circleAgent),
+        ),
+      if (canInteract && circleAgent != null)
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.circleOff, size: 16),
+          child: const Text('Remove circle'),
+          onPressed: () {
+            ref.read(actionProvider.notifier).performTransaction(
+              groups: const [ActionGroup.agent],
+              mutation: () {
+                ref
+                    .read(agentProvider.notifier)
+                    .convertCircleAgentToPlain(id: circleAgent.id);
               },
             );
           },
