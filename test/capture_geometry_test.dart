@@ -13,6 +13,8 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/screenshot/capture_geometry.dart';
+import 'package:icarus/screenshot/capture_images.dart';
+import 'package:icarus/services/app_assets.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 
 StrategyPage _page(
@@ -181,6 +183,42 @@ void main() {
       expect(disposed, isTrue);
     });
   }
+
+  group('while sightlines are on their way', () {
+    final file = svgHeightRegistrationFor(MapValue.ascent)!.attackModelAsset;
+    ProviderContainer loadingForever() {
+      final container = ProviderContainer(overrides: [
+        svgHeightRuntimeProvider.overrideWith(
+          (ref, map) => Completer<SvgHeightRuntime?>().future,
+        ),
+      ]);
+      addTearDown(container.dispose);
+      addTearDown(() => appAssets.missing.value = const {});
+      return container;
+    }
+
+    test('a capture stops as soon as one of their files is missing', () async {
+      final container = loadingForever();
+      final capture =
+          prepareCaptureGeometry(container, MapValue.ascent, [_conePage()]);
+      appAssets.missing.value = {file};
+
+      await expectLater(capture, throwsA(isA<CaptureImagesUnavailable>()));
+    });
+
+    test('an unrelated missing picture does not stop it', () async {
+      final container = loadingForever();
+      var stopped = false;
+      unawaited(
+        prepareCaptureGeometry(container, MapValue.ascent, [_conePage()])
+            .then<void>((_) {}, onError: (Object _) => stopped = true),
+      );
+      appAssets.missing.value = {'assets/agents/Neon/1.webp'};
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(stopped, isFalse);
+    });
+  });
 
   test('pages without sightlines do not request geometry', () async {
     var svgRequested = false, legacyRequested = false;

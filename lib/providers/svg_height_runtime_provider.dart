@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/map_artwork_registration.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/services/app_assets.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/view_cone/svg_height_cone_cache.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
@@ -141,13 +142,13 @@ class SvgHeightRuntimeDependencies {
 
   Future<Uint8List> loadModel(
           SvgHeightMapRegistration registration, bool isAttack) =>
-      rootBundle
+      appAssets
           .load(registration.modelAsset(isAttack))
           .then((data) => Uint8List.sublistView(data));
 
   Future<List<int>> loadArtwork(
           SvgHeightMapRegistration registration, bool isAttack) =>
-      rootBundle.load(registration.artworkAsset(isAttack)).then((data) =>
+      appAssets.load(registration.artworkAsset(isAttack)).then((data) =>
           data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
 }
 
@@ -171,11 +172,16 @@ final svgHeightRuntimeProvider = FutureProvider.autoDispose
     final defenseModelFuture = dependencies.loadModel(registration, false);
     final attackArtworkFuture = dependencies.loadArtwork(registration, true);
     final defenseArtworkFuture = dependencies.loadArtwork(registration, false);
-    final attack = await _loadSide(
-        await attackModelFuture, await attackArtworkFuture,
+    final attackModel = await attackModelFuture;
+    final attackArtwork = await attackArtworkFuture;
+    final defenseModel = await defenseModelFuture;
+    final defenseArtwork = await defenseArtworkFuture;
+    // These can land long after the user left the map, offline. Don't decode
+    // a map nobody is on.
+    if (disposed) return null;
+    final attack = await _loadSide(attackModel, attackArtwork,
         registration: registration, expectedSide: 'attack');
-    final defense = await _loadSide(
-        await defenseModelFuture, await defenseArtworkFuture,
+    final defense = await _loadSide(defenseModel, defenseArtwork,
         registration: registration, expectedSide: 'defense');
     if (disposed) return null;
     final runtime = SplitSvgHeightRuntime.forMap(map, attack, defense);

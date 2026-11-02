@@ -51,6 +51,7 @@ import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/services/browser_url.dart';
+import 'package:icarus/services/app_assets.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/cloud_usage_meter.dart';
@@ -291,7 +292,10 @@ Future<void> main(List<String> args) async {
       runApp(
         UncontrolledProviderScope(
           container: appProviderContainer,
-          child: MyApp(data: launch.fileOpenArgs),
+          child: DefaultAssetBundle(
+            bundle: appAssets,
+            child: MyApp(data: launch.fileOpenArgs),
+          ),
         ),
       );
       if (driveBuild) startDrive();
