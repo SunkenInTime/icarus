@@ -246,7 +246,16 @@ void main() {
     });
 
     test('opens with none from a payload written before doors', () {
-      expect(PlacedUtility.fromJson(_bar('a').toJson()).mapDoor, isNull);
+      final opened = PlacedUtility.fromJson(const {
+        'id': 'a',
+        'type': 'customRectangle',
+        'position': {'dx': 30.0, 'dy': 40.0},
+        'rotation': 0.0,
+        'length': 0.0,
+      });
+
+      expect(opened.mapDoor, isNull);
+      expect(opened.type, UtilityType.customRectangle);
     });
 
     test('saved by desktop 5.1.3, opens with none', () {
@@ -297,7 +306,7 @@ void main() {
           _bar('a', mapDoor: _door).copyWith(position: const Offset(300, 400)),
         ),
       ),
-      isNot(contains('mapDoor')),
+      ['customLength', 'customWidth', 'position', 'rotation'],
     );
   });
 
