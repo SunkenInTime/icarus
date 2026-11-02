@@ -256,11 +256,14 @@ class CoordinateSystem {
     );
   }
 
+  /// How close to the edge, in world units, an item's anchor can be dropped
+  /// before [isOutOfBounds] deletes it.
+  static const double dropEdge = 10;
+
   bool isOutOfBounds(Offset offset) {
-    const int tolerance = 10;
-    return offset.dx > worldNormalizedWidth - tolerance ||
-        offset.dy > normalizedHeight - tolerance ||
-        offset.dx < 0 + tolerance ||
-        offset.dy < 0 + tolerance;
+    return offset.dx > worldNormalizedWidth - dropEdge ||
+        offset.dy > normalizedHeight - dropEdge ||
+        offset.dx < 0 + dropEdge ||
+        offset.dy < 0 + dropEdge;
   }
 }

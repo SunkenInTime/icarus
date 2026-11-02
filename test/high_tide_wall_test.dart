@@ -18,6 +18,7 @@ import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
@@ -284,7 +285,7 @@ void main() {
         ),
       );
       await tester.pump();
-      final icon = tester.getRect(find.byType(Draggable<PlacedWidget>));
+      final icon = tester.getRect(find.byType(CanvasDraggable<PlacedWidget>));
       final pixels = await tester.runAsync(() async {
         final boundary =
             tester.renderObject<RenderRepaintBoundary>(find.byKey(canvasKey));
@@ -403,7 +404,7 @@ void main() {
     );
     await tester.pump();
     final finger = await tester.startGesture(
-      tester.getCenter(find.byType(Draggable<PlacedWidget>)),
+      tester.getCenter(find.byType(CanvasDraggable<PlacedWidget>)),
     );
     await finger.moveBy(const Offset(40, 40));
     await tester.pump();

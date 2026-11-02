@@ -13,6 +13,7 @@ import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_vision_cone_composite.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_deadlock_barrier_mesh_widget.dart';
@@ -203,7 +204,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       }
 
       if (index < 0) {
-        return Draggable<PlacedWidget>(
+        return CanvasDraggable<PlacedWidget>(
           maxSimultaneousDrags: itemDragLimit(context),
           dragAnchorStrategy:
               ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
@@ -382,7 +383,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               lengthOrigin = Offset.zero;
             });
           },
-          child: Draggable<PlacedWidget>(
+          child: CanvasDraggable<PlacedWidget>(
             maxSimultaneousDrags: itemDragLimit(context),
             data: widget.data,
             dragAnchorStrategy: (draggable, context, position) {
@@ -491,7 +492,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     return Positioned(
       left: screenPosition.dx,
       top: screenPosition.dy,
-      child: Draggable<PlacedWidget>(
+      child: CanvasDraggable<PlacedWidget>(
         maxSimultaneousDrags: itemDragLimit(context),
         dragAnchorStrategy:
             ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
@@ -642,7 +643,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             rotationOrigin = Offset.zero;
           });
         },
-        child: Draggable<PlacedWidget>(
+        child: CanvasDraggable<PlacedWidget>(
           maxSimultaneousDrags: itemDragLimit(context),
           data: widget.data,
           dragAnchorStrategy: (draggable, context, position) {

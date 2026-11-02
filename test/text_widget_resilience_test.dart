@@ -25,6 +25,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/text/formatted_text_view.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
@@ -259,8 +260,8 @@ void main() {
     await tester.enterText(find.byType(TextField), 'edited during drag');
     await tester.pump();
 
-    final draggable = tester.widget<Draggable<PlacedText>>(
-      find.byType(Draggable<PlacedText>),
+    final draggable = tester.widget<CanvasDraggable<PlacedText>>(
+      find.byType(CanvasDraggable<PlacedText>),
     );
     draggable.onDragStarted?.call();
     await tester.pump();

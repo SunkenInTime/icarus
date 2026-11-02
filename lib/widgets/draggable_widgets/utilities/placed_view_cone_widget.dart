@@ -12,6 +12,7 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/draggable_widgets/view_cone_drag_origin.dart';
@@ -208,7 +209,7 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
             rotationOrigin = Offset.zero;
           });
         },
-        child: Draggable<PlacedUtility>(
+        child: CanvasDraggable<PlacedUtility>(
           maxSimultaneousDrags: itemDragLimit(context),
           data: widget.utility,
           dragAnchorStrategy: (draggable, context, position) {

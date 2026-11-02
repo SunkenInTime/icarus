@@ -7,6 +7,7 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
@@ -189,7 +190,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
           });
         },
         onPanEnd: (_) => _finishResize(),
-        child: Draggable<PlacedText>(
+        child: CanvasDraggable<PlacedText>(
           maxSimultaneousDrags: itemDragLimit(context),
           data: widget.placedText,
           feedback: Opacity(

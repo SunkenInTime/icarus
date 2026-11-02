@@ -17,6 +17,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/deadlock_barrier_mesh_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -176,7 +177,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
           Positioned(
             left: iconInset,
             top: iconInset,
-            child: Draggable<PlacedWidget>(
+            child: CanvasDraggable<PlacedWidget>(
               maxSimultaneousDrags: itemDragLimit(context),
               data: widget.data,
               dragAnchorStrategy: (draggable, context, position) {

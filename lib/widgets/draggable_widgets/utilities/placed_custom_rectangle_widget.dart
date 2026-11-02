@@ -13,6 +13,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_resize_tooltip.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/rectangle_axis_resize_geometry.dart';
@@ -187,7 +188,7 @@ class _PlacedCustomRectangleWidgetState
                     Positioned(
                       left: insetX,
                       top: insetY,
-                      child: Draggable<PlacedUtility>(
+                      child: CanvasDraggable<PlacedUtility>(
                         maxSimultaneousDrags: itemDragLimit(context),
                         data: utilityRef,
                         dragAnchorStrategy: (draggable, context, position) =>
