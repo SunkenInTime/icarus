@@ -49,6 +49,17 @@ class MovedItemIds {
   }
 }
 
+/// The ids of items that already have the ids they land with: a page pasted
+/// into a cloud strategy, whose paste gave every item, lineup and new
+/// picture its id.
+class PastedItemIds extends MovedItemIds {
+  @override
+  String cloudIdFor(String localId) => localId;
+
+  @override
+  String cloudPictureIdFor(String localId, String fileExtension) => localId;
+}
+
 /// Adds to [ops] the content of [page] as it lands on the cloud page
 /// [cloudPageId]: its items in the order the page draws them, then one row
 /// per lineup group.
