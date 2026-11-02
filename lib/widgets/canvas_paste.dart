@@ -161,7 +161,20 @@ void _showRefusal(String message) => Settings.showToast(
 /// screen.
 Future<void> pasteCopiedItems(WidgetRef ref, {String? afterPageId}) async {
   final notifier = ref.read(canvasClipboardProvider.notifier);
-  final refusal = await notifier.paste(afterPageId: afterPageId);
+  final PasteRefusal? refusal;
+  try {
+    refusal = await notifier.paste(afterPageId: afterPageId);
+  } catch (error, stackTrace) {
+    AppErrorReporter.reportError(
+      'Paste failed: $error',
+      error: error,
+      stackTrace: stackTrace,
+      source: 'canvas_paste.paste',
+      promptUser: false,
+    );
+    _showRefusal("Couldn't paste what you copied.");
+    return;
+  }
   if (refusal == null) return;
   final copiedOn = ref.read(canvasClipboardProvider)?.map;
   _showRefusal(
