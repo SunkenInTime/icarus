@@ -4,6 +4,7 @@ import 'package:icarus/collab/presence/presence_models.dart';
 import 'package:icarus/collab/presence/presence_room.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/editing_presence_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -14,7 +15,9 @@ export 'package:icarus/collab/presence/presence_models.dart';
 /// Who else has the open cloud strategy open, and their cursors. Joins the
 /// strategy's room while the editor shows a cloud strategy, and leaves as soon
 /// as nothing on screen watches it, however the editor was left. Local
-/// strategies have no room.
+/// strategies have no room, and neither does a reader here only through a
+/// share link: the room is for people with access, so asking would be refused
+/// until they add the strategy to their library.
 final strategyPresenceProvider =
     NotifierProvider.autoDispose<StrategyPresenceNotifier, PresenceRoomState>(
   StrategyPresenceNotifier.new,
@@ -32,7 +35,12 @@ class StrategyPresenceNotifier extends AutoDisposeNotifier<PresenceRoomState> {
       ),
     );
     final cloudEnabled = ref.watch(isCloudCollabEnabledProvider);
-    if (strategyPublicId == null || !cloudEnabled) {
+    final throughLink = ref.watch(
+      shareLinkViewProvider.select(
+        (view) => view != null && view.strategyPublicId == strategyPublicId,
+      ),
+    );
+    if (strategyPublicId == null || !cloudEnabled || throughLink) {
       _room = null;
       return PresenceRoomState.off;
     }
