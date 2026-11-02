@@ -36,6 +36,7 @@ import 'package:icarus/migrations/paranoia_range_migration.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -2576,6 +2577,107 @@ void main() {
       container.read(activePageLiveSyncProvider).hydratedPageId,
       pageOne.publicId,
     );
+  });
+
+  test('two pages that differ only by a door still animate, from that door',
+      () async {
+    final pageOne = _page('page-1', 0);
+    final pageTwo = _page('page-2', 1);
+    final door = mapDoors.firstWhere((door) => door.id == 'summit-mid');
+    final row = door.row(id: 'door-row');
+    final pageOneSnapshot = _pageSnapshot(pageOne, elements: [
+      RemoteElement(
+        publicId: row.id,
+        strategyPublicId: 'cloud-strategy',
+        pagePublicId: pageOne.publicId,
+        elementType: 'utility',
+        payload: cloudElementPayload(
+          kind: 'utility',
+          data: {...row.toJson(), 'elementType': 'utility'},
+        ),
+        sortIndex: 0,
+        revision: 1,
+        deleted: false,
+      ),
+    ]);
+    final pageTwoSnapshot = _pageSnapshot(pageTwo, elements: const []);
+    final remote = _FakeRemoteEditorNotifier(
+      _editorSnapshot(
+        pages: [pageOne, pageTwo],
+        activePage: pageOneSnapshot,
+        mapData: Maps.mapNames[MapValue.summit]!,
+      ),
+      pageCatalog: {
+        pageOne.publicId: pageOneSnapshot,
+        pageTwo.publicId: pageTwoSnapshot,
+      },
+    );
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    expect(container.read(utilityProvider).single.mapDoor, door.id);
+
+    await session.setActivePageAnimated(
+      pageTwo.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    // The transition is planned after the frame that shows the new page.
+    WidgetsBinding.instance
+      ..handleBeginFrame(null)
+      ..handleDrawFrame();
+    await _settle();
+
+    final transition = container.read(transitionProvider);
+    expect(transition.active, isTrue);
+    expect(transition.entries, isEmpty);
+    expect(transition.fromDoors, {door.id});
+    expect(container.read(utilityProvider), isEmpty);
+  });
+
+  test('two pages with the same doors and nothing else do not animate',
+      () async {
+    final pageOne = _page('page-1', 0);
+    final pageTwo = _page('page-2', 1);
+    final pageOneSnapshot = _pageSnapshot(pageOne, elements: const []);
+    final pageTwoSnapshot = _pageSnapshot(pageTwo, elements: const []);
+    final remote = _FakeRemoteEditorNotifier(
+      _editorSnapshot(pages: [pageOne, pageTwo], activePage: pageOneSnapshot),
+      pageCatalog: {
+        pageOne.publicId: pageOneSnapshot,
+        pageTwo.publicId: pageTwoSnapshot,
+      },
+    );
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+
+    await session.setActivePageAnimated(
+      pageTwo.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    // The transition is planned after the frame that shows the new page.
+    WidgetsBinding.instance
+      ..handleBeginFrame(null)
+      ..handleDrawFrame();
+    await _settle();
+
+    final transition = container.read(transitionProvider);
+    expect(transition.active, isFalse);
+    expect(transition.phase, PageTransitionPhase.idle);
   });
 
   test('a page switch while offline keeps saving the page on screen', () async {

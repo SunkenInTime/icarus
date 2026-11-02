@@ -6,12 +6,14 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 
-/// How far from a bar the pointer counts as on it, screen pixels.
+/// How far from a bar the pointer counts as on it, in pixels on the screen
+/// whatever the zoom.
 const _hoverReach = 6.0;
 
 const _turnDuration = Duration(milliseconds: 200);
@@ -66,6 +68,7 @@ class MapDoorPainter extends CustomPainter {
     required this.wallColor,
     required this.thickness,
     this.hovered = false,
+    this.reach = _hoverReach,
   });
 
   final MapDoorKind kind;
@@ -74,6 +77,9 @@ class MapDoorPainter extends CustomPainter {
   final Color wallColor;
   final double thickness;
   final bool hovered;
+
+  /// How far past the bar a hit lands, on the canvas.
+  final double reach;
 
   void _stroke(Canvas canvas, Color color, double width) {
     canvas.drawLine(
@@ -135,7 +141,7 @@ class MapDoorPainter extends CustomPainter {
         ? 0.0
         : (((position - a).dx * along.dx + (position - a).dy * along.dy) / span)
             .clamp(0.0, 1.0);
-    return (a + along * t - position).distance <= _hoverReach + thickness / 2;
+    return (a + along * t - position).distance <= reach + thickness / 2;
   }
 
   @override
@@ -145,7 +151,8 @@ class MapDoorPainter extends CustomPainter {
       oldDelegate.changed != changed ||
       oldDelegate.wallColor != wallColor ||
       oldDelegate.thickness != thickness ||
-      oldDelegate.hovered != hovered;
+      oldDelegate.hovered != hovered ||
+      oldDelegate.reach != reach;
 }
 
 double _barThickness() =>
@@ -283,6 +290,7 @@ class _MapDoorBarState extends ConsumerState<_MapDoorBar> {
   Widget build(BuildContext context) {
     final door = widget.door;
     final wallColor = ref.watch(effectiveMapThemePaletteProvider).detailColor;
+    final zoom = ref.watch(screenZoomProvider);
     final amount = widget.amount;
     return IgnorePointer(
       ignoring: !widget.canClick,
@@ -316,6 +324,7 @@ class _MapDoorBarState extends ConsumerState<_MapDoorBar> {
                       wallColor: wallColor,
                       thickness: _barThickness(),
                       hovered: _hovered,
+                      reach: _hoverReach / zoom,
                     ),
                   ),
                   if (_hovered)

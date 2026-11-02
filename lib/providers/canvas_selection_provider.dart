@@ -133,6 +133,8 @@ class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
     pruneOnChange(textProvider);
     pruneOnChange(placedImageProvider.select((state) => state.images));
     pruneOnChange(utilityProvider);
+    // A rectangle naming a door stops being an item on that door's map.
+    pruneOnChange(mapProvider.select((state) => state.currentMap));
     pruneOnChange(drawingProvider.select((state) => state.elements));
     pruneOnChange(
       lineUpProvider.select(

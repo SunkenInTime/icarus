@@ -163,6 +163,14 @@ MapDoor? mapDoorOfRow(PlacedUtility utility, MapValue map) {
   return null;
 }
 
+/// [utilities] without the ones that are doors of [map]: what's drawn and
+/// handled as an item.
+Iterable<PlacedUtility> withoutMapDoors(
+  Iterable<PlacedUtility> utilities,
+  MapValue map,
+) =>
+    utilities.where((utility) => mapDoorOfRow(utility, map) == null);
+
 /// The doors of [map] that [utilities] change, by id.
 Set<String> changedMapDoors(Iterable<PlacedUtility> utilities, MapValue map) =>
     {

@@ -401,9 +401,7 @@ class ScreenshotView extends ConsumerWidget {
                   ...abilities,
                   ...text,
                   ...images,
-                  ...utilities.where(
-                    (utility) => mapDoorOfRow(utility, mapValue) == null,
-                  ),
+                  ...withoutMapDoors(utilities, mapValue),
                 ]),
                 drawings: drawings,
                 isAttack: isAttack,

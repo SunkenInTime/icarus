@@ -16,6 +16,7 @@ import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -47,6 +48,9 @@ class _FixedMapProvider extends MapProvider {
 
   @override
   MapState build() => MapState(currentMap: map, isAttack: isAttack);
+
+  @override
+  void updateMap(MapValue map) => state = state.copyWith(currentMap: map);
 }
 
 ProviderContainer _container({
@@ -320,13 +324,28 @@ void main() {
       );
     });
 
-    test('captionExportItems still gets a plain shape', () {
-      expect(
-        captionExportItems([_plainRectangle('shape')..caption = 'A note'])
-            .single
-            .id,
-        'shape',
-      );
+    test('a picture prints no caption from a door row', () {
+      final items = captionExportItems([
+        ...withoutMapDoors([
+          _door('summit-mid').row(id: 'row')..caption = 'Dropped on 2',
+          _plainRectangle('shape')..caption = 'A note',
+        ], MapValue.summit),
+      ]);
+
+      expect(items.map((item) => item.id), ['shape']);
+    });
+
+    test('a selected rectangle that becomes a door on a map change lets go',
+        () {
+      final container = _container(map: MapValue.ascent);
+      final row = _door('summit-mid').row(id: 'row');
+      container.read(utilityProvider.notifier).fromHive([row]);
+      container.read(canvasSelectionProvider.notifier).selectAll();
+      expect(container.read(canvasSelectionProvider), hasLength(1));
+
+      container.read(mapProvider.notifier).updateMap(MapValue.summit);
+
+      expect(container.read(canvasSelectionProvider), isEmpty);
     });
   });
 
@@ -388,6 +407,20 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(changed(container, MapValue.summit), {'summit-b'});
+    });
+
+    testWidgets('its margin stays the same on screen at any zoom',
+        (tester) async {
+      final container = await pump(tester);
+      container.read(screenZoomProvider.notifier).updateZoom(4);
+      await tester.pump();
+      final bar = tester
+          .widgetList<CustomPaint>(find.byType(CustomPaint))
+          .map((paint) => paint.painter)
+          .whereType<MapDoorPainter>()
+          .first;
+
+      expect(bar.reach, 1.5);
     });
 
     testWidgets('a click beside a bar changes nothing', (tester) async {
