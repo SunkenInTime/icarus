@@ -18,7 +18,7 @@
   {"expectAgents": 1},
   {"tapAt": [640, 420], "button": "secondary"},
   {"wait": 1},
-  {"tapText": "Create Lineup"},
+  {"tapText": "Create lineup"},
   {"wait": 1},
   {"hoverAt": [640, 420]},
   {"wait": 1},

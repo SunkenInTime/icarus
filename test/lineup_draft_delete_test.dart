@@ -97,7 +97,7 @@ Future<void> _pump(
   await tester.pumpAndSettle();
 }
 
-/// The page as Create Lineup leaves it: [agent] placed, and a draft that
+/// The page as Create lineup leaves it: [agent] placed, and a draft that
 /// shares its id.
 Future<void> _pumpDraftOf(
   WidgetTester tester,
@@ -198,7 +198,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Weapon'), findsOneWidget);
-    expect(find.text('Create Lineup'), findsNothing);
+    expect(find.text('Create lineup'), findsNothing);
     expect(find.text('Delete'), findsNothing);
   });
 

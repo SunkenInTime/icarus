@@ -279,12 +279,12 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                           ShadContextMenuItem(
                             leading: const Icon(LucideIcons.folderPlus),
                             onPressed: showCreateFolderDialog,
-                            child: const Text('Create Folder'),
+                            child: const Text('Create folder'),
                           ),
                           ShadContextMenuItem(
                             leading: const Icon(LucideIcons.filePlus),
                             onPressed: showCreateDialog,
-                            child: const Text('Create Strategy'),
+                            child: const Text('Create strategy'),
                           ),
                         ],
                   // Tabs are navigation, so the destination appears on the

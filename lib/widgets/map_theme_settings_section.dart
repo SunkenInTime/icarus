@@ -329,7 +329,7 @@ class _ProfileContextMenuButtonState
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.star, size: 16),
           onPressed: _setAsDefault,
-          child: const Text("Set as Default"),
+          child: const Text("Set as default"),
         ),
       if (!widget.profile.isBuiltIn)
         ShadContextMenuItem(
