@@ -161,10 +161,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
     final index = PlacedWidget.getIndexByID(id, newState);
 
-    final centerPosition = position + storedAgentAnchor;
     final coordinateSystem = CoordinateSystem.instance;
 
-    if (coordinateSystem.isOutOfBounds(centerPosition)) {
+    if (coordinateSystem.isAnchorOutOfBounds(position, storedAgentAnchor)) {
       removeAgentAsAction(id);
       _joinDroppedCopy(droppedCopy, id);
       return;
@@ -200,9 +199,10 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     required Offset position,
   }) {
     if (!ref.canEditPages) return null;
-    final centerPosition = position + storedAgentAnchor;
     final coordinateSystem = CoordinateSystem.instance;
-    if (coordinateSystem.isOutOfBounds(centerPosition)) return null;
+    if (coordinateSystem.isAnchorOutOfBounds(position, storedAgentAnchor)) {
+      return null;
+    }
 
     final sourceIndex = PlacedWidget.getIndexByID(sourceId, state);
     if (sourceIndex < 0) return null;

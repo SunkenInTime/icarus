@@ -204,13 +204,14 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                           abilitySize: abilitySize,
                           isAttack: mapState.isAttack,
                         );
-                        final safeArea = storedAbilityAnchor(
+                        final anchor = storedAbilityAnchor(
                           ability: abilityData,
                           mapScale: mapScale,
                         );
 
-                        if (coordinateSystem.isOutOfBounds(
-                          virtualOffset.translate(safeArea.dx, safeArea.dy),
+                        if (coordinateSystem.isAnchorOutOfBounds(
+                          virtualOffset,
+                          anchor,
                         )) {
                           ref.read(lineUpProvider.notifier).clearDraftAbility();
                           return;

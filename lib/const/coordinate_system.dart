@@ -266,4 +266,22 @@ class CoordinateSystem {
         offset.dx < 0 + dropEdge ||
         offset.dy < 0 + dropEdge;
   }
+
+  /// Whether an item saved at [position], whose dot sits [anchor] from there,
+  /// is off the map. The anchor is in drawing units and the position in world
+  /// units, so it is converted first: added as it is, it falls short of the
+  /// dot, and an item with its dot on the map reads as off it.
+  bool isAnchorOutOfBounds(Offset position, Offset anchor) {
+    return isOutOfBounds(position + virtualToWorld(anchor));
+  }
+
+  /// Whether a picture or text box saved at top-left [position], [screenSize]
+  /// big on the canvas, is off the map. It has no dot, so it goes once its
+  /// top-left and its middle have both left: the top-left alone would delete
+  /// a box hanging over the top edge, the middle alone one hanging over the
+  /// bottom edge, with most of it still on the map.
+  bool isBoxOutOfBounds(Offset position, Size screenSize) {
+    final middle = screenSizeToWorld(screenSize).center(position);
+    return isOutOfBounds(position) && isOutOfBounds(middle);
+  }
 }
