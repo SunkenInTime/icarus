@@ -15,10 +15,13 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/canvas_selection_layer.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
+import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
+import 'package:icarus/widgets/global_shortcuts.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class _AscentAttack extends MapProvider {
@@ -76,13 +79,6 @@ Future<ProviderContainer> _pumpCanvas(
       ),
     ]);
   }
-  bool forward(KeyEvent event) {
-    container.read(keepOnMapKeyProvider.notifier).handleKeyEvent(event);
-    return false;
-  }
-
-  HardwareKeyboard.instance.addHandler(forward);
-  addTearDown(() => HardwareKeyboard.instance.removeHandler(forward));
   await tester.pumpWidget(UncontrolledProviderScope(
     container: container,
     child: ShadApp(
@@ -91,14 +87,16 @@ Future<ProviderContainer> _pumpCanvas(
         brightness: Brightness.dark,
         colorScheme: Settings.tacticalVioletTheme,
       ),
-      home: Scaffold(
-        body: SizedBox(
-          width: 1600,
-          height: 900,
-          child: CanvasSelectionLayer(
-            enabled: true,
-            view: view,
-            child: const PlacedWidgetBuilder(),
+      home: GlobalShortcuts(
+        child: Scaffold(
+          body: SizedBox(
+            width: 1600,
+            height: 900,
+            child: CanvasSelectionLayer(
+              enabled: true,
+              view: view,
+              child: const PlacedWidgetBuilder(),
+            ),
           ),
         ),
       ),
@@ -184,6 +182,44 @@ void main() {
       closeTo(view.left + _inset, 1),
     );
   });
+
+  for (final defense in [false, true]) {
+    testWidgets(
+        'text wider than the view stays on the map, '
+        '${defense ? 'defense' : 'attack'} side', (tester) async {
+      late ProviderContainer held;
+      await _pumpCanvas(
+        tester,
+        defense: defense,
+        view: () => const Rect.fromLTRB(100, 0, 400, 900),
+        fill: (container) {
+          held = container;
+          container.read(textProvider.notifier).fromHive([
+            PlacedText(
+              id: 'note',
+              position: const Offset(600, 400),
+              size: 700,
+              sizeVersion: PlacedText.currentSizeVersion,
+            )..text = 'a wide note',
+          ]);
+        },
+      );
+      final note = find.byType(TextWidget).first;
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      for (final to in const [Offset(-800, 400), Offset(2400, 400)]) {
+        final mouse = await _startDrag(
+          tester,
+          tester.getTopLeft(note) + const Offset(10, 10),
+        );
+        await mouse.moveTo(to);
+        await tester.pump();
+        await _drop(tester, mouse);
+        expect(held.read(textProvider), hasLength(1));
+      }
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    });
+  }
 
   testWidgets('without Alt the same drag still deletes the item', (
     tester,
@@ -331,9 +367,10 @@ void main() {
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
     expect(container.read(keepOnMapKeyProvider), isTrue);
 
-    container.read(keepOnMapKeyProvider.notifier).clear();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     expect(container.read(keepOnMapKeyProvider), isFalse);
 
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
   });
 }

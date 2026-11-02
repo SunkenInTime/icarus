@@ -47,6 +47,13 @@
   {"expectInView": 7, "only": "omen-{run}"},
   {"shot": "{out}/4-zoomed-stops-at-view.png"},
 
+  {"addText": "wide-{run}", "at": [600, 450], "text": "a note wider than the view when zoomed in"},
+  {"holdKey": "altLeft"},
+  {"dragAgent": "wide-{run}", "by": [-1400, 0]},
+  {"letGoKey": "altLeft"},
+  {"wait": 1},
+  {"expectInView": 8, "only": "omen-{run}"},
+
   {"tapAt": [166, 142]},
   {"wait": 2},
   {"tapText": "Keybinds", "optional": true},

@@ -597,10 +597,11 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   /// inside the part of the map on screen, since the canvas runs on past the
   /// window and under the sidebar, and clear of the panels over it: they fill
   /// three of the four corners, and hide what sits under them or, for the
-  /// trash, delete it. An item wider or taller than the view goes by its
-  /// middle that way. An item's anchor, which decides whether a drop deletes
-  /// it, is inside its outline, so an outline clear of that edge can't be
-  /// deleted.
+  /// trash, delete it. An item wider or taller than the view stays on the
+  /// map instead, and one bigger than the map can't go further out at all.
+  /// An item's anchor, which decides whether a drop deletes it, is inside its
+  /// outline but can be at either end of it, so the whole outline has to stay
+  /// clear of the edge.
   ({RenderBox canvas, Offset Function(Offset by) keep})? _keepOnMap(
     RenderBox dragged,
   ) {
@@ -615,15 +616,18 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     final coordinates = CoordinateSystem.instance;
     const inset = CoordinateSystem.dropEdge + 2;
     final margin = coordinates.coordinateToScreen(const Offset(inset, 0)).dx;
-    final area =
-        (widget.view?.call().intersect(_map) ?? _map).deflate(margin);
-    final drawn = _spreadOf(points);
-    final spread = Rect.fromCenter(
-      center: drawn.center,
-      width: drawn.width > area.width ? 0 : drawn.width,
-      height: drawn.height > area.height ? 0 : drawn.height,
+    final map = _map.deflate(margin);
+    final view = (widget.view?.call().intersect(_map) ?? _map).deflate(margin);
+    final spread = _spreadOf(points);
+    final room = _roomInside(
+      spread,
+      Rect.fromLTRB(
+        spread.width > view.width ? map.left : view.left,
+        spread.height > view.height ? map.top : view.top,
+        spread.width > view.width ? map.right : view.right,
+        spread.height > view.height ? map.bottom : view.bottom,
+      ),
     );
-    final room = _roomInside(spread, area);
     final panels = [
       for (final panel in _registry.chromeIn(canvas)) panel.inflate(margin),
     ];
