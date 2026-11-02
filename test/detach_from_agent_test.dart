@@ -3,10 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -34,6 +37,37 @@ ProviderContainer _container() {
   );
   addTearDown(container.dispose);
   return container;
+}
+
+/// The middle of [widget] as the canvas draws it: its screen top-left from
+/// the drawing path, plus its drawn anchor.
+Offset _drawnMiddle(
+  PlacedWidget widget, {
+  required double mapScale,
+  required double agentSize,
+  required double abilitySize,
+  required bool isAttack,
+}) {
+  final coordinateSystem = CoordinateSystem.instance;
+  final topLeft = screenPositionForWidget(
+    widget: widget,
+    coordinateSystem: coordinateSystem,
+    mapScale: mapScale,
+    agentSize: agentSize,
+    abilitySize: abilitySize,
+    isAttack: isAttack,
+  );
+  final anchor = switch (widget) {
+    PlacedUtility() => utilityAnchorForScale(
+        utility: widget,
+        mapScale: mapScale,
+        agentSize: agentSize,
+        abilitySize: abilitySize,
+      ),
+    _ => Offset(agentSize / 2, agentSize / 2),
+  };
+  return topLeft +
+      anchor.scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
 }
 
 void main() {
@@ -103,6 +137,57 @@ void main() {
     container.read(actionProvider.notifier).undoAction();
     expect(container.read(agentProvider).single, isA<PlacedViewConeAgent>());
     expect(container.read(utilityProvider), isEmpty);
+  });
+
+  test('a detached circle or cone is drawn on the agent it came off', () {
+    for (final map in [MapValue.ascent, MapValue.bind, MapValue.lotus]) {
+      for (final isAttack in [true, false]) {
+        for (final attached in <PlacedAgentNode>[
+          PlacedCircleAgent(
+            id: 'circle',
+            type: AgentType.sova,
+            position: const Offset(310, 140),
+            diameterMeters: 12,
+            colorValue: 0xFF22C55E,
+            opacityPercent: 30,
+          ),
+          PlacedViewConeAgent(
+            id: 'cone',
+            type: AgentType.cypher,
+            position: const Offset(610, 380),
+            presetType: UtilityType.viewCone40,
+            rotation: 0.7,
+            length: 60,
+          ),
+        ]) {
+          final container = _container();
+          container.read(mapProvider.notifier).fromHive(map, isAttack);
+          container.read(agentProvider.notifier).fromHive([attached]);
+
+          detachFromAgent(container.read, attached);
+
+          final mapScale = Maps.mapScale[map]!;
+          // Marker sizes other than the ones positions are saved at.
+          for (final (agentSize, abilitySize) in [(35.0, 25.0), (50.0, 40.0)]) {
+            Offset middle(PlacedWidget widget) => _drawnMiddle(
+                  widget,
+                  mapScale: mapScale,
+                  agentSize: agentSize,
+                  abilitySize: abilitySize,
+                  isAttack: isAttack,
+                );
+            final drift = middle(container.read(utilityProvider).single) -
+                middle(container.read(agentProvider).single);
+            expect(
+              drift.distance,
+              lessThan(0.01),
+              reason: '${attached.id} on ${map.name}, '
+                  '${isAttack ? 'attack' : 'defense'}, agent size $agentSize',
+            );
+          }
+        }
+      }
+    }
   });
 
   test('a plain agent has nothing to detach', () {
