@@ -1,0 +1,11 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"tapText": "Doors session"},
+  {"wait": 5},
+  {"logDoors": "reopened"},
+  {"hoverAt": [60, 700]},
+  {"wait": 0.3},
+  {"shot": "{out}/4-reopened.png"},
+  {"exit": 1}
+]

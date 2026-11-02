@@ -682,7 +682,7 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
             left: points.last.dx + 12,
             top: points.last.dy - 12,
             child: IgnorePointer(
-              child: _WallLengthTag(
+              child: CanvasTag(
                 text: atLongest
                     ? '${data.maxLengthMeters.round()} m, the longest'
                     : '${meters.round()} m',
@@ -719,8 +719,9 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
   }
 }
 
-class _WallLengthTag extends StatelessWidget {
-  const _WallLengthTag({required this.text});
+/// A short label on the canvas, for what's under the pointer.
+class CanvasTag extends StatelessWidget {
+  const CanvasTag({super.key, required this.text});
 
   final String text;
 

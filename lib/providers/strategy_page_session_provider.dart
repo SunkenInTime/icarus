@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' show max;
 
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
@@ -405,6 +406,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
     final startSettings = ref.read(strategySettingsProvider);
     final previous = _snapshotAllPlaced();
+    final previousDoors = _changedDoors();
     final strategyState = ref.read(strategyProvider);
     final sourcePageId = state.activePageId;
     var fadeInDrawings = false;
@@ -429,6 +431,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       sourcePageId: sourcePageId,
       targetPageId: pageId,
       fadeInDrawings: fadeInDrawings,
+      fromDoors: previousDoors,
     );
 
     try {
@@ -487,7 +490,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final preliminaryNext = _snapshotAllPlaced();
       final preliminaryEntries = _diffToTransitions(previous, preliminaryNext);
-      if (preliminaryEntries.isEmpty && !fadeInDrawings) {
+      final doorsMove = !setEquals(previousDoors, _changedDoors());
+      if (preliminaryEntries.isEmpty && !fadeInDrawings && !doorsMove) {
         transitionNotifier.complete();
         state = state.copyWith(transitionState: PageTransitionState.idle);
         _resumePendingRemoteReapplyIfPossible();
@@ -528,7 +532,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
       final next = _snapshotAllPlaced();
       final entries = _diffToTransitions(previous, next);
-      if (entries.isEmpty && !fadeInDrawings) {
+      if (entries.isEmpty && !fadeInDrawings && !doorsMove) {
         transitionNotifier.complete();
         state = state.copyWith(transitionState: PageTransitionState.idle);
         _resumePendingRemoteReapplyIfPossible();
@@ -2042,11 +2046,19 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     for (final image in ref.read(placedImageProvider).images) {
       map[image.id] = image;
     }
+    final currentMap = ref.read(mapProvider).currentMap;
     for (final utility in ref.read(utilityProvider)) {
-      map[utility.id] = utility;
+      // A door turns in its own layer.
+      if (mapDoorOfRow(utility, currentMap) == null) map[utility.id] = utility;
     }
     return map;
   }
+
+  /// The map doors changed on the page on screen.
+  Set<String> _changedDoors() => changedMapDoors(
+        ref.read(utilityProvider),
+        ref.read(mapProvider).currentMap,
+      );
 
   List<PageTransitionEntry> _diffToTransitions(
     Map<String, PlacedWidget> previous,

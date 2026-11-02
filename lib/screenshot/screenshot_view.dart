@@ -4,6 +4,7 @@ import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -27,6 +28,7 @@ import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
+import 'package:icarus/widgets/map_door_layer.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class ScreenshotView extends ConsumerWidget {
@@ -56,6 +58,7 @@ class ScreenshotView extends ConsumerWidget {
     this.includeCaptions = false,
     this.onCaptionLayout,
     this.fadingCaptions = const [],
+    this.doorTransition,
   });
 
   /// [page] of a saved [strategy] as a capture draws it, with the map layers
@@ -72,6 +75,7 @@ class ScreenshotView extends ConsumerWidget {
     List<FadingCaptions> fadingCaptions = const [],
     Widget? placedWidgetsOverride,
     double drawingsOpacity = 1.0,
+    MapDoorTransition? doorTransition,
   }) =>
       ScreenshotView(
         isAttack: page.isAttack,
@@ -98,6 +102,7 @@ class ScreenshotView extends ConsumerWidget {
         includeCaptions: includeCaptions,
         onCaptionLayout: onCaptionLayout,
         fadingCaptions: fadingCaptions,
+        doorTransition: doorTransition,
       );
   final StrategyState strategyState;
   final MapValue mapValue;
@@ -138,6 +143,10 @@ class ScreenshotView extends ConsumerWidget {
   /// Video export draws these over a transition frame instead, since neither
   /// page's items are in place on it.
   final List<FadingCaptions> fadingCaptions;
+
+  /// Video export turns the doors on a transition frame, which draws the page
+  /// it's going to.
+  final MapDoorTransition? doorTransition;
 
   static const _pageNameStyle = TextStyle(
     color: Color(0xffb8b8c2),
@@ -336,6 +345,14 @@ class ScreenshotView extends ConsumerWidget {
               ),
             ),
           Positioned.fill(
+            child: MapDoorBars(
+              map: mapValue,
+              isAttack: isAttack,
+              changed: changedMapDoors(utilities, mapValue),
+              transition: doorTransition,
+            ),
+          ),
+          Positioned.fill(
             child: ConeCoverageScope(
               coverage: cones,
               // Lets the captions find the items by their drawn outlines.
@@ -384,7 +401,9 @@ class ScreenshotView extends ConsumerWidget {
                   ...abilities,
                   ...text,
                   ...images,
-                  ...utilities,
+                  ...utilities.where(
+                    (utility) => mapDoorOfRow(utility, mapValue) == null,
+                  ),
                 ]),
                 drawings: drawings,
                 isAttack: isAttack,

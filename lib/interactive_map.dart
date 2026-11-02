@@ -35,6 +35,7 @@ import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placement_editor.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
+import 'package:icarus/widgets/map_door_layer.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
@@ -429,6 +430,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                           ),
                                         ),
                                       ),
+                                    const Positioned.fill(
+                                      child: MapDoorLayer(),
+                                    ),
                                     Positioned.fill(
                                       // PlacedWidgetBuilder keeps a viewer's
                                       // pointer off everything but lineups.

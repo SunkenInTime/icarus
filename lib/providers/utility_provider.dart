@@ -4,10 +4,12 @@ import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
+import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
+import 'package:uuid/uuid.dart';
 
 final utilityProvider =
     NotifierProvider<UtilityProvider, List<PlacedUtility>>(UtilityProvider.new);
@@ -62,6 +64,25 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
           ),
         );
     removeUtility(id);
+  }
+
+  /// Changes [door], or puts it back at rest. One undo step, however many rows
+  /// it takes: two teammates changing a door at once leave two, and any row
+  /// means changed.
+  void toggleMapDoor(MapDoor door) {
+    if (!ref.canEditPages) return;
+    final rows = [
+      for (final utility in state)
+        if (utility.mapDoor == door.id) utility.id,
+    ];
+    if (rows.isEmpty) {
+      addUtility(door.row(id: const Uuid().v4()));
+      return;
+    }
+    ref.read(actionProvider.notifier).performTransaction(
+      groups: const [ActionGroup.utility],
+      mutation: () => rows.forEach(removeUtilityAsAction),
+    );
   }
 
   void updatePosition(Offset position, String id) {

@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -12,6 +13,7 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 
 /// The kinds of thing the user can select on the canvas. A lineup is
@@ -156,7 +158,8 @@ class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
         for (final image in ref.read(placedImageProvider).images)
           (kind: SelectableKind.image, id: image.id),
         for (final utility in ref.read(utilityProvider))
-          (kind: SelectableKind.utility, id: utility.id),
+          if (mapDoorOfRow(utility, ref.read(mapProvider).currentMap) == null)
+            (kind: SelectableKind.utility, id: utility.id),
         for (final drawing in ref.read(drawingProvider).elements)
           (kind: SelectableKind.drawing, id: drawing.id),
         for (final link in ref.read(lineUpProvider).links)
