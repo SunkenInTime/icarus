@@ -338,15 +338,20 @@ void main() {
     }
   });
 
-  test('the native query and the Dart one agree on every door state', () {
+  test('the native query and the Dart one agree with doors in each pose', () {
     final library = Platform.environment['ICARUS_SVG_NATIVE_LIBRARY'];
     if (library == null) {
       markTestSkipped('Set ICARUS_SVG_NATIVE_LIBRARY to icarus_height.dll.');
       return;
     }
-    for (final map in [MapValue.lotus, MapValue.summit]) {
-      final json = _json(map, true);
-      final walls = mapDoorWalls(map, isAttack: true);
+    for (final (map, isAttack) in [
+      (MapValue.lotus, true),
+      (MapValue.lotus, false),
+      (MapValue.summit, true),
+      (MapValue.summit, false),
+    ]) {
+      final json = _json(map, isAttack);
+      final walls = mapDoorWalls(map, isAttack: isAttack);
       final dart = SvgHeightVisibility.fromJson(json, doorWalls: walls);
       final native = SvgHeightVisibility.fromJson(json, doorWalls: walls);
       expect(native.enableNativeAcceleration(libraryPath: library), isTrue);
@@ -358,7 +363,7 @@ void main() {
         doors.toSet(),
       ]) {
         for (final door in mapDoorsOf(map)) {
-          final line = _lineInModel(door, true);
+          final line = _lineInModel(door, isAttack);
           final from = _spotBeside(dart, line, 1);
           final toward = (line.$1 + line.$2) / 2 - from;
           final support = dart.automaticSupportAt(from)?.id;
