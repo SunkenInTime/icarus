@@ -18,6 +18,7 @@ import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -417,6 +418,75 @@ void main() {
     expect(container.read(wallCarriedProvider), isNull);
     await finger.up();
     await tester.pump();
+  });
+
+  group('in a page transition', () {
+    Future<List<Offset>> wallLine(
+      WidgetTester tester,
+      PageTransitionEntry entry, {
+      required double t,
+      PageTransitionDirection direction = PageTransitionDirection.forward,
+    }) async {
+      tester.view
+        ..physicalSize = const Size(1600, 900)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      CoordinateSystem(playAreaSize: const Size(1600, 900));
+      final container = _container(tester);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: ShadApp(
+            home: SizedBox(
+              width: 1600,
+              height: 900,
+              child: TransitionEntriesLayer(
+                entries: [entry],
+                agentPaths: const {},
+                t: t,
+                direction: direction,
+                agentSize: 35,
+                abilitySize: 25,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final paint = tester.widget<CustomPaint>(
+        find.byWidgetPredicate(
+          (w) => w is CustomPaint && w.painter is WallPainter,
+        ),
+      );
+      return (paint.painter! as WallPainter).line;
+    }
+
+    testWidgets('a wall alone on one page slides with its icon', (tester) async {
+      final tide = _tide(const [Offset(0, -300)]);
+      final at = WallOnScreen.of(
+        tide,
+        mapScale: _mapScale,
+        abilitySize: 25,
+        isAttack: true,
+      ).center;
+      final slide = CoordinateSystem.instance.scale(28);
+
+      final appearing = await wallLine(
+        tester,
+        PageTransitionEntry.appear(to: tide),
+        t: 0.5,
+      );
+      expect((appearing.first - (at + Offset(slide / 2, 0))).distance,
+          lessThan(0.5));
+
+      final leaving = await wallLine(
+        tester,
+        PageTransitionEntry.disappear(from: tide),
+        t: 0.5,
+      );
+      expect((leaving.first - (at - Offset(slide / 2, 0))).distance,
+          lessThan(0.5));
+    });
   });
 
   group('hit testing', () {

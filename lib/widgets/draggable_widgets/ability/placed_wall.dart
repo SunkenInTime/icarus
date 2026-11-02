@@ -206,7 +206,12 @@ class PlacedWallHandleList extends ConsumerWidget {
       if (previous?.id == next?.id) return;
       final hover = ref.read(wallHoverProvider.notifier);
       if (previous != null) hover.leave(previous.id);
-      if (next != null) hover.enter(next.id);
+      final hasWall = ref.read(abilityProvider).any(
+            (ability) =>
+                ability.id == next?.id &&
+                ability.data.abilityData is GuidedWallAbility,
+          );
+      if (hasWall) hover.enter(next!.id);
     });
     return Stack(
       clipBehavior: Clip.none,
@@ -244,6 +249,7 @@ class WallHoverNotifier extends Notifier<String?> {
   }
 
   void leave(String id) {
+    if (state != id) return;
     _leaving?.cancel();
     _leaving = Timer(_hoverGrace, () {
       if (state == id) state = null;

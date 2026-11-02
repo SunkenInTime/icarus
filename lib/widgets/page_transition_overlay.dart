@@ -200,10 +200,23 @@ class _EntryRenderer {
     final to = PageTransitionEntry.wallPathOf(entry.to);
     if (from == null && to == null) return null;
     final ability = (entry.to ?? entry.from)! as PlacedAbility;
+    // An item alone on one page slides as it fades; its wall goes with it.
+    final directionalOffset = coordinateSystem.scale(28) *
+        (direction == PageTransitionDirection.forward ? 1.0 : -1.0);
+    Offset slid(Offset position, double screenX) =>
+        position + Offset(_canonicalHorizontalTranslation(screenX), 0);
     final (path, position, opacity) = switch (entry.kind) {
       TransitionKind.none => (to, entry.endPos, 1.0),
-      TransitionKind.appear => (to, entry.endPos, t),
-      TransitionKind.disappear => (from, entry.startPos, 1 - t),
+      TransitionKind.appear => (
+          to,
+          slid(entry.endPos, directionalOffset * (1 - t)),
+          t,
+        ),
+      TransitionKind.disappear => (
+          from,
+          slid(entry.startPos, -directionalOffset * t),
+          1 - t,
+        ),
       TransitionKind.move => (
           _morphedWall(from, to),
           Offset.lerp(entry.startPos, entry.endPos, t) ?? entry.endPos,
