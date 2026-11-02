@@ -291,6 +291,7 @@ PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>
       customLength: (json['customLength'] as num?)?.toDouble(),
       customColorValue: (json['customColorValue'] as num?)?.toInt(),
       customOpacityPercent: (json['customOpacityPercent'] as num?)?.toInt(),
+      mapDoor: json['mapDoor'] as String?,
     )
       ..isDeleted = json['isDeleted'] as bool? ?? false
       ..caption = json['caption'] as String?
@@ -314,4 +315,5 @@ Map<String, dynamic> _$PlacedUtilityToJson(PlacedUtility instance) =>
       'customColorValue': instance.customColorValue,
       'customOpacityPercent': instance.customOpacityPercent,
       'isAlly': instance.isAlly,
+      if (instance.mapDoor case final value?) 'mapDoor': value,
     };

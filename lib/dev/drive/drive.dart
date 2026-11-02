@@ -44,7 +44,7 @@
 //   {"addHighTide": id, "at": [x, y], "wall": [[dx, dy], ...]?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
 //   {"setCaption": id, "text": t}      what the caption dialog's Done does
-//   {"addUtility": id, "type": name, "at": [x, y]}  spike, customRectangle, customCircle
+//   {"addUtility": id, "type": name, "at": [x, y], "door": id?}  spike, customRectangle, customCircle
 //   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?}  two lineups, ids
 //                                      lo1{n}, lo2{n}; legacy ones share one id per lineup
 //   {"dragAgent": id, "by": [dx, dy]}  {"hoverAgent": id}
@@ -76,6 +76,7 @@
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
 //   {"logWalls": tag}                  every ability's position and wall path
+//   {"logUtilities": tag}              every utility's type, position and door
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
 //   {"logCaptions": tag}               every placed item's caption
 //   {"logCard": tag}                   the caption card that's open, and where
@@ -995,6 +996,7 @@ Future<void> _run(Map<String, dynamic> step) async {
           customColorValue:
               type == UtilityType.spike ? null : 0xFF22C55E,
           customOpacityPercent: type == UtilityType.spike ? null : 30,
+          mapDoor: step['door'] as String?,
         ),
       );
       await _place(
@@ -1291,6 +1293,14 @@ Future<void> _run(Map<String, dynamic> step) async {
                     (p) => '(${p.dx.toStringAsFixed(1)}, '
                         '${p.dy.toStringAsFixed(1)})',
                   ).toList()}',
+      ]}');
+    case 'logUtilities':
+      _log('UTILITIES $value ${[
+        for (final utility in c.read(utilityProvider))
+          '${utility.id} ${utility.type.name}@'
+              '(${utility.position.dx.toStringAsFixed(1)}, '
+              '${utility.position.dy.toStringAsFixed(1)}) '
+              'door=${utility.mapDoor}',
       ]}');
     case 'logPage':
       _log(

@@ -1283,6 +1283,12 @@ class PlacedUtility extends PlacedWidget {
   @JsonKey(defaultValue: true)
   final bool isAlly;
 
+  /// The map door this row changes, by id. Null: an ordinary shape. A door at
+  /// rest has no row, so a door returns to rest by deleting it. A later element
+  /// field (see LATER_ELEMENT_FIELDS in convex/lib/elementFields.ts).
+  @JsonKey(includeIfNull: false)
+  final String? mapDoor;
+
   PlacedUtility({
     required this.type,
     required super.position,
@@ -1295,6 +1301,7 @@ class PlacedUtility extends PlacedWidget {
     this.customLength,
     this.customColorValue,
     this.customOpacityPercent,
+    this.mapDoor,
   });
 
   factory PlacedUtility.fromJson(Map<String, dynamic> json) =>
@@ -1344,6 +1351,7 @@ class PlacedUtility extends PlacedWidget {
       customOpacityPercent: identical(customOpacityPercent, _noChange)
           ? this.customOpacityPercent
           : customOpacityPercent as int?,
+      mapDoor: mapDoor,
     );
     copied.rotation = rotation ?? this.rotation;
     copied.length = length ?? this.length;
