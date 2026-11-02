@@ -48,6 +48,7 @@ import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/services/image_file_name.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:icarus/services/strategy_folders.dart';
 import 'package:uuid/uuid.dart';
 
 String sanitizeStrategyFileName(String input) {
@@ -419,7 +420,7 @@ class StrategyImportExportService {
 
   Future<Directory> _getApplicationSupportDirectoryOrSystemTemp() async {
     try {
-      return await getApplicationSupportDirectory();
+      return await strategyFoldersRoot();
     } on MissingPluginException {
       return Directory.systemTemp;
     } on MissingPlatformDirectoryException {

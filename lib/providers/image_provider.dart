@@ -13,6 +13,7 @@ import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/image_file_name.dart';
+import 'package:icarus/services/strategy_folders.dart';
 import 'package:image/image.dart' as img;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
@@ -73,8 +74,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
     final fileIDs = localImages.toSet();
 
     if (kIsWeb) return;
-    // Get the system's application support directory.
-    final directory = await getApplicationSupportDirectory();
+    final directory = await strategyFoldersRoot();
 
     // Create a custom directory inside the application support directory.
     final customDirectory =
@@ -457,10 +457,9 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   static Future<Directory> getImageFolder(String strategyID) async {
-    // Get the system's application support directory.
     Directory appSupportDir;
     try {
-      appSupportDir = await getApplicationSupportDirectory();
+      appSupportDir = await strategyFoldersRoot();
     } on MissingPluginException {
       appSupportDir = Directory.systemTemp;
     } on MissingPlatformDirectoryException {

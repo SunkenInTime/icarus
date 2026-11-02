@@ -35,7 +35,7 @@ import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:hive_ce/hive.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:icarus/services/strategy_folders.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
@@ -754,8 +754,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<Directory> setStorageDirectory(String strategyID) async {
     // final strategyID = state.id;
-    // Get the system's application support directory.
-    final directory = await getApplicationSupportDirectory();
+    final directory = await strategyFoldersRoot();
 
     // Create a custom directory inside the application support directory.
 
@@ -2543,7 +2542,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> forgetDeletedLocalStrategy(String strategyID) async {
     await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
 
-    final directory = await getApplicationSupportDirectory();
+    final directory = await strategyFoldersRoot();
 
     final customDirectory =
         Directory(strategyFolderPath(directory.path, strategyID));

@@ -60,6 +60,7 @@ import 'package:icarus/services/cloud_sign_out_coordinator.dart';
 import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/services/open_cloud_strategy_store.dart';
+import 'package:icarus/services/strategy_folders.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/startup/cloud_bootstrap.dart';
@@ -183,6 +184,9 @@ Future<void> main(List<String> args) async {
         alternateHiveStore = await launch.prepareAlternateStore(
           getDefaultHiveDirectory: getApplicationSupportDirectory,
         );
+        if (alternateHiveStore != null) {
+          keepStrategyFoldersInDriveStore(alternateHiveStore.hiveDirectoryPath);
+        }
       }
 
       await registerDeepLinkProtocol('icarus');
