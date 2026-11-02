@@ -53,20 +53,7 @@ class _WaitingSvgLoader extends SvgAssetLoader {
 
   @override
   Future<ByteData?> prepareMessage(BuildContext? context) =>
-      _AssetSvgBytes.read(assetName);
-}
-
-/// Every SVG read so far, kept for the whole session. A strategy can go back to
-/// a side or recolor a map with no connection, and all the app's SVGs together
-/// are a few megabytes.
-abstract final class _AssetSvgBytes {
-  static final Map<String, ByteData> _arrived = {};
-
-  static Future<ByteData> read(String name) {
-    final bytes = _arrived[name];
-    if (bytes != null) return SynchronousFuture(bytes);
-    return appAssets.load(name).then((bytes) => _arrived[name] = bytes);
-  }
+      appAssets.load(assetName);
 }
 
 /// Says so when the map at [assetName] couldn't be read. It sits above the

@@ -86,6 +86,19 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('an SVG read once is never missing again', (tester) async {
+    online = true;
+    unawaited(appAssets.load('seen_map.svg'));
+    await settle(tester);
+    online = false;
+    reads.clear();
+
+    await appAssets.load('seen_map.svg');
+
+    expect(reads, isEmpty);
+    expect(appAssets.missing.value, isNot(contains('seen_map.svg')));
+  });
+
   testWidgets('a capture stops rather than save a page missing a picture', (
     tester,
   ) async {

@@ -27,12 +27,23 @@ class WaitingAssetBundle extends CachingAssetBundle {
   /// Assets whose last try failed and are still being tried.
   final ValueNotifier<Set<String>> missing = ValueNotifier(const {});
 
+  /// SVGs read so far, kept for the whole session so a map or side already
+  /// seen can be shown or recolored with no connection. All the app's SVGs
+  /// together are a few megabytes. Sightline data isn't kept: it's tens of
+  /// megabytes, and its reader waits.
+  final Map<String, ByteData> _svgs = {};
+
   final Map<String, Future<ByteData>> _loading = {};
 
   @override
   Future<ByteData> load(String key) {
+    final svg = _svgs[key];
+    if (svg != null) return SynchronousFuture(svg);
     return _loading[key] ??=
-        _untilItArrives(key, rootBundle.load).whenComplete(() {
+        _untilItArrives(key, rootBundle.load).then((bytes) {
+      if (key.endsWith('.svg')) _svgs[key] = bytes;
+      return bytes;
+    }).whenComplete(() {
       _loading.remove(key);
     });
   }
