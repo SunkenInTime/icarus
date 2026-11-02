@@ -401,6 +401,41 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     return true;
   }
 
+  bool convertCircleAgentToPlain({required String id}) {
+    if (!ref.canEditPages) return false;
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return false;
+    final node = newState[index];
+    if (node is! PlacedCircleAgent) return false;
+    final before = ActionObjectState.agent(node);
+
+    newState[index] = PlacedAgent(
+      id: node.id,
+      position: node.position,
+      type: node.type,
+      isAlly: node.isAlly,
+      state: node.state,
+      weapon: node.weapon,
+    )
+      ..isDeleted = node.isDeleted
+      ..caption = node.caption;
+
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.agent,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.agent(newState[index]),
+            ),
+          ),
+        );
+    state = newState;
+    return true;
+  }
+
   bool convertPlainAgentToCircle({
     required String id,
     required double diameterMeters,
