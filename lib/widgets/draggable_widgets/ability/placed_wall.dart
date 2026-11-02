@@ -292,6 +292,54 @@ class PlacedWallList extends ConsumerWidget {
   }
 }
 
+/// The pointer's hold on a wall: it shows the dots and makes the delete key
+/// mean this ability. A region taken away under the pointer reports no exit,
+/// so whoever removes one lets go here.
+mixin _WallPointer<T extends ConsumerStatefulWidget> on ConsumerState<T> {
+  final Object _ownerToken = Object();
+  ProviderContainer? _container;
+  String? _heldId;
+
+  void _pointerEntered(String id) {
+    _heldId = id;
+    ref.read(wallHoverProvider.notifier).enter(id);
+    ref.read(hoveredDeleteTargetProvider.notifier).state =
+        HoveredDeleteTarget.ability(id: id, ownerToken: _ownerToken);
+  }
+
+  void _pointerExited() => _release(_container!);
+
+  void _release(ProviderContainer container) {
+    final id = _heldId;
+    if (id == null) return;
+    _heldId = null;
+    container.read(wallHoverProvider.notifier).leave(id);
+    final hovered = container.read(hoveredDeleteTargetProvider);
+    if (hovered?.ownerToken == _ownerToken) {
+      container.read(hoveredDeleteTargetProvider.notifier).state = null;
+    }
+  }
+
+  /// Lets go after this frame, for a build that just took the region away.
+  void _releaseAfterFrame() {
+    if (_heldId == null) return;
+    final container = _container!;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _release(container));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _container ??= ProviderScope.containerOf(context, listen: false);
+  }
+
+  @override
+  void dispose() {
+    _releaseAfterFrame();
+    super.dispose();
+  }
+}
+
 class PlacedWall extends ConsumerStatefulWidget {
   const PlacedWall({super.key, required this.ability});
 
@@ -301,33 +349,18 @@ class PlacedWall extends ConsumerStatefulWidget {
   ConsumerState<PlacedWall> createState() => _PlacedWallState();
 }
 
-class _PlacedWallState extends ConsumerState<PlacedWall> {
-  final Object _ownerToken = Object();
-
-  void _entered() {
-    ref.read(wallHoverProvider.notifier).enter(widget.ability.id);
-    ref.read(hoveredDeleteTargetProvider.notifier).state =
-        HoveredDeleteTarget.ability(
-      id: widget.ability.id,
-      ownerToken: _ownerToken,
-    );
-  }
-
-  void _exited() {
-    ref.read(wallHoverProvider.notifier).leave(widget.ability.id);
-    final hovered = ref.read(hoveredDeleteTargetProvider);
-    if (hovered?.ownerToken == _ownerToken) {
-      ref.read(hoveredDeleteTargetProvider.notifier).state = null;
-    }
-  }
-
+class _PlacedWallState extends ConsumerState<PlacedWall>
+    with _WallPointer<PlacedWall> {
   @override
   Widget build(BuildContext context) {
     final ability = widget.ability;
     final draft = ref.watch(wallDraftProvider);
     final path = draft?.id == ability.id ? draft!.path : ability.wallPath;
     final carried = ref.watch(wallCarriedProvider) == ability.id;
-    if (path == null || path.isEmpty || carried) return const SizedBox.shrink();
+    if (path == null || path.isEmpty || carried) {
+      _releaseAfterFrame();
+      return const SizedBox.shrink();
+    }
 
     final mapState = ref.watch(mapProvider);
     final mapScale = Maps.mapScale[mapState.currentMap] ?? 1;
@@ -349,8 +382,8 @@ class _PlacedWallState extends ConsumerState<PlacedWall> {
         offset: shift ?? Offset.zero,
         child: MouseRegion(
           hitTestBehavior: HitTestBehavior.deferToChild,
-          onEnter: (_) => _entered(),
-          onExit: (_) => _exited(),
+          onEnter: (_) => _pointerEntered(ability.id),
+          onExit: (_) => _pointerExited(),
           child: CustomPaint(
             painter: WallPainter(
               line: smoothWallLine(wall.points(path)),
@@ -426,7 +459,8 @@ class PlacedWallHandles extends ConsumerStatefulWidget {
   ConsumerState<PlacedWallHandles> createState() => _PlacedWallHandlesState();
 }
 
-class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles> {
+class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
+    with _WallPointer<PlacedWallHandles> {
   /// The point of the path under the pointer, while a dot is dragged.
   int? _dragged;
   List<Offset> _path = const [];
@@ -494,6 +528,7 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles> {
     final path = [...?widget.ability.wallPath];
     path.removeAt(index);
     ref.read(abilityProvider.notifier).setWallPath(_id, path);
+    _pointerExited();
   }
 
   Offset _local(Offset global) =>
@@ -517,8 +552,8 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles> {
       top: center.dy - hitSize / 2,
       child: MouseRegion(
         cursor: SystemMouseCursors.grab,
-        onEnter: (_) => ref.read(wallHoverProvider.notifier).enter(_id),
-        onExit: (_) => ref.read(wallHoverProvider.notifier).leave(_id),
+        onEnter: (_) => _pointerEntered(_id),
+        onExit: (_) => _pointerExited(),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onPanStart: (details) => onStart(_local(details.globalPosition)),
@@ -576,6 +611,7 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles> {
         path == null ||
         path.isEmpty ||
         ref.watch(screenshotProvider)) {
+      _releaseAfterFrame();
       return const SizedBox.shrink();
     }
     final mapState = ref.watch(mapProvider);

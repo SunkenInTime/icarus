@@ -50,7 +50,7 @@
   {"tapAt": [124, 142]},
   {"wait": 2},
   {"shot": "{out}/4-picture-dialog.png"},
-  {"tapAt": [835, 618]},
+  {"tapAt": [1064, 598]},
   {"waitFile": "{out}/saved/wall.png", "seconds": 20},
   {"wait": 2},
   {"tapAt": [92, 142]},

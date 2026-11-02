@@ -13,6 +13,7 @@ import 'package:icarus/const/wall_path.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
@@ -368,6 +369,12 @@ void main() {
       return mouse;
     }
 
+    /// Lets the frame after a change run, and the hover grace it may start.
+    Future<void> settle(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
     Finder dot(int index) => find.byKey(ValueKey('wall-dot-point-$index'));
     Finder pale(int index) => find.byKey(ValueKey('wall-dot-pale-$index'));
 
@@ -389,6 +396,52 @@ void main() {
       expect(dot(0), findsOneWidget, reason: 'time to reach a dot');
       await tester.pump(const Duration(milliseconds: 200));
       expect(dot(0), findsNothing);
+    });
+
+    testWidgets('the wall and its dots both aim the delete key at it',
+        (tester) async {
+      final container = await pumpWall(tester, const [Offset(0, -300)]);
+      final mouse = await hoverWall(tester, container);
+      expect(container.read(hoveredDeleteTargetProvider)?.id, 'tide');
+
+      await mouse.moveTo(tester.getCenter(dot(0)));
+      await tester.pump();
+      expect(container.read(hoveredDeleteTargetProvider)?.id, 'tide');
+
+      await mouse.moveTo(const Offset(5, 5));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(container.read(hoveredDeleteTargetProvider), isNull);
+    });
+
+    testWidgets('a wall taken away under the pointer disarms the delete key',
+        (tester) async {
+      final container = await pumpWall(tester, const [Offset(0, -300)]);
+      await hoverWall(tester, container);
+      expect(container.read(hoveredDeleteTargetProvider)?.id, 'tide');
+
+      container.read(abilityProvider.notifier).setWallPath('tide', const []);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(container.read(hoveredDeleteTargetProvider), isNull);
+      expect(dot(0), findsNothing);
+    });
+
+    testWidgets('a dot right-clicked away lets go of the pointer',
+        (tester) async {
+      final container = await pumpWall(tester, const [
+        Offset(0, -150),
+        Offset(0, -300),
+      ]);
+      final mouse = await hoverWall(tester, container);
+      await mouse.moveTo(tester.getCenter(dot(1)));
+      await tester.pump();
+
+      await tester.tap(dot(1), buttons: kSecondaryButton);
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(container.read(hoveredDeleteTargetProvider), isNull);
+      expect(container.read(wallHoverProvider), isNull);
     });
 
     testWidgets('selecting the icon shows its dots, for touch', (tester) async {
@@ -414,11 +467,11 @@ void main() {
     testWidgets('dragging a dot moves that point, as one undo step',
         (tester) async {
       final container = await pumpWall(tester, const [Offset(0, -300)]);
-      await hoverWall(tester, container);
+      final mouse = await hoverWall(tester, container);
       final scale = CoordinateSystem.instance.worldHeightToScreen(1);
 
       await tester.drag(dot(0), const Offset(60, 0), touchSlopX: 0);
-      await tester.pump(const Duration(milliseconds: 300));
+      await settle(tester);
 
       final path = container.read(abilityProvider).single.wallPath!;
       expect(path.single.dx, closeTo(60 / scale, 1.5));
@@ -429,6 +482,8 @@ void main() {
         container.read(abilityProvider).single.wallPath,
         const [Offset(0, -300)],
       );
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
     });
 
     testWidgets('dragging a dot on the defending side saves the attack side',
@@ -438,16 +493,18 @@ void main() {
         const [Offset(0, 300)],
         isAttack: false,
       );
-      await hoverWall(tester, container);
+      final mouse = await hoverWall(tester, container);
       final scale = CoordinateSystem.instance.worldHeightToScreen(1);
 
       await tester.drag(dot(0), const Offset(60, 0), touchSlopX: 0);
-      await tester.pump(const Duration(milliseconds: 300));
+      await settle(tester);
 
       expect(
         container.read(abilityProvider).single.wallPath!.single.dx,
         closeTo(-60 / scale, 1.5),
       );
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
     });
 
     testWidgets('dragging a pale dot adds a bend in its place', (tester) async {
@@ -455,10 +512,10 @@ void main() {
         Offset(0, -150),
         Offset(0, -300),
       ]);
-      await hoverWall(tester, container);
+      final mouse = await hoverWall(tester, container);
 
       await tester.drag(pale(1), const Offset(50, 0), touchSlopX: 0);
-      await tester.pump(const Duration(milliseconds: 300));
+      await settle(tester);
 
       final path = container.read(abilityProvider).single.wallPath!;
       expect(path, hasLength(3));
@@ -466,26 +523,32 @@ void main() {
       expect(path.last, const Offset(0, -300));
       expect(path[1].dx, greaterThan(10));
       expect(path[1].dy, closeTo(-225, 2));
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
     });
 
     testWidgets('a drag stops at the longest wall', (tester) async {
       final container = await pumpWall(tester, const [Offset(0, -300)]);
-      await hoverWall(tester, container);
+      final mouse = await hoverWall(tester, container);
 
       await tester.drag(dot(0), const Offset(0, -700), touchSlopY: 0);
-      await tester.pump(const Duration(milliseconds: 300));
+      await settle(tester);
 
       expect(meters(container), closeTo(60, 0.05));
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
     });
 
     testWidgets('a wall holds no more than its most points', (tester) async {
       final container = await pumpWall(tester, [
         for (var i = 1; i <= maxWallPathPoints; i++) Offset(i * 20, -i * 30),
       ]);
-      await hoverWall(tester, container);
+      final mouse = await hoverWall(tester, container);
 
       expect(dot(maxWallPathPoints - 1), findsOneWidget);
       expect(pale(0), findsNothing);
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
     });
 
     testWidgets('right-clicking a dot takes it away, but never the last one',
@@ -494,21 +557,23 @@ void main() {
         Offset(0, -150),
         Offset(0, -300),
       ]);
-      await hoverWall(tester, container);
+      final mouse = await hoverWall(tester, container);
 
       await tester.tap(dot(0), buttons: kSecondaryButton);
-      await tester.pump();
+      await settle(tester);
       expect(
         container.read(abilityProvider).single.wallPath,
         const [Offset(0, -300)],
       );
 
       await tester.tap(dot(0), buttons: kSecondaryButton);
-      await tester.pump();
+      await settle(tester);
       expect(
         container.read(abilityProvider).single.wallPath,
         const [Offset(0, -300)],
       );
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
     });
   });
 
