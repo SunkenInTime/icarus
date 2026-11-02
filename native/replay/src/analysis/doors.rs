@@ -26,7 +26,7 @@ const LONGEST_MOVE_MS: u32 = 12_000;
 /// here stands for it.
 const WALL: &str = "RespawningWallPlate";
 
-pub(super) fn doors(collector: &Collector, rounds: &[Round]) -> Vec<DoorMove> {
+pub(super) fn doors(collector: &Collector, rounds: &[Round], duration_ms: i64) -> Vec<DoorMove> {
     let starts: Vec<i64> = rounds.iter().map(|round| round.start_ms).collect();
     let mut writes: BTreeMap<String, Vec<u32>> = BTreeMap::new();
     for (time, group) in &collector.door_writes {
@@ -37,7 +37,7 @@ pub(super) fn doors(collector: &Collector, rounds: &[Round]) -> Vec<DoorMove> {
     let mut moves: Vec<DoorMove> = writes
         .into_iter()
         .flat_map(|(actor, times)| {
-            moves_of(times, &starts)
+            moves_of(times, &starts, duration_ms)
                 .into_iter()
                 .map(move |(start_ms, end_ms)| DoorMove {
                     actor: actor.clone(),
@@ -97,8 +97,10 @@ fn is_reset(time: u32, starts: &[i64]) -> bool {
 /// within [`LONGEST_MOVE_MS`], before another burst. A door spun as a round
 /// ends is cut short by the next round's reset, which ends the move instead.
 /// A burst can touch a door without moving it: the barriers falling write
-/// all of them, and nothing follows.
-fn moves_of(times: Vec<u32>, starts: &[i64]) -> Vec<(i64, i64)> {
+/// all of them, and nothing follows. A recording that ends within
+/// [`LONGEST_MOVE_MS`] of a burst ends its move there instead, whatever came
+/// in between: the door was still moving.
+fn moves_of(times: Vec<u32>, starts: &[i64], duration_ms: i64) -> Vec<(i64, i64)> {
     let bursts = bursts(times);
     let mut moves = Vec::new();
     for (i, &(start, count)) in bursts.iter().enumerate() {
@@ -118,8 +120,13 @@ fn moves_of(times: Vec<u32>, starts: &[i64]) -> Vec<(i64, i64)> {
             }
             end = Some(time);
         }
-        if let Some(end) = end {
-            moves.push((i64::from(start), i64::from(end)));
+        let start = i64::from(start);
+        let unfinished = duration_ms - start <= i64::from(LONGEST_MOVE_MS)
+            && !bursts[i + 1..].iter().any(|&(_, writes)| writes >= 2);
+        if unfinished && duration_ms > start {
+            moves.push((start, duration_ms));
+        } else if let Some(end) = end {
+            moves.push((start, i64::from(end)));
         }
     }
     moves
@@ -147,6 +154,7 @@ mod tests {
 
     // As 2dd2de86's first rounds on Lotus.
     const LOTUS: [i64; 4] = [56, 112_332, 205_060, 295_654];
+    const MATCH_MS: i64 = 2_000_000;
 
     fn burst(time: u32, writes: usize) -> Vec<u32> {
         vec![time; writes]
@@ -162,7 +170,7 @@ mod tests {
         ]
         .concat();
 
-        assert_eq!(moves_of(times, &LOTUS), [(46_755, 56_749)]);
+        assert_eq!(moves_of(times, &LOTUS, MATCH_MS), [(46_755, 56_749)]);
     }
 
     #[test]
@@ -176,14 +184,14 @@ mod tests {
         ]
         .concat();
 
-        assert_eq!(moves_of(times, &LOTUS), [(334_326, 344_332)]);
+        assert_eq!(moves_of(times, &LOTUS, MATCH_MS), [(334_326, 344_332)]);
     }
 
     #[test]
     fn a_rounds_start_puts_a_door_back_and_moves_nothing() {
         let times = [burst(205_061, 4), burst(206_000, 1)].concat();
 
-        assert_eq!(moves_of(times, &LOTUS), []);
+        assert_eq!(moves_of(times, &LOTUS, MATCH_MS), []);
     }
 
     #[test]
@@ -191,7 +199,7 @@ mod tests {
         // As DescentBox_v5 at 121795, when the barriers fall.
         let times = [burst(121_795, 2), burst(228_986, 2), burst(230_738, 1)].concat();
 
-        assert_eq!(moves_of(times, &LOTUS), [(228_986, 230_738)]);
+        assert_eq!(moves_of(times, &LOTUS, MATCH_MS), [(228_986, 230_738)]);
     }
 
     #[test]
@@ -199,7 +207,7 @@ mod tests {
         // As Drawbridge6 at 946001, after the round's end.
         let times = [burst(200_000, 4), burst(205_061, 4)].concat();
 
-        assert_eq!(moves_of(times, &LOTUS), [(200_000, 205_061)]);
+        assert_eq!(moves_of(times, &LOTUS, MATCH_MS), [(200_000, 205_061)]);
     }
 
     #[test]
@@ -214,9 +222,17 @@ mod tests {
         .concat();
 
         assert_eq!(
-            moves_of(times, &LOTUS),
+            moves_of(times, &LOTUS, MATCH_MS),
             [(219_231, 229_231), (230_512, 240_509)],
         );
+    }
+
+    #[test]
+    fn a_recording_that_ends_mid_spin_ends_the_move() {
+        // A lone write while it turns, then the recording stops.
+        let times = [burst(390_000, 4), burst(391_500, 1)].concat();
+
+        assert_eq!(moves_of(times, &LOTUS, 395_000), [(390_000, 395_000)]);
     }
 
     #[test]

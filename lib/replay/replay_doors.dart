@@ -47,12 +47,18 @@ class ReplayDoors {
     return changed;
   }
 
-  /// [changed] as one number, a bit per door of the map, for the cone worker
-  /// and for telling one state from another.
+  /// The doors cones cut against in [changed], as one number, a bit per door
+  /// of the map, for the cone worker. A cone only knows a door's two poses,
+  /// so a spinning door blocks as closed for the first and last quarter of
+  /// its turn and side-on in between, the pose it's drawn nearer.
   int mask(Map<String, double> changed) {
     var mask = 0;
     for (var i = 0; i < _doors.length; i++) {
-      if (changed.containsKey(_doors[i].id)) mask |= 1 << i;
+      final amount = changed[_doors[i].id];
+      if (amount == null) continue;
+      final open = _doors[i].kind != MapDoorKind.spin ||
+          (amount >= 0.5 && amount < 1.5);
+      if (open) mask |= 1 << i;
     }
     return mask;
   }

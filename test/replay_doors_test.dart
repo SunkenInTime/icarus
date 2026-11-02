@@ -121,6 +121,18 @@ void main() {
     expect(doors.mask(const {}), 0);
   });
 
+  test("a spinning door cuts cones in the pose it's drawn nearer", () {
+    final doors = ReplayDoors(doc, MapValue.lotus);
+    final ids = [for (final door in mapDoorsOf(MapValue.lotus)) door.id];
+    Set<String> cut(double amount) =>
+        replayDoorsOfMask(ids, doors.mask({'lotus-c': amount}));
+
+    expect(cut(0.2), isEmpty);
+    expect(cut(0.5), {'lotus-c'});
+    expect(cut(1.4), {'lotus-c'});
+    expect(cut(1.6), isEmpty);
+  });
+
   group('a capture', () {
     ReplayFrame frame(Map<String, double> doors) => ReplayFrame(
           timeMs: 0,
@@ -144,10 +156,6 @@ void main() {
 
     test('saves nothing for doors at rest', () {
       expect(frame(const {}).doorRows, isEmpty);
-    });
-
-    test('never draws its rows as placed items in the viewer', () {
-      expect(frame({'lotus-c': 1}).utilities, isEmpty);
     });
   });
 

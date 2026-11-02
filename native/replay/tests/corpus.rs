@@ -140,6 +140,16 @@ fn check_doors(id: &str, doc: &Value, rounds: &[Value]) {
             .rev()
             .find(|r| r["startMs"].as_i64().unwrap() <= start)
             .expect("in a round");
+        // A move ends by the next round's reset, which may cut it short.
+        if let Some(next) = rounds
+            .iter()
+            .find(|r| r["startMs"].as_i64().unwrap() > start)
+        {
+            assert!(
+                end <= next["startMs"].as_i64().unwrap() + 3000,
+                "{id}: {door} runs into the next round"
+            );
+        }
         assert!(
             start - round["startMs"].as_i64().unwrap() > 3000,
             "{id}: {door}"

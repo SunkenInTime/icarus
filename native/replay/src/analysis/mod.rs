@@ -272,7 +272,7 @@ pub(crate) fn analyse(
         rounds.first().map(|r| r.start_ms),
     );
     let casts = casts::casts(&mut cx, &rounds);
-    let doors = doors::doors(collector, &rounds);
+    let doors = doors::doors(collector, &rounds, probe.duration_ms);
     let (movement, blob) = movement::movement(&mut cx, &collector.moves);
 
     let stats = &walked.stats;
