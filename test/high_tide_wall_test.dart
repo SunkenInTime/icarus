@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -137,6 +139,44 @@ void main() {
       expect(
         wallStretchMiddles(const [Offset.zero, Offset(0, -50)]),
         const [Offset(0, -25)],
+      );
+    });
+
+    test('a point added to a curved wall never takes it past the limit', () {
+      final random = math.Random(7);
+      var lengthened = 0;
+      for (var wall = 0; wall < 300; wall++) {
+        final path = <Offset>[];
+        var at = Offset.zero;
+        for (var i = 0; i < 4; i++) {
+          at += Offset.fromDirection(
+            random.nextDouble() * 2 * math.pi,
+            40 + random.nextDouble() * 200,
+          );
+          path.add(at);
+        }
+        final limit = wallPathLength(path);
+        final points = [Offset.zero, ...path];
+        for (final (index, middle) in wallStretchMiddles(points).indexed) {
+          final raw = [...path]..insert(index, middle);
+          if (wallPathLength(raw) > limit + 0.01) lengthened++;
+          final added = wallPathWithPoint(path, index, middle, limit: limit);
+          expect(added, hasLength(path.length + 1));
+          expect(wallPathLength(added), lessThanOrEqualTo(limit + 1e-6));
+        }
+      }
+      expect(lengthened, greaterThan(0), reason: 'the case this guards');
+    });
+
+    test('a point on a short wall goes in where it was put', () {
+      expect(
+        wallPathWithPoint(
+          const [Offset(0, -100)],
+          0,
+          const Offset(20, -50),
+          limit: 1000,
+        ),
+        const [Offset(20, -50), Offset(0, -100)],
       );
     });
 
@@ -650,6 +690,52 @@ void main() {
 
       expect(container.read(abilityProvider).single.wallPath, hasLength(2));
       expect(meters(container), lessThanOrEqualTo(60.05));
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
+    });
+
+    testWidgets('a page turned under a touch drag lets the dots go',
+        (tester) async {
+      final container = await pumpWall(tester, const [Offset(0, -300)]);
+      final mouse = await hoverWall(tester, container);
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
+      expect(container.read(wallHoverProvider), isNull);
+
+      container
+          .read(canvasSelectionProvider.notifier)
+          .select({(kind: SelectableKind.ability, id: 'tide')});
+      await tester.pump();
+      final finger = await tester.startGesture(tester.getCenter(dot(0)));
+      await finger.moveBy(const Offset(60, 0));
+      await tester.pump();
+      (container.read(strategyProvider.notifier) as _TestStrategyProvider)
+          .turnPage();
+      await tester.pump();
+      await finger.up();
+      container.read(canvasSelectionProvider.notifier).clear();
+      await settle(tester);
+
+      expect(container.read(wallHoverProvider), isNull);
+      expect(dot(0), findsNothing);
+    });
+
+    testWidgets("a removed drag leaves another wall's drag alone",
+        (tester) async {
+      final container = await pumpWall(tester, const [Offset(0, -300)]);
+      final mouse = await hoverWall(tester, container);
+      final finger = await tester.startGesture(tester.getCenter(dot(0)));
+      await finger.moveBy(const Offset(60, 0));
+      await tester.pump();
+      const other = (id: 'other', path: [Offset(1, 1)]);
+      container.read(wallDraftProvider.notifier).set(other);
+
+      container.read(abilityProvider.notifier).fromHive(const []);
+      await tester.pump();
+      await tester.pump();
+
+      expect(container.read(wallDraftProvider), other);
+      await finger.up();
       await mouse.moveTo(const Offset(5, 5));
       await settle(tester);
     });

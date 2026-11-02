@@ -473,6 +473,10 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
   int? _dragged;
   List<Offset> _path = const [];
 
+  /// How long this drag may make the wall: its longest, or as long as it
+  /// already was, so a wall past the limit can shrink and not grow.
+  double _limit = 0;
+
   String get _id => widget.ability.id;
 
   double get _mapScale =>
@@ -487,31 +491,32 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
   /// so it can't begin past the longest wall.
   void _begin(int index, {required bool adding, required Offset at}) {
     ref.read(wallHoverProvider.notifier).enter(_id);
-    final path = [...?widget.ability.wallPath];
-    if (adding) path.insert(index, at);
+    final current = [...?widget.ability.wallPath];
+    _limit = math.max(_longest, wallPathLength(current));
+    final path = adding
+        ? wallPathWithPoint(current, index, at, limit: _limit)
+        : current;
     _path = path;
     _dragged = index;
     ref.read(wallDraftProvider.notifier).set((id: _id, path: path));
   }
 
   /// Moves the dragged point to [target], stopping where the wall reaches
-  /// its longest. A wall already past that, as a bend added to a full-length
-  /// wall can leave it by a hair, may not grow.
+  /// [_limit].
   void _drag(Offset target) {
     final index = _dragged;
     if (index == null) return;
     List<Offset> withPoint(Offset point) =>
         [..._path]..[index] = point;
-    final longest = math.max(_longest, wallPathLength(_path));
     var path = withPoint(target);
-    if (wallPathLength(path) > longest) {
+    if (wallPathLength(path) > _limit) {
       final from = _path[index];
       var near = 0.0;
       var far = 1.0;
       for (var i = 0; i < 12; i++) {
         final middle = (near + far) / 2;
         if (wallPathLength(withPoint(Offset.lerp(from, target, middle)!)) >
-            longest) {
+            _limit) {
           far = middle;
         } else {
           near = middle;
@@ -536,6 +541,7 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
     if (_dragged == null) return;
     _dragged = null;
     ref.read(wallDraftProvider.notifier).set(null);
+    if (_heldId == null) ref.read(wallHoverProvider.notifier).leave(_id);
   }
 
   @override
@@ -544,9 +550,13 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
     // draw over the saved wall from then on.
     if (_dragged != null) {
       final container = _container!;
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => container.read(wallDraftProvider.notifier).set(null),
-      );
+      final id = _id;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Another finger may be shaping another wall by now.
+        if (container.read(wallDraftProvider)?.id == id) {
+          container.read(wallDraftProvider.notifier).set(null);
+        }
+      });
     }
     super.dispose();
   }

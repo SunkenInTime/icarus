@@ -98,9 +98,12 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     // the wall hidden for good.
     if (_activeDragId != null) {
       final container = _container!;
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => container.read(wallCarriedProvider.notifier).set(null),
-      );
+      final id = _activeDragId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (container.read(wallCarriedProvider) == id) {
+          container.read(wallCarriedProvider.notifier).set(null);
+        }
+      });
     }
     _visionDragOrigin.dispose();
     super.dispose();

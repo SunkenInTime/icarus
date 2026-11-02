@@ -53,6 +53,21 @@ double wallLineLength(List<Offset> line) {
 double wallPathLength(List<Offset> path) =>
     wallLineLength(smoothWallLine([Offset.zero, ...path]));
 
+/// [path] with [point] added at [index], no longer than [limit]. A new point
+/// on a curved wall bends what's beside it a little, which can lengthen it,
+/// so the whole wall shrinks by that much.
+List<Offset> wallPathWithPoint(
+  List<Offset> path,
+  int index,
+  Offset point, {
+  required double limit,
+}) {
+  final added = [...path]..insert(index, point);
+  final length = wallPathLength(added);
+  if (length <= limit) return added;
+  return [for (final offset in added) offset * (limit / length)];
+}
+
 /// The point [fraction] of the way along [line].
 Offset pointAlongWall(List<Offset> line, double fraction) {
   final total = wallLineLength(line);
