@@ -176,6 +176,7 @@ class VideoExporter {
       renderer = PersistentOffscreenRenderer(
         targetSize: CoordinateSystem.screenShotSize,
         waitForFrameData: captureGeometry?.waitForFrame,
+        isCancelled: () => _cancelled,
         wrapWidget: (child) =>
             wrapForOffscreenCapture(child, container: offscreenContainer),
       );

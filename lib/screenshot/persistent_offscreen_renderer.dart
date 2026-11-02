@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/services/app_assets.dart';
+import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/widgets/asset_svg.dart';
 
 /// Renders a sequence of widgets through one detached Flutter render tree.
@@ -19,6 +20,8 @@ class PersistentOffscreenRenderer {
     this.pixelRatio = 1.0,
     this.wrapWidget,
     this.waitForFrameData,
+    this.isCancelled,
+    this.pictureStallLimit = const Duration(seconds: 30),
   })  : assert(pixelRatio > 0),
         _repaintBoundary = RenderRepaintBoundary(),
         _focusManager = FocusManager(),
@@ -63,6 +66,14 @@ class PersistentOffscreenRenderer {
 
   /// Await queries requested by this exact mounted frame before reading pixels.
   final Future<void> Function()? waitForFrameData;
+
+  /// Checked while a capture waits for its pictures. Once it turns true the
+  /// capture throws [VideoExportCancelled] rather than wait on.
+  final bool Function()? isCancelled;
+
+  /// How long a capture keeps waiting with no picture arriving. A slow
+  /// connection keeps landing them, so this only stops a stalled one.
+  final Duration pictureStallLimit;
 
   final RenderRepaintBoundary _repaintBoundary;
   final FocusManager _focusManager;
@@ -173,28 +184,56 @@ class PersistentOffscreenRenderer {
     await _flushPendingFrames();
     await waitForFrameData?.call();
     await _flushPendingFrames();
-    _checkAssetsArrived();
+    await _waitForPictures();
     return _repaintBoundary.toImage(pixelRatio: pixelRatio);
   }
 
-  /// A picture still waiting for the connection throws no error of its own, so
-  /// a capture has to look, or it would save a page with the picture missing.
-  void _checkAssetsArrived() {
-    final missing = appAssets.missing.value;
-    if (missing.isEmpty) return;
+  /// A picture still on its way throws no error of its own, so a capture has
+  /// to look, or it would save a page with the picture missing. It waits for
+  /// the frame's pictures, and throws [CaptureImagesUnavailable] if one's read
+  /// fails or they stop arriving.
+  Future<void> _waitForPictures() async {
+    var loading = _picturesLoading();
+    final sinceLastPicture = Stopwatch()..start();
+    while (loading.isNotEmpty) {
+      if (isCancelled?.call() ?? false) throw VideoExportCancelled();
+      final missing = appAssets.missing.value;
+      if (loading.any(missing.contains)) {
+        throw CaptureImagesUnavailable.fetchFailed(
+          '${loading.firstWhere(missing.contains)} has not loaded',
+        );
+      }
+      if (sinceLastPicture.elapsed >= pictureStallLimit) {
+        throw const CaptureImagesUnavailable.stillLoading();
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      await _flushPendingFrames();
+      final left = _picturesLoading();
+      if (left.length < loading.length) sinceLastPicture.reset();
+      loading = left;
+    }
+  }
+
+  /// The mounted frame's pictures that have nothing to paint yet, by asset
+  /// name, or null for a picture that isn't an asset. An [Image] builds a
+  /// [RawImage] with no image until its picture is decoded.
+  List<String?> _picturesLoading() {
+    final loading = <String?>[];
+    String? imageAsset;
     void visit(Element element) {
-      final name = switch (element.widget) {
-        AssetSvg(:final assetName) => assetName,
-        Image(image: AssetImage(:final keyName)) => keyName,
-        _ => null,
-      };
-      if (missing.contains(name)) {
-        throw CaptureImagesUnavailable.fetchFailed('$name has not loaded');
+      switch (element.widget) {
+        case AssetSvgLoading(:final assetName):
+          loading.add(assetName);
+        case Image(:final image):
+          imageAsset = image is AssetImage ? image.keyName : null;
+        case RawImage(image: null):
+          loading.add(imageAsset);
       }
       element.visitChildren(visit);
     }
 
     _rootElement?.visitChildren(visit);
+    return loading;
   }
 
   void _updateWidget(Widget widget) {
