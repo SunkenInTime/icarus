@@ -21,6 +21,7 @@
   {"addImage": "{here}/../../../assets/logo.png", "at": [700, 450]},
   {"wait": 1},
   {"logImages": "added"},
+  {"expectPicturesIn": "{out}/store-main"},
   {"shot": "{out}/pictures.png"},
   {"exportIca": "{out}/exported.ica"},
   {"exit": 1}

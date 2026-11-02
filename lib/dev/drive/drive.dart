@@ -64,6 +64,8 @@
 //   {"dropFiles": [paths], "at": [x, y]}  dropped from Explorer
 //   {"exportIca": path}                {"importIca": path}
 // Pictures
+//   {"expectPicturesIn": dir}          fails unless the open strategy's pictures
+//                                      are in a folder under dir
 //   {"clipboard": path, "file": b?}    puts a bitmap on the Windows clipboard as
 //                                      a screenshot does; with file, copies the
 //                                      file as Explorer does
@@ -149,6 +151,7 @@ import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 // The driver alone swaps the platform's launcher; the app uses url_launcher.
 // ignore: depend_on_referenced_packages
@@ -1248,6 +1251,16 @@ Future<void> _run(Map<String, dynamic> step) async {
           'worstGap=${_worstFrameGap.inMilliseconds} ms '
           'over50ms=$_gapsOver50',
         );
+      }
+    case 'expectPicturesIn':
+      final folder = await PlacedImageProvider.getImageFolder(
+        c.read(strategyProvider).strategyId!,
+      );
+      if (!path.isWithin(value as String, folder.path)) {
+        throw StateError('pictures are in ${folder.path}');
+      }
+      if (folder.listSync().isEmpty) {
+        throw StateError('no pictures in ${folder.path}');
       }
     case 'logImages':
       await _logImages(value as String);
