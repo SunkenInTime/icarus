@@ -74,6 +74,7 @@ void main() {
       view: (strategyPublicId: _strategyId, token: 'ICR-TOKEN'),
     );
     await pumpEventQueue();
+    expect(passes.asked, isEmpty);
 
     // Redeeming clears the view only after the server has the member row.
     container.read(shareLinkViewProvider.notifier).state = null;
