@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -19,7 +20,6 @@ import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -117,7 +117,6 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
     final strategySettings = ref.watch(strategySettingsProvider);
     final agentSize = strategySettings.agentSize;
-    final scaledAgentSize = coordinateSystem.scale(agentSize);
     final abilitySize = strategySettings.abilitySize;
     final canEditPages = ref.watch(
       currentStrategyCapabilitiesProvider.select(
@@ -167,13 +166,9 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                               coordinateSystem: coordinateSystem,
                               agentSize: agentSize,
                             ),
-                            _TextList(
-                              coordinateSystem: coordinateSystem,
-                              agentSize: scaledAgentSize,
-                            ),
+                            _TextList(coordinateSystem: coordinateSystem),
                             _PlacedImageList(
                               coordinateSystem: coordinateSystem,
-                              agentSize: scaledAgentSize,
                             ),
                             _UtilityList(
                               coordinateSystem: coordinateSystem,
@@ -545,13 +540,14 @@ class _AbilityList extends ConsumerWidget {
                   abilitySize: abilitySize,
                   isAttack: isAttack,
                 );
-                final safeArea = storedAbilityAnchor(
+                final anchor = storedAbilityAnchor(
                   ability: ability.data.abilityData!,
                   mapScale: mapScale,
                 );
 
-                if (coordinateSystem.isOutOfBounds(
-                  virtualOffset.translate(safeArea.dx, safeArea.dy),
+                if (coordinateSystem.isAnchorOutOfBounds(
+                  virtualOffset,
+                  anchor,
                 )) {
                   ref
                       .read(abilityProvider.notifier)
@@ -753,10 +749,9 @@ class _AgentListState extends ConsumerState<_AgentList> {
 }
 
 class _TextList extends ConsumerWidget {
-  const _TextList({required this.coordinateSystem, required this.agentSize});
+  const _TextList({required this.coordinateSystem});
 
   final CoordinateSystem coordinateSystem;
-  final double agentSize;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -791,10 +786,10 @@ class _TextList extends ConsumerWidget {
                 final virtualOffset = coordinateSystem.screenToCoordinate(
                   attackScreenOffset,
                 );
-                final safeArea = agentSize / 2;
 
-                if (coordinateSystem.isOutOfBounds(
-                  virtualOffset.translate(safeArea, safeArea),
+                if (coordinateSystem.isBoxOutOfBounds(
+                  virtualOffset,
+                  Size(renderedSize.dx, renderedSize.dy),
                 )) {
                   ref
                       .read(textProvider.notifier)
@@ -814,13 +809,9 @@ class _TextList extends ConsumerWidget {
 }
 
 class _PlacedImageList extends ConsumerWidget {
-  const _PlacedImageList({
-    required this.coordinateSystem,
-    required this.agentSize,
-  });
+  const _PlacedImageList({required this.coordinateSystem});
 
   final CoordinateSystem coordinateSystem;
-  final double agentSize;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -843,23 +834,22 @@ class _PlacedImageList extends ConsumerWidget {
               onDragEnd: (details) {
                 final renderBox = context.findRenderObject() as RenderBox;
                 final localOffset = renderBox.globalToLocal(details.offset);
-                final renderedSize = ref
-                    .read(imageWidgetSizeProvider.notifier)
-                    .getSize(placedImage.id);
+                final size = PlacedImageDimensions.screenSize(
+                  coordinateSystem: coordinateSystem,
+                  scale: placedImage.scale,
+                  aspectRatio: placedImage.aspectRatio,
+                );
                 final attackScreenOffset =
                     coordinateSystem.screenPositionFromSide(
                   sideScreenPosition: localOffset,
-                  reflectionOffset: renderedSize,
+                  reflectionOffset: size.bottomRight(Offset.zero),
                   isAttack: isAttack,
                 );
                 final virtualOffset = coordinateSystem.screenToCoordinate(
                   attackScreenOffset,
                 );
-                final safeArea = agentSize / 2;
 
-                if (coordinateSystem.isOutOfBounds(
-                  virtualOffset.translate(safeArea, safeArea),
-                )) {
+                if (coordinateSystem.isBoxOutOfBounds(virtualOffset, size)) {
                   ref
                       .read(placedImageProvider.notifier)
                       .removeImageAsAction(placedImage.id);
@@ -1014,13 +1004,14 @@ class _UtilityList extends ConsumerWidget {
                     isAttack: isAttack,
                   );
 
-                  final safeArea = storedUtilityAnchor(
+                  final anchor = storedUtilityAnchor(
                     utility: placedUtility,
                     mapScale: mapScale,
                   );
 
-                  if (coordinateSystem.isOutOfBounds(
-                    virtualOffset.translate(safeArea.dx, safeArea.dy),
+                  if (coordinateSystem.isAnchorOutOfBounds(
+                    virtualOffset,
+                    anchor,
                   )) {
                     ref
                         .read(utilityProvider.notifier)
@@ -1111,19 +1102,17 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                           return;
                         }
 
-                        // The anchor is in drawing units; the circle's box
-                        // is 110 m wide, so add it in world units or a
-                        // circle near an edge reads as off the map.
-                        final centre = virtualOffset +
-                            CoordinateSystem.virtualToWorld(
-                              UtilityData.utilityWidgets[placedUtility.type]!
-                                  .getAnchorPoint(
-                                mapScale: mapScale,
-                                diameterMeters: diameterMeters,
-                              ),
-                            );
+                        final anchor = UtilityData
+                            .utilityWidgets[placedUtility.type]!
+                            .getAnchorPoint(
+                          mapScale: mapScale,
+                          diameterMeters: diameterMeters,
+                        );
 
-                        if (coordinateSystem.isOutOfBounds(centre)) {
+                        if (coordinateSystem.isAnchorOutOfBounds(
+                          virtualOffset,
+                          anchor,
+                        )) {
                           ref
                               .read(utilityProvider.notifier)
                               .removeUtilityAsAction(placedUtility.id);
@@ -1175,20 +1164,18 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                           return;
                         }
 
-                        // The anchor is in drawing units, so add it in
-                        // world units or a long rectangle with its center
-                        // still on the map reads as off it.
-                        final centre = virtualOffset +
-                            CoordinateSystem.virtualToWorld(
-                              UtilityData.utilityWidgets[placedUtility.type]!
-                                  .getAnchorPoint(
-                                mapScale: mapScale,
-                                widthMeters: widthMeters,
-                                rectLengthMeters: lengthMeters,
-                              ),
-                            );
+                        final anchor = UtilityData
+                            .utilityWidgets[placedUtility.type]!
+                            .getAnchorPoint(
+                          mapScale: mapScale,
+                          widthMeters: widthMeters,
+                          rectLengthMeters: lengthMeters,
+                        );
 
-                        if (coordinateSystem.isOutOfBounds(centre)) {
+                        if (coordinateSystem.isAnchorOutOfBounds(
+                          virtualOffset,
+                          anchor,
+                        )) {
                           ref
                               .read(utilityProvider.notifier)
                               .removeUtilityAsAction(placedUtility.id);

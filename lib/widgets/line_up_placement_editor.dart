@@ -196,8 +196,10 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
                     ref.read(lineUpProvider).edit?.movedOrigins[origin.id];
                 endMove(
                   outOfBounds: position != null &&
-                      coordinateSystem
-                          .isOutOfBounds(position + storedAgentAnchor),
+                      coordinateSystem.isAnchorOutOfBounds(
+                        position,
+                        storedAgentAnchor,
+                      ),
                   undo: () {
                     if (start != null) {
                       notifier.moveEditedOrigin(origin.id, start);
@@ -253,7 +255,7 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
                 );
                 endMove(
                   outOfBounds: position != null &&
-                      coordinateSystem.isOutOfBounds(position + anchor),
+                      coordinateSystem.isAnchorOutOfBounds(position, anchor),
                   undo: () {
                     if (start != null) {
                       notifier.moveEditedLanding(landing.id, start);

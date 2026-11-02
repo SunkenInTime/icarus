@@ -50,7 +50,12 @@
 //                                      two lineups, ids lo1{n}, lo2{n}; legacy ones share
 //                                      one id per lineup; shot is the first one's picture,
 //                                      in a local strategy
+//   {"addAbility": id, "agent": name, "slot": n, "at": [x, y]}
 //   {"dragAgent": id, "by": [dx, dy]}  {"hoverAgent": id}
+//   {"dragAgent": id, "toWorld": [x, y]}
+//                                      drops the middle of any placed item at this
+//                                      point of the canvas as drawn, 1778 by 1000;
+//                                      the id lastImage is the newest picture
 // Library and cloud
 //   {"signIn": true}                   ICARUS_DRIVE_EMAIL / ICARUS_DRIVE_PASSWORD
 //   {"newLocal": map, "name": n}       {"newCloud": name, "map": m?}
@@ -94,6 +99,8 @@
 //                                      With only, checks that item, and the page
 //                                      can have more
 //   {"expectDead": n}                  fails unless n agents on the page are dead
+//   {"expectItem": id, "gone": b?}     fails unless the item is on the page, or
+//                                      with gone, unless it is not
 //   {"expectImages": n, "lineups": m?} fails unless n pictures are on the page,
 //                                      and m in its lineups
 //   {"exit": 1}
@@ -977,6 +984,23 @@ Future<void> _run(Map<String, dynamic> step) async {
         _point(step, 'at'),
         (p) => abilities.updatePosition(p, id),
       );
+    case 'addAbility':
+      final id = value as String;
+      final abilities = c.read(abilityProvider.notifier);
+      final agent = AgentType.values.byName(step['agent'] as String);
+      abilities.addAbility(
+        PlacedAbility(
+          data: AgentData.agents[agent]!.abilities[step['slot'] as int],
+          position: const Offset(500, 500),
+          id: id,
+          isAlly: true,
+        ),
+      );
+      await _place(
+        id,
+        _point(step, 'at'),
+        (p) => abilities.updatePosition(p, id),
+      );
     case 'addHighTide':
       final id = value as String;
       final abilities = c.read(abilityProvider.notifier);
@@ -1113,8 +1137,14 @@ Future<void> _run(Map<String, dynamic> step) async {
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await _frames();
     case 'dragAgent':
-      final from = _itemCenter(value as String);
-      await _drag([from, from + _point(step, 'by')]);
+      final id = _itemId(value as String);
+      final from = _itemCenter(id);
+      await _drag([
+        from,
+        step['toWorld'] == null
+            ? from + _point(step, 'by')
+            : _canvasPointOnScreen(_point(step, 'toWorld')),
+      ]);
     case 'hoverAgent':
       final id = value as String;
       await _hover(
@@ -1404,6 +1434,18 @@ Future<void> _run(Map<String, dynamic> step) async {
           throw StateError('$id is out of view: $drawn');
         }
       }
+    case 'expectItem':
+      final id = _itemId(value as String);
+      final items = _placedItems().where((item) => item.id == id);
+      final at = items.isEmpty
+          ? 'gone'
+          : '(${items.first.position.dx.toStringAsFixed(1)}, '
+              '${items.first.position.dy.toStringAsFixed(1)})';
+      _log('ITEM $value $at'
+          '${items.isEmpty ? '' : ' drawn ${_itemCenter(id)}'}');
+      if (items.isEmpty != (step['gone'] == true)) {
+        throw StateError('$value is $at');
+      }
     case 'expectDead':
       final dead = c
           .read(agentProvider)
@@ -1558,6 +1600,15 @@ Element? _elementOrNull(bool Function(Widget) test) {
 
 Element _elementOf(bool Function(Widget) test) =>
     _elementOrNull(test) ?? (throw StateError('nothing on screen matches'));
+
+/// The driver's name for item [id]: pictures are given theirs by the app.
+String _itemId(String id) => id == 'lastImage'
+    ? appProviderContainer.read(placedImageProvider).images.last.id
+    : id;
+
+/// Where the point [world] of the canvas, as drawn, is in the window.
+Offset _canvasPointOnScreen(Offset world) => _canvasLayer()
+    .localToGlobal(CoordinateSystem.instance.coordinateToScreen(world));
 
 RenderBox _canvasLayer() => _renderOf<CanvasSelectionLayer>();
 

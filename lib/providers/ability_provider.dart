@@ -97,15 +97,12 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     final mapState = ref.read(mapProvider);
     final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
 
-    final centerOffset = storedAbilityAnchor(
+    final anchor = storedAbilityAnchor(
       ability: ability.data.abilityData!,
       mapScale: mapScale,
     );
 
-    final centerPosition =
-        Offset(position.dx + centerOffset.dx, position.dy + centerOffset.dy);
-
-    if (coordinateSystem.isOutOfBounds(centerPosition)) {
+    if (coordinateSystem.isAnchorOutOfBounds(position, anchor)) {
       removeAbilityAsAction(id);
       _joinDroppedCopy(droppedCopy, id);
       return;
@@ -142,14 +139,12 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     final coordinateSystem = CoordinateSystem.instance;
     final mapState = ref.read(mapProvider);
     final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
-    final centerOffset = storedAbilityAnchor(
+    final anchor = storedAbilityAnchor(
       ability: sourceAbility.data.abilityData!,
       mapScale: mapScale,
     );
-    final centerPosition =
-        Offset(position.dx + centerOffset.dx, position.dy + centerOffset.dy);
 
-    if (coordinateSystem.isOutOfBounds(centerPosition)) return null;
+    if (coordinateSystem.isAnchorOutOfBounds(position, anchor)) return null;
 
     final duplicatedAbility = sourceAbility.copyWith(
       id: _uuid.v4(),
