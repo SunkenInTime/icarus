@@ -56,8 +56,10 @@
   {"tapAt": [92, 142]},
   {"wait": 2},
   {"shot": "{out}/5-video-dialog.png"},
+  {"tapText": "Transparent background"},
+  {"wait": 1},
   {"tapText": "Export"},
-  {"waitFile": "{out}/saved/wall.mp4", "seconds": 60},
+  {"waitFile": "{out}/saved/wall.mov", "seconds": 90},
   {"waitText": "Exporting video", "gone": true, "seconds": 60},
   {"wait": 1},
 
