@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -25,6 +26,7 @@ import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:icarus/services/video_export/video_frame_sink.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
+import 'package:icarus/widgets/map_door_layer.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 
 /// Renders a strategy's selected pages into an .mp4 slideshow: each page is
@@ -116,8 +118,11 @@ class VideoExporter {
         geometry?.navigationGeometry == null) {
       for (var i = 1; i < pages.length; i++) {
         final entries = TransitionPlanner.diff(
-          TransitionPlanner.placedWidgetMapForPage(pages[i - 1]),
-          TransitionPlanner.placedWidgetMapForPage(pages[i]),
+          TransitionPlanner.placedWidgetMapForPage(
+            pages[i - 1],
+            strategy.mapData,
+          ),
+          TransitionPlanner.placedWidgetMapForPage(pages[i], strategy.mapData),
         );
         if (entries.any((entry) =>
             entry.kind == TransitionKind.move &&
@@ -228,8 +233,8 @@ class VideoExporter {
         if (i + 1 >= pages.length) continue;
         final nextPage = pages[i + 1];
         final entries = TransitionPlanner.diff(
-          TransitionPlanner.placedWidgetMapForPage(page),
-          TransitionPlanner.placedWidgetMapForPage(nextPage),
+          TransitionPlanner.placedWidgetMapForPage(page, strategy.mapData),
+          TransitionPlanner.placedWidgetMapForPage(nextPage, strategy.mapData),
         );
         final fadeDrawings = TransitionPlanner.drawingsChanged(
           page.drawingData,
@@ -325,6 +330,10 @@ class VideoExporter {
         abilitySize: lerp(from.settings.abilitySize, to.settings.abilitySize),
       ),
       drawingsOpacity: fadeDrawings ? earlyFadeInOpacity(t) : 1.0,
+      doorTransition: (
+        from: changedMapDoors(from.utilityData, strategy.mapData),
+        t: t,
+      ),
       fadingCaptions: [
         if (includeCaptions) ...[
           (layout: _captionLayouts[from.id]!, opacity: fades.from),
@@ -341,6 +350,7 @@ class VideoExporter {
     bool includeCaptions = false,
     ValueChanged<CaptionExportLayout>? onCaptionLayout,
     List<FadingCaptions> fadingCaptions = const [],
+    MapDoorTransition? doorTransition,
   }) =>
       ScreenshotView.forPage(
         strategy,
@@ -354,5 +364,6 @@ class VideoExporter {
         fadingCaptions: fadingCaptions,
         placedWidgetsOverride: placedWidgetsOverride,
         drawingsOpacity: drawingsOpacity,
+        doorTransition: doorTransition,
       );
 }

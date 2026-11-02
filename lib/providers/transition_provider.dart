@@ -26,6 +26,7 @@ class PageTransitionState {
     this.sourcePageId,
     this.targetPageId,
     this.fadeInDrawings = false,
+    this.fromDoors = const {},
   });
   final bool hideView;
   final bool active;
@@ -49,6 +50,10 @@ class PageTransitionState {
   /// hard-swapping them.
   final bool fadeInDrawings;
 
+  /// The map doors changed on the page this leaves. The page it's going to has
+  /// already replaced them where the canvas reads them.
+  final Set<String> fromDoors;
+
   PageTransitionState copyWith({
     bool? active,
     List<PageTransitionEntry>? entries,
@@ -68,6 +73,7 @@ class PageTransitionState {
     String? targetPageId,
     bool clearPageIds = false,
     bool? fadeInDrawings,
+    Set<String>? fromDoors,
   }) =>
       PageTransitionState(
         hideView: hideView ?? this.hideView,
@@ -87,6 +93,7 @@ class PageTransitionState {
         sourcePageId: clearPageIds ? null : (sourcePageId ?? this.sourcePageId),
         targetPageId: clearPageIds ? null : (targetPageId ?? this.targetPageId),
         fadeInDrawings: fadeInDrawings ?? this.fadeInDrawings,
+        fromDoors: fromDoors ?? this.fromDoors,
       );
 
   static const idle = PageTransitionState(
@@ -132,7 +139,8 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       required double startAbilitySize,
       String? sourcePageId,
       String? targetPageId,
-      bool fadeInDrawings = false}) {
+      bool fadeInDrawings = false,
+      Set<String> fromDoors = const {}}) {
     state = state.copyWith(
       allWidgets: widgets,
       hideView: true,
@@ -149,6 +157,7 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       targetPageId: targetPageId,
       agentPaths: const {},
       fadeInDrawings: fadeInDrawings,
+      fromDoors: fromDoors,
     );
   }
 
@@ -202,6 +211,7 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       clearPageIds: true,
       agentPaths: const {},
       fadeInDrawings: false,
+      fromDoors: const {},
     );
   }
 }

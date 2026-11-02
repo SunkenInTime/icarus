@@ -33,6 +33,7 @@
 //   {"tapText": t, "nth": n?, "button": "secondary"?}
 //   {"tapKey": valueKey, "nth": n?}    {"tapIcon": name, "nth": n?}
 //   {"tapAt": [x, y], "hold": s?}      {"hoverAt": [x, y]}
+//   {"tapDoor": id}  {"hoverDoor": id}  the middle of a map door's bar
 //                                      hold: seconds down, for a long press
 //   {"dragAt": [x1, y1, x2, y2]}       {"path": [[x, y], ...], "held": png?}
 //                                      held: a shot before letting go
@@ -80,6 +81,7 @@
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
 //   {"logWalls": tag}                  every ability's position and wall path
 //   {"logUtilities": tag}              every utility's type, position and door
+//   {"logDoors": tag}                  the map doors changed on the page
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
 //   {"logCaptions": tag}               every placed item's caption
 //   {"logCard": tag}                   the caption card that's open, and where
@@ -115,6 +117,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
@@ -133,6 +136,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/caption_card_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/widgets/map_door_layer.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/canvas_selection_layer.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
@@ -395,6 +399,19 @@ Offset _itemCenter(String id) {
   final outline = best;
   if (outline == null) throw StateError('no outline for $id');
   return outline.localToGlobal(outline.size.center(Offset.zero));
+}
+
+/// The middle of a map door's bar, on the screen.
+Offset _doorPoint(String id) {
+  final door = mapDoors.firstWhere((door) => door.id == id);
+  // The bar's layer fills the canvas, so its middle is the canvas's.
+  final canvasMiddle = _centerOf((w) => _hasKey(w, 'map-door-$id'));
+  final canvas = CoordinateSystem.instance.effectiveSize;
+  final onCanvas = mapDoorMiddleOnCanvas(
+    door,
+    isAttack: appProviderContainer.read(mapProvider).isAttack,
+  );
+  return canvasMiddle - canvas.center(Offset.zero) + onCanvas;
 }
 
 // The mouse.
@@ -892,6 +909,10 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'hoverAt':
       await _hover(_point(step, name));
+    case 'tapDoor':
+      await _tap(_doorPoint(value as String));
+    case 'hoverDoor':
+      await _hover(_doorPoint(value as String));
     case 'dragAt':
       await _drag([_point(step, name), _point(step, name, 2)]);
     case 'path':
@@ -1332,6 +1353,13 @@ Future<void> _run(Map<String, dynamic> step) async {
                         '${p.dy.toStringAsFixed(1)})',
                   ).toList()}',
       ]}');
+    case 'logDoors':
+      _log('DOORS $value ${changedMapDoors(
+        c.read(utilityProvider),
+        c.read(mapProvider).currentMap,
+      ).toList()..sort()} rows=${c.read(utilityProvider).where(
+            (utility) => utility.mapDoor != null,
+          ).length}');
     case 'logUtilities':
       _log('UTILITIES $value ${[
         for (final utility in c.read(utilityProvider))

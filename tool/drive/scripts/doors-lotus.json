@@ -1,0 +1,23 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"newLocal": "lotus", "name": "Doors lotus"},
+  {"wait": 4},
+  {"tapText": "Doors lotus"},
+  {"wait": 6},
+  {"shot": "{out}/1-rest.png"},
+  {"hoverDoor": "lotus-a"},
+  {"wait": 0.4},
+  {"shot": "{out}/2-hover.png"},
+  {"tapDoor": "lotus-a"},
+  {"wait": 0.5},
+  {"tapDoor": "lotus-c"},
+  {"wait": 0.5},
+  {"tapDoor": "lotus-a-link"},
+  {"wait": 0.5},
+  {"logDoors": "all-changed"},
+  {"hoverAt": [60, 700]},
+  {"wait": 0.4},
+  {"shot": "{out}/3-changed.png"},
+  {"exit": 1}
+]

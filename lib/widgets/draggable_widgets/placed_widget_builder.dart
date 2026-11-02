@@ -6,6 +6,7 @@ import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -1051,8 +1052,12 @@ class _CustomShapeUtilityList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final customShapes =
-        ref.watch(utilityProvider).where(PageLayering.isCustomShapeUtility);
+    final map = ref.watch(mapProvider).currentMap;
+    final customShapes = ref.watch(utilityProvider).where(
+          (utility) =>
+              PageLayering.isCustomShapeUtility(utility) &&
+              mapDoorOfRow(utility, map) == null,
+        );
     final settings = ref.watch(strategySettingsProvider);
     final isAttack = ref.watch(mapProvider).isAttack;
 

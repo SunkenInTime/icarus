@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/map_doors.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -18,33 +20,39 @@ class TransitionPlanner {
     required List<PlacedText> text,
     required List<PlacedImage> images,
     required List<PlacedUtility> utilities,
+    required MapValue map,
   }) {
-    final map = <String, PlacedWidget>{};
+    final placed = <String, PlacedWidget>{};
     for (final a in agents) {
-      map[a.id] = a;
+      placed[a.id] = a;
     }
     for (final ab in abilities) {
-      map[ab.id] = ab;
+      placed[ab.id] = ab;
     }
     for (final t in text) {
-      map[t.id] = t;
+      placed[t.id] = t;
     }
     for (final img in images) {
-      map[img.id] = img;
+      placed[img.id] = img;
     }
     for (final u in utilities) {
-      map[u.id] = u;
+      // A door turns in its own layer.
+      if (mapDoorOfRow(u, map) == null) placed[u.id] = u;
     }
-    return map;
+    return placed;
   }
 
-  static Map<String, PlacedWidget> placedWidgetMapForPage(StrategyPage page) {
+  static Map<String, PlacedWidget> placedWidgetMapForPage(
+    StrategyPage page,
+    MapValue map,
+  ) {
     return placedWidgetMap(
       agents: page.agentData,
       abilities: page.abilityData,
       text: page.textData,
       images: page.imageData,
       utilities: page.utilityData,
+      map: map,
     );
   }
 

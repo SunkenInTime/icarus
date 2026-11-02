@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
@@ -11,6 +12,7 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 
@@ -19,7 +21,10 @@ import 'package:icarus/widgets/editor_operation_scope.dart';
 final captionedItemsProvider =
     Provider.autoDispose<({Set<String> all, Set<String> round})>((ref) {
   bool holds(PlacedWidget item) => item.caption?.isNotEmpty ?? false;
-  final utilities = ref.watch(utilityProvider).where(holds);
+  final map = ref.watch(mapProvider).currentMap;
+  final utilities = ref.watch(utilityProvider).where(
+        (item) => holds(item) && mapDoorOfRow(item, map) == null,
+      );
   return (
     all: {
       for (final item in ref.watch(agentProvider))
