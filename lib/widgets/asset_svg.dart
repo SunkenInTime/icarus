@@ -43,8 +43,24 @@ class AssetSvg extends StatelessWidget {
       fit: fit,
       colorFilter: colorFilter,
       semanticsLabel: semanticsLabel,
+      placeholderBuilder: (_) =>
+          AssetSvgLoading(assetName, width: width, height: height),
     );
   }
+}
+
+/// What an [AssetSvg] builds until it has a picture to draw. It takes the same
+/// box and draws nothing. A capture looks for it, because a frame with one of
+/// these in it has a picture missing.
+class AssetSvgLoading extends StatelessWidget {
+  const AssetSvgLoading(this.assetName, {super.key, this.width, this.height});
+
+  final String assetName;
+  final double? width;
+  final double? height;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(width: width, height: height);
 }
 
 /// Caches under the asset's name like [SvgAssetLoader], but can't fail to read.

@@ -85,6 +85,7 @@ Future<T> _renderEditorPage<T>(
   bool includeCaptions = false,
   ValueChanged<CaptionExportLayout>? onCaptionLayout,
   bool settleUntilQuiet = false,
+  bool Function() isCancelled = _never,
 }) async {
   final strategyState = ref.read(strategyProvider);
   final strategyId = strategyState.strategyId;
@@ -172,6 +173,7 @@ Future<T> _renderEditorPage<T>(
         targetSize: CoordinateSystem.screenShotSize,
         pixelRatio: pixelRatio,
         waitForFrameData: waitForFrame,
+        isCancelled: isCancelled,
         wrapWidget: (child) =>
             wrapForOffscreenCapture(child, container: container),
       );
@@ -293,9 +295,12 @@ Future<void> renderPageThumbnails(
         pixelRatio: pageThumbnailPixelRatio,
         read: _image,
         settleUntilQuiet: true,
+        isCancelled: isCancelled,
       );
       hearCaptions(openPageId!);
       onThumbnail(openPageId, image);
+    } on VideoExportCancelled {
+      return;
     } catch (error) {
       onUnavailable({openPageId!}, error);
     }
@@ -434,6 +439,7 @@ Future<void> _renderPages<T>(
         targetSize: CoordinateSystem.screenShotSize,
         pixelRatio: pixelRatio,
         waitForFrameData: waitForFrame,
+        isCancelled: isCancelled,
         wrapWidget: (child) =>
             wrapForOffscreenCapture(child, container: container),
       );
@@ -467,6 +473,8 @@ Future<void> _renderPages<T>(
             }
             first = false;
             onRendered(entry.number, entry.page, await read(renderer, view));
+          } on VideoExportCancelled {
+            rethrow;
           } catch (error) {
             if (onPageFailed == null) rethrow;
             onPageFailed(entry.page, error);
