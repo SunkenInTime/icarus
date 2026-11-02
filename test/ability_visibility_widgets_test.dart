@@ -646,6 +646,86 @@ void main() {
       );
     });
 
+    testWidgets('every smoke can be marked down, and stays down when reloaded',
+        (tester) async {
+      const smokes = {
+        AgentType.jett: 0,
+        AgentType.astra: 2,
+        AgentType.viper: 1,
+        AgentType.brimstone: 2,
+        AgentType.omen: 2,
+        AgentType.clove: 2,
+        AgentType.harbor: 2,
+        AgentType.miks: 2,
+      };
+      for (final MapEntry(key: agent, value: slot) in smokes.entries) {
+        final placed = PlacedAbility(
+          id: 'smoke-${agent.name}',
+          data: AgentData.agents[agent]!.abilities[slot],
+          position: Offset.zero,
+        );
+        final container = ProviderContainer(
+          overrides: [
+            actionProvider.overrideWith(_TestActionProvider.new),
+            mapProvider.overrideWith(_FixedMapProvider.new),
+          ],
+        );
+        container.read(abilityProvider.notifier).fromHive([placed]);
+
+        Widget canvas() {
+          final ability = container.read(abilityProvider).single;
+          return _buildHarness(
+            container: container,
+            child: Stack(
+              children: [
+                PlacedAbilityWidget(
+                  ability: ability,
+                  onDragEnd: (_, __) {},
+                  id: ability.id,
+                  data: ability,
+                  rotation: ability.rotation,
+                  length: ability.length,
+                ),
+              ],
+            ),
+          );
+        }
+
+        await tester.pumpWidget(canvas());
+        await tester.pumpAndSettle();
+        await _openContextMenu(
+          tester,
+          find.byKey(const ValueKey('image-ability-active-layer')),
+        );
+        expect(find.text('Active'), findsOneWidget, reason: agent.name);
+        await tester.tap(find.text('Active'));
+        await tester.pumpAndSettle();
+
+        // A save and a reload, the way .ica and the cloud carry it.
+        final saved = container.read(abilityProvider).single.toJson();
+        container
+            .read(abilityProvider.notifier)
+            .fromHive([PlacedAbility.fromJson(saved)]);
+        await tester.pumpWidget(canvas());
+        await tester.pumpAndSettle();
+
+        expect(
+          tester
+              .widget<AnimatedOpacity>(
+                find.byKey(const ValueKey('image-ability-active-layer')),
+              )
+              .opacity,
+          0,
+          reason: agent.name,
+        );
+        expect(find.byType(InactiveCircleAbilityTrace), findsOneWidget,
+            reason: agent.name);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      }
+    });
+
     testWidgets('Viper wall uses Active instead of a generic Range toggle',
         (tester) async {
       final ability = PlacedAbility(
