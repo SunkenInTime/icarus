@@ -700,6 +700,20 @@ Future<void> _settle() async {
   await Future<void>.delayed(Duration.zero);
 }
 
+/// Draws a frame, which is when an animated page switch plans its transition.
+/// Earlier tests in this file leave post-frame work queued on the shared
+/// binding, and it fails on their disposed containers, so those errors are let
+/// go here. What a test then checks is what proves its own frame ran.
+Future<void> _drawFrame() async {
+  runZonedGuarded(
+    () => WidgetsBinding.instance
+      ..handleBeginFrame(null)
+      ..handleDrawFrame(),
+    (_, __) {},
+  );
+  await _settle();
+}
+
 /// Waits, in real time, until [condition] holds.
 Future<void> _until(bool Function() condition) async {
   final deadline = DateTime.now().add(const Duration(seconds: 5));
@@ -2628,11 +2642,7 @@ void main() {
       pageTwo.publicId,
       direction: PageTransitionDirection.forward,
     );
-    // The transition is planned after the frame that shows the new page.
-    WidgetsBinding.instance
-      ..handleBeginFrame(null)
-      ..handleDrawFrame();
-    await _settle();
+    await _drawFrame();
 
     final transition = container.read(transitionProvider);
     expect(transition.active, isTrue);
@@ -2669,11 +2679,7 @@ void main() {
       pageTwo.publicId,
       direction: PageTransitionDirection.forward,
     );
-    // The transition is planned after the frame that shows the new page.
-    WidgetsBinding.instance
-      ..handleBeginFrame(null)
-      ..handleDrawFrame();
-    await _settle();
+    await _drawFrame();
 
     final transition = container.read(transitionProvider);
     expect(transition.active, isFalse);
