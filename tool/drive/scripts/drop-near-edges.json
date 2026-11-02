@@ -64,5 +64,12 @@
   {"wait": 0.5},
   {"expectItem": "ult-defense"},
   {"shot": "{out}/defense.png"},
+  {"addAbility": "ult-undo", "agent": "kayo", "slot": 3, "at": [800, 450]},
+  {"dragAgent": "ult-undo", "toWorld": [880, 4]},
+  {"wait": 0.5},
+  {"expectItem": "ult-undo", "gone": true},
+  {"keyCombo": ["controlLeft", "keyZ"]},
+  {"wait": 0.5},
+  {"expectItem": "ult-undo"},
   {"exit": 1}
 ]

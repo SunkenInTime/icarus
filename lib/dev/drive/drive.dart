@@ -1441,8 +1441,7 @@ Future<void> _run(Map<String, dynamic> step) async {
           ? 'gone'
           : '(${items.first.position.dx.toStringAsFixed(1)}, '
               '${items.first.position.dy.toStringAsFixed(1)})';
-      _log('ITEM $value $at'
-          '${items.isEmpty ? '' : ' drawn ${_itemCenter(id)}'}');
+      _log('ITEM $value $at');
       if (items.isEmpty != (step['gone'] == true)) {
         throw StateError('$value is $at');
       }
