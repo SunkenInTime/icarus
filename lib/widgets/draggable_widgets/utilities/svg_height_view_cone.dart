@@ -131,6 +131,7 @@ class SvgHeightViewCone extends StatefulWidget {
     required this.isAttack,
     this.elevation,
     this.opacity = 1,
+    this.changedDoors = const {},
   });
 
   final SvgHeightRuntime runtime;
@@ -139,6 +140,7 @@ class SvgHeightViewCone extends StatefulWidget {
   final bool isAttack;
   final double? elevation;
   final double opacity;
+  final Set<String> changedDoors;
 
   @override
   State<SvgHeightViewCone> createState() => _SvgHeightViewConeState();
@@ -197,6 +199,7 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
           range: widget.range / mapTransform.scale,
           apertureRadians: widget.angle,
           supportId: support?.id,
+          changedDoors: widget.changedDoors,
         );
 
     final radius = coordinates.worldHeightToScreen(widget.range);

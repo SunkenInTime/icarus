@@ -24,6 +24,7 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/screenshot/caption_export_overlay.dart';
 import 'package:icarus/widgets/caption_markers.dart';
 import 'package:icarus/widgets/map_door_layer.dart';
+import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class _TestStrategyProvider extends StrategyProvider {
@@ -158,11 +159,16 @@ void main() {
       expect(spun.rotation.abs(), closeTo(1.5708, 0.001));
     });
 
-    test('a broken wall is faint, so it doesn\'t read as a wall to old builds',
-        () {
-      expect(_door('lotus-a-link').row(id: 'row').customOpacityPercent, 25);
-      expect(_door('summit-a').row(id: 'row').customOpacityPercent, 100);
-      expect(_door('lotus-a').row(id: 'row').customOpacityPercent, 100);
+    test("a broken wall is the floor's colour, so old builds show no wall", () {
+      expect(
+        _door('lotus-a-link').row(id: 'row').customColorValue,
+        MapSvgSourceColors.base.toARGB32(),
+      );
+      expect(_door('summit-a').row(id: 'row').customColorValue, 0xFF000000);
+      expect(
+        _door('lotus-a').row(id: 'row').customColorValue,
+        MapSvgSourceColors.detail.toARGB32(),
+      );
     });
   });
 

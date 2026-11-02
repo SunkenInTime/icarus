@@ -4,9 +4,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/map_doors_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/view_cone/sightline_report.dart';
 import 'package:icarus/view_cone/sightline_report_image.dart';
@@ -78,6 +80,7 @@ void copySightlineReport({
       rangeSvg:
           coordinates.virtualLengthToWorld(lengthVirtual) / transform.scale,
       savedElevationCm: visionElevationCm,
+      changedDoors: appProviderContainer.read(changedMapDoorsProvider),
       model: model,
     );
     // Encoded inside the guard: a value JSON cannot hold is a report problem,

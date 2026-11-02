@@ -418,7 +418,7 @@ perimeter transparent to recover sightlines that exist only outside the drawn ma
 Treat connected ramps and slopes as continuous tactical ground. Changes in floor
 height do not create extra wall edges or hide the connected downhill floor by
 themselves. Retain real intervening obstacles and meaningful separate levels.
-Crouching and changing door states are outside the current pass.
+Crouching is outside the current pass. For doors, see "Map doors" below.
 
 ## Implementation and acceptance
 
@@ -956,6 +956,53 @@ stand 0.01 farther out), two of them by about 2 units where the steps take
 another way round #256's walls.
 A nudge costs 7 to 10 µs at p50 and 65 to 68 µs at p99 in the test VM; the
 steps alone were 6 to 8 and 49 to 70.
+
+## Map doors (2026-11-02)
+
+Six spots on the map change during a round: Summit's three walls, Lotus's two
+rotating doors and its A Link wall. The game blocks its own minimap cones on
+each of them with a `MinimapVisionConesBlockerLineComponent`, the same part
+High Tide's wall has, so a door is the kind of blocker this model means. The
+bundled models have no wall at any of the six: they were built from lines that
+are always there. Before this, cones ran through Lotus's closed doors and the
+unbroken A Link wall.
+
+Door walls are not in the bundled models, so their files and checksums are
+unchanged. `lib/const/map_doors.dart` holds each door's line in attack SVG
+units, and `mapDoorWalls` turns it into thin rectangles in a side's model
+units when a model loads, because edges and the native index are built once.
+
+- **State.** Each query takes the set of doors changed on the page. A wall that
+  drops blocks when changed. The A Link wall blocks until changed. A rotating door has
+  one wall for each pose, closed and side-on, and blocks in exactly one of
+  them, so a spun door blocks what it covers and a cone sees past it either
+  side. The mask and `SvgHeightConeCache`'s key both include door state.
+- **Height.** A door wall blocks every eye height, as the game's line does, in
+  the mask rather than through `unknownHeight`, which would turn off native
+  acceleration for the whole map.
+- **Standing.** Door walls are not in `walls`, so `contains`,
+  `standablePointNear`, `automaticSupportAt` and `_blockingWallAt` never see
+  them and no agent moves. `standable` is unchanged.
+- **Floors.** They aren't in `_floorOccluders` either. Neither Lotus nor Summit
+  has sightline floors, and `test/map_door_cones_test.dart` holds both to that.
+  A door on a map with sightline floors would need adding there.
+- **An eye inside a bar** ignores that door. Nothing stops someone standing
+  there, and a cone from inside a wall is empty, which reads as a bug.
+- **Ends.** A wall runs 0.5 units past its bar into the walls either side, so
+  no ray slips through.
+
+Where a door's line comes from: Summit's follow the art's dashes, 0.6 to 3.7
+units from the game's own points. Lotus has no door art, so its lines use the
+game's point and the bundled walls either side.
+
+Agents still walk through a dropped wall in a page change: routes come from the
+baked navigation.
+
+Checked on 2026-11-02 with `test/map_door_cones_test.dart` against the bundled
+models: every door seals its corridor on both sides, from a spot beside it
+across its full length; Summit at rest draws the same outlines as a model with
+no door walls, at 432 spots and directions; no standing spot or level changes
+on a 7-unit grid of either map; native and Dart agree in every door state.
 
 ## Corrode 13.08 (2026-10-13)
 

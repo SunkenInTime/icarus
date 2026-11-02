@@ -47,6 +47,7 @@ SightlineReport buildSightlineReport({
   required double apertureRadians,
   required double rangeSvg,
   required double? savedElevationCm,
+  Set<String> changedDoors = const {},
   Offset? svgOrigin,
   SvgHeightVisibility? model,
 }) {
@@ -93,6 +94,7 @@ SightlineReport buildSightlineReport({
     range: rangeSvg,
     apertureRadians: apertureRadians,
     supportId: support?.id,
+    changedDoors: changedDoors,
   );
   final eye = cone.eyeElevationMeters;
 
@@ -112,6 +114,7 @@ SightlineReport buildSightlineReport({
     apertureRadians: apertureRadians,
     rangeSvg: rangeSvg,
     supportId: support?.id,
+    changedDoors: changedDoors,
     eyeElevationMeters: eye,
   );
   report['note'] = '';
@@ -148,6 +151,7 @@ List<Map<String, Object?>> _hits({
   required double apertureRadians,
   required double rangeSvg,
   required String? supportId,
+  required Set<String> changedDoors,
   required double? eyeElevationMeters,
 }) {
   final walls = {for (final wall in model.walls) wall.id: wall};
@@ -167,6 +171,7 @@ List<Map<String, Object?>> _hits({
       directionRadians: angle,
       range: rangeSvg,
       supportId: supportId,
+      changedDoors: changedDoors,
     );
     final wall = hit == null ? null : walls[hit.wallId];
     rows.add({
