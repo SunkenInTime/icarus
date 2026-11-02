@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 
@@ -256,6 +258,13 @@ typedef WallDraft = ({String id, List<Offset> path});
 final wallDraftProvider =
     NotifierProvider<WallDraftNotifier, WallDraft?>(WallDraftNotifier.new);
 
+/// The path being shaped for the ability [id], when one is.
+List<Offset>? _draftPathOf(WidgetRef ref, String id) => ref.watch(
+      wallDraftProvider.select(
+        (draft) => draft?.id == id ? draft!.path : null,
+      ),
+    );
+
 class WallDraftNotifier extends Notifier<WallDraft?> {
   @override
   WallDraft? build() => null;
@@ -354,8 +363,7 @@ class _PlacedWallState extends ConsumerState<PlacedWall>
   @override
   Widget build(BuildContext context) {
     final ability = widget.ability;
-    final draft = ref.watch(wallDraftProvider);
-    final path = draft?.id == ability.id ? draft!.path : ability.wallPath;
+    final path = _draftPathOf(ref, ability.id) ?? ability.wallPath;
     final carried = ref.watch(wallCarriedProvider) == ability.id;
     if (path == null || path.isEmpty || carried) {
       _releaseAfterFrame();
@@ -475,6 +483,8 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
     return ability.maxLengthMeters * wallWorldPerMeter(_mapScale);
   }
 
+  /// Starts dragging point [index]. A new point starts at [at], on the wall,
+  /// so it can't begin past the longest wall.
   void _begin(int index, {required bool adding, required Offset at}) {
     ref.read(wallHoverProvider.notifier).enter(_id);
     final path = [...?widget.ability.wallPath];
@@ -485,21 +495,23 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
   }
 
   /// Moves the dragged point to [target], stopping where the wall reaches
-  /// its longest.
+  /// its longest. A wall already past that, as a bend added to a full-length
+  /// wall can leave it by a hair, may not grow.
   void _drag(Offset target) {
     final index = _dragged;
     if (index == null) return;
     List<Offset> withPoint(Offset point) =>
         [..._path]..[index] = point;
+    final longest = math.max(_longest, wallPathLength(_path));
     var path = withPoint(target);
-    if (wallPathLength(path) > _longest) {
+    if (wallPathLength(path) > longest) {
       final from = _path[index];
       var near = 0.0;
       var far = 1.0;
       for (var i = 0; i < 12; i++) {
         final middle = (near + far) / 2;
         if (wallPathLength(withPoint(Offset.lerp(from, target, middle)!)) >
-            _longest) {
+            longest) {
           far = middle;
         } else {
           near = middle;
@@ -516,12 +528,27 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
     _dragged = null;
     ref.read(wallDraftProvider.notifier).set(null);
     ref.read(abilityProvider.notifier).setWallPath(_id, _path);
-    ref.read(wallHoverProvider.notifier).leave(_id);
+    // A pointer still on the dot keeps it showing. Touch never hovered.
+    if (_heldId == null) ref.read(wallHoverProvider.notifier).leave(_id);
   }
 
   void _cancel() {
+    if (_dragged == null) return;
     _dragged = null;
     ref.read(wallDraftProvider.notifier).set(null);
+  }
+
+  @override
+  void dispose() {
+    // A pan under a disposed dot ends without a word, and its draft would
+    // draw over the saved wall from then on.
+    if (_dragged != null) {
+      final container = _container!;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => container.read(wallDraftProvider.notifier).set(null),
+      );
+    }
+    super.dispose();
   }
 
   void _removePoint(int index) {
@@ -595,7 +622,10 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
 
   @override
   Widget build(BuildContext context) {
-    final draft = ref.watch(wallDraftProvider);
+    // The page under a drag changed: what's held belongs to the last one.
+    ref.listen(strategyProvider.select((state) => state.activePageId), (_, __) {
+      _cancel();
+    });
     final hovered = ref.watch(wallHoverProvider) == _id;
     // Touch has no hover: selecting the wall's icon shows its dots.
     final selected = ref.watch(
@@ -604,7 +634,7 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
       ),
     );
     final carried = ref.watch(wallCarriedProvider) == _id;
-    final path = draft?.id == _id ? draft!.path : widget.ability.wallPath;
+    final path = _draftPathOf(ref, _id) ?? widget.ability.wallPath;
     // A dot being dragged has to stay: taking it away would end the drag.
     if ((!hovered && !selected && _dragged == null) ||
         carried ||
@@ -652,8 +682,10 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
                 hidden: dragging,
                 wall: wall,
                 pointIndex: index,
-                onStart: (local) =>
-                    _begin(index, adding: true, at: wall.saved(local)),
+                onStart: (local) {
+                  _begin(index, adding: true, at: wall.saved(middle));
+                  _drag(wall.saved(local));
+                },
               ),
           for (var index = 0; index < path.length; index++)
             _dot(

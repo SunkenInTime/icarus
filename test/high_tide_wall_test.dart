@@ -15,6 +15,7 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -63,10 +64,27 @@ PlacedAbility _tide(List<Offset>? wallPath, {AbilityInfo? data}) =>
       wallPath: wallPath,
     );
 
+class _TestStrategyProvider extends StrategyProvider {
+  @override
+  StrategyState build() => StrategyState(
+        isSaved: true,
+        stratName: null,
+        id: 'wall-test',
+        storageDirectory: null,
+        activePageId: 'page-1',
+      );
+
+  @override
+  void setUnsaved() => state = state.copyWith(isSaved: false);
+
+  void turnPage() => state = state.copyWith(activePageId: 'page-2');
+}
+
 ProviderContainer _container(WidgetTester tester, {bool isAttack = true}) {
   final container = ProviderContainer(overrides: [
     actionProvider.overrideWith(_TestActionProvider.new),
     mapProvider.overrideWith(() => _FixedMapProvider(isAttack)),
+    strategyProvider.overrideWith(_TestStrategyProvider.new),
   ]);
   addTearDown(() async {
     await tester.pumpWidget(const SizedBox.shrink());
@@ -304,6 +322,63 @@ void main() {
     );
   });
 
+  testWidgets('an icon drag the ability goes out from under unhides its wall',
+      (tester) async {
+    tester.view
+      ..physicalSize = const Size(1600, 900)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    CoordinateSystem(playAreaSize: const Size(1600, 900));
+    final container = _container(tester);
+    container
+        .read(abilityProvider.notifier)
+        .fromHive([_tide(const [Offset(0, -300)])]);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          home: SizedBox(
+            width: 1600,
+            height: 900,
+            child: Consumer(
+              builder: (context, ref, _) => Stack(
+                children: [
+                  for (final ability in ref.watch(abilityProvider))
+                    PlacedAbilityWidget(
+                      key: ValueKey(ability.id),
+                      ability: ability,
+                      onDragEnd: (_, __) {},
+                      id: ability.id,
+                      data: ability,
+                      rotation: ability.rotation,
+                      length: ability.length,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final finger = await tester.startGesture(
+      tester.getCenter(find.byType(Draggable<PlacedWidget>)),
+    );
+    await finger.moveBy(const Offset(40, 40));
+    await tester.pump();
+    await finger.moveBy(const Offset(40, 40));
+    await tester.pump();
+    expect(container.read(wallCarriedProvider), 'tide');
+
+    container.read(abilityProvider.notifier).fromHive(const []);
+    await tester.pump();
+    await tester.pump();
+
+    expect(container.read(wallCarriedProvider), isNull);
+    await finger.up();
+    await tester.pump();
+  });
+
   group('hit testing', () {
     final painter = WallPainter(
       line: const [Offset(100, 100), Offset(300, 100)],
@@ -486,6 +561,27 @@ void main() {
       await settle(tester);
     });
 
+    testWidgets('the dots stay when a mouse lets go on one', (tester) async {
+      final container = await pumpWall(tester, const [Offset(0, -300)]);
+      final mouse = await hoverWall(tester, container);
+
+      await mouse.moveTo(tester.getCenter(dot(0)));
+      await tester.pump();
+      await mouse.down(tester.getCenter(dot(0)));
+      await tester.pump();
+      await mouse.moveBy(const Offset(40, 0));
+      await tester.pump();
+      await mouse.moveBy(const Offset(20, 0));
+      await tester.pump();
+      await mouse.up();
+      await settle(tester);
+
+      expect(dot(0), findsOneWidget);
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
+      expect(dot(0), findsNothing);
+    });
+
     testWidgets('dragging a dot on the defending side saves the attack side',
         (tester) async {
       final container = await pumpWall(
@@ -535,6 +631,90 @@ void main() {
       await settle(tester);
 
       expect(meters(container), closeTo(60, 0.05));
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
+    });
+
+    testWidgets('pulling a bend out of a full-length wall stays at the longest',
+        (tester) async {
+      final longest = 60 * wallWorldPerMeter(_mapScale);
+      final container = await pumpWall(tester, [Offset(0, -longest)]);
+      final mouse = await hoverWall(tester, container);
+
+      // One long move: the pan starts with the pointer already far out.
+      final finger = await tester.startGesture(tester.getCenter(pale(0)));
+      await finger.moveBy(const Offset(220, 0));
+      await tester.pump();
+      await finger.up();
+      await settle(tester);
+
+      expect(container.read(abilityProvider).single.wallPath, hasLength(2));
+      expect(meters(container), lessThanOrEqualTo(60.05));
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
+    });
+
+    testWidgets('an over-long wall can shrink and not grow', (tester) async {
+      final longest = 60 * wallWorldPerMeter(_mapScale);
+      final container = await pumpWall(tester, [Offset(longest + 200, 0)]);
+      final mouse = await hoverWall(tester, container);
+      final before = meters(container);
+      final onWall = tester.getCenter(pale(0));
+
+      await tester.drag(dot(0), const Offset(80, 0), touchSlopX: 0);
+      await settle(tester);
+      expect(meters(container), lessThanOrEqualTo(before + 0.05));
+
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
+      await mouse.moveTo(onWall);
+      await tester.pump();
+      await tester.drag(dot(0), const Offset(-80, 0), touchSlopX: 0);
+      await settle(tester);
+      expect(meters(container), lessThan(before - 1));
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
+    });
+
+    testWidgets('a dot drag the ability goes out from under leaves no draft',
+        (tester) async {
+      final container = await pumpWall(tester, const [Offset(0, -300)]);
+      final mouse = await hoverWall(tester, container);
+      final finger = await tester.startGesture(tester.getCenter(dot(0)));
+      await finger.moveBy(const Offset(60, 0));
+      await tester.pump();
+      expect(container.read(wallDraftProvider), isNotNull);
+
+      container.read(abilityProvider.notifier).fromHive(const []);
+      await tester.pump();
+      await tester.pump();
+
+      expect(container.read(wallDraftProvider), isNull);
+      await finger.up();
+      await mouse.moveTo(const Offset(5, 5));
+      await settle(tester);
+    });
+
+    testWidgets('turning the page under a dot drag drops it unsaved',
+        (tester) async {
+      final container = await pumpWall(tester, const [Offset(0, -300)]);
+      final mouse = await hoverWall(tester, container);
+      final finger = await tester.startGesture(tester.getCenter(dot(0)));
+      await finger.moveBy(const Offset(60, 0));
+      await tester.pump();
+
+      (container.read(strategyProvider.notifier) as _TestStrategyProvider)
+          .turnPage();
+      await tester.pump();
+      expect(container.read(wallDraftProvider), isNull);
+
+      await finger.moveBy(const Offset(60, 0));
+      await finger.up();
+      await tester.pump();
+      expect(
+        container.read(abilityProvider).single.wallPath,
+        const [Offset(0, -300)],
+      );
       await mouse.moveTo(const Offset(5, 5));
       await settle(tester);
     });

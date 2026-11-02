@@ -84,9 +84,24 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
   bool isDragging = false;
   String? _activeDragId;
   final _visionDragOrigin = ViewConeDragOrigin();
+  ProviderContainer? _container;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _container ??= ProviderScope.containerOf(context, listen: false);
+  }
 
   @override
   void dispose() {
+    // Flutter skips onDragEnd once the Draggable has gone, which would leave
+    // the wall hidden for good.
+    if (_activeDragId != null) {
+      final container = _container!;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => container.read(wallCarriedProvider.notifier).set(null),
+      );
+    }
     _visionDragOrigin.dispose();
     super.dispose();
   }
