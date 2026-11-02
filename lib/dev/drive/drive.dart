@@ -53,7 +53,7 @@
 //                                      in a local strategy
 //   {"addAbility": id, "agent": name, "slot": n, "at": [x, y]}
 //   {"dragAgent": id, "by": [dx, dy]}  {"hoverAgent": id}
-//   {"dragAgent": id, "toWorld": [x, y]}
+//   {"dragAgent": id, "toWorld": [x, y], "held": shot?}  shot: saved before letting go
 //                                      drops the middle of any placed item at this
 //                                      point of the canvas as drawn, 1778 by 1000;
 //                                      the id lastImage is the newest picture
@@ -98,10 +98,11 @@
 //   {"expectText": t, "count": n}      fails unless t is on screen n times
 //   {"expectSelected": n}              fails unless n items are selected
 //   {"expectAgents": n}                fails unless n agents are on the page
-//   {"expectInView": n, "only": id?}   fails unless n items are drawn, all of
-//                                      them in the map's view; logs their outlines.
+//   {"expectInView": n, "only": id?,   fails unless n items are drawn, all of
+//    "middles": b?}                    them in the map's view; logs their outlines.
 //                                      With only, checks that item, and the page
-//                                      can have more
+//                                      can have more. With middles, only each
+//                                      item's middle has to be in view
 //   {"expectDead": n}                  fails unless n agents on the page are dead
 //   {"expectItem": id, "gone": b?}     fails unless the item is on the page, or
 //                                      with gone, unless it is not
@@ -1168,7 +1169,7 @@ Future<void> _run(Map<String, dynamic> step) async {
         step['toWorld'] == null
             ? from + _point(step, 'by')
             : _canvasPointOnScreen(_point(step, 'toWorld')),
-      ]);
+      ], shotWhileHeld: step['held'] as String?);
     case 'hoverAgent':
       final id = value as String;
       await _hover(
@@ -1471,6 +1472,12 @@ Future<void> _run(Map<String, dynamic> step) async {
       }
       for (final MapEntry(key: id, value: drawn) in outlines.entries) {
         if (step['only'] case final String only when only != id) continue;
+        if (step['middles'] == true) {
+          if (!view.contains(drawn.center)) {
+            throw StateError('$id has its middle out of view: $drawn');
+          }
+          continue;
+        }
         if (view.intersect(drawn) != drawn) {
           throw StateError('$id is out of view: $drawn');
         }

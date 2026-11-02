@@ -284,4 +284,78 @@ class CoordinateSystem {
     final middle = screenSizeToWorld(screenSize).center(position);
     return isOutOfBounds(position) && isOutOfBounds(middle);
   }
+
+  /// Where an item dropped at [position], whose dot sits [anchor] from
+  /// there, lands, when [view] is the part of the canvas on screen (see
+  /// [showing]). Dropped off the map, it stays where it was dropped, for the
+  /// drop to delete it. Otherwise its dot shows: the map runs on under the
+  /// sidebar and past the window, and an item left there is hard to find.
+  Offset anchoredDrop(
+    Offset position,
+    Offset anchor,
+    Rect? view, {
+    required bool isAttack,
+  }) {
+    if (isAnchorOutOfBounds(position, anchor)) return position;
+    return showing(position, virtualToWorld(anchor), view, isAttack: isAttack);
+  }
+
+  /// [anchoredDrop] for a picture or text box, [screenSize] big on the
+  /// canvas, which has no dot: its middle shows.
+  Offset boxDrop(
+    Offset position,
+    Size screenSize,
+    Rect? view, {
+    required bool isAttack,
+  }) {
+    if (isBoxOutOfBounds(position, screenSize)) return position;
+    final middle = screenSizeToWorld(screenSize).center(Offset.zero);
+    return showing(position, middle, view, isAttack: isAttack);
+  }
+
+  /// [position] moved just far enough that the point [at] from it is in
+  /// [view], a little in from its edge so it can be grabbed. [position] and
+  /// [at] are in world units, saved attack side up; [view] is in canvas
+  /// pixels, as drawn on the side shown. Without one it doesn't move.
+  Offset showing(
+    Offset position,
+    Offset at,
+    Rect? view, {
+    required bool isAttack,
+  }) {
+    if (view == null || view.isEmpty) return position;
+    var seen = Rect.fromPoints(
+      screenToCoordinate(view.topLeft),
+      screenToCoordinate(view.bottomRight),
+    );
+    if (!isAttack) {
+      // Defense draws the attack-side world turned half a turn.
+      seen = Rect.fromLTRB(
+        worldNormalizedWidth - seen.right,
+        normalizedHeight - seen.bottom,
+        worldNormalizedWidth - seen.left,
+        normalizedHeight - seen.top,
+      );
+    }
+    seen = _deflateUpTo(seen, dropEdge + 2);
+    final point = position + at;
+    final shown = Offset(
+      point.dx.clamp(seen.left, seen.right),
+      point.dy.clamp(seen.top, seen.bottom),
+    );
+    return position + (shown - point);
+  }
+
+  /// [rect] deflated by [by], or down to its middle line along an axis
+  /// narrower than that.
+  static Rect _deflateUpTo(Rect rect, double by) {
+    final x = math.min(by, rect.width / 2);
+    final y = math.min(by, rect.height / 2);
+    return Rect.fromLTRB(
+      rect.left + x,
+      rect.top + y,
+      rect.right - x,
+      rect.bottom - y,
+    );
+  }
 }
