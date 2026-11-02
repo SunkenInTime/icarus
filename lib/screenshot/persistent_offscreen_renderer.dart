@@ -21,6 +21,7 @@ class PersistentOffscreenRenderer {
     this.wrapWidget,
     this.waitForFrameData,
     this.isCancelled,
+    this.onWaitingForPictures,
     this.pictureStallLimit = const Duration(seconds: 30),
   })  : assert(pixelRatio > 0),
         _repaintBoundary = RenderRepaintBoundary(),
@@ -70,6 +71,12 @@ class PersistentOffscreenRenderer {
   /// Checked while a capture waits for its pictures. Once it turns true the
   /// capture throws [VideoExportCancelled] rather than wait on.
   final bool Function()? isCancelled;
+
+  /// Hears once when a capture has waited [_waitWorthSaying] for its pictures,
+  /// so the user is told why nothing is moving. A shorter wait stays quiet.
+  final VoidCallback? onWaitingForPictures;
+
+  static const _waitWorthSaying = Duration(seconds: 1);
 
   /// How long a capture keeps waiting with no picture arriving. A slow
   /// connection keeps landing them, so this only stops a stalled one.
@@ -195,8 +202,14 @@ class PersistentOffscreenRenderer {
   Future<void> _waitForPictures() async {
     var loading = _picturesLoading();
     final sinceLastPicture = Stopwatch()..start();
+    final waited = Stopwatch()..start();
+    var said = false;
     while (loading.isNotEmpty) {
       if (isCancelled?.call() ?? false) throw VideoExportCancelled();
+      if (!said && waited.elapsed >= _waitWorthSaying) {
+        said = true;
+        onWaitingForPictures?.call();
+      }
       final missing = appAssets.missing.value;
       if (loading.any(missing.contains)) {
         throw CaptureImagesUnavailable.fetchFailed(

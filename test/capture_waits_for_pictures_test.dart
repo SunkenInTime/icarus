@@ -57,11 +57,13 @@ void main() {
   PersistentOffscreenRenderer renderer({
     Duration stallLimit = const Duration(seconds: 10),
     bool Function()? isCancelled,
+    VoidCallback? onWaitingForPictures,
   }) =>
       PersistentOffscreenRenderer(
         targetSize: const Size(8, 8),
         pictureStallLimit: stallLimit,
         isCancelled: isCancelled,
+        onWaitingForPictures: onWaitingForPictures,
       );
 
   Widget image(String asset) =>
@@ -231,6 +233,30 @@ void main() {
         ),
       );
       heldBack = {};
+      await capture.dispose(waitForFrame: () async {});
+    });
+  });
+
+  testWidgets('a long wait says so once, and a short one stays quiet', (
+    tester,
+  ) async {
+    heldBack = {'short_wait.png', 'long_wait.png'};
+    await tester.runAsync(() async {
+      var told = 0;
+      final capture = renderer(onWaitingForPictures: () => told++);
+
+      final short = capture.captureRawRgba(image('short_wait.png'));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      arrive('short_wait.png');
+      await short;
+      expect(told, 0);
+
+      final long = capture.captureRawRgba(image('long_wait.png'));
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      expect(told, 1);
+      arrive('long_wait.png');
+      await long;
+      expect(told, 1);
       await capture.dispose(waitForFrame: () async {});
     });
   });

@@ -60,8 +60,12 @@ const double pageThumbnailPixelRatio = 0.2;
 /// cloud strategy captures exactly like a local one and nothing waits on a
 /// save or a sync. Throws [CaptureImagesUnavailable] rather than return a
 /// picture with an image missing, and [CaptionsDontFit] rather than one with a
-/// caption missing.
-Future<Uint8List> captureEditorPage(WidgetRef ref) async {
+/// caption missing. [onWaitingForPictures] hears a long wait for the page's
+/// pictures.
+Future<Uint8List> captureEditorPage(
+  WidgetRef ref, {
+  VoidCallback? onWaitingForPictures,
+}) async {
   final preferences = ref.read(appPreferencesProvider);
   final includeCaptions = preferences.includeScreenshotCaptions;
   CaptionExportLayout? captions;
@@ -72,6 +76,7 @@ Future<Uint8List> captureEditorPage(WidgetRef ref) async {
     onCaptionLayout: (layout) => captions = layout,
     pixelRatio: 1,
     read: _png,
+    onWaitingForPictures: onWaitingForPictures,
   );
   if (includeCaptions && captions?.fits != true) throw const CaptionsDontFit();
   return png;
@@ -86,6 +91,7 @@ Future<T> _renderEditorPage<T>(
   ValueChanged<CaptionExportLayout>? onCaptionLayout,
   bool settleUntilQuiet = false,
   bool Function() isCancelled = _never,
+  VoidCallback? onWaitingForPictures,
 }) async {
   final strategyState = ref.read(strategyProvider);
   final strategyId = strategyState.strategyId;
@@ -174,6 +180,7 @@ Future<T> _renderEditorPage<T>(
         pixelRatio: pixelRatio,
         waitForFrameData: waitForFrame,
         isCancelled: isCancelled,
+        onWaitingForPictures: onWaitingForPictures,
         wrapWidget: (child) =>
             wrapForOffscreenCapture(child, container: container),
       );
@@ -208,7 +215,8 @@ typedef PageScreenshot = ({int number, String name, Uint8List png});
 /// cloud one waits for this device's work to land (see
 /// [loadVideoExportSource], whose errors this throws).
 ///
-/// [onPage] hears each page as it starts (1-based, of the total). Throws
+/// [onPage] hears each page as it starts (1-based, of the total), and
+/// [onWaitingForPictures] a long wait for a page's pictures. Throws
 /// [VideoExportCancelled] once [isCancelled] turns true, and [CaptionsDontFit]
 /// for a page whose captions it was asked for and can't place.
 Future<List<PageScreenshot>> captureStrategyPages(
@@ -217,6 +225,7 @@ Future<List<PageScreenshot>> captureStrategyPages(
   required bool transparentBackground,
   bool includeCaptions = false,
   void Function(int page, int total)? onPage,
+  VoidCallback? onWaitingForPictures,
   bool Function() isCancelled = _never,
 }) async {
   final source = await loadVideoExportSource(
@@ -239,6 +248,7 @@ Future<List<PageScreenshot>> captureStrategyPages(
       pixelRatio: 1,
       read: _png,
       onPage: onPage,
+      onWaitingForPictures: onWaitingForPictures,
       onRendered: (number, page, png) {
         if (includeCaptions && captions[page.id]?.fits != true) {
           throw CaptionsDontFit(number);
@@ -412,6 +422,7 @@ Future<void> _renderPages<T>(
   void Function(StrategyPage page, CaptionExportLayout layout)? onCaptionLayout,
   void Function(StrategyPage page, Object error)? onPageFailed,
   void Function(int page, int total)? onPage,
+  VoidCallback? onWaitingForPictures,
   bool Function() isCancelled = _never,
   bool settleUntilQuiet = false,
 }) async {
@@ -440,6 +451,7 @@ Future<void> _renderPages<T>(
         pixelRatio: pixelRatio,
         waitForFrameData: waitForFrame,
         isCancelled: isCancelled,
+        onWaitingForPictures: onWaitingForPictures,
         wrapWidget: (child) =>
             wrapForOffscreenCapture(child, container: container),
       );
