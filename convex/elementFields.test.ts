@@ -516,6 +516,184 @@ describe("a wall and the builds that don't know it", () => {
   });
 });
 
+describe("a map door and the builds that don't know it", () => {
+  const doorBuild = { acceptsPictureIds: true, elementFieldLevel: 3 };
+  const wallBuild = { acceptsPictureIds: true, elementFieldLevel: 2 };
+  const door = "summit-mid";
+
+  function rectangleData(fields: Record<string, unknown> = {}) {
+    return {
+      id: "bar",
+      type: "customRectangle",
+      position: { dx: 10, dy: 20 },
+      ...fields,
+    };
+  }
+
+  function utilityPayload(data: Record<string, unknown>) {
+    return { kind: "utility", payloadVersion: 1, data };
+  }
+
+  function patchBar(
+    opId: string,
+    data: Record<string, unknown>,
+    merge?: { fields: string[] },
+  ) {
+    return {
+      ...patch(opId, "bar", 1, data, merge),
+      payload: utilityPayload(data),
+    };
+  }
+
+  /// [seed]'s strategy, plus "bar", a rectangle with a caption, marking a door.
+  async function seedDoor() {
+    const seeded = await seed();
+    const data = rectangleData({ caption: note, mapDoor: door });
+    await send(seeded.owner, doorBuild, "seed-door", [
+      { ...add("add-bar", data), payload: utilityPayload(data) },
+    ]);
+    return seeded;
+  }
+
+  async function strategyRevision(t: RootHarness) {
+    return await t.run(
+      async (ctx) => (await ctx.db.query("strategies").first())!.revision,
+    );
+  }
+
+  test("a build at each level reads the fields of its level and no later", async () => {
+    const { owner } = await seedDoor();
+    const expected: [Record<string, unknown>, Record<string, unknown>][] = [
+      [oldBuild, rectangleData()],
+      [captionsBuild, rectangleData({ caption: note })],
+      [wallBuild, rectangleData({ caption: note })],
+      [doorBuild, rectangleData({ caption: note, mapDoor: door })],
+    ];
+
+    for (const [client, data] of expected) {
+      for (const [name, elements] of await reads(owner, client)) {
+        expect(find(elements, "bar").payload.data, name).toEqual(data);
+      }
+    }
+  });
+
+  test("a move by a build below the field's level leaves the door", async () => {
+    const { t, owner } = await seedDoor();
+    const moved = { position: { dx: 50, dy: 60 } };
+
+    await send(owner, wallBuild, "old", [
+      patchBar("move", rectangleData(moved), { fields: ["position"] }),
+    ]);
+
+    expect((await row(t, "bar"))!.payload.data).toEqual(
+      rectangleData({ ...moved, caption: note, mapDoor: door }),
+    );
+  });
+
+  test("a whole write by a build below the field's level leaves the door", async () => {
+    const { t, owner } = await seedDoor();
+
+    const results = await send(owner, wallBuild, "old", [
+      patchBar("whole", rectangleData({ customLength: 4 })),
+    ]);
+
+    expect(results[0]!.status).toBe("applied");
+    const stored = (await row(t, "bar"))!.payload.data;
+    expect(stored.customLength).toBe(4);
+    expect(stored.mapDoor).toBe(door);
+  });
+
+  test("a refused write doesn't hand a build below the field's level the door", async () => {
+    const { owner } = await seedDoor();
+
+    const results = await send(owner, wallBuild, "old", [
+      {
+        ...patchBar("stale", rectangleData({ customLength: 9 })),
+        expectedElementRevision: 99,
+      },
+    ]);
+
+    expect(results[0]!.reason).toBe("revision_mismatch");
+    expect(results[0]!.current.value.data).toEqual(
+      rectangleData({ caption: note }),
+    );
+  });
+
+  test("an old build's undo of a delete brings the door back", async () => {
+    const { t, owner } = await seedDoor();
+
+    await send(owner, wallBuild, "old", [
+      {
+        opId: "delete",
+        type: "element.delete",
+        elementPublicId: "bar",
+        pagePublicId: page,
+        expectedElementRevision: 1,
+      },
+    ]);
+    const undo = await send(owner, wallBuild, "old", [
+      {
+        ...add("restore", rectangleData()),
+        payload: utilityPayload(rectangleData()),
+        expectedElementRevision: 2,
+      },
+    ]);
+
+    expect(undo[0]!.status).toBe("applied");
+    expect((await row(t, "bar"))!.payload.data.mapDoor).toBe(door);
+  });
+
+  test("the server's page copy and strategy copy keep the door", async () => {
+    const { t, owner } = await seedDoor();
+
+    await send(owner, wallBuild, "old", [
+      {
+        opId: "next-page",
+        type: "page.add",
+        pagePublicId: "door-page-2",
+        payload: { name: "Page 2", isAutoNamed: true, isAttack: true },
+        sortIndex: 1,
+        expectedStrategyRevision: await strategyRevision(t),
+        copyContentFromPagePublicId: page,
+      },
+    ]);
+    await owner.mutation(duplicateStrategy, {
+      ...protocol,
+      sourceStrategyPublicId: strategy,
+      publicId: "door-copy",
+      name: "Doors (Copy)",
+    });
+
+    for (const [strategyPublicId, copies] of [
+      [strategy, 2],
+      ["door-copy", 2],
+    ] as const) {
+      const snapshot = (await owner.query(getFullSnapshot, {
+        ...protocol,
+        ...doorBuild,
+        strategyPublicId,
+      })) as { elements: Row[] };
+      const doors = snapshot.elements.filter(
+        (element) => element.payload.data.mapDoor === door,
+      );
+      expect(doors, strategyPublicId).toHaveLength(copies);
+    }
+  });
+
+  test("only a utility's key of that name is the door", () => {
+    const stray = { id: "jett", mapDoor: door };
+    const agent = { kind: "agent" as const, payloadVersion: 1 };
+
+    expect(
+      keepLaterFields(
+        { ...agent, data: stray },
+        { ...agent, data: { id: "jett" } },
+      ).data,
+    ).toEqual({ id: "jett" });
+    expect(withoutLaterFields({ ...agent, data: stray }, 0).data).toEqual(stray);
+  });
+});
+
 describe("before any caption exists", () => {
   test("a row without the field reads the same at every level", async () => {
     const { t, owner } = await seed();
