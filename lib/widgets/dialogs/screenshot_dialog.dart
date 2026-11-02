@@ -82,6 +82,9 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
   /// How many of [_saving] are captured.
   int _captured = 0;
 
+  /// Whether the page being captured has been held up by its pictures.
+  bool _waitingForPictures = false;
+
   /// Whether this save can be stopped: the open page alone captures in one
   /// go, with nothing between to stop at.
   bool _stoppable = false;
@@ -241,8 +244,11 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     });
     try {
       if (openPageOnly) {
-        final png = await captureEditorPage(ref);
-        if (mounted) setState(() => _captured = 1);
+        final png = await captureEditorPage(
+          ref,
+          onWaitingForPictures: _sayWaitingForPictures,
+        );
+        if (mounted) setState(() => _setCaptured(1));
         // Desktop asks where to save and writes the bytes there; the
         // browser downloads them.
         await saveExportBytes(
@@ -259,13 +265,14 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
         includeCaptions:
             ref.read(appPreferencesProvider).includeScreenshotCaptions,
         onPage: (page, _) {
-          if (mounted) setState(() => _captured = page - 1);
+          if (mounted) setState(() => _setCaptured(page - 1));
         },
+        onWaitingForPictures: _sayWaitingForPictures,
         isCancelled: () => _stopping,
       );
       // A stop that landed during the last page still wins.
       if (_stopping) throw VideoExportCancelled();
-      if (mounted) setState(() => _captured = shots.length);
+      if (mounted) setState(() => _setCaptured(shots.length));
       if (shots.length == 1) {
         await saveExportBytes(
           pageScreenshotFileName(strategyName, shots.single),
@@ -311,6 +318,15 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     } finally {
       _close();
     }
+  }
+
+  void _setCaptured(int count) {
+    _captured = count;
+    _waitingForPictures = false;
+  }
+
+  void _sayWaitingForPictures() {
+    if (mounted) setState(() => _waitingForPictures = true);
   }
 
   void _reportWarning(String message, Object error, StackTrace stackTrace) =>
@@ -534,7 +550,10 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     final index = order.indexOf(pageId);
     if (index < 0) return null;
     if (index < _captured) return 'Captured';
-    if (index == _captured) return _stopping ? 'Stopping' : 'Capturing';
+    if (index == _captured) {
+      if (_stopping) return 'Stopping';
+      return _waitingForPictures ? 'Waiting for pictures' : 'Capturing';
+    }
     return null;
   }
 }

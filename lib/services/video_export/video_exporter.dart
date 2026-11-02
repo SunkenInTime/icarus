@@ -162,6 +162,7 @@ class VideoExporter {
     ProviderContainer? captureContainer;
     CaptureGeometryLease? captureGeometry;
     PersistentOffscreenRenderer? renderer;
+    var renderedFrames = 0;
     _sink = sink;
     try {
       final offscreenContainer = createCaptureContainer(images: imageSources);
@@ -177,6 +178,10 @@ class VideoExporter {
         targetSize: CoordinateSystem.screenShotSize,
         waitForFrameData: captureGeometry?.waitForFrame,
         isCancelled: () => _cancelled,
+        onWaitingForPictures: () => onProgress?.call(
+          renderedFrames / totalFrames * _renderWeight,
+          'Waiting for pictures',
+        ),
         wrapWidget: (child) =>
             wrapForOffscreenCapture(child, container: offscreenContainer),
       );
@@ -186,7 +191,6 @@ class VideoExporter {
         totalFrames: totalFrames,
         totalSeconds: totalSeconds,
       );
-      var renderedFrames = 0;
 
       Future<void> renderFrame(
         ScreenshotView view,
