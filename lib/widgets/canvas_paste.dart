@@ -72,8 +72,9 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
         _refuse('No image found in clipboard');
       } else if (!stillThere()) {
         _refuse(_pageChanged);
-      } else if (ref.read(interactionStateProvider).itemsInReach) {
-        await _pasteItems();
+      } else if (ref.read(canvasClipboardProvider)?.page != null ||
+          ref.read(interactionStateProvider).itemsInReach) {
+        await pasteCopiedItems(ref);
       }
     } on ClipboardBusyException {
       if (mounted) _refuse(ClipboardService.busyMessage);
@@ -136,43 +137,66 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
       ..ensureVisualUpdate();
   }
 
-  Future<void> _pasteItems() async {
-    final refusal = await ref.read(canvasClipboardProvider.notifier).paste();
-    if (refusal == null || !mounted) return;
-    final copiedOn = ref.read(canvasClipboardProvider)?.map;
-    _refuse(
-      switch (refusal) {
-        PasteRefusal.otherMap => copiedOn == null
-            ? 'What you copied is from another map.'
-            : 'What you copied is from ${Maps.displayName(copiedOn)}. Paste '
-                'it into a strategy on ${Maps.displayName(copiedOn)}.',
-        PasteRefusal.picturesMissing =>
-          "A picture in what you copied couldn't be read when you copied "
-              'it, so nothing was pasted. Check your connection and copy '
-              'it again.',
-        PasteRefusal.pageChanged => _pageChanged,
-        PasteRefusal.pictureTooLarge =>
-          'A picture in what you copied is over 15 MB, more than a cloud '
-              'strategy takes, so nothing was pasted.',
-      },
-    );
-  }
-
   static const _slowPicture = Duration(milliseconds: 200);
 
-  static const _pageChanged =
-      'The page changed before the paste finished, so nothing was pasted.';
-
-  void _refuse(String message) => Settings.showToast(
-        message: message,
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
-      );
+  void _refuse(String message) => _showRefusal(message);
 
   @override
   Widget build(BuildContext context) => Actions(
         actions: {PasteImageIntent: _action},
         child: widget.child,
       );
+}
+
+const _pageChanged =
+    'The page changed before the paste finished, so nothing was pasted.';
+
+void _showRefusal(String message) => Settings.showToast(
+      message: message,
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
+    );
+
+/// Pastes what was copied in the editor, and says why on screen when
+/// nothing landed. A whole page lands after [afterPageId], or the page on
+/// screen.
+Future<void> pasteCopiedItems(WidgetRef ref, {String? afterPageId}) async {
+  final notifier = ref.read(canvasClipboardProvider.notifier);
+  final PasteRefusal? refusal;
+  try {
+    refusal = await notifier.paste(afterPageId: afterPageId);
+  } catch (error, stackTrace) {
+    AppErrorReporter.reportError(
+      'Paste failed: $error',
+      error: error,
+      stackTrace: stackTrace,
+      source: 'canvas_paste.paste',
+      promptUser: false,
+    );
+    _showRefusal("Couldn't paste what you copied.");
+    return;
+  }
+  if (refusal == null) return;
+  final copiedOn = ref.read(canvasClipboardProvider)?.map;
+  _showRefusal(
+    switch (refusal) {
+      PasteRefusal.otherMap => copiedOn == null
+          ? 'What you copied is from another map.'
+          : 'What you copied is from ${Maps.displayName(copiedOn)}. Paste '
+              'it into a strategy on ${Maps.displayName(copiedOn)}.',
+      PasteRefusal.picturesMissing =>
+        "A picture in what you copied couldn't be read when you copied "
+            'it, so nothing was pasted. Check your connection and copy '
+            'it again.',
+      PasteRefusal.pageChanged => _pageChanged,
+      PasteRefusal.pictureTooLarge =>
+        'A picture in what you copied is over 15 MB, more than a cloud '
+            'strategy takes, so nothing was pasted.',
+      PasteRefusal.notSaved =>
+        "The page couldn't be saved on this computer, so it wasn't added.",
+      PasteRefusal.notOpened =>
+        "The page was added, but couldn't be opened. It's in the pages list.",
+    },
+  );
 }
 
 class _PasteAction extends Action<PasteImageIntent> {
