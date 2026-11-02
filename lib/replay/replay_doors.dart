@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/replay/replay_document.dart';
@@ -33,8 +35,10 @@ class ReplayDoors {
       for (final move in _moves[door.id]!) {
         if (move.startMs < round.startMs || move.startMs > timeMs) continue;
         final amount = switch (door.kind) {
+          // A move can run past the spin's 10 s, as one a recording's end
+          // cuts off does; the door has still turned only half way.
           MapDoorKind.spin when timeMs <= move.endMs =>
-            (timeMs - move.startMs) / _spinMs * 2,
+            math.min(2.0, (timeMs - move.startMs) / _spinMs * 2),
           MapDoorKind.spin => null,
           MapDoorKind.drop => move.endMs > timeMs
               ? (timeMs - move.startMs) / (move.endMs - move.startMs)

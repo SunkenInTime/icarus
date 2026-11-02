@@ -52,6 +52,17 @@ void main() {
       expect(doors.at(30001, round(30001)).containsKey('lotus-c'), isFalse);
     });
 
+    test('a move longer than a spin still turns only half way', () {
+      final long = ReplayDoors(
+        document(doors: [
+          {'actor': 'Drawbridge5', 'startMs': 20000, 'endMs': 31500},
+        ]),
+        MapValue.lotus,
+      );
+
+      expect(long.at(31000, round(31000))['lotus-c'], 2);
+    });
+
     test('a spin cut short keeps its pace', () {
       final late = ReplayDoors(
         document(doors: [
