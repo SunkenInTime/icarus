@@ -60,7 +60,6 @@ import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/services/cloud_work_sent.dart';
-import 'package:icarus/strategy/strategy_cloud_migration.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -1837,91 +1836,17 @@ class StrategyProvider extends Notifier<StrategyState> {
       sortIndex: insertionIndex,
     );
 
-    await _insertLocalPage(strat, orderedPages, insertionIndex, newPage);
-    await setActivePageAnimated(newPage.id);
-    return none;
-  }
+    orderedPages.insert(insertionIndex, newPage);
+    final reindexed = reindexPagesAfterStructuralChange(orderedPages);
 
-  Future<void> _insertLocalPage(
-    StrategyData strategy,
-    List<StrategyPage> orderedPages,
-    int index,
-    StrategyPage page,
-  ) async {
-    orderedPages.insert(index, page);
-    final updated = strategy.copyWith(
-      pages: reindexPagesAfterStructuralChange(orderedPages),
+    final updated = strat.copyWith(
+      pages: reindexed,
       lastEdited: DateTime.now(),
     );
-    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .put(updated.id, updated);
-  }
+    await box.put(updated.id, updated);
 
-  /// Adds [page], pasted here with its items and pictures already under ids
-  /// of their own, after [afterPageId] or the page on screen. In the cloud
-  /// it goes through the outbox whole, as "+" does offline (see
-  /// page_made_here.dart), so it can open at once and land behind the canvas.
-  /// False, with nothing added, when it could not be kept.
-  Future<bool> addCopiedPage(StrategyPage page, {String? afterPageId}) async {
-    final strategyId = state.strategyId;
-    if (strategyId == null || !_currentStrategyCanEditPages()) return false;
-    final after =
-        afterPageId ?? ref.read(strategyPageSessionProvider).activePageId;
-    int indexAfter(Iterable<String> pageIds) {
-      final at = pageIds.toList().indexOf(after ?? '');
-      return (at >= 0 ? at : pageIds.length - 1) + 1;
-    }
-
-    if (!_currentStrategyIsCloud()) {
-      await _syncCurrentPageToHive();
-      if (state.strategyId != strategyId) return false;
-      final strategy =
-          Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
-      if (strategy == null || strategy.pages.isEmpty) return false;
-      final ordered = [...strategy.pages]
-        ..sortBySortIndex((item) => item.sortIndex);
-      await _insertLocalPage(
-        strategy,
-        ordered,
-        indexAfter(ordered.map((item) => item.id)),
-        page,
-      );
-      return true;
-    }
-
-    await ref.read(strategyPageSessionProvider.notifier).flushCurrentPage();
-    if (state.strategyId != strategyId) return false;
-    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-    final pages = ref.read(drawnCloudPagesProvider)?.pages;
-    if (snapshot == null || pages == null) return false;
-    final index = indexAfter(pages.map((item) => item.publicId));
-    final isAutoNamed = page.isAutoNamed == true;
-    final content = <StrategyOp>[];
-    appendMovedPageOps(
-      content,
-      page,
-      cloudPageId: page.id,
-      ids: PastedItemIds(),
-    );
-    final queued =
-        await ref.read(strategyOpQueueProvider.notifier).enqueuePageCopy(
-              PageAddOp(
-                opId: const Uuid().v4(),
-                pagePublicId: page.id,
-                payload: {
-                  'name': isAutoNamed ? 'Page ${index + 1}' : page.name,
-                  'isAutoNamed': isAutoNamed,
-                  'isAttack': page.isAttack,
-                  'settings': page.settings.toJson(),
-                },
-                sortIndex: index,
-                expectedStrategyRevision: _drawnStrategyRevision(snapshot),
-              ),
-              content,
-              strategyPublicId: strategyId,
-            );
-    if (queued) _markCloudWorkPending();
-    return queued;
+    await setActivePageAnimated(newPage.id);
+    return none;
   }
 
   /// The ops that put a copy of the cloud page on screen, [pageId], onto

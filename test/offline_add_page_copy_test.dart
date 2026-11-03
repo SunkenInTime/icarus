@@ -16,12 +16,10 @@ import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
-import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
-import 'package:icarus/providers/canvas_clipboard_provider.dart';
 import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
@@ -32,7 +30,6 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
@@ -69,10 +66,7 @@ void main() {
   });
 
   /// The app, started with [online] as the connection.
-  Future<ProviderContainer> start({
-    required bool online,
-    CanvasClipboard? copied,
-  }) async {
+  Future<ProviderContainer> start({required bool online}) async {
     server.reachable = online;
     final connected = StateProvider<bool>((ref) => online);
     final container = ProviderContainer(overrides: [
@@ -97,14 +91,9 @@ void main() {
       cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
       cloudMediaAccountIdProvider.overrideWithValue('account-a'),
       _connection.overrideWith((ref) => connected),
-      if (copied != null) ...[
-        canvasClipboardProvider.overrideWith(() => _Holding(copied)),
-        placedImageProvider.overrideWith(_KeepsNoFiles.new),
-      ],
     ]);
     addTearDown(container.dispose);
     container.listen(strategyPageSessionProvider, (_, __) {});
-    container.listen(canvasClipboardProvider, (_, __) {});
     await container.read(remoteEditorSnapshotProvider.future);
     await container
         .read(remoteEditorSnapshotProvider.notifier)
@@ -205,123 +194,6 @@ void main() {
       unorderedEquals([agent.id, image.id]),
     );
     expect(queued.whereType<LineupAddOp>().single.pagePublicId, pageId);
-  });
-
-  test('a page pasted offline opens at once and lands whole, add first',
-      () async {
-    final app = await start(online: true);
-    final clipboard = app.read(canvasClipboardProvider.notifier);
-    clipboard.copyPage(
-      name: 'B retake',
-      isAutoNamed: false,
-      readPictures: (_) async => const {},
-    );
-    setOnline(app, false);
-
-    expect(await clipboard.paste(), isNull);
-    await _settle();
-
-    final pageId = activePage(app)!;
-    expect(pageId, isNot('p1'));
-    expect(server.pageIds, ['p1'], reason: 'nothing reached the server');
-    expect(app.read(drawnCloudPagesProvider)!.pages.last.name, 'B retake');
-    final agentId = app.read(agentProvider).single.id;
-    expect(agentId, isNot('agent-1'));
-    expect(pageCopyRoot(agentId), 'agent-1');
-    // Pasted into the strategy it came from, a picture stays the same one.
-    expect(
-      app.read(placedImageProvider).images.single.pictureId,
-      'picture-1',
-    );
-    final link = app.read(lineUpProvider).graph.links.single;
-    expect(link.id, isNot('lineup-1'));
-
-    await reconnect(app);
-
-    expect(server.refused, isEmpty);
-    final forNewPage =
-        server.landed.where((op) => op.pagePublicId == pageId).toList();
-    expect(forNewPage.first, isA<PageAddOp>());
-    expect(
-      (forNewPage.first as PageAddOp).copyContentFromPagePublicId,
-      isNull,
-    );
-    expect(server.pageIds, ['p1', pageId]);
-    expect(server.elementsOn(pageId), hasLength(2));
-    expect(server.lineupsOn(pageId), hasLength(1));
-    expect(app.read(strategyOpQueueProvider).pending, isEmpty);
-    expect(app.read(agentProvider).single.id, agentId);
-  });
-
-  test(
-      'a page from another strategy lands with its notes, its wall and '
-      'pictures of its own', () async {
-    final app = await start(
-      online: true,
-      copied: CanvasClipboard(
-        map: MapValue.ascent,
-        strategyId: 'another-strategy',
-        agents: [
-          PlacedAgent(
-            id: 'jett',
-            type: AgentType.jett,
-            position: const Offset(100, 100),
-          )..caption = 'entry',
-        ],
-        abilities: [
-          PlacedAbility(
-            id: 'wall',
-            data: AgentData.agents[AgentType.harbor]!.abilities[1],
-            position: const Offset(200, 200),
-            wallPath: const [Offset(0, 0), Offset(40, 90)],
-          ),
-        ],
-        texts: const [],
-        images: [
-          PlacedImage(
-            id: 'shown',
-            position: const Offset(300, 300),
-            aspectRatio: 1,
-            scale: 100,
-            fileExtension: '.png',
-          ),
-        ],
-        utilities: const [],
-        drawings: const [],
-        lineups: LineUpGraph(),
-        pictures: Future.value({
-          'shown': (
-            bytes: Uint8List.fromList([1, 2, 3]),
-            fileExtension: '.png',
-          ),
-        }),
-        page: (
-          name: 'From elsewhere',
-          isAutoNamed: false,
-          isAttack: false,
-          settings: StrategySettings(agentSize: 50),
-        ),
-      ),
-    );
-
-    expect(await app.read(canvasClipboardProvider.notifier).paste(), isNull);
-    await _drain(app);
-
-    expect(server.refused, isEmpty);
-    final pageId = activePage(app)!;
-    final add = server.landed.whereType<PageAddOp>().single;
-    expect(add.payload['name'], 'From elsewhere');
-    expect(add.payload['isAttack'], isFalse);
-    expect((add.payload['settings'] as Map)['agentSize'], 50);
-    final rows = server.elementsOn(pageId).values.map(
-          (row) => (row['payload'] as Map)['data'] as Map<String, Object?>,
-        );
-    expect(rows, hasLength(3));
-    expect(rows.map((row) => row['caption']), contains('entry'));
-    expect(rows.where((row) => row['wallPath'] != null), hasLength(1));
-    final image = rows.singleWhere((row) => row.containsKey('fileExtension'));
-    expect(image['assetId'], isNot('shown'));
-    expect(pageCopyRoot(image['id'] as String), isNot('shown'));
   });
 
   test('next and previous reach a page made here, as any page', () async {
@@ -1102,45 +974,8 @@ class _Outbox extends MemoryDurableStrategyOutboxStore {
   }
 }
 
-class _Holding extends CanvasClipboardNotifier {
-  _Holding(this.copied);
-
-  final CanvasClipboard copied;
-
-  @override
-  CanvasClipboard? build() => copied;
-}
-
-/// The real provider, keeping no files: what a picture's bytes do is not
-/// what these tests are about.
-class _KeepsNoFiles extends PlacedImageProvider {
-  @override
-  Future<void> saveSecureImage(
-    Uint8List imageBytes,
-    String imageID,
-    String fileExtenstion, {
-    required String? strategyId,
-  }) async {}
-}
-
 class _IdleMediaQueue extends CloudMediaUploadQueueNotifier {
   @override
   CloudMediaUploadQueueState build() =>
       const CloudMediaUploadQueueState(jobs: [], isProcessing: false);
-
-  @override
-  Future<void> enqueuePlacedImageUpload({
-    required String imagePublicId,
-    String? strategyPublicId,
-    String? fileExtension,
-    String? mimeType,
-    int? width,
-    int? height,
-  }) async {}
-
-  @override
-  Future<void> commitStagedMediaReferences({
-    required String strategyPublicId,
-    required Iterable<String> assetPublicIds,
-  }) async {}
 }

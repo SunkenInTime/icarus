@@ -47,10 +47,8 @@
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
 //   {"setCaption": id, "text": t}      what the caption dialog's Done does
 //   {"addUtility": id, "type": name, "at": [x, y], "door": id?}  spike, customRectangle, customCircle
-//   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?, "shot": path?}
-//                                      two lineups, ids lo1{n}, lo2{n}; legacy ones share
-//                                      one id per lineup; shot is the first one's picture,
-//                                      in a local strategy
+//   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?}  two lineups, ids
+//                                      lo1{n}, lo2{n}; legacy ones share one id per lineup
 //   {"addAbility": id, "agent": name, "slot": n, "at": [x, y]}
 //   {"dragAgent": id, "by": [dx, dy]}  {"hoverAgent": id}
 //   {"dragAgent": id, "toWorld": [x, y]}
@@ -1103,16 +1101,6 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'addLineup':
       final smoke = AgentData.agents[AgentType.brimstone]!.abilities[2];
       final legacy = step['legacy'] == true;
-      final shotPath = step['shot'] as String?;
-      final shotId = 'shot$value';
-      if (shotPath != null) {
-        await c.read(placedImageProvider.notifier).saveSecureImage(
-              await File(shotPath).readAsBytes(),
-              shotId,
-              '.png',
-              strategyId: c.read(strategyProvider).strategyId,
-            );
-      }
       LineUpGraph one(String n, Offset from, Offset to) => LineUpGraph(
             origins: [
               LineUpOrigin(
@@ -1144,10 +1132,7 @@ Future<void> _run(Map<String, dynamic> step) async {
                 originId: 'lo$n',
                 landingId: legacy ? 'lo$n' : 'll$n',
                 name: 'Smoke $n',
-                images: [
-                  if (shotPath != null && n.startsWith('1'))
-                    SimpleImageData(id: shotId, fileExtension: '.png'),
-                ],
+                images: const [],
               ),
             ],
           );
