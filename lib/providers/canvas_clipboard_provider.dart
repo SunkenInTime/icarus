@@ -23,10 +23,8 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
-import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -42,15 +40,7 @@ typedef CopiedPicture = ({Uint8List bytes, String fileExtension});
 /// and the copy pastes into its own strategy only.
 const _maxCopiedPictureBytes = 200 * 1024 * 1024;
 
-/// What a page copied whole brings beyond its items.
-typedef CopiedPage = ({
-  String name,
-  bool isAutoNamed,
-  bool isAttack,
-  StrategySettings settings,
-});
-
-/// What Ctrl+C or Copy page took: copies of the items as they were, from the
+/// What Ctrl+C took: copies of the selected items as they were, from the
 /// strategy and map they were on. It lives in this window only, never on
 /// the system clipboard, so nothing copied ever has to be read back by
 /// another version of Icarus.
@@ -66,7 +56,6 @@ class CanvasClipboard {
     required this.drawings,
     required this.lineups,
     required this.pictures,
-    this.page,
   });
 
   final MapValue map;
@@ -84,9 +73,6 @@ class CanvasClipboard {
   /// or past the copy's limit). Only a paste into another strategy waits
   /// for them.
   final Future<Map<String, CopiedPicture?>> pictures;
-
-  /// Set when these are a whole page, which pastes as a new page.
-  final CopiedPage? page;
 
   int get itemCount =>
       agents.length +
@@ -112,30 +98,7 @@ enum PasteRefusal {
 
   /// The page on screen changed while its pictures were saved.
   pageChanged,
-
-  /// The new page could not be stored on this computer.
-  notSaved,
-
-  /// The new page was added but would not open.
-  notOpened,
 }
-
-/// Reads the bytes behind pictures, given their ids and file extensions:
-/// see [readCopiedPictures].
-typedef PictureReader = Future<Map<String, CopiedPicture?>> Function(
-  Map<String, String> pictures,
-);
-
-/// New copies of what a clipboard holds, under ids of their own.
-typedef _Copies = ({
-  List<PlacedAgentNode> agents,
-  List<PlacedAbility> abilities,
-  List<PlacedText> texts,
-  List<PlacedImage> images,
-  List<PlacedUtility> utilities,
-  List<DrawingElement> drawings,
-  LineUpGraph lineups,
-});
 
 final canvasClipboardProvider =
     NotifierProvider<CanvasClipboardNotifier, CanvasClipboard?>(
@@ -157,74 +120,41 @@ class CanvasClipboardNotifier extends Notifier<CanvasClipboard?> {
   /// Puts copies of the selected items on the clipboard. [readPictures]
   /// fetches the bytes behind the pictures they show (see
   /// [readCopiedPictures]). Returns how many items were copied.
-  int copySelection(PictureReader readPictures) {
+  int copySelection(
+    Future<Map<String, CopiedPicture?>> Function(Map<String, String>)
+        readPictures,
+  ) {
     final ids = {for (final item in ref.read(canvasSelectionProvider)) item.id};
     if (ids.isEmpty) return 0;
-    final clipboard = _clipboardOf(
-      picked: ids.contains,
-      lineups: ref.read(lineUpProvider).graph.linksWithSpots(ids),
-      readPictures: readPictures,
-    );
-    if (clipboard.itemCount == 0) return 0;
-    state = clipboard;
-    return clipboard.itemCount;
-  }
-
-  /// Puts the whole page on screen on the clipboard, under the name the pages
-  /// list gives it. An empty page copies too: it still has a name and a side.
-  void copyPage({
-    required String name,
-    required bool isAutoNamed,
-    required PictureReader readPictures,
-  }) {
-    final graph = ref.read(lineUpProvider).graph;
-    state = _clipboardOf(
-      picked: (_) => true,
-      lineups: graph.linksWithSpots({for (final link in graph.links) link.id}),
-      readPictures: readPictures,
-      page: (
-        name: name,
-        isAutoNamed: isAutoNamed,
-        isAttack: ref.read(mapProvider).isAttack,
-        settings: ref.read(strategySettingsProvider).copyWith(),
-      ),
-    );
-  }
-
-  CanvasClipboard _clipboardOf({
-    required bool Function(String id) picked,
-    required LineUpGraph lineups,
-    required PictureReader readPictures,
-    CopiedPage? page,
-  }) {
+    bool picked(PlacedWidget item) => ids.contains(item.id);
     final images = [
       for (final image in ref.read(placedImageProvider).images)
-        if (picked(image.id)) clonePlacedImage(image),
+        if (picked(image)) clonePlacedImage(image),
     ];
-    return CanvasClipboard(
+    final lineups = ref.read(lineUpProvider).graph.linksWithSpots(ids);
+    final clipboard = CanvasClipboard(
       map: ref.read(mapProvider).currentMap,
       strategyId: ref.read(strategyProvider).strategyId,
       agents: [
         for (final agent in ref.read(agentProvider))
-          if (picked(agent.id)) clonePlacedAgentNode(agent),
+          if (picked(agent)) clonePlacedAgentNode(agent),
       ],
       abilities: [
         for (final ability in ref.read(abilityProvider))
-          if (picked(ability.id)) clonePlacedAbility(ability),
+          if (picked(ability)) clonePlacedAbility(ability),
       ],
       texts: [
-        for (final text
-            in ref.read(textProvider.notifier).snapshotForPersistence())
-          if (picked(text.id)) clonePlacedText(text),
+        for (final text in ref.read(textProvider))
+          if (picked(text)) clonePlacedText(text),
       ],
       images: images,
       utilities: [
         for (final utility in ref.read(utilityProvider))
-          if (picked(utility.id)) clonePlacedUtility(utility),
+          if (picked(utility)) clonePlacedUtility(utility),
       ],
       drawings: [
         for (final drawing in ref.read(drawingProvider).elements)
-          if (picked(drawing.id)) cloneDrawingElement(drawing),
+          if (ids.contains(drawing.id)) cloneDrawingElement(drawing),
       ],
       lineups: lineups.deepCopy(),
       pictures: readPictures({
@@ -232,8 +162,10 @@ class CanvasClipboardNotifier extends Notifier<CanvasClipboard?> {
         for (final link in lineups.links)
           for (final image in link.images) image.id: image.fileExtension,
       }),
-      page: page,
     );
+    if (clipboard.itemCount == 0) return 0;
+    state = clipboard;
+    return clipboard.itemCount;
   }
 
   /// Puts copies of what is on the clipboard on the page on screen, where
@@ -241,21 +173,8 @@ class CanvasClipboardNotifier extends Notifier<CanvasClipboard?> {
   /// them. Pasted into the strategy they came from, they show the same
   /// pictures while those are still there; every other picture is saved
   /// anew from the bytes the copy carried, as an image dropped on the map
-  /// is. A whole page lands as a new page after [afterPageId], or after the
-  /// page on screen, and opens. Returns why nothing was pasted, or null.
-  Future<PasteRefusal?> paste({String? afterPageId}) async {
-    if (_pasting) return null;
-    _pasting = true;
-    try {
-      return await _paste(afterPageId);
-    } finally {
-      _pasting = false;
-    }
-  }
-
-  bool _pasting = false;
-
-  Future<PasteRefusal?> _paste(String? afterPageId) async {
+  /// is. Returns why nothing was pasted, or null.
+  Future<PasteRefusal?> paste() async {
     final clipboard = state;
     if (clipboard == null || !_canEdit) return null;
     if (clipboard.map != ref.read(mapProvider).currentMap) {
@@ -265,14 +184,11 @@ class CanvasClipboardNotifier extends Notifier<CanvasClipboard?> {
     final strategyId = strategy.strategyId;
     if (strategyId == null) return null;
     final isCloud = strategy.source == StrategySource.cloud;
-    final copiedPage = clipboard.page;
-    // Items land on this page or not at all. A whole page only needs this
-    // strategy.
+    // Everything lands on this page or not at all.
     final pageId = ref.read(strategyPageSessionProvider).activePageId;
     bool stillHere() =>
         ref.read(strategyProvider).strategyId == strategyId &&
-        (copiedPage != null ||
-            ref.read(strategyPageSessionProvider).activePageId == pageId) &&
+        ref.read(strategyPageSessionProvider).activePageId == pageId &&
         _canEdit;
 
     // Each picture by id, with its file extension.
@@ -327,89 +243,17 @@ class CanvasClipboardNotifier extends Notifier<CanvasClipboard?> {
         );
       }
       if (isCloud) await _stageUploads(clipboard, newPictureIds, strategyId);
-    }
-    Future<void> discardStagedUploads() async {
-      if (!isCloud) return;
-      final queue = ref.read(cloudMediaUploadQueueProvider.notifier);
-      for (final id in newPictureIds.values) {
-        await queue.discardStagedUpload(id);
+      if (!stillHere()) {
+        if (isCloud) {
+          final queue = ref.read(cloudMediaUploadQueueProvider.notifier);
+          for (final id in newPictureIds.values) {
+            await queue.discardStagedUpload(id);
+          }
+        }
+        return PasteRefusal.pageChanged;
       }
     }
 
-    if (newPictureIds.isNotEmpty && !stillHere()) {
-      await discardStagedUploads();
-      return PasteRefusal.pageChanged;
-    }
-
-    final newPageId = _uuid.v4();
-    if (copiedPage == null) {
-      _placeOnPage(pasted);
-    } else {
-      final added = await ref.read(strategyProvider.notifier).addCopiedPage(
-            StrategyPage(
-              id: newPageId,
-              name: copiedPage.name,
-              isAutoNamed: copiedPage.isAutoNamed,
-              drawingData: pasted.drawings,
-              agentData: pasted.agents,
-              abilityData: pasted.abilities,
-              textData: pasted.texts,
-              imageData: pasted.images,
-              utilityData: pasted.utilities,
-              sortIndex: 0,
-              isAttack: copiedPage.isAttack,
-              settings: copiedPage.settings,
-              lineUpOrigins: pasted.lineups.origins,
-              lineUpLandings: pasted.lineups.landings,
-              lineUpLinks: pasted.lineups.links,
-            ),
-            afterPageId: afterPageId,
-          );
-      if (!added) {
-        await discardStagedUploads();
-        return PasteRefusal.notSaved;
-      }
-    }
-
-    if (isCloud && newPictureIds.isNotEmpty) {
-      try {
-        await ref
-            .read(cloudMediaUploadQueueProvider.notifier)
-            .commitStagedMediaReferences(
-              strategyPublicId: strategyId,
-              assetPublicIds: newPictureIds.values,
-            );
-      } catch (error, stackTrace) {
-        // The pictures stay staged on this device; the sync menu shows
-        // them, as it does any image upload that is waiting.
-        AppErrorReporter.reportError(
-          'Pasted pictures could not be marked for upload: $error',
-          error: error,
-          stackTrace: stackTrace,
-          source: 'canvas_clipboard.paste',
-        );
-      }
-    }
-    if (copiedPage == null || !stillHere()) return null;
-    try {
-      await ref
-          .read(strategyProvider.notifier)
-          .setActivePageAnimated(newPageId);
-    } catch (error, stackTrace) {
-      AppErrorReporter.reportError(
-        'A pasted page could not be opened: $error',
-        error: error,
-        stackTrace: stackTrace,
-        source: 'canvas_clipboard.paste',
-        promptUser: false,
-      );
-      return PasteRefusal.notOpened;
-    }
-    return null;
-  }
-
-  /// Adds [pasted] to the page on screen as one undo step, and selects it.
-  void _placeOnPage(_Copies pasted) {
     ref.read(actionProvider.notifier).performTransaction(
       groups: const [],
       mutation: () {
@@ -447,6 +291,27 @@ class CanvasClipboardNotifier extends Notifier<CanvasClipboard?> {
       for (final link in pasted.lineups.links)
         (kind: SelectableKind.lineup, id: link.id),
     ]);
+
+    if (isCloud && newPictureIds.isNotEmpty) {
+      try {
+        await ref
+            .read(cloudMediaUploadQueueProvider.notifier)
+            .commitStagedMediaReferences(
+              strategyPublicId: strategyId,
+              assetPublicIds: newPictureIds.values,
+            );
+      } catch (error, stackTrace) {
+        // The pictures stay staged on this device; the sync menu shows
+        // them, as it does any image upload that is waiting.
+        AppErrorReporter.reportError(
+          'Pasted pictures could not be marked for upload: $error',
+          error: error,
+          stackTrace: stackTrace,
+          source: 'canvas_clipboard.paste',
+        );
+      }
+    }
+    return null;
   }
 
   bool get _canEdit =>
@@ -499,10 +364,15 @@ class CanvasClipboardNotifier extends Notifier<CanvasClipboard?> {
   /// still pairs it with the item it was copied from). Pictures are renamed by
   /// [newPictureIds]: the first image showing a picture takes the picture's
   /// id, as an image placed fresh does, and the rest point at it.
-  _Copies _copies(
-    CanvasClipboard clipboard,
-    Map<String, String> newPictureIds,
-  ) {
+  ({
+    List<PlacedAgentNode> agents,
+    List<PlacedAbility> abilities,
+    List<PlacedText> texts,
+    List<PlacedImage> images,
+    List<PlacedUtility> utilities,
+    List<DrawingElement> drawings,
+    LineUpGraph lineups,
+  }) _copies(CanvasClipboard clipboard, Map<String, String> newPictureIds) {
     final placedPictures = <String>{};
     PlacedImage imageCopy(PlacedImage image) {
       final picture = newPictureIds[image.pictureId];

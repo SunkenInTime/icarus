@@ -1,30 +1,20 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
-import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/const/transition_data.dart';
-import 'package:icarus/providers/canvas_clipboard_provider.dart';
 import 'package:icarus/providers/collab/drawn_cloud_pages_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/trashed_pages_provider.dart';
-import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart'
     hide PageTransitionState;
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
-import 'package:icarus/services/app_error_reporter.dart';
-import 'package:icarus/services/clipboard_service.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
-import 'package:icarus/widgets/canvas_paste.dart';
 import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/delete_page_dialog.dart';
@@ -238,54 +228,6 @@ class _PagesBarState extends ConsumerState<PagesBar> {
   Future<void> _selectPage(String id) async {
     if (id == ref.read(strategyPageSessionProvider).activePageId) return;
     await ref.read(strategyProvider.notifier).setActivePageAnimated(id);
-  }
-
-  /// Puts [page] on the clipboard, to paste as a new page here or in another
-  /// strategy. Only the page on screen can be read whole (a cloud strategy
-  /// has one page and its pictures loaded at a time), so any other is opened
-  /// first.
-  Future<void> _copyPage(PageListItemViewModel page) async {
-    final strategyId = ref.read(strategyProvider).strategyId;
-    try {
-      await _selectPage(page.id);
-    } catch (error, stackTrace) {
-      AppErrorReporter.reportError(
-        'Could not open page ${page.id} to copy it: $error',
-        error: error,
-        stackTrace: stackTrace,
-        source: 'pages_bar.copy',
-        promptUser: false,
-      );
-      if (mounted) {
-        Settings.showToast(
-          message: "Couldn't open '${page.name}' to copy it.",
-          backgroundColor: Settings.tacticalVioletTheme.destructive,
-        );
-      }
-      return;
-    }
-    // A page that could not be read says so itself (see the page session).
-    if (!_showing(strategyId) ||
-        ref.read(strategyPageSessionProvider).activePageId != page.id) {
-      return;
-    }
-    ref.read(canvasClipboardProvider.notifier).copyPage(
-          name: page.name,
-          isAutoNamed: page.isAutoNamed,
-          readPictures: (pictures) => readCopiedPictures(ref, pictures),
-        );
-    // What was copied last is what pastes: see CanvasPaste.
-    unawaited(ClipboardService.clear());
-    const paste = IcarusKeyBinding(
-      trigger: LogicalKeyboardKey.keyV,
-      primary: true,
-    );
-    final map = Maps.displayName(ref.read(mapProvider).currentMap);
-    Settings.showToast(
-      message: "Copied '${page.name}'. Press ${paste.displayLabel()} in any "
-          '$map strategy to add it as a new page.',
-      backgroundColor: Settings.tacticalVioletTheme.secondary,
-    );
   }
 
   Future<void> _renamePage(PageListItemViewModel page) async {
@@ -555,8 +497,6 @@ class _PagesBarState extends ConsumerState<PagesBar> {
                     onSelect: _selectPage,
                     onRename: caps.canRenamePage ? _renamePage : null,
                     onDelete: caps.canDeletePage ? _deletePage : null,
-                    onCopy: caps.canEditPages ? _copyPage : null,
-                    onPaste: _pasteAfter(caps),
                     onAdd: _addPage,
                     // Only when there is something in it: an empty trash
                     // is clutter.
@@ -579,11 +519,6 @@ class _PagesBarState extends ConsumerState<PagesBar> {
                   )
                 : _CollapsedPill(
                     activeName: data.activeName,
-                    menuItems: _pageCopyMenuItems(
-                      data.activePage,
-                      onCopy: caps.canEditPages ? _copyPage : null,
-                      onPaste: _pasteAfter(caps),
-                    ),
                     onAdd: caps.canAddPage ? _addPage : null,
                     onToggle: () => setState(() => _expanded = true),
                   ),
@@ -604,15 +539,6 @@ class _PagesBarState extends ConsumerState<PagesBar> {
         ),
       ],
     );
-  }
-
-  /// Pastes the copied page after a row, while a page is what was copied.
-  ValueChanged<PageListItemViewModel>? _pasteAfter(StrategyCapabilities caps) {
-    final holdsPage =
-        ref.watch(canvasClipboardProvider.select((copied) => copied?.page)) !=
-            null;
-    if (!holdsPage || !caps.canAddPage) return null;
-    return (page) => unawaited(pasteCopiedItems(ref, afterPageId: page.id));
   }
 
   _PageBarData? _buildLocalData(
@@ -662,13 +588,16 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     String? activePageId,
   ) {
     final resolvedActiveId = activePageId ?? pages.first.id;
+    final activeName = pages
+        .firstWhere(
+          (page) => page.id == resolvedActiveId,
+          orElse: () => pages.first,
+        )
+        .name;
     return _PageBarData(
       pages: pages,
       activePageId: resolvedActiveId,
-      activePage: pages.firstWhere(
-        (page) => page.id == resolvedActiveId,
-        orElse: () => pages.first,
-      ),
+      activeName: activeName,
     );
   }
 }
@@ -677,60 +606,29 @@ class _PageBarData {
   const _PageBarData({
     required this.pages,
     required this.activePageId,
-    required this.activePage,
+    required this.activeName,
   });
 
   final List<PageListItemViewModel> pages;
   final String activePageId;
-  final PageListItemViewModel activePage;
-
-  String get activeName => activePage.name;
+  final String activeName;
 }
-
-/// Copy page, and Paste page while a page is what was copied, for [page].
-List<Widget> _pageCopyMenuItems(
-  PageListItemViewModel page, {
-  required ValueChanged<PageListItemViewModel>? onCopy,
-  required ValueChanged<PageListItemViewModel>? onPaste,
-}) =>
-    [
-      if (onCopy != null)
-        ShadContextMenuItem(
-          leading: const Icon(LucideIcons.copy, size: 16),
-          onPressed: () => onCopy(page),
-          child: const Text('Copy page'),
-        ),
-      if (onPaste != null)
-        ShadContextMenuItem(
-          leading: const Icon(LucideIcons.clipboardPaste, size: 16),
-          onPressed: () => onPaste(page),
-          child: const Text('Paste page'),
-        ),
-    ];
 
 /* -------- Collapsed pill -------- */
 class _CollapsedPill extends StatelessWidget {
   const _CollapsedPill({
     required this.activeName,
-    required this.menuItems,
     required this.onAdd,
     required this.onToggle,
   });
 
   final String activeName;
-  final List<Widget> menuItems;
   final VoidCallback? onAdd;
   final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final name = Text(
-      activeName,
-      overflow: TextOverflow.ellipsis,
-      style: theme.textTheme.titleMedium?.copyWith(
-          color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14),
-    );
     return SizedBox(
       height: _pagesBarFooterHeight,
       child: Row(
@@ -745,9 +643,14 @@ class _CollapsedPill extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: menuItems.isEmpty
-                ? name
-                : ContextMenuRegion(items: menuItems, child: name),
+            child: Text(
+              activeName,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14),
+            ),
           ),
           ShadIconButton.ghost(
             width: _pagesBarControlSize,
@@ -783,8 +686,6 @@ class _ExpandedPanel extends ConsumerWidget {
     required this.onSelect,
     required this.onRename,
     required this.onDelete,
-    required this.onCopy,
-    required this.onPaste,
     required this.onAdd,
     required this.onOpenRecentlyDeleted,
     required this.onCollapse,
@@ -807,8 +708,6 @@ class _ExpandedPanel extends ConsumerWidget {
   final ValueChanged<PageListItemViewModel>? onRename;
   final Future<void> Function(PageListItemViewModel page, int pageCount)?
       onDelete;
-  final ValueChanged<PageListItemViewModel>? onCopy;
-  final ValueChanged<PageListItemViewModel>? onPaste;
   final VoidCallback onAdd;
 
   /// Opens Recently deleted; null where there is no trash to open.
@@ -932,8 +831,6 @@ class _ExpandedPanel extends ConsumerWidget {
                         onSelect: onSelect,
                         onRename: onRename,
                         onDelete: onDelete,
-                        onCopy: onCopy,
-                        onPaste: onPaste,
                         pageCount: pages.length,
                         canRename: canRenamePage,
                         disableDelete: !canDeletePage || pages.length == 1,
@@ -1136,8 +1033,6 @@ class _PageRow extends StatefulWidget {
     required this.onSelect,
     required this.onRename,
     required this.onDelete,
-    required this.onCopy,
-    required this.onPaste,
     required this.pageCount,
     required this.canRename,
     required this.disableDelete,
@@ -1152,8 +1047,6 @@ class _PageRow extends StatefulWidget {
   final ValueChanged<PageListItemViewModel>? onRename;
   final Future<void> Function(PageListItemViewModel page, int pageCount)?
       onDelete;
-  final ValueChanged<PageListItemViewModel>? onCopy;
-  final ValueChanged<PageListItemViewModel>? onPaste;
   final int pageCount;
   final bool canRename;
   final bool disableDelete;
@@ -1321,11 +1214,6 @@ class _PageRowState extends State<_PageRow> {
           onPressed: _rename,
           child: const Text('Rename'),
         ),
-      ..._pageCopyMenuItems(
-        widget.page,
-        onCopy: widget.onCopy,
-        onPaste: widget.onPaste,
-      ),
       if (widget.onDelete != null)
         ShadContextMenuItem(
           leading: Icon(

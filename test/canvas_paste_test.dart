@@ -69,7 +69,7 @@ class _Items extends CanvasClipboardNotifier {
       : null;
 
   @override
-  Future<PasteRefusal?> paste({String? afterPageId}) async {
+  Future<PasteRefusal?> paste() async {
     pastes++;
     return null;
   }
