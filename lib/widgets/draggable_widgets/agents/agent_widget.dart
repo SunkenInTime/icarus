@@ -224,7 +224,7 @@ class AgentWidget extends ConsumerWidget {
             : (id?.isNotEmpty ?? false)
                 ? HoveredDeleteTarget.agent(id: id!, ownerToken: Object())
                 : null;
-    // A draft from Create Lineup has the id of the placed agent it started from
+    // A draft from Create lineup has the id of the placed agent it started from
     // and is not that agent, so nothing here may look that agent up.
     final isLineUpDraft = onWeaponSelected != null;
     final placedAgentNode = canInteract &&
@@ -385,7 +385,7 @@ class AgentWidget extends ConsumerWidget {
       if (canInteract && viewConeAgent != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.eyeOff, size: 16),
-          child: const Text('Remove View Cone'),
+          child: const Text('Remove view cone'),
           onPressed: () {
             ref.read(actionProvider.notifier).performTransaction(
               groups: const [ActionGroup.agent],
@@ -424,7 +424,7 @@ class AgentWidget extends ConsumerWidget {
           plainAgent.id.isNotEmpty)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.plus, size: 16),
-          child: const Text('Create Lineup'),
+          child: const Text('Create lineup'),
           onPressed: () {
             ref.read(abilityBarProvider.notifier).updateData(agent);
             final lineUps = ref.read(lineUpProvider.notifier);

@@ -193,7 +193,7 @@ List<ShadContextMenuItem> _buildVisibilityItems(
     if (landingId == null &&
         AbilityVisionConeSpec.forAbility(ability.data) != null)
       _AbilityVisibilityControl(
-        label: 'Vision Cone',
+        label: 'Vision cone',
         isEnabled: ability.visualState.showVisionCone,
         toggle: (state) => state.copyWith(
           showVisionCone: !state.showVisionCone,
@@ -236,21 +236,21 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
     if (_hasInnerRange(abilityData)) {
       return [
         _AbilityVisibilityControl(
-          label: 'Range Outline',
+          label: 'Range outline',
           isEnabled: visualState.showRangeOutline,
           toggle: (state) => state.copyWith(
             showRangeOutline: !state.showRangeOutline,
           ),
         ),
         _AbilityVisibilityControl(
-          label: 'Inner Outline',
+          label: 'Inner outline',
           isEnabled: visualState.showInnerOutline,
           toggle: (state) => state.copyWith(
             showInnerOutline: !state.showInnerOutline,
           ),
         ),
         _AbilityVisibilityControl(
-          label: 'Inner Fill',
+          label: 'Inner fill',
           isEnabled: visualState.showInnerFill,
           toggle: (state) => state.copyWith(
             showInnerFill: !state.showInnerFill,
@@ -261,7 +261,7 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
 
     return [
       _AbilityVisibilityControl(
-        label: 'Range Outline',
+        label: 'Range outline',
         isEnabled: visualState.showRangeOutline,
         toggle: (state) => state.copyWith(
           showRangeOutline: !state.showRangeOutline,
@@ -269,7 +269,7 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
       ),
       if (_hasVisibleRangeFill(abilityData))
         _AbilityVisibilityControl(
-          label: 'Range Fill',
+          label: 'Range fill',
           isEnabled: visualState.showRangeFill,
           toggle: (state) => state.copyWith(
             showRangeFill: !state.showRangeFill,

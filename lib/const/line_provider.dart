@@ -1046,7 +1046,7 @@ class LineUpProvider extends Notifier<LineUpState> {
     final keepsAbility = placement.draftAbility?.data.type == agent.type;
     state = state.copyWith(
       placement: placement.copyWith(
-        // A copy: Create Lineup hands in the placed agent, and moving the
+        // A copy: Create lineup hands in the placed agent, and moving the
         // draft must not move it.
         draftAgent: agent.copyWith(),
         draftAbility: keepsAbility ? placement.draftAbility : null,

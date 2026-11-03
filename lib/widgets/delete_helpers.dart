@@ -65,7 +65,7 @@ void deletePlacedWidget(WidgetRef ref, PlacedWidget placedData) {
 }
 
 /// Removes a placed agent from the page. A lineup mode keeps the page out of
-/// reach, so an agent acted on there is a draft, and a draft from Create Lineup
+/// reach, so an agent acted on there is a draft, and a draft from Create lineup
 /// has the id of the placed agent it started from.
 void _removePlacedAgent(WidgetRef ref, String id) {
   if (ref.read(interactionStateProvider).isLineUpMode) return;

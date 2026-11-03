@@ -174,10 +174,10 @@ void main() {
     expect(trailingSpace, closeTo(leadingSpace, 0.1));
     expect(find.text('View elevation'), findsNothing);
     expect(find.text('Vision calibration'), findsNothing);
-    expect(find.text('Remove View Cone'), findsOneWidget);
+    expect(find.text('Remove view cone'), findsOneWidget);
     expect(find.text('Copy sightline report'), findsOneWidget);
 
-    await tester.tap(find.text('Remove View Cone'));
+    await tester.tap(find.text('Remove view cone'));
     await tester.pumpAndSettle();
 
     final plainAgent = container.read(agentProvider).single;

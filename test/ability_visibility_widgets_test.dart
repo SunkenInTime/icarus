@@ -556,9 +556,9 @@ void main() {
       expect(find.byType(ViewConeWidget), findsOneWidget);
 
       await _openContextMenu(tester, find.byType(AbilityWidget));
-      expect(find.text('Vision Cone'), findsOneWidget);
+      expect(find.text('Vision cone'), findsOneWidget);
 
-      await tester.tap(find.text('Vision Cone'));
+      await tester.tap(find.text('Vision cone'));
       await tester.pumpAndSettle();
 
       expect(
@@ -587,7 +587,7 @@ void main() {
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
       expect(find.text('Range'), findsOneWidget);
-      expect(find.text('Range Outline'), findsNothing);
+      expect(find.text('Range outline'), findsNothing);
       expect(find.text('Mesh'), findsNothing);
     });
 
@@ -689,13 +689,13 @@ void main() {
 
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
-      expect(find.text('Range Outline'), findsOneWidget);
-      expect(find.text('Inner Outline'), findsOneWidget);
-      expect(find.text('Inner Fill'), findsOneWidget);
+      expect(find.text('Range outline'), findsOneWidget);
+      expect(find.text('Inner outline'), findsOneWidget);
+      expect(find.text('Inner fill'), findsOneWidget);
       expect(find.text('Range'), findsNothing);
     });
 
-    testWidgets('transparent circle ability omits the no-op Range Fill toggle',
+    testWidgets('transparent circle ability omits the no-op Range fill toggle',
         (tester) async {
       final turret = PlacedAbility(
         id: 'transparent-circle-menu',
@@ -710,8 +710,8 @@ void main() {
 
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
-      expect(find.text('Range Outline'), findsOneWidget);
-      expect(find.text('Range Fill'), findsNothing);
+      expect(find.text('Range outline'), findsOneWidget);
+      expect(find.text('Range fill'), findsNothing);
     });
 
     testWidgets('placed deadlock ability shows Mesh', (tester) async {
@@ -774,10 +774,10 @@ void main() {
 
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
-      expect(find.text('Range Outline'), findsOneWidget);
-      expect(find.text('Range Fill'), findsOneWidget);
+      expect(find.text('Range outline'), findsOneWidget);
+      expect(find.text('Range fill'), findsOneWidget);
 
-      await tester.tap(find.text('Range Fill'));
+      await tester.tap(find.text('Range fill'));
       await tester.pumpAndSettle();
 
       expect(
@@ -837,7 +837,7 @@ void main() {
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
       expect(find.text('Range'), findsNothing);
-      expect(find.text('Range Outline'), findsNothing);
+      expect(find.text('Range outline'), findsNothing);
       expect(find.text('Mesh'), findsNothing);
     });
 
@@ -954,11 +954,11 @@ void main() {
 
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
-      expect(find.text('Range Outline'), findsOneWidget);
-      expect(find.text('Range Fill'), findsOneWidget);
+      expect(find.text('Range outline'), findsOneWidget);
+      expect(find.text('Range fill'), findsOneWidget);
       expect(find.text('Delete lineup'), findsOneWidget);
 
-      await tester.tap(find.text('Range Outline'));
+      await tester.tap(find.text('Range outline'));
       await tester.pumpAndSettle();
 
       expect(
