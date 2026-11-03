@@ -30,6 +30,7 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/canvas_draggable.dart';
+import 'package:icarus/widgets/canvas_selection_layer.dart';
 import 'package:icarus/widgets/caption_read_region.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_circle_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_widget.dart';
@@ -556,9 +557,15 @@ class _AbilityList extends ConsumerWidget {
                   return;
                 }
 
-                ref
-                    .read(abilityProvider.notifier)
-                    .updatePosition(virtualOffset, draggedId);
+                ref.read(abilityProvider.notifier).updatePosition(
+                      coordinateSystem.anchoredDrop(
+                        virtualOffset,
+                        anchor,
+                        CanvasSelectionLayer.viewOf(context),
+                        isAttack: isAttack,
+                      ),
+                      draggedId,
+                    );
               },
             ),
           ),
@@ -658,19 +665,26 @@ class _AgentListState extends ConsumerState<_AgentList> {
                         isAttack: isAttack,
                       );
 
+                      final landed = widget.coordinateSystem.anchoredDrop(
+                        virtualOffset,
+                        storedAgentAnchor,
+                        CanvasSelectionLayer.viewOf(context),
+                        isAttack: isAttack,
+                      );
+
                       final duplicateId = _pendingDuplicateDragBySource.remove(
                         agent.id,
                       );
                       if (duplicateId != null) {
                         ref
                             .read(agentProvider.notifier)
-                            .updatePosition(virtualOffset, duplicateId);
+                            .updatePosition(landed, duplicateId);
                         return;
                       }
 
                       ref
                           .read(agentProvider.notifier)
-                          .updatePosition(virtualOffset, agent.id);
+                          .updatePosition(landed, agent.id);
                     },
                     child: AgentWidget(
                       state: agent.state,
@@ -705,9 +719,15 @@ class _AgentListState extends ConsumerState<_AgentList> {
                       agentSize: agentSize,
                       isAttack: isAttack,
                     );
-                    ref
-                        .read(agentProvider.notifier)
-                        .updatePosition(virtualOffset, draggedId);
+                    ref.read(agentProvider.notifier).updatePosition(
+                          widget.coordinateSystem.anchoredDrop(
+                            virtualOffset,
+                            storedAgentAnchor,
+                            CanvasSelectionLayer.viewOf(context),
+                            isAttack: isAttack,
+                          ),
+                          draggedId,
+                        );
                   },
                 ),
               PlacedCircleAgent() => PlacedCircleAgentWidget(
@@ -737,9 +757,15 @@ class _AgentListState extends ConsumerState<_AgentList> {
                       agentSize: agentSize,
                       isAttack: isAttack,
                     );
-                    ref
-                        .read(agentProvider.notifier)
-                        .updatePosition(virtualOffset, draggedId);
+                    ref.read(agentProvider.notifier).updatePosition(
+                          widget.coordinateSystem.anchoredDrop(
+                            virtualOffset,
+                            storedAgentAnchor,
+                            CanvasSelectionLayer.viewOf(context),
+                            isAttack: isAttack,
+                          ),
+                          draggedId,
+                        );
                   },
                 ),
             },
@@ -798,9 +824,15 @@ class _TextList extends ConsumerWidget {
                   return;
                 }
 
-                ref
-                    .read(textProvider.notifier)
-                    .updatePosition(virtualOffset, placedText.id);
+                ref.read(textProvider.notifier).updatePosition(
+                      coordinateSystem.boxDrop(
+                        virtualOffset,
+                        Size(renderedSize.dx, renderedSize.dy),
+                        CanvasSelectionLayer.viewOf(context),
+                        isAttack: isAttack,
+                      ),
+                      placedText.id,
+                    );
               },
             ),
           ),
@@ -857,9 +889,15 @@ class _PlacedImageList extends ConsumerWidget {
                   return;
                 }
 
-                ref
-                    .read(placedImageProvider.notifier)
-                    .updatePosition(virtualOffset, placedImage.id);
+                ref.read(placedImageProvider.notifier).updatePosition(
+                      coordinateSystem.boxDrop(
+                        virtualOffset,
+                        size,
+                        CanvasSelectionLayer.viewOf(context),
+                        isAttack: isAttack,
+                      ),
+                      placedImage.id,
+                    );
               },
             ),
           ),
@@ -930,9 +968,22 @@ class _ViewConeUtilityList extends ConsumerWidget {
                   return;
                 }
 
-                ref
-                    .read(utilityProvider.notifier)
-                    .updatePosition(virtualOffset, placedUtility.id);
+                // Nothing deletes a view cone, so one dropped off the map
+                // comes back to where it can be seen too.
+                ref.read(utilityProvider.notifier).updatePosition(
+                      coordinateSystem.showing(
+                        virtualOffset,
+                        CoordinateSystem.virtualToWorld(
+                          storedUtilityAnchor(
+                            utility: placedUtility,
+                            mapScale: mapScale,
+                          ),
+                        ),
+                        CanvasSelectionLayer.viewOf(context),
+                        isAttack: isAttack,
+                      ),
+                      placedUtility.id,
+                    );
               },
             ),
           ),
@@ -1020,9 +1071,15 @@ class _UtilityList extends ConsumerWidget {
                     return;
                   }
 
-                  ref
-                      .read(utilityProvider.notifier)
-                      .updatePosition(virtualOffset, placedUtility.id);
+                  ref.read(utilityProvider.notifier).updatePosition(
+                        coordinateSystem.anchoredDrop(
+                          virtualOffset,
+                          anchor,
+                          CanvasSelectionLayer.viewOf(context),
+                          isAttack: isAttack,
+                        ),
+                        placedUtility.id,
+                      );
                 },
               ),
             ),
@@ -1134,9 +1191,15 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                           return;
                         }
 
-                        ref
-                            .read(utilityProvider.notifier)
-                            .updatePosition(virtualOffset, placedUtility.id);
+                        ref.read(utilityProvider.notifier).updatePosition(
+                              coordinateSystem.anchoredDrop(
+                                virtualOffset,
+                                anchor,
+                                CanvasSelectionLayer.viewOf(context),
+                                isAttack: isAttack,
+                              ),
+                              placedUtility.id,
+                            );
                       },
                     )
                   : PlacedCustomRectangleWidget(
@@ -1187,9 +1250,15 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                           return;
                         }
 
-                        ref
-                            .read(utilityProvider.notifier)
-                            .updatePosition(virtualOffset, placedUtility.id);
+                        ref.read(utilityProvider.notifier).updatePosition(
+                              coordinateSystem.anchoredDrop(
+                                virtualOffset,
+                                anchor,
+                                CanvasSelectionLayer.viewOf(context),
+                                isAttack: isAttack,
+                              ),
+                              placedUtility.id,
+                            );
                       },
                     ),
             ),

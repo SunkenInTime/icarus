@@ -13,6 +13,7 @@ import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/team_provider.dart';
+import 'package:icarus/widgets/canvas_selection_layer.dart';
 import 'package:icarus/widgets/current_line_up_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_lineup_agent_widget.dart';
@@ -219,7 +220,14 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
 
                         ref
                             .read(lineUpProvider.notifier)
-                            .updateDraftAbilityPosition(virtualOffset);
+                            .updateDraftAbilityPosition(
+                              coordinateSystem.anchoredDrop(
+                                virtualOffset,
+                                anchor,
+                                CanvasSelectionLayer.viewOf(context),
+                                isAttack: mapState.isAttack,
+                              ),
+                            );
                       },
                     ),
                   ),
@@ -242,7 +250,18 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
 
                         ref
                             .read(lineUpProvider.notifier)
-                            .updateDraftAgentPosition(virtualOffset);
+                            .updateDraftAgentPosition(
+                              // A drop never deletes the draft agent, so one
+                              // dropped off the map comes back into sight too.
+                              coordinateSystem.showing(
+                                virtualOffset,
+                                CoordinateSystem.virtualToWorld(
+                                  storedAgentAnchor,
+                                ),
+                                CanvasSelectionLayer.viewOf(context),
+                                isAttack: ref.read(mapProvider).isAttack,
+                              ),
+                            );
                       },
                     ),
                   ),

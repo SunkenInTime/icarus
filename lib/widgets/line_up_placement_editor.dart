@@ -10,6 +10,7 @@ import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/canvas_selection_layer.dart';
 import 'package:icarus/widgets/line_up_line_painter.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
@@ -132,10 +133,28 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
       return const SizedBox.shrink();
     }
 
-    void endMove({required bool outOfBounds, required void Function() undo}) {
-      // Dropped off the map: the end goes back to where the drag began.
-      if (outOfBounds) undo();
+    /// Ends the move of an end, its dot [anchor] from where it was dropped,
+    /// [moved], by putting it with [moveTo] where it lands.
+    void endMove({
+      required Offset? moved,
+      required Offset anchor,
+      required void Function(Offset) moveTo,
+    }) {
+      final start = _drag?.position;
       _drag = null;
+      if (moved == null) return;
+      if (coordinateSystem.isAnchorOutOfBounds(moved, anchor)) {
+        // Dropped off the map: the end goes back to where the drag began.
+        if (start != null) moveTo(start);
+        return;
+      }
+      final landed = coordinateSystem.anchoredDrop(
+        moved,
+        anchor,
+        CanvasSelectionLayer.viewOf(context),
+        isAttack: isAttack,
+      );
+      if (landed != moved) moveTo(landed);
     }
 
     return Stack(
@@ -190,23 +209,11 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
                   ),
                 );
               },
-              onMoveEnd: () {
-                final start = _drag?.position;
-                final position =
-                    ref.read(lineUpProvider).edit?.movedOrigins[origin.id];
-                endMove(
-                  outOfBounds: position != null &&
-                      coordinateSystem.isAnchorOutOfBounds(
-                        position,
-                        storedAgentAnchor,
-                      ),
-                  undo: () {
-                    if (start != null) {
-                      notifier.moveEditedOrigin(origin.id, start);
-                    }
-                  },
-                );
-              },
+              onMoveEnd: () => endMove(
+                moved: ref.read(lineUpProvider).edit?.movedOrigins[origin.id],
+                anchor: storedAgentAnchor,
+                moveTo: (to) => notifier.moveEditedOrigin(origin.id, to),
+              ),
             ),
           ),
         for (final landing in landings)
@@ -245,24 +252,14 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
                   ),
                 );
               },
-              onMoveEnd: () {
-                final start = _drag?.position;
-                final position =
-                    ref.read(lineUpProvider).edit?.movedLandings[landing.id];
-                final anchor = storedAbilityAnchor(
+              onMoveEnd: () => endMove(
+                moved: ref.read(lineUpProvider).edit?.movedLandings[landing.id],
+                anchor: storedAbilityAnchor(
                   ability: landing.ability.data.abilityData!,
                   mapScale: mapScale,
-                );
-                endMove(
-                  outOfBounds: position != null &&
-                      coordinateSystem.isAnchorOutOfBounds(position, anchor),
-                  undo: () {
-                    if (start != null) {
-                      notifier.moveEditedLanding(landing.id, start);
-                    }
-                  },
-                );
-              },
+                ),
+                moveTo: (to) => notifier.moveEditedLanding(landing.id, to),
+              ),
             ),
           ),
         if (lineUpEditStatus(state) case final status when status.isNotEmpty)

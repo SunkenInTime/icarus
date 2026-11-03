@@ -72,6 +72,13 @@ class CanvasSelectionLayer extends ConsumerStatefulWidget {
         ?._keepOnMap(dragged);
   }
 
+  /// The part of the canvas on screen, in its pixels: the canvas runs on
+  /// past the window and under the sidebar. Null when [context] isn't on a
+  /// canvas.
+  static Rect? viewOf(BuildContext context) => context
+      .findAncestorStateOfType<_CanvasSelectionLayerState>()
+      ?._onScreen;
+
   const CanvasSelectionLayer({
     required this.enabled,
     required this.child,
@@ -570,7 +577,8 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   }
 
   /// How far the items [ids] can be dragged each way, in canvas pixels,
-  /// before the middle of one of them would leave the map.
+  /// before the middle of one of them would leave the part of the map on
+  /// screen, or the map when they are spread wider than that.
   Rect _roomToMove(Set<String> ids) {
     final canvas = _canvas;
     if (canvas == null) return Rect.zero;
@@ -589,8 +597,24 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     final margin = CoordinateSystem.instance
         .coordinateToScreen(const Offset(20, 0))
         .dx;
-    return _roomInside(_spreadOf(points), _map.deflate(margin));
+    final spread = _spreadOf(points);
+    return _roomInside(
+      spread,
+      _inSight(spread, _map.deflate(margin), _onScreen.deflate(margin)),
+    );
   }
+
+  /// The part of the map on screen, in canvas pixels.
+  Rect get _onScreen => widget.view?.call().intersect(_map) ?? _map;
+
+  /// Where [spread] has to stay to be seen: in [view], except along an axis
+  /// it is too big for, where it stays on [map].
+  static Rect _inSight(Rect spread, Rect map, Rect view) => Rect.fromLTRB(
+        spread.width > view.width ? map.left : view.left,
+        spread.height > view.height ? map.top : view.top,
+        spread.width > view.width ? map.right : view.right,
+        spread.height > view.height ? map.bottom : view.bottom,
+      );
 
   /// The canvas, and where a drag of the item drawn under [dragged] by a
   /// given distance in its pixels stops so the item stays in sight. That is
@@ -616,17 +640,10 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     final coordinates = CoordinateSystem.instance;
     const inset = CoordinateSystem.dropEdge + 2;
     final margin = coordinates.coordinateToScreen(const Offset(inset, 0)).dx;
-    final map = _map.deflate(margin);
-    final view = (widget.view?.call().intersect(_map) ?? _map).deflate(margin);
     final spread = _spreadOf(points);
     final room = _roomInside(
       spread,
-      Rect.fromLTRB(
-        spread.width > view.width ? map.left : view.left,
-        spread.height > view.height ? map.top : view.top,
-        spread.width > view.width ? map.right : view.right,
-        spread.height > view.height ? map.bottom : view.bottom,
-      ),
+      _inSight(spread, _map.deflate(margin), _onScreen.deflate(margin)),
     );
     final panels = [
       for (final panel in _registry.chromeIn(canvas)) panel.inflate(margin),
