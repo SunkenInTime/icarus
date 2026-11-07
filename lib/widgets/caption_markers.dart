@@ -64,16 +64,32 @@ const _markerOffset = Offset(-3, -11);
 /// Where a marker hangs on an item outlined by [corners], in screen
 /// coordinates: the corner furthest up and right, whichever way the item is
 /// turned, or that point on the edge of a round item.
-Offset captionMarkerAnchor(List<Offset> corners, {required bool round}) {
-  if (!round) {
-    return corners.reduce(
-      (best, corner) =>
-          corner.dx - corner.dy > best.dx - best.dy ? corner : best,
-    );
+Offset captionMarkerAnchor(List<Offset> corners, {required bool round}) =>
+    captionNumberSpots(corners, round: round).first;
+
+/// The corners of an item where an export may put its number, in the order it
+/// tries them: the one the marker hangs on, then on around the outline, which
+/// [corners] give in order. On an item that isn't turned that is the bottom
+/// right, bottom left and top left. A circle's are on its edge, at the same
+/// angles.
+List<Offset> captionNumberSpots(List<Offset> corners, {required bool round}) {
+  if (round) {
+    final center = (corners[0] + corners[2]) / 2;
+    final radius = (corners[1] - corners[0]).distance / 2;
+    return [
+      for (final (x, y) in const [(1, -1), (1, 1), (-1, 1), (-1, -1)])
+        center + Offset(x * radius, y * radius) * (math.sqrt2 / 2),
+    ];
   }
-  final center = (corners[0] + corners[2]) / 2;
-  final radius = (corners[1] - corners[0]).distance / 2;
-  return center + Offset(radius, -radius) * (math.sqrt2 / 2);
+  var first = 0;
+  for (final (i, corner) in corners.indexed) {
+    final best = corners[first];
+    if (corner.dx - corner.dy > best.dx - best.dy) first = i;
+  }
+  return [
+    for (var i = 0; i < corners.length; i++)
+      corners[(first + i) % corners.length],
+  ];
 }
 
 /// The top-left of a marker hung on [anchor], on whole device pixels: its
