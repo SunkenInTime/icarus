@@ -47,6 +47,15 @@ void main() {
     await tester.pump();
   }
 
+  // Decoding runs on real time, so give it until the frame lands rather than
+  // a fixed slice a busy machine could miss.
+  Future<void> untilDrawn(WidgetTester tester) async {
+    for (var i = 0; i < 50; i++) {
+      if (tester.widget<RawImage>(find.byType(RawImage)).image != null) return;
+      await settle(tester);
+    }
+  }
+
   Future<void> pumpIcon(WidgetTester tester, String path) {
     return tester.pumpWidget(
       DefaultAssetBundle(
@@ -68,7 +77,7 @@ void main() {
 
     online = true;
     await settle(tester, WaitingAssetBundle.retryDelay);
-    await settle(tester);
+    await untilDrawn(tester);
 
     expect(find.byType(LoadingSpinner), findsNothing);
     expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
@@ -79,7 +88,7 @@ void main() {
     await pumpIcon(tester, 'online_ability.png');
 
     expect(find.byType(LoadingSpinner), findsNothing);
-    await settle(tester);
+    await untilDrawn(tester);
     expect(find.byType(LoadingSpinner), findsNothing);
     expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
   });
