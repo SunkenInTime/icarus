@@ -1058,8 +1058,9 @@ class StrategyImportExportService {
   /// A newer Icarus may lay out its archives differently, so one of those is
   /// never read as an old archive without a manifest.
   static void _throwIfArchiveIsTooNew(Map<String, dynamic> manifest) {
-    final schemaVersion = manifest['schemaVersion'];
-    if (schemaVersion is int && schemaVersion > archiveManifestSchemaVersion) {
+    // Read the way the manifest parser reads it, which takes "2" as 2.
+    final schemaVersion = int.tryParse('${manifest['schemaVersion']}');
+    if (schemaVersion != null && schemaVersion > archiveManifestSchemaVersion) {
       throw NewerVersionImportException(
         importedVersion: schemaVersion,
         currentVersion: archiveManifestSchemaVersion,
