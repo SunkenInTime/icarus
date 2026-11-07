@@ -1781,49 +1781,46 @@ class _PageMarkerSizesSyncBannerState
           liveSettings: liveSettings,
         );
 
-    return SizedBox(
-      width: double.infinity,
-      child: AnimatedCrossFade(
-        firstCurve: Settings.easeOut,
-        secondCurve: Settings.easeOut,
-        sizeCurve: Settings.easeOut,
-        duration: Settings.revealDuration,
-        crossFadeState:
-            showCta ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-        firstChild: const SizedBox.shrink(),
-        secondChild: Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Marker sizes differ across pages. Apply these sizes everywhere?',
-                style: ShadTheme.of(context).textTheme.small.copyWith(
-                      color: Settings.tacticalVioletTheme.mutedForeground,
-                      height: 1.35,
-                    ),
+    // Opens and closes like the other banners. A cross-fade would play its
+    // curve backwards on the way out and hold the text still before it went.
+    return AnimatedSize(
+      duration: Settings.revealDuration,
+      curve: Settings.easeOut,
+      alignment: Alignment.topCenter,
+      child: !showCta
+          ? const SizedBox(width: double.infinity)
+          : Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Marker sizes differ across pages. Apply these sizes everywhere?',
+                    style: ShadTheme.of(context).textTheme.small.copyWith(
+                          color: Settings.tacticalVioletTheme.mutedForeground,
+                          height: 1.35,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  ShadButton(
+                    size: ShadButtonSize.sm,
+                    onPressed: _busy
+                        ? null
+                        : () async {
+                            setState(() => _busy = true);
+                            try {
+                              await ref
+                                  .read(strategyProvider.notifier)
+                                  .applyMarkerSizesToAllPages();
+                            } finally {
+                              if (mounted) setState(() => _busy = false);
+                            }
+                          },
+                    child: Text(_busy ? 'Applying…' : 'Apply to all pages'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              ShadButton(
-                size: ShadButtonSize.sm,
-                onPressed: _busy
-                    ? null
-                    : () async {
-                        setState(() => _busy = true);
-                        try {
-                          await ref
-                              .read(strategyProvider.notifier)
-                              .applyMarkerSizesToAllPages();
-                        } finally {
-                          if (mounted) setState(() => _busy = false);
-                        }
-                      },
-                child: Text(_busy ? 'Applying…' : 'Apply to all pages'),
-              ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 }

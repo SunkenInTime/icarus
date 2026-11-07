@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,6 +39,13 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
   final _link = LayerLink();
   double _containerHeight = 0;
   bool _isOpen = false;
+  Timer? _hideTimer;
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    super.dispose();
+  }
 
   void _closePortal() {
     // Shrink to nothing, then take the overlay down, unless it was opened
@@ -45,14 +54,14 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
       _containerHeight = 0;
       _isOpen = false;
     });
-    Future.delayed(Settings.exitDuration, () {
-      if (mounted && !_isOpen) _controller.hide();
-    });
+    _hideTimer?.cancel();
+    _hideTimer = Timer(Settings.exitDuration, _controller.hide);
   }
 
   void _openPortal() {
     // The overlay mounts at zero height; growing it on the next frame is
     // what animates.
+    _hideTimer?.cancel();
     _controller.show();
     setState(() => _isOpen = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {

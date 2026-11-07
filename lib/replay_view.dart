@@ -25,6 +25,7 @@ import 'package:icarus/replay/replay_loader.dart';
 import 'package:icarus/replay/replay_map_projection.dart';
 import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
+import 'package:icarus/widgets/eased_animation_builder.dart';
 import 'package:icarus/widgets/replay/replay_canvas.dart';
 import 'package:icarus/widgets/replay/replay_dock.dart';
 import 'package:icarus/widgets/replay/replay_match_card.dart';
@@ -49,13 +50,9 @@ class ReplayView extends ConsumerStatefulWidget {
         pageBuilder: (_, __, ___) => ReplayView(file: file, probe: probe),
         transitionDuration: Settings.revealDuration,
         reverseTransitionDuration: Settings.exitDuration,
-        transitionsBuilder: (_, animation, __, child) => FadeTransition(
-          opacity: CurvedAnimation(
-            parent: animation,
-            curve: Settings.easeOut,
-            reverseCurve: Settings.easeOutReverse,
-          ),
-          child: child,
+        transitionsBuilder: (_, animation, __, child) => EasedAnimationBuilder(
+          parent: animation,
+          builder: (_, eased) => FadeTransition(opacity: eased, child: child),
         ),
       );
 

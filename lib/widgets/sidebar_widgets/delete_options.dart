@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/widgets/eased_animation_builder.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class DeleteOptions extends ConsumerWidget {
@@ -180,33 +181,22 @@ class DeleteOptions extends ConsumerWidget {
       onExit: (_) => onMenuExited?.call(),
       child: animation == null
           ? panel
-          : AnimatedBuilder(
-              animation: animation!,
-              builder: (context, child) {
-                final curved = CurvedAnimation(
-                  parent: animation!,
-                  curve: Settings.easeOut,
-                  reverseCurve: Settings.easeOutReverse,
-                );
-                return FadeTransition(
-                  opacity: curved,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0.035, 0),
-                      end: Offset.zero,
-                    ).animate(curved),
-                    child: ScaleTransition(
-                      scale: Tween<double>(
-                        begin: 0.96,
-                        end: 1.0,
-                      ).animate(curved),
-                      alignment: Alignment.centerRight,
-                      child: child,
-                    ),
+          : EasedAnimationBuilder(
+              parent: animation!,
+              builder: (context, eased) => FadeTransition(
+                opacity: eased,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.035, 0),
+                    end: Offset.zero,
+                  ).animate(eased),
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.96, end: 1.0).animate(eased),
+                    alignment: Alignment.centerRight,
+                    child: panel,
                   ),
-                );
-              },
-              child: panel,
+                ),
+              ),
             ),
     );
   }
@@ -229,23 +219,19 @@ class _AnimatedDeleteMenuEntry extends StatelessWidget {
   Widget build(BuildContext context) {
     if (animation == null) return child;
 
-    final curved = CurvedAnimation(
+    return EasedAnimationBuilder(
       parent: animation!,
-      curve: Interval(start, end, curve: Settings.easeOut),
-      reverseCurve: Interval(start, end, curve: Settings.easeOutReverse),
-    );
-
-    return AnimatedBuilder(
-      animation: curved,
-      builder: (context, _) {
-        return Opacity(
-          opacity: curved.value,
+      interval: (start, end),
+      builder: (context, eased) => AnimatedBuilder(
+        animation: eased,
+        builder: (context, _) => Opacity(
+          opacity: eased.value,
           child: Transform.translate(
-            offset: Offset(0, (1 - curved.value) * 6),
+            offset: Offset(0, (1 - eased.value) * 6),
             child: child,
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

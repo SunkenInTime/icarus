@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/color_option.dart';
+import 'package:icarus/widgets/eased_animation_builder.dart';
 import 'package:icarus/widgets/inset_shadow_decoration.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
@@ -482,27 +483,28 @@ class Settings {
     );
   }
 
-  /// Toasts rise in and drop out on [easeOut]. Toastification hands its
-  /// builder a linear animation and plays it backwards to remove a toast.
+  /// Toasts rise in and drop out. Toastification spends the first 30% of
+  /// the animation opening the toast's room, then hands this builder the
+  /// rest eased in-out, and plays it all backwards to remove the toast.
+  /// Easing that out again gets the toast moving as soon as its turn
+  /// comes, on the way in and on the way out.
   static Widget toastTransition(
     BuildContext context,
     Animation<double> animation,
     Alignment alignment,
     Widget child,
   ) {
-    final eased = CurvedAnimation(
+    return EasedAnimationBuilder(
       parent: animation,
-      curve: easeOut,
-      reverseCurve: easeOutReverse,
-    );
-    return FadeTransition(
-      opacity: eased,
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: Offset(0, alignment.y >= 0 ? 1 : -1),
-          end: Offset.zero,
-        ).animate(eased),
-        child: child,
+      builder: (context, eased) => FadeTransition(
+        opacity: eased,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: Offset(0, alignment.y >= 0 ? 1 : -1),
+            end: Offset.zero,
+          ).animate(eased),
+          child: child,
+        ),
       ),
     );
   }

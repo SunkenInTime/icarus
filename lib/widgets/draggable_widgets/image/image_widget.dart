@@ -9,6 +9,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
+import 'package:icarus/widgets/eased_animation_builder.dart';
 import 'package:icarus/widgets/spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -47,17 +48,16 @@ void _showImageFullScreenOverlay({
       opaque: false,
       transitionDuration: Settings.revealDuration,
       reverseTransitionDuration: Settings.exitDuration,
-      pageBuilder: (ctx, anim, __) => FadeTransition(
-        opacity: CurvedAnimation(
-          parent: anim,
-          curve: Settings.easeOut,
-          reverseCurve: Settings.easeOutReverse,
-        ),
-        child: _ImageFullScreenOverlay(
-          heroTag: heroTag,
-          aspectRatio: aspectRatio,
-          image: image,
-          fullImage: fullImage,
+      pageBuilder: (ctx, anim, __) => EasedAnimationBuilder(
+        parent: anim,
+        builder: (_, eased) => FadeTransition(
+          opacity: eased,
+          child: _ImageFullScreenOverlay(
+            heroTag: heroTag,
+            aspectRatio: aspectRatio,
+            image: image,
+            fullImage: fullImage,
+          ),
         ),
       ),
     ),

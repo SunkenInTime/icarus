@@ -27,6 +27,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/canvas_paste.dart';
 import 'package:icarus/widgets/delete_capture.dart';
 import 'package:icarus/widgets/dot_matrix_loaders.dart';
+import 'package:icarus/widgets/eased_animation_builder.dart';
 import 'package:icarus/widgets/strategy_access_watcher.dart';
 import 'package:icarus/widgets/strategy_view_skeleton.dart';
 import 'package:icarus/widgets/strategy_edit_boundary.dart';
@@ -92,20 +93,17 @@ class StrategyView extends ConsumerStatefulWidget {
         initialPageId: initialPageId,
         backTooltip: backTooltip,
       ),
-      transitionsBuilder: (context, animation, _, child) {
-        final eased = CurvedAnimation(
-          parent: animation,
-          curve: Settings.easeOut,
-          reverseCurve: Settings.easeOutReverse,
-        );
-        return FadeTransition(
+      transitionsBuilder: (context, animation, _, child) =>
+          EasedAnimationBuilder(
+        parent: animation,
+        builder: (context, eased) => FadeTransition(
           opacity: eased,
           child: ScaleTransition(
             scale: Tween<double>(begin: 0.97, end: 1.0).animate(eased),
             child: child,
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 

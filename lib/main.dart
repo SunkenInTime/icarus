@@ -804,6 +804,10 @@ class _MyAppState extends ConsumerState<MyApp> {
               ),
             ),
           ),
+          // A popover leaves by playing its entrance backwards, which turns
+          // the app's ease-out into an ease-in that hangs before it goes.
+          // Menus and popovers vanish on the spot instead, as tooltips do.
+          popoverTheme: const ShadPopoverTheme(reverseDuration: Duration.zero),
           primaryDialogTheme: Settings.dialogTheme,
           alertDialogTheme: Settings.dialogTheme,
           // Ghost buttons are quiet controls (menu items, icon buttons),
