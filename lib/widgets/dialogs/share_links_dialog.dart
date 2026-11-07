@@ -19,6 +19,7 @@ import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:icarus/services/product_metrics.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
 
 /// Headline like: Share "My Strategy Name" (`"` in [name] become `'`).
 String _shareDialogHeadline(String name) {
@@ -397,12 +398,12 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
           child: SingleChildScrollView(
             child: AnimatedSize(
               duration: _stateSwitchDuration,
-              curve: Curves.easeOutCubic,
+              curve: Settings.easeOut,
               alignment: Alignment.topCenter,
               child: AnimatedSwitcher(
                 duration: _stateSwitchDuration,
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeOutCubic,
+                switchInCurve: Settings.easeOut,
+                switchOutCurve: Settings.easeOut.flipped,
                 child: _buildBody(theme),
               ),
             ),
@@ -601,7 +602,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
                   ? SizedBox(
                       width: 14,
                       height: 14,
-                      child: CircularProgressIndicator(
+                      child: LoadingSpinner(
                         strokeWidth: 2,
                         color: theme.colorScheme.primaryForeground,
                       ),
@@ -613,7 +614,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         ),
         AnimatedSize(
           duration: _stateSwitchDuration,
-          curve: Curves.easeOutCubic,
+          curve: Settings.easeOut,
           alignment: Alignment.topLeft,
           child: _selectedRole == 'editor'
               ? Padding(
@@ -922,7 +923,7 @@ class _MemberControls extends StatelessWidget {
                   ? SizedBox(
                       width: 14,
                       height: 14,
-                      child: CircularProgressIndicator(
+                      child: LoadingSpinner(
                         strokeWidth: 2,
                         color: theme.colorScheme.mutedForeground,
                       ),
@@ -1106,6 +1107,7 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
         duration: _hoverDuration,
+        curve: Settings.easeOut,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           border: Border.all(
@@ -1117,6 +1119,7 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
         ),
         child: AnimatedOpacity(
           duration: _hoverDuration,
+          curve: Settings.easeOut,
           opacity: link.isRevoked ? 0.6 : 1,
           child: Row(
             children: [
@@ -1198,7 +1201,7 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
                         ? SizedBox(
                             width: 14,
                             height: 14,
-                            child: CircularProgressIndicator(
+                            child: LoadingSpinner(
                               strokeWidth: 2,
                               color: theme.colorScheme.mutedForeground,
                             ),
@@ -1285,8 +1288,8 @@ class _CopyIconButtonState extends State<_CopyIconButton> {
           onPressed: widget.enabled ? _copy : null,
           child: AnimatedSwitcher(
             duration: _hoverDuration,
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeOutCubic,
+            switchInCurve: Settings.easeOut,
+            switchOutCurve: Settings.easeOut.flipped,
             transitionBuilder: (child, animation) => ScaleTransition(
               scale: animation,
               child: FadeTransition(opacity: animation, child: child),
@@ -1366,7 +1369,7 @@ class _LinkListPlaceholderState extends State<_LinkListPlaceholder>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: const Duration(milliseconds: 800),
     );
   }
 
@@ -1487,7 +1490,7 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
               ? SizedBox(
                   width: 14,
                   height: 14,
-                  child: CircularProgressIndicator(
+                  child: LoadingSpinner(
                     strokeWidth: 2,
                     color: theme.colorScheme.primaryForeground,
                   ),
@@ -1524,7 +1527,7 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
           ),
           AnimatedSize(
             duration: _stateSwitchDuration,
-            curve: Curves.easeOutCubic,
+            curve: Settings.easeOut,
             alignment: Alignment.topLeft,
             child: hasError
                 ? Padding(

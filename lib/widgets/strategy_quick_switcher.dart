@@ -21,6 +21,7 @@ import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/widgets/overflow_tooltip_text.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
 
 /// Displays the current strategy name with a recent-strategies dropdown.
 class StrategyQuickSwitcher extends ConsumerStatefulWidget {
@@ -534,8 +535,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
+                                child: LoadingSpinner(strokeWidth: 2),
                               )
                             : Icon(
                                 _isOpen

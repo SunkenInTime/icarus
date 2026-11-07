@@ -391,7 +391,7 @@ class _DownloadFillButton extends StatelessWidget {
                   alignment: Alignment.centerLeft,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 120),
-                    curve: Curves.easeOut,
+                    curve: Settings.easeOut,
                     width: width * fill,
                     color: Settings.accentInk,
                   ),

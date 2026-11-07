@@ -5,6 +5,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
 
 class LineupMediaPage extends ConsumerStatefulWidget {
   final TextEditingController youtubeLinkController;
@@ -194,7 +195,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
     }
     return SizedBox.square(
       dimension: size ?? IconTheme.of(context).size,
-      child: CircularProgressIndicator(strokeWidth: 2, color: color),
+      child: LoadingSpinner(strokeWidth: 2, color: color),
     );
   }
 

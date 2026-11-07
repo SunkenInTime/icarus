@@ -5,6 +5,7 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
 
 /// Asks for a new password after a password reset link signed the user in.
 /// The user is already signed in, so "Not now" keeps them signed in with
@@ -140,7 +141,7 @@ class _SetPasswordDialogState extends ConsumerState<SetPasswordDialog> {
                         ? const SizedBox(
                             width: 14,
                             height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: LoadingSpinner(strokeWidth: 2),
                           )
                         : null,
                     child: Text(_saving ? 'Saving…' : 'Save password'),

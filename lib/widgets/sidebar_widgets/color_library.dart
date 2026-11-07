@@ -209,6 +209,7 @@ class _ColorPickerButtonState extends State<ColorPickerButton> {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
+      curve: Settings.easeOut,
       height: 26,
       width: 26,
       decoration: BoxDecoration(

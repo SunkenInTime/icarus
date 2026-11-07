@@ -888,7 +888,7 @@ class _RotationBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedScale(
       duration: const Duration(milliseconds: 160),
-      curve: Curves.easeOutCubic,
+      curve: Settings.easeOut,
       scale: isEmphasized ? 1.0 : 0.9,
       child: Icon(
         LucideIcons.rotateCw,
@@ -918,7 +918,7 @@ class _ResizePill extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedScale(
       duration: const Duration(milliseconds: 160),
-      curve: Curves.easeOutCubic,
+      curve: Settings.easeOut,
       scale: isActive ? 1.0 : 0.9,
       child: Container(
         width: width,

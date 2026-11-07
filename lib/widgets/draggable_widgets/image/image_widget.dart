@@ -10,6 +10,8 @@ import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
+import 'package:icarus/widgets/eased_route_transition.dart';
 
 /// How tall, in physical pixels, a canvas [canvasHeight] logical pixels
 /// tall gets with the window as tall as its display. The window around the
@@ -45,8 +47,8 @@ void _showImageFullScreenOverlay({
     PageRouteBuilder(
       opaque: false,
       transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (ctx, anim, __) => FadeTransition(
-        opacity: anim,
+      pageBuilder: (ctx, anim, __) => EasedRouteTransition(
+        animation: anim,
         child: _ImageFullScreenOverlay(
           heroTag: heroTag,
           aspectRatio: aspectRatio,
@@ -343,7 +345,7 @@ class _ImageStatePlaceholder extends StatelessWidget {
                   const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: LoadingSpinner(strokeWidth: 2),
                   )
                 else
                   Icon(icon, color: Colors.white70, size: 22),

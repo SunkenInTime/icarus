@@ -76,7 +76,11 @@ class _PlacedDeadlockBarrierMeshWidgetState
       vsync: this,
     );
     _scaleAnimation = Tween<double>(begin: 0.9, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Settings.easeOut,
+        reverseCurve: Settings.easeOut.flipped,
+      ),
     );
   }
 

@@ -20,6 +20,7 @@ import 'package:icarus/widgets/strip_status_icons.dart';
 import 'package:icarus/widgets/web_beta_tag.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
 
 const double _controlHeight = 28;
 // A fingertip's worth: the strip's 28px controls are for a mouse.
@@ -643,7 +644,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           child: SizedBox(
             width: 14,
             height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: LoadingSpinner(strokeWidth: 2),
           ),
         ),
       );

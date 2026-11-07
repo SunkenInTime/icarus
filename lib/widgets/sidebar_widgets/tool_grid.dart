@@ -58,12 +58,12 @@ class BottomContextBar extends ConsumerWidget {
     return ClipRect(
       child: AnimatedSize(
         duration: _animationDuration,
-        curve: Curves.easeInOut,
+        curve: Settings.easeOut,
         alignment: Alignment.topCenter,
         child: AnimatedSwitcher(
           duration: _animationDuration,
-          switchInCurve: Curves.easeIn,
-          switchOutCurve: Curves.easeOut,
+          switchInCurve: Settings.easeOut,
+          switchOutCurve: Settings.easeOut.flipped,
           transitionBuilder: (child, animation) {
             return FadeTransition(
               opacity: animation,

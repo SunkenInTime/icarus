@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
 
 /// What the cloud says about a strategy's place in the library: yours, shared
 /// with edit access, or shared read-only.
@@ -122,7 +123,7 @@ class MovingToCloudBadge extends StatelessWidget {
     return StrategyBadge.leading(
       leading: SizedBox.square(
         dimension: 10,
-        child: CircularProgressIndicator(
+        child: LoadingSpinner(
           strokeWidth: 1.5,
           color: Settings.tacticalVioletTheme.foreground,
         ),

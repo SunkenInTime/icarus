@@ -312,14 +312,10 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
                               ? 1.0
                               : (isEmphasized ? 1.03 : 1.0),
                           duration: targetDuration,
-                          curve: _isDragHoveringTarget
-                              ? Curves.easeOutCubic
-                              : Curves.easeOut,
+                          curve: Settings.easeOut,
                           child: AnimatedContainer(
                             duration: targetDuration,
-                            curve: _isDragHoveringTarget
-                                ? Curves.easeOutCubic
-                                : Curves.easeOut,
+                            curve: Settings.easeOut,
                             decoration: BoxDecoration(
                               color: fillColor,
                               borderRadius: BorderRadius.zero,

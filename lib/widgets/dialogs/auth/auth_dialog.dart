@@ -6,6 +6,8 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
+import 'package:icarus/const/settings.dart';
 
 enum AuthDialogMode { signIn, signUp }
 
@@ -318,7 +320,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
             const SizedBox(height: 12),
             AnimatedSize(
               duration: _bannerDuration,
-              curve: Curves.easeOutCubic,
+              curve: Settings.easeOut,
               alignment: Alignment.topCenter,
               child: _message != null
                   ? Padding(
@@ -332,7 +334,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
             ),
             AnimatedSize(
               duration: _bannerDuration,
-              curve: Curves.easeOutCubic,
+              curve: Settings.easeOut,
               alignment: Alignment.topCenter,
               child: _waitingForDiscord
                   ? Padding(
@@ -383,7 +385,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
                   ? const SizedBox(
                       width: 14,
                       height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: LoadingSpinner(strokeWidth: 2),
                     )
                   : null,
               child: Text(switch ((_view, busy)) {
@@ -469,11 +471,9 @@ class _DiscordPendingBanner extends StatelessWidget {
           SizedBox(
             width: 13,
             height: 13,
-            child: CircularProgressIndicator(
+            child: LoadingSpinner(
               strokeWidth: 1.8,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                theme.colorScheme.mutedForeground,
-              ),
+              color: theme.colorScheme.mutedForeground,
             ),
           ),
           const SizedBox(width: 8),
