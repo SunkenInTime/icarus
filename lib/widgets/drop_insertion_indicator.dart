@@ -160,11 +160,11 @@ class _DropInsertionIndicatorState extends State<DropInsertionIndicator>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 140),
+      duration: Settings.hoverDuration,
     );
     _t = CurvedAnimation(
       parent: _controller,
-      curve: Curves.easeOutCubic,
+      curve: Settings.easeOut,
     );
   }
 

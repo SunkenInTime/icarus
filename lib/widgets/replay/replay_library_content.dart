@@ -109,8 +109,8 @@ class _ReplayGridState extends ConsumerState<_ReplayGrid> {
         final target = top + extent / 2 - position.viewportDimension / 2;
         _scroll.animateTo(
           target.clamp(position.minScrollExtent, position.maxScrollExtent),
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic,
+          duration: Settings.revealDuration,
+          curve: Settings.easeOut,
         );
       }
     }
@@ -318,7 +318,9 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
           child: GestureDetector(
             onTap: () => openReplayListing(context, widget.listing),
             child: AnimatedContainer(
-              duration: Duration(milliseconds: _revealing ? 250 : 100),
+              duration:
+                  _revealing ? Settings.revealDuration : Settings.hoverDuration,
+              curve: Settings.easeOut,
               decoration: BoxDecoration(
                 color: theme.border,
                 gradient: (_hovered && available) || widget.highlighted

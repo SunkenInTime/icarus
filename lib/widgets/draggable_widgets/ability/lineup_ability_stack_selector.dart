@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -229,8 +230,8 @@ class _LineUpStackSelectorOptionState
         onTap: widget.onSelect,
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOut,
+          duration: Settings.hoverDuration,
+          curve: Settings.easeOut,
           padding: widget.contentPadding,
           decoration: BoxDecoration(
             color: Colors.transparent,

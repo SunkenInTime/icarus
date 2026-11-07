@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -15,8 +16,6 @@ import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 /// How far from a bar the pointer counts as on it, in pixels on the screen
 /// whatever the zoom.
 const _hoverReach = 6.0;
-
-const _turnDuration = Duration(milliseconds: 200);
 
 /// A page's doors on the way to another's, for a page change: the doors
 /// changed on the page it's leaving, and curved progress in [0, 1].
@@ -312,8 +311,8 @@ class _MapDoorBarState extends ConsumerState<_MapDoorBar> {
           onTap: () => ref.read(utilityProvider.notifier).toggleMapDoor(door),
           child: TweenAnimationBuilder<double>(
             tween: Tween(end: amount ?? (widget.changed ? 1 : 0)),
-            duration: amount == null ? _turnDuration : Duration.zero,
-            curve: Curves.easeOut,
+            duration: amount == null ? Settings.stateDuration : Duration.zero,
+            curve: Settings.easeOut,
             builder: (context, value, _) {
               final line = _lineOnCanvas(
                 door,

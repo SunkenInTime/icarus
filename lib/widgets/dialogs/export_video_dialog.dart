@@ -428,8 +428,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     );
   }
 
-  bool get _canExport =>
-      _selectedPageIds.isNotEmpty && _captionRefusal == null;
+  bool get _canExport => _selectedPageIds.isNotEmpty && _captionRefusal == null;
 
   /// The preset the export runs at. A transparent video is lossless, so the
   /// presets' size targets don't apply; it plays at Social's 30 fps.
@@ -593,7 +592,8 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                 // dimmed, and without a tap they take no clicks or focus.
                 AnimatedOpacity(
                   opacity: _transparent ? 0.4 : 1,
-                  duration: const Duration(milliseconds: 150),
+                  duration: Settings.stateDuration,
+                  curve: Settings.easeOut,
                   // IntrinsicHeight bounds the stretch so all three cards
                   // share the tallest card's height; without it the
                   // scrollable dialog hands the Row an infinite height to
@@ -782,8 +782,8 @@ class _QualityCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 50),
-        curve: Curves.easeOut,
+        duration: Settings.hoverDuration,
+        curve: Settings.easeOut,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: colors.card,

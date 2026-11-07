@@ -332,8 +332,8 @@ class _StepDots extends StatelessWidget {
                     vertical: 8,
                   ),
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeOut,
+                    duration: Settings.stateDuration,
+                    curve: Settings.easeOut,
                     width: i == current ? 18 : 6,
                     height: 6,
                     decoration: BoxDecoration(

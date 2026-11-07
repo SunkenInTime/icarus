@@ -14,13 +14,13 @@ class RolePicker extends ConsumerWidget {
 
     return ClipRRect(
       child: AnimatedContainer(
-        curve: Curves.easeIn,
-        duration: const Duration(milliseconds: 100),
+        curve: Settings.easeOut,
+        duration: Settings.stateDuration,
         height: isExpanded ? 38 : 0,
         child: AnimatedOpacity(
           opacity: isExpanded ? 1.0 : 0.0,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeIn,
+          duration: Settings.stateDuration,
+          curve: Settings.easeOut,
           child: Padding(
             padding: const EdgeInsets.only(right: 8.0, top: 2),
             child: Row(

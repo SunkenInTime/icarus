@@ -23,11 +23,11 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/widgets/dialogs/deleted_page_dialog.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
 import 'package:icarus/services/product_metrics.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-const _glyphSwitchDuration = Duration(milliseconds: 150);
 const _conflictToastGap = Duration(seconds: 5);
 
 enum _SyncStatus { synced, editing, syncing, offline, attention }
@@ -211,21 +211,25 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
   Future<void> _keepHeldPages(
     Map<EntitySyncKey, ({String page, bool checked, String opId})> held,
   ) =>
-      _resolveHeldDeletes('keep_page', () => ref
-              .read(strategyOpQueueProvider.notifier)
-              .discardRejected(held.keys.toSet(), onlyIf: {
-            for (final entry in held.entries)
-              entry.key: (entry.value.opId, null),
-          }));
+      _resolveHeldDeletes(
+          'keep_page',
+          () => ref
+                  .read(strategyOpQueueProvider.notifier)
+                  .discardRejected(held.keys.toSet(), onlyIf: {
+                for (final entry in held.entries)
+                  entry.key: (entry.value.opId, null),
+              }));
 
   /// Delete anyway: the held deletes the user saw are sent, unread.
   Future<void> _deleteHeldPagesAnyway(
     Map<EntitySyncKey, ({String page, bool checked, String opId})> held,
   ) =>
-      _resolveHeldDeletes('delete_anyway', () =>
-          ref.read(strategyOpQueueProvider.notifier).deleteHeldPagesAnyway({
-            for (final entry in held.entries) entry.key: entry.value.opId,
-          }));
+      _resolveHeldDeletes(
+          'delete_anyway',
+          () =>
+              ref.read(strategyOpQueueProvider.notifier).deleteHeldPagesAnyway({
+                for (final entry in held.entries) entry.key: entry.value.opId,
+              }));
 
   Future<void> _resolveHeldDeletes(
     String choice,
@@ -391,9 +395,9 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         foregroundColor: foreground,
         onPressed: () => _handlePressed(status),
         icon: AnimatedSwitcher(
-          duration: _glyphSwitchDuration,
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeOutCubic,
+          duration: Settings.stateDuration,
+          switchInCurve: Settings.easeOut,
+          switchOutCurve: Settings.easeOutReverse,
           child: _glyph(status, foreground),
         ),
       ),
@@ -420,16 +424,11 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
           color: color,
         );
       case _SyncStatus.syncing:
-        return SizedBox(
+        return Spinner(
           key: const ValueKey('syncing'),
-          width: size - 4,
-          height: size - 4,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.8,
-            valueColor: AlwaysStoppedAnimation<Color>(
-              color ?? Settings.tacticalVioletTheme.mutedForeground,
-            ),
-          ),
+          size: size - 4,
+          strokeWidth: 1.8,
+          color: color ?? Settings.tacticalVioletTheme.mutedForeground,
         );
       case _SyncStatus.offline:
         return Icon(

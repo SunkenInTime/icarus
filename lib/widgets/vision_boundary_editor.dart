@@ -13,6 +13,7 @@ import 'package:icarus/providers/view_cone_debug_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/providers/vision_boundary_editor_provider.dart';
 import 'package:icarus/view_cone/vision_boundary_edit_document.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class VisionBoundaryEditorOverlay extends ConsumerStatefulWidget {
@@ -244,7 +245,7 @@ class _VisionBoundaryEditorPanel extends ConsumerWidget {
         child: editor.isLoading
             ? const SizedBox(
                 height: 56,
-                child: Center(child: CircularProgressIndicator()),
+                child: Center(child: Spinner(size: 36, strokeWidth: 4)),
               )
             : Column(
                 mainAxisSize: MainAxisSize.min,
@@ -484,13 +485,7 @@ class _VisionBoundaryEditorPanel extends ConsumerWidget {
                                   }
                                 },
                           leading: editor.isSaving
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
+                              ? const Spinner(size: 14)
                               : const Icon(LucideIcons.save, size: 16),
                           child: const Text('Save asset'),
                         ),

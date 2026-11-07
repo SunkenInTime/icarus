@@ -6,6 +6,7 @@ import 'package:icarus/const/youtube_handler.dart';
 
 import 'package:icarus/main.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -74,7 +75,7 @@ class _YoutubeViewState extends State<YoutubeView>
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done &&
             !isWebViewWarmupComplete) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: Spinner(size: 36, strokeWidth: 4));
         }
 
         if (!isWebViewInitialized) {
@@ -98,7 +99,7 @@ class _YoutubeViewState extends State<YoutubeView>
           children: [
             const Align(
               alignment: Alignment.center,
-              child: CircularProgressIndicator(),
+              child: Spinner(size: 36, strokeWidth: 4),
             ),
             Positioned.fill(
               child: InAppWebView(

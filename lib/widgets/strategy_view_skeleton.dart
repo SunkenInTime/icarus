@@ -102,7 +102,7 @@ class _SkeletonShimmerState extends State<_SkeletonShimmer>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1350),
+      duration: const Duration(milliseconds: 1000),
     );
   }
 

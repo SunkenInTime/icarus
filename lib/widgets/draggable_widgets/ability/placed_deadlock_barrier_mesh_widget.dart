@@ -72,11 +72,15 @@ class _PlacedDeadlockBarrierMeshWidgetState
     );
     _localRotation = widget.ability.rotation;
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 160),
+      duration: Settings.hoverDuration,
       vsync: this,
     );
     _scaleAnimation = Tween<double>(begin: 0.9, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Settings.easeOut,
+        reverseCurve: Settings.easeOutReverse,
+      ),
     );
   }
 

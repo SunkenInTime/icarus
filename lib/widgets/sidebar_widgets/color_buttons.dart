@@ -30,7 +30,8 @@ class _ColorButtonsState extends ConsumerState<ColorButtons> {
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+      duration: Settings.hoverDuration,
+      curve: Settings.easeOut,
       decoration: BoxDecoration(
         borderRadius: const BorderRadius.all(Radius.circular(4)),
         border: Border.all(

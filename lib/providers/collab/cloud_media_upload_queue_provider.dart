@@ -1701,8 +1701,8 @@ class CloudMediaUploadQueueNotifier
           valueListenable: stateNotifier,
           builder: (context, toastState, _) {
             return AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
+              duration: Settings.revealDuration,
+              curve: Settings.easeOut,
               width: 280,
               margin: const EdgeInsets.all(16),
               padding: const EdgeInsets.symmetric(
@@ -1723,7 +1723,9 @@ class CloudMediaUploadQueueNotifier
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 180),
+                    duration: Settings.stateDuration,
+                    switchInCurve: Settings.easeOut,
+                    switchOutCurve: Settings.easeOutReverse,
                     child: Text(
                       toastState.message,
                       key: ValueKey<String>(toastState.message),
@@ -1741,8 +1743,8 @@ class CloudMediaUploadQueueNotifier
                         begin: 0,
                         end: toastState.progress.clamp(0, 1),
                       ),
-                      duration: const Duration(milliseconds: 350),
-                      curve: Curves.easeOutCubic,
+                      duration: Settings.revealDuration,
+                      curve: Settings.easeOut,
                       builder: (context, value, _) {
                         return LinearProgressIndicator(
                           value: value,

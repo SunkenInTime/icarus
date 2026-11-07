@@ -235,8 +235,8 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
                   icon: const Icon(LucideIcons.arrowLeft, color: Colors.white),
                   onPressed: () {
                     _pageController.previousPage(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
+                      duration: Settings.revealDuration,
+                      curve: Settings.easeOut,
                     );
                   },
                 ),
@@ -255,8 +255,8 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
                   icon: const Icon(LucideIcons.arrowRight, color: Colors.white),
                   onPressed: () {
                     _pageController.nextPage(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
+                      duration: Settings.revealDuration,
+                      curve: Settings.easeOut,
                     );
                   },
                 ),

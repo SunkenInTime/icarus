@@ -39,27 +39,24 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
   bool _isOpen = false;
 
   void _closePortal() {
-    // For closing, animate to zero first
+    // Shrink to nothing, then take the overlay down, unless it was opened
+    // again meanwhile.
     setState(() {
       _containerHeight = 0;
       _isOpen = false;
     });
-
-    // Then hide the overlay after animation completes
-    Future.delayed(const Duration(milliseconds: 200), () {
-      _controller.hide();
+    Future.delayed(Settings.exitDuration, () {
+      if (mounted && !_isOpen) _controller.hide();
     });
   }
 
   void _openPortal() {
-    // First show the overlay with zero size
+    // The overlay mounts at zero height; growing it on the next frame is
+    // what animates.
     _controller.show();
-
-    Future.delayed(const Duration(milliseconds: 100), () {
-      setState(() {
-        _containerHeight = 500;
-        _isOpen = true;
-      });
+    setState(() => _isOpen = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _isOpen) setState(() => _containerHeight = 500);
     });
   }
 
@@ -109,7 +106,10 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                       child: Padding(
                         padding: const EdgeInsets.only(top: 6),
                         child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
+                          duration: _isOpen
+                              ? Settings.revealDuration
+                              : Settings.exitDuration,
+                          curve: Settings.easeOut,
                           height: _containerHeight,
                           width: 260,
                           decoration: BoxDecoration(

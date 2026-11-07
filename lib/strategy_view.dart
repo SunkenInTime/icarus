@@ -81,8 +81,8 @@ class StrategyView extends ConsumerStatefulWidget {
   }) {
     return PageRouteBuilder<void>(
       settings: const RouteSettings(name: Routes.strategyView),
-      transitionDuration: const Duration(milliseconds: 200),
-      reverseTransitionDuration: const Duration(milliseconds: 200),
+      transitionDuration: Settings.revealDuration,
+      reverseTransitionDuration: Settings.exitDuration,
       pageBuilder: (context, animation, _) => StrategyView(
         initialStrategyId: initialStrategyId,
         initialStrategyName: initialStrategyName,
@@ -93,13 +93,15 @@ class StrategyView extends ConsumerStatefulWidget {
         backTooltip: backTooltip,
       ),
       transitionsBuilder: (context, animation, _, child) {
+        final eased = CurvedAnimation(
+          parent: animation,
+          curve: Settings.easeOut,
+          reverseCurve: Settings.easeOutReverse,
+        );
         return FadeTransition(
-          opacity: animation,
+          opacity: eased,
           child: ScaleTransition(
-            scale: Tween<double>(
-              begin: 0.9,
-              end: 1.0,
-            ).chain(CurveTween(curve: Curves.easeOut)).animate(animation),
+            scale: Tween<double>(begin: 0.97, end: 1.0).animate(eased),
             child: child,
           ),
         );

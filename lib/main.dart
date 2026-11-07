@@ -163,6 +163,10 @@ Future<void> main(List<String> args) async {
   await runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      // shadcn's dialogs, menus, popovers and tooltips take their motion from
+      // flutter_animate's defaults, 300ms and linear. They take ours.
+      Animate.defaultDuration = Settings.revealDuration;
+      Animate.defaultCurve = Settings.easeOut;
 
       appProviderContainer = ProviderContainer(overrides: [
         guardedSignOutRequestProvider.overrideWith(
@@ -775,7 +779,8 @@ class _MyAppState extends ConsumerState<MyApp> {
       config: const ToastificationConfig(
         alignment: Alignment.bottomCenter,
         // itemWidth: 440,
-        animationDuration: Duration(milliseconds: 500),
+        animationDuration: Settings.revealDuration,
+        animationBuilder: Settings.toastTransition,
         blockBackgroundInteraction: false,
       ),
       child: ShadApp(

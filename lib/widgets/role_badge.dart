@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// What the cloud says about a strategy's place in the library: yours, shared
@@ -120,13 +121,10 @@ class MovingToCloudBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StrategyBadge.leading(
-      leading: SizedBox.square(
-        dimension: 10,
-        child: CircularProgressIndicator(
+      leading: Spinner(
+          size: 10,
           strokeWidth: 1.5,
-          color: Settings.tacticalVioletTheme.foreground,
-        ),
-      ),
+          color: Settings.tacticalVioletTheme.foreground),
       label: 'Moving to cloud',
       tooltip: 'Stays on this computer until all of it is in the cloud',
     );

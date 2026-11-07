@@ -66,7 +66,8 @@ class _TeamTextButtonState extends State<_TeamTextButton> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedDefaultTextStyle(
-          duration: const Duration(milliseconds: 150),
+          duration: Settings.hoverDuration,
+          curve: Settings.easeOut,
           style: ShadTheme.of(context).textTheme.small.copyWith(
                 color: widget.isSelected
                     ? widget.selectedColor

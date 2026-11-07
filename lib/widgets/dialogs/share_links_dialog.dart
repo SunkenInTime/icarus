@@ -16,6 +16,7 @@ import 'package:icarus/share/share_link_copy.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:icarus/services/product_metrics.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -26,8 +27,6 @@ String _shareDialogHeadline(String name) {
   return 'Share "$safe"';
 }
 
-const _stateSwitchDuration = Duration(milliseconds: 180);
-const _hoverDuration = Duration(milliseconds: 120);
 const _copiedFlashDuration = Duration(milliseconds: 1200);
 
 String _relativeTime(DateTime time) {
@@ -396,13 +395,13 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
           ),
           child: SingleChildScrollView(
             child: AnimatedSize(
-              duration: _stateSwitchDuration,
-              curve: Curves.easeOutCubic,
+              duration: Settings.stateDuration,
+              curve: Settings.easeOut,
               alignment: Alignment.topCenter,
               child: AnimatedSwitcher(
-                duration: _stateSwitchDuration,
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeOutCubic,
+                duration: Settings.stateDuration,
+                switchInCurve: Settings.easeOut,
+                switchOutCurve: Settings.easeOutReverse,
                 child: _buildBody(theme),
               ),
             ),
@@ -598,22 +597,16 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
               key: const ValueKey('share-link-create-and-copy'),
               onPressed: _isCreating ? null : _createLink,
               leading: _isCreating
-                  ? SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: theme.colorScheme.primaryForeground,
-                      ),
-                    )
+                  ? Spinner(
+                      size: 14, color: theme.colorScheme.primaryForeground)
                   : const Icon(LucideIcons.link, size: 16),
               child: Text(_isCreating ? 'Creating…' : 'Create & copy'),
             ),
           ],
         ),
         AnimatedSize(
-          duration: _stateSwitchDuration,
-          curve: Curves.easeOutCubic,
+          duration: Settings.stateDuration,
+          curve: Settings.easeOut,
           alignment: Alignment.topLeft,
           child: _selectedRole == 'editor'
               ? Padding(
@@ -919,14 +912,7 @@ class _MemberControls extends StatelessWidget {
               padding: EdgeInsets.zero,
               onPressed: busy ? null : onRemove,
               child: busy
-                  ? SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: theme.colorScheme.mutedForeground,
-                      ),
-                    )
+                  ? Spinner(size: 14, color: theme.colorScheme.mutedForeground)
                   : Icon(
                       LucideIcons.x,
                       size: 16,
@@ -1105,7 +1091,8 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
-        duration: _hoverDuration,
+        duration: Settings.hoverDuration,
+        curve: Settings.easeOut,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           border: Border.all(
@@ -1116,7 +1103,8 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
           borderRadius: theme.radius,
         ),
         child: AnimatedOpacity(
-          duration: _hoverDuration,
+          duration: Settings.stateDuration,
+          curve: Settings.easeOut,
           opacity: link.isRevoked ? 0.6 : 1,
           child: Row(
             children: [
@@ -1195,14 +1183,8 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
                         ? null
                         : widget.onDisable,
                     child: widget.isDisabling
-                        ? SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: theme.colorScheme.mutedForeground,
-                            ),
-                          )
+                        ? Spinner(
+                            size: 14, color: theme.colorScheme.mutedForeground)
                         : Icon(
                             LucideIcons.link2Off,
                             size: 16,
@@ -1284,9 +1266,9 @@ class _CopyIconButtonState extends State<_CopyIconButton> {
           size: ShadButtonSize.sm,
           onPressed: widget.enabled ? _copy : null,
           child: AnimatedSwitcher(
-            duration: _hoverDuration,
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeOutCubic,
+            duration: Settings.hoverDuration,
+            switchInCurve: Settings.easeOut,
+            switchOutCurve: Settings.easeOutReverse,
             transitionBuilder: (child, animation) => ScaleTransition(
               scale: animation,
               child: FadeTransition(opacity: animation, child: child),
@@ -1366,7 +1348,7 @@ class _LinkListPlaceholderState extends State<_LinkListPlaceholder>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: const Duration(milliseconds: 800),
     );
   }
 
@@ -1484,14 +1466,7 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
         ShadButton(
           onPressed: _isSubmitting ? null : _submit,
           leading: _isSubmitting
-              ? SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: theme.colorScheme.primaryForeground,
-                  ),
-                )
+              ? Spinner(size: 14, color: theme.colorScheme.primaryForeground)
               : null,
           child: Text(_isSubmitting ? 'Adding…' : 'Add'),
         ),
@@ -1523,8 +1498,8 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
             ),
           ),
           AnimatedSize(
-            duration: _stateSwitchDuration,
-            curve: Curves.easeOutCubic,
+            duration: Settings.stateDuration,
+            curve: Settings.easeOut,
             alignment: Alignment.topLeft,
             child: hasError
                 ? Padding(

@@ -1008,7 +1008,8 @@ class _ResizeHandleStatefulState extends State<_ResizeHandleStateful> {
           width: widget.width ?? double.infinity,
           child: Center(
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
+              duration: Settings.hoverDuration,
+              curve: Settings.easeOut,
               width: isHorizontalResize ? 2 : 36,
               height: isHorizontalResize ? 36 : 2,
               decoration: BoxDecoration(

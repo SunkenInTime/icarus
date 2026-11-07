@@ -20,6 +20,7 @@ import 'package:icarus/services/export_save_path.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:path/path.dart' as p;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -632,13 +633,8 @@ class _PageTileState extends State<_PageTile> {
           )
         else
           Center(
-            child: SizedBox.square(
-              dimension: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 1.8,
-                valueColor: AlwaysStoppedAnimation(colors.mutedForeground),
-              ),
-            ),
+            child: Spinner(
+                size: 16, strokeWidth: 1.8, color: colors.mutedForeground),
           ),
       ],
     );
@@ -650,7 +646,8 @@ class _PageTileState extends State<_PageTile> {
         AspectRatio(
           aspectRatio: 16 / 9,
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
+            duration: Settings.hoverDuration,
+            curve: Settings.easeOut,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: borderColor),
@@ -662,7 +659,8 @@ class _PageTileState extends State<_PageTile> {
                 children: [
                   // A page left out sits back.
                   AnimatedOpacity(
-                    duration: const Duration(milliseconds: 150),
+                    duration: Settings.stateDuration,
+                    curve: Settings.easeOut,
                     opacity: widget.selected ? 1 : 0.55,
                     child: picture,
                   ),
@@ -763,13 +761,7 @@ class _StatusChip extends StatelessWidget {
           if (done)
             Icon(LucideIcons.check, size: 12, color: ink)
           else
-            SizedBox.square(
-              dimension: 10,
-              child: CircularProgressIndicator(
-                strokeWidth: 1.5,
-                valueColor: AlwaysStoppedAnimation(ink),
-              ),
-            ),
+            Spinner(size: 10, strokeWidth: 1.5, color: ink),
           const SizedBox(width: 6),
           Text(text, style: TextStyle(fontSize: 12, color: ink)),
         ],

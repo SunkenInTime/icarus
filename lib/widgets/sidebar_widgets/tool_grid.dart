@@ -40,8 +40,6 @@ enum _ContextBarMode {
 class BottomContextBar extends ConsumerWidget {
   const BottomContextBar({super.key});
 
-  static const Duration _animationDuration = Duration(milliseconds: 200);
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final interactionState = ref.watch(interactionStateProvider);
@@ -57,13 +55,13 @@ class BottomContextBar extends ConsumerWidget {
 
     return ClipRect(
       child: AnimatedSize(
-        duration: _animationDuration,
-        curve: Curves.easeInOut,
+        duration: Settings.stateDuration,
+        curve: Settings.easeOut,
         alignment: Alignment.topCenter,
         child: AnimatedSwitcher(
-          duration: _animationDuration,
-          switchInCurve: Curves.easeIn,
-          switchOutCurve: Curves.easeOut,
+          duration: Settings.stateDuration,
+          switchInCurve: Settings.easeOut,
+          switchOutCurve: Settings.easeOutReverse,
           transitionBuilder: (child, animation) {
             return FadeTransition(
               opacity: animation,

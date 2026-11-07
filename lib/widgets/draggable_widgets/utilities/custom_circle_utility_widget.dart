@@ -106,8 +106,8 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
                     : null,
                 child: AnimatedOpacity(
                   opacity: centerMarkerVisible ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 150),
-                  curve: Curves.easeOutCubic,
+                  duration: Settings.stateDuration,
+                  curve: Settings.easeOut,
                   child: Container(
                     width: markerSize,
                     height: markerSize,

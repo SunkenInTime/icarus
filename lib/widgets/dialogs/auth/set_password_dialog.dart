@@ -4,6 +4,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Asks for a new password after a password reset link signed the user in.
@@ -136,13 +137,7 @@ class _SetPasswordDialogState extends ConsumerState<SetPasswordDialog> {
                   child: ShadButton(
                     key: const ValueKey('set-password-save'),
                     onPressed: _saving ? null : _save,
-                    leading: _saving
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : null,
+                    leading: _saving ? const Spinner(size: 14) : null,
                     child: Text(_saving ? 'Saving…' : 'Save password'),
                   ),
                 ),

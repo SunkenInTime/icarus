@@ -47,10 +47,16 @@ class ReplayView extends ConsumerStatefulWidget {
   }) =>
       PageRouteBuilder<void>(
         pageBuilder: (_, __, ___) => ReplayView(file: file, probe: probe),
-        transitionDuration: const Duration(milliseconds: 200),
-        reverseTransitionDuration: const Duration(milliseconds: 150),
-        transitionsBuilder: (_, animation, __, child) =>
-            FadeTransition(opacity: animation, child: child),
+        transitionDuration: Settings.revealDuration,
+        reverseTransitionDuration: Settings.exitDuration,
+        transitionsBuilder: (_, animation, __, child) => FadeTransition(
+          opacity: CurvedAnimation(
+            parent: animation,
+            curve: Settings.easeOut,
+            reverseCurve: Settings.easeOutReverse,
+          ),
+          child: child,
+        ),
       );
 
   @override

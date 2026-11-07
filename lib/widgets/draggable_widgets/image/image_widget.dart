@@ -9,6 +9,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// How tall, in physical pixels, a canvas [canvasHeight] logical pixels
@@ -44,9 +45,14 @@ void _showImageFullScreenOverlay({
   Navigator.of(context).push(
     PageRouteBuilder(
       opaque: false,
-      transitionDuration: const Duration(milliseconds: 200),
+      transitionDuration: Settings.revealDuration,
+      reverseTransitionDuration: Settings.exitDuration,
       pageBuilder: (ctx, anim, __) => FadeTransition(
-        opacity: anim,
+        opacity: CurvedAnimation(
+          parent: anim,
+          curve: Settings.easeOut,
+          reverseCurve: Settings.easeOutReverse,
+        ),
         child: _ImageFullScreenOverlay(
           heroTag: heroTag,
           aspectRatio: aspectRatio,
@@ -340,11 +346,7 @@ class _ImageStatePlaceholder extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (showSpinner)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                  const Spinner(size: 20)
                 else
                   Icon(icon, color: Colors.white70, size: 22),
                 const SizedBox(height: 8),

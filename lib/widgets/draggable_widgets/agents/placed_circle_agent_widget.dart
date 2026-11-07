@@ -506,8 +506,8 @@ class _CircleResizeHandle extends StatelessWidget {
           height: arcRegionSize,
           child: Center(
             child: AnimatedScale(
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOutCubic,
+              duration: Settings.hoverDuration,
+              curve: Settings.easeOut,
               scale: isResizing || isHovered ? 1.0 : 0.9,
               child: CustomPaint(
                 size: Size(arcRegionSize, arcRegionSize),

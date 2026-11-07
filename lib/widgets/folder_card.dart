@@ -26,6 +26,7 @@ import 'package:icarus/widgets/overflow_tooltip_text.dart';
 import 'package:icarus/widgets/role_badge.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -192,14 +193,14 @@ class _FolderCardState extends ConsumerState<FolderCard>
   void initState() {
     super.initState();
     _openController = AnimationController(
-      duration: const Duration(milliseconds: 220),
-      reverseDuration: const Duration(milliseconds: 180),
+      duration: Settings.revealDuration,
+      reverseDuration: Settings.exitDuration,
       vsync: this,
     );
     _open = CurvedAnimation(
       parent: _openController,
-      curve: Curves.easeOutQuart,
-      reverseCurve: Curves.easeOutCubic,
+      curve: Settings.easeOut,
+      reverseCurve: Settings.easeOutReverse,
     );
   }
 
@@ -373,7 +374,8 @@ class _FolderCardState extends ConsumerState<FolderCard>
       _syncOpenState(isDropTarget: isMoveIntoFolderTarget);
 
       return AnimatedOpacity(
-        duration: const Duration(milliseconds: 200),
+        duration: Settings.stateDuration,
+        curve: Settings.easeOut,
         opacity: _isMovingToCloud ? movingToCloudOpacity : 1,
         child: Padding(
           padding:
@@ -654,13 +656,10 @@ class _FolderCardState extends ConsumerState<FolderCard>
     if (_isMovingToCloud) {
       return Row(
         children: [
-          SizedBox.square(
-            dimension: 10,
-            child: CircularProgressIndicator(
+          Spinner(
+              size: 10,
               strokeWidth: 1.5,
-              color: Colors.white.withValues(alpha: 0.7),
-            ),
-          ),
+              color: Colors.white.withValues(alpha: 0.7)),
           const SizedBox(width: 6),
           Text('Moving to cloud', style: footerStyle),
         ],
@@ -720,8 +719,8 @@ class _FolderCardState extends ConsumerState<FolderCard>
         onEnter: (_) => setState(() => _isMenuButtonHovered = true),
         onExit: (_) => setState(() => _isMenuButtonHovered = false),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          curve: Curves.easeOutCubic,
+          duration: Settings.hoverDuration,
+          curve: Settings.easeOut,
           width: 26,
           height: 26,
           decoration: BoxDecoration(

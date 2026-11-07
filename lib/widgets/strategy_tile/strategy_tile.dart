@@ -304,7 +304,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                             // lit violet gradient, since a Border cannot
                             // take a gradient.
                             AnimatedContainer(
-                                duration: const Duration(milliseconds: 100),
+                                duration: Settings.hoverDuration,
+                                curve: Settings.easeOut,
                                 decoration: BoxDecoration(
                                   color: Settings.tacticalVioletTheme.border,
                                   gradient: !isPinDropTarget && _isHovered
@@ -333,8 +334,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                               : needsConnection
                                                   ? const NeedsConnectionBadge()
                                                   : widget.showDeviceBadge
-                                                  ? const DeviceOnlyBadge()
-                                                  : viewData.sharedBadge,
+                                                      ? const DeviceOnlyBadge()
+                                                      : viewData.sharedBadge,
                                         ),
                                       ),
                                       const SizedBox(height: 10),
@@ -419,7 +420,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       },
     );
     return AnimatedOpacity(
-      duration: const Duration(milliseconds: 200),
+      duration: Settings.stateDuration,
+      curve: Settings.easeOut,
       // Dimmed like a move: readable, plainly not available.
       opacity: isMoving || needsConnection ? movingToCloudOpacity : 1,
       child: tile,

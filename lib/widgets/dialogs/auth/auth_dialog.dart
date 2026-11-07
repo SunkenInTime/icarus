@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 enum AuthDialogMode { signIn, signUp }
@@ -12,8 +14,6 @@ enum AuthDialogMode { signIn, signUp }
 enum _AuthView { signIn, signUp, resetPassword }
 
 enum _AuthField { email, password, confirm }
-
-const _bannerDuration = Duration(milliseconds: 180);
 
 /// Supabase takes an address like `foo@bar`, then can't send to it and
 /// answers as if its mail server had failed, so stop it here.
@@ -295,9 +295,8 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
                   padding: EdgeInsets.zero,
                   foregroundColor: theme.colorScheme.mutedForeground,
                   hoverForegroundColor: theme.colorScheme.foreground,
-                  onPressed: busy
-                      ? null
-                      : () => _showView(_AuthView.resetPassword),
+                  onPressed:
+                      busy ? null : () => _showView(_AuthView.resetPassword),
                   child: const Text('Forgot password?'),
                 ),
               ),
@@ -317,8 +316,8 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
             ],
             const SizedBox(height: 12),
             AnimatedSize(
-              duration: _bannerDuration,
-              curve: Curves.easeOutCubic,
+              duration: Settings.stateDuration,
+              curve: Settings.easeOut,
               alignment: Alignment.topCenter,
               child: _message != null
                   ? Padding(
@@ -331,8 +330,8 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
                   : const SizedBox(width: double.infinity),
             ),
             AnimatedSize(
-              duration: _bannerDuration,
-              curve: Curves.easeOutCubic,
+              duration: Settings.stateDuration,
+              curve: Settings.easeOut,
               alignment: Alignment.topCenter,
               child: _waitingForDiscord
                   ? Padding(
@@ -379,13 +378,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
             ShadButton(
               key: const ValueKey('auth-submit-button'),
               onPressed: busy ? null : _submit,
-              leading: busy
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : null,
+              leading: busy ? const Spinner(size: 14) : null,
               child: Text(switch ((_view, busy)) {
                 (_AuthView.signIn, false) => 'Sign in',
                 (_AuthView.signIn, true) => 'Signing in…',
@@ -466,15 +459,10 @@ class _DiscordPendingBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          SizedBox(
-            width: 13,
-            height: 13,
-            child: CircularProgressIndicator(
-              strokeWidth: 1.8,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                theme.colorScheme.mutedForeground,
-              ),
-            ),
+          Spinner(
+            size: 13,
+            strokeWidth: 1.8,
+            color: theme.colorScheme.mutedForeground,
           ),
           const SizedBox(width: 8),
           Expanded(

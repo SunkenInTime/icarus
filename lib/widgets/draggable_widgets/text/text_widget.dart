@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
@@ -316,7 +317,8 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
               child: Material(
                 color: Colors.transparent,
                 child: TweenAnimationBuilder<double>(
-                  duration: const Duration(milliseconds: 150),
+                  duration: Settings.hoverDuration,
+                  curve: Settings.easeOut,
                   tween: Tween(begin: 0, end: 1),
                   builder: (context, progress, child) => Opacity(
                     opacity: progress,

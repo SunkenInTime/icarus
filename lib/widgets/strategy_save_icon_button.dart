@@ -14,6 +14,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
@@ -195,16 +196,11 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton> {
         : const Icon(LucideIcons.check200, key: ValueKey('saved'));
     final Widget icon = switch (_phase) {
       _Phase.idle => resting,
-      _Phase.loading => SizedBox(
+      _Phase.loading => Spinner(
           key: const ValueKey('loading'),
-          width: size - 2,
-          height: size - 2,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.8,
-            valueColor: AlwaysStoppedAnimation<Color>(
-              Settings.tacticalVioletTheme.mutedForeground,
-            ),
-          ),
+          size: size - 2,
+          strokeWidth: 1.8,
+          color: Settings.tacticalVioletTheme.mutedForeground,
         ),
       // An edit made while the spinner ran has not been saved.
       _Phase.success when unsaved => resting,
@@ -222,9 +218,9 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton> {
       enabled: canEditPages,
       onPressed: () => saveStrategyNow(context, ref),
       icon: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 150),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeOutCubic,
+        duration: Settings.stateDuration,
+        switchInCurve: Settings.easeOut,
+        switchOutCurve: Settings.easeOutReverse,
         child: icon,
       ),
     );

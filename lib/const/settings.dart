@@ -131,6 +131,31 @@ class Settings {
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
+
+  // Motion. Interface motion eases out, so it moves on the frame the user
+  // acts and spends its time settling: cubic-bezier(0.23, 1, 0.32, 1).
+  // Never ease-in, which spends the first frames looking like nothing
+  // happened, and never linear, Flutter's default when a curve is left out.
+  static const Curve easeOut = Curves.easeOutQuint;
+
+  /// [easeOut] for an animation that plays backwards, as an
+  /// AnimatedSwitcher's switchOutCurve or a CurvedAnimation's reverseCurve
+  /// do. Those run their curve from 1 down to 0, so plain [easeOut] there
+  /// would hold the exit still and then drop it.
+  static const Curve easeOutReverse = FlippedCurve(easeOut);
+
+  /// Hover, press and focus: the answer to the pointer.
+  static const Duration hoverDuration = Duration(milliseconds: 120);
+
+  /// A change in place: a selection, a glyph or label swapping, a fade.
+  static const Duration stateDuration = Duration(milliseconds: 180);
+
+  /// A surface arriving: a dialog, menu, panel, route or toast.
+  static const Duration revealDuration = Duration(milliseconds: 220);
+
+  /// A surface leaving. Shorter than its arrival: once the user is done
+  /// with it, it should be out of the way.
+  static const Duration exitDuration = Duration(milliseconds: 150);
   static const int versionNumber = 110;
   static const String versionName = "5.1.3";
   static final Uri desktopUpdaterArchiveUrl =
@@ -140,6 +165,7 @@ class Settings {
   static const double sideBarPanelWidth = sideBarContentWidth + 20;
   static const double sideBarPanelPaddingLeft = 8;
   static const double sideBarPanelPaddingRight = 8;
+
   /// How far the editor's canvas zooms in. Pictures placed on it are
   /// decoded for this zoom, so it looks the same all the way in.
   static const double canvasMaxZoom = 8;
@@ -149,6 +175,7 @@ class Settings {
 
   static final Uri windowsStoreLink = Uri.parse(
       "https://apps.microsoft.com/detail/9PBWHHZRQFW6?hl=en-us&gl=US&ocid=pdpshare");
+
   /// The newest stable installer, the same link icarusstrats.com uses.
   /// GitHub Pages can't hold it (files there max out at 100 MB), so the copy
   /// under downloads/ on Pages stopped at 4.6.1.
@@ -364,6 +391,15 @@ class Settings {
   static final ShadDialogTheme dialogTheme = ShadDialogTheme(
     backgroundColor: tacticalVioletTheme.card,
     radius: const BorderRadius.all(Radius.circular(16)),
+    // Arrives on the app's default motion (see main); leaves quicker.
+    animateOut: const [
+      FadeEffect(begin: 1, end: 0, duration: exitDuration),
+      ScaleEffect(
+        begin: Offset(1, 1),
+        end: Offset(.97, .97),
+        duration: exitDuration,
+      ),
+    ],
   );
 
   /// The destructive fill, raised the same way as the primary one.
@@ -443,6 +479,31 @@ class Settings {
           ),
         );
       },
+    );
+  }
+
+  /// Toasts rise in and drop out on [easeOut]. Toastification hands its
+  /// builder a linear animation and plays it backwards to remove a toast.
+  static Widget toastTransition(
+    BuildContext context,
+    Animation<double> animation,
+    Alignment alignment,
+    Widget child,
+  ) {
+    final eased = CurvedAnimation(
+      parent: animation,
+      curve: easeOut,
+      reverseCurve: easeOutReverse,
+    );
+    return FadeTransition(
+      opacity: eased,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: Offset(0, alignment.y >= 0 ? 1 : -1),
+          end: Offset.zero,
+        ).animate(eased),
+        child: child,
+      ),
     );
   }
 

@@ -19,6 +19,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/widgets/overflow_tooltip_text.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -531,12 +532,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                             ? null
                             : () => _isOpen ? _closePortal() : _openPortal(),
                         icon: _isSwitching
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
+                            ? const Spinner(size: 16)
                             : Icon(
                                 _isOpen
                                     ? LucideIcons.chevronUp

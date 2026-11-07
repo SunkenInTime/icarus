@@ -161,9 +161,9 @@ class _HoveredMapItemNameCardState
     return Padding(
       padding: const EdgeInsets.only(left: 16, top: 16),
       child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 120),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeOutCubic,
+        duration: Settings.hoverDuration,
+        switchInCurve: Settings.easeOut,
+        switchOutCurve: Settings.easeOutReverse,
         child: shouldShow
             ? IntrinsicWidth(
                 // Keep the same child across name changes. AnimatedSwitcher

@@ -10,6 +10,7 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/services/clipboard_service.dart';
 import 'package:icarus/services/halved_image.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_library.dart';
+import 'package:icarus/widgets/spinner.dart';
 
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -221,13 +222,9 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
         ShadButton(
           onPressed: hasSelection && !_usingImage ? _useImage : null,
           leading: _usingImage
-              ? SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Settings.tacticalVioletTheme.primaryForeground,
-                  ),
-                )
+              ? Spinner(
+                  size: 16,
+                  color: Settings.tacticalVioletTheme.primaryForeground)
               : null,
           child: const Text('Use image'),
         ),
@@ -407,14 +404,7 @@ class _EmptyState extends StatelessWidget {
             ),
             if (isCheckingClipboard) ...[
               const SizedBox(height: 12),
-              SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: cs.primary,
-                ),
-              ),
+              Spinner(size: 18, color: cs.primary),
               const SizedBox(height: 6),
               Text(
                 'Checking clipboard…',

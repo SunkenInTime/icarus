@@ -22,8 +22,6 @@ class DeleteArea extends ConsumerStatefulWidget {
 class _DeleteAreaState extends ConsumerState<DeleteArea>
     with SingleTickerProviderStateMixin {
   static const Duration _hoverCloseDelay = Duration(milliseconds: 150);
-  static const Duration _openDuration = Duration(milliseconds: 210);
-  static const Duration _closeDuration = Duration(milliseconds: 140);
 
   final OverlayPortalController _overlayController = OverlayPortalController();
   final LayerLink _layerLink = LayerLink();
@@ -32,8 +30,8 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
 
   late final AnimationController _menuAnimationController = AnimationController(
     vsync: this,
-    duration: _openDuration,
-    reverseDuration: _closeDuration,
+    duration: Settings.revealDuration,
+    reverseDuration: Settings.exitDuration,
   );
 
   Timer? _closeTimer;
@@ -221,9 +219,6 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
     final Color shortcutColor = _isDragHoveringTarget
         ? Settings.tacticalVioletTheme.foreground.withValues(alpha: 0.9)
         : Settings.tacticalVioletTheme.mutedForeground;
-    final Duration targetDuration = _isDragHoveringTarget
-        ? const Duration(milliseconds: 100)
-        : const Duration(milliseconds: 140);
 
     return Padding(
       // Same 8px off the strip as the map card on the left, so both hang
@@ -311,15 +306,11 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
                           scale: _isDragHoveringTarget
                               ? 1.0
                               : (isEmphasized ? 1.03 : 1.0),
-                          duration: targetDuration,
-                          curve: _isDragHoveringTarget
-                              ? Curves.easeOutCubic
-                              : Curves.easeOut,
+                          duration: Settings.hoverDuration,
+                          curve: Settings.easeOut,
                           child: AnimatedContainer(
-                            duration: targetDuration,
-                            curve: _isDragHoveringTarget
-                                ? Curves.easeOutCubic
-                                : Curves.easeOut,
+                            duration: Settings.hoverDuration,
+                            curve: Settings.easeOut,
                             decoration: BoxDecoration(
                               color: fillColor,
                               borderRadius: BorderRadius.zero,

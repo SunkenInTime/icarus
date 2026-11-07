@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/custom_border_container.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
@@ -127,6 +128,7 @@ class CustomSquareWidget extends ConsumerWidget {
                       key: const ValueKey('square-range-body-transition'),
                       opacity: showRangeFill ? rangeOpacity : 0,
                       duration: abilityStateTransitionDuration,
+                      curve: Settings.easeOut,
                       child: wallBody,
                     )
                   : Opacity(
@@ -143,6 +145,7 @@ class CustomSquareWidget extends ConsumerWidget {
                 key: const ValueKey('inactive-wall-trace-transition'),
                 opacity: showRangeFill ? 0 : rangeOpacity,
                 duration: abilityStateTransitionDuration,
+                curve: Settings.easeOut,
                 child: IgnorePointer(
                   child: SizedBox(
                     width: inactiveTraceWidth,

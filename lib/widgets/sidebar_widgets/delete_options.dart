@@ -185,8 +185,8 @@ class DeleteOptions extends ConsumerWidget {
               builder: (context, child) {
                 final curved = CurvedAnimation(
                   parent: animation!,
-                  curve: Curves.easeOutCubic,
-                  reverseCurve: Curves.easeInCubic,
+                  curve: Settings.easeOut,
+                  reverseCurve: Settings.easeOutReverse,
                 );
                 return FadeTransition(
                   opacity: curved,
@@ -231,8 +231,8 @@ class _AnimatedDeleteMenuEntry extends StatelessWidget {
 
     final curved = CurvedAnimation(
       parent: animation!,
-      curve: Interval(start, end, curve: Curves.easeOutCubic),
-      reverseCurve: Interval(start, end, curve: Curves.easeInCubic),
+      curve: Interval(start, end, curve: Settings.easeOut),
+      reverseCurve: Interval(start, end, curve: Settings.easeOutReverse),
     );
 
     return AnimatedBuilder(

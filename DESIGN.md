@@ -11,7 +11,10 @@ The palette, theme, and sizing constants live in `lib/const/settings.dart`, with
 - Never hardcode a hex that already has a name in `lib/const/settings.dart`. If a color is new, name it there first.
 - Spacing steps are 8/10/12/16/24px. Radii: 8px controls, 12px panels, 16px cards, 22px dialogs.
 - Type roles, all in the system sans stack: headline 20px/500, title 16px/600, body 14px/400, label 12px/600, micro 10px/600. Hierarchy comes from these five roles, not from display fonts or hero-scale type.
-- Transitions run 150-250ms and must communicate a state change (hover, selection, reveal, loading). No motion for its own sake.
+- Motion must communicate a state change (hover, selection, reveal, loading). No motion for its own sake.
+- Interface motion takes its values from `Settings`: `hoverDuration` for the answer to the pointer, `stateDuration` for a change in place, `revealDuration` for a surface arriving, `exitDuration` for it leaving. Every transition names its curve, since Flutter's default is linear: `Settings.easeOut`, never an ease-in. A `switchOutCurve` or `reverseCurve` plays backwards, so it takes `Settings.easeOutReverse`. shadcn components get the same motion from `Animate.defaultDuration` and `defaultCurve`, set in `main`.
+- Spinners are `Spinner` (`lib/widgets/spinner.dart`), which turns faster than a bare `CircularProgressIndicator`.
+- Page transitions and replays animate the tactics themselves, not the interface, and keep their own timing: changing it changes every exported video.
 
 ## Window chrome
 

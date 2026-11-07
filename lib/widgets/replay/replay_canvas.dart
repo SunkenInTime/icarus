@@ -4,6 +4,7 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
@@ -146,9 +147,8 @@ Matrix4 replayCameraOn(Offset focus, double scale, Size viewport) =>
 Matrix4 replayCameraClamped(Matrix4 camera, Size world, Size viewport) {
   final scale = camera.getMaxScaleOnAxis();
   final at = camera.getTranslation();
-  double held(double from, double content, double room) => content <= room
-      ? (room - content) / 2
-      : from.clamp(room - content, 0.0);
+  double held(double from, double content, double room) =>
+      content <= room ? (room - content) / 2 : from.clamp(room - content, 0.0);
   final x = held(at.x, world.width * scale, viewport.width);
   final y = held(at.y, world.height * scale, viewport.height);
   if (x == at.x && y == at.y) return camera;
@@ -214,7 +214,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
     // would otherwise make it in dispose, after its ticker mode is gone.
     _approach = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration: Settings.revealDuration,
     )..addListener(_follow);
     widget.playback.addListener(_playbackChanged);
     widget.drawing.addListener(_drawingChanged);
@@ -290,7 +290,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
     var focus = at;
     var scale = _controller.value.getMaxScaleOnAxis();
     if (_approaching) {
-      final t = Curves.easeOutCubic.transform(_approach.value);
+      final t = Settings.easeOut.transform(_approach.value);
       focus = Offset.lerp(_approachFrom, at, t)!;
       scale = lerpDouble(_approachFromScale, _approachToScale, t)!;
       if (_approach.value == 1) _approaching = false;
@@ -460,7 +460,8 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                   final cuts = widget.playback.coneCuts;
                   final flights = frame.effects.whereType<ReplayFlight>();
                   final flashed = {
-                    for (final flash in frame.effects.whereType<ReplayFlashed>())
+                    for (final flash
+                        in frame.effects.whereType<ReplayFlashed>())
                       flash.agentId: flash,
                   };
                   // While one player is watched, everyone else steps back.
@@ -526,7 +527,8 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                             child: AssetSvg(
                               'assets/maps/${mapName}_map'
                               '${isAttack ? '' : '_defense'}.svg',
-                              colorMapper: MapSvgColorMapper.forPalette(palette),
+                              colorMapper:
+                                  MapSvgColorMapper.forPalette(palette),
                               fit: BoxFit.contain,
                             ),
                           ),
@@ -551,8 +553,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                                   isAttack: isAttack,
                                   apertureDegrees: cuts.apertureDegrees,
                                 ),
-                                floor: SvgHeightMapTransform.forMap(
-                                        widget.map)
+                                floor: SvgHeightMapTransform.forMap(widget.map)
                                     .floorOnScreen(
                                   isAttack
                                       ? cuts.attackModel
@@ -679,39 +680,39 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                           abilitySize: abilitySize,
                         ),
                       for (final placed in agents) ...[
-                          cuts == null
-                              ? ConeCoverageScope(
-                                  key: ValueKey(placed.id),
-                                  coverage: _cones,
-                                  child: _steppedBack(
-                                      view(placed), opacityOf(placed)),
-                                )
-                              : ViewConesDrawnElsewhere(
-                                  key: ValueKey(placed.id),
-                                  child: _steppedBack(
-                                      view(placed), opacityOf(placed)),
-                                ),
-                          // Washed with its agent, under any stacked above.
-                          if (flashed[placed.id] case final flash?)
-                            Positioned.fill(
-                              key: ValueKey('flash-${placed.id}'),
-                              child: IgnorePointer(
+                        cuts == null
+                            ? ConeCoverageScope(
+                                key: ValueKey(placed.id),
+                                coverage: _cones,
                                 child: _steppedBack(
-                                  CustomPaint(
-                                    painter: ReplayFlashPainter(
-                                      flash: flash,
-                                      isAttack: isAttack,
-                                      agentSize: agentSize,
-                                      neutralTeamColors: ref
-                                          .watch(strategySettingsProvider)
-                                          .useNeutralTeamColors,
-                                    ),
+                                    view(placed), opacityOf(placed)),
+                              )
+                            : ViewConesDrawnElsewhere(
+                                key: ValueKey(placed.id),
+                                child: _steppedBack(
+                                    view(placed), opacityOf(placed)),
+                              ),
+                        // Washed with its agent, under any stacked above.
+                        if (flashed[placed.id] case final flash?)
+                          Positioned.fill(
+                            key: ValueKey('flash-${placed.id}'),
+                            child: IgnorePointer(
+                              child: _steppedBack(
+                                CustomPaint(
+                                  painter: ReplayFlashPainter(
+                                    flash: flash,
+                                    isAttack: isAttack,
+                                    agentSize: agentSize,
+                                    neutralTeamColors: ref
+                                        .watch(strategySettingsProvider)
+                                        .useNeutralTeamColors,
                                   ),
-                                  opacityOf(placed),
                                 ),
+                                opacityOf(placed),
                               ),
                             ),
-                        ],
+                          ),
+                      ],
                       Positioned(
                         left: mapLeft,
                         top: 0,

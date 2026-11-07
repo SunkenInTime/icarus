@@ -55,7 +55,7 @@ class ReplayDock extends ConsumerStatefulWidget {
   static const peekLinger = Duration(milliseconds: 400);
 
   /// How long the story takes to grow open or fold shut.
-  static const storyDuration = Duration(milliseconds: 200);
+  static const storyDuration = Settings.revealDuration;
 
   /// How far below the dock its own margin from the window's edge is when
   /// the story is closed. The open story takes half of it, so the line it
@@ -89,8 +89,8 @@ class _ReplayDockState extends ConsumerState<ReplayDock>
   );
   late final _story = CurvedAnimation(
     parent: _storyController,
-    curve: Curves.easeOutCubic,
-    reverseCurve: Curves.easeOutCubic.flipped,
+    curve: Settings.easeOut,
+    reverseCurve: Settings.easeOutReverse,
   );
 
   bool get _penOut => widget.drawing?.active ?? false;
@@ -497,8 +497,8 @@ class _RoundStripState extends State<_RoundStrip> {
         ? _scroll.jumpTo(target)
         : _scroll.animateTo(
             target,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOutCubic,
+            duration: Settings.revealDuration,
+            curve: Settings.easeOut,
           );
   }
 
@@ -665,7 +665,8 @@ class _RoundSlot extends StatelessWidget {
         cursor: SystemMouseCursors.click,
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
+          duration: Settings.hoverDuration,
+          curve: Settings.easeOut,
           width: _RoundStrip._slot,
           height: _RoundStrip._slot,
           decoration: selected
@@ -1410,9 +1411,8 @@ List<double> replayStoryLane(
   if (ticks.isEmpty) return const [];
   final lo = size / 2;
   final hi = math.max(lo, width - size / 2);
-  final step = ticks.length < 2
-      ? gap
-      : math.min(gap, (hi - lo) / (ticks.length - 1));
+  final step =
+      ticks.length < 2 ? gap : math.min(gap, (hi - lo) / (ticks.length - 1));
   // Runs of portraits that touch, each centred on its ticks' average.
   final runs = <({int first, int count, double sum})>[];
   double left(({int first, int count, double sum}) run) {
@@ -1575,9 +1575,8 @@ class _StoryPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     const mid = _StoryMark.mid;
     final perspective = playback.perspective;
-    Color faint(Color color, int index) => index >= passed
-        ? color.withValues(alpha: _aheadOpacity)
-        : color;
+    Color faint(Color color, int index) =>
+        index >= passed ? color.withValues(alpha: _aheadOpacity) : color;
     for (final (i, mark) in marks.indexed) {
       if (mark.event.kind != ReplayEventKind.ability) continue;
       final team = playback.document.playerBySubject(mark.event.subject)?.team;

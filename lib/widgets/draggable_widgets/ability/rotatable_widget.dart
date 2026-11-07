@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
@@ -54,11 +55,15 @@ class _RotatableWidgetState extends ConsumerState<RotatableWidget>
   void initState() {
     super.initState();
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 150),
+      duration: Settings.hoverDuration,
       vsync: this,
     );
     _scaleAnimation = Tween<double>(begin: 1.0, end: 1.03).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Settings.easeOut,
+        reverseCurve: Settings.easeOutReverse,
+      ),
     );
   }
 

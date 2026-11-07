@@ -198,8 +198,8 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
           },
           child: AnimatedOpacity(
             key: ValueKey('agent-dim-opacity-${agent.type.name}'),
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
+            duration: Settings.stateDuration,
+            curve: Settings.easeOut,
             opacity: tileOpacity,
             child: Stack(
               clipBehavior: Clip.none,
@@ -231,8 +231,8 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
                   top: 2,
                   right: 2,
                   child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 130),
-                    curve: Curves.easeOutCubic,
+                    duration: Settings.hoverDuration,
+                    curve: Settings.easeOut,
                     opacity: showStar ? 1 : 0,
                     child: MouseRegion(
                       cursor: SystemMouseCursors.click,
@@ -261,9 +261,9 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
                             );
                           },
                           child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 120),
-                            switchInCurve: Curves.easeOut,
-                            switchOutCurve: Curves.easeIn,
+                            duration: Settings.hoverDuration,
+                            switchInCurve: Settings.easeOut,
+                            switchOutCurve: Settings.easeOutReverse,
                             transitionBuilder: (child, animation) =>
                                 FadeTransition(
                               opacity: animation,

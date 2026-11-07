@@ -4,6 +4,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class LineupMediaPage extends ConsumerStatefulWidget {
@@ -192,10 +193,8 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
     if (!widget.pasting) {
       return Icon(LucideIcons.clipboardPaste, color: color, size: size);
     }
-    return SizedBox.square(
-      dimension: size ?? IconTheme.of(context).size,
-      child: CircularProgressIndicator(strokeWidth: 2, color: color),
-    );
+    return Spinner(
+        size: size ?? IconTheme.of(context).size ?? 24, color: color);
   }
 
   Widget _buildPasteButton() {

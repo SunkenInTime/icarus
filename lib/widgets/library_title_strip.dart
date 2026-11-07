@@ -16,6 +16,7 @@ import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/replay/replay_library_content.dart';
+import 'package:icarus/widgets/spinner.dart';
 import 'package:icarus/widgets/strip_status_icons.dart';
 import 'package:icarus/widgets/web_beta_tag.dart';
 import 'package:icarus/widgets/window_chrome.dart';
@@ -640,11 +641,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         width: size,
         height: size,
         child: const Center(
-          child: SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          child: Spinner(size: 14),
         ),
       );
     }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/inactive_ability_trace.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
@@ -57,6 +58,7 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
             key: const ValueKey('image-ability-active-layer'),
             opacity: isActive ? rangeOpacity : 0,
             duration: abilityStateTransitionDuration,
+            curve: Settings.easeOut,
             child: Image.asset(imagePath),
           ),
           if (supportsInactiveState)
@@ -64,6 +66,7 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
               key: const ValueKey('image-ability-inactive-layer'),
               opacity: isActive ? 0 : rangeOpacity,
               duration: abilityStateTransitionDuration,
+              curve: Settings.easeOut,
               child: InactiveCircleAbilityTrace(
                 color: inactiveTraceColor!,
               ),
