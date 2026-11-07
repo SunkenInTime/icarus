@@ -572,6 +572,64 @@ void main() {
       expect(find.byType(AbilityWidget), findsOneWidget);
     });
 
+    testWidgets('a toggle item tells a screen reader whether it is on',
+        (tester) async {
+      final semantics = tester.ensureSemantics();
+      final turret = PlacedAbility(
+        id: 'turret-vision-semantics',
+        data: AgentData.agents[AgentType.killjoy]!.abilities[2],
+        position: const Offset(100, 120),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          actionProvider.overrideWith(_TestActionProvider.new),
+          mapProvider.overrideWith(_FixedMapProvider.new),
+        ],
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      });
+      container.read(abilityProvider.notifier).fromHive([turret]);
+
+      await tester.pumpWidget(
+        _buildHarness(
+          container: container,
+          child: Stack(
+            children: [
+              PlacedAbilityWidget(
+                ability: turret,
+                onDragEnd: (_, __) {},
+                id: turret.id,
+                data: turret,
+                rotation: turret.rotation,
+                length: turret.length,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The label, the state and the action on one node, so a screen reader
+      // says "Vision cone, checked" on the thing it can press.
+      Matcher item({required bool on}) => isSemantics(
+            label: 'Vision cone',
+            hasCheckedState: true,
+            isChecked: on,
+            hasTapAction: true,
+          );
+
+      await _openContextMenu(tester, find.byType(AbilityWidget));
+      expect(tester.getSemantics(find.text('Vision cone')), item(on: true));
+
+      await tester.tap(find.text('Vision cone'));
+      await tester.pumpAndSettle();
+      await _openContextMenu(tester, find.byType(AbilityWidget));
+      expect(tester.getSemantics(find.text('Vision cone')), item(on: false));
+      semantics.dispose();
+    });
+
     testWidgets('placed square ability shows Range', (tester) async {
       final squareAbility = PlacedAbility(
         id: 'square-menu',
