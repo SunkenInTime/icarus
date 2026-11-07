@@ -110,7 +110,7 @@ class NewerVersionImportException implements Exception {
   final int currentVersion;
 
   static const String userMessage =
-      'This strategy was created in a newer version of Icarus. '
+      'This file was created in a newer version of Icarus. '
       'Please update the app and try again.';
 
   @override
@@ -537,11 +537,17 @@ class StrategyImportExportService {
     return holdsArchiveFile ? _ImportFileKind.archive : null;
   }
 
-  /// The one thing [_importStrategyFile] can't do without is the map.
+  /// The one thing [_importStrategyFile] can't do without is the map. A
+  /// strategy from a newer Icarus may not hold one where this version looks,
+  /// so its version number says what it is, and the import asks for the
+  /// update.
   bool _isStrategyJson(List<int> bytes) {
     try {
       final json = jsonDecode(utf8.decode(bytes));
-      return json is Map<String, dynamic> && json.containsKey('mapData');
+      if (json is! Map<String, dynamic>) return false;
+      final version = int.tryParse('${json['versionNumber']}');
+      return json.containsKey('mapData') ||
+          (version != null && version > Settings.versionNumber);
     } on FormatException {
       return false;
     }
@@ -882,6 +888,8 @@ class StrategyImportExportService {
         if (manifestData != null) {
           _validateArchiveManifest(manifestData);
         }
+      } on NewerVersionImportException {
+        return _newerArchive(manifestFile.path);
       } catch (error, stackTrace) {
         _reportImportFailure(
           'Failed to import manifest archive from ${sourceDir.path}.',
@@ -973,6 +981,8 @@ class StrategyImportExportService {
       if (manifestData != null) {
         _validateArchiveManifestFromZip(manifestData);
       }
+    } on NewerVersionImportException {
+      return _newerArchive(zipFile.path);
     } catch (error, stackTrace) {
       _reportImportFailure(
         'Failed to import manifest zip ${zipFile.path}.',
@@ -1040,6 +1050,7 @@ class StrategyImportExportService {
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('Archive manifest must decode to an object');
     }
+    _throwIfArchiveIsTooNew(decoded);
 
     final rootPrefix = path.posix.dirname(manifestArchivePath);
     return _ZipManifestData(
@@ -1053,6 +1064,27 @@ class StrategyImportExportService {
   List<int> _archiveFileBytes(ArchiveFile entry) {
     return entry.content as List<int>;
   }
+
+  /// A newer Icarus may lay out its archives differently, so one of those is
+  /// never read as an old archive without a manifest.
+  static void _throwIfArchiveIsTooNew(Map<String, dynamic> manifest) {
+    // Read the way the manifest parser reads it, which takes "2" as 2.
+    final schemaVersion = int.tryParse('${manifest['schemaVersion']}');
+    if (schemaVersion != null && schemaVersion > archiveManifestSchemaVersion) {
+      throw NewerVersionImportException(
+        importedVersion: schemaVersion,
+        currentVersion: archiveManifestSchemaVersion,
+      );
+    }
+  }
+
+  ImportBatchResult _newerArchive(String archivePath) => ImportBatchResult(
+        strategiesImported: 0,
+        foldersCreated: 0,
+        issues: [
+          ImportIssue(path: archivePath, code: ImportIssueCode.newerVersion),
+        ],
+      );
 
   Future<File> _writeArchiveEntryToTempFile({
     required ArchiveFile archiveFile,
@@ -1578,6 +1610,7 @@ class StrategyImportExportService {
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('Archive metadata must decode to an object');
     }
+    _throwIfArchiveIsTooNew(decoded);
 
     return _ManifestImportData(
       rootDirectory: directory,

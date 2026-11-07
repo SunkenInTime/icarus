@@ -945,6 +945,62 @@ void main() {
       expectNothingCreated();
     });
 
+    // A newer Icarus can lay a strategy out in a way this one doesn't read.
+    test('a newer strategy without a map still asks for the update', () async {
+      final future = {
+        'versionNumber': '${Settings.versionNumber + 1}',
+        'board': <String, dynamic>{},
+      };
+      final bare = File(path.join(tempDir.path, 'future'));
+      await bare.writeAsString(jsonEncode(future));
+      final zipped = File(path.join(tempDir.path, 'future-zipped'));
+      await zipped.writeAsBytes(_zipOf({'future.json': jsonEncode(future)}));
+
+      for (final file in [bare, zipped]) {
+        final result = await drop(file);
+
+        expect(result.issues.single.code, ImportIssueCode.newerVersion);
+        expectNothingCreated();
+      }
+    });
+
+    group('a backup from a newer Icarus', () {
+      Future<Directory> newerBackup() async {
+        final backup = await _libraryBackup(container, tempDir);
+        final manifestFile =
+            File(path.join(backup.path, archiveMetadataFileName));
+        final manifest = jsonDecode(await manifestFile.readAsString())
+            as Map<String, dynamic>;
+        manifest['schemaVersion'] = archiveManifestSchemaVersion + 1;
+        await manifestFile.writeAsString(jsonEncode(manifest));
+        return backup;
+      }
+
+      test('asks for the update and imports nothing, picked', () async {
+        final zip = await _zipDirectory(
+          sourceDirectory: await newerBackup(),
+          zipPath: path.join(tempDir.path, 'newer-backup.zip'),
+        );
+        FilePicker.platform = _PickedFile(zip.path);
+
+        final result =
+            await StrategyImportExportService(container).importFromFilePicker();
+
+        expect(result.hasImports, isFalse);
+        expect(result.issues.single.code, ImportIssueCode.newerVersion);
+        expectNothingCreated();
+      });
+
+      test('asks for the update and imports nothing, dropped as a folder',
+          () async {
+        final result = await drop(File((await newerBackup()).path));
+
+        expect(result.hasImports, isFalse);
+        expect(result.issues.single.code, ImportIssueCode.newerVersion);
+        expectNothingCreated();
+      });
+    });
+
     test('a dot in the name is not taken for an extension', () async {
       final file = File(path.join(tempDir.path, 'Bind v1.2'));
       await _writeStrategyFile(file);
