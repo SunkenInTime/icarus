@@ -323,6 +323,10 @@ class StrategyImportExportService {
 
   final dynamic ref;
 
+  /// The folders and strategies an import saved at the local top level, in
+  /// the order they were saved.
+  final _savedAtTopLevel = <({String id, bool isFolder})>[];
+
   void _reportImportFailure(
     String message, {
     Object? error,
@@ -547,35 +551,30 @@ class StrategyImportExportService {
   /// a file that is neither a strategy nor an archive creates nothing and
   /// comes back as an issue.
   ///
-  /// A strategy goes on from the local library to [cloudFolderId] the way a
-  /// drag onto that folder moves it. When it can't, it stays in the local
-  /// library and the move says so.
+  /// With a [cloudFolderId], what the import saves at the local top level
+  /// goes on to that cloud folder the way a drag onto the folder moves it.
+  /// What can't move stays in the local library, and the move says so.
   Future<ImportBatchResult> _importFile({
     required XFile file,
     required String? targetFolderId,
     String? cloudFolderId,
   }) async {
     final localFile = File(file.path);
+    _savedAtTopLevel.clear();
+    final ImportBatchResult result;
     switch (await _importFileKind(localFile)) {
       case _ImportFileKind.strategy:
-        final strategyId = await _importStrategyFile(
+        await _importStrategyFile(
           file: file,
           targetFolderId: targetFolderId,
         );
-        if (cloudFolderId != null) {
-          await ref.read(moveToCloudProvider.notifier).moveStrategy(
-                strategyId,
-                cloudFolderId: cloudFolderId,
-                importing: true,
-              );
-        }
-        return const ImportBatchResult(
+        result = const ImportBatchResult(
           strategiesImported: 1,
           foldersCreated: 0,
           issues: [],
         );
       case _ImportFileKind.archive:
-        return _importZipArchive(
+        result = await _importZipArchive(
           zipFile: localFile,
           parentFolderId: targetFolderId,
         );
@@ -591,6 +590,23 @@ class StrategyImportExportService {
           ],
         );
     }
+    if (cloudFolderId != null) {
+      final mover = ref.read(moveToCloudProvider.notifier);
+      for (final saved in [..._savedAtTopLevel]) {
+        await (saved.isFolder
+            ? mover.moveFolder(
+                saved.id,
+                cloudParentId: cloudFolderId,
+                importing: true,
+              )
+            : mover.moveStrategy(
+                saved.id,
+                cloudFolderId: cloudFolderId,
+                importing: true,
+              ));
+      }
+    }
+    return result;
   }
 
   /// The name a file gives what's imported from it. Only an extension Icarus
@@ -707,6 +723,9 @@ class StrategyImportExportService {
       color: color,
     );
     await Hive.box<Folder>(HiveBoxNames.foldersBox).put(folder.id, folder);
+    if (parentFolderId == null) {
+      _savedAtTopLevel.add((id: folder.id, isFolder: true));
+    }
     return folder;
   }
 
@@ -2002,8 +2021,8 @@ class StrategyImportExportService {
     );
   }
 
-  /// Saves [file] to the local library and returns the new strategy's id.
-  Future<String> _importStrategyFile({
+  /// Saves [file] to the local library.
+  Future<void> _importStrategyFile({
     required XFile file,
     required String? targetFolderId,
     String? displayNameOverride,
@@ -2186,6 +2205,9 @@ class StrategyImportExportService {
       await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
           .put(newStrategy.id, newStrategy);
       saved = true;
+      if (targetFolderId == null) {
+        _savedAtTopLevel.add((id: newStrategy.id, isFolder: false));
+      }
     } finally {
       if (isZip) {
         try {
@@ -2201,7 +2223,6 @@ class StrategyImportExportService {
         }
       }
     }
-    return newID;
   }
 
   static bool isNewerVersionImportError(Object error) {

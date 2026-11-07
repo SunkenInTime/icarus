@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive_io.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,6 +36,7 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:path/path.dart' as p;
@@ -183,24 +186,48 @@ void main() {
     await imageFile(id, '$id-image').writeAsBytes([1, 2, 3]);
   }
 
-  group('Import .ica inside a cloud folder', () {
-    final fixture = File('test/fixtures/strategy_integrity/base-test.ica');
+  group('Import inside a cloud folder', () {
+    final ica = File('test/fixtures/strategy_integrity/base-test.ica')
+        .readAsBytesSync();
 
-    setUp(() => FilePicker.platform = _PickedFile(fixture.absolute.path));
-
-    Future<void> importInto(String cloudFolderId) async {
+    Future<void> importInto(String cloudFolderId, File file) async {
       await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
+      await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
       cloud.folders[cloudFolderId] =
           _CloudFolder(cloudFolderId, 'Plays', null, null);
       open();
       container
           .read(folderProvider.notifier)
           .openFolder(folderId: cloudFolderId, store: LibraryWorkspace.cloud);
+      FilePicker.platform = _PickedFile(file.path);
       await StrategyImportExportService(container).importFromFilePicker();
     }
 
-    test('lands in that folder and leaves nothing on this device', () async {
-      await importInto('plays');
+    File zipOf(String name, Map<String, List<int>> entries) {
+      final archive = Archive();
+      for (final MapEntry(:key, :value) in entries.entries) {
+        archive.addFile(ArchiveFile(key, value.length, value));
+      }
+      return File(p.join(dir.path, name))
+        ..writeAsBytesSync(ZipEncoder().encode(archive));
+    }
+
+    File folderArchive() => zipOf('Team Strats.zip', {
+          'Team Strats/default.ica': ica,
+          'Team Strats/Retakes/a-site.ica': ica,
+        });
+
+    _CloudFolder cloudFolder(String name) =>
+        cloud.folders.values.singleWhere((folder) => folder.name == name);
+    _CloudStrategy cloudStrategy(String name) =>
+        cloud.strategies.values.singleWhere((s) => s.name == name);
+
+    test('an .ica lands in that folder and leaves nothing on this device',
+        () async {
+      await importInto(
+        'plays',
+        File('test/fixtures/strategy_integrity/base-test.ica'),
+      );
 
       final created = cloud.strategies.values.single;
       expect(created.name, 'base-test');
@@ -214,16 +241,97 @@ void main() {
       );
     });
 
-    test('stays on this device when it cannot reach the folder', () async {
+    test('an .ica stays on this device when it cannot reach the folder',
+        () async {
       cloud.refuseBatchesOf = {'base-test'};
 
-      await importInto('plays');
+      await importInto(
+        'plays',
+        File('test/fixtures/strategy_integrity/base-test.ica'),
+      );
 
       expect(cloud.strategies, isEmpty);
       expect(strategies().values.single.name, 'base-test');
       expect(strategies().values.single.folderID, isNull,
           reason: 'never a cloud id in the local library');
       expect(messages.last.$2, isTrue, reason: 'the user is told');
+    });
+
+    test('a folder archive lands in that folder whole', () async {
+      await importInto('plays', folderArchive());
+
+      final root = cloudFolder('Team Strats');
+      expect(root.parentId, 'plays');
+      expect(cloudFolder('Retakes').parentId, root.id);
+      expect(cloudStrategy('default').folderId, root.id);
+      expect(cloudStrategy('a-site').folderId, cloudFolder('Retakes').id);
+      expect(strategies().values, isEmpty);
+      expect(folders().values, isEmpty);
+      expect(
+        messages,
+        [('Importing "Team Strats" to the cloud…', false)],
+        reason: 'the import itself says it worked',
+      );
+    });
+
+    test('a folder archive that cannot move stays on this device', () async {
+      cloud.refuseBatchesOf = {'a-site'};
+
+      await importInto('plays', folderArchive());
+
+      expect(cloudStrategy('default').folderId, cloudFolder('Team Strats').id);
+      Folder local(String name) =>
+          folders().values.singleWhere((folder) => folder.name == name);
+      expect(local('Team Strats').parentID, isNull,
+          reason: 'never a cloud id in the local library');
+      expect(local('Retakes').parentID, local('Team Strats').id);
+      expect(strategies().values.single.folderID, local('Retakes').id);
+      expect(messages.last.$2, isTrue, reason: 'the user is told');
+    });
+
+    test('a library backup puts its top level in that folder', () async {
+      final manifest = {
+        'schemaVersion': archiveManifestSchemaVersion,
+        'archiveType': ArchiveType.libraryBackup.jsonValue,
+        'exportedAt': '2026-01-01T00:00:00.000Z',
+        'appVersionNumber': Settings.versionNumber,
+        'folders': [
+          {
+            'manifestId': 'f1',
+            'name': 'Defaults',
+            'parentManifestId': null,
+            'archivePath': 'folders/Defaults',
+            'color': 'generic',
+          },
+        ],
+        'strategies': [
+          {
+            'name': 'Loose',
+            'archivePath': 'root_strategies/Loose.ica',
+            'folderManifestId': null,
+          },
+          {
+            'name': 'Filed',
+            'archivePath': 'folders/Defaults/Filed.ica',
+            'folderManifestId': 'f1',
+          },
+        ],
+        'globals': {'themeProfiles': [], 'favoriteAgents': []},
+      };
+      final backup = zipOf('backup.zip', {
+        archiveMetadataFileName: utf8.encode(jsonEncode(manifest)),
+        'root_strategies/Loose.ica': ica,
+        'folders/Defaults/Filed.ica': ica,
+      });
+
+      await importInto('plays', backup);
+
+      expect(cloudFolder('Defaults').parentId, 'plays');
+      expect(cloudStrategy('Filed').folderId, cloudFolder('Defaults').id);
+      expect(cloudStrategy('Loose').folderId, 'plays');
+      expect(strategies().values, isEmpty);
+      expect(folders().values, isEmpty);
+      expect(messages.where((m) => m.$2), isEmpty);
     });
   });
 

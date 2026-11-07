@@ -226,8 +226,12 @@ class MoveToCloudNotifier extends Notifier<void> {
   /// Moves the local folder [localFolderId], with every folder and strategy
   /// in it, into the cloud folder [cloudParentId] (the top level when null).
   /// A strategy that cannot move stays on this device in its folder, and so
-  /// do the folders holding it.
-  Future<void> moveFolder(String localFolderId, {String? cloudParentId}) {
+  /// do the folders holding it. [importing] as for [moveStrategy].
+  Future<void> moveFolder(
+    String localFolderId, {
+    String? cloudParentId,
+    bool importing = false,
+  }) {
     final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
     final root = folders.get(localFolderId);
     final accountId = ref.read(cloudMediaAccountIdProvider);
@@ -253,6 +257,7 @@ class MoveToCloudNotifier extends Notifier<void> {
     return _enqueue(() async {
       try {
         if (!_canMoveFor(accountId, root.name)) return;
+        if (importing) _showMessage('Importing "${root.name}" to the cloud…');
         final cloudFolderIds = await _createCloudFolders(
           tree,
           rootParentId: cloudParentId,
@@ -299,7 +304,7 @@ class MoveToCloudNotifier extends Notifier<void> {
         );
 
         if (failed == 0 && foldersWent) {
-          _showMessage('Moved "${root.name}" to the cloud.');
+          if (!importing) _showMessage('Moved "${root.name}" to the cloud.');
         } else if (failed == 0) {
           _showFailure(
             'Moved the strategies in "${root.name}" to the cloud, but some '
