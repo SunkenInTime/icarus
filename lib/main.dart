@@ -163,6 +163,11 @@ Future<void> main(List<String> args) async {
   await runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      // Shad's dialogs, menus, popovers and tooltips animate through
+      // flutter_animate, whose default is 300ms linear. Give them the app's
+      // curve at 200ms (DESIGN.md).
+      Animate.defaultCurve = Settings.easeOut;
+      Animate.defaultDuration = const Duration(milliseconds: 200);
 
       appProviderContainer = ProviderContainer(overrides: [
         guardedSignOutRequestProvider.overrideWith(
@@ -775,7 +780,7 @@ class _MyAppState extends ConsumerState<MyApp> {
       config: const ToastificationConfig(
         alignment: Alignment.bottomCenter,
         // itemWidth: 440,
-        animationDuration: Duration(milliseconds: 500),
+        animationDuration: Duration(milliseconds: 300),
         blockBackgroundInteraction: false,
       ),
       child: ShadApp(
@@ -786,6 +791,10 @@ class _MyAppState extends ConsumerState<MyApp> {
           brightness: Brightness.dark,
           colorScheme: Settings.tacticalVioletTheme,
           breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
+          // Popovers and context menus close by running their opening
+          // effects backward, so any ease-out would hang before it leaves.
+          // They close at once instead, like Shad's tooltips and selects.
+          popoverTheme: const ShadPopoverTheme(reverseDuration: Duration.zero),
           // Dialogs are panels: one surface step above the canvas, so they
           // read as a sheet rather than a black box on a black screen.
           // Fields keep the panel's surface and take the lighter input

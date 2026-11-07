@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/const/settings.dart';
 
 Future<LineUpAbilityStackCandidate?> showLineUpAbilityStackSelector({
   required BuildContext context,
@@ -230,7 +231,7 @@ class _LineUpStackSelectorOptionState
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOut,
+          curve: Settings.easeOut,
           padding: widget.contentPadding,
           decoration: BoxDecoration(
             color: Colors.transparent,

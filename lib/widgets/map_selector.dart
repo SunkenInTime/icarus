@@ -38,6 +38,8 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
   double _containerHeight = 0;
   bool _isOpen = false;
 
+  static const Duration _resizeDuration = Duration(milliseconds: 200);
+
   void _closePortal() {
     // For closing, animate to zero first
     setState(() {
@@ -45,17 +47,20 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
       _isOpen = false;
     });
 
-    // Then hide the overlay after animation completes
-    Future.delayed(const Duration(milliseconds: 200), () {
-      _controller.hide();
+    // Then hide the overlay after animation completes, unless it was
+    // opened again meanwhile.
+    Future.delayed(_resizeDuration, () {
+      if (mounted && !_isOpen) _controller.hide();
     });
   }
 
   void _openPortal() {
-    // First show the overlay with zero size
+    // Show the overlay at zero height, then grow it from the next frame on,
+    // so the list starts opening at once.
     _controller.show();
 
-    Future.delayed(const Duration(milliseconds: 100), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       setState(() {
         _containerHeight = 500;
         _isOpen = true;
@@ -109,7 +114,8 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                       child: Padding(
                         padding: const EdgeInsets.only(top: 6),
                         child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
+                          duration: _resizeDuration,
+                          curve: Settings.easeOut,
                           height: _containerHeight,
                           width: 260,
                           decoration: BoxDecoration(

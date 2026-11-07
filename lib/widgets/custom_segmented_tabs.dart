@@ -28,7 +28,7 @@ class CustomSegmentedTabs<T> extends StatefulWidget {
     this.maxWidth,
     this.padding,
     this.animationDuration = const Duration(milliseconds: 240),
-    this.animationCurve = Curves.easeInOutCubic,
+    this.animationCurve = Settings.easeOut,
     this.indicatorBehavior = SegmentedIndicatorBehavior.slidingPill,
     super.key,
   });

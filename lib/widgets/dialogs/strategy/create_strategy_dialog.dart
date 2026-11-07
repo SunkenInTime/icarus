@@ -80,6 +80,7 @@ class _CreateStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
                 ),
                 trailing: AnimatedRotation(
                   duration: const Duration(milliseconds: 120),
+                  curve: Settings.easeOut,
                   turns: _showOutOfRotation ? 0.5 : 0,
                   child: const Icon(LucideIcons.chevronDown, size: 14),
                 ),
@@ -91,7 +92,7 @@ class _CreateStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
               ),
               AnimatedSize(
                 duration: const Duration(milliseconds: 120),
-                curve: Curves.easeOutCubic,
+                curve: Settings.easeOut,
                 alignment: Alignment.topCenter,
                 child: _showOutOfRotation
                     ? Padding(
@@ -148,7 +149,7 @@ class _MapCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
                 child: TweenAnimationBuilder<double>(
                   duration: _duration,
-                  curve: Curves.easeOut,
+                  curve: Settings.easeOut,
                   tween: Tween(end: target),
                   builder: (context, t, child) {
                     final lift = (t - 1).clamp(0.0, 1.0);
@@ -173,6 +174,7 @@ class _MapCard extends StatelessWidget {
               ),
               AnimatedOpacity(
                 duration: _duration,
+                curve: Settings.easeOut,
                 opacity: quiet ? .5 : 1,
                 child: Center(
                   child: Text(
@@ -194,6 +196,7 @@ class _MapCard extends StatelessWidget {
               ),
               AnimatedContainer(
                 duration: _duration,
+                curve: Settings.easeOut,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(

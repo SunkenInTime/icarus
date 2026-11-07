@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 
 class ColorPickerButton extends ConsumerStatefulWidget {
   const ColorPickerButton({
@@ -26,6 +27,7 @@ class _ColorButtonsState extends ConsumerState<ColorPickerButton> {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
+      curve: Settings.easeOut,
       decoration: BoxDecoration(
         borderRadius: const BorderRadius.all(Radius.circular(4)),
         border: Border.all(

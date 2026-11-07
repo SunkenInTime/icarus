@@ -28,6 +28,7 @@ import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
 
 const double folderCardHeight = 124;
 
@@ -198,8 +199,8 @@ class _FolderCardState extends ConsumerState<FolderCard>
     );
     _open = CurvedAnimation(
       parent: _openController,
-      curve: Curves.easeOutQuart,
-      reverseCurve: Curves.easeOutCubic,
+      curve: Settings.easeOut,
+      reverseCurve: Settings.easeOut.flipped,
     );
   }
 
@@ -374,6 +375,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
 
       return AnimatedOpacity(
         duration: const Duration(milliseconds: 200),
+        curve: Settings.easeOut,
         opacity: _isMovingToCloud ? movingToCloudOpacity : 1,
         child: Padding(
           padding:
@@ -656,7 +658,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
         children: [
           SizedBox.square(
             dimension: 10,
-            child: CircularProgressIndicator(
+            child: LoadingSpinner(
               strokeWidth: 1.5,
               color: Colors.white.withValues(alpha: 0.7),
             ),
@@ -721,7 +723,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
         onExit: (_) => setState(() => _isMenuButtonHovered = false),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          curve: Curves.easeOutCubic,
+          curve: Settings.easeOut,
           width: 26,
           height: 26,
           decoration: BoxDecoration(

@@ -32,6 +32,7 @@ import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/replay/replay_library_content.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
 
 @visibleForTesting
 bool strategyBelongsToVisibleFolder({
@@ -168,8 +169,8 @@ class FolderContent extends ConsumerWidget {
   Widget _crossFade(Widget child) {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 200),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeOutCubic,
+      switchInCurve: Settings.easeOut,
+      switchOutCurve: Settings.easeOut.flipped,
       child: child,
     );
   }
@@ -735,8 +736,8 @@ class FolderContent extends ConsumerWidget {
               Expanded(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeOutCubic,
+                  switchInCurve: Settings.easeOut,
+                  switchOutCurve: Settings.easeOut.flipped,
                   child: (folders.isEmpty && !hasStrategies)
                       ? KeyedSubtree(
                           key: const ValueKey('library-empty'),
@@ -958,7 +959,7 @@ class _CloudLoadingBanner extends StatelessWidget {
       key: const ValueKey('cloud-loading-banner'),
       leading: Padding(
         padding: const EdgeInsets.all(1.5),
-        child: CircularProgressIndicator(
+        child: LoadingSpinner(
           strokeWidth: 1.8,
           color: Settings.tacticalVioletTheme.mutedForeground,
         ),
@@ -1208,7 +1209,7 @@ class _LibraryLoadingSkeletonState extends State<_LibraryLoadingSkeleton>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: const Duration(milliseconds: 800),
     );
   }
 

@@ -89,8 +89,8 @@ class _ReplayDockState extends ConsumerState<ReplayDock>
   );
   late final _story = CurvedAnimation(
     parent: _storyController,
-    curve: Curves.easeOutCubic,
-    reverseCurve: Curves.easeOutCubic.flipped,
+    curve: Settings.easeOut,
+    reverseCurve: Settings.easeOut.flipped,
   );
 
   bool get _penOut => widget.drawing?.active ?? false;
@@ -498,7 +498,7 @@ class _RoundStripState extends State<_RoundStrip> {
         : _scroll.animateTo(
             target,
             duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOutCubic,
+            curve: Settings.easeOut,
           );
   }
 
@@ -666,6 +666,7 @@ class _RoundSlot extends StatelessWidget {
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
+          curve: Settings.easeOut,
           width: _RoundStrip._slot,
           height: _RoundStrip._slot,
           decoration: selected

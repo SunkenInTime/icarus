@@ -12,6 +12,8 @@ The palette, theme, and sizing constants live in `lib/const/settings.dart`, with
 - Spacing steps are 8/10/12/16/24px. Radii: 8px controls, 12px panels, 16px cards, 22px dialogs.
 - Type roles, all in the system sans stack: headline 20px/500, title 16px/600, body 14px/400, label 12px/600, micro 10px/600. Hierarchy comes from these five roles, not from display fonts or hero-scale type.
 - Transitions run 150-250ms and must communicate a state change (hover, selection, reveal, loading). No motion for its own sake.
+- Motion answers on the first frame. Everything eases with `Settings.easeOut`, entering and leaving alike; a reverse curve (`switchOutCurve`, `reverseCurve`) takes `Settings.easeOut.flipped`, because Flutter runs it on a falling value and the plain curve would start the exit slow. Never ease-in or linear on UI: linear is only for motion that tracks a stream (a remote cursor between updates), and nothing waits a fixed delay before it starts to answer. Only the page transition runs longer (420ms): the play moving between pages is content the viewer follows, and video export samples the same curve.
+- Loaders spin quick: `LoadingSpinner`, never a bare `CircularProgressIndicator`, which turns at Material's slower pace.
 
 ## Window chrome
 

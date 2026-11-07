@@ -11,6 +11,7 @@ import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
+import 'package:icarus/const/settings.dart';
 
 /// How far from a bar the pointer counts as on it, in pixels on the screen
 /// whatever the zoom.
@@ -313,7 +314,7 @@ class _MapDoorBarState extends ConsumerState<_MapDoorBar> {
           child: TweenAnimationBuilder<double>(
             tween: Tween(end: amount ?? (widget.changed ? 1 : 0)),
             duration: amount == null ? _turnDuration : Duration.zero,
-            curve: Curves.easeOut,
+            curve: Settings.easeOut,
             builder: (context, value, _) {
               final line = _lineOnCanvas(
                 door,

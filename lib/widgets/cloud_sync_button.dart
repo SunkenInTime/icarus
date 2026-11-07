@@ -26,6 +26,7 @@ import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
 import 'package:icarus/services/product_metrics.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
 
 const _glyphSwitchDuration = Duration(milliseconds: 150);
 const _conflictToastGap = Duration(seconds: 5);
@@ -392,8 +393,8 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         onPressed: () => _handlePressed(status),
         icon: AnimatedSwitcher(
           duration: _glyphSwitchDuration,
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeOutCubic,
+          switchInCurve: Settings.easeOut,
+          switchOutCurve: Settings.easeOut.flipped,
           child: _glyph(status, foreground),
         ),
       ),
@@ -424,11 +425,9 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
           key: const ValueKey('syncing'),
           width: size - 4,
           height: size - 4,
-          child: CircularProgressIndicator(
+          child: LoadingSpinner(
             strokeWidth: 1.8,
-            valueColor: AlwaysStoppedAnimation<Color>(
-              color ?? Settings.tacticalVioletTheme.mutedForeground,
-            ),
+            color: color ?? Settings.tacticalVioletTheme.mutedForeground,
           ),
         );
       case _SyncStatus.offline:

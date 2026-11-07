@@ -16,6 +16,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
 
 const saveFailedMessage = "Couldn't save this strategy. Try again.";
 
@@ -199,11 +200,9 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton> {
           key: const ValueKey('loading'),
           width: size - 2,
           height: size - 2,
-          child: CircularProgressIndicator(
+          child: LoadingSpinner(
             strokeWidth: 1.8,
-            valueColor: AlwaysStoppedAnimation<Color>(
-              Settings.tacticalVioletTheme.mutedForeground,
-            ),
+            color: Settings.tacticalVioletTheme.mutedForeground,
           ),
         ),
       // An edit made while the spinner ran has not been saved.
@@ -223,8 +222,8 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton> {
       onPressed: () => saveStrategyNow(context, ref),
       icon: AnimatedSwitcher(
         duration: const Duration(milliseconds: 150),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeOutCubic,
+        switchInCurve: Settings.easeOut,
+        switchOutCurve: Settings.easeOut.flipped,
         child: icon,
       ),
     );

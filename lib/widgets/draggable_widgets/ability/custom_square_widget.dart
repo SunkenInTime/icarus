@@ -8,6 +8,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/inactive_ability_trace.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/const/settings.dart';
 
 class CustomSquareWidget extends ConsumerWidget {
   const CustomSquareWidget({
@@ -127,6 +128,7 @@ class CustomSquareWidget extends ConsumerWidget {
                       key: const ValueKey('square-range-body-transition'),
                       opacity: showRangeFill ? rangeOpacity : 0,
                       duration: abilityStateTransitionDuration,
+                      curve: Settings.easeOut,
                       child: wallBody,
                     )
                   : Opacity(
@@ -143,6 +145,7 @@ class CustomSquareWidget extends ConsumerWidget {
                 key: const ValueKey('inactive-wall-trace-transition'),
                 opacity: showRangeFill ? 0 : rangeOpacity,
                 duration: abilityStateTransitionDuration,
+                curve: Settings.easeOut,
                 child: IgnorePointer(
                   child: SizedBox(
                     width: inactiveTraceWidth,

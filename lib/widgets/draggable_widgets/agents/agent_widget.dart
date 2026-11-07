@@ -659,7 +659,7 @@ class _AgentAbilityContextMenuButtonState
           onTapUp: (_) => setState(() => _isPressed = false),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
-            curve: Curves.easeOutCubic,
+            curve: Settings.easeOut,
             width: _agentQuickActionSize,
             height: _agentQuickActionSize,
             padding: const EdgeInsets.all(5),

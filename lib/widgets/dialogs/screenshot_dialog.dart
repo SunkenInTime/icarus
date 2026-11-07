@@ -22,6 +22,7 @@ import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:path/path.dart' as p;
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
 
 /// Draws the thumbnails the screenshot dialog shows (see
 /// [renderPageThumbnails]). Tests replace it: the real one renders offscreen
@@ -634,9 +635,9 @@ class _PageTileState extends State<_PageTile> {
           Center(
             child: SizedBox.square(
               dimension: 16,
-              child: CircularProgressIndicator(
+              child: LoadingSpinner(
                 strokeWidth: 1.8,
-                valueColor: AlwaysStoppedAnimation(colors.mutedForeground),
+                color: colors.mutedForeground,
               ),
             ),
           ),
@@ -651,6 +652,7 @@ class _PageTileState extends State<_PageTile> {
           aspectRatio: 16 / 9,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
+            curve: Settings.easeOut,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: borderColor),
@@ -663,6 +665,7 @@ class _PageTileState extends State<_PageTile> {
                   // A page left out sits back.
                   AnimatedOpacity(
                     duration: const Duration(milliseconds: 150),
+                    curve: Settings.easeOut,
                     opacity: widget.selected ? 1 : 0.55,
                     child: picture,
                   ),
@@ -765,9 +768,9 @@ class _StatusChip extends StatelessWidget {
           else
             SizedBox.square(
               dimension: 10,
-              child: CircularProgressIndicator(
+              child: LoadingSpinner(
                 strokeWidth: 1.5,
-                valueColor: AlwaysStoppedAnimation(ink),
+                color: ink,
               ),
             ),
           const SizedBox(width: 6),

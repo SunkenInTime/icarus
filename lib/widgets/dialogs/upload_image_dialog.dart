@@ -12,6 +12,7 @@ import 'package:icarus/services/halved_image.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_library.dart';
 
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
 
 class UploadImageResult {
   const UploadImageResult({
@@ -223,7 +224,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
           leading: _usingImage
               ? SizedBox.square(
                   dimension: 16,
-                  child: CircularProgressIndicator(
+                  child: LoadingSpinner(
                     strokeWidth: 2,
                     color: Settings.tacticalVioletTheme.primaryForeground,
                   ),
@@ -410,7 +411,7 @@ class _EmptyState extends StatelessWidget {
               SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(
+                child: LoadingSpinner(
                   strokeWidth: 2,
                   color: cs.primary,
                 ),

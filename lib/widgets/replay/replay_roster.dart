@@ -213,6 +213,7 @@ class _PlayerRowState extends State<_PlayerRow> {
         onTap: widget.onWatch,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
+          curve: Settings.easeOut,
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: 6),
           decoration: widget.watched
