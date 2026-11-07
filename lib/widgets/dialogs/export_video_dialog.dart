@@ -16,6 +16,7 @@ import 'package:icarus/screenshot/caption_export_layout.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/export_save_path.dart';
 import 'package:icarus/screenshot/capture_images.dart';
+import 'package:icarus/screenshot/refused_captions_watch.dart';
 import 'package:icarus/services/video_export/browser_video_sink.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_sink.dart';
@@ -65,6 +66,10 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   int _captionRun = 0;
   Future<void> _captionCheck = Future.value();
 
+  /// Checks a refused page again once it changes.
+  late final _refusedWatch =
+      RefusedCaptionsWatch(ref, onChange: _measureCaptions);
+
   /// Saving, syncing, and loading images, before any frame renders.
   bool _preparing = false;
   bool _cancelRequested = false;
@@ -79,6 +84,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     // Closing the dialog mid-export must not leave frames rendering and
     // the encoder running in the background.
     _cancel();
+    _refusedWatch.dispose();
     super.dispose();
   }
 
@@ -102,10 +108,10 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   }
 
   /// Works out every page's captions, once any older check has stopped:
-  /// captures run one at a time.
+  /// captures run one at a time. What an earlier check found stands until
+  /// this one replaces it.
   void _measureCaptions() {
     final run = ++_captionRun;
-    _captions.clear();
     if (!_includeCaptions) return;
     bool stale() => !mounted || run != _captionRun;
     bool cancelled() => stale() || _isExporting;
@@ -119,7 +125,12 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         onThumbnail: (_, image) => image.dispose(),
         onUnavailable: (_, __) {},
         onCaptions: (pageId, layout) {
-          if (!stale()) setState(() => _captions[pageId] = layout);
+          if (stale()) return;
+          setState(() => _captions[pageId] = layout);
+          _refusedWatch.watch({
+            for (final MapEntry(:key, :value) in _captions.entries)
+              if (!value.fits) key,
+          });
         },
         isCancelled: cancelled,
       );
@@ -130,8 +141,10 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   void _setIncludeCaptions(bool value) {
     setState(() {
       _includeCaptions = value;
+      _captions.clear();
       _measureCaptions();
     });
+    _refusedWatch.watch(const {});
     unawaited(
       ref.read(appPreferencesProvider.notifier).setIncludeVideoCaptions(value),
     );

@@ -24,9 +24,11 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/screenshot/caption_export_layout.dart';
 import 'package:icarus/screenshot/page_screenshot.dart';
+import 'package:icarus/screenshot/refused_captions_watch.dart';
 import 'package:icarus/screenshot/save_screenshots.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -855,6 +857,99 @@ void main() {
           ))
           .enabled,
       isFalse,
+    );
+  });
+
+  testWidgets('a refusal clears once the open page changes so its notes fit',
+      (tester) async {
+    await tester.runAsync(
+      () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+        _strategyId,
+        StrategyData(
+          id: _strategyId,
+          name: 'Retakes',
+          mapData: MapValue.ascent,
+          versionNumber: 1,
+          lastEdited: DateTime(2026),
+          folderID: null,
+          pages: [_page('a', 'Default', 0)],
+        ),
+      ),
+    );
+    // Stands in for the real check: what the open page's notes work out to
+    // is whatever the test says, as of each check.
+    var fits = false;
+    var checks = 0;
+    Future<void> thumbnailer(
+      WidgetRef ref, {
+      required Set<String> pageIds,
+      required void Function(String pageId, ui.Image image) onThumbnail,
+      required void Function(Set<String> pageIds, Object error) onUnavailable,
+      required bool Function() isCancelled,
+      bool includeCaptions = false,
+      void Function(String pageId, CaptionExportLayout layout)? onCaptions,
+    }) async {
+      if (!includeCaptions) return;
+      checks++;
+      onCaptions?.call('a', CaptionExportLayout(entries: const [], fits: fits));
+    }
+
+    final container = ProviderContainer(overrides: [
+      strategyProvider.overrideWith(_OpenLocalStrategy.new),
+      pageThumbnailerProvider.overrideWithValue(thumbnailer),
+    ]);
+    addTearDown(container.dispose);
+    container.read(strategyPageSessionProvider.notifier).setStateForTest(
+          container
+              .read(strategyPageSessionProvider)
+              .copyWith(activePageId: 'a'),
+        );
+    await tester.runAsync(
+      () => container
+          .read(appPreferencesProvider.notifier)
+          .setIncludeScreenshotCaptions(true),
+    );
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const ShadApp(home: Scaffold(body: EditorToolbar())),
+    ));
+    await tester.tap(find.byIcon(LucideIcons.camera200));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    ignoreTestFontOverflow(tester);
+
+    final refusal = captionsDontFitMessage(null);
+    bool saveEnabled() => tester
+        .widget<ShadButton>(find.ancestor(
+          of: find.text('Save screenshot').last,
+          matching: find.byType(ShadButton),
+        ))
+        .enabled;
+    expect(find.text(refusal), findsOneWidget);
+    expect(saveEnabled(), isFalse);
+    final checksWhileRefused = checks;
+
+    // A teammate's shorter note arrives on the open page.
+    fits = true;
+    container.read(textProvider.notifier).fromHive([]);
+    await tester.pump(RefusedCaptionsWatch.settle);
+    await tester.pump();
+    ignoreTestFontOverflow(tester);
+
+    expect(checks, checksWhileRefused + 1);
+    expect(find.text(refusal), findsNothing);
+    expect(saveEnabled(), isTrue);
+
+    // With nothing refused, edits on the page don't check again.
+    container.read(textProvider.notifier).fromHive([]);
+    await tester.pump(RefusedCaptionsWatch.settle);
+    await tester.pump();
+    expect(checks, checksWhileRefused + 1);
+
+    await tester.runAsync(
+      () => container
+          .read(appPreferencesProvider.notifier)
+          .setIncludeScreenshotCaptions(false),
     );
   });
 

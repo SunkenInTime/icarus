@@ -13,6 +13,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/screenshot/caption_export_layout.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/screenshot/page_screenshot.dart';
+import 'package:icarus/screenshot/refused_captions_watch.dart';
 import 'package:icarus/screenshot/save_screenshots.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -67,6 +68,14 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
 
   /// Pages whose captions can't be placed, while they're included.
   final Set<String> _captionMisfits = {};
+
+  /// Checks a refused page again once it changes.
+  late final _refusedWatch = RefusedCaptionsWatch(
+    ref,
+    onChange: () => _renderPreviews(
+      ref.read(appPreferencesProvider).includeScreenshotCaptions,
+    ),
+  );
 
   /// Which round of previews is wanted. The Include captions box asks for a
   /// new one, and what an older one still delivers is dropped.
@@ -131,8 +140,15 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
           }
         },
         onCaptions: (pageId, layout) {
-          if (stale() || layout.fits) return;
-          setState(() => _captionMisfits.add(pageId));
+          if (stale()) return;
+          setState(() {
+            if (layout.fits) {
+              _captionMisfits.remove(pageId);
+            } else {
+              _captionMisfits.add(pageId);
+            }
+          });
+          _refusedWatch.watch(_captionMisfits);
         },
         onUnavailable: (pageIds, _) {
           if (stale()) return;
@@ -146,6 +162,7 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
 
   void _setIncludeCaptions(bool value) {
     setState(_captionMisfits.clear);
+    _refusedWatch.watch(_captionMisfits);
     _renderPreviews(value);
     unawaited(
       ref
@@ -166,6 +183,7 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
 
   @override
   void dispose() {
+    _refusedWatch.dispose();
     for (final image in _thumbnails.values) {
       image.dispose();
     }
