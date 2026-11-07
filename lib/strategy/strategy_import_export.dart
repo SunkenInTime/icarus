@@ -921,35 +921,45 @@ class StrategyImportExportService {
       parentFolderId: parentFolderId,
     );
 
-    var result = const ImportBatchResult(
+    final listing = await _listImportEntities(sourceDir);
+    final contents = ImportBatchResult(
       strategiesImported: 0,
-      foldersCreated: 1,
+      foldersCreated: 0,
       themeProfilesImported: 0,
       globalStateRestored: false,
-      issues: [],
-    );
-
-    final listing = await _listImportEntities(sourceDir);
-    if (listing.issues.isNotEmpty) {
-      result = result.merge(
-        ImportBatchResult(
-          strategiesImported: 0,
-          foldersCreated: 0,
-          themeProfilesImported: 0,
-          globalStateRestored: false,
-          issues: listing.issues,
-        ),
-      );
-    }
-
-    result = result.merge(
+      issues: listing.issues,
+    ).merge(
       await _importEntitiesIntoFolder(
         entities: listing.entities,
         parentFolderId: importedFolder.id,
       ),
     );
 
-    return result;
+    return _keepImportedFolder(importedFolder, contents);
+  }
+
+  /// [folder], made for an import whose [contents] went into it, stays when
+  /// something landed in it or nothing in it failed: an empty folder copied
+  /// from the user's files is theirs. One that holds nothing because what was
+  /// meant for it failed comes out again, so the library doesn't show an
+  /// import that didn't happen.
+  Future<ImportBatchResult> _keepImportedFolder(
+    Folder folder,
+    ImportBatchResult contents,
+  ) async {
+    final landed =
+        contents.strategiesImported > 0 || contents.foldersCreated > 0;
+    if (!landed && contents.issues.isNotEmpty) {
+      await Hive.box<Folder>(HiveBoxNames.foldersBox).delete(folder.id);
+      return contents;
+    }
+    return const ImportBatchResult(
+      strategiesImported: 0,
+      foldersCreated: 1,
+      themeProfilesImported: 0,
+      globalStateRestored: false,
+      issues: [],
+    ).merge(contents);
   }
 
   Future<ImportBatchResult> _importZipArchive({
@@ -1372,13 +1382,8 @@ class StrategyImportExportService {
       parentFolderId: parentFolderId,
     );
 
-    return const ImportBatchResult(
-      strategiesImported: 0,
-      foldersCreated: 1,
-      themeProfilesImported: 0,
-      globalStateRestored: false,
-      issues: [],
-    ).merge(
+    return _keepImportedFolder(
+      wrapperFolder,
       await _importLegacyZipEntitiesIntoFolder(
         parentPrefix: '',
         filesByPath: filesByPath,
@@ -1397,13 +1402,8 @@ class StrategyImportExportService {
       parentFolderId: parentFolderId,
     );
 
-    return const ImportBatchResult(
-      strategiesImported: 0,
-      foldersCreated: 1,
-      themeProfilesImported: 0,
-      globalStateRestored: false,
-      issues: [],
-    ).merge(
+    return _keepImportedFolder(
+      importedFolder,
       await _importLegacyZipEntitiesIntoFolder(
         parentPrefix: directoryPrefix,
         filesByPath: filesByPath,

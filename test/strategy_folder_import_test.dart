@@ -793,7 +793,7 @@ void main() {
     );
 
     expect(result.strategiesImported, 1);
-    expect(result.foldersCreated, 2);
+    expect(result.foldersCreated, 1);
     expect(
       result.issues
           .where((issue) => issue.code == ImportIssueCode.unsupportedFile),
@@ -804,6 +804,83 @@ void main() {
       containsAll([nestedText.path, nestedZip.path]),
     );
     expect(_strategyByName('valid').folderID, _folderByName('Mixed Folder').id);
+    expect(
+      Hive.box<Folder>(HiveBoxNames.foldersBox).values.map((f) => f.name),
+      ['Mixed Folder'],
+      reason: 'nothing in Nested came in',
+    );
+  });
+
+  group('a folder whose strategies all fail leaves no folder behind', () {
+    void expectNoFolders() =>
+        expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, isEmpty);
+
+    test('dropped', () async {
+      final sourceRoot =
+          await Directory(path.join(tempDir.path, 'source', 'Broken'))
+              .create(recursive: true);
+      await File(path.join(sourceRoot.path, 'broken.ica'))
+          .writeAsString('{"mapData": ');
+
+      final result =
+          await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(sourceRoot.path)],
+      );
+
+      expect(result.hasImports, isFalse);
+      expect(result.issues.single.code, ImportIssueCode.invalidStrategy);
+      expectNoFolders();
+    });
+
+    test('dropped, nested, with one from a newer Icarus', () async {
+      final inner = await Directory(
+        path.join(tempDir.path, 'source', 'Outer', 'Inner'),
+      ).create(recursive: true);
+      await _writeStrategyFile(
+        File(path.join(inner.path, 'future.ica')),
+        versionNumber: Settings.versionNumber + 1,
+      );
+
+      final result =
+          await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(path.join(tempDir.path, 'source', 'Outer'))],
+      );
+
+      expect(result.foldersCreated, 0);
+      expect(result.issues.single.code, ImportIssueCode.newerVersion);
+      expectNoFolders();
+    });
+
+    test('a zip of a folder', () async {
+      final zip = File(path.join(tempDir.path, 'Team Strats.zip'));
+      await zip
+          .writeAsBytes(_zipOf({'Team Strats/broken.ica': '{"mapData": '}));
+
+      final result =
+          await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(zip.path)],
+      );
+
+      expect(result.hasImports, isFalse);
+      expect(result.issues.single.code, ImportIssueCode.invalidStrategy);
+      expectNoFolders();
+    });
+
+    test('a zip of loose files', () async {
+      final zip = File(path.join(tempDir.path, 'Loose.zip'));
+      await zip.writeAsBytes(
+        _zipOf({'a.ica': '{"mapData": ', 'b.ica': '{"mapData": '}),
+      );
+
+      final result =
+          await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(zip.path)],
+      );
+
+      expect(result.hasImports, isFalse);
+      expect(result.issues, hasLength(2));
+      expectNoFolders();
+    });
   });
 
   test('empty folder plus unsupported nested file reports one skipped file',
