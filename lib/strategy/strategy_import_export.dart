@@ -948,13 +948,14 @@ class StrategyImportExportService {
     Folder folder,
     ImportBatchResult contents,
   ) async {
-    final holdsSomething = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+    bool holdsSomething() =>
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
             .values
             .any((strategy) => strategy.folderID == folder.id) ||
         Hive.box<Folder>(HiveBoxNames.foldersBox)
             .values
             .any((child) => child.parentID == folder.id);
-    if (!holdsSomething && contents.issues.isNotEmpty) {
+    if (contents.issues.isNotEmpty && !holdsSomething()) {
       await Hive.box<Folder>(HiveBoxNames.foldersBox).delete(folder.id);
       return contents;
     }
