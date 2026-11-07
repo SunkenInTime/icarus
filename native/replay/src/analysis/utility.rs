@@ -55,8 +55,9 @@ pub(super) fn utility(
                     ]);
                 }
             }
-            // Phoenix's Blaze and Viper's Toxic Screen.
-            "MulticastAddSmokeScreenPoint.Translation" => {
+            // Phoenix's Blaze and Viper's Toxic Screen, then Harbor's
+            // High Tide.
+            "MulticastAddSmokeScreenPoint.Translation" | "MulticastAddAnchor.Translation" => {
                 point(row.text.as_deref().and_then(parse_vector));
             }
             // Neon's Fast Lane, then Vyse's Shear wall and its trap.
@@ -143,6 +144,7 @@ pub(super) fn utility(
             yaw: a.spawn_yaw.map(f64::from).or(spawn.map(|_| 0.0)),
             path: None,
             points: None,
+            point_ms: None,
         });
     }
     trapwire_far_ends(cx, &out, &mut points);
@@ -159,15 +161,16 @@ pub(super) fn utility(
                 );
             }
         }
-        let mine: Vec<Vec3> = points
+        let (times, mine): (Vec<i64>, Vec<Vec3>) = points
             .get(&u.id)
             .into_iter()
             .flatten()
             .filter(|(t, _)| within(f64::from(*t)))
-            .map(|&(_, p)| p)
-            .collect();
+            .map(|&(t, p)| (i64::from(t), p))
+            .unzip();
         if !mine.is_empty() {
             u.points = Some(mine);
+            u.point_ms = Some(times);
         }
     }
     for (n, what) in [

@@ -63,6 +63,8 @@
 //                                      writes its code to the file
 //   {"openShareLink": path}            opens the link whose code is in the file
 //   {"importReplay": path}             {"fakeSaveDir": dir, "as": name?}
+//   {"openReplay": path}               adds it as Add Replay does and opens it
+//   {"seekReplay": ms}                 pauses the open replay at ms
 //                                      answers save dialogs, typing name if given
 //   {"fakePick": path}                 answers open dialogs with this file
 //   {"dropFiles": [paths], "at": [x, y]}  dropped from Explorer
@@ -152,6 +154,10 @@ import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
+import 'package:icarus/providers/library_navigation_provider.dart';
+import 'package:icarus/widgets/replay/replay_dock.dart';
+import 'package:icarus/widgets/replay/replay_library_content.dart';
+import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -1227,6 +1233,16 @@ Future<void> _run(Map<String, dynamic> step) async {
           );
     case 'importReplay':
       await c.read(replayLibraryProvider.notifier).import(value as String);
+    case 'openReplay':
+      final listing =
+          await c.read(replayLibraryProvider.notifier).import(value as String);
+      c.read(libraryNavigationProvider).showReplays();
+      openReplayListing(appNavigatorKey.currentContext!, listing);
+    case 'seekReplay':
+      (_elementOf((widget) => widget is ReplayDock).widget as ReplayDock)
+          .playback
+        ..pause()
+        ..seek(value as int);
     case 'dropFiles':
       // The messages the native drop target sends, so the drop arrives where
       // Windows delivers one.

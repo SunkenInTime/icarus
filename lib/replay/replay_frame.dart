@@ -208,8 +208,9 @@ class ReplaySweep extends ReplayEffect {
   final double opacity;
 }
 
-/// A guided wall (High Tide) as far as its head has run. A saved page has no
-/// way to hold a curved wall, so a capture keeps only the ability's icon.
+/// One stretch of a guided wall (High Tide): where the game raised it, as far
+/// as its head has run. A saved page has no way to hold a curved wall, so a
+/// capture keeps only the ability's icon.
 class ReplayGuidedWall extends ReplayEffect {
   const ReplayGuidedWall({
     required this.points,
@@ -217,7 +218,7 @@ class ReplayGuidedWall extends ReplayEffect {
     required super.isAlly,
   });
 
-  /// Along the wall, from where it starts to where its head is.
+  /// Along the stretch, in the order the game raised it.
   final List<Offset> points;
 
   /// 1 while the wall is up, falling to 0 as it fades out.
@@ -300,6 +301,39 @@ class ReplayFrameBuilder {
               utility.spawnMs <= headEndMs + _wallHolderGraceMs) &&
           ownerOf(utility, entry) == caster,
     );
+  }
+
+  /// Two anchors of a guided wall further apart than this, in game units,
+  /// have bare ground between them, where the game raised no wall (inside
+  /// geometry, under the floor). It lays one every 200 cm, and a stretch
+  /// short of one anchor is bridged.
+  static const _wallGap = 500.0;
+
+  /// The stretches of the guided wall at [index] standing at [timeMs], in
+  /// world units: the anchors its holder had laid by then, split where the
+  /// game left bare ground. An anchor alone between two gaps is no stretch.
+  List<List<Offset>> _wallRuns(int index, int timeMs) {
+    final holder = _wallHolders[index];
+    if (holder == null) return const [];
+    final runs = <List<Offset>>[];
+    ReplayVector? last;
+    for (var i = 0; i < holder.points.length; i++) {
+      // A point without its time stands from the start.
+      final laidMs =
+          i < holder.pointMs.length ? holder.pointMs[i] : holder.spawnMs;
+      if (laidMs > timeMs) break;
+      final at = holder.points[i];
+      if (last == null ||
+          Offset(at.x - last.x, at.y - last.y).distance > _wallGap) {
+        runs.add([]);
+      }
+      runs.last.add(projection.toWorld(at.x, at.y));
+      last = at;
+    }
+    return [
+      for (final run in runs)
+        if (run.length >= 2) run,
+    ];
   }
 
   /// When the utility at [index] comes off the map: when its actor closes,
@@ -546,7 +580,7 @@ class ReplayFrameBuilder {
 
       // Where it last stood, for one that has just ended.
       final shownAt = active ? timeMs : endMs - 1;
-      final ability = entry.place(
+      var ability = entry.place(
         utility: utility,
         projection: projection,
         timeMs: shownAt,
@@ -557,7 +591,25 @@ class ReplayFrameBuilder {
       // swept so far is drawn under it (see ReplaySweep).
       final sweeps = entry.kind == ReplayUtilityKind.sweep;
       final at = sweeps ? utility.position : utility.positionAt(shownAt);
-      final centre = projection.toWorld(at.x, at.y);
+      var centre = projection.toWorld(at.x, at.y);
+      final wallRuns = entry.kind == ReplayUtilityKind.guidedWall
+          ? _wallRuns(i, shownAt)
+          : const <List<Offset>>[];
+      // Once a guided wall's head has stopped, its icon marks where the wall
+      // ends, which can be short of the head: past the last anchor the head
+      // ran on inside geometry or under the floor.
+      final headEndMs = utility.endMs;
+      if (wallRuns.isNotEmpty && headEndMs != null && shownAt >= headEndMs) {
+        final shift = wallRuns.last.last - centre;
+        centre += shift;
+        ability = PlacedAbility(
+          data: ability.data,
+          position: ability.position + shift,
+          id: ability.id,
+          isAlly: ability.isAlly,
+          rotation: ability.rotation,
+        );
+      }
       if (sweeps) {
         effects.add(ReplaySweep(
           area: ability,
@@ -576,15 +628,12 @@ class ReplayFrameBuilder {
           isAlly: isAlly,
         ));
       }
-      if (entry.kind == ReplayUtilityKind.guidedWall) {
-        final wall = _linePoints(utility, shownAt);
-        if (wall != null) {
-          effects.add(ReplayGuidedWall(
-            points: wall,
-            opacity: active ? 1 : 1 - (timeMs - endMs) / exitMs,
-            isAlly: isAlly,
-          ));
-        }
+      for (final run in wallRuns) {
+        effects.add(ReplayGuidedWall(
+          points: run,
+          opacity: active ? 1 : 1 - (timeMs - endMs) / exitMs,
+          isAlly: isAlly,
+        ));
       }
       final placed = sweeps
           ? PlacedAbility(
@@ -613,8 +662,12 @@ class ReplayFrameBuilder {
       }
       abilities.add(placed);
       if (faint) dimmed.add(placed.id);
-      final occluder = _occluderOf(entry, utility, timeMs, centre, radius);
-      if (occluder != null) occluders.add(occluder);
+      if (entry.kind == ReplayUtilityKind.guidedWall) {
+        occluders.addAll([for (final run in wallRuns) LineOccluder(run)]);
+      } else if (_occluderOf(entry, utility, timeMs, centre, radius)
+          case final occluder?) {
+        occluders.add(occluder);
+      }
       final age = timeMs - utility.spawnMs;
       if (age < activationMs) {
         effects.add(ReplayActivation(
@@ -691,21 +744,17 @@ class ReplayFrameBuilder {
       case ReplayVisionBlock.sphere:
         return CircleOccluder(centre, radius);
       case ReplayVisionBlock.line:
-        final points = _linePoints(utility, timeMs);
+        final points = _linePoints(utility);
         return points == null ? null : LineOccluder(points);
     }
   }
 
-  /// The line [utility] stands along at [timeMs], in world units: its points
-  /// for a wall raised point by point, where its head has been for a guided
-  /// one (High Tide). Null while that is too short to be a line.
-  List<Offset>? _linePoints(ReplayUtility utility, int timeMs) {
-    final points = utility.points.length >= 2
-        ? utility.points
-        : utility.trail(utility.spawnMs, timeMs);
-    if (points.length < 2) return null;
+  /// The line a wall raised point by point stands along, in world units.
+  /// Null while it is too short to be a line.
+  List<Offset>? _linePoints(ReplayUtility utility) {
+    if (utility.points.length < 2) return null;
     return [
-      for (final point in points) projection.toWorld(point.x, point.y),
+      for (final point in utility.points) projection.toWorld(point.x, point.y),
     ];
   }
 }

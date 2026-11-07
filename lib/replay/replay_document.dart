@@ -377,6 +377,7 @@ class ReplayUtility {
     this.yaw,
     this.path = const [],
     this.points = const [],
+    this.pointMs = const [],
   });
 
   final int id;
@@ -394,6 +395,9 @@ class ReplayUtility {
 
   /// Shape points, for walls and drawn paths.
   final List<ReplayVector> points;
+
+  /// When each of [points] arrived, in the same order.
+  final List<int> pointMs;
 
   bool isActiveAt(int timeMs) =>
       timeMs >= spawnMs && (endMs == null || timeMs < endMs!);
@@ -442,6 +446,7 @@ class ReplayUtility {
           for (final row in (json['points'] as List? ?? const []))
             ReplayVector.fromJson(row as List),
         ],
+        pointMs: (json['pointMs'] as List? ?? const []).cast<int>(),
       );
 }
 

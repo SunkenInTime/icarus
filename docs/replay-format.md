@@ -41,7 +41,7 @@ first byte.
 
 ```jsonc
 {
-  "decoder": { "name": "icarus_replay", "version": "0.3.3+vrfkit.0.4.0", "vrfkit": "0.4.0" },
+  "decoder": { "name": "icarus_replay", "version": "0.3.4+vrfkit.0.4.0", "vrfkit": "0.4.0" },
   "match": {
     "id": "dc078274-2d68-495b-8321-5e58b2a3eeba",
     "mapPath": "/Game/Maps/Juliett/Juliett",
@@ -105,7 +105,8 @@ first byte.
       "position": [x, y, z],
       "yaw?": 90.0,                         // absent only for an actor with no spawn transform
       "path?": [[timeMs, x, y, z], …],     // where it went, about 10 Hz; see "Utility"
-      "points?": [[x, y, z], …]             // shape points; see "Utility"
+      "points?": [[x, y, z], …],            // shape points; see "Utility"
+      "pointMs?": [timeMs, …]               // when each point arrived
     }
   ],
   "doors": [
@@ -223,13 +224,18 @@ with the last always kept. It is absent when the actor never left its
 | Utility | `points` | Source |
 |---|---|---|
 | Phoenix's Blaze (`GameObject_Phoenix_Q_FlameWallManager_Production`), Viper's Toxic Screen (`GameObject_Pandemic_E_SmokeScreenManager`, not in our corpus) | the wall, start to end | `MulticastAddSmokeScreenPoint.Translation` |
+| Harbor's High Tide (`GameObject_Mage_Q_WallManager`) | where the game raised the wall, 200 cm apart along its head's path. It starts 3 to 8 m from Harbor, and a stretch the game left bare (inside geometry, under the floor) has no points, so the gaps are holes. z is not a height (it reads 100 to 500) | `MulticastAddAnchor.Translation` |
 | Neon's Fast Lane (`GameObject_Sprinter_4_Tunnel`) | the lane, start to end, 125 cm apart | `MulticastAddTunnelPoint.Translation` |
 | Vyse's Shear (`GameObject_Nox_Wall`) | the wall's start and end | `MulticastInitializeWall.WallStartLocation`, `WallEndLocation` |
 | Vyse's Shear trap (`GameObject_Nox_WallTrap`) | the wall it raises, start and end | `MulticastInitializeTrapAnchors.WallStartPoint`, `WallEndPoint` |
 | Deadlock's Barrier Mesh (`GameObject_CableJamRoot`) | each arm's end, one per arm that deployed (a blocked arm has none) | each `GameObject_CableJam_CableDeployer_Precomputed` it owns: `MulticastInitialize.Destination` |
 | Cypher's Trapwire (`GameObject_Gumshoe_E_TripWire`) | one point, the far anchor; the actor is the near one | the `GameObject_Gumshoe_E_TripWire_SecondWire` opened with it, same millisecond and `Owner` |
 
-Every other utility has none. The Fast Lane, Shear and Barrier Mesh values
+Every other utility has none. `pointMs` holds the time each point arrived,
+one per point. High Tide's anchors arrive as its head lays them, so the
+viewer raises the wall by them.
+
+The Fast Lane, Shear and Barrier Mesh values
 are vectors vrfkit leaves untyped; the decoder reads them as three
 little-endian doubles, which put each wall's first point on its actor and
 each mesh's `RootLocation` on its root.
@@ -293,7 +299,7 @@ the first). A clean replay has none.
   "durationMs": 321499,
   "recordedAt?": "2026-07-08T00:35:45Z",
   "supported": true,                       // a payload transform is registered for the build
-  "decoderVersion": "0.3.3+vrfkit.0.4.0",  // same as the document's decoder.version
+  "decoderVersion": "0.3.4+vrfkit.0.4.0",  // same as the document's decoder.version
   "players": [{ "subject": "…", "agentId": "…" }]
 }
 ```
