@@ -591,20 +591,11 @@ class StrategyImportExportService {
         );
     }
     if (cloudFolderId != null) {
-      final mover = ref.read(moveToCloudProvider.notifier);
-      for (final saved in [..._savedAtTopLevel]) {
-        await (saved.isFolder
-            ? mover.moveFolder(
-                saved.id,
-                cloudParentId: cloudFolderId,
-                importing: true,
-              )
-            : mover.moveStrategy(
-                saved.id,
-                cloudFolderId: cloudFolderId,
-                importing: true,
-              ));
-      }
+      await ref.read(moveToCloudProvider.notifier).moveImported(
+            _importedName(file.name),
+            [..._savedAtTopLevel],
+            cloudFolderId: cloudFolderId,
+          );
     }
     return result;
   }

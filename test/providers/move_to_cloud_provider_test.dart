@@ -46,6 +46,7 @@ import '../collab/strategy_copy_fixtures.dart';
 var _adaptersRegistered = false;
 
 final _account = StateProvider<String?>((ref) => 'account-1');
+final _online = StateProvider<bool>((ref) => true);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -99,7 +100,8 @@ void main() {
       convexStrategyRepositoryProvider.overrideWithValue(cloud),
       authProvider.overrideWith(_CloudReadyAuth.new),
       cloudMediaAccountIdProvider.overrideWith((ref) => ref.watch(_account)),
-      convexConnectionSnapshotProvider.overrideWithValue(true),
+      convexConnectionSnapshotProvider
+          .overrideWith((ref) => ref.watch(_online)),
       cloudMediaUploadQueueProvider.overrideWith(() => uploads),
       strategyProvider.overrideWith(editor ?? _ClosedStrategy.new),
       cloudStrategiesProvider.overrideWith((ref) => const Stream.empty()),
@@ -190,7 +192,12 @@ void main() {
     final ica = File('test/fixtures/strategy_integrity/base-test.ica')
         .readAsBytesSync();
 
-    Future<void> importInto(String cloudFolderId, File file) async {
+    Future<void> importInto(
+      String cloudFolderId,
+      File file, {
+      bool online = true,
+      bool signedIn = true,
+    }) async {
       await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
       await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
       cloud.folders[cloudFolderId] =
@@ -199,6 +206,9 @@ void main() {
       container
           .read(folderProvider.notifier)
           .openFolder(folderId: cloudFolderId, store: LibraryWorkspace.cloud);
+      container.read(_online.notifier).state = online;
+      // Signed out after picking, while the import saves locally.
+      if (!signedIn) container.read(_account.notifier).state = null;
       FilePicker.platform = _PickedFile(file.path);
       await StrategyImportExportService(container).importFromFilePicker();
     }
@@ -289,7 +299,7 @@ void main() {
       expect(messages.last.$2, isTrue, reason: 'the user is told');
     });
 
-    test('a library backup puts its top level in that folder', () async {
+    File libraryBackup() {
       final manifest = {
         'schemaVersion': archiveManifestSchemaVersion,
         'archiveType': ArchiveType.libraryBackup.jsonValue,
@@ -318,11 +328,15 @@ void main() {
         ],
         'globals': {'themeProfiles': [], 'favoriteAgents': []},
       };
-      final backup = zipOf('backup.zip', {
+      return zipOf('backup.zip', {
         archiveMetadataFileName: utf8.encode(jsonEncode(manifest)),
         'root_strategies/Loose.ica': ica,
         'folders/Defaults/Filed.ica': ica,
       });
+    }
+
+    test('a library backup puts its top level in that folder', () async {
+      final backup = libraryBackup();
 
       await importInto('plays', backup);
 
@@ -331,7 +345,27 @@ void main() {
       expect(cloudStrategy('Loose').folderId, 'plays');
       expect(strategies().values, isEmpty);
       expect(folders().values, isEmpty);
-      expect(messages.where((m) => m.$2), isEmpty);
+      expect(messages, [('Importing "backup" to the cloud…', false)]);
+    });
+
+    test('offline, a backup stays on this device with one message', () async {
+      await importInto('plays', libraryBackup(), online: false);
+
+      expect(cloud.strategies, isEmpty);
+      expect(strategies().values, hasLength(2));
+      expect(folders().values.single.parentID, isNull);
+      expect(messages, hasLength(1));
+      expect(messages.single.$2, isTrue);
+    });
+
+    test('signed out before it moves, an archive says it stayed', () async {
+      await importInto('plays', folderArchive(), signedIn: false);
+
+      expect(cloud.strategies, isEmpty);
+      expect(strategies().values, hasLength(2));
+      expect(messages, [
+        ('You signed out, so "Team Strats" stays on this device.', true),
+      ]);
     });
   });
 
