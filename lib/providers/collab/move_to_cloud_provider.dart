@@ -149,9 +149,8 @@ class MoveToCloudNotifier extends Notifier<void> {
 
   /// Moves the local strategy [localId] into the cloud folder
   /// [cloudFolderId] (the top level when null) of the signed-in account.
-  /// When [importing], the user asked for an import and is looking at an
-  /// empty folder: the move says it has started, and leaves saying it worked
-  /// to the import. A move that doesn't work always says so.
+  /// When [importing], [moveImported] has said the move started, and the
+  /// import says it worked. A move that doesn't work always says so.
   Future<void> moveStrategy(
     String localId, {
     String? cloudFolderId,
@@ -169,7 +168,6 @@ class MoveToCloudNotifier extends Notifier<void> {
     return _enqueue(() async {
       try {
         if (!_canMoveFor(accountId, name)) return;
-        if (importing) _showMessage('Importing "$name" to the cloud…');
         final outcome = await _moveOne(
           localId,
           cloudFolderId: cloudFolderId,
@@ -226,8 +224,12 @@ class MoveToCloudNotifier extends Notifier<void> {
   /// Moves the local folder [localFolderId], with every folder and strategy
   /// in it, into the cloud folder [cloudParentId] (the top level when null).
   /// A strategy that cannot move stays on this device in its folder, and so
-  /// do the folders holding it.
-  Future<void> moveFolder(String localFolderId, {String? cloudParentId}) {
+  /// do the folders holding it. [importing] as for [moveStrategy].
+  Future<void> moveFolder(
+    String localFolderId, {
+    String? cloudParentId,
+    bool importing = false,
+  }) {
     final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
     final root = folders.get(localFolderId);
     final accountId = ref.read(cloudMediaAccountIdProvider);
@@ -299,7 +301,7 @@ class MoveToCloudNotifier extends Notifier<void> {
         );
 
         if (failed == 0 && foldersWent) {
-          _showMessage('Moved "${root.name}" to the cloud.');
+          if (!importing) _showMessage('Moved "${root.name}" to the cloud.');
         } else if (failed == 0) {
           _showFailure(
             'Moved the strategies in "${root.name}" to the cloud, but some '
@@ -327,6 +329,42 @@ class MoveToCloudNotifier extends Notifier<void> {
         _unmarkMoving(localIds);
       }
     });
+  }
+
+  /// Moves what an import of [name] saved at the local top level ([items],
+  /// folders and strategies) into the cloud folder [cloudFolderId]. The user
+  /// is looking at that folder, still empty: one message says the move has
+  /// started, or why it can't, and each item that doesn't move says so.
+  Future<void> moveImported(
+    String name,
+    List<({String id, bool isFolder})> items, {
+    required String cloudFolderId,
+  }) async {
+    if (items.isEmpty) return;
+    final accountId = ref.read(cloudMediaAccountIdProvider);
+    if (accountId == null) {
+      _showFailure('You signed out, so "$name" stays on this device.');
+      return;
+    }
+    if (!_canMoveFor(accountId, name)) return;
+    _showMessage('Importing "$name" to the cloud…');
+    for (final item in items) {
+      // Each move alone would stay quiet about a sign-out; the import says
+      // once what didn't go.
+      if (ref.read(cloudMediaAccountIdProvider) != accountId) {
+        _showFailure(
+          'You signed out, so the rest of "$name" stays on this device.',
+        );
+        return;
+      }
+      await (item.isFolder
+          ? moveFolder(item.id, cloudParentId: cloudFolderId, importing: true)
+          : moveStrategy(
+              item.id,
+              cloudFolderId: cloudFolderId,
+              importing: true,
+            ));
+    }
   }
 
   /// Children before parents: a local folder goes once nothing is left in
