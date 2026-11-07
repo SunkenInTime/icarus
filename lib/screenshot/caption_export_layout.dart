@@ -1,7 +1,17 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 /// A caption to print on an exported page, with where its item is drawn.
-typedef CaptionExportNote = ({String id, String text, Offset anchor});
+///
+/// [anchor] is the corner the canvas hangs the item's marker on, and the
+/// first place its number tries. [corners] are the item's others, in the
+/// order its number tries them when that one is taken.
+typedef CaptionExportNote = ({
+  String id,
+  String text,
+  Offset anchor,
+  List<Offset> corners,
+});
 
 /// A printed caption: its number, the numbered dot on its item, and its card.
 typedef CaptionExportEntry = ({
@@ -29,6 +39,9 @@ abstract final class CaptionExportMetrics {
   static const framePadding = 24.0;
   static const maxCardWidth = 460.0;
   static const dotRadius = 15.0;
+
+  /// The least room between two numbers on the map.
+  static const dotGap = 4.0;
 }
 
 /// How long a note takes to read, at about 20 characters a second.
@@ -147,21 +160,67 @@ CaptionExportLayout layoutExportCaptions({
     }
   }
 
-  var number = 0;
-  CaptionExportEntry entry(CaptionExportNote note, Rect card) => (
-        number: ++number,
-        id: note.id,
-        text: note.text,
-        dot: note.anchor,
-        card: card,
-      );
+  final numbered = [...left, ...right];
+  final dots = _placeNumbers(numbered, frame);
+  final cards = [...leftRects, ...rightRects];
   return CaptionExportLayout(
     fits: true,
     entries: [
-      for (final (i, note) in left.indexed) entry(note, leftRects[i]),
-      for (final (i, note) in right.indexed) entry(note, rightRects[i]),
+      for (final (i, note) in numbered.indexed)
+        (
+          number: i + 1,
+          id: note.id,
+          text: note.text,
+          dot: dots[i],
+          card: cards[i],
+        ),
     ],
   );
+}
+
+/// Where each of [notes]' numbers sits on the map, in number order, so that
+/// no two cover each other.
+///
+/// A number takes the first of its item's corners that no earlier number
+/// covers, starting with the one the canvas hangs its marker on. When an
+/// item's corners are all taken, as in a stack of items on one spot, its
+/// number steps out from its first corner until it finds room.
+List<Offset> _placeNumbers(List<CaptionExportNote> notes, Size frame) {
+  const radius = CaptionExportMetrics.dotRadius;
+  const apart = 2 * radius + CaptionExportMetrics.dotGap;
+  // A number past the frame's edge would be cut off.
+  Offset inFrame(Offset spot) => Offset(
+        spot.dx.clamp(radius, frame.width - radius),
+        spot.dy.clamp(radius, frame.height - radius),
+      );
+
+  final placed = <Offset>[];
+  bool free(Offset spot) =>
+      placed.every((other) => (other - spot).distance >= apart);
+  Offset place(CaptionExportNote note) {
+    for (final corner in [note.anchor, ...note.corners].map(inFrame)) {
+      if (free(corner)) return corner;
+    }
+    // Rings around the first corner, each a number further out, tried from
+    // its upper right, the side the marker hangs on, clockwise.
+    for (var ring = 1; ring <= 64; ring++) {
+      final steps = 6 * ring;
+      for (var step = 0; step < steps; step++) {
+        final angle = -math.pi / 4 + 2 * math.pi * step / steps;
+        final spot = inFrame(
+          note.anchor +
+              Offset(math.cos(angle), math.sin(angle)) * (apart * ring),
+        );
+        if (free(spot)) return spot;
+      }
+    }
+    return inFrame(note.anchor);
+  }
+
+  for (final note in notes) {
+    placed.add(place(note));
+  }
+  return placed;
 }
 
 /// The cards of [column] from the top, or null when they don't all fit. With

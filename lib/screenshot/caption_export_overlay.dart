@@ -105,13 +105,6 @@ void _paintLayout(
   CaptionExportLayout layout,
   TextStyle style,
 ) {
-  const dotRadius = CaptionExportMetrics.dotRadius;
-  final inset = Rect.fromLTRB(
-    dotRadius,
-    dotRadius,
-    frame.width - dotRadius,
-    frame.height - dotRadius,
-  );
   final surface = Paint()..color = Settings.abilityBGColor;
   final edge = Paint()
     ..color = Settings.tacticalVioletTheme.border
@@ -144,11 +137,8 @@ void _paintLayout(
     _paintNumber(
       canvas,
       entry.number,
-      Offset(
-        entry.dot.dx.clamp(inset.left, inset.right),
-        entry.dot.dy.clamp(inset.top, inset.bottom),
-      ),
-      dotRadius,
+      entry.dot,
+      CaptionExportMetrics.dotRadius,
       style,
     );
   }
@@ -257,10 +247,12 @@ class _PageCaptionsPainter extends CustomPainter {
       if (corners == null) {
         return const CaptionExportLayout(entries: [], fits: false);
       }
+      final spots = captionNumberSpots(corners, round: item.round);
       notes.add((
         id: item.id,
         text: item.text,
-        anchor: captionMarkerAnchor(corners, round: item.round),
+        anchor: spots.first,
+        corners: spots.sublist(1),
       ));
     }
     return layoutExportCaptions(

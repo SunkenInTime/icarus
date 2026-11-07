@@ -7,8 +7,30 @@ const _frame = Size(1920, 1080);
 const _mapLeft = 500.0;
 const _mapRight = 1420.0;
 
-CaptionExportNote _note(String id, double x, double y) =>
-    (id: id, text: id, anchor: Offset(x, y));
+/// A note on a 40 by 40 item whose upper right corner is at [x], [y].
+CaptionExportNote _note(String id, double x, double y) => (
+      id: id,
+      text: id,
+      anchor: Offset(x, y),
+      corners: [Offset(x, y + 40), Offset(x - 40, y + 40), Offset(x - 40, y)],
+    );
+
+/// The least distance between the middles of two numbers that don't touch.
+const _apart = 2 * CaptionExportMetrics.dotRadius + CaptionExportMetrics.dotGap;
+
+void _expectApart(CaptionExportLayout layout) {
+  for (final a in layout.entries) {
+    for (final b in layout.entries) {
+      if (a.number < b.number) {
+        expect(
+          (a.dot - b.dot).distance,
+          greaterThanOrEqualTo(_apart),
+          reason: 'numbers ${a.number} and ${b.number}',
+        );
+      }
+    }
+  }
+}
 
 CaptionExportLayout _layout(
   List<CaptionExportNote> notes, {
@@ -60,8 +82,8 @@ void main() {
 
   test('a page reads at about 20 characters a second', () {
     final layout = _layout([
-      (id: 'a', text: 'x' * 100, anchor: const Offset(700, 200)),
-      (id: 'b', text: 'y' * 101, anchor: const Offset(1200, 200)),
+      (id: 'a', text: 'x' * 100, anchor: const Offset(700, 200), corners: []),
+      (id: 'b', text: 'y' * 101, anchor: const Offset(1200, 200), corners: []),
     ]);
 
     expect(captionReadSeconds(layout), 11);
@@ -196,5 +218,58 @@ void main() {
     );
 
     expect(layout.fits, isFalse);
+  });
+
+  group('numbers on the map', () {
+    test('sit on the corner the marker hangs on when it is free', () {
+      final layout = _layout([_note('a', 700, 300), _note('b', 760, 300)]);
+
+      expect(layout.entries[0].dot, const Offset(700, 300));
+      expect(layout.entries[1].dot, const Offset(760, 300));
+    });
+
+    test('of two items side by side cover neither', () {
+      // Two smokes dropped a little apart, as on the canvas.
+      final notes = [_note('first', 1300, 580), _note('second', 1312, 592)];
+      final layout = _layout(notes);
+
+      _expectApart(layout);
+      expect(layout.entries[0].dot, notes[0].anchor);
+      expect(
+        [notes[1].anchor, ...notes[1].corners],
+        contains(layout.entries[1].dot),
+        reason: 'the second number stays on a corner of its own item',
+      );
+    });
+
+    test('of a row of small items cover none', () {
+      final layout = _layout([
+        for (var i = 0; i < 4; i++) _note('item $i', 700.0 + 20 * i, 400),
+      ]);
+
+      _expectApart(layout);
+    });
+
+    test('of a stack of items on one spot cover none', () {
+      final layout = _layout([
+        for (var i = 0; i < 9; i++) _note('item $i', 900, 500),
+      ]);
+
+      expect(layout.entries, hasLength(9));
+      _expectApart(layout);
+    });
+
+    test('stay inside the frame', () {
+      final layout = _layout([
+        for (var i = 0; i < 3; i++) _note('item $i', 1910, 5),
+      ]);
+
+      _expectApart(layout);
+      const radius = CaptionExportMetrics.dotRadius;
+      for (final entry in layout.entries) {
+        expect(entry.dot.dx, inInclusiveRange(radius, _frame.width - radius));
+        expect(entry.dot.dy, inInclusiveRange(radius, _frame.height - radius));
+      }
+    });
   });
 }
