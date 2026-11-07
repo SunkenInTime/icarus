@@ -12,7 +12,9 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/team_provider.dart';
+import 'package:icarus/services/app_assets.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/widgets/loading_spinner.dart';
 
 class AbiilityBar extends ConsumerWidget {
   const AbiilityBar({super.key});
@@ -129,7 +131,7 @@ class AbiilityBar extends ConsumerWidget {
                       child: SizedBox(
                         height: 55,
                         width: 55,
-                        child: Image.asset(ability.iconPath),
+                        child: AbilityBarIcon(ability.iconPath),
                       ),
                     ),
                   ),
@@ -147,6 +149,40 @@ class AbiilityBar extends ConsumerWidget {
     return IgnorePointer(
       key: const ValueKey('ability-bar-disabled'),
       child: Opacity(opacity: 0.4, child: bar),
+    );
+  }
+}
+
+/// An ability's icon in the bar. A read that can't reach the asset waits for
+/// it (see [appAssets]), so with no connection the slot would sit empty and
+/// look broken. While the icon is waiting the slot spins instead.
+class AbilityBarIcon extends StatelessWidget {
+  const AbilityBarIcon(this.iconPath, {super.key});
+
+  final String iconPath;
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      iconPath,
+      frameBuilder: (context, child, frame, _) {
+        if (frame != null) return child;
+        return ValueListenableBuilder(
+          valueListenable: appAssets.missing,
+          builder: (context, missing, _) {
+            if (!missing.contains(iconPath)) return child;
+            return Center(
+              child: SizedBox.square(
+                dimension: 20,
+                child: LoadingSpinner(
+                  strokeWidth: 2,
+                  color: Settings.tacticalVioletTheme.mutedForeground,
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
