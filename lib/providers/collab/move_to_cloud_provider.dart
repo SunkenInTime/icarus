@@ -349,6 +349,14 @@ class MoveToCloudNotifier extends Notifier<void> {
     if (!_canMoveFor(accountId, name)) return;
     _showMessage('Importing "$name" to the cloud…');
     for (final item in items) {
+      // Each move alone would stay quiet about a sign-out; the import says
+      // once what didn't go.
+      if (ref.read(cloudMediaAccountIdProvider) != accountId) {
+        _showFailure(
+          'You signed out, so the rest of "$name" stays on this device.',
+        );
+        return;
+      }
       await (item.isFolder
           ? moveFolder(item.id, cloudParentId: cloudFolderId, importing: true)
           : moveStrategy(

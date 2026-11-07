@@ -358,6 +358,20 @@ void main() {
       expect(messages.single.$2, isTrue);
     });
 
+    test('signed out partway, the rest of a backup says it stayed', () async {
+      cloud.onFinish =
+          () async => container.read(_account.notifier).state = null;
+
+      await importInto('plays', libraryBackup());
+
+      expect(cloud.strategies, hasLength(1), reason: 'the first item went');
+      expect(strategies().values.single.name, 'Loose');
+      expect(messages.last, (
+        'You signed out, so the rest of "backup" stays on this device.',
+        true,
+      ));
+    });
+
     test('signed out before it moves, an archive says it stayed', () async {
       await importInto('plays', folderArchive(), signedIn: false);
 
