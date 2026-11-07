@@ -19,9 +19,10 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 /// now, so the refusal lasts only as long as the notes that caused it.
 ///
 /// The open page is read from the editor, which takes a teammate's edits as
-/// they arrive. Another page of a cloud strategy is watched on the server
-/// while it's refused. A local strategy's other pages can't change while a
-/// dialog covers the editor.
+/// they arrive. Its changes are counted from the first check on, since one
+/// can land while a check is still drawing the copy it took. Another page of
+/// a cloud strategy is watched on the server while it's refused. A local
+/// strategy's other pages can't change while a dialog covers the editor.
 class RefusedCaptionsWatch {
   RefusedCaptionsWatch(this._ref, {required this.onChange});
 
@@ -38,12 +39,19 @@ class RefusedCaptionsWatch {
   final Map<String, StreamSubscription<RemotePageSnapshot>> _pages = {};
   Timer? _settling;
 
-  /// Watches [pageIds], and stops watching every other page.
-  void watch(Set<String> pageIds) {
-    final openPageId = _ref.read(strategyPageSessionProvider).activePageId;
-    final watchOpenPage = pageIds.contains(openPageId);
-    if (watchOpenPage && _openPage.isEmpty) {
-      void changed(Object? _, Object? __) => _changed();
+  /// How many times the open page has changed since the first check.
+  int _openPageChanges = 0;
+  bool _watchingOpenPage = false;
+
+  /// Call as a check takes its copy of the pages. Pass what it returns to
+  /// [watch] with that check's refusals.
+  int checkStarting() {
+    if (_openPage.isEmpty) {
+      void changed(Object? _, Object? __) {
+        _openPageChanges++;
+        if (_watchingOpenPage) _changed();
+      }
+
       _openPage = [
         _ref.listenManual(agentProvider, changed),
         _ref.listenManual(abilityProvider, changed),
@@ -52,8 +60,18 @@ class RefusedCaptionsWatch {
         _ref.listenManual(utilityProvider, changed),
         _ref.listenManual(drawingProvider, changed),
       ];
-    } else if (!watchOpenPage) {
-      _closeOpenPage();
+    }
+    return _openPageChanges;
+  }
+
+  /// Watches [pageIds], and stops watching every other page. [checked] is
+  /// what [checkStarting] returned for the check that refused them: when the
+  /// open page is among them and has changed since, it's checked again.
+  void watch(Set<String> pageIds, {int? checked}) {
+    final openPageId = _ref.read(strategyPageSessionProvider).activePageId;
+    _watchingOpenPage = pageIds.contains(openPageId);
+    if (_watchingOpenPage && checked != null && checked != _openPageChanges) {
+      _changed();
     }
 
     final strategy = _ref.read(strategyProvider);
@@ -79,7 +97,7 @@ class RefusedCaptionsWatch {
           )
           .listen((_) => _changed(), onError: (Object _) {});
     }
-    if (_openPage.isEmpty && _pages.isEmpty) {
+    if (!_watchingOpenPage && _pages.isEmpty) {
       _settling?.cancel();
       _settling = null;
     }
@@ -90,16 +108,11 @@ class RefusedCaptionsWatch {
     _settling = Timer(settle, onChange);
   }
 
-  void _closeOpenPage() {
+  void dispose() {
+    _settling?.cancel();
     for (final subscription in _openPage) {
       subscription.close();
     }
-    _openPage = const [];
-  }
-
-  void dispose() {
-    _settling?.cancel();
-    _closeOpenPage();
     for (final subscription in _pages.values) {
       unawaited(subscription.cancel());
     }

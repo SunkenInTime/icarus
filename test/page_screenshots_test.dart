@@ -222,6 +222,33 @@ Future<CaptionExportLayout> _captionLayout(
   return layout!;
 }
 
+/// Stands in for the export dialogs' caption check: the open page's notes fit
+/// or not as [fits] says when the check takes its copy, and [whileChecking]
+/// runs once, after that copy is taken.
+class _FakeCaptionCheck {
+  var fits = false;
+  var checks = 0;
+  void Function(WidgetRef ref)? whileChecking;
+
+  Future<void> thumbnailer(
+    WidgetRef ref, {
+    required Set<String> pageIds,
+    required void Function(String pageId, ui.Image image) onThumbnail,
+    required void Function(Set<String> pageIds, Object error) onUnavailable,
+    required bool Function() isCancelled,
+    bool includeCaptions = false,
+    void Function(String pageId, CaptionExportLayout layout)? onCaptions,
+  }) async {
+    if (!includeCaptions) return;
+    checks++;
+    final copied = fits;
+    final during = whileChecking;
+    whileChecking = null;
+    during?.call(ref);
+    onCaptions?.call('a', CaptionExportLayout(entries: const [], fits: copied));
+  }
+}
+
 PageScreenshot _shot(int number, String name) =>
     (number: number, name: name, png: Uint8List.fromList([number]));
 
@@ -860,8 +887,12 @@ void main() {
     );
   });
 
-  testWidgets('a refusal clears once the open page changes so its notes fit',
-      (tester) async {
+  /// Opens the screenshot dialog on a one-page local strategy with captions
+  /// included, its check replaced by [check].
+  Future<ProviderContainer> openCaptionsDialog(
+    WidgetTester tester,
+    _FakeCaptionCheck check,
+  ) async {
     await tester.runAsync(
       () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
         _strategyId,
@@ -876,27 +907,9 @@ void main() {
         ),
       ),
     );
-    // Stands in for the real check: what the open page's notes work out to
-    // is whatever the test says, as of each check.
-    var fits = false;
-    var checks = 0;
-    Future<void> thumbnailer(
-      WidgetRef ref, {
-      required Set<String> pageIds,
-      required void Function(String pageId, ui.Image image) onThumbnail,
-      required void Function(Set<String> pageIds, Object error) onUnavailable,
-      required bool Function() isCancelled,
-      bool includeCaptions = false,
-      void Function(String pageId, CaptionExportLayout layout)? onCaptions,
-    }) async {
-      if (!includeCaptions) return;
-      checks++;
-      onCaptions?.call('a', CaptionExportLayout(entries: const [], fits: fits));
-    }
-
     final container = ProviderContainer(overrides: [
       strategyProvider.overrideWith(_OpenLocalStrategy.new),
-      pageThumbnailerProvider.overrideWithValue(thumbnailer),
+      pageThumbnailerProvider.overrideWithValue(check.thumbnailer),
     ]);
     addTearDown(container.dispose);
     container.read(strategyPageSessionProvider.notifier).setStateForTest(
@@ -904,11 +917,13 @@ void main() {
               .read(strategyPageSessionProvider)
               .copyWith(activePageId: 'a'),
         );
-    await tester.runAsync(
-      () => container
-          .read(appPreferencesProvider.notifier)
-          .setIncludeScreenshotCaptions(true),
-    );
+    Future<void> includeCaptions(bool value) => tester.runAsync(
+          () => container
+              .read(appPreferencesProvider.notifier)
+              .setIncludeScreenshotCaptions(value),
+        );
+    await includeCaptions(true);
+    addTearDown(() => includeCaptions(false));
     await tester.pumpWidget(UncontrolledProviderScope(
       container: container,
       child: const ShadApp(home: Scaffold(body: EditorToolbar())),
@@ -917,40 +932,61 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     ignoreTestFontOverflow(tester);
+    return container;
+  }
 
-    final refusal = captionsDontFitMessage(null);
-    bool saveEnabled() => tester
-        .widget<ShadButton>(find.ancestor(
-          of: find.text('Save screenshot').last,
-          matching: find.byType(ShadButton),
-        ))
-        .enabled;
+  final refusal = captionsDontFitMessage(null);
+  bool saveEnabled(WidgetTester tester) => tester
+      .widget<ShadButton>(find.ancestor(
+        of: find.text('Save screenshot').last,
+        matching: find.byType(ShadButton),
+      ))
+      .enabled;
+
+  testWidgets('a refusal clears once the open page changes so its notes fit',
+      (tester) async {
+    final check = _FakeCaptionCheck();
+    final container = await openCaptionsDialog(tester, check);
+
     expect(find.text(refusal), findsOneWidget);
-    expect(saveEnabled(), isFalse);
-    final checksWhileRefused = checks;
+    expect(saveEnabled(tester), isFalse);
+    expect(check.checks, 1);
 
     // A teammate's shorter note arrives on the open page.
-    fits = true;
+    check.fits = true;
     container.read(textProvider.notifier).fromHive([]);
     await tester.pump(RefusedCaptionsWatch.settle);
     await tester.pump();
     ignoreTestFontOverflow(tester);
 
-    expect(checks, checksWhileRefused + 1);
+    expect(check.checks, 2);
     expect(find.text(refusal), findsNothing);
-    expect(saveEnabled(), isTrue);
+    expect(saveEnabled(tester), isTrue);
 
     // With nothing refused, edits on the page don't check again.
     container.read(textProvider.notifier).fromHive([]);
     await tester.pump(RefusedCaptionsWatch.settle);
     await tester.pump();
-    expect(checks, checksWhileRefused + 1);
+    expect(check.checks, 2);
+  });
 
-    await tester.runAsync(
-      () => container
-          .read(appPreferencesProvider.notifier)
-          .setIncludeScreenshotCaptions(false),
-    );
+  testWidgets(
+      'a note fixed while the check that refuses it runs is checked again',
+      (tester) async {
+    final check = _FakeCaptionCheck();
+    check.whileChecking = (ref) {
+      // The check has its copy; the teammate's fix lands in the editor.
+      check.fits = true;
+      ref.read(textProvider.notifier).fromHive([]);
+    };
+    await openCaptionsDialog(tester, check);
+    await tester.pump(RefusedCaptionsWatch.settle);
+    await tester.pump();
+    ignoreTestFontOverflow(tester);
+
+    expect(check.checks, 2);
+    expect(find.text(refusal), findsNothing);
+    expect(saveEnabled(tester), isTrue);
   });
 
   testWidgets('a cancel during the last page still saves nothing',

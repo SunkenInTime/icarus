@@ -128,6 +128,7 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     final thumbnailer = ref.read(pageThumbnailerProvider);
     _previews = _previews.whenComplete(() {
       if (cancelled()) return null;
+      final checked = _refusedWatch.checkStarting();
       return thumbnailer(
         ref,
         pageIds: {for (final page in _pages) page.id},
@@ -148,7 +149,7 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
               _captionMisfits.add(pageId);
             }
           });
-          _refusedWatch.watch(_captionMisfits);
+          _refusedWatch.watch(_captionMisfits, checked: checked);
         },
         onUnavailable: (pageIds, _) {
           if (stale()) return;

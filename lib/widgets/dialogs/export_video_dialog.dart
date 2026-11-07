@@ -118,6 +118,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     final thumbnailer = ref.read(pageThumbnailerProvider);
     _captionCheck = _captionCheck.whenComplete(() {
       if (cancelled()) return null;
+      final checked = _refusedWatch.checkStarting();
       return thumbnailer(
         ref,
         pageIds: {for (final page in _pages) page.id},
@@ -130,7 +131,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
           _refusedWatch.watch({
             for (final MapEntry(:key, :value) in _captions.entries)
               if (!value.fits) key,
-          });
+          }, checked: checked);
         },
         isCancelled: cancelled,
       );
