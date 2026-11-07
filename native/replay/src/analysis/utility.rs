@@ -55,8 +55,9 @@ pub(super) fn utility(
                     ]);
                 }
             }
-            // Phoenix's Blaze and Viper's Toxic Screen.
-            "MulticastAddSmokeScreenPoint.Translation" => {
+            // Phoenix's Blaze and Viper's Toxic Screen, then Harbor's
+            // High Tide.
+            "MulticastAddSmokeScreenPoint.Translation" | "MulticastAddAnchor.Translation" => {
                 point(row.text.as_deref().and_then(parse_vector));
             }
             // Neon's Fast Lane, then Vyse's Shear wall and its trap.

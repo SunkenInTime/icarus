@@ -185,6 +185,7 @@ const EXACT: &[&str] = &[
     "MulticastNotifyKilledEnemy.KillerCharacter",
     "MulticastNotifyKilledEnemy.KilledCharacter",
     "MulticastAddSmokeScreenPoint.Translation",
+    "MulticastAddAnchor.Translation",
     "MulticastAddTunnelPoint.Translation",
     "MulticastInitializeWall.WallStartLocation",
     "MulticastInitializeWall.WallEndLocation",

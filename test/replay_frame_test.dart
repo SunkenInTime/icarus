@@ -473,7 +473,10 @@ void main() {
     });
 
     // Harbor's High Tide: a head run from the origin along +x, then up +y,
-    // and the actor that holds the wall up for 15 s after.
+    // and the actor that holds the wall up for 15 s after, with the anchors
+    // the game raised it on: 200 apart from 400 along the run, one missing
+    // at (2000, 600) and three at (2000, 1200) to (2000, 2000) where the game
+    // left bare ground, as it does inside geometry.
     const highTide = '/Game/Characters/Mage/S0/Ability_Q/'
         'Projectile_Mage_Q_Wall.Projectile_Mage_Q_Wall_C';
     const wallManager = '/Game/Characters/Mage/S0/Ability_Q/'
@@ -502,22 +505,38 @@ void main() {
           'spawnMs': spawnMs,
           'endMs': spawnMs + 16000,
           'position': [0, 0, 100],
+          'points': [
+            for (var x = 400; x <= 2000; x += 200) [x, 0, 100],
+            for (final y in [200, 400, 800, 1000, 1600, 1800]) [2000, y, 100],
+          ],
         };
-    final corner = projection.toWorld(2000, 0);
-    final end = projection.toWorld(2000, 2000);
+    List<Offset> world(List<(double, double)> points) => [
+          for (final (x, y) in points) projection.toWorld(x, y),
+        ];
+    final firstStretch = world([
+      for (var x = 400.0; x <= 2000; x += 200) (x, 0),
+      for (final y in <double>[200, 400, 800, 1000]) (2000, y),
+    ]);
+    final secondStretch = world([(2000, 1600), (2000, 1800)]);
+    Offset iconAt(PlacedAbility placed) =>
+        placed.position +
+        CoordinateSystem.virtualToWorld(storedAbilityAnchor(
+          ability: placed.data.abilityData!,
+          mapScale: Maps.mapScale[projection.map]!,
+        ));
 
-    test('High Tide grows behind its head, and blocks what is drawn', () {
+    test('High Tide grows on its anchors behind its head, and blocks', () {
       final frames = builder(document(
         players: harborPlayers,
         utility: [head(5, 1000), holder(6, 1002)],
       ));
-      final frame = frames.frameAt(2500, perspective: ReplayTeam.red);
+      // The head is at (2000, 900): past the anchor at (2000, 800), short
+      // of the one at (2000, 1000).
+      final frame = frames.frameAt(2450, perspective: ReplayTeam.red);
 
+      // From the first anchor, not the cast, and across the one missing.
       final wall = frame.effects.whereType<ReplayGuidedWall>().single;
-      expect(wall.points.first, projection.toWorld(0, 0));
-      expect(wall.points[1], corner);
-      expect((wall.points.last - projection.toWorld(2000, 1000)).distance,
-          lessThan(1e-6));
+      expect(wall.points, firstStretch.sublist(0, firstStretch.length - 1));
       expect(wall.opacity, 1);
       expect(wall.isAlly, isFalse);
 
@@ -527,11 +546,7 @@ void main() {
       // The icon rides the head.
       final placed = frame.abilities.single;
       expect((placed.data.type, placed.data.index), (AgentType.harbor, 1));
-      final anchor = CoordinateSystem.virtualToWorld(storedAbilityAnchor(
-        ability: placed.data.abilityData!,
-        mapScale: Maps.mapScale[projection.map]!,
-      ));
-      expect((placed.position + anchor - wall.points.last).distance,
+      expect((iconAt(placed) - projection.toWorld(2000, 900)).distance,
           lessThan(1e-6));
     });
 
@@ -542,40 +557,81 @@ void main() {
       ));
       ReplayFrame at(int t) => frames.frameAt(t, perspective: ReplayTeam.red);
 
-      // The head's actor closed at 3000; the wall came down at 17002.
+      // The head's actor closed at 3000; the wall came down at 17002. It
+      // stands in two stretches, with bare ground between, and its icon
+      // marks where it ends, short of where the head stopped.
       for (final t in [3000, 10000, 17001]) {
         final frame = at(t);
-        final wall = frame.effects.whereType<ReplayGuidedWall>().single;
-        expect(wall.points.last, end, reason: '$t');
-        expect(wall.opacity, 1, reason: '$t');
-        expect((frame.occluders.single as LineOccluder).points, wall.points,
+        final walls = frame.effects.whereType<ReplayGuidedWall>();
+        expect([for (final wall in walls) wall.points],
+            [firstStretch, secondStretch],
             reason: '$t');
-        expect(frame.abilities.single.id, 'replay-utility-5', reason: '$t');
+        expect(walls.map((wall) => wall.opacity), [1, 1], reason: '$t');
+        expect([
+          for (final occluder in frame.occluders)
+            (occluder as LineOccluder).points,
+        ], [
+          firstStretch,
+          secondStretch
+        ], reason: '$t');
+        final placed = frame.abilities.single;
+        expect(placed.id, 'replay-utility-5', reason: '$t');
+        expect((iconAt(placed) - secondStretch.last).distance, lessThan(1e-6),
+            reason: '$t');
       }
 
       // Coming down: it fades where it stood, and hides nothing any more.
       final leaving = at(17252);
       expect(leaving.abilities, isEmpty);
       expect(leaving.occluders, isEmpty);
-      final wall = leaving.effects.whereType<ReplayGuidedWall>().single;
-      expect(wall.points.last, end);
-      expect(wall.opacity, closeTo(0.5, 1e-9));
+      final walls = leaving.effects.whereType<ReplayGuidedWall>();
+      expect([for (final wall in walls) wall.points],
+          [firstStretch, secondStretch]);
+      expect(walls.map((wall) => wall.opacity),
+          everyElement(closeTo(0.5, 1e-9)));
+      expect((leaving.effects.whereType<ReplayExit>().single.centre -
+                  secondStretch.last)
+              .distance,
+          lessThan(1e-6));
       expect(leaving.effects.whereType<ReplayExit>().single.progress,
           closeTo(0.5, 1e-9));
 
       expect(at(17600).effects, isEmpty);
     });
 
-    test('High Tide with no holder goes when its head does', () {
+    test('High Tide with no holder raises no wall, and goes with its head',
+        () {
       final frames = builder(document(
         players: harborPlayers,
         utility: [head(5, 1000)],
       ));
       ReplayFrame at(int t) => frames.frameAt(t, perspective: ReplayTeam.red);
-      expect(at(2999).occluders, hasLength(1));
-      expect(at(3000).occluders, isEmpty);
-      expect(at(3000).effects.whereType<ReplayGuidedWall>().single.opacity, 1);
+      expect(at(2999).abilities, hasLength(1));
+      expect(at(2999).occluders, isEmpty);
+      expect(at(2999).effects.whereType<ReplayGuidedWall>(), isEmpty);
+      expect(at(3000).abilities, isEmpty);
       expect(at(3600).effects, isEmpty);
+    });
+
+    test('an anchor alone between bare ground is no stretch', () {
+      final frames = builder(document(
+        players: harborPlayers,
+        utility: [
+          head(5, 1000),
+          holder(6, 1002)
+            ..['points'] = [
+              [400, 0, 100],
+              [1200, 0, 100],
+              [1400, 0, 100],
+              [2000, 0, 100],
+            ],
+        ],
+      ));
+      final frame = frames.frameAt(9000, perspective: ReplayTeam.red);
+      expect(
+          frame.effects.whereType<ReplayGuidedWall>().single.points,
+          world([(1200, 0), (1400, 0)]));
+      expect(frame.occluders, hasLength(1));
     });
 
     test('each High Tide takes the holder its own caster opened', () {
@@ -630,7 +686,7 @@ void main() {
       expect(frame.widgets.whereType<PlacedAbility>().single.data.name,
           'High Tide');
       // The wall itself is an effect, which a page never holds.
-      expect(frame.effects.whereType<ReplayGuidedWall>(), hasLength(1));
+      expect(frame.effects.whereType<ReplayGuidedWall>(), hasLength(2));
     });
 
     test('a wall is stroked along its line, in its colour over its team', () {
