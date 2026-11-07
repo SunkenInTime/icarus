@@ -8,8 +8,9 @@
 #     -Companion tool\drive\scripts\editor-soak-companion.json -Account <email>
 #
 # -Companion runs a second instance at the same time, signed in to the same
-# account, like a second device; the two wait for each other with the
-# signal / waitSignal steps. Each instance keeps its library, its pictures and
+# account, like a second device, or with -CompanionAccount to another one,
+# like a teammate; the two wait for each other with the signal / waitSignal
+# steps. Each instance keeps its library, its pictures and
 # its sign-in under -Out, a new folder each run, so a run never signs the
 # installed app
 # in or out, and driver builds leave icarus: links with the installed app.
@@ -24,6 +25,7 @@ param(
   [Parameter(Mandatory)] [string]$Script,
   [Parameter(Mandatory)] [string]$Account,
   [string]$Companion,
+  [string]$CompanionAccount,
   [string]$Out,
   [string]$AccountsFile = (Join-Path $HOME '.agents\secrets\icarus\test-accounts.md'),
   [int]$TimeoutSeconds = 900
@@ -40,13 +42,15 @@ if ((Test-Path -LiteralPath $Out) -and (Get-ChildItem -LiteralPath $Out -Force |
 New-Item -ItemType Directory -Force -Path (Join-Path $Out 'signals') | Out-Null
 $exePath = if ((Get-Item -LiteralPath $Exe).PSIsContainer) { Join-Path $Exe 'icarus.exe' } else { $Exe }
 
-$row = Get-Content -LiteralPath $AccountsFile |
-  Where-Object { $_ -match ('^\|\s*' + [regex]::Escape($Account) + '\s*\|') } |
-  Select-Object -First 1
-if (-not $row) { throw "No row for $Account in $AccountsFile" }
-$password = $row.Split('|')[2].Trim()
+function Get-Password([string]$email) {
+  $row = Get-Content -LiteralPath $AccountsFile |
+    Where-Object { $_ -match ('^\|\s*' + [regex]::Escape($email) + '\s*\|') } |
+    Select-Object -First 1
+  if (-not $row) { throw "No row for $email in $AccountsFile" }
+  $row.Split('|')[2].Trim()
+}
 
-function Start-Instance([string]$name, [string]$scriptPath) {
+function Start-Instance([string]$name, [string]$scriptPath, [string]$email) {
   $env:LOCALAPPDATA = Join-Path $Out "appdata-$name"
   $env:ICARUS_DRIVE_SCRIPT = (Resolve-Path $scriptPath).Path
   $env:ICARUS_DRIVE_LOG = Join-Path $Out "$name.log"
@@ -55,8 +59,8 @@ function Start-Instance([string]$name, [string]$scriptPath) {
   $env:ICARUS_DRIVE_SIGNALS = Join-Path $Out 'signals'
   $env:ICARUS_DRIVE_SESSION = Join-Path $Out "session-$name.json"
   $env:ICARUS_DRIVE_SET_CLIPBOARD = Join-Path $PSScriptRoot 'set-clipboard.ps1'
-  $env:ICARUS_DRIVE_EMAIL = $Account
-  $env:ICARUS_DRIVE_PASSWORD = $password
+  $env:ICARUS_DRIVE_EMAIL = $email
+  $env:ICARUS_DRIVE_PASSWORD = Get-Password $email
   try {
     $process = Start-Process -FilePath $exePath -PassThru `
       -ArgumentList ('"--hive-store-dir={0}"' -f (Join-Path $Out "store-$name")) `
@@ -69,10 +73,12 @@ function Start-Instance([string]$name, [string]$scriptPath) {
 }
 
 $originalAppData = $env:LOCALAPPDATA
-$instances = [ordered]@{ main = Start-Instance 'main' $Script }
-if ($Companion) { $instances.companion = Start-Instance 'companion' $Companion }
+$instances = [ordered]@{ main = Start-Instance 'main' $Script $Account }
+if ($Companion) {
+  $email = if ($CompanionAccount) { $CompanionAccount } else { $Account }
+  $instances.companion = Start-Instance 'companion' $Companion $email
+}
 $env:LOCALAPPDATA = $originalAppData
-$password = $null
 
 $clean = $true
 foreach ($name in $instances.Keys) {

@@ -24,9 +24,11 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/screenshot/caption_export_layout.dart';
 import 'package:icarus/screenshot/page_screenshot.dart';
+import 'package:icarus/screenshot/refused_captions_watch.dart';
 import 'package:icarus/screenshot/save_screenshots.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -218,6 +220,33 @@ Future<CaptionExportLayout> _captionLayout(
     await tester.pump();
   }
   return layout!;
+}
+
+/// Stands in for the export dialogs' caption check: the open page's notes fit
+/// or not as [fits] says when the check takes its copy, and [whileChecking]
+/// runs once, after that copy is taken.
+class _FakeCaptionCheck {
+  var fits = false;
+  var checks = 0;
+  void Function(WidgetRef ref)? whileChecking;
+
+  Future<void> thumbnailer(
+    WidgetRef ref, {
+    required Set<String> pageIds,
+    required void Function(String pageId, ui.Image image) onThumbnail,
+    required void Function(Set<String> pageIds, Object error) onUnavailable,
+    required bool Function() isCancelled,
+    bool includeCaptions = false,
+    void Function(String pageId, CaptionExportLayout layout)? onCaptions,
+  }) async {
+    if (!includeCaptions) return;
+    checks++;
+    final copied = fits;
+    final during = whileChecking;
+    whileChecking = null;
+    during?.call(ref);
+    onCaptions?.call('a', CaptionExportLayout(entries: const [], fits: copied));
+  }
 }
 
 PageScreenshot _shot(int number, String name) =>
@@ -856,6 +885,108 @@ void main() {
           .enabled,
       isFalse,
     );
+  });
+
+  /// Opens the screenshot dialog on a one-page local strategy with captions
+  /// included, its check replaced by [check].
+  Future<ProviderContainer> openCaptionsDialog(
+    WidgetTester tester,
+    _FakeCaptionCheck check,
+  ) async {
+    await tester.runAsync(
+      () => Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+        _strategyId,
+        StrategyData(
+          id: _strategyId,
+          name: 'Retakes',
+          mapData: MapValue.ascent,
+          versionNumber: 1,
+          lastEdited: DateTime(2026),
+          folderID: null,
+          pages: [_page('a', 'Default', 0)],
+        ),
+      ),
+    );
+    final container = ProviderContainer(overrides: [
+      strategyProvider.overrideWith(_OpenLocalStrategy.new),
+      pageThumbnailerProvider.overrideWithValue(check.thumbnailer),
+    ]);
+    addTearDown(container.dispose);
+    container.read(strategyPageSessionProvider.notifier).setStateForTest(
+          container
+              .read(strategyPageSessionProvider)
+              .copyWith(activePageId: 'a'),
+        );
+    Future<void> includeCaptions(bool value) => tester.runAsync(
+          () => container
+              .read(appPreferencesProvider.notifier)
+              .setIncludeScreenshotCaptions(value),
+        );
+    await includeCaptions(true);
+    addTearDown(() => includeCaptions(false));
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const ShadApp(home: Scaffold(body: EditorToolbar())),
+    ));
+    await tester.tap(find.byIcon(LucideIcons.camera200));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    ignoreTestFontOverflow(tester);
+    return container;
+  }
+
+  final refusal = captionsDontFitMessage(null);
+  bool saveEnabled(WidgetTester tester) => tester
+      .widget<ShadButton>(find.ancestor(
+        of: find.text('Save screenshot').last,
+        matching: find.byType(ShadButton),
+      ))
+      .enabled;
+
+  testWidgets('a refusal clears once the open page changes so its notes fit',
+      (tester) async {
+    final check = _FakeCaptionCheck();
+    final container = await openCaptionsDialog(tester, check);
+
+    expect(find.text(refusal), findsOneWidget);
+    expect(saveEnabled(tester), isFalse);
+    expect(check.checks, 1);
+
+    // A teammate's shorter note arrives on the open page.
+    check.fits = true;
+    container.read(textProvider.notifier).fromHive([]);
+    await tester.pump(RefusedCaptionsWatch.settle);
+    await tester.pump();
+    ignoreTestFontOverflow(tester);
+
+    expect(check.checks, 2);
+    expect(find.text(refusal), findsNothing);
+    expect(saveEnabled(tester), isTrue);
+
+    // With nothing refused, edits on the page don't check again.
+    container.read(textProvider.notifier).fromHive([]);
+    await tester.pump(RefusedCaptionsWatch.settle);
+    await tester.pump();
+    expect(check.checks, 2);
+  });
+
+  testWidgets(
+      'a note fixed while the check that refuses it runs is checked again',
+      (tester) async {
+    final check = _FakeCaptionCheck();
+    check.whileChecking = (ref) {
+      // The check has its copy; the teammate's fix lands in the editor.
+      check.fits = true;
+      ref.read(textProvider.notifier).fromHive([]);
+    };
+    await openCaptionsDialog(tester, check);
+    await tester.pump(RefusedCaptionsWatch.settle);
+    await tester.pump();
+    ignoreTestFontOverflow(tester);
+
+    expect(check.checks, 2);
+    expect(find.text(refusal), findsNothing);
+    expect(saveEnabled(tester), isTrue);
   });
 
   testWidgets('a cancel during the last page still saves nothing',
