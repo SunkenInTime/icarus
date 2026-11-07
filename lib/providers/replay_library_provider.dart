@@ -2,9 +2,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/replay/replay_decoder.dart';
 import 'package:icarus/replay/replay_files.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/strategy_folders.dart';
 import 'package:path/path.dart' as p;
 
-final replayFilesProvider = Provider<ReplayFiles>((ref) => ReplayFiles());
+/// A driver run given its own store with --hive-store-dir keeps its replays
+/// and their decoded cache there, away from the real app's.
+final replayFilesProvider = Provider<ReplayFiles>(
+    (ref) => ReplayFiles(supportDirectory: strategyFoldersRoot));
 
 /// Reads a replay's header. Tests swap it for one that needs no native
 /// decoder.
