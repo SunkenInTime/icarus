@@ -340,7 +340,9 @@ ShadContextMenuItem _buildToggleItem({
       isEnabled ? LucideIcons.squareCheck : LucideIcons.square,
       size: 16,
     ),
-    child: Text(label),
+    // The box glyph is the only sign of the state; this says it to a screen
+    // reader. It merges into the item's node.
+    child: Semantics(checked: isEnabled, child: Text(label)),
   );
 }
 
