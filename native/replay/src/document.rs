@@ -148,6 +148,9 @@ pub struct Utility {
     pub path: Option<Vec<PathRow>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points: Option<Vec<Vec3>>,
+    /// When each of `points` arrived, in the same order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub point_ms: Option<Vec<i64>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -237,6 +240,7 @@ mod tests {
             yaw: Some(0.0),
             path: Some(vec![(50_806, 1.5, -2.0, 3.0)]),
             points: None,
+            point_ms: None,
         };
         let json = serde_json::to_string(&utility).unwrap();
         assert!(json.contains("[50806,1.5,-2.0,3.0]"), "{json}");

@@ -509,6 +509,12 @@ void main() {
             for (var x = 400; x <= 2000; x += 200) [x, 0, 100],
             for (final y in [200, 400, 800, 1000, 1600, 1800]) [2000, y, 100],
           ],
+          // Laid as a head cast 2 ms before passes each.
+          'pointMs': [
+            for (var x = 400; x <= 2000; x += 200) spawnMs - 2 + x ~/ 2,
+            for (final y in [200, 400, 800, 1000, 1600, 1800])
+              spawnMs - 2 + 1000 + y ~/ 2,
+          ],
         };
     List<Offset> world(List<(double, double)> points) => [
           for (final (x, y) in points) projection.toWorld(x, y),
@@ -525,13 +531,13 @@ void main() {
           mapScale: Maps.mapScale[projection.map]!,
         ));
 
-    test('High Tide grows on its anchors behind its head, and blocks', () {
+    test('High Tide grows on its anchors as they are laid, and blocks', () {
       final frames = builder(document(
         players: harborPlayers,
         utility: [head(5, 1000), holder(6, 1002)],
       ));
-      // The head is at (2000, 900): past the anchor at (2000, 800), short
-      // of the one at (2000, 1000).
+      // The anchor at (2000, 800) was laid at 2400, the one at (2000, 1000)
+      // not until 2500.
       final frame = frames.frameAt(2450, perspective: ReplayTeam.red);
 
       // From the first anchor, not the cast, and across the one missing.
@@ -611,34 +617,6 @@ void main() {
       expect(at(2999).effects.whereType<ReplayGuidedWall>(), isEmpty);
       expect(at(3000).abilities, isEmpty);
       expect(at(3600).effects, isEmpty);
-    });
-
-    test('a wall bent back on itself shows each anchor as its head first passes',
-        () {
-      final frames = builder(document(
-        players: harborPlayers,
-        utility: [
-          {
-            ...head(5, 1000),
-            // Out along +x, then back alongside, nearer the anchors.
-            'endMs': 3000,
-            'path': [
-              [2000, 2000, 0, 100],
-              [2100, 2000, 10, 100],
-              [3000, 0, 10, 100],
-            ],
-          },
-          holder(6, 1002)
-            ..['points'] = [
-              [400, 6, 100],
-              [600, 6, 100],
-            ],
-        ],
-      ));
-      // Passed on the way out by 1300; the way back comes nearer at 2800.
-      final frame = frames.frameAt(1400, perspective: ReplayTeam.red);
-      expect(frame.effects.whereType<ReplayGuidedWall>().single.points,
-          world([(400, 6), (600, 6)]));
     });
 
     test('an anchor alone between bare ground is no stretch', () {

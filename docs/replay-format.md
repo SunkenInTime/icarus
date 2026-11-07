@@ -105,7 +105,8 @@ first byte.
       "position": [x, y, z],
       "yaw?": 90.0,                         // absent only for an actor with no spawn transform
       "path?": [[timeMs, x, y, z], …],     // where it went, about 10 Hz; see "Utility"
-      "points?": [[x, y, z], …]             // shape points; see "Utility"
+      "points?": [[x, y, z], …],            // shape points; see "Utility"
+      "pointMs?": [timeMs, …]               // when each point arrived
     }
   ],
   "doors": [
@@ -230,7 +231,11 @@ with the last always kept. It is absent when the actor never left its
 | Deadlock's Barrier Mesh (`GameObject_CableJamRoot`) | each arm's end, one per arm that deployed (a blocked arm has none) | each `GameObject_CableJam_CableDeployer_Precomputed` it owns: `MulticastInitialize.Destination` |
 | Cypher's Trapwire (`GameObject_Gumshoe_E_TripWire`) | one point, the far anchor; the actor is the near one | the `GameObject_Gumshoe_E_TripWire_SecondWire` opened with it, same millisecond and `Owner` |
 
-Every other utility has none. The Fast Lane, Shear and Barrier Mesh values
+Every other utility has none. `pointMs` holds the time each point arrived,
+one per point. High Tide's anchors arrive as its head lays them, so the
+viewer raises the wall by them.
+
+The Fast Lane, Shear and Barrier Mesh values
 are vectors vrfkit leaves untyped; the decoder reads them as three
 little-endian doubles, which put each wall's first point on its actor and
 each mesh's `RootLocation` on its root.

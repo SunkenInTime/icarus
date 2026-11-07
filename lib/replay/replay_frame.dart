@@ -309,72 +309,20 @@ class ReplayFrameBuilder {
   /// short of one anchor is bridged.
   static const _wallGap = 500.0;
 
-  /// Where the game raised each guided wall, by its head's index in the
-  /// utility list: its holder's anchors, in the order they went down, each
-  /// with when the head passed it.
-  late final Map<int, List<({int passedMs, ReplayVector at})>> _wallAnchors = {
-    for (final MapEntry(key: index, value: holder) in _wallHolders.entries)
-      index: _passedAnchors(document.utility[index], holder.points),
-  };
-
-  /// How near, in game units, the head's path counts as passing an anchor:
-  /// the anchors sit a few centimetres off the path the replay keeps, and
-  /// at most about half a metre on a tight bend.
-  static const _passedWithin = 100.0;
-
-  /// [anchors] each with when [head] passed it: where its path first went
-  /// near, looking on from where it passed the anchor before. A wall bent
-  /// back on itself passes an earlier anchor again later, and that later
-  /// pass mustn't hold the anchor back until then.
-  static List<({int passedMs, ReplayVector at})> _passedAnchors(
-    ReplayUtility head,
-    List<ReplayVector> anchors,
-  ) {
-    final path = [ReplayPathPoint(head.spawnMs, head.position), ...head.path];
-    final passed = <({int passedMs, ReplayVector at})>[];
-    var start = 0;
-    for (final at in anchors) {
-      var nearest = double.infinity;
-      var nearestMs = path[start].timeMs;
-      var nearestStep = start;
-      for (var i = start; i + 1 < path.length; i++) {
-        final from = path[i].position, to = path[i + 1].position;
-        final dx = to.x - from.x, dy = to.y - from.y;
-        final length = dx * dx + dy * dy;
-        final t = length == 0
-            ? 0.0
-            : (((at.x - from.x) * dx + (at.y - from.y) * dy) / length)
-                .clamp(0.0, 1.0);
-        final distance = Offset(
-          from.x + dx * t - at.x,
-          from.y + dy * t - at.y,
-        ).distance;
-        if (distance < nearest) {
-          nearest = distance;
-          nearestMs = path[i].timeMs +
-              ((path[i + 1].timeMs - path[i].timeMs) * t).round();
-          nearestStep = i;
-        } else if (nearest < _passedWithin &&
-            distance > nearest + _wallGap) {
-          // Passed it, and gone on.
-          break;
-        }
-      }
-      passed.add((passedMs: nearestMs, at: at));
-      start = nearestStep;
-    }
-    return passed;
-  }
-
   /// The stretches of the guided wall at [index] standing at [timeMs], in
-  /// world units: the anchors its head has passed, split where the game
-  /// left bare ground. An anchor alone between two gaps is no stretch.
+  /// world units: the anchors its holder had laid by then, split where the
+  /// game left bare ground. An anchor alone between two gaps is no stretch.
   List<List<Offset>> _wallRuns(int index, int timeMs) {
+    final holder = _wallHolders[index];
+    if (holder == null) return const [];
     final runs = <List<Offset>>[];
     ReplayVector? last;
-    for (final (:passedMs, :at)
-        in _wallAnchors[index] ?? const <({int passedMs, ReplayVector at})>[]) {
-      if (passedMs > timeMs) break;
+    for (var i = 0; i < holder.points.length; i++) {
+      // A point without its time stands from the start.
+      final laidMs =
+          i < holder.pointMs.length ? holder.pointMs[i] : holder.spawnMs;
+      if (laidMs > timeMs) break;
+      final at = holder.points[i];
       if (last == null ||
           Offset(at.x - last.x, at.y - last.y).distance > _wallGap) {
         runs.add([]);
