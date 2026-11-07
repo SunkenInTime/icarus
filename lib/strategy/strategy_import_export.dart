@@ -939,17 +939,22 @@ class StrategyImportExportService {
   }
 
   /// [folder], made for an import whose [contents] went into it, stays when
-  /// something landed in it or nothing in it failed: an empty folder copied
-  /// from the user's files is theirs. One that holds nothing because what was
-  /// meant for it failed comes out again, so the library doesn't show an
-  /// import that didn't happen.
+  /// it holds anything or nothing in it failed: an empty folder copied from
+  /// the user's files is theirs. One left empty because what was meant for it
+  /// failed comes out again, so the library doesn't show an import that
+  /// didn't happen. What it holds is read from the library, not the import:
+  /// the user can move work into the folder while the import runs.
   Future<ImportBatchResult> _keepImportedFolder(
     Folder folder,
     ImportBatchResult contents,
   ) async {
-    final landed =
-        contents.strategiesImported > 0 || contents.foldersCreated > 0;
-    if (!landed && contents.issues.isNotEmpty) {
+    final holdsSomething = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+            .values
+            .any((strategy) => strategy.folderID == folder.id) ||
+        Hive.box<Folder>(HiveBoxNames.foldersBox)
+            .values
+            .any((child) => child.parentID == folder.id);
+    if (!holdsSomething && contents.issues.isNotEmpty) {
       await Hive.box<Folder>(HiveBoxNames.foldersBox).delete(folder.id);
       return contents;
     }

@@ -866,6 +866,25 @@ void main() {
       expectNoFolders();
     });
 
+    test('but stays when the user moved work into it meanwhile', () async {
+      final sourceRoot =
+          await Directory(path.join(tempDir.path, 'source', 'Broken'))
+              .create(recursive: true);
+      await File(path.join(sourceRoot.path, 'broken.ica'))
+          .writeAsString('{"mapData": ');
+      final moved = Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .watch()
+          .first
+          .then((event) => _storeStrategy(name: 'Mine', folderID: event.key));
+
+      await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(sourceRoot.path)],
+      );
+      await moved;
+
+      expect(_strategyByName('Mine').folderID, _folderByName('Broken').id);
+    });
+
     test('a zip of loose files', () async {
       final zip = File(path.join(tempDir.path, 'Loose.zip'));
       await zip.writeAsBytes(
