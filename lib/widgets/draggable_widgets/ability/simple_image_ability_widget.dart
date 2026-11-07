@@ -7,6 +7,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/inactive_ability_trace.
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_range_opacity.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/const/settings.dart';
 
 class SimpleImageAbilityWidget extends ConsumerWidget {
   const SimpleImageAbilityWidget({
@@ -57,6 +58,7 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
             key: const ValueKey('image-ability-active-layer'),
             opacity: isActive ? rangeOpacity : 0,
             duration: abilityStateTransitionDuration,
+            curve: Settings.easeOut,
             child: Image.asset(imagePath),
           ),
           if (supportsInactiveState)
@@ -64,6 +66,7 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
               key: const ValueKey('image-ability-inactive-layer'),
               opacity: isActive ? 0 : rangeOpacity,
               duration: abilityStateTransitionDuration,
+              curve: Settings.easeOut,
               child: InactiveCircleAbilityTrace(
                 color: inactiveTraceColor!,
               ),

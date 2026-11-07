@@ -126,8 +126,8 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                           alignment: Alignment.centerLeft,
                           child: AnimatedSwitcher(
                             duration: const Duration(milliseconds: 180),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
+                            switchInCurve: Settings.easeOut,
+                            switchOutCurve: Settings.easeOut.flipped,
                             child: filterState.favoritesOnly
                                 ? const Padding(
                                     key: ValueKey("favorites-only-indicator"),

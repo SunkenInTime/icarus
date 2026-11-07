@@ -164,7 +164,7 @@ class _DropInsertionIndicatorState extends State<DropInsertionIndicator>
     );
     _t = CurvedAnimation(
       parent: _controller,
-      curve: Curves.easeOutCubic,
+      curve: Settings.easeOut,
     );
   }
 

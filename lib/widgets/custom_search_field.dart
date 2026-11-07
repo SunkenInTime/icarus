@@ -26,7 +26,7 @@ class SearchTextField extends ConsumerStatefulWidget {
     this.collapsedWidth = 44,
     this.expandedWidth = 260,
     this.duration = const Duration(milliseconds: 250),
-    this.curve = Curves.easeOutCubic,
+    this.curve = Settings.easeOut,
     this.compact = false,
     this.onChanged,
     this.autofocus = false,

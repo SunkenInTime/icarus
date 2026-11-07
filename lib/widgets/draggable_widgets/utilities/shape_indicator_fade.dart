@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/const/settings.dart';
 
 /// Fades a shape edit handle in and out with hover, and makes it
 /// untouchable while hidden so it never blocks whatever is underneath.
@@ -19,7 +20,7 @@ class ShapeIndicatorFade extends StatelessWidget {
       child: AnimatedOpacity(
         opacity: visible ? 1.0 : 0.0,
         duration: const Duration(milliseconds: 150),
-        curve: Curves.easeOutCubic,
+        curve: Settings.easeOut,
         child: child,
       ),
     );

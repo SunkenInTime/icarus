@@ -67,6 +67,7 @@ class _TeamTextButtonState extends State<_TeamTextButton> {
         onTap: widget.onTap,
         child: AnimatedDefaultTextStyle(
           duration: const Duration(milliseconds: 150),
+          curve: Settings.easeOut,
           style: ShadTheme.of(context).textTheme.small.copyWith(
                 color: widget.isSelected
                     ? widget.selectedColor

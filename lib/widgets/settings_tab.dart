@@ -163,7 +163,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
         Scrollable.ensureVisible(
           context,
           duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
+          curve: Settings.easeOut,
           alignment: 0,
         );
       }
@@ -856,7 +856,7 @@ class _ShortcutBindingRow extends StatelessWidget {
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 160),
-      curve: Curves.easeOutCubic,
+      curve: Settings.easeOut,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       color: isEditing
           ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.06)
@@ -904,6 +904,8 @@ class _ShortcutBindingRow extends StatelessWidget {
           ),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 160),
+            switchInCurve: Settings.easeOut,
+            switchOutCurve: Settings.easeOut.flipped,
             child: isEditing
                 ? Padding(
                     padding: const EdgeInsets.only(top: 10),
@@ -934,7 +936,7 @@ class _ShortcutBindingPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 160),
-      curve: Curves.easeOutCubic,
+      curve: Settings.easeOut,
       constraints: const BoxConstraints(minWidth: 56),
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
@@ -997,7 +999,7 @@ class _ShortcutCaptureFieldState extends State<_ShortcutCaptureField>
       TweenSequenceItem(tween: Tween(begin: 7, end: -4), weight: 2),
       TweenSequenceItem(tween: Tween(begin: -4, end: 0), weight: 1),
     ]).animate(
-      CurvedAnimation(parent: _shakeController, curve: Curves.easeOutCubic),
+      CurvedAnimation(parent: _shakeController, curve: Settings.easeOut),
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1092,6 +1094,8 @@ class _ShortcutCaptureFieldState extends State<_ShortcutCaptureField>
           ),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 160),
+            switchInCurve: Settings.easeOut,
+            switchOutCurve: Settings.easeOut.flipped,
             child: hasDuplicate
                 ? Padding(
                     key: ValueKey(widget.duplicateMessage),
@@ -1152,8 +1156,8 @@ class AccountSettingsSection extends ConsumerWidget {
           : 'Sign in to sync strategies to the cloud and share them.',
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 180),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeOutCubic,
+        switchInCurve: Settings.easeOut,
+        switchOutCurve: Settings.easeOut.flipped,
         child: authState.isAuthenticated
             ? _SignedInAccountRow(
                 key: const ValueKey('account-signed-in'),
@@ -1780,9 +1784,9 @@ class _PageMarkerSizesSyncBannerState
     return SizedBox(
       width: double.infinity,
       child: AnimatedCrossFade(
-        firstCurve: Curves.easeInCubic,
-        secondCurve: Curves.easeOutCubic,
-        sizeCurve: Curves.easeInOutCubic,
+        firstCurve: Settings.easeOut.flipped,
+        secondCurve: Settings.easeOut,
+        sizeCurve: Settings.easeOut,
         duration: const Duration(milliseconds: 240),
         crossFadeState:
             showCta ? CrossFadeState.showSecond : CrossFadeState.showFirst,

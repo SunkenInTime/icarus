@@ -1009,6 +1009,7 @@ class _ResizeHandleStatefulState extends State<_ResizeHandleStateful> {
           child: Center(
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 120),
+              curve: Settings.easeOut,
               width: isHorizontalResize ? 2 : 36,
               height: isHorizontalResize ? 36 : 2,
               decoration: BoxDecoration(

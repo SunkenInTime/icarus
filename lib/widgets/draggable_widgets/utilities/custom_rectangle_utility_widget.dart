@@ -98,7 +98,7 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
                 child: AnimatedOpacity(
                   opacity: centerMarkerVisible ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 150),
-                  curve: Curves.easeOutCubic,
+                  curve: Settings.easeOut,
                   child: Container(
                     width: markerSize,
                     height: markerSize,

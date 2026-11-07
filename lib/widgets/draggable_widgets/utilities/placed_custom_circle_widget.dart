@@ -289,7 +289,7 @@ class _PlacedCustomCircleWidgetState
                   child: IgnorePointer(
                     child: AnimatedScale(
                       duration: const Duration(milliseconds: 160),
-                      curve: Curves.easeOutCubic,
+                      curve: Settings.easeOut,
                       scale: _isResizing || _isHandleHovered ? 1.0 : 0.9,
                       child: CustomPaint(
                         size: Size(arcRegionSize, arcRegionSize),

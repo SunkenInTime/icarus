@@ -25,6 +25,7 @@ class KeybindBadge extends StatelessWidget {
       ),
       child: AnimatedDefaultTextStyle(
         duration: const Duration(milliseconds: 150),
+        curve: Settings.easeOut,
         style: Theme.of(context).textTheme.labelSmall!.copyWith(
               color: lit ? theme.foreground : theme.mutedForeground,
               fontWeight: FontWeight.w700,

@@ -27,6 +27,7 @@ import 'package:icarus/widgets/replay/replay_cones.dart';
 import 'package:icarus/widgets/replay/replay_drawing_layer.dart';
 import 'package:icarus/widgets/replay/replay_effects.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/const/settings.dart';
 
 /// The map as the editor draws it, with the replay's current moment on top
 /// and what the user drew over it above that. Pans and zooms like the
@@ -290,7 +291,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
     var focus = at;
     var scale = _controller.value.getMaxScaleOnAxis();
     if (_approaching) {
-      final t = Curves.easeOutCubic.transform(_approach.value);
+      final t = Settings.easeOut.transform(_approach.value);
       focus = Offset.lerp(_approachFrom, at, t)!;
       scale = lerpDouble(_approachFromScale, _approachToScale, t)!;
       if (_approach.value == 1) _approaching = false;

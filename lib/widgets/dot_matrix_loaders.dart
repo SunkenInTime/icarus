@@ -140,7 +140,7 @@ class _WingDotPainter extends _DotMatrixPainter {
     required super.offDotColor,
   });
 
-  static const _beat = 1.4; // seconds per wing beat
+  static const _beat = 1.0; // seconds per wing beat
   static const _feathers = 5;
   static const _shoulder = Offset(0.16, 0.40);
   static const _spanX = 0.72; // wing length in local frame

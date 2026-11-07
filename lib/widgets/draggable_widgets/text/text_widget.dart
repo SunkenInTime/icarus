@@ -11,6 +11,7 @@ import 'package:icarus/widgets/draggable_widgets/text/markup_text_editing_contro
 import 'package:icarus/widgets/draggable_widgets/text/text_format_bar.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_markup.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
+import 'package:icarus/const/settings.dart';
 
 class TextWidget extends ConsumerWidget {
   const TextWidget({
@@ -317,6 +318,7 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
                 color: Colors.transparent,
                 child: TweenAnimationBuilder<double>(
                   duration: const Duration(milliseconds: 150),
+                  curve: Settings.easeOut,
                   tween: Tween(begin: 0, end: 1),
                   builder: (context, progress, child) => Opacity(
                     opacity: progress,

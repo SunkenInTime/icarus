@@ -594,6 +594,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                 AnimatedOpacity(
                   opacity: _transparent ? 0.4 : 1,
                   duration: const Duration(milliseconds: 150),
+                  curve: Settings.easeOut,
                   // IntrinsicHeight bounds the stretch so all three cards
                   // share the tallest card's height; without it the
                   // scrollable dialog hands the Row an infinite height to
@@ -783,7 +784,7 @@ class _QualityCard extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 50),
-        curve: Curves.easeOut,
+        curve: Settings.easeOut,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: colors.card,

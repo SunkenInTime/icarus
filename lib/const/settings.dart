@@ -130,6 +130,13 @@ class Settings {
 
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
+  /// The app's one easing curve (DESIGN.md, Motion): fast off the mark,
+  /// then a long settle, so a response shows on the first frame.
+  /// Flutter runs a reverse curve (an AnimatedSwitcher's switchOutCurve, a
+  /// CurvedAnimation's reverseCurve) on a value falling from 1 to 0; pass
+  /// `easeOut.flipped` there so exits start fast too.
+  static const Curve easeOut = Cubic(0.23, 1, 0.32, 1);
+
   static const Duration autoSaveOffset = Duration(seconds: 15);
   static const int versionNumber = 110;
   static const String versionName = "5.1.3";
