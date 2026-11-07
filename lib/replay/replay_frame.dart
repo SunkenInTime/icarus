@@ -314,36 +314,56 @@ class ReplayFrameBuilder {
   /// with when the head passed it.
   late final Map<int, List<({int passedMs, ReplayVector at})>> _wallAnchors = {
     for (final MapEntry(key: index, value: holder) in _wallHolders.entries)
-      index: [
-        for (final at in holder.points)
-          (passedMs: _passedMs(document.utility[index], at), at: at),
-      ],
+      index: _passedAnchors(document.utility[index], holder.points),
   };
 
-  /// When [head] went nearest [point], on the map.
-  static int _passedMs(ReplayUtility head, ReplayVector point) {
-    var fromMs = head.spawnMs;
-    var from = head.position;
-    var nearest = double.infinity;
-    var nearestMs = fromMs;
-    for (final step in head.path) {
-      final to = step.position;
-      final dx = to.x - from.x, dy = to.y - from.y;
-      final length = dx * dx + dy * dy;
-      final t = length == 0
-          ? 0.0
-          : (((point.x - from.x) * dx + (point.y - from.y) * dy) / length)
-              .clamp(0.0, 1.0);
-      final ex = from.x + dx * t - point.x, ey = from.y + dy * t - point.y;
-      final distance = ex * ex + ey * ey;
-      if (distance < nearest) {
-        nearest = distance;
-        nearestMs = fromMs + ((step.timeMs - fromMs) * t).round();
+  /// How near, in game units, the head's path counts as passing an anchor:
+  /// the anchors sit a few centimetres off the path the replay keeps, and
+  /// at most about half a metre on a tight bend.
+  static const _passedWithin = 100.0;
+
+  /// [anchors] each with when [head] passed it: where its path first went
+  /// near, looking on from where it passed the anchor before. A wall bent
+  /// back on itself passes an earlier anchor again later, and that later
+  /// pass mustn't hold the anchor back until then.
+  static List<({int passedMs, ReplayVector at})> _passedAnchors(
+    ReplayUtility head,
+    List<ReplayVector> anchors,
+  ) {
+    final path = [ReplayPathPoint(head.spawnMs, head.position), ...head.path];
+    final passed = <({int passedMs, ReplayVector at})>[];
+    var start = 0;
+    for (final at in anchors) {
+      var nearest = double.infinity;
+      var nearestMs = path[start].timeMs;
+      var nearestStep = start;
+      for (var i = start; i + 1 < path.length; i++) {
+        final from = path[i].position, to = path[i + 1].position;
+        final dx = to.x - from.x, dy = to.y - from.y;
+        final length = dx * dx + dy * dy;
+        final t = length == 0
+            ? 0.0
+            : (((at.x - from.x) * dx + (at.y - from.y) * dy) / length)
+                .clamp(0.0, 1.0);
+        final distance = Offset(
+          from.x + dx * t - at.x,
+          from.y + dy * t - at.y,
+        ).distance;
+        if (distance < nearest) {
+          nearest = distance;
+          nearestMs = path[i].timeMs +
+              ((path[i + 1].timeMs - path[i].timeMs) * t).round();
+          nearestStep = i;
+        } else if (nearest < _passedWithin &&
+            distance > nearest + _wallGap) {
+          // Passed it, and gone on.
+          break;
+        }
       }
-      fromMs = step.timeMs;
-      from = to;
+      passed.add((passedMs: nearestMs, at: at));
+      start = nearestStep;
     }
-    return nearestMs;
+    return passed;
   }
 
   /// The stretches of the guided wall at [index] standing at [timeMs], in

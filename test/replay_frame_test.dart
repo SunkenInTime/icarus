@@ -613,6 +613,34 @@ void main() {
       expect(at(3600).effects, isEmpty);
     });
 
+    test('a wall bent back on itself shows each anchor as its head first passes',
+        () {
+      final frames = builder(document(
+        players: harborPlayers,
+        utility: [
+          {
+            ...head(5, 1000),
+            // Out along +x, then back alongside, nearer the anchors.
+            'endMs': 3000,
+            'path': [
+              [2000, 2000, 0, 100],
+              [2100, 2000, 10, 100],
+              [3000, 0, 10, 100],
+            ],
+          },
+          holder(6, 1002)
+            ..['points'] = [
+              [400, 6, 100],
+              [600, 6, 100],
+            ],
+        ],
+      ));
+      // Passed on the way out by 1300; the way back comes nearer at 2800.
+      final frame = frames.frameAt(1400, perspective: ReplayTeam.red);
+      expect(frame.effects.whereType<ReplayGuidedWall>().single.points,
+          world([(400, 6), (600, 6)]));
+    });
+
     test('an anchor alone between bare ground is no stretch', () {
       final frames = builder(document(
         players: harborPlayers,
