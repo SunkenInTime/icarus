@@ -68,8 +68,10 @@ Offset captionMarkerAnchor(List<Offset> corners, {required bool round}) =>
     captionNumberSpots(corners, round: round).first;
 
 /// The corners of an item where an export may put its number, in the order it
-/// tries them: the one the marker hangs on, then the bottom right, bottom left
-/// and top left. A circle's are on its edge, at the same angles.
+/// tries them: the one the marker hangs on, then on around the outline, which
+/// [corners] give in order. On an item that isn't turned that is the bottom
+/// right, bottom left and top left. A circle's are on its edge, at the same
+/// angles.
 List<Offset> captionNumberSpots(List<Offset> corners, {required bool round}) {
   if (round) {
     final center = (corners[0] + corners[2]) / 2;
@@ -79,13 +81,14 @@ List<Offset> captionNumberSpots(List<Offset> corners, {required bool round}) {
         center + Offset(x * radius, y * radius) * (math.sqrt2 / 2),
     ];
   }
-  Offset most(double Function(Offset corner) score) => corners
-      .reduce((best, corner) => score(corner) > score(best) ? corner : best);
+  var first = 0;
+  for (final (i, corner) in corners.indexed) {
+    final best = corners[first];
+    if (corner.dx - corner.dy > best.dx - best.dy) first = i;
+  }
   return [
-    most((c) => c.dx - c.dy),
-    most((c) => c.dx + c.dy),
-    most((c) => c.dy - c.dx),
-    most((c) => -c.dx - c.dy),
+    for (var i = 0; i < corners.length; i++)
+      corners[(first + i) % corners.length],
   ];
 }
 

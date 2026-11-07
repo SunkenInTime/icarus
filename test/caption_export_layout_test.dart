@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/screenshot/caption_export_layout.dart';
+import 'package:icarus/widgets/caption_markers.dart';
 
 const _frame = Size(1920, 1080);
 const _mapLeft = 500.0;
@@ -221,6 +222,32 @@ void main() {
   });
 
   group('numbers on the map', () {
+    test("try an item's corners from the marker's, around its outline", () {
+      // Top left, top right, bottom right, bottom left, as outlines give them.
+      const square = [
+        Offset(100, 100),
+        Offset(140, 100),
+        Offset(140, 140),
+        Offset(100, 140),
+      ];
+      expect(captionNumberSpots(square, round: false), const [
+        Offset(140, 100),
+        Offset(140, 140),
+        Offset(100, 140),
+        Offset(100, 100),
+      ]);
+
+      // Turned 45 degrees: two corners are equally far up and right, and
+      // every corner is still tried once.
+      const diamond = [
+        Offset(700, 300),
+        Offset(740, 340),
+        Offset(700, 380),
+        Offset(660, 340),
+      ];
+      expect(captionNumberSpots(diamond, round: false), diamond);
+    });
+
     test('sit on the corner the marker hangs on when it is free', () {
       final layout = _layout([_note('a', 700, 300), _note('b', 760, 300)]);
 
@@ -247,6 +274,8 @@ void main() {
         for (var i = 0; i < 4; i++) _note('item $i', 700.0 + 20 * i, 400),
       ]);
 
+      expect(layout.fits, isTrue);
+      expect(layout.entries, hasLength(4));
       _expectApart(layout);
     });
 
@@ -264,6 +293,8 @@ void main() {
         for (var i = 0; i < 3; i++) _note('item $i', 1910, 5),
       ]);
 
+      expect(layout.fits, isTrue);
+      expect(layout.entries, hasLength(3));
       _expectApart(layout);
       const radius = CaptionExportMetrics.dotRadius;
       for (final entry in layout.entries) {
