@@ -130,6 +130,26 @@ void main() {
       expect(wallPathLength(const [Offset(0, -50)]), 50);
     });
 
+    test('a traced wall keeps its ends and the points that shape it', () {
+      // An L traced every 10 units, with a kink near its far end.
+      final traced = [
+        for (var x = 0.0; x <= 100; x += 10) Offset(x, 0),
+        for (var y = 10.0; y <= 100; y += 10) Offset(100, y),
+        const Offset(130, 100),
+      ];
+      expect(keepWallShape(traced, 4), const [
+        Offset.zero,
+        Offset(100, 0),
+        Offset(100, 100),
+        Offset(130, 100),
+      ]);
+      // Fewer than asked for are kept as they are, less any repeated.
+      expect(
+        keepWallShape(const [Offset.zero, Offset.zero, Offset(5, 5)], 8),
+        const [Offset.zero, Offset(5, 5)],
+      );
+    });
+
     test('a pale dot sits in the middle of its stretch, on the wall', () {
       final middles = wallStretchMiddles(points);
       expect(middles, hasLength(3));

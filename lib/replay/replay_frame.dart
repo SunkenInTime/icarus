@@ -10,6 +10,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/const/wall_path.dart';
 import 'package:icarus/replay/replay_ability_catalog.dart';
 import 'package:icarus/replay/replay_cone_cuts.dart';
 import 'package:icarus/replay/replay_agents.dart';
@@ -209,8 +210,8 @@ class ReplaySweep extends ReplayEffect {
 }
 
 /// One stretch of a guided wall (High Tide): where the game raised it, as far
-/// as its head has run. A saved page has no way to hold a curved wall, so a
-/// capture keeps only the ability's icon.
+/// as its head has run. A capture saves the wall on the ability, as its
+/// wallPath.
 class ReplayGuidedWall extends ReplayEffect {
   const ReplayGuidedWall({
     required this.points,
@@ -334,6 +335,18 @@ class ReplayFrameBuilder {
       for (final run in runs)
         if (run.length >= 2) run,
     ];
+  }
+
+  /// The wall [runs] as an ability saves one, for a capture: from the icon at
+  /// [icon] back to where the wall starts, in as many points as a saved wall
+  /// holds, each measured from the icon. A saved wall has no holes, so it
+  /// runs on across the bare ground between stretches.
+  static List<Offset> _savedWall(Offset icon, List<List<Offset>> runs) {
+    final line = keepWallShape([
+      icon,
+      for (final run in runs.reversed) ...run.reversed,
+    ], maxWallPathPoints + 1);
+    return [for (final point in line.skip(1)) point - icon];
   }
 
   /// When the utility at [index] comes off the map: when its actor closes,
@@ -595,12 +608,14 @@ class ReplayFrameBuilder {
       final wallRuns = entry.kind == ReplayUtilityKind.guidedWall
           ? _wallRuns(i, shownAt)
           : const <List<Offset>>[];
-      // Once a guided wall's head has stopped, its icon marks where the wall
-      // ends, which can be short of the head: past the last anchor the head
-      // ran on inside geometry or under the floor.
-      final headEndMs = utility.endMs;
-      if (wallRuns.isNotEmpty && headEndMs != null && shownAt >= headEndMs) {
-        final shift = wallRuns.last.last - centre;
+      if (wallRuns.isNotEmpty) {
+        // Once a guided wall's head has stopped, its icon marks where the
+        // wall ends, which can be short of the head: past the last anchor
+        // the head ran on inside geometry or under the floor.
+        final headEndMs = utility.endMs;
+        final shift = headEndMs != null && shownAt >= headEndMs
+            ? wallRuns.last.last - centre
+            : Offset.zero;
         centre += shift;
         ability = PlacedAbility(
           data: ability.data,
@@ -608,6 +623,7 @@ class ReplayFrameBuilder {
           id: ability.id,
           isAlly: ability.isAlly,
           rotation: ability.rotation,
+          wallPath: _savedWall(centre, wallRuns),
         );
       }
       if (sweeps) {
