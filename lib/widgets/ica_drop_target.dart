@@ -18,7 +18,7 @@ String buildImportSummaryMessage(ImportBatchResult result) {
       newerCount == result.issues.length) {
     return newerCount == 1
         ? NewerVersionImportException.userMessage
-        : 'These strategies were created in a newer version of Icarus. '
+        : 'These files were created in a newer version of Icarus. '
             'Please update the app and try again.';
   }
 

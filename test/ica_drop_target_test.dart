@@ -94,7 +94,7 @@ void main() {
     test('several files, and nothing else', () {
       expect(
         buildImportSummaryMessage(resultOf(0, const [newer, newer])),
-        'These strategies were created in a newer version of Icarus. '
+        'These files were created in a newer version of Icarus. '
         'Please update the app and try again.',
       );
     });
