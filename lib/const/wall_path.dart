@@ -100,3 +100,44 @@ List<Offset> wallStretchMiddles(List<Offset> points) {
       line[i * _samplesPerStretch + _samplesPerStretch ~/ 2],
   ];
 }
+
+/// The [count] points of [line] that keep its shape best: its ends, then
+/// over and over the point furthest from the line through those kept around
+/// it. A traced wall, such as a replay's, has too many points to keep.
+List<Offset> keepWallShape(List<Offset> line, int count) {
+  // A point repeated would be a stretch of no length.
+  final unique = <Offset>[];
+  for (final point in line) {
+    if (unique.isEmpty || unique.last != point) unique.add(point);
+  }
+  if (unique.length <= count) return unique;
+  final kept = <int>[0, unique.length - 1];
+  while (kept.length < count) {
+    var furthest = -1.0;
+    var at = -1;
+    for (var k = 0; k + 1 < kept.length; k++) {
+      final a = unique[kept[k]], b = unique[kept[k + 1]];
+      for (var i = kept[k] + 1; i < kept[k + 1]; i++) {
+        final distance = _distanceToStretch(unique[i], a, b);
+        if (distance > furthest) {
+          furthest = distance;
+          at = i;
+        }
+      }
+    }
+    if (at < 0) break;
+    kept
+      ..add(at)
+      ..sort();
+  }
+  return [for (final i in kept) unique[i]];
+}
+
+double _distanceToStretch(Offset point, Offset a, Offset b) {
+  final along = b - a;
+  final length = along.distanceSquared;
+  if (length == 0) return (point - a).distance;
+  final t = (((point - a).dx * along.dx + (point - a).dy * along.dy) / length)
+      .clamp(0.0, 1.0);
+  return (a + along * t - point).distance;
+}

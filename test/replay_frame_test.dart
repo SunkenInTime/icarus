@@ -8,6 +8,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/wall_path.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/replay/replay_cone_cuts.dart';
@@ -683,16 +684,39 @@ void main() {
       expect(frame.abilities.map((a) => a.id), ['replay-utility-5']);
     });
 
-    test('High Tide places its icon, and its wall is only an effect', () {
+    test('High Tide carries its wall for a capture, from the icon back', () {
       final frames = builder(document(
         players: harborPlayers,
         utility: [head(5, 1000), holder(6, 1002)],
       ));
-      final frame = frames.frameAt(9000, perspective: ReplayTeam.red);
-      expect(frame.widgets.whereType<PlacedAbility>().single.data.name,
-          'High Tide');
-      // The wall itself is an effect, which a page never holds.
-      expect(frame.effects.whereType<ReplayGuidedWall>(), hasLength(2));
+      // Built: the icon is at the wall's end, (2000, 1800). The saved wall
+      // runs back over the bare ground to where it starts, (400, 0), turning
+      // at the corner, in no more points than a saved wall holds.
+      final built = frames.frameAt(9000, perspective: ReplayTeam.red);
+      final placed = built.widgets.whereType<PlacedAbility>().single;
+      expect(placed.data.name, 'High Tide');
+      final icon = iconAt(placed);
+      final saved = [for (final point in placed.wallPath!) icon + point];
+      expect(saved.length, lessThanOrEqualTo(maxWallPathPoints));
+      Matcher near(Offset point) => predicate<Offset>(
+          (o) => (o - point).distance < 1e-6, 'near $point');
+      expect(saved.first, near(secondStretch.first));
+      expect(saved, contains(near(projection.toWorld(2000, 0))));
+      expect(saved.last, near(firstStretch.first));
+      final anchors = [...firstStretch, ...secondStretch];
+      expect(
+          saved,
+          everyElement(predicate<Offset>((o) =>
+              anchors.any((anchor) => (anchor - o).distance < 1e-6))));
+
+      // Flying: from the head back over what has been raised so far.
+      final flying = frames.frameAt(2450, perspective: ReplayTeam.red);
+      final riding = flying.widgets.whereType<PlacedAbility>().single;
+      final raised = [
+        for (final point in riding.wallPath!) iconAt(riding) + point,
+      ];
+      expect(raised.first, near(projection.toWorld(2000, 800)));
+      expect(raised.last, near(firstStretch.first));
     });
 
     test('a wall is stroked along its line, in its colour over its team', () {
