@@ -791,6 +791,10 @@ class _MyAppState extends ConsumerState<MyApp> {
           brightness: Brightness.dark,
           colorScheme: Settings.tacticalVioletTheme,
           breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
+          // Popovers and context menus close by running their opening
+          // effects backward, so any ease-out would hang before it leaves.
+          // They close at once instead, like Shad's tooltips and selects.
+          popoverTheme: const ShadPopoverTheme(reverseDuration: Duration.zero),
           // Dialogs are panels: one surface step above the canvas, so they
           // read as a sheet rather than a black box on a black screen.
           // Fields keep the panel's surface and take the lighter input

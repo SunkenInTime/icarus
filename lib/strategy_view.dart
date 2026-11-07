@@ -43,6 +43,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
+import 'package:icarus/widgets/eased_route_transition.dart';
 
 class StrategyView extends ConsumerStatefulWidget {
   const StrategyView({
@@ -92,20 +93,12 @@ class StrategyView extends ConsumerStatefulWidget {
         initialPageId: initialPageId,
         backTooltip: backTooltip,
       ),
-      transitionsBuilder: (context, animation, _, child) {
-        final eased = CurvedAnimation(
-          parent: animation,
-          curve: Settings.easeOut,
-          reverseCurve: Settings.easeOut.flipped,
-        );
-        return FadeTransition(
-          opacity: eased,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.96, end: 1.0).animate(eased),
-            child: child,
-          ),
-        );
-      },
+      transitionsBuilder: (context, animation, _, child) =>
+          EasedRouteTransition(
+        animation: animation,
+        scaleFrom: 0.96,
+        child: child,
+      ),
     );
   }
 

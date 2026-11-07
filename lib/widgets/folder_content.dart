@@ -1209,7 +1209,7 @@ class _LibraryLoadingSkeletonState extends State<_LibraryLoadingSkeleton>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: const Duration(milliseconds: 800),
     );
   }
 

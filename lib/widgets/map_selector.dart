@@ -47,9 +47,10 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
       _isOpen = false;
     });
 
-    // Then hide the overlay after animation completes
+    // Then hide the overlay after animation completes, unless it was
+    // opened again meanwhile.
     Future.delayed(_resizeDuration, () {
-      _controller.hide();
+      if (mounted && !_isOpen) _controller.hide();
     });
   }
 

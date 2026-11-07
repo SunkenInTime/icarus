@@ -1369,7 +1369,7 @@ class _LinkListPlaceholderState extends State<_LinkListPlaceholder>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: const Duration(milliseconds: 800),
     );
   }
 

@@ -31,6 +31,7 @@ import 'package:icarus/widgets/replay/replay_match_card.dart';
 import 'package:icarus/widgets/replay/replay_roster.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/widgets/eased_route_transition.dart';
 
 /// Watches one Valorant replay on the Icarus map. The map, the players and
 /// their utility are the editor's own widgets, so whatever is on screen can
@@ -49,14 +50,8 @@ class ReplayView extends ConsumerStatefulWidget {
         pageBuilder: (_, __, ___) => ReplayView(file: file, probe: probe),
         transitionDuration: const Duration(milliseconds: 200),
         reverseTransitionDuration: const Duration(milliseconds: 150),
-        transitionsBuilder: (_, animation, __, child) => FadeTransition(
-          opacity: CurvedAnimation(
-            parent: animation,
-            curve: Settings.easeOut,
-            reverseCurve: Settings.easeOut.flipped,
-          ),
-          child: child,
-        ),
+        transitionsBuilder: (_, animation, __, child) =>
+            EasedRouteTransition(animation: animation, child: child),
       );
 
   @override

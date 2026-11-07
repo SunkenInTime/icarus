@@ -11,6 +11,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:icarus/widgets/loading_spinner.dart';
+import 'package:icarus/widgets/eased_route_transition.dart';
 
 /// How tall, in physical pixels, a canvas [canvasHeight] logical pixels
 /// tall gets with the window as tall as its display. The window around the
@@ -46,12 +47,8 @@ void _showImageFullScreenOverlay({
     PageRouteBuilder(
       opaque: false,
       transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (ctx, anim, __) => FadeTransition(
-        opacity: CurvedAnimation(
-          parent: anim,
-          curve: Settings.easeOut,
-          reverseCurve: Settings.easeOut.flipped,
-        ),
+      pageBuilder: (ctx, anim, __) => EasedRouteTransition(
+        animation: anim,
         child: _ImageFullScreenOverlay(
           heroTag: heroTag,
           aspectRatio: aspectRatio,
