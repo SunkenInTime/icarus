@@ -40,6 +40,14 @@ class _Menus extends StatelessWidget {
                 child: _target('second'),
               ),
             ),
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: ContextMenuRegion(
+                items: const [ShadContextMenuItem(child: Text('Corner item'))],
+                child: _target('corner'),
+              ),
+            ),
           ],
         ),
       ),
@@ -61,6 +69,13 @@ Future<void> _rightClick(WidgetTester tester, String key) async {
   );
   await tester.pumpAndSettle();
 }
+
+/// The box of the menu holding [item], or of its submenu.
+Rect _menuOf(WidgetTester tester, String item) => tester.getRect(
+      find
+          .ancestor(of: find.text(item), matching: find.byType(ShadDecorator))
+          .last,
+    );
 
 void main() {
   // Windows opens the menu when the button comes up, not when it goes down.
@@ -117,7 +132,74 @@ void main() {
     await gesture.up();
   }, variant: windows);
 
-  test('only ContextMenuRegion builds a shadcn region', () {
+  testWidgets('a right-click opens the menu at its top-left corner',
+      (tester) async {
+    await tester.pumpWidget(const _Menus());
+
+    await _rightClick(tester, 'first');
+
+    final pointer = tester.getCenter(find.byKey(const ValueKey('first')));
+    expect(_menuOf(tester, 'First item').topLeft, pointer);
+  }, variant: windows);
+
+  testWidgets('a right-click by the window corner keeps the menu on screen',
+      (tester) async {
+    await tester.pumpWidget(const _Menus());
+
+    await _rightClick(tester, 'corner');
+
+    final window = tester.view.physicalSize / tester.view.devicePixelRatio;
+    final pointer = tester.getCenter(find.byKey(const ValueKey('corner')));
+    final menu = _menuOf(tester, 'Corner item');
+    // Opens upward from the pointer and moves left until it fits.
+    expect(menu.bottom, pointer.dy);
+    expect(menu.right, window.width);
+  }, variant: windows);
+
+  testWidgets('a submenu opens beside its row', (tester) async {
+    await tester.pumpWidget(const _Menus());
+
+    await _rightClick(tester, 'first');
+    await tester.tap(find.text('More'));
+    await tester.pumpAndSettle();
+
+    final menu = _menuOf(tester, 'First item');
+    final row = tester.getRect(find.text('More'));
+    final nested = tester.getRect(find.text('Nested item'));
+    expect(nested.left, greaterThan(menu.right));
+    expect(nested.center.dy, closeTo(row.center.dy, 8));
+  }, variant: windows);
+
+  testWidgets('a menu opened from code opens below its region', (tester) async {
+    final controller = ShadContextMenuController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(_Menus(controller: controller));
+
+    controller.show();
+    await tester.pumpAndSettle();
+
+    final region = tester.getRect(find.byKey(const ValueKey('first')));
+    final menu = _menuOf(tester, 'First item');
+    expect(menu.top, region.bottom + 4);
+  }, variant: windows);
+
+  testWidgets('a right-click after a menu opened from code moves it',
+      (tester) async {
+    final controller = ShadContextMenuController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(_Menus(controller: controller));
+
+    controller.show();
+    await tester.pumpAndSettle();
+    await _rightClick(tester, 'first');
+
+    final pointer = tester.getCenter(find.byKey(const ValueKey('first')));
+    expect(find.text('First item'), findsOneWidget);
+    expect(_menuOf(tester, 'First item').topLeft, pointer);
+    expect(controller.isOpen, isTrue);
+  }, variant: windows);
+
+  test('nothing builds a shadcn region, which centers its menu', () {
     final builders = <String>[
       for (final file in Directory('lib').listSync(recursive: true))
         if (file is File &&
@@ -126,6 +208,6 @@ void main() {
           file.path.replaceAll(r'\', '/'),
     ];
 
-    expect(builders, ['lib/widgets/context_menu_region.dart']);
+    expect(builders, isEmpty);
   });
 }
