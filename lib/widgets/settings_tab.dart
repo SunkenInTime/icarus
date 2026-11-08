@@ -611,7 +611,8 @@ class _ShortcutSettingsSectionState
           const SizedBox(height: 14),
           const _ShortcutTableHeader(),
           const SizedBox(height: 4),
-          if (visibleDefinitions.isEmpty)
+          // The Alt row isn't a definition, but it can be what matched.
+          if (visibleDefinitions.isEmpty && !_snapToMapMatches)
             const _ShortcutEmptySearch()
           else
             for (final definition in visibleDefinitions) ...[
