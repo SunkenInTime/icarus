@@ -87,13 +87,13 @@ class DropTarget: NSView {
   }
 
   // ICARUS PATCH: this view covers the whole Flutter view, so without this
-  // AppKit takes it for the view under the mouse. Whenever AppKit re-checks
-  // the cursor it then asks this view, which knows nothing of Flutter's
-  // cursor and falls back to the arrow, so a button's hand cursor shows for
-  // a moment and is replaced. Returning nil leaves the FlutterView under the
-  // mouse, and its cursorUpdate: restores Flutter's cursor. Drags still find
-  // this view through registerForDraggedTypes, which does not use hitTest.
-  // Upstream made the same change in desktop_drop 0.9.0.
+  // AppKit takes it, not the FlutterView, for the view under the mouse. The
+  // FlutterView's cursorUpdate: is what puts Flutter's cursor back when
+  // AppKit re-checks the cursor, and it never ran, so a button's hand cursor
+  // showed for a moment and then turned into the arrow. Returning nil leaves
+  // the FlutterView under the mouse. Drags still reach this view through
+  // registerForDraggedTypes. Published desktop_drop 0.9.0 has the same
+  // override.
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
   override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
