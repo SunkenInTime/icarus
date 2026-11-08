@@ -175,6 +175,10 @@ void main() {
         _door('lotus-a').row(id: 'row').customColorValue,
         MapSvgSourceColors.detail.toARGB32(),
       );
+      expect(
+        _door('ascent-b').row(id: 'row').customColorValue,
+        MapSvgSourceColors.detail.toARGB32(),
+      );
     });
   });
 
@@ -362,7 +366,13 @@ void main() {
   });
 
   group('how a door is painted', () {
-    Future<Color> middlePixel(MapDoorKind kind, double changed) async {
+    /// The pixel [x] along a bar from 10 to 90: 50 is in its middle dash, 34
+    /// between dashes.
+    Future<Color> middlePixel(
+      MapDoorKind kind,
+      double changed, {
+      int x = 50,
+    }) async {
       const wall = Color(0xFFB27C40);
       final recorder = ui.PictureRecorder();
       MapDoorPainter(
@@ -376,7 +386,7 @@ void main() {
       final image = await picture.toImage(100, 40);
       try {
         final bytes = (await image.toByteData())!;
-        final at = (20 * 100 + 50) * 4;
+        final at = (20 * 100 + x) * 4;
         return Color.fromARGB(
           bytes.getUint8(at + 3),
           bytes.getUint8(at),
@@ -400,6 +410,14 @@ void main() {
 
     test('a dropped wall draws nothing over the map art', () async {
       expect((await middlePixel(MapDoorKind.drop, 0)).a, 0);
+    });
+
+    test('an open Ascent door is dashes and a shut one a solid bar', () async {
+      expect(
+          (await middlePixel(MapDoorKind.shutter, 0)).toARGB32(), 0xFFB27C40);
+      expect((await middlePixel(MapDoorKind.shutter, 0, x: 34)).a, 0);
+      expect((await middlePixel(MapDoorKind.shutter, 1, x: 34)).toARGB32(),
+          0xFFB27C40);
     });
   });
 
@@ -495,8 +513,27 @@ void main() {
       expect(container.read(utilityProvider), isEmpty);
     });
 
+    testWidgets('an Ascent door shuts from either side', (tester) async {
+      for (final isAttack in [true, false]) {
+        final container = await pump(
+          tester,
+          map: MapValue.ascent,
+          isAttack: isAttack,
+        );
+
+        await tester.tapAt(middle('ascent-a', isAttack: isAttack));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(changed(container, MapValue.ascent), {'ascent-a'});
+
+        await tester.tapAt(middle('ascent-b', isAttack: isAttack));
+        await tester.tapAt(middle('ascent-a', isAttack: isAttack));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(changed(container, MapValue.ascent), {'ascent-b'});
+      }
+    });
+
     testWidgets('a map with no doors has nothing to click', (tester) async {
-      final container = await pump(tester, map: MapValue.ascent);
+      final container = await pump(tester, map: MapValue.bind);
 
       expect(find.byType(CustomPaint), findsNothing);
       await tester.tapAt(const Offset(800, 450));

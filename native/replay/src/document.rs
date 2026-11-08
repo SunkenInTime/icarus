@@ -167,14 +167,19 @@ pub struct Cast {
     pub position: Option<Vec3>,
 }
 
-/// A door on the map changing: a spin or a drop from `start_ms` to `end_ms`,
-/// or a wall breaking, both at the same moment (docs/replay-format.md).
-#[derive(Debug, Serialize)]
+/// A door on the map changing: a spin, a drop or a door shutting or opening
+/// from `start_ms` to `end_ms`, or a wall breaking, both at the same moment
+/// (docs/replay-format.md).
+#[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DoorMove {
     pub actor: String,
     pub start_ms: i64,
     pub end_ms: i64,
+    /// The move puts the door back as a round starts it: an Ascent door
+    /// opening again.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub to_rest: bool,
 }
 
 #[derive(Debug, Serialize, Clone, Copy)]

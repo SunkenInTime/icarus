@@ -456,17 +456,23 @@ class ReplayDoorMove {
     required this.actor,
     required this.startMs,
     required this.endMs,
+    this.toRest = false,
   });
 
   factory ReplayDoorMove.fromJson(Map<String, dynamic> json) => ReplayDoorMove(
         actor: json['actor'] as String,
         startMs: json['startMs'] as int,
         endMs: json['endMs'] as int,
+        toRest: json['toRest'] as bool? ?? false,
       );
 
   final String actor;
   final int startMs;
   final int endMs;
+
+  /// Whether the move puts the door back as a round starts it: an Ascent door
+  /// opening again. Every other move takes a door away from that.
+  final bool toRest;
 }
 
 class ReplayQuality {

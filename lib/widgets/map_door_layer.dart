@@ -129,6 +129,13 @@ class MapDoorPainter extends CustomPainter {
         if (changed > 0) {
           _dashes(canvas, wallColor.withValues(alpha: changed));
         }
+      case MapDoorKind.shutter:
+        if (changed < 1) {
+          _dashes(canvas, wallColor.withValues(alpha: 1 - changed));
+        }
+        if (changed > 0) {
+          _stroke(canvas, wallColor.withValues(alpha: changed), thickness);
+        }
     }
   }
 

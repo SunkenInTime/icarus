@@ -53,10 +53,16 @@ pub struct Collector {
     pub door_writes: Vec<(u32, Arc<str>)>,
     /// When the Lotus A Link wall reported `OnDie`.
     pub wall_breaks: Vec<u32>,
+    /// Every door state an Ascent door's `PlayDoorSounds` call carried. Unlike
+    /// the other doors' fields, these are named.
+    pub shutter_states: Vec<ShutterState>,
+    /// Each Ascent door's actor name by net GUID, since its calls carry only
+    /// the GUID.
+    pub shutter_names: std::collections::BTreeMap<u32, Arc<str>>,
     /// `wanted` per interned name; the `Arc` held here keeps its address unique.
     verdicts: std::collections::HashMap<usize, (Arc<str>, bool)>,
-    /// Whether a group is a door's, per interned group, the same way.
-    door_groups: std::collections::HashMap<usize, (Arc<str>, bool)>,
+    /// Which door a group belongs to, if any, per interned group, the same way.
+    door_groups: std::collections::HashMap<usize, (Arc<str>, DoorGroup)>,
     /// Bytes of the records above, against [`MAX_RETAINED_BYTES`].
     retained: usize,
 }
@@ -117,22 +123,47 @@ impl Observer for Collector {
             let door = self
                 .door_groups
                 .entry(group_key)
-                .or_insert_with(|| {
-                    let door = door_actor(&field.group_path).is_some()
-                        || field.group_path.ends_with(WALL_NET_CACHE);
-                    (Arc::clone(&field.group_path), door)
-                })
+                .or_insert_with(|| (Arc::clone(&field.group_path), door_group(&field.group_path)))
                 .1;
-            if door {
-                if field.group_path.ends_with(WALL_NET_CACHE) {
+            match door {
+                DoorGroup::None => {}
+                DoorGroup::Moves => {
+                    self.door_writes
+                        .push((field.time_ms, Arc::clone(&field.group_path)));
+                    self.retain(size_of::<(u32, Arc<str>)>())?;
+                }
+                DoorGroup::Wall => {
                     if field.field_name.as_deref() == Some("OnDie") {
                         self.wall_breaks.push(field.time_ms);
                     }
-                } else {
-                    self.door_writes
-                        .push((field.time_ms, Arc::clone(&field.group_path)));
+                    self.retain(size_of::<(u32, Arc<str>)>())?;
                 }
-                self.retain(size_of::<(u32, Arc<str>)>())?;
+                DoorGroup::Shutter => {
+                    if let std::collections::btree_map::Entry::Vacant(entry) =
+                        self.shutter_names.entry(field.actor_net_guid)
+                    {
+                        let name = shutter_actor(&field.group_path).unwrap_or_default();
+                        entry.insert(Arc::from(name));
+                        self.retain(size_of::<(u32, Arc<str>)>() + name.len())?;
+                    }
+                }
+                DoorGroup::ShutterCalls => {
+                    let entered = match field.field_name.as_deref() {
+                        Some("PlayDoorSounds.New State") => Some(true),
+                        Some("PlayDoorSounds.Old State") => Some(false),
+                        _ => None,
+                    };
+                    let state = field.raw_bits.as_deref().and_then(|raw| raw.first());
+                    if let (Some(entered), Some(state)) = (entered, state) {
+                        self.shutter_states.push(ShutterState {
+                            time: field.time_ms,
+                            actor: field.actor_net_guid,
+                            entered,
+                            state: state & 0b111,
+                        });
+                        self.retain(size_of::<ShutterState>())?;
+                    }
+                }
             }
             let Some(name) = &field.field_name else {
                 continue;
@@ -218,6 +249,59 @@ fn untyped_bytes(field: &FieldRecord) -> Option<Vec<u8>> {
 /// The Lotus A Link wall's calls.
 const WALL_NET_CACHE: &str = "RespawningWallPlate_C_ClassNetCache";
 
+/// An Ascent door's calls, whichever door: the call names its actor by GUID.
+const SHUTTER_NET_CACHE: &str = "WindowShield_C_ClassNetCache";
+
+/// One door state an Ascent door's `PlayDoorSounds` call carried: the state
+/// it `entered`, or the one it left. A state of 0 isn't sent, so a call
+/// without one of the two left or entered 0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShutterState {
+    pub time: u32,
+    pub actor: u32,
+    pub entered: bool,
+    /// `EAresDoorState`, a 3-bit enum.
+    pub state: u8,
+}
+
+/// Whose door a group of fields is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DoorGroup {
+    None,
+    /// A Lotus or Summit door's own unnamed fields.
+    Moves,
+    /// A breakable wall's calls.
+    Wall,
+    /// An Ascent door's own fields, which name it.
+    Shutter,
+    /// Every Ascent door's calls.
+    ShutterCalls,
+}
+
+fn door_group(group: &str) -> DoorGroup {
+    if door_actor(group).is_some() {
+        DoorGroup::Moves
+    } else if group.ends_with(WALL_NET_CACHE) {
+        DoorGroup::Wall
+    } else if shutter_actor(group).is_some() {
+        DoorGroup::Shutter
+    } else if group.ends_with(SHUTTER_NET_CACHE) {
+        DoorGroup::ShutterCalls
+    } else {
+        DoorGroup::None
+    }
+}
+
+/// The Ascent door a group of fields belongs to, without the suffix a level
+/// gives it: `WindowShieldA1`. Sunset has one too, `WindowShieldA3`.
+pub fn shutter_actor(group: &str) -> Option<&str> {
+    let actor = group.split("_UAID").next()?;
+    (actor.len() > "WindowShield".len()
+        && actor.starts_with("WindowShield")
+        && !actor.contains('.'))
+    .then_some(actor)
+}
+
 /// The door a group of fields belongs to, without the suffix a level gives it:
 /// `Drawbridge5`, `DescentBox_v12`. None for anything else, such as
 /// `Drawbridge_MinimapObject`.
@@ -262,6 +346,25 @@ fn wanted(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_ascent_door_is_named_by_its_own_group() {
+        assert_eq!(shutter_actor("WindowShieldA1"), Some("WindowShieldA1"));
+        assert_eq!(
+            shutter_actor("WindowShieldB1_UAID_2C58B90EE7EFB17102_1686271982"),
+            Some("WindowShieldB1"),
+        );
+        assert_eq!(
+            shutter_actor("WindowShield.WindowShield_C_ClassNetCache"),
+            None
+        );
+        assert_eq!(
+            door_group("WindowShield.WindowShield_C_ClassNetCache"),
+            DoorGroup::ShutterCalls
+        );
+        assert_eq!(door_group("WindowShieldA1"), DoorGroup::Shutter);
+        assert_eq!(door_group("Drawbridge5"), DoorGroup::Moves);
+    }
 
     #[test]
     fn only_a_door_is_a_door_actor() {

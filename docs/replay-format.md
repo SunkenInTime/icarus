@@ -41,7 +41,7 @@ first byte.
 
 ```jsonc
 {
-  "decoder": { "name": "icarus_replay", "version": "0.3.4+vrfkit.0.4.0", "vrfkit": "0.4.0" },
+  "decoder": { "name": "icarus_replay", "version": "0.3.5+vrfkit.0.4.0", "vrfkit": "0.4.0" },
   "match": {
     "id": "dc078274-2d68-495b-8321-5e58b2a3eeba",
     "mapPath": "/Game/Maps/Juliett/Juliett",
@@ -110,7 +110,8 @@ first byte.
     }
   ],
   "doors": [
-    { "actor": "Drawbridge6", "startMs": 46755, "endMs": 56749 } // see "Doors"
+    { "actor": "Drawbridge6", "startMs": 46755, "endMs": 56749 }, // see "Doors"
+    { "actor": "WindowShieldA1", "startMs": 152023, "endMs": 157023, "toRest?": true }
   ],
   "casts": [
     {
@@ -189,8 +190,10 @@ never flashed have no entry. Seconds are rounded to three decimals.
 
 One row per time a door on the map changes, in time order. `actor` is the
 door: `Drawbridge5` and `Drawbridge6` are Lotus's rotating doors,
-`DescentBox_v5`, `_v9` and `_v12` are Summit's dropping walls, and
-`RespawningWallPlate` is a breakable wall, Lotus's A Link and one on Abyss.
+`DescentBox_v5`, `_v9` and `_v12` are Summit's dropping walls,
+`WindowShieldA1` and `WindowShieldB1` are Ascent's doors (Sunset's one door is
+`WindowShieldA3`), and `RespawningWallPlate` is a breakable wall, Lotus's A Link
+and one on Abyss.
 
 A spin or a drop runs from `startMs` to `endMs`: 10 s and 1.75 s. A spin an
 actor starts as a round ends is cut short when the next round puts the door
@@ -198,12 +201,26 @@ back. A wall breaking has both times the same. A dropped or broken door stays
 that way until the next round starts; a round's start resets every door, and
 that isn't a row.
 
+An Ascent door is open when a round starts. It shuts in 5 s and opens again in
+5 s, as often as its switch is pressed. A row that opens it has `toRest`, and
+every other row leaves it out. A door still shut stays that way until the
+next round starts. A shutting move cut off by a round's start ends there.
+
 The door fields have no names and their numbers could shift in a patch, so
 none is read. A move is told from when the door's actor is written: a burst of
 several writes, away from a round's start, and a last lone write. The
 A Link wall's break is its named `OnDie`. On the corpus the rows match the named
 events they imply: a `MulticastPlayAnimation` on a Lotus switch for every spin,
 on 13.00 and 13.09.
+
+An Ascent door's moves are named. Each `PlayDoorSounds` call on
+`WindowShield_C_ClassNetCache` carries `Old State` and `New State`, a 3-bit
+`EAresDoorState` (Open 0, Opening 1, Closing 2, Closed 3, Invalid 4). A state
+of 0 isn't sent. A call entering Closing or Opening starts a move, and the
+door's next call ends it. The call names its door only by net GUID, so the
+door's own fields, grouped under its actor name, supply the name. Checked on
+Sunset's door, the same blueprint, in a 13.00 replay: no Ascent replay was on
+hand. A door shot open isn't read, since no replay here has one.
 
 ## Utility
 
@@ -299,7 +316,7 @@ the first). A clean replay has none.
   "durationMs": 321499,
   "recordedAt?": "2026-07-08T00:35:45Z",
   "supported": true,                       // a payload transform is registered for the build
-  "decoderVersion": "0.3.4+vrfkit.0.4.0",  // same as the document's decoder.version
+  "decoderVersion": "0.3.5+vrfkit.0.4.0",  // same as the document's decoder.version
   "players": [{ "subject": "…", "agentId": "…" }]
 }
 ```
