@@ -372,15 +372,21 @@ void main() {
         wallColor: wall,
         thickness: 6,
       ).paint(Canvas(recorder), const Size(100, 40));
-      final image = await recorder.endRecording().toImage(100, 40);
-      final bytes = (await image.toByteData())!;
-      final at = (20 * 100 + 50) * 4;
-      return Color.fromARGB(
-        bytes.getUint8(at + 3),
-        bytes.getUint8(at),
-        bytes.getUint8(at + 1),
-        bytes.getUint8(at + 2),
-      );
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(100, 40);
+      try {
+        final bytes = (await image.toByteData())!;
+        final at = (20 * 100 + 50) * 4;
+        return Color.fromARGB(
+          bytes.getUint8(at + 3),
+          bytes.getUint8(at),
+          bytes.getUint8(at + 1),
+          bytes.getUint8(at + 2),
+        );
+      } finally {
+        image.dispose();
+        picture.dispose();
+      }
     }
 
     test("a raised wall is the theme's wall colour, like a closed door",
