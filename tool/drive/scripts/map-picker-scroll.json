@@ -12,7 +12,7 @@
   {"wait": 3},
   {"watchFrames": false, "tag": "editor-idle"},
   {"framesLog": "editor-idle"},
-  {"tapAt": [100, 80]},
+  {"tapText": "ASCENT"},
   {"wait": 1},
   {"shot": "{out}/1-open.png"},
   {"hoverAt": [130, 300]},

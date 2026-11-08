@@ -23,13 +23,27 @@ void main() {
               color: const Color(0xFF18181B),
               child: Column(
                 children: [
-                  for (final name in ['ascent', 'sunset', 'corrode'])
+                  // A card in the map list, the picker's own card, and the
+                  // tile's own size.
+                  for (final (name, size) in [
+                    ('ascent', const Size(248, 65)),
+                    ('sunset', const Size(180, 55)),
+                    ('corrode', const Size(MapTile.width, MapTile.height)),
+                  ])
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        RepaintBoundary(child: _BlurredEveryFrame(name)),
                         RepaintBoundary(
-                          child: MapTile(name: name, onTap: () {}),
+                          child: SizedBox.fromSize(
+                            size: size,
+                            child: _BlurredEveryFrame(name),
+                          ),
+                        ),
+                        RepaintBoundary(
+                          child: SizedBox.fromSize(
+                            size: size,
+                            child: MapTile(name: name, onTap: () {}),
+                          ),
                         ),
                       ],
                     ),

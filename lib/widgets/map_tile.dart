@@ -52,11 +52,16 @@ class _MapTileState extends ConsumerState<MapTile> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: Image(
-                    image: _SoftenedThumbnail(
-                      'assets/maps/thumbnails/${widget.name}_thumbnail.webp',
+                  // The tile takes the size its parent gives it: wider in the
+                  // map list, shorter in the picker card.
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => Image(
+                      image: _SoftenedThumbnail(
+                        'assets/maps/thumbnails/${widget.name}_thumbnail.webp',
+                        constraints.biggest,
+                      ),
+                      fit: BoxFit.fill,
                     ),
-                    fit: BoxFit.fill,
                   ),
                 ),
                 if (_isHovered && !widget.isPreview)
@@ -93,17 +98,18 @@ class _MapTileState extends ConsumerState<MapTile> {
   }
 }
 
-/// A map's thumbnail as a tile draws it: covering the tile, at 80%, softened
-/// by a 1 px blur, painted once into a picture the tile's size.
+/// A map's thumbnail as a tile of [size] draws it: covering the tile, at 80%,
+/// softened by a 1 px blur, painted once into a picture the tile's size.
 ///
 /// The tiles used to blur and fade the thumbnail as they drew it, two
 /// offscreen layers per tile on every frame. Impeller, which draws on macOS,
 /// keeps nothing between frames, so scrolling the map picker redrew every
 /// visible tile's layers each frame and lagged.
 class _SoftenedThumbnail extends ImageProvider<_SoftenedThumbnailKey> {
-  const _SoftenedThumbnail(this.asset);
+  const _SoftenedThumbnail(this.asset, this.size);
 
   final String asset;
+  final Size size;
 
   /// The size the thumbnail is decoded at, kept from before it was painted
   /// once, so the tiles look as they did.
@@ -113,7 +119,7 @@ class _SoftenedThumbnail extends ImageProvider<_SoftenedThumbnailKey> {
   @override
   Future<_SoftenedThumbnailKey> obtainKey(ImageConfiguration configuration) {
     return SynchronousFuture(
-      _SoftenedThumbnailKey(asset, configuration.devicePixelRatio ?? 1),
+      _SoftenedThumbnailKey(asset, size, configuration.devicePixelRatio ?? 1),
     );
   }
 
@@ -144,7 +150,7 @@ class _SoftenedThumbnail extends ImageProvider<_SoftenedThumbnailKey> {
     }
 
     final ratio = key.devicePixelRatio;
-    final tile = Offset.zero & const Size(MapTile.width, MapTile.height);
+    final tile = Offset.zero & key.size;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder)..scale(ratio);
     // What ImageFiltered(blur 1) over Opacity(0.8) over Image(cover) drew.
@@ -178,24 +184,26 @@ class _SoftenedThumbnail extends ImageProvider<_SoftenedThumbnailKey> {
 
   @override
   bool operator ==(Object other) =>
-      other is _SoftenedThumbnail && other.asset == asset;
+      other is _SoftenedThumbnail && other.asset == asset && other.size == size;
 
   @override
-  int get hashCode => asset.hashCode;
+  int get hashCode => Object.hash(asset, size);
 }
 
 class _SoftenedThumbnailKey {
-  const _SoftenedThumbnailKey(this.asset, this.devicePixelRatio);
+  const _SoftenedThumbnailKey(this.asset, this.size, this.devicePixelRatio);
 
   final String asset;
+  final Size size;
   final double devicePixelRatio;
 
   @override
   bool operator ==(Object other) =>
       other is _SoftenedThumbnailKey &&
       other.asset == asset &&
+      other.size == size &&
       other.devicePixelRatio == devicePixelRatio;
 
   @override
-  int get hashCode => Object.hash(asset, devicePixelRatio);
+  int get hashCode => Object.hash(asset, size, devicePixelRatio);
 }
