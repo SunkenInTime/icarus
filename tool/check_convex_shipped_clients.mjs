@@ -290,6 +290,8 @@ function compareSingle(judge, sent, mode) {
     case "bytes":
       return sent.type === judge.type ? [] : mismatch();
     case "id":
+      // A generated decoder reads an id as any string; Convex checks the table.
+      if (mode.decoder) return compareSingle({ type: "string" }, sent, mode);
       return sent.type === "id" && sent.tableName === judge.tableName ? [] : mismatch();
     case "array":
       return sent.type === "array"
@@ -310,7 +312,8 @@ function compareSingle(judge, sent, mode) {
       return mismatch();
     case "object":
       if (sent.type !== "object") return mismatch();
-      return mode.decoder && isPayloadObject(judge)
+      // Raw-union predicates check payload objects field by field instead.
+      return mode.decoder && !mode.inRaw && isPayloadObject(judge)
         ? comparePayloads(judge, sent, mode)
         : compareObjects(judge, sent, mode);
     default:
@@ -377,7 +380,7 @@ function anyMap(validator) {
 }
 
 function decoderModes(strictness) {
-  const raw = { decoder: true, strict: strictness.raw, key: `raw:${strictness.raw}` };
+  const raw = { decoder: true, inRaw: true, strict: strictness.raw, key: `raw:${strictness.raw}` };
   raw.raw = raw;
   return {
     decoder: true,

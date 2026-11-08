@@ -223,6 +223,27 @@ test("payload envelopes are judged the way the payload codec reads them", () => 
   ]);
 });
 
+test("a payload inside a raw union is checked field by field", () => {
+  const data = { type: "record", keys: string, values: field(string) };
+  const payload = (extra = {}) =>
+    object({ kind: literal("agent"), payloadVersion: number, data, ...extra });
+  // A string next to the payload makes the generator emit a raw predicate.
+  const before = { "a.js:f": { returns: object({ value: union(payload(), string) }) } };
+  const after = { "a.js:f": { returns: object({ value: union(payload({ metadata: string }), string) }) } };
+  assert.deepEqual(issues(before, after), [
+    'a:f result.value<kind=agent>.metadata: new field "metadata"; old clients reject result fields they don\'t know',
+  ]);
+});
+
+test("decoders read ids as strings, but Convex checks an id argument's table", () => {
+  const id = (tableName) => ({ type: "id", tableName });
+  const before = { "a.js:f": { args: object({ ref: string }), returns: object({ ref: id("strategies") }) } };
+  const after = { "a.js:f": { args: object({ ref: id("strategies") }), returns: object({ ref: string }) } };
+  assert.deepEqual(issues(before, after), [
+    "a:f args.ref: old clients send string, but the server now accepts only id<strategies>",
+  ]);
+});
+
 const optInBefore = { "a.js:f": { args: object({}), returns: array(card) } };
 const optInAfter = {
   "a.js:f": {
