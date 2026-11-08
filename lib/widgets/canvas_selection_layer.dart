@@ -332,14 +332,17 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
       }
     }
     final coordinates = CoordinateSystem.instance;
+    // Drawings are painted attack side up and turned with the map.
+    final painted = _isAttack
+        ? box
+        : Rect.fromPoints(
+            _flip(box.topLeft, coordinates.playAreaSize),
+            _flip(box.bottomRight, coordinates.playAreaSize),
+          );
     for (final drawing in ref.read(drawingProvider).elements) {
       // Wide by half the stroke, so the edge of a thick stroke counts.
-      final reach = box.inflate(coordinates.scale(drawing.thickness) / 2);
-      final area = Rect.fromPoints(
-        _stored(reach.topLeft),
-        _stored(reach.bottomRight),
-      );
-      if (drawingCrosses(drawing, area)) {
+      final reach = painted.inflate(coordinates.scale(drawing.thickness) / 2);
+      if (drawingCrosses(drawing, reach)) {
         found.add((kind: SelectableKind.drawing, id: drawing.id));
       }
     }

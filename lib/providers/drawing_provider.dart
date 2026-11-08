@@ -989,22 +989,77 @@ bool isNearDrawing(DrawingElement drawing, Offset point, double threshold) {
   };
 }
 
-/// Whether [drawing]'s stroke passes through [area], both in world
-/// coordinates: what a selection box takes.
+/// Whether [drawing]'s stroke passes through [area] as the canvas paints
+/// it: smoothed, with its arrowhead. [area] is in the coordinates drawings
+/// are painted in, the attack side's. What a selection box takes.
 bool drawingCrosses(DrawingElement drawing, Rect area) {
-  return switch (drawing) {
-    FreeDrawing(:final listOfPoints) => listOfPoints.length == 1
-        ? area.contains(listOfPoints.single)
-        : _polylineCrosses(listOfPoints, area),
-    Line() => _segmentCrosses(drawing.lineStart, drawing.lineEnd, area),
-    RectangleDrawing() => _polylineCrosses(
-        _corners(drawing.normalizedRect),
-        area,
-      ),
-    EllipseDrawing() => _ellipseStrokeCrosses(drawing.normalizedRect, area),
-    _ => false,
+  final coordinates = CoordinateSystem.instance;
+  Offset drawn(Offset world) => coordinates.coordinateToScreen(world);
+  if (drawing.boundingBox case final bounds?) {
+    final arrowHead = 8 * (drawing.thickness / Settings.defaultStrokeThickness);
+    final around = Rect.fromPoints(drawn(bounds.min), drawn(bounds.max))
+        .inflate(drawing.hasArrow ? arrowHead : 0);
+    if (!_meet(around, area)) return false;
+  }
+  if (drawing is EllipseDrawing) {
+    return _ellipseStrokeCrosses(
+      Rect.fromPoints(drawn(drawing.start), drawn(drawing.end)),
+      area,
+    );
+  }
+  final List<List<Offset>> strokes = switch (drawing) {
+    Line() => [
+        [drawn(drawing.lineStart), drawn(drawing.lineEnd)],
+        if (drawing.hasArrow)
+          ..._arrowHead(
+            drawn(drawing.lineStart),
+            drawn(drawing.lineEnd),
+            drawing.thickness,
+          ),
+      ],
+    // Fewer than two points paint nothing.
+    FreeDrawing(:final listOfPoints) when listOfPoints.length >= 2 => [
+        ..._alongPath(drawing.path),
+        if (drawing.hasArrow)
+          ..._arrowHead(
+            drawn(listOfPoints[listOfPoints.length - 2]),
+            drawn(listOfPoints.last),
+            drawing.thickness,
+          ),
+      ],
+    RectangleDrawing() => [
+        _corners(Rect.fromPoints(drawn(drawing.start), drawn(drawing.end))),
+      ],
+    _ => const [],
   };
+  return strokes.any((stroke) => _polylineCrosses(stroke, area));
 }
+
+/// Whether [a] and [b] share a point, edges included.
+bool _meet(Rect a, Rect b) =>
+    a.left <= b.right &&
+    b.left <= a.right &&
+    a.top <= b.bottom &&
+    b.top <= a.bottom;
+
+List<List<Offset>> _arrowHead(Offset from, Offset to, double thickness) {
+  final (wing1, wing2) = arrowHeadWings(from, to, thickness);
+  return [
+    [to, wing1],
+    [to, wing2],
+  ];
+}
+
+/// [path] as lines through points two pixels apart along it, one per
+/// contour.
+List<List<Offset>> _alongPath(Path path) => [
+      for (final contour in path.computeMetrics())
+        [
+          for (var at = 0.0; at < contour.length; at += 2)
+            contour.getTangentForOffset(at)!.position,
+          contour.getTangentForOffset(contour.length)!.position,
+        ],
+    ];
 
 /// [rect]'s outline as a closed polyline.
 List<Offset> _corners(Rect rect) => [
@@ -1028,25 +1083,21 @@ bool _segmentCrosses(Offset a, Offset b, Rect area) {
   final d = b - a;
   var enters = 0.0;
   var leaves = 1.0;
-  for (final (toward, room) in [
-    (-d.dx, a.dx - area.left),
-    (d.dx, area.right - a.dx),
-    (-d.dy, a.dy - area.top),
-    (d.dy, area.bottom - a.dy),
-  ]) {
-    if (toward == 0) {
-      if (room < 0) return false;
-      continue;
-    }
+  bool clip(double toward, double room) {
+    if (toward == 0) return room >= 0;
     final t = room / toward;
     if (toward < 0) {
       enters = max(enters, t);
     } else {
       leaves = min(leaves, t);
     }
-    if (enters > leaves) return false;
+    return enters <= leaves;
   }
-  return true;
+
+  return clip(-d.dx, a.dx - area.left) &&
+      clip(d.dx, area.right - a.dx) &&
+      clip(-d.dy, a.dy - area.top) &&
+      clip(d.dy, area.bottom - a.dy);
 }
 
 /// Whether [area] meets the ellipse in [rect] and isn't wholly inside it.

@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 
 import 'package:dash_painter/dash_painter.dart';
 import 'package:flutter/material.dart';
@@ -561,7 +560,6 @@ class DrawingPainter extends CustomPainter {
       ..isAntiAlias = true
       ..strokeCap = StrokeCap.round;
 
-    // Helper function to draw an arrow
     void drawArrow(
       Canvas canvas,
       Paint paint,
@@ -569,31 +567,15 @@ class DrawingPainter extends CustomPainter {
       Offset to,
       double thickness,
     ) {
-      final arrowHeadSize = 8 * (thickness / Settings.defaultStrokeThickness);
-      const double arrowAngle = math.pi / 4; // 30 degrees arrow head angle
-
-      // Calculate the direction angle from `from` to `to`
-      final angle = math.atan2(to.dy - from.dy, to.dx - from.dx);
-
-      // Calculate the points for the arrow head lines.
-      final arrowPoint1 = Offset(
-        to.dx - arrowHeadSize * math.cos(angle - arrowAngle),
-        to.dy - arrowHeadSize * math.sin(angle - arrowAngle),
+      final (wing1, wing2) = arrowHeadWings(from, to, thickness);
+      canvas.drawPath(
+        Path()
+          ..moveTo(to.dx, to.dy)
+          ..lineTo(wing1.dx, wing1.dy)
+          ..moveTo(to.dx, to.dy)
+          ..lineTo(wing2.dx, wing2.dy),
+        paint,
       );
-      final arrowPoint2 = Offset(
-        to.dx - arrowHeadSize * math.cos(angle + arrowAngle),
-        to.dy - arrowHeadSize * math.sin(angle + arrowAngle),
-      );
-
-      // Create a path for the arrowhead
-      final arrowPath = Path();
-      arrowPath.moveTo(to.dx, to.dy);
-      arrowPath.lineTo(arrowPoint1.dx, arrowPoint1.dy);
-      arrowPath.moveTo(to.dx, to.dy);
-      arrowPath.lineTo(arrowPoint2.dx, arrowPoint2.dy);
-
-      // Draw the arrowhead lines
-      canvas.drawPath(arrowPath, paint);
     }
 
     void paintLine(Canvas canvas, Paint paint, Line line) {
