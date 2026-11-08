@@ -779,6 +779,8 @@ impl BaseConvexClient {
 
         let (state_restart_messages, auth_token_changed) = self.state.restart().await;
         let mut ongoing_mutation_messages = self.request_manager.restart();
+        // THROWAWAY BREAK: drop in-flight mutations instead of replaying them.
+        ongoing_mutation_messages.clear();
 
         self.remote_query_set = RemoteQuerySet::new();
         for state_restart_message in state_restart_messages {
