@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:icarus/const/settings.dart';
 
@@ -356,13 +357,12 @@ class _LineUpAbilityContextMenuDialogState
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
-      child: ShadContextMenu(
+      child: ContextMenuAtPoint(
         controller: _controller,
-        anchor: ShadGlobalAnchor(widget.globalPosition),
+        position: widget.globalPosition,
         items: [
           for (final item in widget.items) _wrapItem(item),
         ],
-        child: const SizedBox.expand(),
       ),
     );
   }

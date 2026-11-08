@@ -143,8 +143,7 @@ void main() {
       buttons: kSecondaryButton,
       kind: PointerDeviceKind.mouse,
     );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pumpAndSettle();
 
     expect(find.text('Copy sightline report'), findsOneWidget);
     // Weapons live under one Weapon entry; its categories open on hover.
@@ -251,8 +250,7 @@ void main() {
       buttons: kSecondaryButton,
       kind: PointerDeviceKind.mouse,
     );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pumpAndSettle();
 
     // The cone still offers its sightline report on a legacy map; only the
     // elevation controls belong to the SVG-height runtime.
