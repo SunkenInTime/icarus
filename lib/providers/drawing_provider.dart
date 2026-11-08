@@ -989,6 +989,89 @@ bool isNearDrawing(DrawingElement drawing, Offset point, double threshold) {
   };
 }
 
+/// Whether [drawing]'s stroke passes through [area], both in world
+/// coordinates: what a selection box takes.
+bool drawingCrosses(DrawingElement drawing, Rect area) {
+  return switch (drawing) {
+    FreeDrawing(:final listOfPoints) => listOfPoints.length == 1
+        ? area.contains(listOfPoints.single)
+        : _polylineCrosses(listOfPoints, area),
+    Line() => _segmentCrosses(drawing.lineStart, drawing.lineEnd, area),
+    RectangleDrawing() => _polylineCrosses(
+        _corners(drawing.normalizedRect),
+        area,
+      ),
+    EllipseDrawing() => _ellipseStrokeCrosses(drawing.normalizedRect, area),
+    _ => false,
+  };
+}
+
+/// [rect]'s outline as a closed polyline.
+List<Offset> _corners(Rect rect) => [
+      rect.topLeft,
+      rect.topRight,
+      rect.bottomRight,
+      rect.bottomLeft,
+      rect.topLeft,
+    ];
+
+bool _polylineCrosses(List<Offset> points, Rect area) {
+  for (var i = 0; i < points.length - 1; i++) {
+    if (_segmentCrosses(points[i], points[i + 1], area)) return true;
+  }
+  return false;
+}
+
+/// Whether any of the segment from [a] to [b] is inside [area]: clipped to
+/// each of the area's four sides in turn, some of it is left.
+bool _segmentCrosses(Offset a, Offset b, Rect area) {
+  final d = b - a;
+  var enters = 0.0;
+  var leaves = 1.0;
+  for (final (toward, room) in [
+    (-d.dx, a.dx - area.left),
+    (d.dx, area.right - a.dx),
+    (-d.dy, a.dy - area.top),
+    (d.dy, area.bottom - a.dy),
+  ]) {
+    if (toward == 0) {
+      if (room < 0) return false;
+      continue;
+    }
+    final t = room / toward;
+    if (toward < 0) {
+      enters = max(enters, t);
+    } else {
+      leaves = min(leaves, t);
+    }
+    if (enters > leaves) return false;
+  }
+  return true;
+}
+
+/// Whether [area] meets the ellipse in [rect] and isn't wholly inside it.
+/// Scaled so the ellipse is the unit circle, [area] stays a rectangle.
+bool _ellipseStrokeCrosses(Rect rect, Rect area) {
+  if (rect.width == 0 || rect.height == 0) {
+    return _segmentCrosses(rect.topLeft, rect.bottomRight, area);
+  }
+  final rx = rect.width / 2;
+  final ry = rect.height / 2;
+  final unit = Rect.fromLTRB(
+    (area.left - rect.center.dx) / rx,
+    (area.top - rect.center.dy) / ry,
+    (area.right - rect.center.dx) / rx,
+    (area.bottom - rect.center.dy) / ry,
+  );
+  final nearest = Offset(
+    0.0.clamp(unit.left, unit.right),
+    0.0.clamp(unit.top, unit.bottom),
+  );
+  if (nearest.distanceSquared > 1) return false;
+  return [unit.topLeft, unit.topRight, unit.bottomRight, unit.bottomLeft]
+      .any((corner) => corner.distanceSquared >= 1);
+}
+
 double _distanceToLineSegment(Offset p, Offset a, Offset b) {
   // If a and b are the same point, just return distance to that point
   if (a == b) return (p - a).distance;

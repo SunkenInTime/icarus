@@ -191,15 +191,34 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('a box selects the items whose middle it covers', (
+  testWidgets('a box selects the items it covers', (tester) async {
+    await pumpCanvas(tester);
+
+    // Covers a (100, 100 to 120, 120) and b (200, 100 to 220, 120), not c.
+    await mouseDrag(tester, const Offset(50, 50), const Offset(250, 200));
+
+    expect(container.read(canvasSelectionProvider), {_a, _b});
+  });
+
+  testWidgets('a box that clips a corner of an item selects it', (
     tester,
   ) async {
     await pumpCanvas(tester);
 
-    // Covers a's middle (110, 110) and b's (210, 110), not c's.
-    await mouseDrag(tester, const Offset(50, 50), const Offset(250, 200));
+    // c is drawn from (400, 300) to (420, 320); its middle stays outside.
+    await mouseDrag(tester, const Offset(415, 315), const Offset(500, 400));
 
-    expect(container.read(canvasSelectionProvider), {_a, _b});
+    expect(container.read(canvasSelectionProvider), {_c});
+  });
+
+  testWidgets('a box that stops short of an item selects nothing', (
+    tester,
+  ) async {
+    await pumpCanvas(tester);
+
+    await mouseDrag(tester, const Offset(425, 325), const Offset(500, 400));
+
+    expect(container.read(canvasSelectionProvider), isEmpty);
   });
 
   group('in a lineup mode', () {

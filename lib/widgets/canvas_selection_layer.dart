@@ -301,52 +301,74 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     setState(() => _box = null);
   }
 
-  /// What [box] selects. Things that mark a spot (agents, abilities,
-  /// utilities, a lineup's two ends) count when their middle is inside it;
-  /// text, images and drawings, which cover an area, when all of them is.
+  /// What [box] selects: everything it touches as drawn. An item counts
+  /// when the box touches its outline, a drawing when the box crosses its
+  /// stroke, so a long diagonal line isn't taken by a box near its middle.
   Set<SelectedItem> _itemsIn(Rect box) {
     final canvas = _canvas;
     if (canvas == null) return const {};
     if (_lineUpMode) {
       return {
         for (final (:item, :corners) in _registry.itemsIn(canvas))
-          if (item.kind == SelectableKind.lineupEnd &&
-              box.contains(_middle(corners)))
+          if (item.kind == SelectableKind.lineupEnd && _touches(box, corners))
             item,
       };
     }
     final found = <SelectedItem>{};
     final lineupEnds = <String>{};
     for (final (:item, :corners) in _registry.itemsIn(canvas)) {
-      final inside = switch (item.kind) {
-        SelectableKind.text ||
-        SelectableKind.image =>
-          corners.every(box.contains),
-        _ => box.contains(_middle(corners)),
-      };
-      if (!inside) continue;
+      if (!_touches(box, corners)) continue;
       if (item.kind == SelectableKind.lineup) {
         lineupEnds.add(item.id);
       } else {
         found.add(item);
       }
     }
-    // A lineup comes in whole: both its throw spot and landing are inside.
+    // A lineup comes in whole: the box touches its throw spot and landing.
     for (final link in ref.read(lineUpProvider).links) {
       if (lineupEnds.contains(link.originId) &&
           lineupEnds.contains(link.landingId)) {
         found.add((kind: SelectableKind.lineup, id: link.id));
       }
     }
+    final coordinates = CoordinateSystem.instance;
     for (final drawing in ref.read(drawingProvider).elements) {
-      final bounds = drawing.boundingBox;
-      if (bounds == null) continue;
-      if (box.contains(_drawn(bounds.min)) &&
-          box.contains(_drawn(bounds.max))) {
+      // Wide by half the stroke, so the edge of a thick stroke counts.
+      final reach = box.inflate(coordinates.scale(drawing.thickness) / 2);
+      final area = Rect.fromPoints(
+        _stored(reach.topLeft),
+        _stored(reach.bottomRight),
+      );
+      if (drawingCrosses(drawing, area)) {
         found.add((kind: SelectableKind.drawing, id: drawing.id));
       }
     }
     return found;
+  }
+
+  /// Whether [box] and the outline through [corners], a rectangle that may
+  /// be turned, share any point. Two convex shapes miss each other exactly
+  /// when, along the normal of one of their edges, their shadows don't
+  /// overlap.
+  static bool _touches(Rect box, List<Offset> corners) {
+    final rect = [box.topLeft, box.topRight, box.bottomRight, box.bottomLeft];
+    for (final shape in [rect, corners]) {
+      for (var i = 0; i < shape.length; i++) {
+        final edge = shape[(i + 1) % shape.length] - shape[i];
+        if (_apartAlong(Offset(-edge.dy, edge.dx), rect, corners)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  static bool _apartAlong(Offset axis, List<Offset> a, List<Offset> b) {
+    double along(Offset point) => point.dx * axis.dx + point.dy * axis.dy;
+    final onA = a.map(along).toList();
+    final onB = b.map(along).toList();
+    return onA.reduce(math.max) < onB.reduce(math.min) ||
+        onB.reduce(math.max) < onA.reduce(math.min);
   }
 
   bool get _lineUpMode => ref.read(interactionStateProvider).isLineUpMode;
