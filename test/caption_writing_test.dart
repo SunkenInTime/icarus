@@ -13,6 +13,8 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/widgets/caption_card.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
+import 'package:icarus/widgets/global_shortcuts.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 
 class _TestStrategyProvider extends StrategyProvider {
   @override
@@ -70,6 +72,7 @@ Future<_Rig> _pump(
   WidgetTester tester, {
   String? caption,
   bool canEdit = true,
+  bool appShortcuts = false,
 }) async {
   final container = ProviderContainer(overrides: [
     strategyProvider.overrideWith(_TestStrategyProvider.new),
@@ -90,13 +93,11 @@ Future<_Rig> _pump(
   addTearDown(canvas.dispose);
   final rig = _Rig(container, canvas);
 
-  await tester.pumpWidget(
-    UncontrolledProviderScope(
-      container: container,
-      child: MaterialApp(
-        // Stands in for GlobalShortcuts: E deletes and X turns what's under
-        // the pointer.
-        home: Shortcuts(
+  Widget shortcuts(Widget child) => appShortcuts
+      ? GlobalShortcuts(child: child)
+      // Stands in for GlobalShortcuts: E deletes and X turns what's under
+      // the pointer.
+      : Shortcuts(
           shortcuts: const {
             SingleActivator(LogicalKeyboardKey.keyE): _Shortcut('E'),
             SingleActivator(LogicalKeyboardKey.keyX): _Shortcut('X'),
@@ -107,34 +108,42 @@ Future<_Rig> _pump(
                 onInvoke: (intent) => rig.fired.add(intent.key),
               ),
             },
-            child: Scaffold(
-              body: CanvasItemRegistryScope(
-                registry: container.read(canvasItemRegistryProvider),
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: Focus(
-                        focusNode: canvas,
-                        autofocus: true,
-                        child: const SizedBox.expand(),
-                      ),
+            child: child,
+          ),
+        );
+
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        home: shortcuts(
+          Scaffold(
+            body: CanvasItemRegistryScope(
+              registry: container.read(canvasItemRegistryProvider),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Focus(
+                      focusNode: canvas,
+                      autofocus: true,
+                      child: const SizedBox.expand(),
                     ),
-                    const Positioned(
-                      left: 300,
-                      top: 400,
-                      width: 40,
-                      height: 40,
-                      child: ItemOutlineScope(
-                        id: 'agent',
-                        kind: SelectableKind.agent,
-                        child: EditorItemOutline(child: SizedBox.expand()),
-                      ),
+                  ),
+                  const Positioned(
+                    left: 300,
+                    top: 400,
+                    width: 40,
+                    height: 40,
+                    child: ItemOutlineScope(
+                      id: 'agent',
+                      kind: SelectableKind.agent,
+                      child: EditorItemOutline(child: SizedBox.expand()),
                     ),
-                    Positioned.fill(
-                      child: CaptionCardLayer(transformation: controller),
-                    ),
-                  ],
-                ),
+                  ),
+                  Positioned.fill(
+                    child: CaptionCardLayer(transformation: controller),
+                  ),
+                ],
               ),
             ),
           ),
@@ -297,5 +306,75 @@ void main() {
 
     expect(rig.card?.writing, isFalse);
     expect(find.byType(EditableText), findsNothing);
+  });
+
+  testWidgets(
+      "E deletes the item under the pointer, but not while a note is being "
+      'written, even before the keyboard reaches the note', (tester) async {
+    final rig = await _pump(tester, appShortcuts: true);
+    void hoverAgent() =>
+        rig.container.read(hoveredDeleteTargetProvider.notifier).state =
+            HoveredDeleteTarget.agent(id: 'agent', ownerToken: 'test');
+
+    rig.startWriting();
+    await tester.pump();
+    // The menu closing puts the keyboard back on the map.
+    rig.canvas.requestFocus();
+    await tester.pump();
+    expect(rig.canvas.hasFocus, isTrue);
+    hoverAgent();
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(rig.caption, isNull);
+    expect(placedItemById(rig.container, 'agent'), isNotNull);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(rig.card, isNull);
+
+    // Back on the map, E deletes it.
+    rig.canvas.requestFocus();
+    hoverAgent();
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+    await tester.pump();
+    expect(placedItemById(rig.container, 'agent'), isNull);
+  });
+
+  testWidgets(
+      "Escape with the field's menu open closes the menu and keeps the note",
+      (tester) async {
+    final rig = await _pump(tester);
+    await rig.write(tester);
+    await tester.enterText(find.byType(EditableText), 'Keep this');
+    final field = tester.state<EditableTextState>(find.byType(EditableText));
+    field.showToolbar();
+    await tester.pumpAndSettle();
+    expect(field.selectionOverlay?.toolbarIsVisible, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(field.selectionOverlay?.toolbarIsVisible ?? false, isFalse);
+    expect(rig.card?.writing, isTrue);
+    expect(_field(tester).controller.text, 'Keep this');
+  });
+
+  testWidgets("a press on the field's menu is a press in the note",
+      (tester) async {
+    final rig = await _pump(tester);
+    await rig.write(tester);
+    await tester.enterText(find.byType(EditableText), 'Smoke');
+    final field = tester.state<EditableTextState>(find.byType(EditableText));
+    field.selectAll(SelectionChangedCause.toolbar);
+    field.showToolbar();
+    await tester.pumpAndSettle();
+
+    final button = find.text('Cut');
+    expect(button, findsOneWidget);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(rig.card?.writing, isTrue);
+    expect(_field(tester).controller.text, '');
   });
 }

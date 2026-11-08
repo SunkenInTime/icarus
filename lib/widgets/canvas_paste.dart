@@ -9,6 +9,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/canvas_clipboard_provider.dart';
+import 'package:icarus/providers/caption_card_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
@@ -47,6 +48,7 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
 
   bool _canPaste() =>
       !isTypingInTextField() &&
+      !ref.read(writingCaptionProvider) &&
       ref.read(currentStrategyCapabilitiesProvider).canEditPages &&
       !ref.read(interactionStateProvider).isLineUpMode &&
       !ref.read(transitionProvider).active;

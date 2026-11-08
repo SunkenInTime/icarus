@@ -130,22 +130,20 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
     if (event is PointerUpEvent || event is PointerCancelEvent) {
       _notifier.pointerUp(event.pointer);
     }
-    if (_onCard(event.position)) return;
-    if (event is PointerDownEvent) {
-      _leave();
-    } else if (event is PointerSignalEvent) {
+    // A note being written decides for itself what a press off it means: its
+    // field's menu and handles can sit outside the card.
+    if (_draft != null || _onCard(event.position)) return;
+    if (event is PointerDownEvent || event is PointerSignalEvent) {
       _notifier.closeNow();
     }
   }
 
+  /// Escape closes a card being read. A note being written handles its own,
+  /// since its field may want the key first.
   bool _onKey(KeyEvent event) {
     if (event is KeyDownEvent &&
         event.logicalKey == LogicalKeyboardKey.escape) {
-      if (_draft != null) {
-        _finish(save: false);
-      } else {
-        _notifier.closeNow();
-      }
+      _notifier.closeNow();
     }
     return false;
   }
@@ -302,6 +300,7 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
                     name: name,
                     draft: draft,
                     onSave: () => _finish(save: true),
+                    onDrop: () => _finish(save: false),
                   )
                 : _CaptionCard(
                     name: name,
@@ -626,6 +625,35 @@ class _StayIntent extends Intent {
   const _StayIntent();
 }
 
+class _DropCaptionIntent extends Intent {
+  const _DropCaptionIntent();
+}
+
+/// Escape drops the note, unless the field is using the key: to close its
+/// Cut, Copy and Paste menu, or to cancel a word being composed.
+class _DropCaptionAction extends Action<_DropCaptionIntent> {
+  _DropCaptionAction(this.draft, this.onDrop);
+
+  final _Draft draft;
+  final VoidCallback onDrop;
+
+  @override
+  bool isEnabled(_DropCaptionIntent intent, [BuildContext? context]) =>
+      !draft.controller.value.composing.isValid;
+
+  @override
+  Object? invoke(_DropCaptionIntent intent) {
+    final field =
+        draft.focus.context?.findAncestorStateOfType<EditableTextState>();
+    if (field?.selectionOverlay?.toolbarIsVisible ?? false) {
+      field!.hideToolbar();
+    } else {
+      onDrop();
+    }
+    return null;
+  }
+}
+
 /// The card with its note in a text field. What's typed looks as it will
 /// read, and no key typed here reaches the app's shortcuts.
 class _CaptionEditor extends StatelessWidget {
@@ -633,11 +661,13 @@ class _CaptionEditor extends StatelessWidget {
     required this.name,
     required this.draft,
     required this.onSave,
+    required this.onDrop,
   });
 
   final String name;
   final _Draft draft;
   final VoidCallback onSave;
+  final VoidCallback onDrop;
 
   static bool get _mac =>
       defaultTargetPlatform == TargetPlatform.macOS ||
@@ -660,14 +690,17 @@ class _CaptionEditor extends StatelessWidget {
           color: Settings.tacticalVioletTheme.mutedForeground,
         ),
       ),
-      // A press off the card saves the note; the layer sees to it.
+      // A press off the card saves the note, and the card sees to it.
       onTapOutside: (_) {},
     );
     return Material(
       type: MaterialType.transparency,
-      // A press on the card's header or edge is a press in the field: it
-      // keeps the keyboard there.
+      // The card, the field's menu and its handles are one region: a press
+      // anywhere else saves the note, whether or not the keyboard reached the
+      // field yet. A press on the card's header or edge keeps the keyboard in
+      // the field.
       child: TextFieldTapRegion(
+        onTapOutside: (_) => onSave(),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: draft.focus.requestFocus,
@@ -692,6 +725,8 @@ class _CaptionEditor extends StatelessWidget {
                 SingleActivator(LogicalKeyboardKey.tab): _StayIntent(),
                 SingleActivator(LogicalKeyboardKey.tab, shift: true):
                     _StayIntent(),
+                SingleActivator(LogicalKeyboardKey.escape):
+                    _DropCaptionIntent(),
               },
               child: Actions(
                 actions: {
@@ -702,6 +737,7 @@ class _CaptionEditor extends StatelessWidget {
                     },
                   ),
                   _StayIntent: DoNothingAction(),
+                  _DropCaptionIntent: _DropCaptionAction(draft, onDrop),
                 },
                 child: Padding(padding: _notePadding, child: field),
               ),

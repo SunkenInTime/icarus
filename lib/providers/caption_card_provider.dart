@@ -36,6 +36,15 @@ class OpenCaption {
 final captionCardProvider = NotifierProvider<CaptionCardNotifier, OpenCaption?>(
     CaptionCardNotifier.new);
 
+/// Whether a note is being written in a caption card. The app's shortcuts
+/// are off for as long as it is, wherever the keyboard is: a menu closing as
+/// the card opens hands the keyboard to the canvas for a moment, and a letter
+/// typed then must not delete or turn what's under the pointer.
+final writingCaptionProvider = Provider<bool>(
+  (ref) =>
+      ref.watch(captionCardProvider.select((open) => open?.writing ?? false)),
+);
+
 class CaptionCardNotifier extends Notifier<OpenCaption?> {
   /// Long enough that crossing the map or grabbing an item shows nothing.
   static const openDelay = Duration(milliseconds: 300);
