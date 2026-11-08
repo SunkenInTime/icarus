@@ -128,7 +128,14 @@ class _SoftenedThumbnail extends ImageProvider<_SoftenedThumbnailKey> {
     _SoftenedThumbnailKey key,
     ImageDecoderCallback decode,
   ) {
-    return OneFrameImageStreamCompleter(_paint(key, decode));
+    final completer = OneFrameImageStreamCompleter(_paint(key, decode));
+    completer.addEphemeralErrorListener((_, __) {
+      // As in ResizeImage: a failed paint must not stay in the cache, or the
+      // tile would stay blank until the app restarts. The cache may not hold
+      // the key yet when the error arrives.
+      scheduleMicrotask(() => PaintingBinding.instance.imageCache.evict(key));
+    });
+    return completer;
   }
 
   static Future<ImageInfo> _paint(

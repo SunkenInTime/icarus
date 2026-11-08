@@ -434,6 +434,7 @@ Offset _doorPoint(String id) {
 // The mouse.
 
 var _pointer = 900;
+final _pointerClock = Stopwatch()..start();
 Offset? _mouseAt;
 
 /// Puts the mouse at [at]. MouseTracker asserts in debug builds when the
@@ -462,10 +463,18 @@ void _addMouse(int pointer, Offset at) {
 Future<void> _panScroll(Offset at, double dy, Duration over) async {
   final pointer = _pointer++;
   final binding = GestureBinding.instance;
-  binding.handlePointerEvent(
-    PointerPanZoomStartEvent(pointer: pointer, device: pointer, position: at),
-  );
+  // The velocity tracker reads the events' time stamps; without them the
+  // swipe has no speed and the list doesn't fling when the fingers lift.
   final clock = Stopwatch()..start();
+  Duration now() => _pointerClock.elapsed;
+  binding.handlePointerEvent(
+    PointerPanZoomStartEvent(
+      timeStamp: now(),
+      pointer: pointer,
+      device: pointer,
+      position: at,
+    ),
+  );
   var pan = Offset.zero;
   while (clock.elapsed < over) {
     await _frames(1);
@@ -473,6 +482,7 @@ Future<void> _panScroll(Offset at, double dy, Duration over) async {
     final next = Offset(0, dy * share.clamp(0.0, 1.0));
     binding.handlePointerEvent(
       PointerPanZoomUpdateEvent(
+        timeStamp: now(),
         pointer: pointer,
         device: pointer,
         position: at,
@@ -483,7 +493,12 @@ Future<void> _panScroll(Offset at, double dy, Duration over) async {
     pan = next;
   }
   binding.handlePointerEvent(
-    PointerPanZoomEndEvent(pointer: pointer, device: pointer, position: at),
+    PointerPanZoomEndEvent(
+      timeStamp: now(),
+      pointer: pointer,
+      device: pointer,
+      position: at,
+    ),
   );
   await Future<void>.delayed(const Duration(milliseconds: 1500));
   await _frames();
@@ -1113,8 +1128,7 @@ Future<void> _run(Map<String, dynamic> step) async {
               ? ((step['size'] ?? 2) as num).toDouble()
               : null,
           customDiameter: type == UtilityType.customCircle ? 10 : null,
-          customColorValue:
-              type == UtilityType.spike ? null : 0xFF22C55E,
+          customColorValue: type == UtilityType.spike ? null : 0xFF22C55E,
           customOpacityPercent: type == UtilityType.spike ? null : 30,
           mapDoor: step['door'] as String?,
         ),
@@ -1503,7 +1517,8 @@ Future<void> _run(Map<String, dynamic> step) async {
         }
         outlines[item.id] = outlines[item.id]?.expandToInclude(drawn) ?? drawn;
       }
-      _log('IN-VIEW view=${view.left},${view.top},${view.right},${view.bottom} ${{
+      _log(
+          'IN-VIEW view=${view.left},${view.top},${view.right},${view.bottom} ${{
         for (final MapEntry(key: id, value: drawn) in outlines.entries)
           id: '${drawn.left.toStringAsFixed(1)},'
               '${drawn.top.toStringAsFixed(1)},'

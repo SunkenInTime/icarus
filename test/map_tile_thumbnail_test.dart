@@ -84,6 +84,28 @@ void main() {
       }
     });
   }
+
+  testWidgets('a thumbnail that fails to load is not kept', (tester) async {
+    final cache = PaintingBinding.instance.imageCache
+      ..clear()
+      ..clearLiveImages();
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Material(child: MapTile(name: 'nowhere', onTap: () {})),
+        ),
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    }
+    // Kept, the failed load would answer every later open of the picker,
+    // and the tile would stay blank until the app restarted.
+    expect(cache.pendingImageCount, 0);
+  });
 }
 
 Future<List<int>> _pixels(
