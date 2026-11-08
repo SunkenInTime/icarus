@@ -179,6 +179,50 @@ test("builds that differ only in raw strictness get their own answers", () => {
   assert.equal(issues(before, after, { typed: true, raw: false }).length, 0);
 });
 
+test("a field named like an Object property still counts as new", () => {
+  const before = { "a.js:f": { returns: object({ name: string }) } };
+  const after = { "a.js:f": { returns: object({ name: string, toString: field(string, true) }) } };
+  assert.deepEqual(issues(before, after), [
+    'a:f result.toString: new optional field "toString"; old clients reject result fields they don\'t know',
+  ]);
+});
+
+test("payload envelopes are judged the way the payload codec reads them", () => {
+  const data = { type: "record", keys: string, values: field(string) };
+  const payload = (kind, extra = {}) =>
+    object({ kind: literal(kind), payloadVersion: number, data, ...extra });
+  const before = { "a.js:f": { returns: object({ payload: union(payload("agent"), payload("text")) }) } };
+  // The codec ignores envelope keys it doesn't use, and takes any map as data.
+  const extraKey = {
+    "a.js:f": {
+      returns: object({
+        payload: union(
+          payload("agent", { metadata: string }),
+          object({ kind: literal("text"), payloadVersion: literal(2), data: object({ body: string }) }),
+        ),
+      }),
+    },
+  };
+  assert.deepEqual(issues(before, extraKey), []);
+  // It still needs a kind it knows, a number, and a map.
+  const broken = {
+    "a.js:f": {
+      returns: object({
+        payload: union(
+          payload("agent", { payloadVersion: string }),
+          payload("text", { data: string }),
+          payload("image"),
+        ),
+      }),
+    },
+  };
+  assert.deepEqual(issues(before, broken).sort(), [
+    "a:f result.payload<kind=agent>.payloadVersion: now string; old clients decode only number",
+    'a:f result.payload<kind=image>: new variant kind "image", which old clients don\'t know',
+    "a:f result.payload<kind=text>.data: now string; old clients decode only record<any>",
+  ]);
+});
+
 const optInBefore = { "a.js:f": { args: object({}), returns: array(card) } };
 const optInAfter = {
   "a.js:f": {

@@ -261,6 +261,9 @@ function compareSingle(judge, sent, mode) {
     { path: [], kind: "type", judge: describe(judge), sent: describe(sent) },
   ];
   switch (judge.type) {
+    // Only the payload comparison makes these: the codec takes any value.
+    case "any":
+      return [];
     case "literal":
       if (sent.type === "literal" && sent.value === judge.value) return [];
       if (isStringLiteral(sent) && isStringLiteral(judge)) {
@@ -306,7 +309,10 @@ function compareSingle(judge, sent, mode) {
       }
       return mismatch();
     case "object":
-      return sent.type === "object" ? compareObjects(judge, sent, mode) : mismatch();
+      if (sent.type !== "object") return mismatch();
+      return mode.decoder && isPayloadObject(judge)
+        ? comparePayloads(judge, sent, mode)
+        : compareObjects(judge, sent, mode);
     default:
       return mismatch();
   }
@@ -315,7 +321,7 @@ function compareSingle(judge, sent, mode) {
 function compareObjects(judge, sent, mode) {
   const issues = [];
   for (const [name, judgeField] of Object.entries(judge.value)) {
-    const sentField = sent.value[name];
+    const sentField = Object.hasOwn(sent.value, name) ? sent.value[name] : undefined;
     if (sentField === undefined) {
       if (!judgeField.optional) issues.push({ path: [`.${name}`], kind: "missing" });
       continue;
@@ -327,12 +333,47 @@ function compareObjects(judge, sent, mode) {
   }
   if (mode.strict) {
     for (const [name, sentField] of Object.entries(sent.value)) {
-      if (judge.value[name] === undefined) {
+      if (!Object.hasOwn(judge.value, name)) {
         issues.push({ path: [`.${name}`], kind: "extra", optional: sentField.optional });
       }
     }
   }
   return issues;
+}
+
+// A payload envelope goes to the build's hand-written codec, not a generated
+// model. The codec (lib/collab/convex_payload_codecs.dart) checks the kind, a
+// numeric payloadVersion, and a map for data, and ignores other keys. What is
+// inside data is the codec's business, which the spec can't describe.
+function comparePayloads(judge, sent, mode) {
+  const envelope = {
+    type: "object",
+    value: {
+      kind: judge.value.kind,
+      payloadVersion: asField({ type: "number" }),
+      data: asField({ type: "record", keys: { type: "string" }, values: asField({ type: "any" }) }),
+    },
+  };
+  const shape = {
+    type: "object",
+    value: {
+      kind: sent.value.kind,
+      payloadVersion: sent.value.payloadVersion,
+      data: sent.value.data && asField(anyMap(sent.value.data.fieldType), sent.value.data.optional),
+    },
+  };
+  return compareObjects(envelope, shape, { ...mode, strict: false, key: `${mode.key}/payload` });
+}
+
+function asField(fieldType, optional = false) {
+  return { fieldType, optional };
+}
+
+// Any map-shaped data, as the codec sees it.
+function anyMap(validator) {
+  return unionMembers(validator).every((member) => member.type === "record" || member.type === "object")
+    ? { type: "record", keys: { type: "string" }, values: asField({ type: "any" }) }
+    : validator;
 }
 
 function decoderModes(strictness) {
@@ -464,7 +505,7 @@ function resolvePath(validator, segments) {
     } else {
       const name = segment.slice(1);
       const object = members.find(
-        (member) => member.type === "object" && member.value[name] !== undefined,
+        (member) => member.type === "object" && Object.hasOwn(member.value, name),
       );
       if (object) next = object.value[name];
     }
