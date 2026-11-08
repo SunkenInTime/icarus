@@ -42,16 +42,6 @@ class MapDoor {
   /// The name a decoded replay files this door's moves under.
   final String replayActor;
 
-  /// Tells a user what a click does.
-  String tag({required bool changed}) => switch ((kind, changed)) {
-        (MapDoorKind.drop, false) => 'Drop the wall',
-        (MapDoorKind.drop, true) => 'Raise the wall',
-        (MapDoorKind.spin, false) => 'Spin the door',
-        (MapDoorKind.spin, true) => 'Close the door',
-        (MapDoorKind.breakable, false) => 'Break the wall',
-        (MapDoorKind.breakable, true) => 'Repair the wall',
-      };
-
   /// The door's line turned by [changed], 0 at rest and 1 changed, in canonical
   /// world units. Only a spin moves.
   (Offset, Offset) worldLine({double changed = 0}) {
