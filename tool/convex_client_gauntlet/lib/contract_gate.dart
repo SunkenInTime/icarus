@@ -5,8 +5,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'strict_codegen.dart';
 
-const _dartvexVersion = '0.2.0';
-const _dartvexCodegenVersion = '0.2.0';
+const _dartvexVersion = '0.3.0';
+const _dartvexCodegenVersion = '0.3.0';
 
 final class ContractGateResult {
   ContractGateResult({required this.report});

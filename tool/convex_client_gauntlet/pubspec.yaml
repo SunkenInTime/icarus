@@ -6,8 +6,8 @@ environment:
 
 dependencies:
   crypto: 3.0.7
-  dartvex: 0.2.0
-  dartvex_codegen: 0.2.0
+  dartvex: 0.3.0
+  dartvex_codegen: 0.3.0
 
 dev_dependencies:
   test: 1.26.3
