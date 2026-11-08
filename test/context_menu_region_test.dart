@@ -248,6 +248,66 @@ void main() {
     expect(_menuOf(tester, 'First item').top, region.bottom + 4);
   }, variant: windows);
 
+  // A two-finger tap on a Mac trackpad starts a trackpad pan/zoom, and the
+  // right-click it makes arrives while the fingers are still down.
+  const macOSAndWindows = TargetPlatformVariant(
+    {TargetPlatform.macOS, TargetPlatform.windows},
+  );
+
+  testWidgets('a two-finger tap on the canvas opens the menu', (tester) async {
+    await tester.pumpWidget(
+      ShadApp(
+        home: InteractiveViewer(
+          child: Center(
+            child: ContextMenuRegion(
+              items: const [ShadContextMenuItem(child: Text('Agent item'))],
+              child: _target('agent'),
+            ),
+          ),
+        ),
+      ),
+    );
+    final at = tester.getCenter(find.byKey(const ValueKey('agent')));
+
+    final fingers = await tester.createGesture(
+      kind: PointerDeviceKind.trackpad,
+    );
+    await fingers.panZoomStart(at);
+    final click = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
+    await click.down(at);
+    await tester.pump();
+    await click.up();
+    await fingers.panZoomEnd();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Agent item'), findsOneWidget);
+  }, variant: macOSAndWindows);
+
+  testWidgets('a right-click on a region inside another opens the inner menu',
+      (tester) async {
+    await tester.pumpWidget(
+      ShadApp(
+        home: ContextMenuRegion(
+          items: const [ShadContextMenuItem(child: Text('Outer item'))],
+          child: Center(
+            child: ContextMenuRegion(
+              items: const [ShadContextMenuItem(child: Text('Inner item'))],
+              child: _target('inner'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await _rightClick(tester, 'inner');
+
+    expect(find.text('Inner item'), findsOneWidget);
+    expect(find.text('Outer item'), findsNothing);
+  }, variant: macOSAndWindows);
+
   test('nothing builds a shadcn region, which centers its menu', () {
     final builders = <String>[
       for (final file in Directory('lib').listSync(recursive: true))
