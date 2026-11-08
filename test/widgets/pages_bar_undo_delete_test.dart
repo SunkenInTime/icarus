@@ -210,7 +210,7 @@ class _Harness {
 
   /// Opens Page 2's delete confirmation (the page you are on) and confirms.
   Future<void> confirmDelete(WidgetTester tester) async {
-    await tester.tap(find.byIcon(LucideIcons.trash));
+    await tester.tap(find.byIcon(LucideIcons.trash200));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('confirm-alert-confirm')));
   }
@@ -336,7 +336,7 @@ void main() {
       (tester) async {
     final harness = _Harness();
     await harness.pump(tester);
-    await tester.tap(find.byIcon(LucideIcons.trash));
+    await tester.tap(find.byIcon(LucideIcons.trash200));
     await tester.pumpAndSettle();
 
     harness.strategy.switchTo('strategy-b');

@@ -1069,10 +1069,13 @@ class _PageRowState extends State<_PageRow> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    const colors = Settings.tacticalVioletTheme;
     final fillProgress = widget.transitionProgress?.clamp(0.0, 1.0);
     final showActions =
         _hovered || widget.active || widget.transitionProgress != null;
     final isRaised = widget.active && fillProgress == null;
+    // The chosen page, or one the page change's violet sweep is crossing.
+    final onViolet = widget.active || fillProgress != null;
     final row = MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -1160,35 +1163,44 @@ class _PageRowState extends State<_PageRow> {
                               const KeybindBadge(label: "D"),
                             const SizedBox(width: 2),
                           ],
+                          // The editor toolbar's glyphs: the light stroke,
+                          // resting a step under white, white on hover.
                           if (showActions) ...[
                             ShadTooltip(
                               builder: (context) => const Text("Rename"),
                               child: ShadIconButton.ghost(
                                 width: 24,
+                                enabled: widget.canRename,
                                 hoverBackgroundColor: Colors.transparent,
                                 foregroundColor: widget.canRename
-                                    ? Colors.white
+                                    ? Settings.toolbarGlyph
                                     : Colors.white24,
-                                icon: const Icon(LucideIcons.pen,
-                                    size: 18, color: Colors.white),
+                                hoverForegroundColor: colors.foreground,
+                                icon: const Icon(LucideIcons.pen200, size: 18),
                                 onPressed: widget.canRename ? _rename : null,
                               ),
                             ),
                             const SizedBox(width: 2),
                             ShadTooltip(
                               builder: (context) => const Text("Delete"),
+                              // Red is barely there on violet (1.5:1), so on
+                              // a violet row the trash lights up as a red
+                              // button instead.
                               child: ShadIconButton.ghost(
                                 width: 24,
-                                hoverForegroundColor:
-                                    Settings.tacticalVioletTheme.destructive,
-                                hoverBackgroundColor: Colors.transparent,
+                                height: onViolet ? 24 : null,
+                                enabled: !widget.disableDelete,
+                                hoverBackgroundColor: onViolet
+                                    ? colors.destructive
+                                    : Colors.transparent,
+                                hoverForegroundColor: onViolet
+                                    ? colors.foreground
+                                    : colors.destructive,
                                 foregroundColor: widget.disableDelete
                                     ? Colors.white24
-                                    : Colors.white,
-                                icon: const Icon(
-                                  LucideIcons.trash,
-                                  size: 18,
-                                ),
+                                    : Settings.toolbarGlyph,
+                                icon:
+                                    const Icon(LucideIcons.trash200, size: 18),
                                 onPressed:
                                     widget.disableDelete ? null : _delete,
                               ),
