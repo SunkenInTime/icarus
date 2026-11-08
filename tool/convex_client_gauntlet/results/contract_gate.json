@@ -1,12 +1,12 @@
 {
   "schemaVersion": 2,
   "evaluation": "convex_dart_client_contract_gate",
-  "baseCommit": "e59402eedee9035cf14693fbd26fe8b097d6abfa",
+  "baseCommit": "b1b56044b67e8cef805f1a42150cd4f8938eaf79",
   "adapterCandidate": "dartvex",
-  "sdkVersion": "0.2.0",
-  "codegenVersion": "0.2.0",
-  "platform": "macos-arm64",
-  "dartVersion": "3.11.0 (stable) (Mon Feb 9 00:38:07 2026 -0800) on \"macos_arm64\"",
+  "sdkVersion": "0.3.0",
+  "codegenVersion": "0.3.0",
+  "platform": "windows-x64",
+  "dartVersion": "3.12.2 (stable) (Tue Jun 9 01:11:39 2026 -0700) on \"windows_x64\"",
   "fixture": "folders:listForParent",
   "baselineCompiles": true,
   "baselineAnalysisExitCode": 0,
@@ -65,8 +65,8 @@
       "id": "deterministic_regeneration",
       "required": "second_generation_has_no_diff",
       "status": "pass",
-      "firstSha256": "ea6a3655ead9e0250282424593fa1be36907c55d7de8386bb5503d80b985bc36",
-      "secondSha256": "ea6a3655ead9e0250282424593fa1be36907c55d7de8386bb5503d80b985bc36",
+      "firstSha256": "dc27becf025e49debd007ac732abd32e563612094e6decb52e700981ddbbe6aa",
+      "secondSha256": "dc27becf025e49debd007ac732abd32e563612094e6decb52e700981ddbbe6aa",
       "changedFiles": []
     }
   ],
