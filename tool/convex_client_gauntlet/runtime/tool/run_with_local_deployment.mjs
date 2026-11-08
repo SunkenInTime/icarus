@@ -61,9 +61,10 @@ let backendLog = "";
 try {
   const { privateKey, jwks } = makeIssuerKey();
   makeProject(jwks);
-  backend = await startDeployment();
+  backend = spawnDeployment();
+  await deploymentReady(backend);
   const tokens = [mintToken(privateKey), mintToken(privateKey)];
-  const report = runGauntlet(tokens);
+  const report = await runGauntlet(tokens);
   if (process.env.GAUNTLET_REPORT) {
     fs.copyFileSync(reportPath, process.env.GAUNTLET_REPORT);
   }
@@ -150,7 +151,7 @@ function deploymentEnv() {
   return env;
 }
 
-async function startDeployment() {
+function spawnDeployment() {
   const child = spawn(
     process.execPath,
     [
@@ -181,33 +182,26 @@ async function startDeployment() {
   };
   child.stdout.on("data", onData);
   child.stderr.on("data", onData);
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("convex dev was not ready after 180 s")), 180_000);
-    const poll = setInterval(() => {
-      if (backendLog.includes("Convex functions ready!")) {
-        clearInterval(poll);
-        clearTimeout(timer);
-        resolve();
-      } else if (backendLog.includes("✘")) {
-        // convex dev marks a failed push with this cross and waits for edits.
-        clearInterval(poll);
-        clearTimeout(timer);
-        reject(new Error("convex dev could not push the functions"));
-      }
-    }, 200);
-    child.on("exit", (code) => {
-      clearInterval(poll);
-      clearTimeout(timer);
-      reject(new Error(`convex dev exited with ${code}`));
-    });
-  });
-  child.removeAllListeners("exit");
-  console.log(`Local deployment ready at ${deploymentUrl}`);
   return child;
 }
 
+async function deploymentReady(child) {
+  const deadline = Date.now() + 180_000;
+  while (!backendLog.includes("Convex functions ready!")) {
+    if (child.exitCode !== null) throw new Error(`convex dev exited with ${child.exitCode}`);
+    // convex dev marks a failed push with this cross and waits for edits.
+    if (backendLog.includes("✘")) throw new Error("convex dev could not push the functions");
+    if (Date.now() > deadline) throw new Error("convex dev was not ready after 180 s");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  console.log(`Local deployment ready at ${deploymentUrl}`);
+}
+
 async function stopDeployment(child) {
-  const exited = new Promise((resolve) => child.once("exit", resolve));
+  const exited =
+    child.exitCode !== null || child.signalCode !== null
+      ? Promise.resolve()
+      : new Promise((resolve) => child.once("exit", resolve));
   if (process.platform === "win32") {
     spawnSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
   } else {
@@ -224,12 +218,22 @@ async function stopDeployment(child) {
   }
 }
 
-function runGauntlet([accessToken, refreshedAccessToken]) {
+// Runs [command] and resolves with its exit code. Asynchronous, so the
+// deployment's output keeps draining while the test runs.
+function run(command, args, options) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, options);
+    child.once("error", reject);
+    child.once("exit", (code) => resolve(code ?? 1));
+  });
+}
+
+async function runGauntlet([accessToken, refreshedAccessToken]) {
   const gitCommit = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repoDir, encoding: "utf8" }).stdout?.trim() ?? "";
-  for (let run = 0; run < 2; run += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     fs.rmSync(reportPath, { force: true });
     const started = Date.now();
-    const result = spawnSync(
+    const exitCode = await run(
       flutter[0],
       [...flutter.slice(1), "test", "test/live_deployment_test.dart", "--reporter", "expanded"],
       {
@@ -242,7 +246,7 @@ function runGauntlet([accessToken, refreshedAccessToken]) {
           ADAPTER: adapter,
           SEED_COUNT: String(seeds),
           ALLOW_CHECKPOINT: "1",
-          RESET_PROGRESS: run === 0 ? "1" : "0",
+          RESET_PROGRESS: attempt === 0 ? "1" : "0",
           GAUNTLET_ACCESS_TOKEN: accessToken,
           GAUNTLET_REFRESHED_ACCESS_TOKEN: refreshedAccessToken,
           REPORT_PATH: reportPath,
@@ -251,10 +255,10 @@ function runGauntlet([accessToken, refreshedAccessToken]) {
         },
       },
     );
-    console.log(`Gauntlet process ${run + 1} took ${((Date.now() - started) / 1000).toFixed(1)} s`);
+    console.log(`Gauntlet process ${attempt + 1} took ${((Date.now() - started) / 1000).toFixed(1)} s`);
     const report = fs.existsSync(reportPath) ? JSON.parse(fs.readFileSync(reportPath, "utf8")) : null;
-    if (result.status !== 0 || report === null) {
-      throw new Error(`The gauntlet failed (exit ${result.status})${report ? `: ${report.losingCondition}: ${report.message}` : ""}`);
+    if (exitCode !== 0 || report === null) {
+      throw new Error(`The gauntlet failed (exit ${exitCode})${report ? `: ${report.losingCondition}: ${report.message}` : ""}`);
     }
     if (report.status === "passed") return report;
     if (report.status !== "checkpoint") throw new Error(`Unexpected gauntlet status ${report.status}`);
