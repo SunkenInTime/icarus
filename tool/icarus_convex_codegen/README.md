@@ -19,9 +19,16 @@ snapshots before regenerating:
 ```sh
 npm run snapshot:convex-contract
 npm run audit:convex-contract
+node tool/check_convex_shipped_clients.mjs
 fvm dart run tool/icarus_convex_codegen/bin/generate.dart
 git diff --exit-code -- convex/function_spec.json convex/error_codes.json lib/collab/generated
 ```
+
+`check_convex_shipped_clients.mjs` compares the spec with the one in every
+`desktop-stable-v*` tag and fails when a build we shipped would send arguments
+the server now refuses or receive results its decoders can't read. A result
+value the server sends only to clients that ask for it is declared in
+`tool/convex_opt_in_results.json`.
 
 CI repeats generation from the committed snapshots on Windows and Linux. Its
 contract job first creates an isolated Convex preview deployment, then runs the

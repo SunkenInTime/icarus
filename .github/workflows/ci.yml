@@ -195,7 +195,7 @@ jobs:
           lane web ''
           lane replay '^native/replay/'
           # The contract scripts in tool/ run in this lane, against its preview.
-          lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$)' guarded
+          lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$|tool/check_convex_shipped_clients(\.test)?\.mjs$|tool/convex_opt_in_results\.json$)' guarded
           lane presence '^presence/' guarded
           lane contract '^(convex/|tool/|lib/collab/)' guarded
           lane bridge '^third_party/'
@@ -293,6 +293,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      # Each desktop-stable-v* tag is a build we shipped (web deploys from the
+      # latest), holding the function spec its generated client was built
+      # from. Only the tagged trees are needed, not their history.
+      - name: Fetch shipped client tags
+        run: git fetch --no-tags --depth=1 origin '+refs/tags/desktop-stable-v*:refs/tags/desktop-stable-v*'
+
+      - name: Check shipped clients can still use the contract
+        run: |
+          node --test tool/check_convex_shipped_clients.test.mjs
+          node tool/check_convex_shipped_clients.mjs
 
       - name: Require Convex preview deploy key
         shell: bash
