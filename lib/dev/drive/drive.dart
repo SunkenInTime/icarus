@@ -38,6 +38,8 @@
 //   {"dragAt": [x1, y1, x2, y2]}       {"path": [[x, y], ...], "held": png?}
 //                                      held: a shot before letting go
 //   {"scrollAt": [x, y, dy]}           {"key": name}  {"keyCombo": [names]}
+//   {"panScroll": [x, y, dy, ms]}      a trackpad swipe of dy over ms, then
+//                                      lets go so the list flings, as on a Mac
 //   {"holdKey": name}  {"letGoKey": name}  a key held across other steps
 //   {"resize": [w, h]}                 the window
 //   {"typeText": t}                    replaces the text in the last text field
@@ -452,6 +454,39 @@ void _addMouse(int pointer, Offset at) {
       position: at,
     ),
   );
+}
+
+/// A trackpad swipe: pan-zoom events, one a frame, moving [dy] in all over
+/// [over], then the fingers lift, so the list flings the way it does under a
+/// real swipe. Waits for the fling to settle.
+Future<void> _panScroll(Offset at, double dy, Duration over) async {
+  final pointer = _pointer++;
+  final binding = GestureBinding.instance;
+  binding.handlePointerEvent(
+    PointerPanZoomStartEvent(pointer: pointer, device: pointer, position: at),
+  );
+  final clock = Stopwatch()..start();
+  var pan = Offset.zero;
+  while (clock.elapsed < over) {
+    await _frames(1);
+    final share = clock.elapsed.inMicroseconds / over.inMicroseconds;
+    final next = Offset(0, dy * share.clamp(0.0, 1.0));
+    binding.handlePointerEvent(
+      PointerPanZoomUpdateEvent(
+        pointer: pointer,
+        device: pointer,
+        position: at,
+        pan: next,
+        panDelta: next - pan,
+      ),
+    );
+    pan = next;
+  }
+  binding.handlePointerEvent(
+    PointerPanZoomEndEvent(pointer: pointer, device: pointer, position: at),
+  );
+  await Future<void>.delayed(const Duration(milliseconds: 1500));
+  await _frames();
 }
 
 Future<void> _hover(Offset at) async {
@@ -946,6 +981,13 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await _frames();
+    case 'panScroll':
+      final v = (value as List).cast<num>();
+      await _panScroll(
+        Offset(v[0].toDouble(), v[1].toDouble()),
+        v[2].toDouble(),
+        Duration(milliseconds: v[3].toInt()),
+      );
     case 'key':
       await _expectKeyFocus();
       _press([value as String]);
