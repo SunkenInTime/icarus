@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/map_lines.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -13,7 +14,8 @@ import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/canvas_resize_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
-import 'package:icarus/providers/keep_on_map_key_provider.dart';
+import 'package:icarus/providers/snap_to_map_key_provider.dart';
+import 'package:icarus/providers/map_lines_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/canvas_selection_layer.dart';
@@ -21,7 +23,6 @@ import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.d
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/current_line_up_painter.dart';
-import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/line_up_placement_editor.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:icarus/widgets/lineup_control_buttons.dart';
@@ -91,11 +92,12 @@ class _AbilityDragSource extends StatelessWidget {
   }
 }
 
-ProviderContainer _createContainer() {
+ProviderContainer _createContainer({List<Override> overrides = const []}) {
   final container = ProviderContainer(
     overrides: [
       actionProvider.overrideWith(_TestActionProvider.new),
       mapProvider.overrideWith(_FixedMapProvider.new),
+      ...overrides,
     ],
   );
   addTearDown(container.dispose);
@@ -586,15 +588,31 @@ void main() {
     expect(container.read(lineUpProvider).edit, isNull);
   });
 
-  testWidgets('Alt keeps a lineup end on the map in placement editing', (
+  testWidgets('Alt snaps a lineup end onto a map line in placement editing', (
     tester,
   ) async {
-    final container = _createContainer();
+    final ability = _breachGroup().items.single.ability;
+    final anchor = CoordinateSystem.virtualToWorld(
+      storedAbilityAnchor(
+        ability: ability.data.abilityData!,
+        mapScale: Maps.mapScale[MapValue.bind]!,
+      ),
+    );
+    final dot = ability.position + anchor;
+    // A floor edge a little above the end.
+    final edgeY = dot.dy - 40;
+    final container = _createContainer(overrides: [
+      mapLinesProvider.overrideWith(
+        (ref, map) => MapLines([
+          (Offset(dot.dx - 200, edgeY), Offset(dot.dx + 200, edgeY)),
+        ]),
+      ),
+    ]);
     container
         .read(lineUpProvider.notifier)
         .fromHive(LineUpGraph.fromLegacyGroups([_breachGroup()]));
     bool forward(KeyEvent event) {
-      container.read(keepOnMapKeyProvider.notifier).handleKeyEvent(event);
+      container.read(snapToMapKeyProvider.notifier).handleKeyEvent(event);
       return false;
     }
 
@@ -637,23 +655,36 @@ void main() {
       tester.getCenter(end),
       kind: PointerDeviceKind.mouse,
     );
-    await gesture.moveBy(const Offset(0, 20));
+    await gesture.moveBy(const Offset(0, -20));
     await tester.pump();
-    await gesture.moveTo(const Offset(450, -800));
+    await gesture.moveBy(const Offset(15, -10));
     await tester.pump();
     await gesture.up();
     await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
     await tester.pump();
 
-    final inset = CoordinateSystem.instance
-        .coordinateToScreen(const Offset(CoordinateSystem.dropEdge + 2, 0))
-        .dx;
-    // The box that takes the drag is bigger than what the end draws.
-    final drawn = find.descendant(
-      of: end,
-      matching: find.byType(EditorItemOutline),
+    await tester.tap(find.byKey(const ValueKey('lineup-edit-save')));
+    await tester.pumpAndSettle();
+
+    final moved = container
+            .read(lineUpProvider)
+            .landingById('breach-item')!
+            .ability
+            .position +
+        anchor;
+    expect(moved.dy, closeTo(edgeY, 0.01));
+    expect(
+      moved.dx,
+      closeTo(
+        dot.dx +
+            CoordinateSystem.instance
+                .screenToCoordinate(
+                  const Offset(15, 0),
+                )
+                .dx,
+        0.5,
+      ),
     );
-    expect(tester.getTopLeft(drawn.last).dy, closeTo(inset, 1));
   });
 
   testWidgets('edit placement stacks the ends it moves as the page does',

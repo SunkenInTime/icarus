@@ -618,6 +618,8 @@ class _AgentListState extends ConsumerState<_AgentList> {
                     isAttack: isAttack,
                   ).dy,
                   child: CanvasDraggable<PlacedWidget>(
+                    dot: agent.position +
+                        CoordinateSystem.virtualToWorld(storedAgentAnchor),
                     // One of several selected: a drag on it moves them all.
                     maxSimultaneousDrags:
                         ref.watch(dragsWithSelectionProvider(agent.id))

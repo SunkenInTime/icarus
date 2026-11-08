@@ -78,6 +78,8 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
     if (moving) {
       marker = _MovableEnd(
         key: ValueKey('lineup-agent-drag-${origin.id}'),
+        dot: origin.agent.position +
+            CoordinateSystem.virtualToWorld(storedAgentAnchor),
         onMove: onMove!,
         onMoveEnd: onMoveEnd,
         child: marker,
@@ -194,6 +196,13 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
     if (moving) {
       marker = _MovableEnd(
         key: ValueKey('lineup-ability-drag-${landing.id}'),
+        dot: ability.position +
+            CoordinateSystem.virtualToWorld(
+              storedAbilityAnchor(
+                ability: ability.data.abilityData!,
+                mapScale: mapScale,
+              ),
+            ),
         onMove: onMove!,
         onMoveEnd: onMoveEnd,
         // The ability art has transparent gaps; the whole box takes the drag.
@@ -226,10 +235,14 @@ class _MovingLineUpEnd {
 class _MovableEnd extends StatelessWidget {
   const _MovableEnd({
     super.key,
+    required this.dot,
     required this.onMove,
     required this.onMoveEnd,
     required this.child,
   });
+
+  /// See [CanvasDraggable.dot].
+  final Offset dot;
 
   final ValueChanged<DragUpdateDetails> onMove;
   final VoidCallback? onMoveEnd;
@@ -240,6 +253,7 @@ class _MovableEnd extends StatelessWidget {
     return MouseRegion(
       cursor: SystemMouseCursors.grab,
       child: CanvasDraggable<_MovingLineUpEnd>(
+        dot: dot,
         maxSimultaneousDrags: itemDragLimit(context),
         data: const _MovingLineUpEnd(),
         feedback: const SizedBox.shrink(),

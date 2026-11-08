@@ -210,6 +210,11 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
           });
         },
         child: CanvasDraggable<PlacedUtility>(
+          dot: widget.utility.position +
+              CoordinateSystem.virtualToWorld(
+                storedUtilityAnchor(
+                    utility: widget.utility, mapScale: mapScale),
+              ),
           maxSimultaneousDrags: itemDragLimit(context),
           data: widget.utility,
           dragAnchorStrategy: (draggable, context, position) {

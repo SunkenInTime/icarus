@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -184,6 +185,16 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
           },
           onPanEnd: (_) => _finishResize(ref),
           child: CanvasDraggable<PlacedWidget>(
+            dot: widget.placedImage.position +
+                coordinateSystem
+                    .screenSizeToWorld(
+                      PlacedImageDimensions.screenSize(
+                        coordinateSystem: coordinateSystem,
+                        scale: widget.placedImage.scale,
+                        aspectRatio: widget.placedImage.aspectRatio,
+                      ),
+                    )
+                    .center(Offset.zero),
             maxSimultaneousDrags: itemDragLimit(context),
             data: widget.placedImage,
             feedback: ZoomTransform(

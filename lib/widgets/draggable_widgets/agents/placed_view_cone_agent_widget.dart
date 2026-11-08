@@ -301,6 +301,8 @@ class _PlacedViewConeAgentWidgetState
           });
         },
         child: CanvasDraggable<PlacedWidget>(
+          dot: current.position +
+              CoordinateSystem.virtualToWorld(storedAgentAnchor),
           maxSimultaneousDrags: itemDragLimit(context),
           data: current,
           dragAnchorStrategy: (draggable, context, position) {

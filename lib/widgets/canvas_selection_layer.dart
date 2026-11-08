@@ -14,8 +14,10 @@ import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/map_lines_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/snap_to_map_key_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -60,17 +62,15 @@ bool isTypingInTextField() {
 /// never fire from a dialog, a menu or the library. Paste belongs to the
 /// whole editor: see CanvasPaste.
 class CanvasSelectionLayer extends ConsumerStatefulWidget {
-  /// See [_CanvasSelectionLayerState._keepOnMap]. Null when [pressed] isn't
-  /// on a canvas or draws no outline.
-  static ({RenderBox canvas, Offset Function(Offset by) keep})? keepOnMap(
+  /// See [_CanvasSelectionLayerState._snapToMap]. Null when [pressed] isn't
+  /// on a canvas.
+  static ({RenderBox canvas, Offset Function(Offset by) snap})? snapToMap(
     BuildContext pressed,
-  ) {
-    final dragged = pressed.findRenderObject();
-    if (dragged is! RenderBox) return null;
-    return pressed
-        .findAncestorStateOfType<_CanvasSelectionLayerState>()
-        ?._keepOnMap(dragged);
-  }
+    Offset dot,
+  ) =>
+      pressed
+          .findAncestorStateOfType<_CanvasSelectionLayerState>()
+          ?._snapToMap(dot);
 
   /// The part of the canvas on screen, in its pixels: the canvas runs on
   /// past the window and under the sidebar. Null when [context] isn't on a
@@ -493,7 +493,20 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
       for (final item in selection)
         if (movesWithSelection(item.kind)) item.id,
     };
+    _dragDot = _dotOf(pressed, event.position);
     return true;
+  }
+
+  /// The point of what a press took hold of that Alt puts on the map's
+  /// lines, in world units, attack side up: the middle of the item pressed,
+  /// or for a drawing, the point pressed on it.
+  Offset? _dotOf(Set<String> pressed, Offset global) {
+    final canvas = _canvas;
+    if (canvas == null) return null;
+    for (final (:item, :corners) in _registry.itemsIn(canvas)) {
+      if (pressed.contains(item.id)) return _stored(_middle(corners));
+    }
+    return _stored(canvas.globalToLocal(global));
   }
 
   /// The drag of the selection: the pointer that pressed it, the items it
@@ -503,6 +516,11 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   int? _dragPointer;
   Set<String>? _dragIds;
   Offset? _dragOrigin;
+  Offset? _dragDot;
+
+  /// How far the pointer has gone since the drag began, for Alt to move the
+  /// items again when it changes with the pointer still.
+  Offset _dragMoved = Offset.zero;
   Rect _dragRoom = Rect.zero;
   bool _dragDropped = false;
 
@@ -515,7 +533,10 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     final pointer = _dragPointer;
     if (ids == null || pointer == null) return;
     _dragOrigin = details.localPosition;
+    _dragMoved = Offset.zero;
     _dragDropped = false;
+    // Read now so they are there by the time the drag needs them.
+    ref.read(mapLinesProvider(ref.read(mapProvider).currentMap));
     _dragRoom = _roomToMove(ids);
     _dragEndsFrom = {
       for (final MapEntry(key: id, value: position)
@@ -531,10 +552,21 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
 
   void _onDragUpdate(DragUpdateDetails details) {
     final origin = _dragOrigin;
-    final ids = _dragIds;
-    if (origin == null || ids == null || _dragDropped) return;
-    final moved = details.localPosition - origin;
+    if (origin == null) return;
     _pressBecameDrag = true;
+    _dragTo(details.localPosition - origin);
+  }
+
+  /// Moves what the drag carries by [moved], or onto the map's lines from
+  /// there while Alt is held, as far as [_dragRoom] lets it go.
+  void _dragTo(Offset moved) {
+    final ids = _dragIds;
+    if (ids == null || _dragDropped) return;
+    _dragMoved = moved;
+    final dot = _dragDot;
+    if (dot != null && ref.read(snapToMapKeyProvider)) {
+      moved = _snapped(moved, dot);
+    }
     final by = Offset(
       moved.dx.clamp(_dragRoom.left, _dragRoom.right),
       moved.dy.clamp(_dragRoom.top, _dragRoom.bottom),
@@ -570,6 +602,7 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     _dragPointer = null;
     _dragIds = null;
     _dragOrigin = null;
+    _dragDot = null;
     _dragEndsFrom = const {};
     if (ref.read(canvasGroupDragProvider) != null) {
       ref.read(canvasGroupDragProvider.notifier).set(null);
@@ -616,89 +649,46 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
         spread.height > view.height ? map.bottom : view.bottom,
       );
 
-  /// The canvas, and where a drag of the item drawn under [dragged] by a
-  /// given distance in its pixels stops so the item stays in sight. That is
-  /// inside the part of the map on screen, since the canvas runs on past the
-  /// window and under the sidebar, and clear of the panels over it: they fill
-  /// three of the four corners, and hide what sits under them or, for the
-  /// trash, delete it. An item wider or taller than the view stays on the
-  /// map instead, and one bigger than the map can't go further out at all.
-  /// An item's anchor, which decides whether a drop deletes it, is inside its
-  /// outline but can be at either end of it, so the whole outline has to stay
-  /// clear of the edge.
-  ({RenderBox canvas, Offset Function(Offset by) keep})? _keepOnMap(
-    RenderBox dragged,
+  /// The canvas, and where a drag of an item whose dot is at [dot] by a
+  /// given distance in its pixels goes while Alt is held. See [_snapped].
+  ({RenderBox canvas, Offset Function(Offset by) snap})? _snapToMap(
+    Offset dot,
   ) {
     final canvas = _canvas;
     if (canvas == null) return null;
-    final points = [
-      for (final (item: _, :corners)
-          in _registry.itemsIn(canvas, under: dragged))
-        ...corners,
-    ];
-    if (points.isEmpty) return null;
-    final coordinates = CoordinateSystem.instance;
-    const inset = CoordinateSystem.dropEdge + 2;
-    final margin = coordinates.coordinateToScreen(const Offset(inset, 0)).dx;
-    final spread = _spreadOf(points);
-    final room = _roomInside(
-      spread,
-      _inSight(spread, _map.deflate(margin), _onScreen.deflate(margin)),
-    );
-    final panels = [
-      for (final panel in _registry.chromeIn(canvas)) panel.inflate(margin),
-    ];
-    return (
-      canvas: canvas,
-      keep: (by) => _nearestClear(
-        Offset(
-          by.dx.clamp(room.left, room.right),
-          by.dy.clamp(room.top, room.bottom),
-        ),
-        spread,
-        panels,
-        room,
-      ),
-    );
+    // Read now so they are there by the time the drag needs them.
+    ref.read(mapLinesProvider(ref.read(mapProvider).currentMap));
+    return (canvas: canvas, snap: (by) => _snapped(by, dot));
   }
 
-  /// [by], or the nearest place to it inside [room] where [spread] touches
-  /// none of [panels]. That is always against a panel's side, so those are
-  /// the only places to try.
-  static Offset _nearestClear(
-    Offset by,
-    Rect spread,
-    List<Rect> panels,
-    Rect room,
-  ) {
-    bool clear(Offset at) => !panels.any(spread.shift(at).overlaps);
-    if (clear(by)) return by;
-    final across = [
-      by.dx,
-      for (final panel in panels) ...[
-        panel.left - spread.right,
-        panel.right - spread.left,
-      ],
-    ].where((x) => x >= room.left && x <= room.right);
-    final down = [
-      by.dy,
-      for (final panel in panels) ...[
-        panel.top - spread.bottom,
-        panel.bottom - spread.top,
-      ],
-    ].where((y) => y >= room.top && y <= room.bottom);
-    Offset? nearest;
-    for (final x in across) {
-      for (final y in down) {
-        final at = Offset(x, y);
-        if (!clear(at)) continue;
-        if (nearest == null || (at - by).distance < (nearest - by).distance) {
-          nearest = at;
-        }
-      }
-    }
-    return nearest ?? by;
+  /// [by], a drag in canvas pixels of something whose dot is at [dot], moved
+  /// so the dot lands on the nearest line the map draws, when there is one
+  /// within [_snapReach] of where it would be. Otherwise it is [by]: away
+  /// from every line the drag goes where the pointer does. [dot] is in world
+  /// units, attack side up.
+  Offset _snapped(Offset by, Offset dot) {
+    final map = ref.read(mapProvider).currentMap;
+    final lines = ref.read(mapLinesProvider(map)).valueOrNull;
+    if (lines == null) return by;
+    final coordinates = CoordinateSystem.instance;
+    // The defense side draws the attack side turned half a turn.
+    Offset turned(Offset by) => _isAttack ? by : -by;
+    final reach = coordinates
+        .screenToCoordinate(
+          Offset(_snapReach / ref.read(screenZoomProvider), 0),
+        )
+        .dx;
+    final onLine = lines.nearest(
+      dot + turned(coordinates.screenToCoordinate(by)),
+      reach,
+    );
+    if (onLine == null) return by;
+    return coordinates.coordinateToScreen(turned(onLine - dot));
   }
+
+  /// How near a line, in screen pixels, a dragged item's dot has to come for
+  /// Alt to put it on the line.
+  static const double _snapReach = 24;
 
   Rect get _map => Offset.zero & CoordinateSystem.instance.playAreaSize;
 
@@ -749,6 +739,9 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(snapToMapKeyProvider, (_, __) {
+      if (_dragOrigin != null) _dragTo(_dragMoved);
+    });
     final panHeld = ref.watch(canvasPanKeyHeldProvider);
     final selecting = widget.enabled && !panHeld;
     return CanvasItemRegistryScope(

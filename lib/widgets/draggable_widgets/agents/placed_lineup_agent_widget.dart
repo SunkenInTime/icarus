@@ -45,6 +45,8 @@ class PlacedLineupAgentWidget extends ConsumerWidget {
       top: screenPosition.dy,
       child: draggable
           ? CanvasDraggable<PlacedWidget>(
+              dot: agent.position +
+                  CoordinateSystem.virtualToWorld(storedAgentAnchor),
               maxSimultaneousDrags: itemDragLimit(context),
               data: agent,
               dragAnchorStrategy:

@@ -103,6 +103,8 @@
 //                                      With only, checks that item, and the page
 //                                      can have more. With middles, only each
 //                                      item's middle has to be in view
+//   {"expectOnMapLine": id}            fails unless the agent or ability's dot is
+//                                      on a line the map draws; logs how far off
 //   {"expectDead": n}                  fails unless n agents on the page are dead
 //   {"expectItem": id, "gone": b?}     fails unless the item is on the page, or
 //                                      with gone, unless it is not
@@ -129,6 +131,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
@@ -152,6 +155,7 @@ import 'package:icarus/widgets/canvas_selection_layer.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/map_lines_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
@@ -1444,6 +1448,26 @@ Future<void> _run(Map<String, dynamic> step) async {
       if (count != step['count']) {
         throw StateError('"$value" $count times, expected ${step['count']}');
       }
+    case 'expectOnMapLine':
+      final id = _itemId(value as String);
+      final map = c.read(mapProvider).currentMap;
+      final agents = c.read(agentProvider).where((agent) => agent.id == id);
+      final abilities = c.read(abilityProvider).where((a) => a.id == id);
+      final dot = agents.isNotEmpty
+          ? agents.single.position +
+              CoordinateSystem.virtualToWorld(storedAgentAnchor)
+          : abilities.single.position +
+              CoordinateSystem.virtualToWorld(
+                storedAbilityAnchor(
+                  ability: abilities.single.data.abilityData!,
+                  mapScale: Maps.mapScale[map] ?? 1,
+                ),
+              );
+      final lines = await c.read(mapLinesProvider(map).future);
+      final away = (lines.nearest(dot, double.infinity)! - dot).distance;
+      _log('ON-LINE $id dot=${dot.dx.toStringAsFixed(2)},'
+          '${dot.dy.toStringAsFixed(2)} away=${away.toStringAsFixed(3)}');
+      if (away > 0.5) throw StateError('$id is $away off the nearest line');
     case 'expectAgents':
       final agents = c.read(agentProvider).length;
       if (agents != value) throw StateError('$agents agents, expected $value');

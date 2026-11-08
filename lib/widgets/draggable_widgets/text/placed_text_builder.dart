@@ -7,6 +7,7 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
@@ -158,6 +159,12 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
     final coordinateSystem = CoordinateSystem.instance;
     final attackScreenPosition =
         coordinateSystem.coordinateToScreen(widget.placedText.position);
+    final drawnSize = ref.watch(
+          textWidgetHeightProvider.select(
+            (sizes) => sizes[widget.placedText.id],
+          ),
+        ) ??
+        Offset.zero;
     return CanonicalPositionedBox(
       attackScreenPosition: attackScreenPosition,
       isAttack: widget.isAttack,
@@ -191,6 +198,10 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         },
         onPanEnd: (_) => _finishResize(),
         child: CanvasDraggable<PlacedText>(
+          dot: widget.placedText.position +
+              coordinateSystem
+                  .screenSizeToWorld(Size(drawnSize.dx, drawnSize.dy))
+                  .center(Offset.zero),
           maxSimultaneousDrags: itemDragLimit(context),
           data: widget.placedText,
           feedback: Opacity(

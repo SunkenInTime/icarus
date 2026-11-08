@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
@@ -41,6 +43,10 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
     final abilitySize = ref
         .watch(strategySettingsProvider.select((state) => state.abilitySize));
     return CanvasDraggable<PlacedUtility>(
+      dot: widget.utility.position +
+          CoordinateSystem.virtualToWorld(
+            storedUtilityAnchor(utility: widget.utility, mapScale: mapScale),
+          ),
       maxSimultaneousDrags: itemDragLimit(context),
       dragAnchorStrategy:
           ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
