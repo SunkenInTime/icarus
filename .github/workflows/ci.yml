@@ -87,12 +87,13 @@ jobs:
   #   ci: all
   #
   # Lanes: analyze, test, web, replay, convex, presence, contract, bridge,
-  # desktop, separated by spaces or commas, unquoted. "skip" runs none of
-  # them. A word that is not a lane runs every lane. Lanes that guard production or the
-  # library (convex, presence, contract, desktop) still run when the PR
-  # changes their files, whatever the line says. Without the line, a PR runs
-  # analyze, test and web plus the lanes its changed files reach. The line is
-  # read when the run starts, so after editing it, rerun the run.
+  # gauntlet, desktop, separated by spaces or commas, unquoted. "skip" runs
+  # none of them. A word that is not a lane runs every lane. Lanes that guard
+  # production or the library (convex, presence, contract, gauntlet, desktop)
+  # still run when the PR changes their files, whatever the line says.
+  # Without the line, a PR runs analyze, test and web plus the lanes its
+  # changed files reach. The line is read when the run starts, so after
+  # editing it, rerun the run.
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -107,6 +108,7 @@ jobs:
       presence: ${{ steps.lanes.outputs.presence }}
       contract: ${{ steps.lanes.outputs.contract }}
       bridge: ${{ steps.lanes.outputs.bridge }}
+      gauntlet: ${{ steps.lanes.outputs.gauntlet }}
       desktop: ${{ steps.lanes.outputs.desktop }}
     steps:
       - name: Pick lanes
@@ -147,14 +149,14 @@ jobs:
               unknown=0
               for word in "${words[@]}"; do
                 case "$word" in
-                  analyze|test|web|replay|convex|presence|contract|bridge|desktop|skip) named+="$word " ;;
+                  analyze|test|web|replay|convex|presence|contract|bridge|gauntlet|desktop|skip) named+="$word " ;;
                   all) named+="all "; full=true ;;
                   *) unknown=$((unknown + 1)) ;;
                 esac
               done
               printf 'The description names:%s\n' "$named"
               if (( unknown > 0 )); then
-                printf '::warning::The ci: line has %d word(s) that are not lanes; running every lane. Lanes: analyze test web replay convex presence contract bridge desktop skip all.\n' "$unknown"
+                printf '::warning::The ci: line has %d word(s) that are not lanes; running every lane. Lanes: analyze test web replay convex presence contract bridge gauntlet desktop skip all.\n' "$unknown"
                 full=true
               fi
             fi
@@ -199,6 +201,10 @@ jobs:
           lane presence '^presence/' guarded
           lane contract '^(convex/|tool/|lib/collab/)' guarded
           lane bridge '^third_party/'
+          # Sync: the op path on the server (convex/ops.ts, what it imports
+          # from convex/lib/, and the functions the gauntlet calls), the
+          # native client, the client's sync code, and the gauntlet itself.
+          lane gauntlet '^(lib/collab/|lib/providers/collab/|third_party/convex_(flutter|rs)/|convex/(ops|schema|strategy|strategies|folders|users)\.ts$|convex/lib/|tool/convex_client_gauntlet/runtime/)' guarded
           # The desktop builds and the upgrade/rollback test, for changes to
           # what a shipped build finds in its Hive store, the installer, the
           # release scripts, or the test itself. The release runs the same
@@ -441,6 +447,67 @@ jobs:
         run: |
           cargo test --manifest-path third_party/convex_flutter/rust/Cargo.toml
           cargo test --manifest-path third_party/convex_rs/Cargo.toml
+
+  # The sync fault-injection run in tool/convex_client_gauntlet/runtime:
+  # three seeds of 1,000 ops through the native client the desktop app uses,
+  # with offline queuing, duplicate delivery, a subscription restart, a
+  # rejected token and its refresh, a reconnect, revision conflicts,
+  # delete/recreate and a process restart. Each seed must end holding every
+  # write the server accepted. It runs against a throwaway local Convex
+  # deployment and signs in with tokens from an issuer made for the run, so
+  # it needs no secrets and reaches no cloud deployment.
+  gauntlet:
+    needs: changes
+    if: needs.changes.outputs.gauntlet == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Cargo build scripts and npm packages run here: no write token, none
+    # left in .git.
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Convex dependencies
+        run: npm ci
+
+      - uses: ./.github/actions/setup-flutter
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: third_party/convex_flutter/rust
+
+      # The test loads this library through
+      # FRB_DART_LOAD_EXTERNAL_LIBRARY_NATIVE_LIB_DIR instead of an app bundle.
+      - name: Build Native Convex Bridge
+        run: cargo build --release --locked --manifest-path third_party/convex_flutter/rust/Cargo.toml
+
+      - name: Get Gauntlet Dependencies
+        working-directory: tool/convex_client_gauntlet/runtime
+        run: fvm flutter pub get
+
+      - name: Run Gauntlet
+        env:
+          FLUTTER: fvm flutter
+          GAUNTLET_REPORT: ${{ runner.temp }}/gauntlet-report.json
+        run: node tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment.mjs
+
+      - name: Upload Gauntlet Report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gauntlet-report-${{ env.RELEASE_SOURCE_SHA }}
+          path: ${{ runner.temp }}/gauntlet-report.json
+          if-no-files-found: ignore
 
   linux-build:
     needs: changes

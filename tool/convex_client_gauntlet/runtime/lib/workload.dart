@@ -4,8 +4,14 @@ import 'package:crypto/crypto.dart';
 
 const operationsPerSeed = 1000;
 const operationBatchSize = 50;
-const cloudProtocolVersion = 5;
+const cloudProtocolVersion = 6;
 const payloadVersion = 1;
+// What clients write today (lib/collab/cloud_payload_upgrade.dart and
+// convex/lib/payloadValidators.ts).
+const customCirclePayloadVersion = 3;
+const lineupsPayloadVersion = 1;
+// The newest later element field clients keep (currentElementFieldLevel).
+const elementFieldLevel = 3;
 const baseFixturePath = 'test/fixtures/strategy_integrity/base-test-v43.ica';
 const baseFixtureSha256 =
     '8544873d608a0ad885b2e6042a383596a0b1dc37514034281b4e4eec6168756a';
@@ -17,6 +23,39 @@ String strategyId(int seed) => '${seedPrefix(seed)}strategy';
 String folderId(int seed) => '${seedPrefix(seed)}folder';
 String initialPageId(int seed) => '${seedPrefix(seed)}page-custom-shapes';
 String secondaryPageId(int seed) => '${seedPrefix(seed)}page-secondary';
+// A deleted page waits in the trash and only pages:restore brings it back,
+// so the page added after the delete is a new one.
+String replacementPageId(int seed) =>
+    '${seedPrefix(seed)}page-secondary-replacement';
+
+/// Arguments for ops:applyBatch, with the flags
+/// lib/collab/convex_strategy_repository.dart sends, so the server takes the
+/// paths today's client takes. [accountSubject] binds the batch to the
+/// account whose outbox holds it.
+Map<String, Object?> applyBatchArgs({
+  required int seed,
+  required String clientId,
+  required String accountSubject,
+  required List<Map<String, Object?>> ops,
+}) => {
+  'strategyPublicId': strategyId(seed),
+  'clientId': clientId,
+  'clientProtocolVersion': cloudProtocolVersion,
+  'ops': ops,
+  'accountSubject': accountSubject,
+  'checkTrashedPageDeletes': true,
+  'acceptsPictureIds': true,
+  'elementFieldLevel': elementFieldLevel,
+};
+
+/// Arguments for strategy:getFullSnapshot, as today's client asks.
+Map<String, Object?> fullSnapshotArgs(int seed) => {
+  'clientProtocolVersion': cloudProtocolVersion,
+  'strategyPublicId': strategyId(seed),
+  'acceptsTrashedPagesLeftOut': true,
+  'acceptsPictureIds': true,
+  'elementFieldLevel': elementFieldLevel,
+};
 
 List<Map<String, Object?>> buildOperationTrace(int seed) {
   final operations = <Map<String, Object?>>[];
@@ -48,8 +87,7 @@ List<Map<String, Object?>> buildOperationTrace(int seed) {
       add: add,
       entity: _ContentEntity.lineup,
       // A lineup row is keyed by the lineup's id.
-      publicId:
-          '${seedPrefix(seed)}lineup-${cycle.toString().padLeft(3, '0')}',
+      publicId: '${seedPrefix(seed)}lineup-${cycle.toString().padLeft(3, '0')}',
       pagePublicId: initialPageId(seed),
       payloadBuilder: (variant) => _lineupPayload(seed, cycle, variant),
       initialSortIndex: 1000 + cycle,
@@ -93,28 +131,29 @@ List<Map<String, Object?>> buildOperationTrace(int seed) {
     'pagePublicId': secondPage,
     'expectedStrategyRevision': 2,
   });
+  final replacementPage = replacementPageId(seed);
   add({
     'type': 'page.add',
-    'pagePublicId': secondPage,
+    'pagePublicId': replacementPage,
     'payload': {'name': 'Secondary C', 'isAttack': false},
     'sortIndex': 1,
     'expectedStrategyRevision': 3,
   });
   add({
     'type': 'page.patch',
-    'pagePublicId': secondPage,
+    'pagePublicId': replacementPage,
     'payload': {'name': 'Secondary D'},
     'expectedPageRevision': 1,
   });
   add({
     'type': 'page.reorder',
-    'pagePublicId': secondPage,
+    'pagePublicId': replacementPage,
     'sortIndex': 0,
     'expectedStrategyRevision': 4,
   });
   add({
     'type': 'page.patch',
-    'pagePublicId': secondPage,
+    'pagePublicId': replacementPage,
     'payload': {'name': 'Secondary final'},
     'expectedPageRevision': 3,
   });
@@ -238,7 +277,7 @@ Map<String, Object?> _utilityPayload(int seed, int cycle, int variant) {
   final id = '${seedPrefix(seed)}element-${cycle.toString().padLeft(3, '0')}';
   return {
     'kind': 'utility',
-    'payloadVersion': payloadVersion,
+    'payloadVersion': customCirclePayloadVersion,
     'data': {
       'id': id,
       'isDeleted': false,
@@ -262,43 +301,54 @@ Map<String, Object?> _utilityPayload(int seed, int cycle, int variant) {
 
 Map<String, Object?> _lineupPayload(int seed, int cycle, int variant) {
   final id = '${seedPrefix(seed)}lineup-${cycle.toString().padLeft(3, '0')}';
-  // One lineup with its origin and landing; each revision cycle moves its
-  // agent.
+  // One lineup group: an origin, a landing and the lineup joining them. Each
+  // revision cycle moves its agent.
   return {
-    'kind': 'lineup',
-    'payloadVersion': payloadVersion,
+    'kind': 'lineups',
+    'payloadVersion': lineupsPayloadVersion,
     'data': {
       'id': id,
-      'name': 'Lineup $cycle',
-      'youtubeLink': '',
-      'notes': '',
-      'images': <Object?>[],
-      'origin': {
-        'id': '$id-origin',
-        'agent': {
-          'id': '$id-agent',
-          'isDeleted': false,
-          'position': {'dx': 10 + cycle, 'dy': 20 + variant},
-          'type': 'sova',
-          'isAlly': true,
-          'state': 'none',
-          'kind': 'plain',
-          'lineUpID': '$id-origin',
+      'origins': [
+        {
+          'id': '$id-origin',
+          'agent': {
+            'id': '$id-agent',
+            'isDeleted': false,
+            'position': {'dx': 10 + cycle, 'dy': 20 + variant},
+            'type': 'sova',
+            'isAlly': true,
+            'state': 'none',
+            'kind': 'plain',
+            'lineUpID': '$id-origin',
+          },
         },
-      },
-      'landing': {
-        'id': '$id-landing',
-        'ability': {
-          'id': '$id-ability',
-          'isDeleted': false,
-          'position': {'dx': 40 + cycle, 'dy': 50},
-          'data': {'type': 'sova', 'index': 1},
-          'isAlly': true,
-          'rotation': 0,
-          'length': 0,
-          'lineUpID': '$id-landing',
+      ],
+      'landings': [
+        {
+          'id': '$id-landing',
+          'ability': {
+            'id': '$id-ability',
+            'isDeleted': false,
+            'position': {'dx': 40 + cycle, 'dy': 50},
+            'data': {'type': 'sova', 'index': 1},
+            'isAlly': true,
+            'rotation': 0,
+            'length': 0,
+            'lineUpID': '$id-landing',
+          },
         },
-      },
+      ],
+      'links': [
+        {
+          'id': '$id-link',
+          'originId': '$id-origin',
+          'landingId': '$id-landing',
+          'name': 'Lineup $cycle',
+          'youtubeLink': '',
+          'notes': '',
+          'images': <Object?>[],
+        },
+      ],
     },
   };
 }
@@ -315,7 +365,9 @@ List<Map<String, Object?>> baseElementOps(int seed) {
     required int opacity,
   }) => {
     'kind': 'utility',
-    'payloadVersion': payloadVersion,
+    'payloadVersion': type == 'customCircle'
+        ? customCirclePayloadVersion
+        : payloadVersion,
     'data': {
       'id': id,
       'isDeleted': false,
@@ -370,6 +422,57 @@ List<Map<String, Object?>> baseElementOps(int seed) {
     },
   ];
 }
+
+/// What the server must show after [seed]'s base fixture and trace: for
+/// each element and lineup, the last payload and place written to it, and
+/// for each page, its last name and settings. Each of those last writes is
+/// one the trace expects to land (its only refused write, the stale patch in
+/// each revision cycle, is always followed by accepted ones), so a row that
+/// shows anything else lost an acknowledged edit.
+final class ExpectedContent {
+  final payloads = <String, Object?>{};
+  final sortIndexes = <String, num>{};
+  final pageNames = <String, Object?>{};
+  final pageSettings = <String, Object?>{};
+}
+
+ExpectedContent expectedFinalContent(int seed) {
+  final expected = ExpectedContent();
+  for (final op in [...baseElementOps(seed), ...buildOperationTrace(seed)]) {
+    final type = op['type'];
+    final page = op['pagePublicId'];
+    final item = op['elementPublicId'] ?? op['lineupPublicId'];
+    if (item is String) {
+      if (op['payload'] != null) expected.payloads[item] = op['payload'];
+      if (op['sortIndex'] case final num sortIndex) {
+        expected.sortIndexes[item] = sortIndex;
+      }
+    } else if (type == 'page.add' || type == 'page.patch') {
+      final payload = op['payload'] as Map<String, Object?>;
+      if (payload.containsKey('name')) {
+        expected.pageNames[page as String] = payload['name'];
+      }
+    } else if (type == 'pageContent.patch') {
+      expected.pageSettings[page as String] = op['settings'];
+    }
+  }
+  return expected;
+}
+
+/// Whether two JSON values hold the same data. Convex numbers are doubles,
+/// so 1 and 1.0 are the same here.
+bool sameJson(Object? left, Object? right) =>
+    canonicalJson(_numbersAsDoubles(left)) ==
+    canonicalJson(_numbersAsDoubles(right));
+
+Object? _numbersAsDoubles(Object? value) => switch (value) {
+  final num number => number.toDouble(),
+  final List<dynamic> list => list.map(_numbersAsDoubles).toList(),
+  final Map<dynamic, dynamic> map => map.map(
+    (key, item) => MapEntry(key, _numbersAsDoubles(item)),
+  ),
+  _ => value,
+};
 
 String canonicalJson(Object? value) => jsonEncode(_sortJson(value));
 
