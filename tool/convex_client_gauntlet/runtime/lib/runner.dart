@@ -2,8 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:supabase/supabase.dart';
-
+import 'auth.dart';
 import 'transport.dart';
 import 'workload.dart';
 
@@ -28,10 +27,7 @@ final class GauntletRunner {
   GauntletRunner({
     required this.adapter,
     required this.deploymentUrl,
-    required this.supabaseUrl,
-    required this.supabaseKey,
-    required this.email,
-    required this.password,
+    required this.account,
     required this.seedCount,
     required this.transportFactory,
     required this.gitCommit,
@@ -39,10 +35,7 @@ final class GauntletRunner {
 
   final String adapter;
   final String deploymentUrl;
-  final String supabaseUrl;
-  final String supabaseKey;
-  final String email;
-  final String password;
+  final GauntletAuth account;
   final int seedCount;
   final TransportFactory transportFactory;
   final String gitCommit;
@@ -62,25 +55,13 @@ final class GauntletRunner {
       throw StateError('Persisted gauntlet progress does not match this run');
     }
 
-    final supabase = SupabaseClient(
-      supabaseUrl,
-      supabaseKey,
-      authOptions: const AuthClientOptions(
-        authFlowType: AuthFlowType.implicit,
-        autoRefreshToken: false,
-      ),
-    );
-    final signIn = await supabase.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
-    var session =
-        signIn.session ??
-        (throw StateError('Disposable account sign-in failed'));
+    var accessToken = await account.signIn();
 
     final candidate = await transportFactory();
-    await candidate.authenticate(session.accessToken);
-    await candidate.mutation('users:ensureCurrentUser', const {});
+    await candidate.authenticate(accessToken);
+    await candidate.mutation('users:ensureCurrentUser', const {
+      'clientProtocolVersion': cloudProtocolVersion,
+    });
 
     try {
       while (progress.seed < seedCount) {
@@ -93,10 +74,7 @@ final class GauntletRunner {
           await _saveProgress(progress);
         }
 
-        var observer = await _SnapshotObserver.open(
-          candidate,
-          strategyId(seed),
-        );
+        var observer = await _SnapshotObserver.open(candidate, seed);
         try {
           final trace = buildOperationTrace(seed);
           final traceHash = canonicalHash(trace);
@@ -120,10 +98,9 @@ final class GauntletRunner {
             }
 
             if (seed == 0 && batchIndex == 10) {
-              session = await _exerciseAuthRefresh(
+              accessToken = await _exerciseAuthRefresh(
                 candidate: candidate,
-                supabase: supabase,
-                session: session,
+                accessToken: accessToken,
                 seed: seed,
                 batch: batch,
                 report: progress.current,
@@ -132,10 +109,7 @@ final class GauntletRunner {
 
             if (batchIndex == 7) {
               await observer.close();
-              observer = await _SnapshotObserver.open(
-                candidate,
-                strategyId(seed),
-              );
+              observer = await _SnapshotObserver.open(candidate, seed);
               (progress.current['faults']
                       as Map<String, Object?>)['subscriptionRestart'] =
                   true;
@@ -161,20 +135,14 @@ final class GauntletRunner {
             _recordDelivery(progress.current, delivery, stopwatch.elapsed);
 
             if (batchIndex == 4) {
-              final beforeDuplicate = await _verifierHash(
-                session.accessToken,
-                seed,
-              );
+              final beforeDuplicate = await _verifierHash(accessToken, seed);
               final duplicate = await _deliverBatch(
                 candidate: candidate,
                 seed: seed,
                 batchIndex: batchIndex,
                 batch: batch,
               );
-              final afterDuplicate = await _verifierHash(
-                session.accessToken,
-                seed,
-              );
+              final afterDuplicate = await _verifierHash(accessToken, seed);
               if (duplicate.statuses.length != batch.length ||
                   beforeDuplicate != afterDuplicate) {
                 throw StateError('Duplicated delivery changed seed $seed');
@@ -218,7 +186,7 @@ final class GauntletRunner {
           final finalReport = await _verifySeed(
             candidate: candidate,
             observer: observer,
-            accessToken: session.accessToken,
+            accessToken: accessToken,
             seed: seed,
             report: progress.current,
           );
@@ -308,7 +276,7 @@ final class GauntletRunner {
       };
     } finally {
       await candidate.close();
-      await supabase.dispose();
+      await account.close();
     }
   }
 
@@ -317,10 +285,12 @@ final class GauntletRunner {
     int seed,
   ) async {
     await candidate.mutation('folders:create', {
+      'clientProtocolVersion': cloudProtocolVersion,
       'publicId': folderId(seed),
       'name': 'Gauntlet seed $seed',
     });
     await candidate.mutation('strategies:createWithInitialPage', {
+      'clientProtocolVersion': cloudProtocolVersion,
       'publicId': strategyId(seed),
       'name': 'Gauntlet seed $seed',
       'mapData': 'ascent',
@@ -334,12 +304,15 @@ final class GauntletRunner {
         'useNeutralTeamColors': false,
       },
     });
-    final result = await candidate.mutation('ops:applyBatch', {
-      'strategyPublicId': strategyId(seed),
-      'clientId': 'gauntlet-base-fixture',
-      'clientProtocolVersion': cloudProtocolVersion,
-      'ops': baseElementOps(seed),
-    });
+    final result = await candidate.mutation(
+      'ops:applyBatch',
+      applyBatchArgs(
+        seed: seed,
+        clientId: 'gauntlet-base-fixture',
+        accountSubject: account.accountSubject,
+        ops: baseElementOps(seed),
+      ),
+    );
     final statuses = _parseStatuses(result);
     if (statuses.length != 2 ||
         statuses.any((status) => status != 'applied' && status != 'noop')) {
@@ -347,10 +320,10 @@ final class GauntletRunner {
         'Failed to materialize base-test-v43.ica for seed $seed',
       );
     }
-    final initial = await candidate.query('strategy:getFullSnapshot', {
-      'clientProtocolVersion': cloudProtocolVersion,
-      'strategyPublicId': strategyId(seed),
-    });
+    final initial = await candidate.query(
+      'strategy:getFullSnapshot',
+      fullSnapshotArgs(seed),
+    );
     final snapshot = _map(initial, 'initial snapshot');
     if (_list(snapshot['pages'], 'pages').length != 1 ||
         _list(snapshot['elements'], 'elements').length != 2 ||
@@ -396,6 +369,7 @@ final class GauntletRunner {
         'manualReconnectMs': null,
         'postReconnectAcceptedMs': null,
         'acceptedAfterRefresh': false,
+        'queuedBatchLandedAfterRefresh': false,
         'queuedBatchReplayedExactlyOnce': false,
       },
     };
@@ -412,26 +386,29 @@ final class GauntletRunner {
       {'fault': 'process_restart', 'afterOperation': 500},
   ];
 
-  Future<Session> _exerciseAuthRefresh({
+  Future<String> _exerciseAuthRefresh({
     required IcarusConvexTransport candidate,
-    required SupabaseClient supabase,
-    required Session session,
+    required String accessToken,
     required int seed,
     required List<Map<String, Object?>> batch,
     required Map<String, Object?> report,
   }) async {
     final auth = report['auth'] as Map<String, Object?>;
     auth['exercised'] = true;
+    final beforeQueuedBatch = await _verifierHash(accessToken, seed);
     var rejected = false;
     try {
       await candidate.injectRejectedAuth(rejectedExpiredAccessToken);
       await candidate
-          .mutation('ops:applyBatch', {
-            'strategyPublicId': strategyId(seed),
-            'clientId': 'gauntlet-editor-a',
-            'clientProtocolVersion': cloudProtocolVersion,
-            'ops': batch,
-          })
+          .mutation(
+            'ops:applyBatch',
+            applyBatchArgs(
+              seed: seed,
+              clientId: 'gauntlet-editor-a',
+              accountSubject: account.accountSubject,
+              ops: batch,
+            ),
+          )
           .timeout(const Duration(seconds: 10));
     } catch (_) {
       rejected = true;
@@ -441,17 +418,12 @@ final class GauntletRunner {
     }
     auth['rejectedTokenObserved'] = true;
 
-    final oldAccessToken = session.accessToken;
-    final refreshed = await supabase.auth.refreshSession();
-    final nextSession = refreshed.session;
-    if (nextSession == null) {
-      throw StateError('refreshSession returned no session');
-    }
+    final nextAccessToken = await account.refresh();
     auth['refreshSessionCalled'] = true;
-    auth['tokenChanged'] = nextSession.accessToken != oldAccessToken;
+    auth['tokenChanged'] = nextAccessToken != accessToken;
     final recovery = Stopwatch()..start();
     final recoveryDeadline = DateTime.now().add(const Duration(seconds: 20));
-    await candidate.recoverAuth(nextSession.accessToken);
+    await candidate.recoverAuth(nextAccessToken);
 
     Future<Object?> waitForCurrentUser() async {
       while (DateTime.now().isBefore(recoveryDeadline)) {
@@ -506,7 +478,24 @@ final class GauntletRunner {
     recovery.stop();
     auth['recoveryMs'] = recovery.elapsedMicroseconds / 1000;
     auth['acceptedAfterRefresh'] = true;
-    return nextSession;
+
+    // The batch sent under the rejected token is still the client's to
+    // deliver: once the fresh token is accepted, it must land without being
+    // sent again. The runner sends it once more next, which the server must
+    // answer as a replay.
+    final landedDeadline = DateTime.now().add(const Duration(seconds: 20));
+    while (await _verifierHash(nextAccessToken, seed) == beforeQueuedBatch) {
+      if (DateTime.now().isAfter(landedDeadline)) {
+        throw const GauntletFailure(
+          'queued_batch_lost',
+          'The batch sent under a rejected token did not land after the '
+              'fresh token was accepted',
+        );
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    auth['queuedBatchLandedAfterRefresh'] = true;
+    return nextAccessToken;
   }
 
   Future<_BatchDelivery> _deliverBatch({
@@ -522,14 +511,17 @@ final class GauntletRunner {
       attempts += 1;
       try {
         result = await candidate
-            .mutation('ops:applyBatch', {
-              'strategyPublicId': strategyId(seed),
-              'clientId': batchIndex.isEven
-                  ? 'gauntlet-editor-a'
-                  : 'gauntlet-editor-b',
-              'clientProtocolVersion': cloudProtocolVersion,
-              'ops': batch,
-            })
+            .mutation(
+              'ops:applyBatch',
+              applyBatchArgs(
+                seed: seed,
+                clientId: batchIndex.isEven
+                    ? 'gauntlet-editor-a'
+                    : 'gauntlet-editor-b',
+                accountSubject: account.accountSubject,
+                ops: batch,
+              ),
+            )
             .timeout(const Duration(seconds: 20));
         break;
       } catch (error) {
@@ -546,11 +538,24 @@ final class GauntletRunner {
         '${batch.length} operations',
       );
     }
-    if (statuses.any(
-      (status) =>
-          status != 'applied' && status != 'noop' && status != 'rejected',
-    )) {
-      throw StateError('Batch $batchIndex returned an unresolved result');
+    final unresolved =
+        _list(
+              _map(result, 'applyBatch response')['results'],
+              'operation results',
+            )
+            .where(
+              (item) => !const {
+                'applied',
+                'noop',
+                'rejected',
+              }.contains(_map(item, 'operation result')['status']),
+            )
+            .toList(growable: false);
+    if (unresolved.isNotEmpty) {
+      throw StateError(
+        'Batch $batchIndex returned an unresolved result: '
+        '${jsonEncode(unresolved.first)}',
+      );
     }
     return _BatchDelivery(statuses: statuses, attempts: attempts);
   }
@@ -586,10 +591,10 @@ final class GauntletRunner {
     await verifier.authenticate(accessToken);
     try {
       final stopwatch = Stopwatch()..start();
-      final snapshot = await verifier.query('strategy:getFullSnapshot', {
-        'clientProtocolVersion': cloudProtocolVersion,
-        'strategyPublicId': strategyId(seed),
-      });
+      final snapshot = await verifier.query(
+        'strategy:getFullSnapshot',
+        fullSnapshotArgs(seed),
+      );
       final folders = await verifier.query('folders:listTree', {
         'scope': 'all',
       });
@@ -624,7 +629,10 @@ final class GauntletRunner {
       }
       final auth = report['auth'] as Map<String, Object?>;
       if (seed == 0) {
-        auth['queuedBatchReplayedExactlyOnce'] = true;
+        // Landed after the refresh, and the counts above show its second
+        // delivery only replayed it.
+        auth['queuedBatchReplayedExactlyOnce'] =
+            auth['queuedBatchLandedAfterRefresh'] == true;
       }
       return <String, Object?>{
         ...report,
@@ -646,10 +654,10 @@ final class GauntletRunner {
     final verifier = DartvexTransport(deploymentUrl);
     await verifier.authenticate(accessToken);
     try {
-      final snapshot = await verifier.query('strategy:getFullSnapshot', {
-        'clientProtocolVersion': cloudProtocolVersion,
-        'strategyPublicId': strategyId(seed),
-      });
+      final snapshot = await verifier.query(
+        'strategy:getFullSnapshot',
+        fullSnapshotArgs(seed),
+      );
       final folders = await verifier.query('folders:listTree', {
         'scope': 'all',
       });
@@ -697,7 +705,7 @@ final class GauntletRunner {
       (page) => page['publicId'] == initialPageId(seed),
     );
     final secondary = pages.singleWhere(
-      (page) => page['publicId'] == secondaryPageId(seed),
+      (page) => page['publicId'] == replacementPageId(seed),
     );
     if (initial['sortIndex'] != 1 ||
         initial['revision'] != 4 ||
@@ -720,6 +728,29 @@ final class GauntletRunner {
           (lineup) => lineup['revision'] != 9 || lineup['deleted'] != false,
         )) {
       throw StateError('Seed $seed delete/recreate revisions diverged');
+    }
+
+    final expected = expectedFinalContent(seed);
+    for (final row in [...elements, ...lineups]) {
+      final id = row['publicId'] as String;
+      if (!sameJson(row['payload'], expected.payloads[id]) ||
+          !sameJson(row['sortIndex'], expected.sortIndexes[id])) {
+        throw StateError(
+          'Seed $seed $id does not hold the last write the server accepted',
+        );
+      }
+    }
+    for (final page in pages) {
+      final id = page['publicId'] as String;
+      if ((expected.pageNames.containsKey(id) &&
+              page['name'] != expected.pageNames[id]) ||
+          (expected.pageSettings.containsKey(id) &&
+              !sameJson(page['settings'], expected.pageSettings[id]))) {
+        throw StateError(
+          'Seed $seed page $id does not hold the last write the server '
+          'accepted',
+        );
+      }
     }
   }
 
@@ -758,12 +789,12 @@ final class _SnapshotObserver {
 
   static Future<_SnapshotObserver> open(
     IcarusConvexTransport transport,
-    String strategyPublicId,
+    int seed,
   ) async {
-    final remote = await transport.subscribe('strategy:getFullSnapshot', {
-      'clientProtocolVersion': cloudProtocolVersion,
-      'strategyPublicId': strategyPublicId,
-    });
+    final remote = await transport.subscribe(
+      'strategy:getFullSnapshot',
+      fullSnapshotArgs(seed),
+    );
     final latest = _LatestValue();
     final listener = remote.values.listen(latest.add, onError: latest.addError);
     await latest.first.timeout(const Duration(seconds: 20));
