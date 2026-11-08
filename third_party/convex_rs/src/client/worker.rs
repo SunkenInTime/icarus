@@ -389,8 +389,19 @@ mod tests {
 
         let result = tokio::time::timeout(Duration::from_secs(2), result).await??;
         assert_eq!(result, FunctionResult::Value(Value::from("upload url")));
-        // Give the resend time to happen, then check it left the action out.
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        // Wait for the state to be resent on the new connection, then check
+        // the resend left the action out.
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !protocol
+                .sent
+                .lock()
+                .iter()
+                .any(|message| matches!(message, ClientMessage::ModifyQuerySet { .. }))
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await?;
         worker.abort();
         assert_eq!(protocol.reconnects.lock().len(), 1);
         assert_eq!(
