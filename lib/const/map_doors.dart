@@ -84,8 +84,7 @@ class MapDoor {
       customWidth: widthMeters,
       customLength: lengthMeters,
       customColorValue: switch (kind) {
-        MapDoorKind.drop => 0xFF000000,
-        MapDoorKind.spin => _mapWallColor,
+        MapDoorKind.drop || MapDoorKind.spin => _mapWallColor,
         MapDoorKind.breakable => _mapFloorColor,
       },
       customOpacityPercent: 100,

@@ -114,7 +114,7 @@ class MapDoorPainter extends CustomPainter {
     switch (kind) {
       case MapDoorKind.drop:
         if (changed > 0) {
-          _stroke(canvas, Colors.black.withValues(alpha: changed), thickness);
+          _stroke(canvas, wallColor.withValues(alpha: changed), thickness);
         }
       case MapDoorKind.spin:
         _stroke(canvas, wallColor, thickness);

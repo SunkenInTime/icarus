@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -165,7 +167,10 @@ void main() {
         _door('lotus-a-link').row(id: 'row').customColorValue,
         MapSvgSourceColors.base.toARGB32(),
       );
-      expect(_door('summit-a').row(id: 'row').customColorValue, 0xFF000000);
+      expect(
+        _door('summit-a').row(id: 'row').customColorValue,
+        MapSvgSourceColors.detail.toARGB32(),
+      );
       expect(
         _door('lotus-a').row(id: 'row').customColorValue,
         MapSvgSourceColors.detail.toARGB32(),
@@ -353,6 +358,48 @@ void main() {
       container.read(mapProvider.notifier).updateMap(MapValue.summit);
 
       expect(container.read(canvasSelectionProvider), isEmpty);
+    });
+  });
+
+  group('how a door is painted', () {
+    Future<Color> middlePixel(MapDoorKind kind, double changed) async {
+      const wall = Color(0xFFB27C40);
+      final recorder = ui.PictureRecorder();
+      MapDoorPainter(
+        kind: kind,
+        line: (const Offset(10, 20), const Offset(90, 20)),
+        changed: changed,
+        wallColor: wall,
+        thickness: 6,
+      ).paint(Canvas(recorder), const Size(100, 40));
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(100, 40);
+      try {
+        final bytes = (await image.toByteData())!;
+        final at = (20 * 100 + 50) * 4;
+        return Color.fromARGB(
+          bytes.getUint8(at + 3),
+          bytes.getUint8(at),
+          bytes.getUint8(at + 1),
+          bytes.getUint8(at + 2),
+        );
+      } finally {
+        image.dispose();
+        picture.dispose();
+      }
+    }
+
+    test("a raised wall is the theme's wall colour, like a closed door",
+        () async {
+      final raised = await middlePixel(MapDoorKind.drop, 1);
+      final closed = await middlePixel(MapDoorKind.spin, 0);
+
+      expect(raised.toARGB32(), 0xFFB27C40);
+      expect(raised, closed);
+    });
+
+    test('a dropped wall draws nothing over the map art', () async {
+      expect((await middlePixel(MapDoorKind.drop, 0)).a, 0);
     });
   });
 
