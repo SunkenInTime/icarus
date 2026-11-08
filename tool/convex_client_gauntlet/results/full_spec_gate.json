@@ -1,0 +1,387 @@
+{
+  "publicFunctions": 61,
+  "typed": 50,
+  "degraded": 0,
+  "refused": 11,
+  "wholeSpec": {
+    "rawGenerationExitCode": 70,
+    "output": [
+      "Ambiguous union \"CreateResult\": object and object both decode from a Dart Map. Dart cannot select a safe union case at runtime. Use a broader non-union validator, or for object unions add a shared required literal discriminator with distinct values."
+    ]
+  },
+  "withoutRefused": {
+    "functions": 50,
+    "rawGenerationExitCode": 0,
+    "generatedDartBytes": 46366046,
+    "analysisExitCode": 0,
+    "analysisMs": 188171
+  },
+  "functions": [
+    {
+      "function": "elements:listForPage",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 4090598
+    },
+    {
+      "function": "elements:listForStrategy",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 4246277
+    },
+    {
+      "function": "folders:create",
+      "functionType": "Mutation",
+      "status": "refused",
+      "refusal": "Ambiguous union \"CreateResult\": object and object both decode from a Dart Map. Dart cannot select a safe union case at runtime. Use a broader non-union validator, or for object unions add a shared required literal discriminator with distinct values."
+    },
+    {
+      "function": "folders:delete",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 2834
+    },
+    {
+      "function": "folders:listTree",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 9082
+    },
+    {
+      "function": "folders:move",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 2786
+    },
+    {
+      "function": "folders:update",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 6946
+    },
+    {
+      "function": "health:ping",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 1899
+    },
+    {
+      "function": "images:completeUpload",
+      "functionType": "Action",
+      "status": "typed",
+      "generatedModuleBytes": 10086
+    },
+    {
+      "function": "images:deleteAssetRef",
+      "functionType": "Action",
+      "status": "typed",
+      "generatedModuleBytes": 2851
+    },
+    {
+      "function": "images:generateUploadUrl",
+      "functionType": "Action",
+      "status": "typed",
+      "generatedModuleBytes": 7338
+    },
+    {
+      "function": "images:getAssetUrl",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 3423
+    },
+    {
+      "function": "images:listForStrategy",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 7967
+    },
+    {
+      "function": "images:listReferencedAssetIds",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 3420
+    },
+    {
+      "function": "invites:create",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 3690
+    },
+    {
+      "function": "invites:get",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 9145
+    },
+    {
+      "function": "invites:redeem",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 3274
+    },
+    {
+      "function": "invites:revoke",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 2560
+    },
+    {
+      "function": "lineups:listForPage",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 679691
+    },
+    {
+      "function": "lineups:listForStrategy",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 705679
+    },
+    {
+      "function": "ops:applyBatch",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 20695493
+    },
+    {
+      "function": "page:getElementSlice",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 4551934
+    },
+    {
+      "function": "page:getFrame",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 720253
+    },
+    {
+      "function": "page:getSnapshot",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 5134695
+    },
+    {
+      "function": "pages:add",
+      "functionType": "Mutation",
+      "status": "refused",
+      "refusal": "Ambiguous union \"AddResult\": object and object both decode from a Dart Map. Dart cannot select a safe union case at runtime. Use a broader non-union validator, or for object unions add a shared required literal discriminator with distinct values."
+    },
+    {
+      "function": "pages:delete",
+      "functionType": "Mutation",
+      "status": "refused",
+      "refusal": "Ambiguous union \"DeleteResult\": object and object both decode from a Dart Map. Dart cannot select a safe union case at runtime. Use a broader non-union validator, or for object unions add a shared required literal discriminator with distinct values."
+    },
+    {
+      "function": "pages:listForStrategy",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 5521
+    },
+    {
+      "function": "pages:listTrashed",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 4468
+    },
+    {
+      "function": "pages:rename",
+      "functionType": "Mutation",
+      "status": "refused",
+      "refusal": "Ambiguous union \"RenameResult\": object and object both decode from a Dart Map. Dart cannot select a safe union case at runtime. Use a broader non-union validator, or for object unions add a shared required literal discriminator with distinct values."
+    },
+    {
+      "function": "pages:reorder",
+      "functionType": "Mutation",
+      "status": "refused",
+      "refusal": "Ambiguous union \"ReorderResult\": object and object both decode from a Dart Map. Dart cannot select a safe union case at runtime. Use a broader non-union validator, or for object unions add a shared required literal discriminator with distinct values."
+    },
+    {
+      "function": "pages:restore",
+      "functionType": "Mutation",
+      "status": "refused",
+      "refusal": "Ambiguous union \"RestoreResult\": object and object both decode from a Dart Map. Dart cannot select a safe union case at runtime. Use a broader non-union validator, or for object unions add a shared required literal discriminator with distinct values."
+    },
+    {
+      "function": "presence:issueRoomPass",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 3044
+    },
+    {
+      "function": "shares:create",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 4145
+    },
+    {
+      "function": "shares:leave",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 3090
+    },
+    {
+      "function": "shares:list",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 4652
+    },
+    {
+      "function": "shares:listFolderAccess",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 4184
+    },
+    {
+      "function": "shares:listLinkJoins",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 4739
+    },
+    {
+      "function": "shares:listMembers",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 7632
+    },
+    {
+      "function": "shares:preview",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 8375
+    },
+    {
+      "function": "shares:redeem",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 7960
+    },
+    {
+      "function": "shares:removeMember",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 3690
+    },
+    {
+      "function": "shares:resolve",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 5610
+    },
+    {
+      "function": "shares:revoke",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 3843
+    },
+    {
+      "function": "shares:setMemberRole",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 4560
+    },
+    {
+      "function": "strategies:abandonMove",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 3339
+    },
+    {
+      "function": "strategies:create",
+      "functionType": "Mutation",
+      "status": "refused",
+      "refusal": "Ambiguous union \"CreateResult\": object and object both decode from a Dart Map. Dart cannot select a safe union case at runtime. Use a broader non-union validator, or for object unions add a shared required literal discriminator with distinct values."
+    },
+    {
+      "function": "strategies:createWithInitialPage",
+      "functionType": "Mutation",
+      "status": "refused",
+      "refusal": "Ambiguous union \"CreateWithInitialPageResult\": object and object both decode from a Dart Map. Dart cannot select a safe union case at runtime. Use a broader non-union validator, or for object unions add a shared required literal discriminator with distinct values."
+    },
+    {
+      "function": "strategies:delete",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 3327
+    },
+    {
+      "function": "strategies:duplicate",
+      "functionType": "Mutation",
+      "status": "refused",
+      "refusal": "Ambiguous union \"DuplicateResult\": object and object both decode from a Dart Map. Dart cannot select a safe union case at runtime. Use a broader non-union validator, or for object unions add a shared required literal discriminator with distinct values."
+    },
+    {
+      "function": "strategies:finishMove",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 2890
+    },
+    {
+      "function": "strategies:getHeader",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 7088
+    },
+    {
+      "function": "strategies:listForFolder",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 11971
+    },
+    {
+      "function": "strategies:listInventory",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 4828
+    },
+    {
+      "function": "strategies:listSharedWithMe",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 10532
+    },
+    {
+      "function": "strategies:move",
+      "functionType": "Mutation",
+      "status": "refused",
+      "refusal": "Ambiguous union \"MoveResult\": object and object both decode from a Dart Map. Dart cannot select a safe union case at runtime. Use a broader non-union validator, or for object unions add a shared required literal discriminator with distinct values."
+    },
+    {
+      "function": "strategies:update",
+      "functionType": "Mutation",
+      "status": "refused",
+      "refusal": "Ambiguous union \"UpdateResult\": object and object both decode from a Dart Map. Dart cannot select a safe union case at runtime. Use a broader non-union validator, or for object unions add a shared required literal discriminator with distinct values."
+    },
+    {
+      "function": "strategy:getFullSnapshot",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 5313677
+    },
+    {
+      "function": "strategy:getShell",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 12834
+    },
+    {
+      "function": "strategy:listContentVersions",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 14185
+    },
+    {
+      "function": "users:ensureCurrentUser",
+      "functionType": "Mutation",
+      "status": "typed",
+      "generatedModuleBytes": 2078
+    },
+    {
+      "function": "users:me",
+      "functionType": "Query",
+      "status": "typed",
+      "generatedModuleBytes": 2804
+    }
+  ]
+}

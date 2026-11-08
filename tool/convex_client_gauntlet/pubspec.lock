@@ -93,18 +93,18 @@ packages:
     dependency: "direct main"
     description:
       name: dartvex
-      sha256: "7a343c5853f25a1a136051d2d37002a0e1e3f6c230b6f24560797880de33b5d8"
+      sha256: e104b69c064bc6c4cee04f0b096a317412141207081bd5533e2dfc0846d9ac6a
       url: "https://pub.dev"
     source: hosted
-    version: "0.2.0"
+    version: "0.3.0"
   dartvex_codegen:
     dependency: "direct main"
     description:
       name: dartvex_codegen
-      sha256: "07f81e4b16460eeb58673f6e514911df92ba5b38513d9207a4211a92646512a7"
+      sha256: "6af7cb15e2fa928c015ca0edc88d3e6adbb6af0eb84a2dd599db0b917a284015"
       url: "https://pub.dev"
     source: hosted
-    version: "0.2.0"
+    version: "0.3.0"
   file:
     dependency: transitive
     description:
