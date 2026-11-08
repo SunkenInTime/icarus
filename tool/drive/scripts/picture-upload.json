@@ -1,0 +1,23 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 4},
+  {"newCloudFolder": "Upload {run}"},
+  {"openCloudFolder": "Upload {run}"},
+  {"wait": 3},
+  {"newCloud": "Picture {run}"},
+  {"wait": 4},
+  {"tapText": "Picture {run}"},
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"addImage": "{here}/../../../assets/logo.png", "at": [600, 450]},
+  {"wait": 2},
+  {"logImages": "placed"},
+  {"expectImages": 1},
+  {"waitSettled": 120},
+  {"logImages": "uploaded"},
+  {"shot": "{out}/uploaded.png"},
+  {"wait": 1},
+  {"exit": 1}
+]

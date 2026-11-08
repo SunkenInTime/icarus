@@ -15,6 +15,11 @@ Icarus stores image ownership, strategy access, references, cleanup state, and U
 
 New uploads fail with an actionable Convex error if the required R2 env vars are missing. Legacy Convex-storage assets remain readable through `ctx.storage.getUrl(storageId)`.
 
+## Buckets
+
+- `icarus-media`: production only, public at `media.icarus-strats.xyz` (and `media.icarusstrats.com`).
+- `icarus-media-dev`: the dev deployment and every preview (`tool/drive/preview.ps1` copies dev's variables), public at `media-dev.icarus-strats.xyz`. Its S3 token reaches only this bucket, so a test upload can't land in production's. Pictures dev uploaded before Nov 8 2026 were copied over from `icarus-media` and are still there too.
+
 ## Runtime Flow
 
 1. The client calls `images:generateUploadUrl` with strategy ID, asset ID, MIME type, extension, and byte size.
@@ -46,7 +51,7 @@ Strategy/page/lineup payloads store image IDs and local metadata only. Public re
 
 ## Web beta
 
-**Required dashboard step. Applied on the `icarus-media` bucket; any new bucket needs it too.** The web beta adds images and lineups from the browser, so the browser talks to R2 directly: it PUTs bytes to the presigned S3 URL (`https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com/...`) and GETs them from `R2_PUBLIC_BASE_URL` to paint them. Both are cross-origin, so the bucket must allow the web beta origins. Without this rule the upload's preflight fails, the media job retries and stays unsynced, and images the browser cannot fetch fall back to a plain `<img>` element.
+**Required step. Applied on both buckets; any new bucket needs it too** (`npx wrangler r2 bucket cors set <bucket> --file <rules.json>` does it without the dashboard). The web beta adds images and lineups from the browser, so the browser talks to R2 directly: it PUTs bytes to the presigned S3 URL (`https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com/...`) and GETs them from `R2_PUBLIC_BASE_URL` to paint them. Both are cross-origin, so the bucket must allow the web beta origins. Without this rule the upload's preflight fails, the media job retries and stays unsynced, and images the browser cannot fetch fall back to a plain `<img>` element.
 
 In the Cloudflare dashboard: R2 > the media bucket > Settings > CORS Policy > Add CORS policy, and paste:
 
