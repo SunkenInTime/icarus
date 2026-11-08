@@ -354,10 +354,9 @@ packages:
   desktop_drop:
     dependency: "direct main"
     description:
-      name: desktop_drop
-      sha256: "927511f590ce01ee90d0d80f79bc71b9c919d8522d01e495e89a00c6f4a4fb5b"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/desktop_drop"
+      relative: true
+    source: path
     version: "0.6.1"
   desktop_updater:
     dependency: "direct main"
