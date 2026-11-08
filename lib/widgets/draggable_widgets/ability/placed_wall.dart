@@ -20,6 +20,7 @@ import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
+import 'package:icarus/widgets/right_click_detector.dart';
 
 /// The wall's width and team edge against a map's scale, in virtual units:
 /// a placed Viper's Toxic Screen is as wide.
@@ -597,36 +598,39 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
         cursor: SystemMouseCursors.grab,
         onEnter: (_) => _pointerEntered(_id),
         onExit: (_) => _pointerExited(),
-        child: GestureDetector(
+        child: RightClickDetector(
           behavior: HitTestBehavior.opaque,
-          onPanStart: (details) => onStart(_local(details.globalPosition)),
-          onPanUpdate: (details) =>
-              _drag(wall.saved(_local(details.globalPosition))),
-          onPanEnd: (_) => _end(),
-          onPanCancel: _cancel,
-          onSecondaryTap: onRemove,
-          child: SizedBox(
-            width: hitSize,
-            height: hitSize,
-            child: Center(
-              child: hidden ? null : Container(
-                width: size,
-                height: size,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: pale
-                      ? Colors.white.withValues(alpha: 0.38)
-                      : Colors.white,
-                  border: pale
-                      ? Border.all(color: Colors.white, width: 1)
-                      : null,
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 3,
-                      offset: Offset(0, 1),
-                    ),
-                  ],
+          onClick: onRemove,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanStart: (details) => onStart(_local(details.globalPosition)),
+            onPanUpdate: (details) =>
+                _drag(wall.saved(_local(details.globalPosition))),
+            onPanEnd: (_) => _end(),
+            onPanCancel: _cancel,
+            child: SizedBox(
+              width: hitSize,
+              height: hitSize,
+              child: Center(
+                child: hidden ? null : Container(
+                  width: size,
+                  height: size,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: pale
+                        ? Colors.white.withValues(alpha: 0.38)
+                        : Colors.white,
+                    border: pale
+                        ? Border.all(color: Colors.white, width: 1)
+                        : null,
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 3,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

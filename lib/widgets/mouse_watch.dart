@@ -8,6 +8,7 @@ import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/widgets/context_menu_region.dart';
+import 'package:icarus/widgets/right_click_detector.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/lineup_ability_stack_selector.dart';
 import 'package:icarus/widgets/dialogs/lineup_panel_dialog.dart';
@@ -366,8 +367,11 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
       interactiveChild = GestureDetector(
         behavior: HitTestBehavior.deferToChild,
         onTapUp: _handleStackAwarePrimaryTap,
-        onSecondaryTapUp: canEdit ? _handleStackAwareSecondaryTap : null,
-        child: interactiveChild,
+        child: RightClickDetector(
+          behavior: HitTestBehavior.deferToChild,
+          onUp: canEdit ? _handleStackAwareSecondaryTap : null,
+          child: interactiveChild,
+        ),
       );
     } else if (effectiveOnTap != null) {
       interactiveChild = GestureDetector(

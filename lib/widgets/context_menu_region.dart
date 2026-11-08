@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:icarus/widgets/right_click_detector.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// A right-click menu on [child]. Use this, not [ShadContextMenuRegion].
@@ -136,24 +137,27 @@ class _ContextMenuRegionState extends State<ContextMenuRegion> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapDown: (_) => _controller.hide(),
-            onSecondaryTapDown: (details) async {
-              if (kIsWeb && !_browserMenuWasOff) {
-                await BrowserContextMenu.disableContextMenu();
-              }
-              if (!onButtonUp) _openAt(details.globalPosition);
-            },
-            onSecondaryTapUp: (details) async {
-              if (onButtonUp) _openAt(details.globalPosition);
-              if (kIsWeb && !_browserMenuWasOff) {
-                await Future<void>.delayed(Duration.zero);
-                await BrowserContextMenu.enableContextMenu();
-              }
-            },
             onLongPressStart: longPress
                 ? (details) => _longPressAt = details.globalPosition
                 : null,
             onLongPress: longPress ? () => _openAt(_longPressAt!) : null,
-            child: widget.child,
+            child: RightClickDetector(
+              behavior: HitTestBehavior.opaque,
+              onDown: (details) async {
+                if (kIsWeb && !_browserMenuWasOff) {
+                  await BrowserContextMenu.disableContextMenu();
+                }
+                if (!onButtonUp) _openAt(details.globalPosition);
+              },
+              onUp: (details) async {
+                if (onButtonUp) _openAt(details.globalPosition);
+                if (kIsWeb && !_browserMenuWasOff) {
+                  await Future<void>.delayed(Duration.zero);
+                  await BrowserContextMenu.enableContextMenu();
+                }
+              },
+              child: widget.child,
+            ),
           ),
         ),
       ),
