@@ -19,6 +19,7 @@ class RightClickDetector extends StatelessWidget {
     this.onDown,
     this.onUp,
     this.onClick,
+    this.onCancel,
     this.behavior,
     required this.child,
   });
@@ -26,6 +27,10 @@ class RightClickDetector extends StatelessWidget {
   final GestureTapDownCallback? onDown;
   final GestureTapUpCallback? onUp;
   final GestureTapCallback? onClick;
+
+  /// After [onDown], when the click ends without [onUp]: the button was
+  /// held and dragged away, or the pointer was cancelled.
+  final GestureTapCancelCallback? onCancel;
   final HitTestBehavior? behavior;
   final Widget child;
 
@@ -40,7 +45,8 @@ class RightClickDetector extends StatelessWidget {
           (recognizer) => recognizer
             ..onSecondaryTapDown = onDown
             ..onSecondaryTapUp = onUp
-            ..onSecondaryTap = onClick,
+            ..onSecondaryTap = onClick
+            ..onSecondaryTapCancel = onCancel,
         ),
       },
       child: child,

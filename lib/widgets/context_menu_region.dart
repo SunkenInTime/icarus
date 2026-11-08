@@ -52,6 +52,16 @@ class _ContextMenuRegionState extends State<ContextMenuRegion> {
 
   final _browserMenuWasOff = kIsWeb && !BrowserContextMenu.enabled;
 
+  /// Whether this region turned the browser's own menu off for a right-click
+  /// that hasn't ended yet.
+  bool _browserMenuOff = false;
+
+  Future<void> _offerBrowserMenu() async {
+    if (!_browserMenuOff) return;
+    _browserMenuOff = false;
+    await BrowserContextMenu.enableContextMenu();
+  }
+
   ShadContextMenuController get _controller =>
       widget.controller ?? _ownController;
 
@@ -77,6 +87,7 @@ class _ContextMenuRegionState extends State<ContextMenuRegion> {
     if (identical(_open, _controller)) _open = null;
     _ownController.dispose();
     _idle.dispose();
+    _offerBrowserMenu();
     super.dispose();
   }
 
@@ -145,17 +156,19 @@ class _ContextMenuRegionState extends State<ContextMenuRegion> {
               behavior: HitTestBehavior.opaque,
               onDown: (details) async {
                 if (kIsWeb && !_browserMenuWasOff) {
+                  _browserMenuOff = true;
                   await BrowserContextMenu.disableContextMenu();
                 }
                 if (!onButtonUp) _openAt(details.globalPosition);
               },
               onUp: (details) async {
                 if (onButtonUp) _openAt(details.globalPosition);
-                if (kIsWeb && !_browserMenuWasOff) {
-                  await Future<void>.delayed(Duration.zero);
-                  await BrowserContextMenu.enableContextMenu();
-                }
+                await Future<void>.delayed(Duration.zero);
+                await _offerBrowserMenu();
               },
+              // Held and dragged away: no menu, so text fields get the
+              // browser's Cut, Copy and Paste again.
+              onCancel: _offerBrowserMenu,
               child: widget.child,
             ),
           ),
