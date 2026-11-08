@@ -323,7 +323,21 @@ class CoordinateSystem {
     Rect? view, {
     required bool isAttack,
   }) {
-    if (view == null || view.isEmpty) return position;
+    final seen = inSight(view, isAttack: isAttack);
+    if (seen == null) return position;
+    final point = position + at;
+    final shown = Offset(
+      point.dx.clamp(seen.left, seen.right),
+      point.dy.clamp(seen.top, seen.bottom),
+    );
+    return position + (shown - point);
+  }
+
+  /// Where [showing] keeps a point, in world units saved attack side up:
+  /// inside [view], a little in from its edge. [view] is in canvas pixels, as
+  /// drawn on the side shown. Null without one.
+  Rect? inSight(Rect? view, {required bool isAttack}) {
+    if (view == null || view.isEmpty) return null;
     var seen = Rect.fromPoints(
       screenToCoordinate(view.topLeft),
       screenToCoordinate(view.bottomRight),
@@ -337,13 +351,7 @@ class CoordinateSystem {
         normalizedHeight - seen.top,
       );
     }
-    seen = _deflateUpTo(seen, dropEdge + 2);
-    final point = position + at;
-    final shown = Offset(
-      point.dx.clamp(seen.left, seen.right),
-      point.dy.clamp(seen.top, seen.bottom),
-    );
-    return position + (shown - point);
+    return _deflateUpTo(seen, dropEdge + 2);
   }
 
   /// [rect] deflated by [by], or down to its middle line along an axis

@@ -54,11 +54,15 @@ class MapLines {
     ]);
   }
 
-  /// The point on a line nearest [point], when one is within [reach].
-  Offset? nearest(Offset point, double reach) {
+  /// The point on a line nearest [point], when one is within [reach]. With
+  /// [within], only the parts of lines inside it count.
+  Offset? nearest(Offset point, double reach, {Rect? within}) {
     Offset? nearest;
     var distance = reach;
-    for (final (start, end) in segments) {
+    for (final segment in segments) {
+      final clipped = within == null ? segment : _clip(segment, within);
+      if (clipped == null) continue;
+      final (start, end) = clipped;
       final along = end - start;
       final length = along.distanceSquared;
       final t = length == 0
@@ -74,6 +78,33 @@ class MapLines {
       }
     }
     return nearest;
+  }
+
+  /// The part of [segment] inside [rect], if any (Liang-Barsky).
+  static (Offset, Offset)? _clip((Offset, Offset) segment, Rect rect) {
+    final (start, end) = segment;
+    final along = end - start;
+    var from = 0.0, to = 1.0;
+    for (final (p, q) in [
+      (-along.dx, start.dx - rect.left),
+      (along.dx, rect.right - start.dx),
+      (-along.dy, start.dy - rect.top),
+      (along.dy, rect.bottom - start.dy),
+    ]) {
+      if (p == 0) {
+        if (q < 0) return null;
+        continue;
+      }
+      final t = q / p;
+      if (p < 0) {
+        if (t > to) return null;
+        if (t > from) from = t;
+      } else {
+        if (t < from) return null;
+        if (t < to) to = t;
+      }
+    }
+    return (start + along * from, start + along * to);
   }
 
   /// Masks and definitions are never drawn as they are.

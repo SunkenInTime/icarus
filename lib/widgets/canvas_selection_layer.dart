@@ -535,8 +535,6 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     _dragOrigin = details.localPosition;
     _dragMoved = Offset.zero;
     _dragDropped = false;
-    // Read now so they are there by the time the drag needs them.
-    ref.read(mapLinesProvider(ref.read(mapProvider).currentMap));
     _dragRoom = _roomToMove(ids);
     _dragEndsFrom = {
       for (final MapEntry(key: id, value: position)
@@ -656,8 +654,6 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   ) {
     final canvas = _canvas;
     if (canvas == null) return null;
-    // Read now so they are there by the time the drag needs them.
-    ref.read(mapLinesProvider(ref.read(mapProvider).currentMap));
     return (canvas: canvas, snap: (by) => _snapped(by, dot));
   }
 
@@ -665,7 +661,9 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   /// so the dot lands on the nearest line the map draws, when there is one
   /// within [_snapReach] of where it would be. Otherwise it is [by]: away
   /// from every line the drag goes where the pointer does. [dot] is in world
-  /// units, attack side up.
+  /// units, attack side up. Only lines where a drop would leave the dot
+  /// count: a drop brings a dot near the edge of the view in from it
+  /// (CoordinateSystem.showing), which would take it off the line.
   Offset _snapped(Offset by, Offset dot) {
     final map = ref.read(mapProvider).currentMap;
     final lines = ref.read(mapLinesProvider(map)).valueOrNull;
@@ -681,6 +679,7 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     final onLine = lines.nearest(
       dot + turned(coordinates.screenToCoordinate(by)),
       reach,
+      within: coordinates.inSight(_onScreen, isAttack: _isAttack),
     );
     if (onLine == null) return by;
     return coordinates.coordinateToScreen(turned(onLine - dot));
@@ -739,6 +738,10 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
 
   @override
   Widget build(BuildContext context) {
+    // Read as soon as the map shows, so the first drag has them.
+    ref.watch(
+      mapLinesProvider(ref.watch(mapProvider.select((map) => map.currentMap))),
+    );
     ref.listen(snapToMapKeyProvider, (_, __) {
       if (_dragOrigin != null) _dragTo(_dragMoved);
     });

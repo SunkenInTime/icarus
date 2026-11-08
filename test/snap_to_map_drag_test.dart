@@ -73,6 +73,7 @@ double get _perPixel => CoordinateSystem.instance
 Future<ProviderContainer> _pumpCanvas(
   WidgetTester tester, {
   bool defense = false,
+  Rect Function()? view,
   void Function(ProviderContainer container)? fill,
 }) async {
   tester.view
@@ -111,9 +112,10 @@ Future<ProviderContainer> _pumpCanvas(
           body: SizedBox(
             width: _canvas.width,
             height: _canvas.height,
-            child: const CanvasSelectionLayer(
+            child: CanvasSelectionLayer(
               enabled: true,
-              child: PlacedWidgetBuilder(),
+              view: view,
+              child: const PlacedWidgetBuilder(),
             ),
           ),
         ),
@@ -212,6 +214,18 @@ void main() {
     expect(lines.segments.length, greaterThan(200));
   });
 
+  test('only the part of a line inside the area counts', () {
+    final lines = MapLines([(const Offset(0, 0), const Offset(100, 0))]);
+    const area = Rect.fromLTRB(40, -10, 200, 10);
+    const away = Rect.fromLTRB(150, -10, 200, 10);
+    expect(lines.nearest(const Offset(20, 5), 30), const Offset(20, 0));
+    expect(
+      lines.nearest(const Offset(20, 5), 30, within: area),
+      const Offset(40, 0),
+    );
+    expect(lines.nearest(const Offset(20, 5), 30, within: away), isNull);
+  });
+
   testWidgets('near a line, Alt puts the dot on it', (tester) async {
     final container = await _pumpCanvas(tester);
 
@@ -221,6 +235,25 @@ void main() {
     final dot = _savedDot(container);
     expect(dot.dx, closeTo(_wallX, 0.01));
     expect(dot.dy, closeTo(_dot.dy, 0.5));
+  });
+
+  testWidgets('a line the drop would pull the item off does not catch it', (
+    tester,
+  ) async {
+    // The view's edge runs just left of the wall, so the wall is in the
+    // strip a drop pulls items in from (CoordinateSystem.showing).
+    final edge = CoordinateSystem.instance.coordinateToScreen(
+      Offset(_wallX - 6, 0),
+    );
+    final container = await _pumpCanvas(
+      tester,
+      view: () => Rect.fromLTRB(edge.dx, 0, _canvas.width, _canvas.height),
+    );
+
+    await _dragBy(tester, _agentCentre(tester), const Offset(-40, 0));
+
+    // Where the pointer took it, which is where the preview showed it.
+    expect(_savedDot(container).dx, closeTo(_dot.dx - 40 * _perPixel, 0.5));
   });
 
   testWidgets('away from every line the item goes where the pointer does', (
