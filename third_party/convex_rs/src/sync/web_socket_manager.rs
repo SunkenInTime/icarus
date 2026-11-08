@@ -177,6 +177,10 @@ impl WebSocketWorker {
                     tracing::debug!("Reconnecting websocket due to {}", reconnect.reason);
                     last_close_reason = reconnect.reason;
                     max_observed_timestamp = reconnect.max_observed_timestamp;
+                    let _ = worker
+                        .on_response
+                        .send(ProtocolResponse::ReconnectAcknowledged)
+                        .await;
                     continue;
                 },
                 Err(e) => e,
@@ -204,6 +208,10 @@ impl WebSocketWorker {
                     break reconnect;
                 }
             };
+            let _ = worker
+                .on_response
+                .send(ProtocolResponse::ReconnectAcknowledged)
+                .await;
             if reconnect.auth_retry {
                 // Auth retries are paced by the client worker while it polls
                 // the token callback. A second exponential backoff here can
