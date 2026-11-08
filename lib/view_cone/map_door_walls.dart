@@ -10,13 +10,14 @@ import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.
 const _overlap = 0.5;
 
 /// The walls [map]'s doors add to its height model on [isAttack]'s side, in
-/// that model's SVG units. A wall that drops or breaks has one: solid when
-/// dropped, solid until broken. A door that turns has one for each pose, so a
-/// spun door blocks only what it covers and a cone sees past it either side.
+/// that model's SVG units. A wall that drops or breaks, or a door that shuts,
+/// has one: solid when dropped or shut, solid until broken. A door that turns
+/// has one for each pose, so a spun door blocks only what it covers and a cone
+/// sees past it either side.
 List<SvgDoorWall> mapDoorWalls(MapValue map, {required bool isAttack}) => [
       for (final door in mapDoorsOf(map))
         ...switch (door.kind) {
-          MapDoorKind.drop => [
+          MapDoorKind.drop || MapDoorKind.shutter => [
               _wall(door, 'dropped', isAttack,
                   changed: 1, solidWhenChanged: true),
             ],

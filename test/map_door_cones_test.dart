@@ -21,6 +21,9 @@ Map<String, dynamic> _json(MapValue map, bool isAttack) =>
 
 final _models = <(MapValue, bool, bool), SvgHeightVisibility>{};
 
+/// Every map with a door.
+final _doorMaps = {for (final door in mapDoors) door.map};
+
 /// The model of [map] on a side, with or without its doors.
 SvgHeightVisibility _model(MapValue map, bool isAttack, {bool doors = true}) =>
     _models[(map, isAttack, doors)] ??= SvgHeightVisibility.fromJson(
@@ -104,7 +107,10 @@ void main() {
   for (final door in mapDoors) {
     for (final isAttack in [true, false]) {
       final side = isAttack ? 'attack' : 'defense';
-      final solidAtRest = door.kind != MapDoorKind.drop;
+      final solidAtRest = switch (door.kind) {
+        MapDoorKind.drop || MapDoorKind.shutter => false,
+        MapDoorKind.spin || MapDoorKind.breakable => true,
+      };
       final blockedState = solidAtRest ? const <String>{} : {door.id};
 
       test('${door.id} on $side seals its corridor when solid', () {
@@ -147,38 +153,41 @@ void main() {
   }
 
   group('a door that opens', () {
-    test('Summit at rest is the model without doors, cone for cone', () {
-      final bare = _model(MapValue.summit, true, doors: false);
-      final withDoors = _model(MapValue.summit, true);
+    for (final map in [MapValue.summit, MapValue.ascent]) {
+      test('${map.name} at rest is the model without doors, cone for cone', () {
+        final bare = _model(map, true, doors: false);
+        final withDoors = _model(map, true);
+        final box = Maps.mapViewBox[map]!;
 
-      for (var x = 30.0; x < 370; x += 23) {
-        for (var y = 30.0; y < 300; y += 23) {
-          final spot = bare.standablePointNear(Offset(x, y));
-          if (spot == null) continue;
-          final support = bare.automaticSupportAt(spot)?.id;
-          for (final direction in [0.0, 1.57, 3.14, 4.71]) {
-            List<Offset> outline(SvgHeightVisibility model) => model
-                .horizontalCone(
-                  origin: spot,
-                  directionRadians: direction,
-                  range: 70,
-                  apertureRadians: 1.8,
-                  supportId: support,
-                )
-                .polygon;
-            final before = outline(bare), after = outline(withDoors);
-            expect(
-              math.max(
-                _farthestFrom(before, after),
-                _farthestFrom(after, before),
-              ),
-              lessThan(1e-9),
-              reason: '$spot facing $direction',
-            );
+        for (var x = 30.0; x < box.width - 30; x += 23) {
+          for (var y = 30.0; y < box.height - 30; y += 23) {
+            final spot = bare.standablePointNear(Offset(x, y));
+            if (spot == null) continue;
+            final support = bare.automaticSupportAt(spot)?.id;
+            for (final direction in [0.0, 1.57, 3.14, 4.71]) {
+              List<Offset> outline(SvgHeightVisibility model) => model
+                  .horizontalCone(
+                    origin: spot,
+                    directionRadians: direction,
+                    range: 70,
+                    apertureRadians: 1.8,
+                    supportId: support,
+                  )
+                  .polygon;
+              final before = outline(bare), after = outline(withDoors);
+              expect(
+                math.max(
+                  _farthestFrom(before, after),
+                  _farthestFrom(after, before),
+                ),
+                lessThan(1e-9),
+                reason: '$spot facing $direction',
+              );
+            }
           }
         }
-      }
-    });
+      });
+    }
 
     test('a dropped Summit wall is gone from the other wall', () {
       final door = mapDoors.firstWhere((door) => door.id == 'summit-mid');
@@ -239,7 +248,7 @@ void main() {
   });
 
   group('nobody moves', () {
-    for (final map in [MapValue.lotus, MapValue.summit]) {
+    for (final map in _doorMaps) {
       test('${map.name}: door walls change no standing spot or level', () {
         final bare = _model(map, true, doors: false);
         final withDoors = _model(map, true);
@@ -333,7 +342,7 @@ void main() {
 
   test('a map without doors adds no walls', () {
     for (final map in MapValue.values) {
-      if (map == MapValue.lotus || map == MapValue.summit) continue;
+      if (_doorMaps.contains(map)) continue;
       expect(mapDoorWalls(map, isAttack: true), isEmpty, reason: map.name);
     }
   });
@@ -345,10 +354,7 @@ void main() {
       return;
     }
     for (final (map, isAttack) in [
-      (MapValue.lotus, true),
-      (MapValue.lotus, false),
-      (MapValue.summit, true),
-      (MapValue.summit, false),
+      for (final map in _doorMaps) ...[(map, true), (map, false)],
     ]) {
       final json = _json(map, isAttack);
       final walls = mapDoorWalls(map, isAttack: isAttack);

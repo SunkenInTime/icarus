@@ -993,7 +993,13 @@ units when a model loads, because edges and the native index are built once.
 
 Where a door's line comes from: Summit's follow the art's dashes, 0.6 to 3.7
 units from the game's own points. Lotus has no door art, so its lines use the
-game's point and the bundled walls either side.
+game's point and the bundled walls either side. Ascent's span the art's gap
+between the walls either side, and the game's point lies on each line.
+
+Ascent's two doors (2026-11-08) are open at rest, like Summit's walls, and
+block when shut. `test/map_door_cones_test.dart` holds Ascent at rest to the
+same outlines as a model with no door walls, so no saved Ascent cone changes
+until someone shuts a door. Ascent has no sightline floors either.
 
 Agents still walk through a dropped wall in a page change: routes come from the
 baked navigation.

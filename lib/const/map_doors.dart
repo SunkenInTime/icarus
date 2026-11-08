@@ -18,6 +18,11 @@ enum MapDoorKind {
 
   /// Closed at rest. Lotus's A Link wall breaks and stays broken for the round.
   breakable,
+
+  /// Open at rest. Ascent's doors: a switch shuts one in 5 s and opens it
+  /// again in 5 s, as often as players press it in a round. The map art has a
+  /// gap there, so the bar shows as dashes until it shuts.
+  shutter,
 }
 
 /// A part of a map a player can change. Lines come from the game's level files
@@ -84,7 +89,10 @@ class MapDoor {
       customWidth: widthMeters,
       customLength: lengthMeters,
       customColorValue: switch (kind) {
-        MapDoorKind.drop || MapDoorKind.spin => _mapWallColor,
+        MapDoorKind.drop ||
+        MapDoorKind.spin ||
+        MapDoorKind.shutter =>
+          _mapWallColor,
         MapDoorKind.breakable => _mapFloorColor,
       },
       customOpacityPercent: 100,
@@ -150,6 +158,24 @@ const mapDoors = <MapDoor>[
     start: Offset(338.4, 200.9),
     end: Offset(338.4, 210.7),
     replayActor: 'RespawningWallPlate',
+  ),
+  // The art's gap between the walls either side. The game's own point for
+  // each door lies on the line, at most 1.1 units from its middle.
+  MapDoor(
+    id: 'ascent-a',
+    map: MapValue.ascent,
+    kind: MapDoorKind.shutter,
+    start: Offset(322.5, 179.5),
+    end: Offset(322.5, 192.0),
+    replayActor: 'WindowShieldA1',
+  ),
+  MapDoor(
+    id: 'ascent-b',
+    map: MapValue.ascent,
+    kind: MapDoorKind.shutter,
+    start: Offset(148.5, 129.5),
+    end: Offset(148.5, 140.0),
+    replayActor: 'WindowShieldB1',
   ),
 ];
 

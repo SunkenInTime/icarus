@@ -101,6 +101,62 @@ void main() {
     });
   });
 
+  group('an Ascent door', () {
+    // As Sunset's door in a 13.00 replay: shut at 10 s, open again at 30 s,
+    // shut at 45 s and still shut as the round ends.
+    final ascent = document(doors: [
+      {'actor': 'WindowShieldB1', 'startMs': 10000, 'endMs': 15000},
+      {
+        'actor': 'WindowShieldB1',
+        'startMs': 30000,
+        'endMs': 35000,
+        'toRest': true,
+      },
+      {'actor': 'WindowShieldB1', 'startMs': 45000, 'endMs': 50000},
+    ]);
+    final doors = ReplayDoors(ascent, MapValue.ascent);
+    ReplayRound round(int timeMs) => ascent.roundAt(timeMs)!;
+
+    test('is open until it starts to shut', () {
+      expect(doors.at(9999, round(9999)), isEmpty);
+    });
+
+    test('shuts at the pace of its move and stays shut', () {
+      expect(doors.at(12500, round(12500))['ascent-b'], closeTo(0.5, 1e-9));
+      expect(doors.at(29999, round(29999))['ascent-b'], 1);
+    });
+
+    test('opens again at the pace of its move', () {
+      expect(doors.at(31000, round(31000))['ascent-b'], closeTo(0.8, 1e-9));
+      expect(doors.at(35000, round(35000)), isEmpty);
+      expect(doors.at(44999, round(44999)), isEmpty);
+    });
+
+    test("stays shut to the round's end and opens for the next", () {
+      expect(doors.at(59000, round(59000))['ascent-b'], 1);
+      expect(doors.at(60000, round(60000)), isEmpty);
+    });
+
+    test('cuts cones once it is half way down', () {
+      final ids = [for (final door in mapDoorsOf(MapValue.ascent)) door.id];
+
+      expect(replayDoorsOfMask(ids, doors.mask({'ascent-b': 0.4})), isEmpty);
+      expect(
+        replayDoorsOfMask(ids, doors.mask({'ascent-b': 0.5})),
+        {'ascent-b'},
+      );
+    });
+  });
+
+  test('a move reads as away from rest unless it says', () {
+    final moves = document(doors: [
+      {'actor': 'WindowShieldA1', 'startMs': 1, 'endMs': 2},
+      {'actor': 'WindowShieldA1', 'startMs': 3, 'endMs': 4, 'toRest': true},
+    ]).doors;
+
+    expect([for (final move in moves) move.toRest], [false, true]);
+  });
+
   test("another map's actors don't reach a map", () {
     final abyss = ReplayDoors(
       document(doors: [

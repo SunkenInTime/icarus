@@ -119,17 +119,20 @@ fn every_replay_decodes_to_the_contract() {
 }
 
 /// Door moves start a real while into a round and last no longer than that
-/// door takes. Lotus and Summit always have some, and a wall is all another
-/// map can have.
+/// door takes. Lotus and Summit always have some, and a wall or a shutting
+/// door, as on Ascent and Sunset, is all another map can have.
 fn check_doors(id: &str, doc: &Value, rounds: &[Value]) {
     let map = doc["match"]["mapPath"].as_str().unwrap_or("");
     let moves = doc["doors"].as_array().unwrap();
-    let wall = |door: &&Value| door["actor"] == "RespawningWallPlate";
+    let elsewhere = |door: &&Value| {
+        door["actor"] == "RespawningWallPlate"
+            || door["actor"].as_str().unwrap().starts_with("WindowShield")
+    };
     if !map.contains("/Jam/") && !map.contains("/Plummet/") {
-        assert!(moves.iter().all(|door| wall(&door)), "{id}: doors on {map}");
-        return;
+        assert!(moves.iter().all(|door| elsewhere(&door)), "{id}: doors on {map}");
+    } else {
+        assert!(!moves.is_empty(), "{id}: no door moved on {map}");
     }
-    assert!(!moves.is_empty(), "{id}: no door moved on {map}");
     for door in moves {
         let (start, end) = (
             door["startMs"].as_i64().unwrap(),
@@ -150,12 +153,19 @@ fn check_doors(id: &str, doc: &Value, rounds: &[Value]) {
                 "{id}: {door} runs into the next round"
             );
         }
+        let lasts = end - start;
+        let actor = door["actor"].as_str().unwrap();
+        // A door shuts from a switch, which defenders can reach in the buy
+        // phase, and nothing a round's start does reads as a move.
+        if actor.starts_with("WindowShield") {
+            assert!((1..=5100).contains(&lasts), "{id}: {door}");
+            continue;
+        }
         assert!(
             start - round["startMs"].as_i64().unwrap() > 3000,
             "{id}: {door}"
         );
-        let lasts = end - start;
-        match door["actor"].as_str().unwrap() {
+        match actor {
             "RespawningWallPlate" => assert_eq!(lasts, 0, "{id}: {door}"),
             actor if actor.starts_with("Drawbridge") => {
                 assert!((1..=12_000).contains(&lasts), "{id}: {door}")
