@@ -117,7 +117,12 @@ export async function startBackend({ port, keep = false }) {
     } catch {
       // Not listening yet.
     }
-    if (Date.now() - started > 60_000) throw new Error(`Backend did not start:\n${stderr}`);
+    if (Date.now() - started > 60_000) {
+      child.kill();
+      await new Promise((resolve) => (child.exitCode !== null ? resolve() : child.once("exit", resolve)));
+      rmSync(dir, { recursive: true, force: true });
+      throw new Error(`Backend did not start:\n${stderr}`);
+    }
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   return {
