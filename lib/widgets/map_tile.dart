@@ -1,5 +1,10 @@
-import 'dart:ui';
+import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+
+import 'package:flutter/foundation.dart' show SynchronousFuture;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 
@@ -47,17 +52,11 @@ class _MapTileState extends ConsumerState<MapTile> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: 1, sigmaY: 1),
-                    child: Opacity(
-                      opacity: .8,
-                      child: Image.asset(
-                        cacheWidth: 180,
-                        cacheHeight: 53,
-                        "assets/maps/thumbnails/${widget.name}_thumbnail.webp",
-                        fit: BoxFit.cover,
-                      ),
+                  child: Image(
+                    image: _SoftenedThumbnail(
+                      'assets/maps/thumbnails/${widget.name}_thumbnail.webp',
                     ),
+                    fit: BoxFit.fill,
                   ),
                 ),
                 if (_isHovered && !widget.isPreview)
@@ -92,4 +91,111 @@ class _MapTileState extends ConsumerState<MapTile> {
       ),
     );
   }
+}
+
+/// A map's thumbnail as a tile draws it: covering the tile, at 80%, softened
+/// by a 1 px blur, painted once into a picture the tile's size.
+///
+/// The tiles used to blur and fade the thumbnail as they drew it, two
+/// offscreen layers per tile on every frame. Impeller, which draws on macOS,
+/// keeps nothing between frames, so scrolling the map picker redrew every
+/// visible tile's layers each frame and lagged.
+class _SoftenedThumbnail extends ImageProvider<_SoftenedThumbnailKey> {
+  const _SoftenedThumbnail(this.asset);
+
+  final String asset;
+
+  /// The size the thumbnail is decoded at, kept from before it was painted
+  /// once, so the tiles look as they did.
+  static const _decodeWidth = 180;
+  static const _decodeHeight = 53;
+
+  @override
+  Future<_SoftenedThumbnailKey> obtainKey(ImageConfiguration configuration) {
+    return SynchronousFuture(
+      _SoftenedThumbnailKey(asset, configuration.devicePixelRatio ?? 1),
+    );
+  }
+
+  @override
+  ImageStreamCompleter loadImage(
+    _SoftenedThumbnailKey key,
+    ImageDecoderCallback decode,
+  ) {
+    return OneFrameImageStreamCompleter(_paint(key, decode));
+  }
+
+  static Future<ImageInfo> _paint(
+    _SoftenedThumbnailKey key,
+    ImageDecoderCallback decode,
+  ) async {
+    final codec = await decode(
+      await rootBundle.loadBuffer(key.asset),
+      getTargetSize: (_, __) => const ui.TargetImageSize(
+        width: _decodeWidth,
+        height: _decodeHeight,
+      ),
+    );
+    final ui.Image thumbnail;
+    try {
+      thumbnail = (await codec.getNextFrame()).image;
+    } finally {
+      codec.dispose();
+    }
+
+    final ratio = key.devicePixelRatio;
+    final tile = Offset.zero & const Size(MapTile.width, MapTile.height);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder)..scale(ratio);
+    // What ImageFiltered(blur 1) over Opacity(0.8) over Image(cover) drew.
+    canvas.saveLayer(
+      tile,
+      Paint()..imageFilter = ui.ImageFilter.blur(sigmaX: 1, sigmaY: 1),
+    );
+    canvas.saveLayer(tile, Paint()..color = const Color(0xCC000000));
+    paintImage(
+      canvas: canvas,
+      rect: tile,
+      image: thumbnail,
+      fit: BoxFit.cover,
+      filterQuality: FilterQuality.medium,
+    );
+    canvas
+      ..restore()
+      ..restore();
+    final picture = recorder.endRecording();
+    try {
+      final image = await picture.toImage(
+        math.max(1, (tile.width * ratio).round()),
+        math.max(1, (tile.height * ratio).round()),
+      );
+      return ImageInfo(image: image, scale: ratio, debugLabel: key.asset);
+    } finally {
+      picture.dispose();
+      thumbnail.dispose();
+    }
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _SoftenedThumbnail && other.asset == asset;
+
+  @override
+  int get hashCode => asset.hashCode;
+}
+
+class _SoftenedThumbnailKey {
+  const _SoftenedThumbnailKey(this.asset, this.devicePixelRatio);
+
+  final String asset;
+  final double devicePixelRatio;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _SoftenedThumbnailKey &&
+      other.asset == asset &&
+      other.devicePixelRatio == devicePixelRatio;
+
+  @override
+  int get hashCode => Object.hash(asset, devicePixelRatio);
 }
