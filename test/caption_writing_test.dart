@@ -349,12 +349,12 @@ void main() {
     final field = tester.state<EditableTextState>(find.byType(EditableText));
     field.showToolbar();
     await tester.pumpAndSettle();
-    expect(field.selectionOverlay?.toolbarIsVisible, isTrue);
+    expect(find.text('Select all'), findsOneWidget);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    expect(field.selectionOverlay?.toolbarIsVisible ?? false, isFalse);
+    expect(find.text('Select all'), findsNothing);
     expect(rig.card?.writing, isTrue);
     expect(_field(tester).controller.text, 'Keep this');
   });

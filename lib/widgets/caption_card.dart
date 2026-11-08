@@ -357,6 +357,9 @@ class _Draft {
   final TextEditingController controller;
   final focus = FocusNode(debugLabel: 'caption');
 
+  /// The field whose Cut, Copy and Paste menu is open, if it is.
+  EditableTextState? menuOf;
+
   String get id => open.id;
   CaptionPlace get place => open.writingAt!;
 
@@ -643,15 +646,44 @@ class _DropCaptionAction extends Action<_DropCaptionIntent> {
 
   @override
   Object? invoke(_DropCaptionIntent intent) {
-    final field =
-        draft.focus.context?.findAncestorStateOfType<EditableTextState>();
-    if (field?.selectionOverlay?.toolbarIsVisible ?? false) {
-      field!.hideToolbar();
+    if (draft.menuOf case final field?) {
+      field.hideToolbar(false);
     } else {
       onDrop();
     }
     return null;
   }
+}
+
+/// The field's Cut, Copy and Paste menu, which tells its draft while it's
+/// open.
+class _CaptionFieldMenu extends StatefulWidget {
+  const _CaptionFieldMenu({required this.draft, required this.field});
+
+  final _Draft draft;
+  final EditableTextState field;
+
+  @override
+  State<_CaptionFieldMenu> createState() => _CaptionFieldMenuState();
+}
+
+class _CaptionFieldMenuState extends State<_CaptionFieldMenu> {
+  @override
+  void initState() {
+    super.initState();
+    widget.draft.menuOf = widget.field;
+  }
+
+  @override
+  void dispose() {
+    if (widget.draft.menuOf == widget.field) widget.draft.menuOf = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      AdaptiveTextSelectionToolbar.editableText(
+          editableTextState: widget.field);
 }
 
 /// The card with its note in a text field. What's typed looks as it will
@@ -692,6 +724,8 @@ class _CaptionEditor extends StatelessWidget {
       ),
       // A press off the card saves the note, and the card sees to it.
       onTapOutside: (_) {},
+      contextMenuBuilder: (_, field) =>
+          _CaptionFieldMenu(draft: draft, field: field),
     );
     return Material(
       type: MaterialType.transparency,
