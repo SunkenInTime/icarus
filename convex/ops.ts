@@ -1758,7 +1758,8 @@ async function applyLineupOp(
   }
   const revision = existing.revision + 1;
   await ctx.db.patch(existing._id, {
-    ...patch,
+    // THROWAWAY BREAK: acknowledge a lineup edit without writing its content.
+    ...(patch.payload === undefined ? patch : {}),
     revision,
     updatedAt: Date.now(),
   });
