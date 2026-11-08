@@ -152,7 +152,7 @@ void main() {
 
         card.itemEntered('agent', 'region');
         async.elapse(CaptionCardNotifier.openDelay);
-        expect(container.read(captionCardProvider), 'agent');
+        expect(container.read(captionCardProvider)?.id, 'agent');
       });
     });
 
@@ -194,7 +194,7 @@ void main() {
         async.elapse(const Duration(milliseconds: 100));
         card.cardEntered();
         async.elapse(const Duration(seconds: 1));
-        expect(container.read(captionCardProvider), 'agent');
+        expect(container.read(captionCardProvider)?.id, 'agent');
 
         card.cardExited();
         async.elapse(CaptionCardNotifier.closeDelay);
@@ -213,7 +213,7 @@ void main() {
 
         card.itemExited('center marker');
         async.elapse(const Duration(seconds: 1));
-        expect(container.read(captionCardProvider), 'agent');
+        expect(container.read(captionCardProvider)?.id, 'agent');
       });
     });
 
