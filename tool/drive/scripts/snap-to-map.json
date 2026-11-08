@@ -1,0 +1,47 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"newLocal": "ascent", "name": "Snap {run}"},
+  {"wait": 4},
+  {"tapText": "Snap {run}", "optional": true},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+
+  {"addAgent": "jett-{run}", "at": [950, 600]},
+  {"addSmoke": "smoke-{run}", "at": [985, 620]},
+  {"shot": "{out}/1-placed.png"},
+
+  {"holdKey": "altLeft"},
+  {"dragAgent": "jett-{run}", "toWorld": [918, 600], "held": "{out}/2-held-by-wall.png"},
+  {"expectOnMapLine": "jett-{run}"},
+  {"dragAgent": "jett-{run}", "toWorld": [899, 692]},
+  {"expectOnMapLine": "jett-{run}"},
+  {"dragAgent": "smoke-{run}", "toWorld": [990, 694]},
+  {"expectOnMapLine": "smoke-{run}"},
+  {"letGoKey": "altLeft"},
+  {"wait": 1},
+  {"shot": "{out}/3-on-the-lines.png"},
+
+  {"addAgent": "sova-{run}", "agent": "sova", "at": [1000, 560]},
+  {"dragAgent": "sova-{run}", "toWorld": [915, 560]},
+  {"expectOnMapLine": "sova-{run}", "optional": true},
+
+  {"key": "keyF"},
+  {"wait": 2},
+  {"holdKey": "altLeft"},
+  {"dragAgent": "jett-{run}", "toWorld": [879, 360]},
+  {"expectOnMapLine": "jett-{run}"},
+  {"letGoKey": "altLeft"},
+  {"wait": 1},
+  {"shot": "{out}/4-defense.png"},
+
+  {"tapAt": [166, 142]},
+  {"wait": 2},
+  {"tapText": "Keybinds", "optional": true},
+  {"wait": 1},
+  {"scrollAt": [800, 600, 3000]},
+  {"wait": 1},
+  {"waitText": "Snap to map lines while dragging", "seconds": 5},
+  {"shot": "{out}/5-keybinds.png"},
+  {"exit": 1}
+]

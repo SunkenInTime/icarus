@@ -1,13 +1,14 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Whether Alt is held, which keeps a dragged item on the map. Going by this
-/// rather than [HardwareKeyboard.isAltPressed] because Alt+Tab takes the key
-/// up to another window: the keyboard would still say held on the way back.
-final keepOnMapKeyProvider =
-    NotifierProvider<KeepOnMapKeyNotifier, bool>(KeepOnMapKeyNotifier.new);
+/// Whether Alt is held, which snaps a dragged item onto the map's lines.
+/// Going by this rather than [HardwareKeyboard.isAltPressed] because Alt+Tab
+/// takes the key up to another window: the keyboard would still say held on
+/// the way back.
+final snapToMapKeyProvider =
+    NotifierProvider<SnapToMapKeyNotifier, bool>(SnapToMapKeyNotifier.new);
 
-class KeepOnMapKeyNotifier extends Notifier<bool> {
+class SnapToMapKeyNotifier extends Notifier<bool> {
   @override
   bool build() => false;
 

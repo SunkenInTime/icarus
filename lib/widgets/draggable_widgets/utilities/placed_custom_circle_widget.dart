@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
@@ -147,6 +148,10 @@ class _PlacedCustomCircleWidgetState
         clipBehavior: Clip.none,
         children: [
           CanvasDraggable<PlacedUtility>(
+            dot: utilityRef.position +
+                CoordinateSystem.virtualToWorld(
+                  storedUtilityAnchor(utility: utilityRef, mapScale: mapScale),
+                ),
             maxSimultaneousDrags: itemDragLimit(context),
             data: utilityRef,
             dragAnchorStrategy:

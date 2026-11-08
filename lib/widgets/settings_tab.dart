@@ -676,27 +676,27 @@ class _ShortcutSettingsSectionState
               ),
               const _SettingsItemDivider(),
             ],
-          if (_keepOnMapMatches) const _KeepOnMapRow(),
+          if (_snapToMapMatches) const _SnapToMapRow(),
         ],
       ),
     );
   }
 
-  bool get _keepOnMapMatches {
+  bool get _snapToMapMatches {
     final query = ShortcutInfo.normalizeSearch(_query);
     return ShortcutInfo.normalizeSearch(
-      '${_KeepOnMapRow.title} ${_KeepOnMapRow.keys}',
+      '${_SnapToMapRow.title} ${_SnapToMapRow.keys}',
     ).contains(query);
   }
 }
 
-/// Alt keeping a dragged item on the map. It changes a drag rather than
-/// doing anything itself, so it can't be rebound, but this is where people
-/// look for what a key does.
-class _KeepOnMapRow extends StatelessWidget {
-  const _KeepOnMapRow();
+/// Alt snapping a dragged item onto the map's lines. It changes a drag
+/// rather than doing anything itself, so it can't be rebound, but this is
+/// where people look for what a key does.
+class _SnapToMapRow extends StatelessWidget {
+  const _SnapToMapRow();
 
-  static const title = 'Keep item on the map while dragging';
+  static const title = 'Snap to map lines while dragging';
   static const keys = 'Hold Alt';
 
   @override

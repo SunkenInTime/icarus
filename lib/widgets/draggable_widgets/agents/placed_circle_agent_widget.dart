@@ -236,6 +236,8 @@ class _PlacedCircleAgentWidgetState
           clipBehavior: Clip.none,
           children: [
             CanvasDraggable<PlacedWidget>(
+              dot: current.position +
+                  CoordinateSystem.virtualToWorld(storedAgentAnchor),
               maxSimultaneousDrags: itemDragLimit(context),
               data: current,
               dragAnchorStrategy:

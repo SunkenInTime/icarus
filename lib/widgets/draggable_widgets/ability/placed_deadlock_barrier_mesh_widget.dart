@@ -182,6 +182,13 @@ class _PlacedDeadlockBarrierMeshWidgetState
             left: iconInset,
             top: iconInset,
             child: CanvasDraggable<PlacedWidget>(
+              dot: abilityRef.position +
+                  CoordinateSystem.virtualToWorld(
+                    storedAbilityAnchor(
+                      ability: barrierAbility,
+                      mapScale: mapScale,
+                    ),
+                  ),
               maxSimultaneousDrags: itemDragLimit(context),
               data: widget.data,
               dragAnchorStrategy: (draggable, context, position) {

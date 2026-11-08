@@ -177,6 +177,10 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     final contextMenuItems = widget.isLineUp
         ? null
         : buildAbilityContextMenuItems(ref, abilityRef, context: context);
+    final dot = abilityRef.position +
+        CoordinateSystem.virtualToWorld(
+          storedAbilityAnchor(ability: abilityData, mapScale: mapScale),
+        );
 
     if (abilityData is DeadlockBarrierMeshAbility) {
       return PlacedDeadlockBarrierMeshWidget(
@@ -205,6 +209,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
 
       if (index < 0) {
         return CanvasDraggable<PlacedWidget>(
+          dot: dot,
           maxSimultaneousDrags: itemDragLimit(context),
           dragAnchorStrategy:
               ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
@@ -384,6 +389,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             });
           },
           child: CanvasDraggable<PlacedWidget>(
+            dot: dot,
             maxSimultaneousDrags: itemDragLimit(context),
             data: widget.data,
             dragAnchorStrategy: (draggable, context, position) {
@@ -493,6 +499,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       left: screenPosition.dx,
       top: screenPosition.dy,
       child: CanvasDraggable<PlacedWidget>(
+        dot: dot,
         maxSimultaneousDrags: itemDragLimit(context),
         dragAnchorStrategy:
             ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
@@ -591,6 +598,10 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       storedLength: localLength ?? 0,
       mapScale: mapScale,
     );
+    final dot = abilityRef.position +
+        CoordinateSystem.virtualToWorld(
+          storedAbilityAnchor(ability: abilityData, mapScale: mapScale),
+        );
 
     Widget buildAbilityChild({required bool watchMouse}) {
       return abilityData.createWidget(
@@ -644,6 +655,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           });
         },
         child: CanvasDraggable<PlacedWidget>(
+          dot: dot,
           maxSimultaneousDrags: itemDragLimit(context),
           data: widget.data,
           dragAnchorStrategy: (draggable, context, position) {

@@ -6,6 +6,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_cursors.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
@@ -189,6 +190,13 @@ class _PlacedCustomRectangleWidgetState
                       left: insetX,
                       top: insetY,
                       child: CanvasDraggable<PlacedUtility>(
+                        dot: utilityRef.position +
+                            CoordinateSystem.virtualToWorld(
+                              storedUtilityAnchor(
+                                utility: utilityRef,
+                                mapScale: mapScale,
+                              ),
+                            ),
                         maxSimultaneousDrags: itemDragLimit(context),
                         data: utilityRef,
                         dragAnchorStrategy: (draggable, context, position) =>

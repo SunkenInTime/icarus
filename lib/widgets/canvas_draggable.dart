@@ -1,16 +1,15 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/providers/keep_on_map_key_provider.dart';
+import 'package:icarus/providers/snap_to_map_key_provider.dart';
 import 'package:icarus/widgets/canvas_selection_layer.dart';
 
 /// The [Draggable] of an item placed on the canvas. While Alt is held the
-/// item stops at the edge of the map and slides along it, however far the
-/// pointer goes: an item dropped past the edge is deleted, so this is how to
-/// put one right beside it. See [CanvasSelectionLayer.keepOnMap] for where it
-/// stops.
+/// item's [dot] snaps onto the nearest line the map draws and slides along
+/// it: see [CanvasSelectionLayer.snapToMap].
 class CanvasDraggable<T extends Object> extends Draggable<T> {
   const CanvasDraggable({
+    required this.dot,
     required super.child,
     required super.feedback,
     super.data,
@@ -26,13 +25,23 @@ class CanvasDraggable<T extends Object> extends Draggable<T> {
     super.key,
   });
 
-  /// What was pressed. Flutter only hands the context to
-  /// [dragAnchorStrategy], from the same call that starts the drag.
-  static BuildContext? _pressed;
+  /// Where the item's dot is, in world units with the attack side up: its
+  /// saved position plus the anchor its drop goes by (a picture or a note,
+  /// which have none, use their middle). This is the point Alt puts on a line.
+  final Offset dot;
+
+  /// What was pressed, and where its dot was then. Flutter only hands the
+  /// context to [dragAnchorStrategy], from the same call that starts the
+  /// drag, and builds the recognizer with the first widget, so the dot is
+  /// read from the widget pressed rather than this one.
+  static ({BuildContext context, Offset dot})? _pressed;
 
   @override
   DragAnchorStrategy get dragAnchorStrategy => (draggable, context, position) {
-        _pressed = context;
+        _pressed = (
+          context: context,
+          dot: (draggable as CanvasDraggable).dot,
+        );
         return super.dragAnchorStrategy(draggable, context, position);
       };
 
@@ -45,32 +54,32 @@ class CanvasDraggable<T extends Object> extends Draggable<T> {
       final pressed = _pressed;
       _pressed = null;
       if (drag == null || pressed == null) return drag;
-      final limit = CanvasSelectionLayer.keepOnMap(pressed);
-      if (limit == null) return drag;
-      return _KeepOnMapDrag(
+      final snap = CanvasSelectionLayer.snapToMap(pressed.context, pressed.dot);
+      if (snap == null) return drag;
+      return _SnapToMapDrag(
         drag,
         pressedAt: position,
-        canvas: limit.canvas,
-        keep: limit.keep,
-        container: ProviderScope.containerOf(pressed, listen: false),
+        canvas: snap.canvas,
+        snap: snap.snap,
+        container: ProviderScope.containerOf(pressed.context, listen: false),
       );
     });
   }
 }
 
-/// Passes a drag along, stopping it where [keep] says while Alt is held. The
+/// Passes a drag along, moved where [snap] says while Alt is held. The
 /// [Draggable] follows what it is told, so the preview, the drop and anything
 /// watching the drag all agree on where the item is.
-class _KeepOnMapDrag implements Drag {
-  _KeepOnMapDrag(
+class _SnapToMapDrag implements Drag {
+  _SnapToMapDrag(
     this._drag, {
     required this.pressedAt,
     required this.canvas,
-    required this.keep,
+    required this.snap,
     required ProviderContainer container,
   }) {
     // Alt can change with the pointer still, so it moves the item itself.
-    _key = container.listen(keepOnMapKeyProvider, (_, held) {
+    _key = container.listen(snapToMapKeyProvider, (_, held) {
       _held = held;
       _follow();
     });
@@ -81,8 +90,8 @@ class _KeepOnMapDrag implements Drag {
   final Offset pressedAt;
   final RenderBox canvas;
 
-  /// Where a drag by a distance in the canvas's pixels stops.
-  final Offset Function(Offset by) keep;
+  /// Where a drag by a distance in the canvas's pixels goes instead.
+  final Offset Function(Offset by) snap;
 
   late final ProviderSubscription<bool> _key;
   bool _held = false;
@@ -99,7 +108,7 @@ class _KeepOnMapDrag implements Drag {
   }
 
   void _follow([Duration? timeStamp]) {
-    final shown = _held ? _kept(_moved) : _moved;
+    final shown = _held ? _snapped(_moved) : _moved;
     final delta = shown - _shown;
     _shown = shown;
     _drag.update(
@@ -111,11 +120,11 @@ class _KeepOnMapDrag implements Drag {
     );
   }
 
-  Offset _kept(Offset moved) {
+  Offset _snapped(Offset moved) {
     if (!canvas.attached) return moved;
     final from = canvas.globalToLocal(pressedAt);
     final by = canvas.globalToLocal(pressedAt + moved) - from;
-    return canvas.localToGlobal(from + keep(by)) - pressedAt;
+    return canvas.localToGlobal(from + snap(by)) - pressedAt;
   }
 
   @override

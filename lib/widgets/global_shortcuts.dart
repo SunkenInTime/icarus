@@ -14,7 +14,7 @@ import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
-import 'package:icarus/providers/keep_on_map_key_provider.dart';
+import 'package:icarus/providers/snap_to_map_key_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
@@ -40,11 +40,11 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
     with WidgetsBindingObserver {
   bool _handleModifierKeyEvent(KeyEvent event) {
     ref.read(duplicateDragModifierProvider.notifier).handleKeyEvent(event);
-    ref.read(keepOnMapKeyProvider.notifier).handleKeyEvent(event);
+    ref.read(snapToMapKeyProvider.notifier).handleKeyEvent(event);
     // Alt on its own takes a browser to its menu, and the next key with it.
     // Claimed here so the page keeps it. Alt with another key still reaches
     // the browser: that key is a separate event.
-    return kIsWeb && KeepOnMapKeyNotifier.isAlt(event.logicalKey);
+    return kIsWeb && SnapToMapKeyNotifier.isAlt(event.logicalKey);
   }
 
   // Catches shortcuts for the whole app; it is never a Tab stop. Skipping
@@ -76,7 +76,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
       ref.read(duplicateDragModifierProvider.notifier).clear();
-      ref.read(keepOnMapKeyProvider.notifier).clear();
+      ref.read(snapToMapKeyProvider.notifier).clear();
     }
   }
 
