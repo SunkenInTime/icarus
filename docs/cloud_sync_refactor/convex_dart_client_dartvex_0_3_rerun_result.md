@@ -42,19 +42,28 @@ refusal can't hide the rest. Then it generates the whole spec once, and the
 spec minus the refused functions with `dart analyze`.
 
 A function counts as typed only when generation exits 0 with no warning and no
-public declaration in its module is typed `dynamic`, `Object` or `Object?`.
-Dartvex's private `_encode`/`_decode` helpers are skipped, because they never
-reach a caller. So is the `value` field on generated enums: it holds the wire
-literal, while the result field still has the enum type.
+public declaration in its module is typed `dynamic`, `Object` or `Object?`. That
+includes every field of the record typedefs Dartvex writes for result and
+argument objects. Dartvex's private `_encode`/`_decode` helpers are skipped,
+because they never reach a caller. So is the `value` field on generated enums:
+it holds the wire literal, while the result field still has the enum type.
+`test/full_spec_gate_test.dart` proves the scan catches a nested `v.any()`,
+which Dartvex turns into `dynamic` without a warning.
+
+"Typed" covers arguments and successful results only. A failed subscription
+still hands callers `TypedQueryError.data`, which Dartvex's generated
+`runtime.dart` declares `Object?`. That's the server's `ConvexError` payload,
+and our own `ConvexClientFunctionError.data` is `Object?` too, until our
+generator maps its code to `ConvexErrorCode`.
 
 | Result | Count |
 | --- | ---: |
 | Public functions in the spec | 61 |
-| Fully typed, no `dynamic` or `Object?` reaching a caller | 50 |
+| Arguments and results fully typed | 50 |
 | Degraded to `dynamic` | 0 |
 | Refused, generation exits 70 | 11 |
 | Whole spec | refused, exit 70 |
-| The 50 typed functions together | 46,366,046 bytes of Dart; `dart analyze` clean in 188 s |
+| The 50 typed functions together | 46,366,046 bytes of Dart; `dart analyze` clean, 188 s with a cold analyzer cache |
 
 The answer to the deciding question is no. Nothing degrades to `dynamic` any
 more, and 0.3.0 is now strict where 0.2.0 failed open. But generation
@@ -140,8 +149,11 @@ Plan, once D's harness lands:
      `subscribeValues`, run over Dartvex, never delivers values from two server
      states. This includes the case where one query of the group is seeded from
      Dartvex's after-unsubscribe cache (see the table below).
-   - A mutation in flight during a sign-out and sign-in fails with a
-     `ConvexException`, and the outbox replays it instead of dropping it.
+   - Sign-out and sign-in with a mutation in flight, in two cases. On an
+     unbroken socket the mutation may still complete. Across a reconnect it
+     fails with `Authentication changed before the request completed`, unless
+     the server had already confirmed it. Either way the outbox must end with
+     the op landed exactly once or visibly failed, never silently dropped.
 
 ## 3. What the numbers don't show
 
@@ -154,7 +166,7 @@ each. Nothing in this table has been seen at runtime yet.
 | Structured error code on both transports | `ConvexException.data` and `QueryError.data` carry the server's `ConvexError` payload. `data['code']` is where our native adapter reads `rawCode` today. One client means one mapping for native and web. | Native reads `data['code']` from the Rust error. Web reads the JS error object. Two mappings, kept equal by conformance tests. |
 | Consistent multi-query delivery (`subscribeValues`, `watchTogether`) | No grouped-subscribe API. It does deliver every query update from one server transition synchronously: `StreamController.broadcast(sync: true)` plus `addSync`, in one loop in `_handleServerMessage`. Our web adapter already relies on that from the JS client, so its microtask grouping should carry over. One gap: a new subscription's first value may come from the after-unsubscribe cache, which can be older than the other queries in the group. That needs the plan's step 4 test, or an upstream option to skip the cache seed. | `subscribe_group` in our patched Rust crate calls Dart once per transition. That is the strongest guarantee of the three, and it is fork-only code. |
 | Real reconnect | `reconnectNow(reason)` restarts the socket through `WebSocketManager` and replays auth, the query set and pending requests. | `reconnect_now` is an Icarus patch on Convex Rust 0.10.4. Upstream has no such call. |
-| Auth refresh inside the client state machine | `setAuthWithRefresh` hands the fetcher to `AuthManager`, which refetches on a server auth rejection and retries the fetch after 500 ms and 2 s. 0.3.0 also changed this: a mutation in flight during an identity change (sign-out, another user) now fails instead of being replayed under the new user, while same-user token refreshes keep results. Our outbox replays by op ID, so a failed in-flight mutation should be safe, but step 4 has to prove it. | Our Aug 27 patches to both the package and the crate. |
+| Auth refresh inside the client state machine | `setAuthWithRefresh` hands the fetcher to `AuthManager`, which refetches on a server auth rejection and retries the fetch after 500 ms and 2 s. 0.3.0 also changed this. After an identity change (sign-out, another user), a mutation that hasn't completed by the next reconnect fails instead of being replayed under the new user. A mutation the server already confirmed is kept (`request_manager.dart`, `prepareReconnect`). Same-user token refreshes keep results. Our outbox replays by op ID, so a failed mutation should be safe, but step 4 has to prove it. | Our Aug 27 patches to both the package and the crate. |
 
 ### Web
 
@@ -217,7 +229,9 @@ dart run bin/full_spec.dart --analyze --output results/full_spec_gate.json
 dart test
 ```
 
-`full_spec.dart` takes about 40 s, plus about 3 minutes with `--analyze`.
+`full_spec.dart` takes about 40 s, plus about 3 minutes with `--analyze` on a
+cold analyzer cache. A rerun over identical files analyzes in about a second,
+which is the `analysisMs` the committed JSON records.
 Measured on Windows x64, Dart 3.12.2. The scrubbed spec has no `url` key, which
 `dartvex_codegen` requires, so the tool adds a placeholder. Dartvex copies the
 URL only into a comment.

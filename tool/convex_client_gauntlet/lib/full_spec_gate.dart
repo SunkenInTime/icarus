@@ -164,7 +164,7 @@ Future<Map<String, Object?>> evaluateFullSpecGate({
 /// field: Dartvex stores each case's wire literal there as `Object?`, while
 /// the result field itself has the enum's type.
 List<String> _untypedPublicDeclarations(Directory output) {
-  final untyped = RegExp(r'\b(dynamic|Object\??)(?=[\s>,])');
+  final untyped = RegExp(r'\b(dynamic|Object\??)(?=[\s>,)}])');
   final declaration = RegExp(
     r'^(?:final\s+|static\s+|late\s+)*([A-Za-z_][\w<>?, ]*?)\s+([A-Za-z][\w$]*)\s*(?:;|\(|=>|\{|$)',
   );
@@ -172,16 +172,33 @@ List<String> _untypedPublicDeclarations(Directory output) {
   for (final file in _moduleFiles(output)) {
     final relative = _relative(output, file);
     var inEnum = false;
+    var inTypedef = false;
     for (final line in file.readAsLinesSync()) {
       if (line.startsWith('enum ')) {
         inEnum = true;
       } else if (line == '}') {
         inEnum = false;
       }
+      // Dartvex writes object results as record typedefs, on one line or
+      // spread over several: `typedef Result = ({dynamic value});`. Every
+      // type inside one is public.
+      if (line.startsWith('typedef ')) {
+        inTypedef = true;
+      }
+      final typedefLine = inTypedef;
+      if (inTypedef && line.trimRight().endsWith(';')) {
+        inTypedef = false;
+      }
       if (inEnum || (!line.contains('dynamic') && !line.contains('Object'))) {
         continue;
       }
       final trimmed = line.trim();
+      if (typedefLine) {
+        if (untyped.hasMatch(trimmed)) {
+          lines.add('$relative: $trimmed');
+        }
+        continue;
+      }
       final match = declaration.firstMatch(trimmed);
       if (match == null) {
         continue;
