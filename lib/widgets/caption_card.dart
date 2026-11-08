@@ -23,6 +23,7 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/widgets/canvas_selection_layer.dart';
 import 'package:icarus/widgets/caption_markers.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
@@ -70,14 +71,14 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
   /// Where the cursor starts in the next draft: the spot clicked in the card.
   int? _clickedAt;
 
-  late final ProviderContainer _container =
-      ProviderScope.containerOf(context, listen: false);
+  late final ProviderContainer _container;
   late final CaptionCardNotifier _notifier =
       ref.read(captionCardProvider.notifier);
 
   @override
   void initState() {
     super.initState();
+    _container = ProviderScope.containerOf(context, listen: false);
     _notifier.clearPointers();
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
     HardwareKeyboard.instance.addHandler(_onKey);
@@ -93,22 +94,25 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
     widget.transformation.removeListener(_onTransform);
     final draft = _draft;
     _draft = null;
-    if (draft != null) {
-      // The editor went away with a note open. It's kept, as a click
-      // elsewhere would keep it, once the tree has finished coming down.
-      final container = _container;
-      final notifier = _notifier;
-      Future<void>.microtask(() {
-        _save(container, draft);
-        notifier.stopWriting();
-        draft.dispose();
-      });
-    }
+    // The editor went away, maybe with a note open. It's kept, as a click
+    // elsewhere would keep it, once the tree has finished coming down, and
+    // writing ends either way.
+    final container = _container;
+    final notifier = _notifier;
+    Future<void>.microtask(() {
+      if (draft != null) _save(container, draft);
+      notifier.stopWriting();
+      draft?.dispose();
+    });
     super.dispose();
   }
 
+  /// Whether the card is open for writing. The draft comes with the card's
+  /// first build, so it can be missing while this is true.
+  bool get _writing => ref.read(writingCaptionProvider);
+
   void _onTransform() {
-    if (_draft == null) {
+    if (!_writing) {
       _notifier.closeNow();
       return;
     }
@@ -132,7 +136,7 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
     }
     // A note being written decides for itself what a press off it means: its
     // field's menu and handles can sit outside the card.
-    if (_draft != null || _onCard(event.position)) return;
+    if (_writing || _onCard(event.position)) return;
     if (event is PointerDownEvent || event is PointerSignalEvent) {
       _notifier.closeNow();
     }
@@ -158,21 +162,25 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
   /// The user moved on: a note being written is saved, a card being read
   /// closes.
   void _leave() {
-    if (_draft != null) {
+    if (_writing) {
       _finish(save: true);
     } else {
       _notifier.closeNow();
     }
   }
 
+  /// Ends writing, saving the note first when [save]. The item can go before
+  /// the card first builds, with no draft yet, and writing still ends then, or
+  /// the app's shortcuts would stay off.
   void _finish({required bool save}) {
     final draft = _draft;
-    if (draft == null) return;
     _draft = null;
-    if (save) _save(_container, draft);
+    if (draft != null && save) _save(_container, draft);
     _notifier.stopWriting();
     // The field holds them until the card is gone.
-    WidgetsBinding.instance.addPostFrameCallback((_) => draft.dispose());
+    if (draft != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => draft.dispose());
+    }
   }
 
   /// The draft for [open], made when the card opens for writing.
@@ -196,6 +204,22 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
 
     WidgetsBinding.instance.addPostFrameCallback((_) => takeFocus());
     Future<void>.delayed(const Duration(milliseconds: 250), takeFocus);
+    // A press in another text field, such as a shape's size in the sidebar,
+    // is inside the card's tap region: Flutter puts every text field and the
+    // field's Cut, Copy and Paste menu in one group. So the keyboard landing
+    // in another field is what saves the note then. Losing it to the canvas
+    // as a menu closes, or to another window, doesn't.
+    draft.focus.addListener(() {
+      if (draft.focus.hasFocus) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            _draft == draft &&
+            !draft.focus.hasFocus &&
+            isTypingInTextField()) {
+          _finish(save: true);
+        }
+      });
+    });
     return draft;
   }
 

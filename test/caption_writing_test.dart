@@ -73,6 +73,7 @@ Future<_Rig> _pump(
   String? caption,
   bool canEdit = true,
   bool appShortcuts = false,
+  bool sidebarField = false,
 }) async {
   final container = ProviderContainer(overrides: [
     strategyProvider.overrideWith(_TestStrategyProvider.new),
@@ -143,6 +144,14 @@ Future<_Rig> _pump(
                   Positioned.fill(
                     child: CaptionCardLayer(transformation: controller),
                   ),
+                  // Stands in for the sidebar's fields, a shape's size say.
+                  if (sidebarField)
+                    const Positioned(
+                      left: 650,
+                      top: 20,
+                      width: 120,
+                      child: TextField(key: ValueKey('sidebar field')),
+                    ),
                 ],
               ),
             ),
@@ -376,5 +385,38 @@ void main() {
 
     expect(rig.card?.writing, isTrue);
     expect(_field(tester).controller.text, '');
+  });
+
+  testWidgets('clicking another text field saves the note and ends writing',
+      (tester) async {
+    final rig = await _pump(tester, sidebarField: true);
+    await rig.write(tester);
+    final note = find.descendant(
+      of: find.byType(CaptionCardLayer),
+      matching: find.byType(EditableText),
+    );
+    await tester.enterText(note, 'Lurk');
+
+    await tester.tap(find.byKey(const ValueKey('sidebar field')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(rig.caption, 'Lurk');
+    expect(rig.card, isNull);
+    expect(rig.container.read(writingCaptionProvider), isFalse);
+  });
+
+  testWidgets(
+      'an item gone before its card is drawn ends writing, and the '
+      "app's shortcuts come back", (tester) async {
+    final rig = await _pump(tester);
+    rig.container
+        .read(captionCardProvider.notifier)
+        .startWriting('gone', currentCaptionPlace(rig.container));
+    await tester.pump();
+    await tester.pump();
+
+    expect(rig.card, isNull);
+    expect(rig.container.read(writingCaptionProvider), isFalse);
   });
 }
