@@ -18,7 +18,8 @@ class MapSelector extends ConsumerStatefulWidget {
   ConsumerState<ConsumerStatefulWidget> createState() => _MapSelectorState();
 }
 
-class _MapSelectorState extends ConsumerState<MapSelector> {
+class _MapSelectorState extends ConsumerState<MapSelector>
+    with SingleTickerProviderStateMixin {
   static const double _cardHeight = 65;
   static const double _outerRadius = 12;
   static const double _innerGap = 4;
@@ -35,37 +36,45 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
 
   final OverlayPortalController _controller = OverlayPortalController();
   final _link = LayerLink();
-  double _containerHeight = 0;
   bool _isOpen = false;
 
-  static const Duration _resizeDuration = Duration(milliseconds: 200);
+  /// How far above its resting place the list starts, so it drops in from
+  /// under the picker.
+  static const double _dropDistance = 12;
+
+  // The list drops in and fades in at full size; closing runs the same
+  // motion back, faster, starting fast (DESIGN.md: reverse curves take
+  // easeOut.flipped).
+  late final AnimationController _drop = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+    reverseDuration: const Duration(milliseconds: 150),
+  );
+  late final Animation<double> _shown = CurvedAnimation(
+    parent: _drop,
+    curve: Settings.easeOut,
+    reverseCurve: Settings.easeOut.flipped,
+  );
+
+  @override
+  void dispose() {
+    _drop.dispose();
+    super.dispose();
+  }
 
   void _closePortal() {
-    // For closing, animate to zero first
-    setState(() {
-      _containerHeight = 0;
-      _isOpen = false;
-    });
-
-    // Then hide the overlay after animation completes, unless it was
-    // opened again meanwhile.
-    Future.delayed(_resizeDuration, () {
+    setState(() => _isOpen = false);
+    // Hide the overlay once the list is gone, unless it was opened again
+    // meanwhile.
+    _drop.reverse().whenCompleteOrCancel(() {
       if (mounted && !_isOpen) _controller.hide();
     });
   }
 
   void _openPortal() {
-    // Show the overlay at zero height, then grow it from the next frame on,
-    // so the list starts opening at once.
     _controller.show();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() {
-        _containerHeight = 500;
-        _isOpen = true;
-      });
-    });
+    setState(() => _isOpen = true);
+    _drop.forward();
   }
 
   @override
@@ -113,100 +122,124 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                       alignment: AlignmentDirectional.topStart,
                       child: Padding(
                         padding: const EdgeInsets.only(top: 6),
-                        child: AnimatedContainer(
-                          duration: _resizeDuration,
-                          curve: Settings.easeOut,
-                          height: _containerHeight,
-                          width: 260,
-                          decoration: BoxDecoration(
-                            color: Settings.tacticalVioletTheme.card,
-                            borderRadius: const BorderRadius.all(
-                              Radius.circular(10),
-                            ),
-                            border: Border.all(
-                              color: Settings.tacticalVioletTheme.border,
-                              width: 2,
-                            ),
-                          ),
-                          child: ClipRRect(
-                            clipBehavior: Clip.antiAlias,
-                            borderRadius: const BorderRadius.all(
-                              Radius.circular(10),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Expanded(
-                                  child: ListView.separated(
-                                    padding: const EdgeInsets.all(_innerGap),
-                                    itemCount: availableMaps.length +
-                                        outOfRotationMaps.length +
-                                        1,
-                                    separatorBuilder: (_, __) =>
-                                        const SizedBox(height: _innerGap),
-                                    itemBuilder: (context, index) {
-                                      if (index < availableMaps.length) {
-                                        final mapValue = availableMaps[index];
-                                        final mapName =
-                                            Maps.mapNames[mapValue]!;
-                                        return MapTile(
-                                          name: mapName,
-                                          borderRadius: _innerRadius,
-                                          onTap: () {
-                                            ref
-                                                .read(mapProvider.notifier)
-                                                .updateMap(mapValue);
-                                            ref
-                                                .read(strategyProvider.notifier)
-                                                .setUnsaved();
-                                            _closePortal();
-                                          },
-                                        );
-                                      }
-
-                                      if (index == availableMaps.length) {
-                                        return const Padding(
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 5,
-                                          ),
-                                          child: Text(
-                                            "Out of rotation",
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w500,
-                                              color: Color.fromARGB(
-                                                255,
-                                                160,
-                                                160,
-                                                160,
-                                              ),
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        );
-                                      }
-
-                                      final mapValue = outOfRotationMaps[
-                                          index - availableMaps.length - 1];
-                                      final mapName = Maps.mapNames[mapValue]!;
-                                      return MapTile(
-                                        name: mapName,
-                                        borderRadius: _innerRadius,
-                                        // isActive: mapValue == currentMap,
-                                        onTap: () {
-                                          ref
-                                              .read(mapProvider.notifier)
-                                              .updateMap(mapValue);
-                                          ref
-                                              .read(strategyProvider.notifier)
-                                              .setUnsaved();
-                                          _closePortal();
-                                        },
-                                      );
-                                    },
+                        // A closing list takes no clicks.
+                        child: IgnorePointer(
+                          ignoring: !_isOpen,
+                          child: FadeTransition(
+                            opacity: _shown,
+                            child: AnimatedBuilder(
+                              animation: _shown,
+                              builder: (context, child) => Transform.translate(
+                                offset: Offset(
+                                  0,
+                                  -_dropDistance * (1 - _shown.value),
+                                ),
+                                child: child,
+                              ),
+                              child: Container(
+                                height: 500,
+                                width: 260,
+                                decoration: BoxDecoration(
+                                  color: Settings.tacticalVioletTheme.card,
+                                  borderRadius: const BorderRadius.all(
+                                    Radius.circular(10),
+                                  ),
+                                  border: Border.all(
+                                    color: Settings.tacticalVioletTheme.border,
+                                    width: 2,
                                   ),
                                 ),
-                              ],
+                                child: ClipRRect(
+                                  clipBehavior: Clip.antiAlias,
+                                  borderRadius: const BorderRadius.all(
+                                    Radius.circular(10),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      Expanded(
+                                        child: ListView.separated(
+                                          padding:
+                                              const EdgeInsets.all(_innerGap),
+                                          itemCount: availableMaps.length +
+                                              outOfRotationMaps.length +
+                                              1,
+                                          separatorBuilder: (_, __) =>
+                                              const SizedBox(height: _innerGap),
+                                          itemBuilder: (context, index) {
+                                            if (index < availableMaps.length) {
+                                              final mapValue =
+                                                  availableMaps[index];
+                                              final mapName =
+                                                  Maps.mapNames[mapValue]!;
+                                              return MapTile(
+                                                name: mapName,
+                                                borderRadius: _innerRadius,
+                                                onTap: () {
+                                                  ref
+                                                      .read(
+                                                          mapProvider.notifier)
+                                                      .updateMap(mapValue);
+                                                  ref
+                                                      .read(strategyProvider
+                                                          .notifier)
+                                                      .setUnsaved();
+                                                  _closePortal();
+                                                },
+                                              );
+                                            }
+
+                                            if (index == availableMaps.length) {
+                                              return const Padding(
+                                                padding: EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 5,
+                                                ),
+                                                child: Text(
+                                                  "Out of rotation",
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w500,
+                                                    color: Color.fromARGB(
+                                                      255,
+                                                      160,
+                                                      160,
+                                                      160,
+                                                    ),
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              );
+                                            }
+
+                                            final mapValue = outOfRotationMaps[
+                                                index -
+                                                    availableMaps.length -
+                                                    1];
+                                            final mapName =
+                                                Maps.mapNames[mapValue]!;
+                                            return MapTile(
+                                              name: mapName,
+                                              borderRadius: _innerRadius,
+                                              // isActive: mapValue == currentMap,
+                                              onTap: () {
+                                                ref
+                                                    .read(mapProvider.notifier)
+                                                    .updateMap(mapValue);
+                                                ref
+                                                    .read(strategyProvider
+                                                        .notifier)
+                                                    .setUnsaved();
+                                                _closePortal();
+                                              },
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
