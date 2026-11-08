@@ -669,26 +669,12 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
       isAttack: mapState.isAttack,
     );
     final points = wall.points(path);
-    final meters = wallPathLength(path) / wallWorldPerMeter(mapScale);
-    final data = widget.ability.data.abilityData as GuidedWallAbility;
-    final atLongest = meters >= data.maxLengthMeters - 0.05;
     final dragging = _dragged != null;
     final canAdd = dragging || path.length < maxWallPathPoints;
     return Positioned.fill(
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          Positioned(
-            left: points.last.dx + 12,
-            top: points.last.dy - 12,
-            child: IgnorePointer(
-              child: CanvasTag(
-                text: atLongest
-                    ? '${data.maxLengthMeters.round()} m, the longest'
-                    : '${meters.round()} m',
-              ),
-            ),
-          ),
           if (canAdd)
             for (final (index, middle) in wallStretchMiddles(points).indexed)
               _dot(
@@ -714,34 +700,6 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
               onRemove: path.length < 2 ? null : () => _removePoint(index),
             ),
         ],
-      ),
-    );
-  }
-}
-
-/// A short label on the canvas, for what's under the pointer.
-class CanvasTag extends StatelessWidget {
-  const CanvasTag({super.key, required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Settings.abilityBGColor,
-        borderRadius: const BorderRadius.all(Radius.circular(4)),
-        border: Border.all(color: Settings.tacticalVioletTheme.border),
-        boxShadow: const [Settings.cardForegroundBackdrop],
-      ),
-      child: Text(
-        text,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: Settings.tacticalVioletTheme.foreground,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
       ),
     );
   }
