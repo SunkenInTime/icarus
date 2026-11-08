@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/strategy_capabilities.dart';
@@ -391,6 +392,15 @@ void main() {
       return container;
     }
 
+    bool hovered(WidgetTester tester) => tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((paint) => paint.painter)
+        .whereType<MapDoorPainter>()
+        .any((bar) => bar.hovered);
+
+    MouseCursor? cursor() =>
+        RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1);
+
     Offset middle(String id, {bool isAttack = true}) =>
         mapDoorMiddleOnCanvas(_door(id), isAttack: isAttack);
 
@@ -473,7 +483,8 @@ void main() {
 
       await mouse.moveTo(middle('lotus-a'));
       await tester.pump();
-      expect(find.text('Spin the door'), findsNothing);
+      expect(hovered(tester), isFalse);
+      expect(cursor(), SystemMouseCursors.basic);
 
       await tester.tapAt(middle('lotus-a'));
       await tester.pump(const Duration(milliseconds: 300));
@@ -504,25 +515,30 @@ void main() {
       expect(container.read(utilityProvider), isEmpty);
     });
 
-    testWidgets('hovering says what a click does, and changes with the door',
-        (tester) async {
-      await pump(tester);
+    testWidgets(
+        'hovering lights the bar and shows the hand, and only a click '
+        'changes the door', (tester) async {
+      final container = await pump(tester);
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       addTearDown(mouse.removePointer);
       await mouse.addPointer(location: const Offset(5, 5));
 
       await mouse.moveTo(middle('summit-mid'));
-      await tester.pump();
-      expect(find.text('Drop the wall'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 1));
+      expect(hovered(tester), isTrue);
+      expect(cursor(), SystemMouseCursors.click);
+      expect(container.read(utilityProvider), isEmpty);
+      expect(find.byType(Text), findsNothing);
 
       await mouse.down(middle('summit-mid'));
       await mouse.up();
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('Raise the wall'), findsOneWidget);
+      expect(changed(container, MapValue.summit), {'summit-mid'});
 
       await mouse.moveTo(const Offset(5, 5));
       await tester.pump();
-      expect(find.text('Raise the wall'), findsNothing);
+      expect(hovered(tester), isFalse);
+      expect(changed(container, MapValue.summit), {'summit-mid'});
     });
 
     testWidgets('clicks wait for a page change to end', (tester) async {

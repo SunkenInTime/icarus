@@ -10,7 +10,6 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
-import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 import 'package:icarus/const/settings.dart';
 
 /// How far from a bar the pointer counts as on it, in pixels on the screen
@@ -321,32 +320,16 @@ class _MapDoorBarState extends ConsumerState<_MapDoorBar> {
                 changed: value,
                 isAttack: widget.isAttack,
               );
-              return Stack(
-                clipBehavior: Clip.none,
-                fit: StackFit.expand,
-                children: [
-                  CustomPaint(
-                    painter: MapDoorPainter(
-                      kind: door.kind,
-                      line: line,
-                      changed: value,
-                      wallColor: wallColor,
-                      thickness: _barThickness(),
-                      hovered: _hovered,
-                      reach: _hoverReach / zoom,
-                    ),
-                  ),
-                  if (_hovered)
-                    Positioned(
-                      left: (line.$1.dx + line.$2.dx) / 2 + 14,
-                      top: (line.$1.dy + line.$2.dy) / 2 - 34,
-                      child: IgnorePointer(
-                        child: CanvasTag(
-                          text: door.tag(changed: widget.changed),
-                        ),
-                      ),
-                    ),
-                ],
+              return CustomPaint(
+                painter: MapDoorPainter(
+                  kind: door.kind,
+                  line: line,
+                  changed: value,
+                  wallColor: wallColor,
+                  thickness: _barThickness(),
+                  hovered: _hovered,
+                  reach: _hoverReach / zoom,
+                ),
               );
             },
           ),
