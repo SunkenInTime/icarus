@@ -69,8 +69,8 @@ class CustomSegmentedTabs<T> extends StatefulWidget {
 }
 
 class _CustomSegmentedTabsState<T> extends State<CustomSegmentedTabs<T>> {
-  static const double _containerRadius = 6;
   static const double _segmentRadius = 5;
+  static const double _borderWidth = 1;
 
   final GlobalKey _stackKey = GlobalKey();
   late List<GlobalKey> _tabKeys;
@@ -178,15 +178,21 @@ class _CustomSegmentedTabsState<T> extends State<CustomSegmentedTabs<T>> {
         widget.segmentVerticalPadding ?? lerpDouble(7, 4, clampedCompactness)!;
 
     final selectedIndex = _selectedIndex;
+    // The track's corner runs parallel to the pill's: its radius is the
+    // pill's plus the space between their edges.
+    final outerPadding =
+        widget.padding?.resolve(Directionality.of(context)).top ?? 0;
+    final containerRadius =
+        _segmentRadius + _borderWidth + outerPadding + verticalInset;
 
     Widget content = Container(
       padding: widget.padding,
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.secondary,
-        borderRadius: BorderRadius.circular(_containerRadius),
+        borderRadius: BorderRadius.circular(containerRadius),
         border: Border.all(
           color: Settings.tacticalVioletTheme.border,
-          width: 1,
+          width: _borderWidth,
         ),
       ),
       child: Padding(
