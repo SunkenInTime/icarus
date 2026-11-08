@@ -4,6 +4,7 @@ import 'package:icarus/collab/presence/presence_models.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/caption_card_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/editing_presence_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
@@ -127,6 +128,24 @@ void main() {
       const PresenceEditing(pageId: 'p1', itemIds: {'text-1'}),
     );
     container.read(textDraftProvider.notifier).clearDraft('text-1');
+    expect(editing(), isNull);
+  });
+
+  test('a caption being written is editing its item, on its page only', () {
+    final card = container.read(captionCardProvider.notifier);
+    card.openNow('agent-1');
+    expect(editing(), isNull, reason: 'reading a caption is not editing');
+
+    card.startWriting('agent-1', (strategyId: 's', pageId: 'p1'));
+    expect(
+      editing(),
+      const PresenceEditing(pageId: 'p1', itemIds: {'agent-1'}),
+    );
+    card.stopWriting();
+    expect(editing(), isNull);
+
+    // A copy on another page has the same id.
+    card.startWriting('agent-1', (strategyId: 's', pageId: 'p2'));
     expect(editing(), isNull);
   });
 

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/providers/caption_card_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_presence_provider.dart';
@@ -38,10 +39,6 @@ class OpenLineUpItemsNotifier extends Notifier<Map<Object, Set<String>>> {
   String? pageOf(Object owner) => _pageOf[owner];
 }
 
-/// The item whose caption dialog is open, and the page it opened on.
-final openCaptionItemProvider =
-    StateProvider<({String? pageId, String id})?>((ref) => null);
-
 /// What this user is editing on the page on screen. Its items are the canvas
 /// items they hold or have open (a text draft, a lineup placement's pinned
 /// spot, a placement edit's lineups). Its groups are the lineup groups of
@@ -61,10 +58,10 @@ final myEditingProvider = Provider<PresenceEditing?>((ref) {
   // Not editorHeldEntitiesProvider: a press off the canvas (a sidebar drag)
   // does not stop the user changing the items they have open.
   final held = ref.watch(editorHeldCanvasItemsProvider);
-  final caption = ref.watch(openCaptionItemProvider);
+  final caption = ref.watch(captionCardProvider);
   final items = {
     ...held,
-    if (caption != null && caption.pageId == pageId) caption.id,
+    if (caption?.writingAt?.pageId == pageId) caption!.id,
   };
   final edit = ref.watch(lineUpProvider.select((s) => s.edit?.linkIds));
   final open = ref.watch(openLineUpItemsProvider);

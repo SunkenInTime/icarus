@@ -11,6 +11,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/canvas_clipboard_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
+import 'package:icarus/providers/caption_card_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
@@ -163,7 +164,9 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (isTypingInTextField()) return KeyEventResult.ignored;
+    if (isTypingInTextField() || ref.read(writingCaptionProvider)) {
+      return KeyEventResult.ignored;
+    }
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.space) {
       if (event is! KeyUpEvent) {

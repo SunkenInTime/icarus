@@ -9,6 +9,7 @@ import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
+import 'package:icarus/providers/caption_card_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
@@ -101,8 +102,9 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
     // The focus node sits inside Shortcuts, so shortcuts still fire when
     // the node itself holds focus. With the web semantics tree on, a click
     // on an empty part of the page focuses it.
+    final writingCaption = ref.watch(writingCaptionProvider);
     return Shortcuts(
-      shortcuts: editorCovered
+      shortcuts: editorCovered || writingCaption
           ? const {}
           : ShortcutInfo.globalShortcutsFor(
               ref.watch(appPreferencesProvider).customShortcutBindings,
