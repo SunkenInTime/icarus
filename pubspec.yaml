@@ -63,6 +63,10 @@ dependency_overrides:
   # See packages/custom_mouse_cursor/README.md.
   custom_mouse_cursor:
     path: packages/custom_mouse_cursor
+  # Vendored so the macOS drop view stops replacing the cursor.
+  # See packages/desktop_drop/ICARUS.md.
+  desktop_drop:
+    path: packages/desktop_drop
 
 dev_dependencies:
   crypto: ^3.0.7
