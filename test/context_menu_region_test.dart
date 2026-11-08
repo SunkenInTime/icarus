@@ -199,6 +199,55 @@ void main() {
     expect(controller.isOpen, isTrue);
   }, variant: windows);
 
+  testWidgets('a right-click inside a nested navigator opens at the pointer',
+      (tester) async {
+    await tester.pumpWidget(
+      ShadApp(
+        home: Padding(
+          padding: const EdgeInsets.only(left: 100, top: 50),
+          child: Navigator(
+            onGenerateRoute: (_) => PageRouteBuilder<void>(
+              pageBuilder: (_, __, ___) => Align(
+                alignment: Alignment.topLeft,
+                child: Padding(
+                  padding: const EdgeInsets.all(40),
+                  child: ContextMenuRegion(
+                    items: const [
+                      ShadContextMenuItem(child: Text('Inner item')),
+                    ],
+                    child: _target('inner'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await _rightClick(tester, 'inner');
+
+    final pointer = tester.getCenter(find.byKey(const ValueKey('inner')));
+    expect(_menuOf(tester, 'Inner item').topLeft, pointer);
+  }, variant: windows);
+
+  testWidgets('a menu opened from code after a right-click opens below',
+      (tester) async {
+    final controller = ShadContextMenuController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(_Menus(controller: controller));
+
+    await _rightClick(tester, 'first');
+    await tester.tapAt(const Offset(700, 100));
+    await tester.pumpAndSettle();
+    expect(find.text('First item'), findsNothing);
+    controller.show();
+    await tester.pumpAndSettle();
+
+    final region = tester.getRect(find.byKey(const ValueKey('first')));
+    expect(_menuOf(tester, 'First item').top, region.bottom + 4);
+  }, variant: windows);
+
   test('nothing builds a shadcn region, which centers its menu', () {
     final builders = <String>[
       for (final file in Directory('lib').listSync(recursive: true))

@@ -131,7 +131,9 @@ class _ContextMenuRegionState extends State<ContextMenuRegion> {
         child: ShadContextMenu(
           controller: pointer == null ? _controller : _idle,
           items: widget.items,
-          child: ShadGestureDetector(
+          // Not ShadGestureDetector: it gives positions in the nearest
+          // Navigator's overlay, and [ContextMenuAtPoint] takes global ones.
+          child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapDown: (_) => _controller.hide(),
             onSecondaryTapDown: (details) async {
