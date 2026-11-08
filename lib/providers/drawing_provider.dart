@@ -995,11 +995,20 @@ bool isNearDrawing(DrawingElement drawing, Offset point, double threshold) {
 bool drawingCrosses(DrawingElement drawing, Rect area) {
   final coordinates = CoordinateSystem.instance;
   Offset drawn(Offset world) => coordinates.coordinateToScreen(world);
-  if (drawing.boundingBox case final bounds?) {
+  // A freehand stroke is measured by the path it is painted with, which
+  // can lag its points after a resize.
+  final painted = switch (drawing) {
+    FreeDrawing() => drawing.path.getBounds(),
+    _ => switch (drawing.boundingBox) {
+        final bounds? => Rect.fromPoints(drawn(bounds.min), drawn(bounds.max)),
+        null => null,
+      },
+  };
+  if (painted != null) {
     final arrowHead = 8 * (drawing.thickness / Settings.defaultStrokeThickness);
-    final around = Rect.fromPoints(drawn(bounds.min), drawn(bounds.max))
-        .inflate(drawing.hasArrow ? arrowHead : 0);
-    if (!_meet(around, area)) return false;
+    if (!_meet(painted.inflate(drawing.hasArrow ? arrowHead : 0), area)) {
+      return false;
+    }
   }
   if (drawing is EllipseDrawing) {
     return _ellipseStrokeCrosses(
