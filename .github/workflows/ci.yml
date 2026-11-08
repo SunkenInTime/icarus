@@ -86,13 +86,13 @@ jobs:
   #   ci: skip
   #   ci: all
   #
-  # Lanes: analyze, test, web, replay, convex, presence, contract, bridge,
-  # gauntlet, desktop, separated by spaces or commas, unquoted. "skip" runs
-  # none of them. A word that is not a lane runs every lane. Lanes that guard
-  # production or the library (convex, presence, contract, gauntlet, desktop)
-  # still run when the PR changes their files, whatever the line says.
-  # Without the line, a PR runs analyze, test and web plus the lanes its
-  # changed files reach. The line is read when the run starts, so after
+  # Lanes: analyze, test, web, replay, convex, cost, presence, contract,
+  # bridge, gauntlet, desktop, separated by spaces or commas, unquoted. "skip"
+  # runs none of them. A word that is not a lane runs every lane. Lanes that
+  # guard production or the library (convex, cost, presence, contract,
+  # gauntlet, desktop) still run when the PR changes their files, whatever the
+  # line says. Without the line, a PR runs analyze, test and web plus the lanes
+  # its changed files reach. The line is read when the run starts, so after
   # editing it, rerun the run.
   changes:
     runs-on: ubuntu-latest
@@ -105,6 +105,7 @@ jobs:
       web: ${{ steps.lanes.outputs.web }}
       replay: ${{ steps.lanes.outputs.replay }}
       convex: ${{ steps.lanes.outputs.convex }}
+      cost: ${{ steps.lanes.outputs.cost }}
       presence: ${{ steps.lanes.outputs.presence }}
       contract: ${{ steps.lanes.outputs.contract }}
       bridge: ${{ steps.lanes.outputs.bridge }}
@@ -149,14 +150,14 @@ jobs:
               unknown=0
               for word in "${words[@]}"; do
                 case "$word" in
-                  analyze|test|web|replay|convex|presence|contract|bridge|gauntlet|desktop|skip) named+="$word " ;;
+                  analyze|test|web|replay|convex|cost|presence|contract|bridge|gauntlet|desktop|skip) named+="$word " ;;
                   all) named+="all "; full=true ;;
                   *) unknown=$((unknown + 1)) ;;
                 esac
               done
               printf 'The description names:%s\n' "$named"
               if (( unknown > 0 )); then
-                printf '::warning::The ci: line has %d word(s) that are not lanes; running every lane. Lanes: analyze test web replay convex presence contract bridge gauntlet desktop skip all.\n' "$unknown"
+                printf '::warning::The ci: line has %d word(s) that are not lanes; running every lane. Lanes: analyze test web replay convex cost presence contract bridge gauntlet desktop skip all.\n' "$unknown"
                 full=true
               fi
             fi
@@ -198,6 +199,10 @@ jobs:
           lane replay '^native/replay/'
           # The contract scripts in tool/ run in this lane, against its preview.
           lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$|tool/check_convex_shipped_clients(\.test)?\.mjs$|tool/convex_opt_in_results\.json$)' guarded
+          # A server change can make a cloud flow cost more without failing a
+          # test: the cost lane runs whenever the server, its packages or the
+          # run changes.
+          lane cost '^(convex/|package(-lock)?\.json$|tool/convex_cost/)' guarded
           lane presence '^presence/' guarded
           lane contract '^(convex/|tool/|lib/collab/)' guarded
           lane bridge '^third_party/'
@@ -368,6 +373,39 @@ jobs:
             -H "Authorization: Bearer $CONVEX_DEPLOY_KEY" \
             "https://api.convex.dev/v1/deployments/$name/delete"
           echo "Deleted Convex preview $name"
+
+  # What the common cloud flows cost on a real Convex backend (bytes read,
+  # live query re-runs, write conflicts), against tool/convex_cost/budgets.json.
+  # The backend runs on the runner: no deployment, no secrets.
+  cost:
+    needs: changes
+    if: needs.changes.outputs.cost == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Convex dependencies
+        run: npm ci
+
+      # The release is pinned in tool/convex_cost/lib/backend.mjs.
+      - name: Cache the Convex backend
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/convex/binaries
+          key: convex-local-backend-${{ runner.os }}-${{ hashFiles('tool/convex_cost/lib/backend.mjs') }}
+
+      - name: Check Convex cost budgets
+        run: node tool/convex_cost/run.mjs
 
   presence-worker:
     needs: changes
