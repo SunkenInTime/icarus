@@ -208,8 +208,10 @@ jobs:
           lane bridge '^third_party/'
           # Sync: the op path on the server (convex/ops.ts, what it imports
           # from convex/lib/, and the functions the gauntlet calls), the
-          # native client, the client's sync code, and the gauntlet itself.
-          lane gauntlet '^(lib/collab/|lib/providers/collab/|third_party/convex_(flutter|rs)/|convex/(ops|schema|strategy|strategies|folders|users)\.ts$|convex/lib/|tool/convex_client_gauntlet/runtime/)' guarded
+          # native client, and the gauntlet itself. Not lib/collab/: the
+          # gauntlet sends its own copy of the wire format, so the app's
+          # queue isn't under test yet.
+          lane gauntlet '^(third_party/convex_(flutter|rs)/|convex/(ops|schema|strategy|strategies|folders|users)\.ts$|convex/lib/|tool/convex_client_gauntlet/runtime/)' guarded
           # The desktop builds and the upgrade/rollback test, for changes to
           # what a shipped build finds in its Hive store, the installer, the
           # release scripts, or the test itself. The release runs the same
