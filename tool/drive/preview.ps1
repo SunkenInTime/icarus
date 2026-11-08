@@ -51,10 +51,13 @@ $api = 'https://api.convex.dev/v1'
 $headers = @{ Authorization = "Bearer $key" }
 
 function Find-Preview {
-  # A preview deploy key lists only this project's previews.
-  Invoke-RestMethod -Headers $headers "$api/projects/$projectId/list_deployments" |
-    Where-Object { $_.previewIdentifier -eq $Name } |
-    Select-Object -First 1
+  # A preview deploy key lists only this project's previews. Invoke-RestMethod
+  # passes a JSON array down the pipeline as one object, so enumerate it
+  # before filtering, or the filter matches every preview at once.
+  $previews = @(Invoke-RestMethod -Headers $headers "$api/projects/$projectId/list_deployments")
+  $found = @($previews | ForEach-Object { $_ } | Where-Object { $_.previewIdentifier -eq $Name })
+  if ($found.Count -gt 1) { throw "$($found.Count) previews are named $Name." }
+  $found | Select-Object -First 1
 }
 
 # npx convex reads these; a stray one would pick another deployment.
