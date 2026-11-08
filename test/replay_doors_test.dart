@@ -137,6 +137,28 @@ void main() {
       expect(doors.at(60000, round(60000)), isEmpty);
     });
 
+    test('keeps its pace when its move is cut short', () {
+      // A recording that ends 3 s into a close, then one that ends 2 s into
+      // an opening.
+      ReplayDoors cut(List<Map<String, Object?>> moves) =>
+          ReplayDoors(document(doors: moves), MapValue.ascent);
+      final shutting = cut([
+        {'actor': 'WindowShieldB1', 'startMs': 50000, 'endMs': 53000},
+      ]);
+      final opening = cut([
+        {'actor': 'WindowShieldB1', 'startMs': 40000, 'endMs': 45000},
+        {
+          'actor': 'WindowShieldB1',
+          'startMs': 50000,
+          'endMs': 52000,
+          'toRest': true,
+        },
+      ]);
+
+      expect(shutting.at(51500, round(51500))['ascent-b'], closeTo(0.3, 1e-9));
+      expect(opening.at(51000, round(51000))['ascent-b'], closeTo(0.8, 1e-9));
+    });
+
     test('cuts cones once it is half way down', () {
       final ids = [for (final door in mapDoorsOf(MapValue.ascent)) door.id];
 

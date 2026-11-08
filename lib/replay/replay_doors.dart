@@ -8,9 +8,19 @@ import 'package:icarus/replay/replay_document.dart';
 /// short, but it turns at this pace.
 const _spinMs = 10000;
 
+/// An Ascent door shutting or opening. A move can end sooner, when a round's
+/// reset or a recording's end cuts it short, but it moves at this pace.
+const _shutterMs = 5000;
+
 /// How far a move from [startMs] to [endMs] has gone at [timeMs], 0 to 1.
 double _progress(ReplayDoorMove move, int timeMs) => move.endMs > timeMs
     ? (timeMs - move.startMs) / (move.endMs - move.startMs)
+    : 1.0;
+
+/// How far an Ascent door has shut or opened at [timeMs], 0 to 1, at its own
+/// pace however soon its move ends.
+double _shutterProgress(ReplayDoorMove move, int timeMs) => move.endMs > timeMs
+    ? math.min(1.0, (timeMs - move.startMs) / _shutterMs)
     : 1.0;
 
 /// What a replay's doors do over time on one map.
@@ -49,8 +59,9 @@ class ReplayDoors {
           MapDoorKind.spin => null,
           MapDoorKind.drop => _progress(move, timeMs),
           MapDoorKind.breakable => 1.0,
-          MapDoorKind.shutter when move.toRest => 1 - _progress(move, timeMs),
-          MapDoorKind.shutter => _progress(move, timeMs),
+          MapDoorKind.shutter when move.toRest =>
+            1 - _shutterProgress(move, timeMs),
+          MapDoorKind.shutter => _shutterProgress(move, timeMs),
         };
       }
       if (amount != null && amount > 0) changed[door.id] = amount;
@@ -68,12 +79,12 @@ class ReplayDoors {
     for (var i = 0; i < _doors.length; i++) {
       final amount = changed[_doors[i].id];
       if (amount == null) continue;
-      final open = switch (_doors[i].kind) {
+      final changedPose = switch (_doors[i].kind) {
         MapDoorKind.spin => amount >= 0.5 && amount < 1.5,
         MapDoorKind.shutter => amount >= 0.5,
         MapDoorKind.drop || MapDoorKind.breakable => true,
       };
-      if (open) mask |= 1 << i;
+      if (changedPose) mask |= 1 << i;
     }
     return mask;
   }
