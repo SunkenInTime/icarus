@@ -123,12 +123,7 @@ impl Observer for Collector {
             let door = self
                 .door_groups
                 .entry(group_key)
-                .or_insert_with(|| {
-                    (
-                        Arc::clone(&field.group_path),
-                        door_group(&field.group_path),
-                    )
-                })
+                .or_insert_with(|| (Arc::clone(&field.group_path), door_group(&field.group_path)))
                 .1;
             match door {
                 DoorGroup::None => {}
@@ -144,10 +139,11 @@ impl Observer for Collector {
                     self.retain(size_of::<(u32, Arc<str>)>())?;
                 }
                 DoorGroup::Shutter => {
-                    if !self.shutter_names.contains_key(&field.actor_net_guid) {
+                    if let std::collections::btree_map::Entry::Vacant(entry) =
+                        self.shutter_names.entry(field.actor_net_guid)
+                    {
                         let name = shutter_actor(&field.group_path).unwrap_or_default();
-                        self.shutter_names
-                            .insert(field.actor_net_guid, Arc::from(name));
+                        entry.insert(Arc::from(name));
                         self.retain(size_of::<(u32, Arc<str>)>() + name.len())?;
                     }
                 }
@@ -358,8 +354,14 @@ mod tests {
             shutter_actor("WindowShieldB1_UAID_2C58B90EE7EFB17102_1686271982"),
             Some("WindowShieldB1"),
         );
-        assert_eq!(shutter_actor("WindowShield.WindowShield_C_ClassNetCache"), None);
-        assert_eq!(door_group("WindowShield.WindowShield_C_ClassNetCache"), DoorGroup::ShutterCalls);
+        assert_eq!(
+            shutter_actor("WindowShield.WindowShield_C_ClassNetCache"),
+            None
+        );
+        assert_eq!(
+            door_group("WindowShield.WindowShield_C_ClassNetCache"),
+            DoorGroup::ShutterCalls
+        );
         assert_eq!(door_group("WindowShieldA1"), DoorGroup::Shutter);
         assert_eq!(door_group("Drawbridge5"), DoorGroup::Moves);
     }

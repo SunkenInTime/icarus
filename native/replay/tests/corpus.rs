@@ -129,7 +129,10 @@ fn check_doors(id: &str, doc: &Value, rounds: &[Value]) {
             || door["actor"].as_str().unwrap().starts_with("WindowShield")
     };
     if !map.contains("/Jam/") && !map.contains("/Plummet/") {
-        assert!(moves.iter().all(|door| elsewhere(&door)), "{id}: doors on {map}");
+        assert!(
+            moves.iter().all(|door| elsewhere(&door)),
+            "{id}: doors on {map}"
+        );
     } else {
         assert!(!moves.is_empty(), "{id}: no door moved on {map}");
     }
