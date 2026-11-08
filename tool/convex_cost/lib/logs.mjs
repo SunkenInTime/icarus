@@ -57,13 +57,13 @@ export class LogStream {
 
 const MARKER = "health:ping";
 
-/// Runs [work] and returns the log entries of every function it made the
-/// backend run, live query re-runs included. The window is bounded by a
-/// marker call before and after, so it holds exactly what ran in between:
-/// the log stream lists executions in the order they finished, and every
-/// re-run a mutation causes finishes before the client sees the mutation's
-/// result (a Convex client resolves a mutation only once its live queries
-/// reflect it).
+/// Runs [work] and returns the log entries of what it made the backend run:
+/// its own calls and the re-runs of the writing client's live queries. The
+/// window is bounded by a marker call before and after. Every re-run a
+/// mutation causes on its own client finishes before that client sees the
+/// mutation's result (a Convex client resolves a mutation only once its
+/// live queries reflect it), so it lands before the closing marker. Work a
+/// mutation schedules counts only if it finishes inside the window.
 export async function measure(logs, http, work) {
   const start = await mark(logs, http);
   const value = await work();

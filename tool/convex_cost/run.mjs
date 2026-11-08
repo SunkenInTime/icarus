@@ -126,12 +126,18 @@ async function main() {
     const scenario = SCENARIOS[name];
     console.log(`\n${scenario.title} (${name}, ${result.seconds.toFixed(1)} s)`);
     printDetail(name, result);
+    for (const problem of result.problems) {
+      console.log(`  FAILED ${problem}`);
+      failures.push(`${scenario.title}: ${problem}`);
+    }
     const saved = budgets.scenarios[name]?.metrics ?? {};
     for (const [metric, value] of Object.entries(result.metrics)) {
       const entry = saved[metric];
       const label = METRICS[metric].label;
       if (!entry) {
-        console.log(`  ${label}: ${format(metric, value)} (no budget yet)`);
+        // A metric without a budget would pass whatever it cost.
+        console.log(`  OVER ${label}: ${format(metric, value)} (no budget in budgets.json)`);
+        failures.push(`${scenario.title}: ${label} has no budget in budgets.json`);
         continue;
       }
       const over = value > entry.budget;

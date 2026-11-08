@@ -198,8 +198,9 @@ jobs:
           # The contract scripts in tool/ run in this lane, against its preview.
           lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$)' guarded
           # A server change can make a cloud flow cost more without failing a
-          # test: the cost lane runs whenever the server or the run changes.
-          lane cost '^(convex/|tool/convex_cost/)' guarded
+          # test: the cost lane runs whenever the server, its packages or the
+          # run changes.
+          lane cost '^(convex/|package(-lock)?\.json$|tool/convex_cost/)' guarded
           lane presence '^presence/' guarded
           lane contract '^(convex/|tool/|lib/collab/)' guarded
           lane bridge '^third_party/'

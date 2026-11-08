@@ -35,6 +35,9 @@ class Device {
   constructor(env, user) {
     this.env = env;
     this.user = user;
+    // Live queries that failed after answering once: the flow then broke
+    // the page or list a user watches, whatever it cost.
+    this.errors = [];
     this.client = new ConvexClient(env.url, { skipConvexDeploymentUrlCheck: true, unsavedChangesWarning: false });
     // The admin key acting as [user]: the backend treats the calls as that
     // user's, as it does a signed-in app's.
@@ -67,12 +70,19 @@ class Device {
   /// A live query; resolves once it has answered.
   async watch(name, args) {
     let settle;
+    let answered = false;
     const first = new Promise((resolve, reject) => (settle = { resolve, reject }));
     const unsubscribe = this.client.onUpdate(
       makeFunctionReference(name),
       this.args(name, args),
-      (value) => settle.resolve(value),
-      (error) => settle.reject(error),
+      (value) => {
+        answered = true;
+        settle.resolve(value);
+      },
+      (error) => {
+        if (answered) this.errors.push(`${name}: ${error.message}`);
+        else settle.reject(error);
+      },
     );
     await first;
     return unsubscribe;
@@ -329,6 +339,9 @@ export const SCENARIOS = {
       const { editor } = library;
       const page = editor.pages[1];
       const second = new Device(env, OWNER);
+      // Connected and signed in before the measured sends, so both devices
+      // send from the first call.
+      await second.query("strategy:getShell", { strategyPublicId: editor.publicId });
       const items = editor.elements[page];
       const revisions = await Promise.all(items.slice(0, 20).map((add) => elementRevision(owner, editor, page, add.elementPublicId)));
       const measured = await measure(owner.env.logs, owner.env.http, () => {
@@ -345,8 +358,22 @@ export const SCENARIOS = {
       });
       await second.close();
       const summary = summarize(measured.entries);
+      // Zero retries proves nothing unless batches ran at the same time.
+      const runs = measured.entries
+        .filter((entry) => entry.identifier === "ops:applyBatch")
+        .map((entry) => [entry.executionTimestamp, entry.timestamp]);
+      let overlapping = 0;
+      for (let i = 0; i < runs.length; i++) {
+        for (let j = i + 1; j < runs.length; j++) {
+          if (runs[i][0] < runs[j][1] && runs[j][0] < runs[i][1]) overlapping++;
+        }
+      }
       return {
         summary,
+        problems: [
+          ...second.errors,
+          ...(overlapping === 0 ? ["No two applyBatch runs overlapped, so the flow tested no contention"] : []),
+        ],
         metrics: {
           conflictRetries: summary.total.conflictRetries,
         },
@@ -383,8 +410,18 @@ export async function runScenarios({ url, adminKey, projectDir, logs, names }) {
     const at = Date.now();
     // Each scenario draws from its own generator, so leaving one out
     // doesn't change what another writes.
-    results[name] = await scenario.run({ owner, rng: seeded(hash(name)), library, env });
-    results[name].seconds = (Date.now() - at) / 1000;
+    owner.errors = [];
+    const result = await scenario.run({ owner, rng: seeded(hash(name)), library, env });
+    result.seconds = (Date.now() - at) / 1000;
+    // A cheap flow that failed is not a pass.
+    result.problems = [
+      ...(result.problems ?? []),
+      ...owner.errors,
+      ...[...result.summary.byFunction]
+        .filter(([, row]) => row.failures > 0)
+        .map(([fn, row]) => `${fn} failed ${row.failures} time(s)`),
+    ];
+    results[name] = result;
   }
   await owner.close();
   return results;
