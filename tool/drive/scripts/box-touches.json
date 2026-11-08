@@ -1,0 +1,46 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1440, 900]},
+  {"newLocal": "ascent", "name": "Box touches {run}"},
+  {"wait": 4},
+  {"tapIcon": "x", "optional": true},
+  {"tapText": "Box touches {run}"},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"addImage": "{here}/../../../assets/logo.png", "at": [300, 450]},
+  {"wait": 2},
+  {"addAgent": "a1-{run}", "at": [150, 450]},
+  {"tapIcon": "pencil"},
+  {"wait": 1},
+  {"path": [[600, 250], [675, 350], [750, 450], [825, 550], [900, 650]]},
+  {"wait": 1},
+  {"tapIcon": "pencil"},
+  {"wait": 1},
+  {"shot": "{out}/0-canvas.png"},
+  {"wait": 1},
+
+  {"path": [[340, 300], [440, 420]], "held": "{out}/1-picture-box.png"},
+  {"wait": 1},
+  {"shot": "{out}/1-picture.png"},
+  {"expectSelected": 1},
+
+  {"path": [[820, 280], [890, 400]], "held": "{out}/2-line-bounds-box.png"},
+  {"wait": 1},
+  {"shot": "{out}/2-line-bounds.png"},
+  {"expectSelected": 0},
+
+  {"path": [[730, 400], [790, 470]], "held": "{out}/3-line-stroke-box.png"},
+  {"wait": 1},
+  {"shot": "{out}/3-line-stroke.png"},
+  {"expectSelected": 1},
+
+  {"path": [[160, 460], [230, 530]], "held": "{out}/4-agent-corner-box.png"},
+  {"wait": 1},
+  {"shot": "{out}/4-agent-corner.png"},
+  {"expectSelected": 1},
+
+  {"key": "escape"},
+  {"wait": 1},
+  {"exit": 1}
+]

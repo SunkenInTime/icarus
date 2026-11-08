@@ -989,6 +989,149 @@ bool isNearDrawing(DrawingElement drawing, Offset point, double threshold) {
   };
 }
 
+/// Whether [drawing]'s stroke passes through [area] as the canvas paints
+/// it: smoothed, with its arrowhead. [area] is in the coordinates drawings
+/// are painted in, the attack side's. What a selection box takes.
+bool drawingCrosses(DrawingElement drawing, Rect area) {
+  final coordinates = CoordinateSystem.instance;
+  Offset drawn(Offset world) => coordinates.coordinateToScreen(world);
+  // A freehand stroke is measured by the path it is painted with, which
+  // can lag its points after a resize.
+  final painted = switch (drawing) {
+    FreeDrawing() => drawing.path.getBounds(),
+    _ => switch (drawing.boundingBox) {
+        final bounds? => Rect.fromPoints(drawn(bounds.min), drawn(bounds.max)),
+        null => null,
+      },
+  };
+  if (painted != null) {
+    final arrowHead = 8 * (drawing.thickness / Settings.defaultStrokeThickness);
+    if (!_meet(painted.inflate(drawing.hasArrow ? arrowHead : 0), area)) {
+      return false;
+    }
+  }
+  if (drawing is EllipseDrawing) {
+    return _ellipseStrokeCrosses(
+      Rect.fromPoints(drawn(drawing.start), drawn(drawing.end)),
+      area,
+    );
+  }
+  final List<List<Offset>> strokes = switch (drawing) {
+    Line() => [
+        [drawn(drawing.lineStart), drawn(drawing.lineEnd)],
+        if (drawing.hasArrow)
+          ..._arrowHead(
+            drawn(drawing.lineStart),
+            drawn(drawing.lineEnd),
+            drawing.thickness,
+          ),
+      ],
+    // Fewer than two points paint nothing.
+    FreeDrawing(:final listOfPoints) when listOfPoints.length >= 2 => [
+        ..._alongPath(drawing.path),
+        if (drawing.hasArrow)
+          ..._arrowHead(
+            drawn(listOfPoints[listOfPoints.length - 2]),
+            drawn(listOfPoints.last),
+            drawing.thickness,
+          ),
+      ],
+    RectangleDrawing() => [
+        _corners(Rect.fromPoints(drawn(drawing.start), drawn(drawing.end))),
+      ],
+    _ => const [],
+  };
+  return strokes.any((stroke) => _polylineCrosses(stroke, area));
+}
+
+/// Whether [a] and [b] share a point, edges included.
+bool _meet(Rect a, Rect b) =>
+    a.left <= b.right &&
+    b.left <= a.right &&
+    a.top <= b.bottom &&
+    b.top <= a.bottom;
+
+List<List<Offset>> _arrowHead(Offset from, Offset to, double thickness) {
+  final (wing1, wing2) = arrowHeadWings(from, to, thickness);
+  return [
+    [to, wing1],
+    [to, wing2],
+  ];
+}
+
+/// [path] as lines through points two pixels apart along it, one per
+/// contour.
+List<List<Offset>> _alongPath(Path path) => [
+      for (final contour in path.computeMetrics())
+        [
+          for (var at = 0.0; at < contour.length; at += 2)
+            contour.getTangentForOffset(at)!.position,
+          contour.getTangentForOffset(contour.length)!.position,
+        ],
+    ];
+
+/// [rect]'s outline as a closed polyline.
+List<Offset> _corners(Rect rect) => [
+      rect.topLeft,
+      rect.topRight,
+      rect.bottomRight,
+      rect.bottomLeft,
+      rect.topLeft,
+    ];
+
+bool _polylineCrosses(List<Offset> points, Rect area) {
+  for (var i = 0; i < points.length - 1; i++) {
+    if (_segmentCrosses(points[i], points[i + 1], area)) return true;
+  }
+  return false;
+}
+
+/// Whether any of the segment from [a] to [b] is inside [area]: clipped to
+/// each of the area's four sides in turn, some of it is left.
+bool _segmentCrosses(Offset a, Offset b, Rect area) {
+  final d = b - a;
+  var enters = 0.0;
+  var leaves = 1.0;
+  bool clip(double toward, double room) {
+    if (toward == 0) return room >= 0;
+    final t = room / toward;
+    if (toward < 0) {
+      enters = max(enters, t);
+    } else {
+      leaves = min(leaves, t);
+    }
+    return enters <= leaves;
+  }
+
+  return clip(-d.dx, a.dx - area.left) &&
+      clip(d.dx, area.right - a.dx) &&
+      clip(-d.dy, a.dy - area.top) &&
+      clip(d.dy, area.bottom - a.dy);
+}
+
+/// Whether [area] meets the ellipse in [rect] and isn't wholly inside it.
+/// Scaled so the ellipse is the unit circle, [area] stays a rectangle.
+bool _ellipseStrokeCrosses(Rect rect, Rect area) {
+  if (rect.width == 0 || rect.height == 0) {
+    return _segmentCrosses(rect.topLeft, rect.bottomRight, area);
+  }
+  final rx = rect.width / 2;
+  final ry = rect.height / 2;
+  final unit = Rect.fromLTRB(
+    (area.left - rect.center.dx) / rx,
+    (area.top - rect.center.dy) / ry,
+    (area.right - rect.center.dx) / rx,
+    (area.bottom - rect.center.dy) / ry,
+  );
+  final nearest = Offset(
+    0.0.clamp(unit.left, unit.right),
+    0.0.clamp(unit.top, unit.bottom),
+  );
+  if (nearest.distanceSquared > 1) return false;
+  return [unit.topLeft, unit.topRight, unit.bottomRight, unit.bottomLeft]
+      .any((corner) => corner.distanceSquared >= 1);
+}
+
 double _distanceToLineSegment(Offset p, Offset a, Offset b) {
   // If a and b are the same point, just return distance to that point
   if (a == b) return (p - a).distance;

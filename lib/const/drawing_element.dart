@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/bounding_box.dart';
@@ -8,6 +10,20 @@ import 'package:icarus/const/traversal_speed.dart';
 import 'package:json_annotation/json_annotation.dart';
 
 part "drawing_element.g.dart";
+
+/// The two strokes of the arrowhead drawn at [to] on a stroke coming from
+/// [from], [thickness] wide, as the ends of each stroke away from [to], in
+/// the coordinates [from] and [to] are in.
+(Offset, Offset) arrowHeadWings(Offset from, Offset to, double thickness) {
+  final size = 8 * (thickness / Settings.defaultStrokeThickness);
+  const spread = math.pi / 4;
+  final angle = math.atan2(to.dy - from.dy, to.dx - from.dx);
+  Offset wing(double turn) => Offset(
+        to.dx - size * math.cos(angle + turn),
+        to.dy - size * math.sin(angle + turn),
+      );
+  return (wing(-spread), wing(spread));
+}
 
 abstract class DrawingElement {
   @JsonKey(
