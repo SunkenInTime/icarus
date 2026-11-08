@@ -1074,6 +1074,8 @@ class _PageRowState extends State<_PageRow> {
     final showActions =
         _hovered || widget.active || widget.transitionProgress != null;
     final isRaised = widget.active && fillProgress == null;
+    // The chosen page, or one the page change's violet sweep is crossing.
+    final onViolet = widget.active || fillProgress != null;
     final row = MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -1168,6 +1170,7 @@ class _PageRowState extends State<_PageRow> {
                               builder: (context) => const Text("Rename"),
                               child: ShadIconButton.ghost(
                                 width: 24,
+                                enabled: widget.canRename,
                                 hoverBackgroundColor: Colors.transparent,
                                 foregroundColor: widget.canRename
                                     ? Settings.toolbarGlyph
@@ -1181,15 +1184,16 @@ class _PageRowState extends State<_PageRow> {
                             ShadTooltip(
                               builder: (context) => const Text("Delete"),
                               // Red is barely there on violet (1.5:1), so on
-                              // the chosen page the trash lights up as a red
+                              // a violet row the trash lights up as a red
                               // button instead.
                               child: ShadIconButton.ghost(
                                 width: 24,
-                                height: widget.active ? 24 : null,
-                                hoverBackgroundColor: widget.active
+                                height: onViolet ? 24 : null,
+                                enabled: !widget.disableDelete,
+                                hoverBackgroundColor: onViolet
                                     ? colors.destructive
                                     : Colors.transparent,
-                                hoverForegroundColor: widget.active
+                                hoverForegroundColor: onViolet
                                     ? colors.foreground
                                     : colors.destructive,
                                 foregroundColor: widget.disableDelete
