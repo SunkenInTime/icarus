@@ -19,6 +19,8 @@ use tokio::{
         broadcast,
         mpsc,
         oneshot,
+        watch,
+        Notify,
     },
     task::JoinHandle,
 };
@@ -93,6 +95,8 @@ pub struct ConvexClient {
     listen_handle: Option<Arc<JoinHandle<Infallible>>>,
     request_sender: mpsc::UnboundedSender<ClientRequest>,
     watch_receiver: broadcast::Receiver<QueryResults>,
+    reconnect_requested: Arc<Notify>,
+    auth_refused: watch::Receiver<bool>,
 }
 
 /// Clone the [`ConvexClient`], sharing the connection and outstanding
@@ -103,6 +107,8 @@ impl Clone for ConvexClient {
             listen_handle: self.listen_handle.clone(),
             request_sender: self.request_sender.clone(),
             watch_receiver: self.watch_receiver.resubscribe(),
+            reconnect_requested: self.reconnect_requested.clone(),
+            auth_refused: self.auth_refused.clone(),
         }
     }
 }
@@ -160,17 +166,23 @@ impl ConvexClient {
         )
         .await?;
 
+        let reconnect_requested = Arc::new(Notify::new());
+        let (auth_refused_sender, auth_refused) = watch::channel(false);
         let listen_handle = tokio::spawn(worker(
             response_receiver,
             request_receiver,
             watch_sender,
             base_client,
             protocol,
+            reconnect_requested.clone(),
+            auth_refused_sender,
         ));
         let client = ConvexClient {
             listen_handle: Some(Arc::new(listen_handle)),
             request_sender,
             watch_receiver,
+            reconnect_requested,
+            auth_refused,
         };
         Ok(client)
     }
@@ -425,10 +437,23 @@ impl ConvexClient {
 
     /// Force the client's WebSocket to reconnect and replay its current auth,
     /// subscriptions, and in-flight mutations.
+    ///
+    /// If the client is waiting to retry auth the server refused, it retries
+    /// now instead of when the wait ends.
     pub async fn reconnect_now(&mut self, reason: &str) {
         self.request_sender
             .send(ClientRequest::Reconnect(reason.to_owned()))
             .expect("INTERNAL BUG: Worker has gone away");
+        self.reconnect_requested.notify_waiters();
+    }
+
+    /// Whether the server keeps refusing this client's auth. It turns true
+    /// once the server has refused the token from the auth callback (or set
+    /// with [`ConvexClient::set_auth`]) several times in a row, and false
+    /// again once it accepts one. The client keeps retrying either way, with
+    /// longer waits while refused.
+    pub fn watch_auth_refused(&self) -> watch::Receiver<bool> {
+        self.auth_refused.clone()
     }
 
     /// Set admin auth for use when calling Convex functions as a deployment
@@ -541,6 +566,8 @@ pub mod tests {
     use tokio::sync::{
         broadcast,
         mpsc,
+        watch,
+        Notify,
     };
 
     use super::ConvexClient;
@@ -582,18 +609,24 @@ pub mod tests {
             .await?;
             let base_client = BaseConvexClient::new();
 
+            let reconnect_requested = Arc::new(Notify::new());
+            let (auth_refused_sender, auth_refused) = watch::channel(false);
             let listen_handle = tokio::spawn(worker(
                 response_receiver,
                 request_receiver,
                 watch_sender,
                 base_client,
                 test_protocol.clone(),
+                reconnect_requested.clone(),
+                auth_refused_sender,
             ));
 
             let client = ConvexClient {
                 listen_handle: Some(Arc::new(listen_handle)),
                 request_sender,
                 watch_receiver,
+                reconnect_requested,
+                auth_refused,
             };
             Ok((client, test_protocol))
         }

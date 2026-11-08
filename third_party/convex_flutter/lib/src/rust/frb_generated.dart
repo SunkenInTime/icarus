@@ -2436,6 +2436,11 @@ class MobileConvexClientImpl extends RustOpaque implements MobileConvexClient {
   /// The callback is owned by the upstream Convex client so authentication
   /// and query state are replayed together after a disconnect.
   ///
+  /// `on_auth_change(false)` reports that the client holds no session the
+  /// server accepts: `fetch_token` returned no token, or the server keeps
+  /// refusing the tokens it returns. `on_auth_change(true)` follows once a
+  /// token is accepted again.
+  ///
   /// Returns an AuthHandle that can be used to dispose the auth session.
   Future<AuthHandle> setAuthWithRefresh({
     required FutureOr<String?> Function() fetchToken,
