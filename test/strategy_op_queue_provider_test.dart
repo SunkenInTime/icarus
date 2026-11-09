@@ -2592,6 +2592,60 @@ void main() {
       expect(acked.single.restored, isTrue);
     });
 
+    test(
+        'an edit drawn fresh after a reset during an ack is not taken as '
+        'made behind the acked change', () async {
+      final store = _GatedRemoveStore();
+      final repository = _SequencedAckRepository();
+      final container =
+          _cloudQueueContainer(store: store, repository: repository);
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      Map<String, dynamic> agent(String position, String weapon) => {
+            'kind': 'agent',
+            'payloadVersion': 1,
+            'data': {'id': 'element-1', 'position': position, 'weapon': weapon},
+          };
+      // The user moves the agent from A to B.
+      await notifier.enqueue(ElementPatchOp(
+        opId: 'move',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: agent('B', 'none'),
+        sortIndex: 0,
+        expectedElementRevision: 1,
+        merge: const FieldMerge(fields: ['position'], base: {'position': 'A'}),
+      ));
+      unawaited(notifier.flushNow());
+      await repository.firstStarted.future;
+      repository.completeFirst(const AppliedOpAck(opId: 'move', revision: 2));
+      await store.removeStarted.future;
+      // The strategy is opened again while the move's answer is stored: the
+      // canvas is drawn fresh from a read that still shows A, and the user
+      // changes only the weapon.
+      notifier.forgetCanvasWork();
+      store.releaseRemove.complete();
+      await Future<void>.delayed(Duration.zero);
+      await notifier.enqueue(ElementPatchOp(
+        opId: 'weapon',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: agent('A', 'vandal'),
+        sortIndex: 0,
+        expectedElementRevision: 1,
+        merge: const FieldMerge(fields: ['weapon'], base: {'weapon': 'none'}),
+      ));
+      unawaited(notifier.flushNow());
+      await repository.secondStarted.future;
+
+      // The weapon change names only the weapon: it must not write A over
+      // the move this canvas never showed.
+      final sent = repository.calls[1].single;
+      expect(sent.merge!.fields, ['weapon']);
+      repository.completeSecond(AppliedOpAck(opId: sent.opId, revision: 3));
+    });
+
     test('discarding refused work forgets it as the canvas\'s', () async {
       final container = _cloudQueueContainer(
         store: MemoryDurableStrategyOutboxStore(),

@@ -83,6 +83,32 @@ void main() {
     expect(server.deleted, isFalse);
   });
 
+  test('a landed change is remembered only until the canvas catches up',
+      () async {
+    final server = _Server(row: agent('A', 'none'));
+    final (_, queue) = _start(MemoryDurableStrategyOutboxStore(), server);
+
+    await queue.enqueue(
+      edit('move', agent('B', 'none'), base: {'position': 'A'}, revision: 1),
+    );
+    await queue.flushNow();
+    expect(queue.landedCanvasWorkCount, 1);
+    // The canvas heard the move landed at 2, and edits from there.
+    await queue.enqueue(edit(
+      'weapon',
+      agent('B', 'ghost'),
+      base: {'weapon': 'none'},
+      revision: 2,
+    ));
+    expect(queue.landedCanvasWorkCount, 0);
+    await queue.flushNow();
+    expect(queue.landedCanvasWorkCount, 1);
+    // The canvas is drawn fresh: nothing it drew before is its own now.
+    queue.forgetCanvasWork();
+    expect(queue.landedCanvasWorkCount, 0);
+    expect(server.row, agent('B', 'ghost'));
+  });
+
   test('an edit made while an answer is stored keeps the queued field',
       () async {
     final store = _HoldPromotion();
