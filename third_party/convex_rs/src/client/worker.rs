@@ -322,9 +322,9 @@ mod tests {
         reconnects: Arc<Mutex<Vec<String>>>,
         /// What the server does on each new connection.
         server: Arc<Mutex<Server>>,
-        /// How long a mutation takes to finish sending once it's on the
-        /// socket, as a slow one would.
-        mutation_send_time: Arc<Mutex<Duration>>,
+        /// How long a mutation or action takes to finish sending once it's
+        /// on the socket, as a slow one would.
+        request_send_time: Arc<Mutex<Duration>>,
     }
 
     #[derive(Clone, Copy)]
@@ -344,7 +344,7 @@ mod tests {
                 sent: Arc::default(),
                 reconnects: Arc::default(),
                 server: Arc::new(Mutex::new(Server::Quiet)),
-                mutation_send_time: Arc::default(),
+                request_send_time: Arc::default(),
             }
         }
 
@@ -387,10 +387,13 @@ mod tests {
         }
 
         async fn send(&mut self, message: ClientMessage) -> anyhow::Result<()> {
-            let is_mutation = matches!(message, ClientMessage::Mutation { .. });
+            let is_request = matches!(
+                message,
+                ClientMessage::Mutation { .. } | ClientMessage::Action { .. }
+            );
             self.sent.lock().push(message);
-            if is_mutation {
-                let send_time = *self.mutation_send_time.lock();
+            if is_request {
+                let send_time = *self.request_send_time.lock();
                 tokio::time::sleep(send_time).await;
             }
             Ok(())
@@ -579,7 +582,7 @@ mod tests {
     ) -> anyhow::Result<()> {
         let (response_sender, response_receiver) = mpsc::channel(1);
         let protocol = FakeProtocol::new(response_sender.clone());
-        *protocol.mutation_send_time.lock() = Duration::from_millis(100);
+        *protocol.request_send_time.lock() = Duration::from_millis(100);
         *protocol.server.lock() = Server::AcceptAuth;
         let worker = start_worker(&protocol, response_receiver);
         worker
@@ -641,6 +644,56 @@ mod tests {
         let result = tokio::time::timeout(Duration::from_secs(2), result).await??;
         worker.handle.abort();
         assert_eq!(result, FunctionResult::Value(Value::from("applied")));
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_action_sent_as_the_connection_fails_is_answered_after_the_reconnect(
+    ) -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        *protocol.request_send_time.lock() = Duration::from_millis(100);
+        *protocol.server.lock() = Server::AcceptAuth;
+        let worker = start_worker(&protocol, response_receiver);
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(changing_token())))?;
+        protocol.wait_for_sent(1).await?;
+
+        // While the action is being sent, the server refuses the token and
+        // the connection fails.
+        let (tx, rx) = oneshot::channel();
+        worker.requests.send(ClientRequest::Action(
+            ActionRequest {
+                udf_path: UdfPath::from_str("images:generateUploadUrl")?,
+                args: BTreeMap::new(),
+            },
+            tx,
+        ))?;
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        response_sender
+            .send(ProtocolResponse::ServerMessage(auth_error()))
+            .await?;
+
+        let result = tokio::time::timeout(Duration::from_secs(2), rx)
+            .await?
+            .map_err(|_| anyhow::anyhow!("the caller was told the action failed"))?;
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(protocol.reconnects.lock().len(), 1);
+        assert_eq!(protocol.sent_actions(), 2, "{:?}", protocol.sent.lock());
+
+        response_sender
+            .send(ProtocolResponse::ServerMessage(
+                ServerMessage::ActionResponse {
+                    request_id: 0,
+                    result: FunctionResult::Value(Value::from("upload url")).into(),
+                    log_lines: LogLinesMessage(vec![]),
+                },
+            ))
+            .await?;
+        let result = tokio::time::timeout(Duration::from_secs(2), result).await??;
+        worker.handle.abort();
+        assert_eq!(result, FunctionResult::Value(Value::from("upload url")));
         Ok(())
     }
 
