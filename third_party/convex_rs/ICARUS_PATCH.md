@@ -27,11 +27,16 @@ resets and skips its independent network backoff for those attempts. Without
 that coordination, the two workers can each back off the same rejected socket
 and still strand a fresh token for up to 15 seconds.
 
-Before a reconnect, the worker drains responses buffered by the connection it
-is replacing. Auth rejection can otherwise be followed by a stale socket-close
-failure during the retry delay; replaying that old failure on the new connection
-starts a second backoff and can also apply old query-set transitions after the
-client has rebuilt its versions.
+The WebSocket worker answers every reconnect request with
+`ProtocolResponse::ReconnectAcknowledged` once it stops reading the connection
+it replaces. After asking for a reconnect, the client worker handles everything
+that arrived before that acknowledgement against the old state, before it
+resends, and ignores its errors. An action or mutation the old connection
+already answered completes instead of being sent again, and the old socket's
+close failure or stale transitions can't start a second reconnect. This is the
+approach of convex/convex-rs#23. It replaces an earlier Icarus patch that
+dropped whatever was buffered before reconnecting: that raced with the old
+socket's late messages and threw away finished action results.
 
 WebSocket reconnects now retain one session ID for the lifetime of the client
 and increment `connection_count` after every successful socket open, including

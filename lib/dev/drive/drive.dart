@@ -57,6 +57,8 @@
 //                                      the id lastImage is the newest picture
 // Library and cloud
 //   {"signIn": true}                   ICARUS_DRIVE_EMAIL / ICARUS_DRIVE_PASSWORD
+//   {"refreshSession": true}           refreshes the sign-in, as Supabase does
+//                                      about once an hour
 //   {"newLocal": map, "name": n}       {"newCloud": name, "map": m?}
 //   {"newCloudFolder": name}           {"openCloudFolder": name}
 //   {"shareLink": role, "file": path}  makes a link to the open strategy and
@@ -1185,6 +1187,8 @@ Future<void> _run(Map<String, dynamic> step) async {
         if (error != null) throw StateError(error);
       }
       await _waitFor(() => c.read(authProvider).isConvexUserReady, 60);
+    case 'refreshSession':
+      await Supabase.instance.client.auth.refreshSession();
     case 'newLocal':
       await c.read(strategyProvider.notifier).createNewStrategy(
             map: MapValue.values.byName(value as String),

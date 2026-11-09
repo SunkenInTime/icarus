@@ -145,15 +145,6 @@ pub async fn worker<T: SyncProtocol>(
         );
         tokio::time::sleep(delay).await;
 
-        // Everything currently buffered came from the connection we are about
-        // to replace. In particular, an auth error can be followed by the old
-        // socket closing and queuing ProtocolFailure while this worker is in
-        // its retry delay. Replaying that stale failure after the new socket is
-        // up starts a second, unrelated backoff and can leave fresh auth behind
-        // it. Query and mutation state is rebuilt below, so discard the old
-        // connection's buffered responses before requesting the replacement.
-        while protocol_response_receiver.try_recv().is_ok() {}
-
         // Tell the sync protocol to reconnect followed by an immediate resend of
         // ongoing queries/mutations. It's important these happen together to
         // ensure mutation ordering. If an auth token fetcher is stored,
@@ -165,6 +156,25 @@ pub async fn worker<T: SyncProtocol>(
                 auth_retry: auth_recovery.active,
             })
             .await;
+        // Until the protocol acknowledges the reconnect, responses still come
+        // from the connection being replaced. Handle them against the state
+        // they belong to, before it's resent below, so an action or mutation
+        // that connection already answered completes instead of being sent
+        // again. Ignore their errors: that connection is already being
+        // replaced. Otherwise its failure (the server closes the socket right
+        // after an AuthError, say) would reconnect a second time, and its
+        // transitions would hit the new state.
+        while let Some(protocol_response) = protocol_response_receiver.recv().await {
+            if let ProtocolResponse::ReconnectAcknowledged = protocol_response {
+                break;
+            }
+            let _ = handle_protocol_response(
+                &mut base_client,
+                &mut watch_sender,
+                protocol_response,
+                &mut auth_recovery,
+            );
+        }
         let auth_token_changed = base_client.resend_ongoing_queries_mutations().await;
         if auth_recovery.active && auth_token_changed {
             auth_recovery.fresh_token_in_flight = true;
@@ -176,7 +186,45 @@ pub async fn worker<T: SyncProtocol>(
 
 #[cfg(test)]
 mod tests {
-    use super::is_auth_rejection;
+    use std::{
+        collections::BTreeMap,
+        str::FromStr,
+        sync::Arc,
+        time::Duration,
+    };
+
+    use async_trait::async_trait;
+    use convex_sync_types::{
+        ClientMessage,
+        LogLinesMessage,
+        UdfPath,
+    };
+    use parking_lot::Mutex;
+    use tokio::sync::{
+        broadcast,
+        mpsc,
+        oneshot,
+    };
+    use url::Url;
+
+    use super::{
+        is_auth_rejection,
+        worker,
+        ActionRequest,
+        ClientRequest,
+    };
+    use crate::{
+        base_client::BaseConvexClient,
+        sync::{
+            ProtocolResponse,
+            ReconnectRequest,
+            ServerMessage,
+            SyncProtocol,
+            WebSocketState,
+        },
+        value::Value,
+        FunctionResult,
+    };
 
     #[test]
     fn only_server_auth_errors_use_the_auth_retry_path() {
@@ -185,6 +233,184 @@ mod tests {
         ));
         assert!(!is_auth_rejection("ProtocolFailure"));
         assert!(!is_auth_rejection("convex_flutter:manual"));
+    }
+
+    /// Records what the worker sends and the reconnects it asks for. Like the
+    /// WebSocket worker, it delivers responses still read from the old
+    /// connection after a reconnect is requested, then acknowledges it.
+    #[derive(Clone)]
+    struct FakeProtocol {
+        response_sender: mpsc::Sender<ProtocolResponse>,
+        late_responses: Arc<Mutex<Vec<ProtocolResponse>>>,
+        sent: Arc<Mutex<Vec<ClientMessage>>>,
+        reconnects: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl FakeProtocol {
+        fn new(response_sender: mpsc::Sender<ProtocolResponse>) -> Self {
+            Self {
+                response_sender,
+                late_responses: Arc::default(),
+                sent: Arc::default(),
+                reconnects: Arc::default(),
+            }
+        }
+
+        async fn wait_for_sent(&self, n: usize) -> anyhow::Result<()> {
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while self.sent.lock().len() < n {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await?;
+            Ok(())
+        }
+
+        fn sent_actions(&self) -> usize {
+            self.sent
+                .lock()
+                .iter()
+                .filter(|message| matches!(message, ClientMessage::Action { .. }))
+                .count()
+        }
+    }
+
+    #[async_trait]
+    impl SyncProtocol for FakeProtocol {
+        async fn open(
+            _ws_url: Url,
+            _on_response: mpsc::Sender<ProtocolResponse>,
+            _on_state_change: Option<mpsc::Sender<WebSocketState>>,
+            _client_id: &str,
+        ) -> anyhow::Result<Self> {
+            unimplemented!()
+        }
+
+        async fn send(&mut self, message: ClientMessage) -> anyhow::Result<()> {
+            self.sent.lock().push(message);
+            Ok(())
+        }
+
+        async fn reconnect(&mut self, request: ReconnectRequest) {
+            self.reconnects.lock().push(request.reason);
+            let late_responses = std::mem::take(&mut *self.late_responses.lock());
+            let response_sender = self.response_sender.clone();
+            tokio::spawn(async move {
+                for response in late_responses {
+                    let _ = response_sender.send(response).await;
+                }
+                let _ = response_sender
+                    .send(ProtocolResponse::ReconnectAcknowledged)
+                    .await;
+            });
+        }
+    }
+
+    fn start_worker(
+        protocol: &FakeProtocol,
+        response_receiver: mpsc::Receiver<ProtocolResponse>,
+    ) -> (
+        mpsc::UnboundedSender<ClientRequest>,
+        tokio::task::JoinHandle<std::convert::Infallible>,
+    ) {
+        let (request_sender, request_receiver) = mpsc::unbounded_channel();
+        let (watch_sender, _watch_receiver) = broadcast::channel(1);
+        let handle = tokio::spawn(worker(
+            response_receiver,
+            request_receiver,
+            watch_sender,
+            BaseConvexClient::new(),
+            protocol.clone(),
+        ));
+        (request_sender, handle)
+    }
+
+    #[tokio::test]
+    async fn test_old_socket_failure_after_auth_error_reconnects_once() -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        // The server closes the socket right after rejecting the token, and
+        // the WebSocket worker reports that after the reconnect is requested.
+        protocol
+            .late_responses
+            .lock()
+            .push(ProtocolResponse::Failure);
+        let (_request_sender, worker) = start_worker(&protocol, response_receiver);
+
+        response_sender
+            .send(ProtocolResponse::ServerMessage(ServerMessage::AuthError {
+                error_message: "Token expired".into(),
+                base_version: None,
+                auth_update_attempted: Some(false),
+            }))
+            .await?;
+
+        // Wait for the state to be resent on the new connection, then for
+        // longer than the auth retry delay before a second reconnect.
+        protocol.wait_for_sent(1).await?;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        worker.abort();
+        let reconnects = protocol.reconnects.lock();
+        assert_eq!(reconnects.len(), 1, "reconnected for {reconnects:?}");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_action_answered_by_the_old_socket_is_not_sent_again() -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        let (request_sender, worker) = start_worker(&protocol, response_receiver);
+
+        let (tx, rx) = oneshot::channel();
+        request_sender.send(ClientRequest::Action(
+            ActionRequest {
+                udf_path: UdfPath::from_str("images:generateUploadUrl")?,
+                args: BTreeMap::new(),
+            },
+            tx,
+        ))?;
+        let result = rx.await?;
+        protocol.wait_for_sent(1).await?;
+        assert_eq!(protocol.sent_actions(), 1);
+
+        // The app asks for a reconnect while the action runs, and the old
+        // socket still delivers its result before it closes.
+        protocol
+            .late_responses
+            .lock()
+            .push(ProtocolResponse::ServerMessage(
+                ServerMessage::ActionResponse {
+                    request_id: 0,
+                    result: FunctionResult::Value(Value::from("upload url")).into(),
+                    log_lines: LogLinesMessage(vec![]),
+                },
+            ));
+        request_sender.send(ClientRequest::Reconnect("convex_flutter:manual".into()))?;
+
+        let result = tokio::time::timeout(Duration::from_secs(2), result).await??;
+        assert_eq!(result, FunctionResult::Value(Value::from("upload url")));
+        // Wait for the state to be resent on the new connection, then check
+        // the resend left the action out.
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !protocol
+                .sent
+                .lock()
+                .iter()
+                .any(|message| matches!(message, ClientMessage::ModifyQuerySet { .. }))
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await?;
+        worker.abort();
+        assert_eq!(protocol.reconnects.lock().len(), 1);
+        assert_eq!(
+            protocol.sent_actions(),
+            1,
+            "the finished action was sent again: {:?}",
+            protocol.sent.lock()
+        );
+        Ok(())
     }
 }
 
@@ -403,6 +629,8 @@ fn handle_protocol_response(
         ProtocolResponse::Failure => {
             return Err("ProtocolFailure".into());
         },
+        // Only expected after a reconnect request, where `worker` waits for it.
+        ProtocolResponse::ReconnectAcknowledged => {},
     }
     Ok(())
 }

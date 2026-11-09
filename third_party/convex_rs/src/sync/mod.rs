@@ -32,6 +32,10 @@ pub type ServerMessage = convex_sync_types::ServerMessage<Value>;
 pub enum ProtocolResponse {
     ServerMessage(ServerMessage),
     Failure,
+    /// Sent once per [`SyncProtocol::reconnect`] request, when the protocol
+    /// stops reading the connection it replaces. Every response before it
+    /// came from that connection.
+    ReconnectAcknowledged,
 }
 
 #[derive(Debug)]
