@@ -137,6 +137,17 @@ class Settings {
   /// `easeOut.flipped` there so exits start fast too.
   static const Curve easeOut = Cubic(0.23, 1, 0.32, 1);
 
+  /// A held button shrinks to this scale (DESIGN.md, Motion), and comes back
+  /// on release, both ways over [pressDuration].
+  static const double pressScale = 0.97;
+
+  /// How far in a pressed button's edges may move. A wide button reaches it
+  /// before [pressScale] and shrinks less, so a full-width row doesn't
+  /// visibly jump.
+  static const double pressMaxInset = 2;
+
+  static const Duration pressDuration = Duration(milliseconds: 100);
+
   static const Duration autoSaveOffset = Duration(seconds: 15);
   static const int versionNumber = 110;
   static const String versionName = "5.1.3";
@@ -147,6 +158,7 @@ class Settings {
   static const double sideBarPanelWidth = sideBarContentWidth + 20;
   static const double sideBarPanelPaddingLeft = 8;
   static const double sideBarPanelPaddingRight = 8;
+
   /// How far the editor's canvas zooms in. Pictures placed on it are
   /// decoded for this zoom, so it looks the same all the way in.
   static const double canvasMaxZoom = 8;
@@ -156,6 +168,7 @@ class Settings {
 
   static final Uri windowsStoreLink = Uri.parse(
       "https://apps.microsoft.com/detail/9PBWHHZRQFW6?hl=en-us&gl=US&ocid=pdpshare");
+
   /// The newest stable installer, the same link icarusstrats.com uses.
   /// GitHub Pages can't hold it (files there max out at 100 MB), so the copy
   /// under downloads/ on Pages stopped at 4.6.1.

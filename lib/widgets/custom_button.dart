@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/widgets/press_scale.dart';
 
 class CustomButton extends ConsumerWidget {
   const CustomButton({
@@ -109,10 +110,13 @@ class CustomButton extends ConsumerWidget {
           );
 
     // When dynamic, size to content; otherwise respect explicit width
-    Widget content = SizedBox(
-      height: height,
-      width: isDynamicWidth ? null : width,
-      child: isDynamicWidth ? IntrinsicWidth(child: button) : button,
+    Widget content = PressScale(
+      enabled: effectiveOnPressed != null,
+      child: SizedBox(
+        height: height,
+        width: isDynamicWidth ? null : width,
+        child: isDynamicWidth ? IntrinsicWidth(child: button) : button,
+      ),
     );
 
     if (isDisabled && disabledTooltip != null) {
