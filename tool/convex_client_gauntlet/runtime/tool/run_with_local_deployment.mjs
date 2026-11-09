@@ -1,6 +1,10 @@
 #!/usr/bin/env node
-// Runs the gauntlet against a throwaway local Convex deployment, with no
-// Supabase project and no stored credentials.
+// Runs a gauntlet against a throwaway local Convex deployment, with no
+// Supabase project and no stored credentials. By default that is the
+// save-path gauntlet (tool/sync_gauntlet): the app's own op queue, outbox
+// and sync state under network and process faults. With GAUNTLET_ADAPTER
+// set it is this package's client comparison instead, which drives one
+// Convex client directly with its own copy of the wire format.
 //
 // The deployment is made from a copy of convex/ in a temporary directory. The
 // copy's auth.config.ts trusts one issuer whose key is generated here and
@@ -8,12 +12,14 @@
 // below and nothing else. The repository's convex/auth.config.ts, which
 // production deploys, is never read or changed.
 //
-// When the runner stops at its mid-run checkpoint, the test runs again in a
-// new process: that is the process-restart fault.
+// When the gauntlet stops at its mid-run checkpoint, the test runs again in
+// a new process: that is the process-restart fault. The save-path gauntlet
+// keeps the app's Hive directory between the two, so the second process
+// starts from the outbox the first one left.
 //
 // Usage, from the repository root after `npm ci`, a release cargo build of
-// third_party/convex_flutter/rust, and `flutter pub get` in the runtime
-// package:
+// third_party/convex_flutter/rust, and `flutter pub get` in the repository
+// root (for the client comparison, in the runtime package):
 //
 //   node tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment.mjs
 //
@@ -22,7 +28,8 @@
 //                         seed 1 restarts the process)
 //   GAUNTLET_PORT         local backend port (default 3410; the site proxy
 //                         uses the next one)
-//   GAUNTLET_ADAPTER      convex_flutter (default) or dartvex
+//   GAUNTLET_ADAPTER      unset for the save-path gauntlet; convex_flutter
+//                         or dartvex for the client comparison
 //   GAUNTLET_REPORT       where to copy the final report (optional)
 //   FLUTTER               the flutter command (default "flutter"; CI uses
 //                         "fvm flutter")
@@ -41,7 +48,8 @@ const runtimeDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 const repoDir = path.resolve(runtimeDir, "../../..");
 const seeds = Number(process.env.GAUNTLET_SEEDS ?? 3);
 const port = Number(process.env.GAUNTLET_PORT ?? 3410);
-const adapter = process.env.GAUNTLET_ADAPTER ?? "convex_flutter";
+const adapter = process.env.GAUNTLET_ADAPTER ?? "";
+const accountSubject = "gauntlet-user";
 const flutter = (process.env.FLUTTER ?? "flutter").split(" ").filter(Boolean);
 const nativeLibDir =
   process.env.FRB_DART_LOAD_EXTERNAL_LIBRARY_NATIVE_LIB_DIR ??
@@ -126,7 +134,7 @@ function mintToken(privateKey) {
   const header = encode({ alg: "ES256", typ: "JWT", kid: "gauntlet" });
   const payload = encode({
     iss: issuer,
-    sub: "gauntlet-user",
+    sub: accountSubject,
     aud: "authenticated",
     role: "authenticated",
     email: "gauntlet@icarus.invalid",
@@ -230,14 +238,18 @@ function run(command, args, options) {
 
 async function runGauntlet([accessToken, refreshedAccessToken]) {
   const gitCommit = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repoDir, encoding: "utf8" }).stdout?.trim() ?? "";
+  const [cwd, testFile] =
+    adapter === ""
+      ? [repoDir, "tool/sync_gauntlet/save_path_gauntlet_test.dart"]
+      : [runtimeDir, "test/live_deployment_test.dart"];
   for (let attempt = 0; attempt < 2; attempt += 1) {
     fs.rmSync(reportPath, { force: true });
     const started = Date.now();
     const exitCode = await run(
       flutter[0],
-      [...flutter.slice(1), "test", "test/live_deployment_test.dart", "--reporter", "expanded"],
+      [...flutter.slice(1), "test", testFile, "--reporter", "expanded"],
       {
-        cwd: runtimeDir,
+        cwd,
         stdio: "inherit",
         shell: process.platform === "win32",
         env: {
@@ -249,6 +261,8 @@ async function runGauntlet([accessToken, refreshedAccessToken]) {
           RESET_PROGRESS: attempt === 0 ? "1" : "0",
           GAUNTLET_ACCESS_TOKEN: accessToken,
           GAUNTLET_REFRESHED_ACCESS_TOKEN: refreshedAccessToken,
+          GAUNTLET_ACCOUNT_SUBJECT: accountSubject,
+          GAUNTLET_STATE_DIR: path.join(workDir, "app-state"),
           REPORT_PATH: reportPath,
           GIT_COMMIT: gitCommit,
           FRB_DART_LOAD_EXTERNAL_LIBRARY_NATIVE_LIB_DIR: nativeLibDir,
@@ -262,12 +276,36 @@ async function runGauntlet([accessToken, refreshedAccessToken]) {
     }
     if (report.status === "passed") return report;
     if (report.status !== "checkpoint") throw new Error(`Unexpected gauntlet status ${report.status}`);
-    console.log(`Checkpoint at seed ${report.seed}, operation ${report.nextOperation}; restarting the process`);
+    const where = adapter === "" ? `round ${report.round}` : `operation ${report.nextOperation}`;
+    console.log(`Checkpoint at seed ${report.seed}, ${where}; restarting the process`);
   }
   throw new Error("The gauntlet did not pass after its process restart");
 }
 
 function printSummary(report) {
+  if (adapter === "") {
+    console.log(
+      `Save-path gauntlet passed: ${report.seedCount} seeds, ` +
+        `${report.processRestarts} process restart(s), ${(report.wallClockMs / 1000).toFixed(1)} s`,
+    );
+    for (const seed of report.seeds) {
+      const faults = Object.entries(seed.faults)
+        .filter(([, hit]) => hit)
+        .map(([name]) => name)
+        .join(", ");
+      const checks = Object.entries(seed.checks)
+        .map(([chip, count]) => `${count} ${chip}`)
+        .join(", ");
+      const answers = seed.answers;
+      console.log(
+        `  seed ${seed.seed}: ${seed.userEdits} edits in ${answers.batches} batches ` +
+          `(${answers.lost} answers lost), ${answers.applied} applied, ${answers.noop} replayed, ` +
+          `${answers.rejected} refused; synced ${seed.syncedAfterReconnectMs} ms after reconnecting; ` +
+          `chip checked ${checks}; content ${seed.contentSha256.slice(0, 12)}; ${faults}`,
+      );
+    }
+    return;
+  }
   const restarts = report.seeds.filter((seed) => seed.faults.processRestart).length;
   console.log(
     `Gauntlet passed: ${report.adapter}, ${report.seedCount} seeds, ${report.totalOperations} ops, ` +
