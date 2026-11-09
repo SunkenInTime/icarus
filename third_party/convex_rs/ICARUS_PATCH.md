@@ -86,3 +86,11 @@ sent the work again, and the server refused the resend as a conflict with the
 write it had already applied. Now the caller waits through the reconnect and
 gets the server's answer, as long as that comes before its own timeout (the
 `convex_flutter` bridge gives up on a call after 30 seconds by default).
+
+A single query subscription is handed over the same way. Upstream returned
+early when the connection failed while the subscription was being sent, so the
+caller got `channel closed` while the query stayed subscribed and was added
+again on the next connection. Nothing held its subscription, so nothing could
+unsubscribe it, and it kept costing reads for the life of the client. Now the
+caller gets the subscription either way, and dropping it unsubscribes. Sent
+upstream as convex/convex-rs#26.
