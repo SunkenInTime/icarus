@@ -866,7 +866,7 @@ final class SavePathGauntlet {
         fail(
           'synced_but_not_on_server',
           'the chip says synced but the server does not hold '
-              '${missing.join(', ')}',
+              '${missing.join(', ')}: ${_explainMissing(missing, snapshot)}',
         );
       }
     } else {
@@ -939,6 +939,23 @@ final class SavePathGauntlet {
     final checks = _progress.current['checks'] as Map<String, Object?>;
     checks[chip.name] = ((checks[chip.name] as int?) ?? 0) + 1;
     return chip;
+  }
+
+  String _explainMissing(List<String> missing, Map<String, Object?> snapshot) {
+    _recordAnswersQuietly();
+    final rows = {
+      for (final row in [
+        ...(snapshot['elements'] as List).cast<Map>(),
+        ...(snapshot['lineups'] as List).cast<Map>(),
+      ])
+        row['publicId'] as String: row,
+    };
+    return [
+      for (final id in missing)
+        '$id drawn ${jsonEncode(_editor!.drawn[id]?.payload)} '
+            'sort ${_editor!.drawn[id]?.sortIndex}; server '
+            '${jsonEncode(rows[id])}; sent ${(_history[id] ?? const []).join(' | ')}',
+    ].join(' ;; ');
   }
 
   /// What an op changes, named the way [_notOnServer] names it.

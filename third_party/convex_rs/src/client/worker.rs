@@ -927,14 +927,17 @@ async fn _worker_once<T: SyncProtocol>(
                     let result_receiver = base_client
                         .mutation(udf_path, args);
                     let _ = tx.send(result_receiver);
-                    communicate(
+                    if let Err(e) = communicate(
                         base_client,
                         protocol_response_receiver,
                         watch_sender,
                         protocol_manager,
                         auth_recovery,
                     )
-                    .await?;
+                    .await {
+                        println!("RUST: DBG mutation send failed: {e}");
+                        return Err(e);
+                    }
                 },
                 ClientRequest::Action(action, tx) => {
                     let ActionRequest {

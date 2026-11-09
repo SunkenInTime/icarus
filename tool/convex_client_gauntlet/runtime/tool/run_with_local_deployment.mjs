@@ -58,7 +58,7 @@ if (!process.env.GAUNTLET_LOOP_CHILD) {
     } else {
       fails += 1;
       console.log(`run ${i} FAILED`);
-      const keep = /DBG|round|State changed|failed|Error|queued_batch/;
+      const keep = /DBG|round|State changed|failed|Error|queued_batch|synced_but/;
       console.log(out.split(newline).filter((l) => keep.test(l)).slice(-500).join(newline));
     }
   }
