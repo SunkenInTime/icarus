@@ -2278,12 +2278,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             stackTrace: stackTrace,
           );
         }
-        await _restoreRecordsAfterFailure(
-          batch,
-          lastError:
-              upgradeRequired ? clientUpgradeRequiredQueueError : '$error',
-          countsAsFailure: !upgradeRequired,
-        );
+        // THROWAWAY BUG: a send whose answer never came is taken as landed.
+        await _serializeWrite(() async {
+          for (final sent in batch) {
+            await _removeRecordByStorageKeyIfCurrent(
+              sent.storageKey,
+              sent.pending.op.opId,
+            );
+          }
+          _refreshActiveQueueView(isFlushing: false);
+        });
       }
     } finally {
       _finishNetworkLane();
