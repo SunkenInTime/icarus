@@ -235,13 +235,14 @@ pub async fn worker<T: SyncProtocol>(
                 &mut auth_recovery,
             );
         }
-        base_client.resend_ongoing_queries_mutations().await;
+        let sends_auth = base_client.resend_ongoing_queries_mutations().await;
         // Everything the old connection sent was handled above, so from here
         // on answers come from the new connection, and the server only
         // answers there after accepting the auth this resend sends first.
         // That's true of the same token too: the server may accept a token it
-        // refused before (its auth config was fixed, say).
-        if auth_recovery.active {
+        // refused before (its auth config was fixed, say). A resend without
+        // auth proves nothing: the server answers anonymous clients too.
+        if auth_recovery.active && sends_auth {
             auth_recovery.auth_resent = true;
         }
         // We'll flush messages from base_client inside the next call to
@@ -679,6 +680,39 @@ mod tests {
             .await?;
         tokio::time::sleep(Duration::from_secs(20)).await;
         assert!(!*worker.auth_refused.borrow());
+        worker.handle.abort();
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_answer_without_auth_does_not_end_the_refusal() -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        let token = Arc::new(Mutex::new(Some("token".to_string())));
+        let callback_token = token.clone();
+        let worker = start_worker(&protocol, response_receiver);
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(Box::new(
+                move |_force_refresh| {
+                    let token = callback_token.lock().clone();
+                    Box::pin(async move {
+                        Ok(token.map_or(AuthenticationToken::None, AuthenticationToken::User))
+                    })
+                },
+            ))))?;
+        refuse(&response_sender, AUTH_REFUSALS_TO_REPORT as usize).await?;
+        assert!(*worker.auth_refused.borrow());
+
+        // The callback has no token for the next retry, so the client
+        // reconnects without auth, and the server answers it anonymously.
+        *token.lock() = None;
+        *protocol.server.lock() = Server::AcceptAuth;
+        response_sender
+            .send(ProtocolResponse::ServerMessage(auth_error()))
+            .await?;
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        assert!(*worker.auth_refused.borrow());
         worker.handle.abort();
         Ok(())
     }

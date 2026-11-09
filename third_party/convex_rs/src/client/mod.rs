@@ -441,10 +441,12 @@ impl ConvexClient {
     /// If the client is waiting to retry auth the server refused, it retries
     /// now instead of when the wait ends.
     pub async fn reconnect_now(&mut self, reason: &str) {
+        // Wake first: the worker clears the wake-up when it serves the
+        // request, so it must exist by then.
+        self.reconnect_requested.notify_one();
         self.request_sender
             .send(ClientRequest::Reconnect(reason.to_owned()))
             .expect("INTERNAL BUG: Worker has gone away");
-        self.reconnect_requested.notify_one();
     }
 
     /// Whether the server keeps refusing this client's auth. It turns true
