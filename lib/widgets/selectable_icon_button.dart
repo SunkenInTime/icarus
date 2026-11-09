@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/widgets/press_scale.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 // The secondary icon button's own corner radius (the theme default).
 const double _radius = 6;
+
+Widget _withoutPress(
+  BuildContext context, {
+  required bool pressable,
+  required Widget child,
+}) =>
+    child;
 
 class SelectableIconButton extends ConsumerWidget {
   const SelectableIconButton({
@@ -34,12 +42,17 @@ class SelectableIconButton extends ConsumerWidget {
         ? hoverBackgroundColor ?? Settings.tacticalVioletTheme.primary
         : null;
     final raised = raisedColor != null && raisedColor.a > 0;
-    Widget button = ShadIconButton.secondary(
-      padding: EdgeInsets.zero,
-      icon: icon,
-      backgroundColor: isSelected ? Colors.transparent : null,
-      hoverBackgroundColor: isSelected ? Colors.transparent : null,
-      onPressed: onPressed,
+    // The raised fill sits outside the Shad button, so the press goes around
+    // both and the Shad button's own press is turned off.
+    Widget button = ShadButtonWrapper(
+      wrap: _withoutPress,
+      child: ShadIconButton.secondary(
+        padding: EdgeInsets.zero,
+        icon: icon,
+        backgroundColor: isSelected ? Colors.transparent : null,
+        hoverBackgroundColor: isSelected ? Colors.transparent : null,
+        onPressed: onPressed,
+      ),
     );
     if (raised) {
       button = DecoratedBox(
@@ -47,6 +60,7 @@ class SelectableIconButton extends ConsumerWidget {
         child: button,
       );
     }
+    button = PressScale(child: button);
 
     // No tooltip text means no ShadTooltip wrapper; an empty tooltip bubble
     // would still pop up on hover otherwise.

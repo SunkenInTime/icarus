@@ -67,6 +67,10 @@ dependency_overrides:
   # See packages/desktop_drop/ICARUS.md.
   desktop_drop:
     path: packages/desktop_drop
+  # Vendored so every ShadButton can press (scale on pointer down).
+  # See packages/shadcn_ui/ICARUS.md.
+  shadcn_ui:
+    path: packages/shadcn_ui
 
 dev_dependencies:
   crypto: ^3.0.7

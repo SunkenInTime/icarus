@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/widgets/press_scale.dart';
 import 'package:icarus/widgets/inset_shadow_decoration.dart';
 
 enum SegmentedIndicatorBehavior {
@@ -286,32 +287,38 @@ class _TabButton<T> extends StatelessWidget {
         ? Settings.tacticalVioletTheme.primaryForeground
         : Settings.tacticalVioletTheme.mutedForeground;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        mouseCursor: SystemMouseCursors.click,
-        borderRadius: BorderRadius.circular(borderRadius),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: animationDuration,
-          curve: animationCurve,
-          alignment: Alignment.center,
-          padding: EdgeInsets.symmetric(
-            horizontal: horizontalPadding,
-            vertical: verticalPadding,
-          ),
-          decoration: showStaticFill && isSelected
-              ? Settings.raisedPrimary(borderRadius)
-              : InsetShadowDecoration(
-                  borderRadius: BorderRadius.circular(borderRadius),
-                ),
-          child: DefaultTextStyle.merge(
-            style: TextStyle(
-              color: textColor,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+    // Only a tab that isn't chosen presses: clicking the chosen one does
+    // nothing, and its sliding pill is drawn outside the tab, so it would
+    // stay put while the label shrank.
+    return PressScale(
+      enabled: !isSelected,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          mouseCursor: SystemMouseCursors.click,
+          borderRadius: BorderRadius.circular(borderRadius),
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: animationDuration,
+            curve: animationCurve,
+            alignment: Alignment.center,
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: verticalPadding,
             ),
-            child: item.child,
+            decoration: showStaticFill && isSelected
+                ? Settings.raisedPrimary(borderRadius)
+                : InsetShadowDecoration(
+                    borderRadius: BorderRadius.circular(borderRadius),
+                  ),
+            child: DefaultTextStyle.merge(
+              style: TextStyle(
+                color: textColor,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+              child: item.child,
+            ),
           ),
         ),
       ),

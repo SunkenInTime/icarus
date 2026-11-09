@@ -18,6 +18,7 @@ analyzer:
     - macos/**
     - linux/**
     - third_party/**
+    - packages/shadcn_ui/**
     - tool/convex_client_gauntlet/**
     - tool/icarus_convex_codegen/**
   errors:

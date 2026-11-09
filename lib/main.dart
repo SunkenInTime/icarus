@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
+import 'package:icarus/widgets/press_scale.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
@@ -862,7 +863,11 @@ class _MyAppState extends ConsumerState<MyApp> {
             child: EditorOperationScope(
               child: MouseNavigation(
                 child: ReplayWindowDropTarget(
-                  child: child ?? const SizedBox.shrink(),
+                  // Every Shad button presses (DESIGN.md, Motion).
+                  child: ShadButtonWrapper(
+                    wrap: _pressScaleButton,
+                    child: child ?? const SizedBox.shrink(),
+                  ),
                 ),
               ),
             ),
@@ -872,6 +877,13 @@ class _MyAppState extends ConsumerState<MyApp> {
     );
   }
 }
+
+Widget _pressScaleButton(
+  BuildContext context, {
+  required bool pressable,
+  required Widget child,
+}) =>
+    PressScale(enabled: pressable, child: child);
 
 class MyHomePage extends ConsumerWidget {
   const MyHomePage({super.key});
