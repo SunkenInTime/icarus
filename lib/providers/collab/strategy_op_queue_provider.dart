@@ -2333,6 +2333,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         await _putRecord(inFlight);
         claimed.add(inFlight);
       }
+      // Shown in flight before this write ends: an edit queued behind it
+      // runs before the flush goes on, and must see these records as sent
+      // or it folds itself into one (a delete folded into an add drops both).
+      if (claimed.isNotEmpty) _refreshActiveQueueView();
       return claimed;
     });
   }
