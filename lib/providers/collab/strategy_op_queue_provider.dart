@@ -3881,14 +3881,18 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// change: as its successor, promoted onto the revision it landed at
   /// ([_landedBehind]). An add behind this device's add is an edit of the
   /// added item, and a merge names the fields the landed change wrote, from
-  /// what it wrote. Any other [op] as it is.
+  /// what it wrote. A change the canvas never drew (recovered after a
+  /// restart) is not what the user saw, so [op] keeps the version it was
+  /// made from and is checked against it. Any other [op] as it is.
   StrategyOp _behindOwnLanded(EntitySyncKey key, StrategyOp op) {
     final landed = _ownLanded[DurableOutboxRecord.createStorageKey(
       accountId: state.accountId!,
       strategyPublicId: state.strategyPublicId!,
       entityKey: key,
     )];
-    if (landed == null || (op.expectedRevision ?? 0) >= landed.revision) {
+    if (landed == null ||
+        !landed.drawn ||
+        (op.expectedRevision ?? 0) >= landed.revision) {
       return op;
     }
     return _landedBehind(
