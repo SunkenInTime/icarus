@@ -48,6 +48,42 @@ void main() {
     );
   });
 
+  // A newer server adds result fields; a build already installed must keep
+  // reading the results it understands (docs/adr/0001).
+  test('generated decoders ignore fields a newer server adds', () {
+    final tree = decodeFoldersListTreeResult(
+      _folderTreeValue(
+        extraFields: {'addedLater': const ConvexString('new data')},
+      ),
+    );
+    expect(tree.single.publicId, 'folder-1');
+
+    final created = decodeFoldersCreateResult(
+      ConvexObject({
+        'ok': const ConvexBoolean(true),
+        'addedLater': const ConvexInteger(1),
+      }),
+    );
+    expect((created as ConvexObject).value['ok'], const ConvexBoolean(true));
+  });
+
+  test('generated decoders still reject a missing declared field', () {
+    final folder = (_folderTreeValue().value.single as ConvexObject).value;
+    final tree = ConvexArray([
+      ConvexObject({...folder}..remove('publicId')),
+    ]);
+    expect(
+      () => decodeFoldersListTreeResult(tree),
+      throwsA(
+        isA<ConvexDecodingException>().having(
+          (error) => error.path,
+          'path',
+          'folders.js:listTree.returns[0].publicId',
+        ),
+      ),
+    );
+  });
+
   test('unknown server error code and structured data are preserved', () async {
     final data = ConvexObject({'retryable': const ConvexBoolean(true)});
     final api = IcarusConvexApi(
@@ -281,9 +317,11 @@ void main() {
 ConvexArray _folderTreeValue({
   String role = 'owner',
   String name = 'Defaults',
+  Map<String, ConvexValue> extraFields = const {},
 }) =>
     ConvexArray([
       ConvexObject({
+        ...extraFields,
         'color': const ConvexNull(),
         'createdAt': const ConvexInteger(1),
         'customColorValue': const ConvexNull(),

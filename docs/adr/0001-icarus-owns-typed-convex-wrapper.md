@@ -193,6 +193,14 @@ declare, allowing a newer server to add data without breaking an installed
 client. They still reject a missing declared field or a value of the wrong
 type.
 
+Generated decoders refused undeclared fields until November 2026, against this
+rule, so builds before then still break on any added field and need the opt-in
+arguments (`includeAgentTypes`, `acceptsPictureIds`) until they age out. An
+ignored field is also not kept: a client that writes an object back whole,
+such as strategy settings or a palette, sends it without the fields it
+ignored. Adding a field to an object clients write back is a write change, and
+the server must keep the stored field when a write leaves it out.
+
 Generated enums fail decoding when the server sends an unknown literal. Icarus
 does not guess at new permission roles, sync statuses, or operation kinds. A
 specific harmless enum may opt into an explicit `unknown` case.

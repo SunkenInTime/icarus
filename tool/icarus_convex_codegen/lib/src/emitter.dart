@@ -264,16 +264,9 @@ void _emitModel(StringBuffer out, ModelDeclaration declaration) {
     ..writeln(
       '  factory ${declaration.name}.decode(ConvexValue value, String path) {',
     )
+    // Fields the model doesn't declare are ignored, not refused: a newer
+    // server may add them, and installed builds must keep reading.
     ..writeln('    final object = _decodeObject(value, path);')
-    ..writeln('    _checkObjectFields(object, path, const {');
-  if (declaration.discriminatorName != null) {
-    out.writeln("      '${_escape(declaration.discriminatorName!)}',");
-  }
-  for (final field in declaration.fields) {
-    out.writeln("      '${_escape(field.wireName)}',");
-  }
-  out
-    ..writeln('    });')
     ..writeln('    return ${declaration.name}(');
   for (final field in declaration.fields) {
     final wire = _escape(field.wireName);
@@ -599,11 +592,9 @@ final class _RawPredicateEmitter {
     String value,
     String Function(ConvexValidator, String) child,
   ) {
-    final allowed = fields.keys.map((key) => "'${_escape(key)}'").join(',');
-    final checks = <String>[
-      '$value is ConvexObject',
-      '$value.value.keys.every(const {$allowed}.contains)',
-    ];
+    // Like the typed decoders, this ignores fields it doesn't declare: a
+    // newer server may add them, and installed builds must keep reading.
+    final checks = <String>['$value is ConvexObject'];
     for (final entry in fields.entries) {
       final access = "$value.value['${_escape(entry.key)}']";
       if (entry.value.optional) {
@@ -677,18 +668,6 @@ Never _missing(String path, String field) =>
 String _fieldPath(String path, String field) => '$path.$field';
 
 String _indexPath(String path, int index) => '$path[$index]';
-
-void _checkObjectFields(
-  ConvexObject object,
-  String path,
-  Set<String> allowed,
-) {
-  for (final field in object.value.keys) {
-    if (!allowed.contains(field)) {
-      throw ConvexDecodingException('$path.$field', 'unexpected field');
-    }
-  }
-}
 
 Null _decodeNull(ConvexValue value, String path) {
   if (value is ConvexNull) return null;
