@@ -241,9 +241,10 @@ pub async fn worker<T: SyncProtocol>(
         // answers there after accepting the auth this resend sends first.
         // That's true of the same token too: the server may accept a token it
         // refused before (its auth config was fixed, say). A resend without
-        // auth proves nothing: the server answers anonymous clients too.
-        if auth_recovery.active && sends_auth {
-            auth_recovery.auth_resent = true;
+        // auth proves nothing: the server answers anonymous clients too, and
+        // auth an earlier connection sent is gone with it.
+        if auth_recovery.active {
+            auth_recovery.auth_resent = sends_auth;
         }
         // We'll flush messages from base_client inside the next call to
         // `_worker_once`.
@@ -704,13 +705,13 @@ mod tests {
         refuse(&response_sender, AUTH_REFUSALS_TO_REPORT as usize).await?;
         assert!(*worker.auth_refused.borrow());
 
-        // The callback has no token for the next retry, so the client
-        // reconnects without auth, and the server answers it anonymously.
+        // The last retry's connection, which sent the token, drops before
+        // the server answers. The callback has no token for the next one, so
+        // the client reconnects without auth, and the server answers it
+        // anonymously.
         *token.lock() = None;
         *protocol.server.lock() = Server::AcceptAuth;
-        response_sender
-            .send(ProtocolResponse::ServerMessage(auth_error()))
-            .await?;
+        response_sender.send(ProtocolResponse::Failure).await?;
         tokio::time::sleep(Duration::from_secs(20)).await;
         assert!(*worker.auth_refused.borrow());
         worker.handle.abort();
