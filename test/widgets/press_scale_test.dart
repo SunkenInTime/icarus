@@ -65,6 +65,28 @@ void main() {
     expect(_paintedScale(tester), 1);
   });
 
+  testWidgets('a press whose release was lost lets go on the next hover',
+      (tester) async {
+    await _pumpButton(tester, onPressed: () {});
+    final center = tester.getCenter(find.byType(ShadButton));
+    await tester.startGesture(center, kind: PointerDeviceKind.mouse);
+    await tester.pump();
+    await tester.pump(Settings.pressDuration);
+    expect(_paintedScale(tester), closeTo(Settings.pressScale, 1e-9));
+
+    // The up never arrives; the same mouse comes back with no button held.
+    await tester.sendEventToBinding(
+      PointerHoverEvent(
+        kind: PointerDeviceKind.mouse,
+        device: 1, // every test mouse is device 1
+        position: center,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(Settings.pressDuration);
+    expect(_paintedScale(tester), 1);
+  });
+
   testWidgets('the click lands on release, no later than without the press',
       (tester) async {
     var clicks = 0;

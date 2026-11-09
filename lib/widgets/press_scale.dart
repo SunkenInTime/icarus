@@ -30,7 +30,8 @@ class PressScale extends StatefulWidget {
 }
 
 class _PressScaleState extends State<PressScale> {
-  final Set<int> _pointers = {};
+  /// Each pointer holding the button down, to the device that pressed it.
+  final Map<int, int> _pointers = {};
 
   bool get _pressed => _pointers.isNotEmpty;
 
@@ -44,12 +45,19 @@ class _PressScaleState extends State<PressScale> {
 
   void _down(PointerDownEvent event) {
     if (!widget.enabled || event.buttons & kPrimaryButton == 0) return;
-    setState(() => _pointers.add(event.pointer));
+    setState(() => _pointers[event.pointer] = event.device);
   }
 
   void _release(PointerEvent event) {
-    if (!_pointers.contains(event.pointer)) return;
+    if (!_pointers.containsKey(event.pointer)) return;
     setState(() => _pointers.remove(event.pointer));
+  }
+
+  /// A hovering device has no buttons down. If its release was lost (the
+  /// window lost focus mid-press), let go now instead of staying shrunk.
+  void _releaseDevice(PointerHoverEvent event) {
+    if (!_pointers.containsValue(event.device)) return;
+    setState(() => _pointers.removeWhere((_, d) => d == event.device));
   }
 
   @override
@@ -58,6 +66,7 @@ class _PressScaleState extends State<PressScale> {
       onPointerDown: _down,
       onPointerUp: _release,
       onPointerCancel: _release,
+      onPointerHover: _releaseDevice,
       child: TweenAnimationBuilder<double>(
         tween: Tween(end: _pressed ? 1 : 0),
         duration: MediaQuery.disableAnimationsOf(context)
