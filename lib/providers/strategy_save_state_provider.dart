@@ -68,7 +68,8 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
         return;
       }
 
-      final hasPendingSync = next.isFlushing || next.pending.isNotEmpty;
+      // THROWAWAY BUG: only work being sent counts as unsaved.
+      final hasPendingSync = next.isFlushing;
       state = state.copyWith(
         isSaving: next.isFlushing,
         hasPendingCloudSync: hasPendingSync,
