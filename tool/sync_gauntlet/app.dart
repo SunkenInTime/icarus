@@ -129,7 +129,14 @@ final class GauntletApp {
     await app.signIn(accessToken);
     await app.repository.ensureCurrentUser();
     // What the editor keeps alive while a cloud strategy is open.
-    container.listen(cloudSyncStatusProvider, (_, __) {});
+    container.listen(cloudSyncStatusProvider, (prev, next) {
+      final q = container.read(strategyOpQueueProvider);
+      // ignore: avoid_print
+      print('DBG ${DateTime.now().toIso8601String()} chip $prev -> $next '
+          'lastError=${q.lastError} saveErr=${container.read(strategySaveStateProvider).cloudSyncError} '
+          'queued=${q.queuedByEntityKey.length} inFlight=${q.inFlightByEntityKey.length} '
+          'paused=${q.pausedByEntityKey.length} attn=${q.attentionByEntityKey.length}');
+    });
     container.listen(strategyOpQueueProvider, (_, __) {});
     return app;
   }

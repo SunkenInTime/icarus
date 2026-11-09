@@ -702,7 +702,9 @@ final class SavePathGauntlet {
     if (shown != CloudSyncStatus.synced) {
       throw GauntletFailure(
         'queued_batch_lost',
-        'After the session refreshed the chip showed $shown',
+        'After the session refreshed the chip showed $shown '
+            '(lastError ${_app.queueState.lastError}; '
+            'save ${_app.saveState.cloudSyncError}; held ${_held()})',
       );
     }
     auth['landedOnce'] = true;

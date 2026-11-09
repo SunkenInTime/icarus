@@ -38,6 +38,34 @@
 //                         convex_flutter cargo release directory)
 
 import { spawn, spawnSync } from "node:child_process";
+// THROWAWAY: run seed 0 several times and print the chip log of failures.
+if (!process.env.GAUNTLET_LOOP_CHILD) {
+  const { spawnSync: run } = await import("node:child_process");
+  const { fileURLToPath: toPath } = await import("node:url");
+  const self = toPath(import.meta.url);
+  let fails = 0;
+  const total = Number(process.env.GAUNTLET_LOOPS ?? 8);
+  const newline = String.fromCharCode(10);
+  for (let i = 1; i <= total; i += 1) {
+    const r = run(process.execPath, [self], {
+      env: { ...process.env, GAUNTLET_LOOP_CHILD: "1", GAUNTLET_SEEDS: "1" },
+      encoding: "utf8",
+      maxBuffer: 1 << 28,
+    });
+    const out = (r.stdout ?? "") + (r.stderr ?? "");
+    if (r.status === 0) {
+      console.log(`run ${i} passed`);
+    } else {
+      fails += 1;
+      console.log(`run ${i} FAILED`);
+      const keep = /DBG|round|State changed|failed|Error|queued_batch/;
+      console.log(out.split(newline).filter((l) => keep.test(l)).slice(-250).join(newline));
+    }
+  }
+  console.log(`FAILS ${fails} of ${total}`);
+  process.exit(fails ? 1 : 0);
+}
+
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
