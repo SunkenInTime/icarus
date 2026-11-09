@@ -287,7 +287,11 @@ class _TabButton<T> extends StatelessWidget {
         ? Settings.tacticalVioletTheme.primaryForeground
         : Settings.tacticalVioletTheme.mutedForeground;
 
+    // Only a tab that isn't chosen presses: clicking the chosen one does
+    // nothing, and its sliding pill is drawn outside the tab, so it would
+    // stay put while the label shrank.
     return PressScale(
+      enabled: !isSelected,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
