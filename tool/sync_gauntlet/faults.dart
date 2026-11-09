@@ -96,7 +96,24 @@ final class FaultyTransport implements ConvexTransport {
   }
 
   Future<ConvexValue> _send(ConvexObject args, {bool delivered = true}) async {
-    final result = await _inner.mutation('ops:applyBatch', args);
+    final ops = (args.toDart() as Map)['ops'] as List;
+    // ignore: avoid_print
+    print('DBG ${DateTime.now().toIso8601String()} send ${ops.length} ops '
+        'first ${(ops.first as Map)['opId']}');
+    final ConvexValue result;
+    try {
+      result = await _inner.mutation('ops:applyBatch', args);
+    } catch (error) {
+      // ignore: avoid_print
+      print('DBG ${DateTime.now().toIso8601String()} send error '
+          '${error.runtimeType}: $error');
+      rethrow;
+    }
+    // ignore: avoid_print
+    final shown = '${result.toDart()}';
+    // ignore: avoid_print
+    print('DBG ${DateTime.now().toIso8601String()} answer '
+        '${shown.length > 300 ? shown.substring(0, 300) : shown}');
     seen.add(SeenBatch(
       args.toDart(),
       (result.toDart() as Map).cast<String, Object?>(),

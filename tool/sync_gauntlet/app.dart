@@ -137,7 +137,13 @@ final class GauntletApp {
           'queued=${q.queuedByEntityKey.length} inFlight=${q.inFlightByEntityKey.length} '
           'paused=${q.pausedByEntityKey.length} attn=${q.attentionByEntityKey.length}');
     });
-    container.listen(strategyOpQueueProvider, (_, __) {});
+    container.listen(strategyOpQueueProvider, (p, n) {
+      if (p?.lastError != n.lastError) {
+        // ignore: avoid_print
+        print('DBG ${DateTime.now().toIso8601String()} queue lastError '
+            '${n.lastError}');
+      }
+    });
     return app;
   }
 
@@ -158,6 +164,8 @@ final class GauntletApp {
 
   /// Gives the native client [token], replacing the one it holds.
   Future<void> signIn(String token) async {
+    // ignore: avoid_print
+    print('DBG ${DateTime.now().toIso8601String()} signIn start');
     _authHandle?.dispose();
     _authHandle = null;
     await ConvexClient.instance.clearAuth();
@@ -165,13 +173,24 @@ final class GauntletApp {
     await Future<void>.delayed(const Duration(milliseconds: 50));
     _token = token;
     _authHandle = await ConvexClient.instance.setAuthWithRefresh(
-      fetchToken: () async => _token,
+      fetchToken: () async {
+        // ignore: avoid_print
+        print('DBG ${DateTime.now().toIso8601String()} token fetched '
+            '${_token.hashCode}');
+        return _token;
+      },
     );
+    // ignore: avoid_print
+    print('DBG ${DateTime.now().toIso8601String()} signIn done');
   }
 
   /// The token the client fetches the next time the server refuses the one
   /// it holds, as a session refresh would.
-  void refreshTokenTo(String token) => _token = token;
+  void refreshTokenTo(String token) {
+    // ignore: avoid_print
+    print('DBG ${DateTime.now().toIso8601String()} token refreshed');
+    _token = token;
+  }
 
   /// Drops the native client's socket and waits for it to come back.
   Future<void> reconnect() async {
