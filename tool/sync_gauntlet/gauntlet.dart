@@ -883,12 +883,19 @@ final class SavePathGauntlet {
             _subjectOf(successor.op),
         ],
       };
-      final notKept = named.where((subject) => !diskSubjects.contains(subject));
+      // Only work the server lacks must be on disk. While the queue clears
+      // an accepted batch it removes the records one write at a time and
+      // updates its waiting list once at the end, so in between the list
+      // can still name work that has landed and left the disk.
+      final notKept = named.where(
+        (subject) =>
+            missing.contains(subject) && !diskSubjects.contains(subject),
+      );
       if (notKept.isNotEmpty) {
         fail(
           'waiting_work_not_on_disk',
-          'the app lists ${notKept.join(', ')} as waiting, but the outbox on '
-              'disk does not hold it',
+          'the app lists ${notKept.join(', ')} as waiting, and neither the '
+              'server nor the outbox on disk holds it',
         );
       }
       // Waiting is not enough: the newest op the outbox holds for an item
