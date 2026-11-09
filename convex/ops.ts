@@ -1892,6 +1892,11 @@ export const applyBatch = mutation({
     // another account is refused whole (see assertCallerIsAccount). Older
     // clients send it unbound, checked against whoever is signed in.
     accountSubject: v.optional(v.string()),
+    // Set by clients that read wasApplied on a replayed op's noop: the op
+    // was applied when first received, at the noop's currentRevision, so
+    // that revision is the client's own write and its waiting work can move
+    // onto it. Older clients get the noop without it.
+    includeWasApplied: v.optional(v.boolean()),
   },
   returns: applyBatchResultValidator,
   handler: async (ctx, args) => {
@@ -1958,13 +1963,18 @@ export const applyBatch = mutation({
                   latestPayload: latest?.payload,
                 }
               : noop(existingEvent.appliedRevision);
+        const replayed = toPublicResult(
+          op,
+          replayResult,
+          args.acceptsPictureIds === true,
+          args.elementFieldLevel,
+        );
         results.push(
-          toPublicResult(
-            op,
-            replayResult,
-            args.acceptsPictureIds === true,
-            args.elementFieldLevel,
-          ),
+          replayed.status === "noop" &&
+            existingEvent.status === "applied" &&
+            args.includeWasApplied === true
+            ? { ...replayed, wasApplied: true }
+            : replayed,
         );
         continue;
       }

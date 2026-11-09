@@ -5,6 +5,11 @@
       "function": "strategy:getFullSnapshot",
       "path": "result.contentVersion",
       "sentOnlyWith": ["args.includeContentVersion"]
+    },
+    {
+      "function": "ops:applyBatch",
+      "path": "result.results[]<status=noop>.wasApplied",
+      "sentOnlyWith": ["args.includeWasApplied"]
     }
   ]
 }

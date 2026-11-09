@@ -48485,6 +48485,12 @@
             },
             "optional": true
           },
+          "includeWasApplied": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "ops": {
             "fieldType": {
               "type": "array",
@@ -121048,6 +121054,12 @@
                           "value": "noop"
                         },
                         "optional": false
+                      },
+                      "wasApplied": {
+                        "fieldType": {
+                          "type": "boolean"
+                        },
+                        "optional": true
                       }
                     }
                   },
