@@ -75,3 +75,22 @@ again with the first transition on the new connection, which can be the one
 that only acknowledges re-authentication, before the server has answered any
 query. Subscribers then took old results for current ones. Until the reconnect
 lands, the old results stay readable as before.
+
+A mutation or action now gets its answer channel as soon as the client starts
+tracking it, before the worker sends it. Upstream handed the channel over only
+after the send, so a connection that failed during the send (the server
+refusing auth, a dropped socket) dropped the channel: the caller got
+`channel closed`, while the request stayed tracked and was sent again after the
+reconnect, where the server ran it. Icarus took that error as a failed save and
+sent the work again, and the server refused the resend as a conflict with the
+write it had already applied. Now the caller waits through the reconnect and
+gets the server's answer, as long as that comes before its own timeout (the
+`convex_flutter` bridge gives up on a call after 30 seconds by default).
+
+A single query subscription is handed over the same way. Upstream returned
+early when the connection failed while the subscription was being sent, so the
+caller got `channel closed` while the query stayed subscribed and was added
+again on the next connection. Nothing held its subscription, so nothing could
+unsubscribe it, and it kept costing reads for the life of the client. Now the
+caller gets the subscription either way, and dropping it unsubscribes. Sent
+upstream as convex/convex-rs#26.

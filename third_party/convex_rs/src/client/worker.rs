@@ -265,9 +265,13 @@ mod tests {
         AuthenticationToken,
         ClientMessage,
         LogLinesMessage,
+        QueryId,
+        QuerySetModification,
+        StateModification,
         StateVersion,
         UdfPath,
     };
+    use futures::StreamExt;
     use parking_lot::Mutex;
     use tokio::sync::{
         broadcast,
@@ -283,6 +287,8 @@ mod tests {
         worker,
         ActionRequest,
         ClientRequest,
+        MutationRequest,
+        SubscribeRequest,
         AUTH_REFUSALS_TO_REPORT,
     };
     use crate::{
@@ -321,6 +327,11 @@ mod tests {
         reconnects: Arc<Mutex<Vec<String>>>,
         /// What the server does on each new connection.
         server: Arc<Mutex<Server>>,
+        /// How long a mutation or action takes to finish sending once it's
+        /// on the socket, as a slow one would.
+        request_send_time: Arc<Mutex<Duration>>,
+        /// The same for a change to the query set.
+        query_set_send_time: Arc<Mutex<Duration>>,
     }
 
     #[derive(Clone, Copy)]
@@ -340,7 +351,22 @@ mod tests {
                 sent: Arc::default(),
                 reconnects: Arc::default(),
                 server: Arc::new(Mutex::new(Server::Quiet)),
+                request_send_time: Arc::default(),
+                query_set_send_time: Arc::default(),
             }
+        }
+
+        fn sent_query_sets(&self) -> Vec<Vec<QuerySetModification>> {
+            self.sent
+                .lock()
+                .iter()
+                .filter_map(|message| match message {
+                    ClientMessage::ModifyQuerySet { modifications, .. } => {
+                        Some(modifications.clone())
+                    },
+                    _ => None,
+                })
+                .collect()
         }
 
         async fn wait_for_sent(&self, n: usize) -> anyhow::Result<()> {
@@ -351,6 +377,14 @@ mod tests {
             })
             .await?;
             Ok(())
+        }
+
+        fn sent_mutations(&self) -> usize {
+            self.sent
+                .lock()
+                .iter()
+                .filter(|message| matches!(message, ClientMessage::Mutation { .. }))
+                .count()
         }
 
         fn sent_actions(&self) -> usize {
@@ -374,7 +408,20 @@ mod tests {
         }
 
         async fn send(&mut self, message: ClientMessage) -> anyhow::Result<()> {
+            let is_request = matches!(
+                message,
+                ClientMessage::Mutation { .. } | ClientMessage::Action { .. }
+            );
+            let is_query_set = matches!(message, ClientMessage::ModifyQuerySet { .. });
             self.sent.lock().push(message);
+            if is_request {
+                let send_time = *self.request_send_time.lock();
+                tokio::time::sleep(send_time).await;
+            }
+            if is_query_set {
+                let send_time = *self.query_set_send_time.lock();
+                tokio::time::sleep(send_time).await;
+            }
             Ok(())
         }
 
@@ -553,6 +600,213 @@ mod tests {
             "the finished action was sent again: {:?}",
             protocol.sent.lock()
         );
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_mutation_sent_as_the_connection_fails_is_answered_after_the_reconnect(
+    ) -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        *protocol.request_send_time.lock() = Duration::from_millis(100);
+        *protocol.server.lock() = Server::AcceptAuth;
+        let worker = start_worker(&protocol, response_receiver);
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(changing_token())))?;
+        protocol.wait_for_sent(1).await?;
+
+        // While the mutation is being sent, the server refuses the token
+        // and the connection fails.
+        let (tx, rx) = oneshot::channel();
+        worker.requests.send(ClientRequest::Mutation(
+            MutationRequest {
+                udf_path: UdfPath::from_str("ops:applyBatch")?,
+                args: BTreeMap::new(),
+            },
+            tx,
+        ))?;
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        response_sender
+            .send(ProtocolResponse::ServerMessage(auth_error()))
+            .await?;
+
+        // The caller still waits for the answer, and the mutation goes
+        // again on the next connection, after a fresh token.
+        let result = tokio::time::timeout(Duration::from_secs(2), rx)
+            .await?
+            .map_err(|_| anyhow::anyhow!("the caller was told the mutation failed"))?;
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(protocol.reconnects.lock().len(), 1);
+        assert_eq!(protocol.sent_mutations(), 2, "{:?}", protocol.sent.lock());
+
+        // The server runs it there and answers.
+        let first = StateVersion {
+            ts: StateVersion::initial().ts.succ()?,
+            ..StateVersion::initial()
+        };
+        response_sender
+            .send(ProtocolResponse::ServerMessage(
+                ServerMessage::MutationResponse {
+                    request_id: 0,
+                    result: FunctionResult::Value(Value::from("applied")).into(),
+                    ts: None,
+                    log_lines: LogLinesMessage(vec![]),
+                },
+            ))
+            .await?;
+        response_sender
+            .send(ProtocolResponse::ServerMessage(ServerMessage::Transition {
+                start_version: first,
+                end_version: StateVersion {
+                    ts: first.ts.succ()?,
+                    ..first
+                },
+                modifications: vec![],
+                client_clock_skew: None,
+                server_ts: None,
+            }))
+            .await?;
+        let result = tokio::time::timeout(Duration::from_secs(2), result).await??;
+        worker.handle.abort();
+        assert_eq!(result, FunctionResult::Value(Value::from("applied")));
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_subscribe_sent_as_the_connection_fails_returns_the_subscription(
+    ) -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        *protocol.query_set_send_time.lock() = Duration::from_millis(100);
+        *protocol.server.lock() = Server::AcceptAuth;
+        let worker = start_worker(&protocol, response_receiver);
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(changing_token())))?;
+        protocol.wait_for_sent(1).await?;
+
+        // While the subscription is being sent, the server refuses the token
+        // and the connection fails.
+        let (tx, rx) = oneshot::channel();
+        worker.requests.send(ClientRequest::Subscribe(
+            SubscribeRequest {
+                udf_path: UdfPath::from_str("folders:listTree")?,
+                args: BTreeMap::new(),
+            },
+            tx,
+            worker.requests.clone(),
+        ))?;
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        response_sender
+            .send(ProtocolResponse::ServerMessage(auth_error()))
+            .await?;
+
+        // The caller still gets the subscription, and the query is added
+        // again on the next connection.
+        let mut subscription = tokio::time::timeout(Duration::from_secs(2), rx)
+            .await?
+            .map_err(|_| anyhow::anyhow!("the caller got no subscription"))?;
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(protocol.reconnects.lock().len(), 1);
+        let adds = |sets: &[Vec<QuerySetModification>]| {
+            sets.iter()
+                .filter(|set| matches!(set[..], [QuerySetModification::Add(_)]))
+                .count()
+        };
+        assert_eq!(
+            adds(&protocol.sent_query_sets()),
+            2,
+            "{:?}",
+            protocol.sent.lock()
+        );
+
+        // The server answers the query there, and the caller gets it.
+        let first = StateVersion {
+            ts: StateVersion::initial().ts.succ()?,
+            ..StateVersion::initial()
+        };
+        response_sender
+            .send(ProtocolResponse::ServerMessage(ServerMessage::Transition {
+                start_version: first,
+                end_version: StateVersion {
+                    ts: first.ts.succ()?,
+                    ..first
+                },
+                modifications: vec![StateModification::QueryUpdated {
+                    query_id: QueryId::new(0),
+                    value: Value::from("ten"),
+                    journal: None,
+                    log_lines: LogLinesMessage(vec![]),
+                }],
+                client_clock_skew: None,
+                server_ts: None,
+            }))
+            .await?;
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), subscription.next()).await?,
+            Some(FunctionResult::Value(Value::from("ten")))
+        );
+
+        // Dropping it unsubscribes, so the query stops costing reads.
+        drop(subscription);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let removed = protocol
+            .sent_query_sets()
+            .iter()
+            .any(|set| matches!(set[..], [QuerySetModification::Remove { .. }]));
+        worker.handle.abort();
+        assert!(removed, "{:?}", protocol.sent.lock());
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_action_sent_as_the_connection_fails_is_answered_after_the_reconnect(
+    ) -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        *protocol.request_send_time.lock() = Duration::from_millis(100);
+        *protocol.server.lock() = Server::AcceptAuth;
+        let worker = start_worker(&protocol, response_receiver);
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(changing_token())))?;
+        protocol.wait_for_sent(1).await?;
+
+        // While the action is being sent, the server refuses the token and
+        // the connection fails.
+        let (tx, rx) = oneshot::channel();
+        worker.requests.send(ClientRequest::Action(
+            ActionRequest {
+                udf_path: UdfPath::from_str("images:generateUploadUrl")?,
+                args: BTreeMap::new(),
+            },
+            tx,
+        ))?;
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        response_sender
+            .send(ProtocolResponse::ServerMessage(auth_error()))
+            .await?;
+
+        let result = tokio::time::timeout(Duration::from_secs(2), rx)
+            .await?
+            .map_err(|_| anyhow::anyhow!("the caller was told the action failed"))?;
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(protocol.reconnects.lock().len(), 1);
+        assert_eq!(protocol.sent_actions(), 2, "{:?}", protocol.sent.lock());
+
+        response_sender
+            .send(ProtocolResponse::ServerMessage(
+                ServerMessage::ActionResponse {
+                    request_id: 0,
+                    result: FunctionResult::Value(Value::from("upload url")).into(),
+                    log_lines: LogLinesMessage(vec![]),
+                },
+            ))
+            .await?;
+        let result = tokio::time::timeout(Duration::from_secs(2), result).await??;
+        worker.handle.abort();
+        assert_eq!(result, FunctionResult::Value(Value::from("upload url")));
         Ok(())
     }
 
@@ -775,15 +1029,20 @@ async fn _worker_once<T: SyncProtocol>(
                         args,
                     } =  query;
                     let subscriber_id = base_client.subscribe(udf_path, args);
-                    communicate(
+                    let send_result = communicate(
                         base_client,
                         protocol_response_receiver,
                         watch_sender,
                         protocol_manager,
                         auth_recovery,
                     )
-                    .await?;
+                    .await;
 
+                    // The query stays subscribed, and is subscribed again
+                    // after a reconnect, even if the connection failed during
+                    // the send. Hand over the subscription either way, so the
+                    // caller gets its results and dropping it unsubscribes;
+                    // without it nothing could ever unsubscribe the query.
                     let watch = BroadcastStream::new(watch);
                     let subscription = QuerySubscription {
                         subscriber_id,
@@ -792,6 +1051,7 @@ async fn _worker_once<T: SyncProtocol>(
                         initial: base_client.latest_results().get(&subscriber_id).cloned(),
                     };
                     let _ = tx.send(subscription);
+                    send_result?;
                 },
                 ClientRequest::SubscribeSet(queries, tx, request_sender) => {
                     // The tokens exist before anything that can fail, so a
@@ -830,34 +1090,41 @@ async fn _worker_once<T: SyncProtocol>(
                         udf_path,
                         args,
                     } = mutation;
+                    // From here the request is tracked, and a reconnect
+                    // sends it again. Hand the caller its answer before the
+                    // send below can fail, or a connection that fails during
+                    // it (the server refusing auth, say) drops `tx`: the
+                    // caller hears "channel closed" while the server still
+                    // runs the mutation after the reconnect.
                     let result_receiver = base_client
                         .mutation(udf_path, args);
-                        communicate(
-                            base_client,
-                            protocol_response_receiver,
-                            watch_sender,
-                            protocol_manager,
-                            auth_recovery,
-                        )
-                        .await?;
                     let _ = tx.send(result_receiver);
+                    communicate(
+                        base_client,
+                        protocol_response_receiver,
+                        watch_sender,
+                        protocol_manager,
+                        auth_recovery,
+                    )
+                    .await?;
                 },
                 ClientRequest::Action(action, tx) => {
                     let ActionRequest {
                         udf_path,
                         args,
                     } = action;
+                    // Tracked from here, like a mutation above.
                     let result_receiver = base_client
                         .action(udf_path, args);
-                        communicate(
-                            base_client,
-                            protocol_response_receiver,
-                            watch_sender,
-                            protocol_manager,
-                            auth_recovery,
-                        )
-                        .await?;
                     let _ = tx.send(result_receiver);
+                    communicate(
+                        base_client,
+                        protocol_response_receiver,
+                        watch_sender,
+                        protocol_manager,
+                        auth_recovery,
+                    )
+                    .await?;
                 },
                 ClientRequest::Unsubscribe(unsubscribe) => {
                     let UnsubscribeRequest {subscriber_id} = unsubscribe;
