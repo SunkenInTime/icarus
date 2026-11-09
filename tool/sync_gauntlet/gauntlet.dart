@@ -240,6 +240,7 @@ final class SavePathGauntlet {
           await _drawLineup(editor, seed, index, variant: 0);
         }
         await _deleteWhileClaiming(seed, editor);
+        await _editWhileAddAnswered(seed, editor);
       case _delayRound:
         _app.transport.inject(BatchFault.delay);
         _faults['delayedDelivery'] = true;
@@ -390,6 +391,39 @@ final class SavePathGauntlet {
       await editor.draw(id, payload: null, sortIndex: 2000 + step);
     }
     _faults['deleteDuringSendSweep'] = true;
+  }
+
+  /// Adds an item and moves it as the answer to the add reaches the app,
+  /// a moment later each time, so some move is made while the queue stores
+  /// that answer, before the editor hears of it: made as an add, it must
+  /// land as a move of the added item.
+  Future<void> _editWhileAddAnswered(int seed, Editor editor) async {
+    for (var step = 0; step < 6; step += 1) {
+      final id = '${_prefix(seed)}element-answered-$step';
+      Map<String, dynamic> at(double dx) =>
+          cloudElementPayload(kind: 'utility', data: {
+            'id': id,
+            'isDeleted': false,
+            'position': {'dx': dx, 'dy': 400.0 + step},
+            'type': 'customCircle',
+            'rotation': 0.0,
+            'length': 0.0,
+            'angle': 0.0,
+            'attachedAgentId': null,
+            'customDiameter': 8.0,
+            'customWidth': null,
+            'customLength': null,
+            'customColorValue': 4282090230,
+            'customOpacityPercent': 30,
+          });
+      final answered = _app.transport.batchAnswered.first;
+      await editor.draw(id, payload: at(300), sortIndex: 3000 + step);
+      await answered;
+      await Future<void>.delayed(Duration(microseconds: step * 500));
+      await editor.draw(id, payload: at(340), sortIndex: 3000 + step);
+      await _settle(seed);
+    }
+    _faults['editWhileAddAnswered'] = true;
   }
 
   bool _waitsInOutbox(String id) =>
@@ -1161,6 +1195,7 @@ final class SavePathGauntlet {
           'reconnect': false,
           'deleteRecreate': false,
           'deleteDuringSendSweep': false,
+          'editWhileAddAnswered': false,
           'authRefresh': false,
           'processRestart': false,
         },

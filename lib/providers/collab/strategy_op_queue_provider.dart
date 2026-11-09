@@ -311,6 +311,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// is marked restored, since the canvas was drawn without it. Cleared by
   /// [forgetCanvasWork].
   final Set<String> _canvasOpIds = {};
+
+  /// The revision each item this device added landed at, by storage key,
+  /// until another change of this device's to it lands (see
+  /// [_asEditOfOwnAdd]).
+  final Map<String, int> _ownAddsLanded = {};
   int _canvasSession = 0;
 
   /// Op IDs of work made while connected, with no disconnect since: it is
@@ -1268,14 +1273,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         // Page changes wait in their list, which reconciling a page's
         // content never touches.
         if (key.kind == EntitySyncKeyKind.pageChange) continue;
-        final desired = desiredOps[key];
+        final made = desiredOps[key];
         final existing = queued[key];
         final inFlightIntent = state.inFlightByEntityKey[key];
         final inFlight = inFlightIntent?.pending.op;
         final successorIntent = successors[key];
         final pausedIntent = paused[key];
         final attentionIntent = attention[key];
-        if (desired != null && heldOpIds.contains(desired.opId)) {
+        if (made != null && heldOpIds.contains(made.opId)) {
           // Kept work that has landed or been replaced since is not written
           // again.
           if (![
@@ -1284,7 +1289,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             successorIntent?.pending,
             pausedIntent?.pending,
             attentionIntent?.pending,
-          ].any((pending) => pending?.op.opId == desired.opId)) {
+          ].any((pending) => pending?.op.opId == made.opId)) {
             continue;
           }
           // Kept paused or refused work stays as it is, unless its record
@@ -1300,6 +1305,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             continue;
           }
         }
+        final desired = made == null || heldOpIds.contains(made.opId)
+            ? made
+            : _asEditOfOwnAdd(key, made);
 
         // A rejected op remains the durable authority until the user
         // explicitly retries it. Reconciliation may update its successor, but
@@ -2735,6 +2743,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       if (ownRevision != null) {
         await _advanceSeenPage(sent, ownRevision, batch);
       }
+      if (ack.isAck) {
+        final op = sent.pending.op;
+        final revision = ack.appliedRevision;
+        if ((op is ElementAddOp || op is LineupAddOp) && revision != null) {
+          _ownAddsLanded[sent.storageKey] = revision;
+        } else {
+          _ownAddsLanded.remove(sent.storageKey);
+        }
+      }
       final current = _recordsByStorageKey[sent.storageKey];
       if (current?.pending.op.opId != ack.opId) continue;
       final successor = current!.successorPending;
@@ -3862,6 +3879,22 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     final exponent = _offlineRetryCount.clamp(0, 6);
     _offlineRetryCount += 1;
     return Duration(milliseconds: 300 * (1 << exponent));
+  }
+
+  /// [op] for [key], made as an add of an item this device's own add put on
+  /// the server at a revision [op] was not made from: made while the queue
+  /// stored that add's answer, before the canvas heard of it, it is an edit
+  /// of the added item, and goes as one, checked against the revision the
+  /// add landed at. Any other [op] as it is.
+  StrategyOp _asEditOfOwnAdd(EntitySyncKey key, StrategyOp op) {
+    if (op is! ElementAddOp && op is! LineupAddOp) return op;
+    final landed = _ownAddsLanded[DurableOutboxRecord.createStorageKey(
+      accountId: state.accountId!,
+      strategyPublicId: state.strategyPublicId!,
+      entityKey: key,
+    )];
+    if (landed == null || (op.expectedRevision ?? 0) >= landed) return op;
+    return _rebaseRejectedOp(op, landed, preserveAdd: false);
   }
 
   bool _sameIntent(StrategyOp left, StrategyOp right) {

@@ -55,8 +55,8 @@ save state, the outbox as the Hive box holds it, and then the server:
 ## Bugs it found that it steps around
 
 The first two start with a lost answer, after which the queue cannot tell
-its own landed change from a teammate's. All three are left for changes of
-their own, and the gauntlet avoids them so the lane passes until then:
+its own landed change from a teammate's. Both are left for changes of their
+own, and the gauntlet avoids them so the lane passes until then:
 
 - An edit made while a failed batch waits to be resent is folded into the
   failed op under a new op id. When the lost answer was an accept, the
@@ -67,13 +67,6 @@ their own, and the gauntlet avoids them so the lane passes until then:
   onto the revision it made. A strategy rename made offline is then refused
   as a conflict. The gauntlet cuts the network only when nothing is being
   sent.
-- An edit made while the queue applies the answer to an add of the same
-  item is made as an add too (the editor has not learned the add landed),
-  and the queue takes it after the add as new work, which the server
-  refuses as `already_exists`. Live sync makes its ops the same way, so the
-  app likely has this race; the gauntlet has not shown it outside its own
-  editor. The editor waits for an add being sent to be answered before
-  drawing that item again.
 
 ## Run it
 
