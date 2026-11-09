@@ -265,10 +265,13 @@ mod tests {
         AuthenticationToken,
         ClientMessage,
         LogLinesMessage,
+        QueryId,
         QuerySetModification,
+        StateModification,
         StateVersion,
         UdfPath,
     };
+    use futures::StreamExt;
     use parking_lot::Mutex;
     use tokio::sync::{
         broadcast,
@@ -701,7 +704,7 @@ mod tests {
 
         // The caller still gets the subscription, and the query is added
         // again on the next connection.
-        let subscription = tokio::time::timeout(Duration::from_secs(2), rx)
+        let mut subscription = tokio::time::timeout(Duration::from_secs(2), rx)
             .await?
             .map_err(|_| anyhow::anyhow!("the caller got no subscription"))?;
         tokio::time::sleep(Duration::from_secs(2)).await;
@@ -716,6 +719,33 @@ mod tests {
             2,
             "{:?}",
             protocol.sent.lock()
+        );
+
+        // The server answers the query there, and the caller gets it.
+        let first = StateVersion {
+            ts: StateVersion::initial().ts.succ()?,
+            ..StateVersion::initial()
+        };
+        response_sender
+            .send(ProtocolResponse::ServerMessage(ServerMessage::Transition {
+                start_version: first,
+                end_version: StateVersion {
+                    ts: first.ts.succ()?,
+                    ..first
+                },
+                modifications: vec![StateModification::QueryUpdated {
+                    query_id: QueryId::new(0),
+                    value: Value::from("ten"),
+                    journal: None,
+                    log_lines: LogLinesMessage(vec![]),
+                }],
+                client_clock_skew: None,
+                server_ts: None,
+            }))
+            .await?;
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), subscription.next()).await?,
+            Some(FunctionResult::Value(Value::from("ten")))
         );
 
         // Dropping it unsubscribes, so the query stops costing reads.
