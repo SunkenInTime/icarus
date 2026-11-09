@@ -122,8 +122,9 @@ final class SavePathGauntlet {
         if (checkpoint) {
           _progress.processRestarts += 1;
           _progress.wallClockMs += wallClock.elapsedMilliseconds;
+          // The process ends here as a crash would: Hive is not closed, and
+          // the next process opens what its awaited writes left on disk.
           await _saveProgress();
-          await _app.crash();
           return {
             'status': 'checkpoint',
             'seed': _progress.seed,
@@ -189,6 +190,14 @@ final class SavePathGauntlet {
     _editor = editor;
     if (_progress.editor case final saved?) editor.restore(saved);
     editor.hydrate(await _snapshot(seed));
+    if (_progress.editor != null) {
+      // The strategy opens drawn from the server, showing the teammate's
+      // field that this device never drew before it closed.
+      for (final MapEntry(key: id, value: fields) in _teammateFields.entries) {
+        final data = editor.drawn[id]?.payload?['data'];
+        if (data is Map) data.addAll(fields);
+      }
+    }
     final random = Random(seed * 1000 + _progress.round);
     try {
       while (_progress.round < roundCount) {
@@ -311,7 +320,10 @@ final class SavePathGauntlet {
         if (drawnNow?.payload == null) {
           // Live sync remakes a waiting op from its live read once the
           // delete before it lands; the stand-in makes each op once, so the
-          // user brings an item back only after its delete has landed.
+          // user brings an item back only after its delete has landed. A
+          // delete made offline waits for the network, so offline the user
+          // leaves the item alone.
+          if (_app.proxy.isOffline && _waitsInOutbox(id)) continue;
           await _waitFor(
             'the delete of $id to land',
             () => !_waitsInOutbox(id),
@@ -377,7 +389,7 @@ final class SavePathGauntlet {
       await Future<void>.delayed(Duration(milliseconds: 176 + step * 3));
       await editor.draw(id, payload: null, sortIndex: 2000 + step);
     }
-    _faults['editWhileClaiming'] = true;
+    _faults['deleteDuringSendSweep'] = true;
   }
 
   bool _waitsInOutbox(String id) =>
@@ -434,7 +446,10 @@ final class SavePathGauntlet {
         'customWidth': null,
         'customLength': null,
         'customColorValue': 4282090230,
-        'customOpacityPercent': 30,
+        // The user never changes it; it stays as the canvas shows it.
+        'customOpacityPercent': (editor.drawn[id]?.payload?['data']
+                as Map?)?['customOpacityPercent'] ??
+            30,
       }),
       sortIndex: sortIndex ?? editor.drawn[id]?.sortIndex ?? 100 + index,
     );
@@ -860,6 +875,30 @@ final class SavePathGauntlet {
               'disk does not hold it',
         );
       }
+      // Waiting is not enough: the newest op the outbox holds for an item
+      // must write what the user drew last, or an earlier edit stands in
+      // for a lost later one.
+      final newest = {
+        for (final record in onDisk)
+          _subjectOf(record.pending.op):
+              (record.successorPending ?? record.pending).op,
+      };
+      for (final id in missing) {
+        final drawn = _editor!.drawn[id];
+        final op = newest[id];
+        if (drawn == null || op == null) continue;
+        final writesDrawn = drawn.payload == null
+            ? op is ElementDeleteOp || op is LineupDeleteOp
+            : _same(op.payload, drawn.payload) &&
+                op.sortIndex == drawn.sortIndex;
+        if (!writesDrawn) {
+          fail(
+            'latest_edit_not_kept',
+            'the outbox holds ${op.type.wireName} for $id, which is not '
+                'what the user drew last',
+          );
+        }
+      }
     }
     final checks = _progress.current['checks'] as Map<String, Object?>;
     checks[chip.name] = ((checks[chip.name] as int?) ?? 0) + 1;
@@ -892,6 +931,12 @@ final class SavePathGauntlet {
     };
     for (final MapEntry(key: id, value: name) in editor.pageNames.entries) {
       if (pages[id]?['name'] != name) missing.add('page:$id');
+    }
+    for (final MapEntry(key: id, value: sortIndex)
+        in editor.pageOrder.entries) {
+      if ((pages[id]?['sortIndex'] as num?)?.toInt() != sortIndex) {
+        missing.add('page:$id');
+      }
     }
     for (final id in editor.pagesDeleted) {
       if (pages.containsKey(id)) missing.add('page:$id');
@@ -1062,7 +1107,7 @@ final class SavePathGauntlet {
           'offlineQueuedEdits': false,
           'reconnect': false,
           'deleteRecreate': false,
-          'editWhileClaiming': false,
+          'deleteDuringSendSweep': false,
           'authRefresh': false,
           'processRestart': false,
         },
