@@ -311,7 +311,10 @@ final class SavePathGauntlet {
         if (drawnNow?.payload == null) {
           // Live sync remakes a waiting op from its live read once the
           // delete before it lands; the stand-in makes each op once, so the
-          // user brings an item back only after its delete has landed.
+          // user brings an item back only after its delete has landed. A
+          // delete made offline waits for the network, so offline the user
+          // leaves the item alone.
+          if (_app.proxy.isOffline && _waitsInOutbox(id)) continue;
           await _waitFor(
             'the delete of $id to land',
             () => !_waitsInOutbox(id),
@@ -892,6 +895,12 @@ final class SavePathGauntlet {
     };
     for (final MapEntry(key: id, value: name) in editor.pageNames.entries) {
       if (pages[id]?['name'] != name) missing.add('page:$id');
+    }
+    for (final MapEntry(key: id, value: sortIndex)
+        in editor.pageOrder.entries) {
+      if ((pages[id]?['sortIndex'] as num?)?.toInt() != sortIndex) {
+        missing.add('page:$id');
+      }
     }
     for (final id in editor.pagesDeleted) {
       if (pages.containsKey(id)) missing.add('page:$id');
