@@ -1646,9 +1646,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       );
       try {
         for (final entry in state.pausedByEntityKey.entries) {
+          // A fresh count of attempts, but it keeps when it was last sent:
+          // sent before, it may have landed (see _selectBatch).
           final pending = PendingOp(
             op: entry.value.pending.op,
             clientId: entry.value.pending.clientId,
+            lastAttemptAt: entry.value.pending.lastAttemptAt,
           );
           final isOversized = cloudOperationExceedsPolicy(pending.op);
           await _putRecord(_recordFor(
@@ -2439,13 +2442,18 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     // changes onto the revision it made (see _advanceOwnStrategyRevision),
     // so until it comes they are not sent: the server would check them
     // against the revision before it.
+    // A send that failed counts an attempt and notes when it was made,
+    // which the user's Retry keeps; one cut short leaves the record in
+    // flight. One paused after failing still has no answer, and holds the
+    // others until the user retries it.
     bool sentBefore(DurableOutboxRecord record) =>
         record.status == DurableOutboxStatus.inFlight ||
-        record.pending.attempts > 0;
+        record.pending.attempts > 0 ||
+        record.pending.lastAttemptAt != null;
     final strategyChangeUnanswered = records.any((record) =>
         _takesStrategyRevision(record.pending.op) &&
         sentBefore(record) &&
-        waiting(record));
+        (waiting(record) || record.status == DurableOutboxStatus.paused));
     bool waitsForStrategyAnswer(DurableOutboxRecord record) =>
         strategyChangeUnanswered &&
         _takesStrategyRevision(record.pending.op) &&

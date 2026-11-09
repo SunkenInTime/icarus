@@ -6,6 +6,7 @@ import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -76,6 +77,65 @@ void main() {
     expect(container.read(strategyOpQueueProvider).needsAttention, isFalse);
   });
 
+  test('a rename made while a lost page add is paused lands after Retry',
+      () async {
+    final server = _Server();
+    server.appliedEarlier(addPage);
+    // Every answer to the add was lost and it paused; the server has it.
+    final store = MemoryDurableStrategyOutboxStore();
+    await store.put(DurableOutboxRecord(
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-1',
+      entityKey: const EntitySyncKey.pageChange('add'),
+      pending: PendingOp(
+        op: addPage,
+        clientId: 'client-a',
+        attempts: 8,
+        lastAttemptAt: DateTime(2026),
+      ),
+      status: DurableOutboxStatus.paused,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+      pageChangeSequence: 1,
+    ));
+    final (container, queue) = _start(server, store: store);
+
+    await queue.enqueue(rename);
+    await queue.flushNow();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(server.refused, isEmpty, reason: 'the rename waits for the add');
+
+    await queue.retryPaused();
+    await _until(() => container.read(strategyOpQueueProvider).pending.isEmpty);
+
+    expect(server.refused, isEmpty);
+    expect(server.name, 'Offline name');
+    expect(container.read(strategyOpQueueProvider).needsAttention, isFalse);
+  });
+
+  test('a page rename after a lost rename of that page lands', () async {
+    final server = _Server();
+    final (container, queue) = _start(server);
+    PagePatchOp renamePage(String opId, String name) => PagePatchOp(
+          opId: opId,
+          pagePublicId: 'page-1',
+          payload: {'name': name},
+          expectedPageRevision: 1,
+        );
+
+    await queue.enqueuePageChange(renamePage('first', 'Defaults'));
+    server.loseNextAnswer = true;
+    await queue.flushNow();
+    expect(server.pageName, 'Defaults', reason: 'the server renamed it');
+
+    await queue.enqueuePageChange(renamePage('second', 'Retakes'));
+    await queue.flushNow();
+    await _until(() => container.read(strategyOpQueueProvider).pending.isEmpty);
+
+    expect(server.refused, isEmpty);
+    expect(server.pageName, 'Retakes');
+  });
+
   test('a page added after a lost rename lands once the rename is resent',
       () async {
     final server = _Server();
@@ -115,10 +175,13 @@ void main() {
   });
 }
 
-(ProviderContainer, StrategyOpQueueNotifier) _start(_Server server) {
+(ProviderContainer, StrategyOpQueueNotifier) _start(
+  _Server server, {
+  DurableStrategyOutboxStore? store,
+}) {
   final container = ProviderContainer(overrides: [
     durableStrategyOutboxStoreProvider.overrideWithValue(
-      MemoryDurableStrategyOutboxStore(),
+      store ?? MemoryDurableStrategyOutboxStore(),
     ),
     convexStrategyRepositoryProvider.overrideWithValue(server),
     authProvider.overrideWith(_ReadyAuthProvider.new),
@@ -135,6 +198,7 @@ Future<void> _until(bool Function() done) async {
   for (var i = 0; i < 300 && !done(); i += 1) {
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
+  expect(done(), isTrue, reason: 'still waiting after 3 s');
 }
 
 /// A strategy at revision 5, answered as convex/ops.ts answers: each change
@@ -149,6 +213,11 @@ final class _Server extends ConvexStrategyRepository {
   final Set<String> pages = {'page-1'};
   bool loseNextAnswer = false;
   bool appliedReplays = true;
+  String pageName = 'Page 1';
+  int _pageRevision = 1;
+
+  /// [op] reached the server and was applied before the test starts.
+  void appliedEarlier(StrategyOp op) => _apply(op);
   final Map<String, int> _landed = {};
   final List<String> refused = [];
 
@@ -176,8 +245,17 @@ final class _Server extends ConvexStrategyRepository {
       );
     }
     if (op is PagePatchOp) {
-      _landed[op.opId] = 2;
-      return AppliedOpAck(opId: op.opId, revision: 2);
+      if (op.expectedPageRevision != _pageRevision) {
+        refused.add(op.opId);
+        return RejectedOpAck(
+          opId: op.opId,
+          rejectionReason: OpRejectionReason.revisionMismatch,
+        );
+      }
+      pageName = op.payload['name'] as String? ?? pageName;
+      _pageRevision += 1;
+      _landed[op.opId] = _pageRevision;
+      return AppliedOpAck(opId: op.opId, revision: _pageRevision);
     }
     if (op.expectedRevision != revision) {
       refused.add(op.opId);
