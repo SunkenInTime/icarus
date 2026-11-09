@@ -312,10 +312,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// [forgetCanvasWork].
   final Set<String> _canvasOpIds = {};
 
-  /// The last change of this device's to each item that landed, by storage
-  /// key: the op, the revision it landed at, and whether it was the canvas's
-  /// own work (see [_behindOwnLanded]).
-  final Map<String, ({StrategyOp op, int revision, bool drawn})> _ownLanded =
+  /// The canvas's last change to each item of the active strategy that
+  /// landed, by storage key: the op, the revision it landed at, and the
+  /// canvas session that drew it. Kept until the canvas makes an op from
+  /// that revision or newer, or is drawn fresh (see [_behindOwnLanded]).
+  final Map<String, ({StrategyOp op, int revision, int session})> _ownLanded =
       {};
   int _canvasSession = 0;
 
@@ -499,6 +500,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _retryTimer?.cancel();
     _awaitingRemoteAdoption.clear();
     _landedPageChanges.clear();
+    _ownLanded.clear();
     _offlineRetryCount = 0;
     final matching = accountId == null || strategyPublicId == null
         ? const <DurableOutboxRecord>[]
@@ -614,10 +616,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   void forgetCanvasWork() {
     _canvasSession++;
     _canvasOpIds.clear();
+    _ownLanded.clear();
   }
 
   /// How many op IDs are remembered as the canvas's work; for tests.
   int get canvasWorkCount => _canvasOpIds.length;
+
+  /// How many items' last landed change is remembered; for tests.
+  int get landedCanvasWorkCount => _ownLanded.length;
 
   /// Whether [opId] is work the canvas holds: queued from its edits, or
   /// drawn on it from the outbox ([noteDrawnWork]).
@@ -2802,12 +2808,20 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       if (ownRevision != null) {
         await _advanceSeenPage(sent, ownRevision, batch);
       }
-      if ((ack.isAck, ack.appliedRevision) case (true, final revision?)) {
-        _ownLanded[sent.storageKey] = (
-          op: sent.pending.op,
-          revision: revision,
-          drawn: _canvasOpIds.contains(sent.pending.op.opId),
-        );
+      if (!_isPageChange(sent)) {
+        // Only the canvas's own work, drawn in this session: the canvas
+        // made its later ops on top of it.
+        if ((ack.isAck, ack.appliedRevision) case (true, final revision?)
+            when _canvasOpIds.contains(sent.pending.op.opId) &&
+                _isActive(sent.accountId, sent.strategyPublicId)) {
+          _ownLanded[sent.storageKey] = (
+            op: sent.pending.op,
+            revision: revision,
+            session: _canvasSession,
+          );
+        } else {
+          _ownLanded.remove(sent.storageKey);
+        }
       }
       final current = _recordsByStorageKey[sent.storageKey];
       if (current?.pending.op.opId != ack.opId) continue;
@@ -3940,21 +3954,25 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// ([_landedBehind]). An add behind this device's add is an edit of the
   /// added item, and a merge names the fields the landed change wrote, from
   /// what it wrote. A change the canvas never drew (recovered after a
-  /// restart) is not what the user saw, so [op] keeps the version it was
-  /// made from and is checked against it. Any other [op] as it is.
+  /// restart, or landed as the canvas was drawn fresh) is not what the user
+  /// saw, so [op] keeps the version it was made from and is checked against
+  /// it. Any other [op] as it is.
   StrategyOp _behindOwnLanded(EntitySyncKey key, StrategyOp op) {
-    final landed = _ownLanded[DurableOutboxRecord.createStorageKey(
+    final storageKey = DurableOutboxRecord.createStorageKey(
       accountId: state.accountId!,
       strategyPublicId: state.strategyPublicId!,
       entityKey: key,
-    )];
-    if (landed == null ||
-        !landed.drawn ||
+    );
+    final landed = _ownLanded[storageKey];
+    if (landed == null) return op;
+    if (landed.session != _canvasSession ||
         (op.expectedRevision ?? 0) >= landed.revision) {
+      // Drawn by another canvas, or this one has heard it landed.
+      _ownLanded.remove(storageKey);
       return op;
     }
     return _landedBehind(
-      _asSuccessorOf(op, landed.op, drawn: landed.drawn),
+      _asSuccessorOf(op, landed.op, drawn: true),
       predecessor: landed.op,
       revision: landed.revision,
     );
