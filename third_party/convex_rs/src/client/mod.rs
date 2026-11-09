@@ -444,7 +444,7 @@ impl ConvexClient {
         self.request_sender
             .send(ClientRequest::Reconnect(reason.to_owned()))
             .expect("INTERNAL BUG: Worker has gone away");
-        self.reconnect_requested.notify_waiters();
+        self.reconnect_requested.notify_one();
     }
 
     /// Whether the server keeps refusing this client's auth. It turns true
