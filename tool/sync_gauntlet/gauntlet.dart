@@ -369,12 +369,16 @@ final class SavePathGauntlet {
             if (intent.pending.attempts > 0) intent.pending.op,
         ];
     await _waitFor('the batch to fail', () => failed().isNotEmpty);
+    // Whether an edit was queued behind work still waiting to be resent,
+    // which is what this round is for.
+    var waitedBehind = false;
     for (final op in failed()) {
       if (op is PageContentPatchOp) {
         await editor.setPageSettings({
           ...?editor.pageSettings,
           'agentSize': 60 + round,
         });
+        waitedBehind |= _app.queueState.successorByEntityKey.isNotEmpty;
         continue;
       }
       final id = op.entityPublicId;
@@ -382,8 +386,9 @@ final class SavePathGauntlet {
       final index = int.tryParse(id.split('element-').last);
       if (index == null || editor.drawn[id]?.payload == null) continue;
       await _drawElement(editor, seed, index, variant: round * 100 + 99);
+      waitedBehind |= _app.queueState.successorByEntityKey.isNotEmpty;
     }
-    _faults['editedWhileResendWaits'] = true;
+    if (waitedBehind) _faults['editedWhileResendWaits'] = true;
   }
 
   /// Adds an item and deletes it just after the queue starts sending the

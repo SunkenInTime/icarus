@@ -1672,9 +1672,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       );
       try {
         for (final entry in state.pausedByEntityKey.entries) {
+          // A fresh count of attempts, but it keeps when it was last sent:
+          // sent before, it may have landed (see _mayHaveLanded).
           final pending = PendingOp(
             op: entry.value.pending.op,
             clientId: entry.value.pending.clientId,
+            lastAttemptAt: entry.value.pending.lastAttemptAt,
           );
           final isOversized = cloudOperationExceedsPolicy(pending.op);
           await _putRecord(_recordFor(
@@ -3899,11 +3902,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   /// Whether [record]'s op was sent and no answer came, so it may have
-  /// landed: a send that failed counts an attempt, and one cut short (the
-  /// app closed mid-send) leaves the record in flight.
+  /// landed: a send that failed counts an attempt and notes when it was
+  /// made (which the user's Retry keeps, though it starts the count again),
+  /// and one cut short (the app closed mid-send) leaves the record in
+  /// flight.
   static bool _mayHaveLanded(DurableOutboxRecord record) =>
       record.status == DurableOutboxStatus.inFlight ||
-      record.pending.attempts > 0;
+      record.pending.attempts > 0 ||
+      record.pending.lastAttemptAt != null;
 
   bool _sameIntent(StrategyOp left, StrategyOp right) {
     return left.kind == right.kind &&

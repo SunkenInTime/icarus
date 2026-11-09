@@ -64,6 +64,88 @@ void main() {
     expect(server.received.where((op) => op == 'first'), hasLength(2));
   });
 
+  test('an edit after a restart with a send in flight lands behind it',
+      () async {
+    final server = _Server(row: text('a'));
+    // The app closed while patch first was being sent; the server had
+    // applied it.
+    final first = patch('first', 'a', 'b', 1);
+    server.appliedEarlier(first);
+    final store = MemoryDurableStrategyOutboxStore();
+    await store.put(DurableOutboxRecord(
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-1',
+      entityKey: key,
+      pending: PendingOp(op: first, clientId: 'client-a'),
+      status: DurableOutboxStatus.inFlight,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    ));
+    final (container, queue) = _start(server, store: store);
+
+    // Reopened, the canvas still shows the element as the user left it at
+    // revision 1 holding a (the live read has not come), and the user
+    // edits it before the queue sends first again.
+    await queue.syncDesiredOpsForPage(
+      pageId: 'page-1',
+      desiredOpsByEntityKey: {key: patch('second', 'a', 'c', 1)},
+    );
+    await queue.flushNow();
+    await _until(() => container.read(strategyOpQueueProvider).pending.isEmpty);
+
+    expect(server.refused, isEmpty);
+    expect(server.row, text('c'));
+    expect(container.read(strategyOpQueueProvider).needsAttention, isFalse);
+  });
+
+  test('a delete after Retry on a lost add that paused is not dropped',
+      () async {
+    final server = _Server();
+    final add = ElementAddOp(
+      opId: 'add',
+      elementPublicId: 'element-1',
+      pagePublicId: 'page-1',
+      payload: text('a'),
+      sortIndex: 0,
+    );
+    // Every answer to the add was lost and it paused; the server has it.
+    server.appliedEarlier(add);
+    final store = MemoryDurableStrategyOutboxStore();
+    await store.put(DurableOutboxRecord(
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-1',
+      entityKey: key,
+      pending: PendingOp(
+        op: add,
+        clientId: 'client-a',
+        attempts: 8,
+        lastAttemptAt: DateTime(2026),
+      ),
+      status: DurableOutboxStatus.paused,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    ));
+    final (container, queue) = _start(server, store: store);
+
+    await queue.retryPaused(flushImmediately: false);
+    await queue.syncDesiredOpsForPage(
+      pageId: 'page-1',
+      desiredOpsByEntityKey: {
+        key: const ElementDeleteOp(
+          opId: 'delete',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          expectedElementRevision: 0,
+        ),
+      },
+    );
+    await queue.flushNow();
+    await _until(() => container.read(strategyOpQueueProvider).pending.isEmpty);
+
+    expect(server.deleted, isTrue);
+    expect(server.refused, isEmpty);
+  });
+
   test('a delete after a lost add is not dropped with the add', () async {
     final server = _Server();
     final (container, queue) = _start(server);
@@ -99,10 +181,13 @@ void main() {
   });
 }
 
-(ProviderContainer, StrategyOpQueueNotifier) _start(_Server server) {
+(ProviderContainer, StrategyOpQueueNotifier) _start(
+  _Server server, {
+  DurableStrategyOutboxStore? store,
+}) {
   final container = ProviderContainer(overrides: [
     durableStrategyOutboxStoreProvider.overrideWithValue(
-      MemoryDurableStrategyOutboxStore(),
+      store ?? MemoryDurableStrategyOutboxStore(),
     ),
     convexStrategyRepositoryProvider.overrideWithValue(server),
     authProvider.overrideWith(_ReadyAuthProvider.new),
@@ -119,6 +204,7 @@ Future<void> _until(bool Function() done) async {
   for (var i = 0; i < 300 && !done(); i += 1) {
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
+  expect(done(), isTrue, reason: 'still waiting after 3 s');
 }
 
 /// One element row, answered as convex/ops.ts answers: a known op id is
@@ -132,6 +218,10 @@ final class _Server extends ConvexStrategyRepository {
 
   Map<String, dynamic>? row;
   bool deleted = false;
+
+  /// [op] reached the server and was applied before the test starts.
+  void appliedEarlier(StrategyOp op) => _apply(op);
+
   int _revision;
   bool loseNextAnswer = false;
   final Map<String, int> _landed = {};
