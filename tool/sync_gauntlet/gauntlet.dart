@@ -1045,7 +1045,10 @@ final class SavePathGauntlet {
           '${(op['opId'] as String).substring(0, 8)}'
           '${op['merge'] == null ? '' : ' merged'}${batch.delivered ? '' : ' (answer lost)'}: '
           '${result['status']}${result['reason'] == null ? '' : ' ${result['reason']}'}'
-          '${result['revision'] == null ? '' : ' at ${result['revision']}'}',
+          '${switch (result['appliedRevision'] ?? result['currentRevision']) {
+            null => '',
+            final revision => ' at $revision'
+          }}',
         );
         final status = result['status'] as String;
         count(status);
