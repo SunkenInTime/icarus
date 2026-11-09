@@ -312,10 +312,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// [forgetCanvasWork].
   final Set<String> _canvasOpIds = {};
 
-  /// The revision each item this device added landed at, by storage key,
-  /// until another change of this device's to it lands (see
-  /// [_asEditOfOwnAdd]).
-  final Map<String, int> _ownAddsLanded = {};
+  /// The last change of this device's to each item that landed, by storage
+  /// key: the op, the revision it landed at, and whether it was the canvas's
+  /// own work (see [_behindOwnLanded]).
+  final Map<String, ({StrategyOp op, int revision, bool drawn})> _ownLanded =
+      {};
   int _canvasSession = 0;
 
   /// Op IDs of work made while connected, with no disconnect since: it is
@@ -1308,7 +1309,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         }
         final desired = made == null || heldOpIds.contains(made.opId)
             ? made
-            : _asEditOfOwnAdd(key, made);
+            : _behindOwnLanded(key, made);
 
         // A rejected op remains the durable authority until the user
         // explicitly retries it. Reconciliation may update its successor, but
@@ -2801,14 +2802,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       if (ownRevision != null) {
         await _advanceSeenPage(sent, ownRevision, batch);
       }
-      if (ack.isAck) {
-        final op = sent.pending.op;
-        final revision = ack.appliedRevision;
-        if ((op is ElementAddOp || op is LineupAddOp) && revision != null) {
-          _ownAddsLanded[sent.storageKey] = revision;
-        } else {
-          _ownAddsLanded.remove(sent.storageKey);
-        }
+      if ((ack.isAck, ack.appliedRevision) case (true, final revision?)) {
+        _ownLanded[sent.storageKey] = (
+          op: sent.pending.op,
+          revision: revision,
+          drawn: _canvasOpIds.contains(sent.pending.op.opId),
+        );
       }
       final current = _recordsByStorageKey[sent.storageKey];
       if (current?.pending.op.opId != ack.opId) continue;
@@ -2817,17 +2816,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       // promotion. A rejected predecessor leaves both intents in attention.
       final successorRevision = ack.appliedRevision;
       if (successor != null && ack.isAck && successorRevision != null) {
-        final predecessorCreatedEntity =
-            sent.pending.op is ElementAddOp || sent.pending.op is LineupAddOp;
         final promoted = PendingOp(
-          op: _onLandedPredecessor(
-            _rebaseRejectedOp(
-              successor.op,
-              successorRevision,
-              preserveAdd: !predecessorCreatedEntity,
-            ),
-            original: successor.op,
+          op: _landedBehind(
+            successor.op,
             predecessor: sent.pending.op,
+            revision: successorRevision,
           ),
           clientId: successor.clientId,
         );
@@ -3939,20 +3932,28 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     return Duration(milliseconds: 300 * (1 << exponent));
   }
 
-  /// [op] for [key], made as an add of an item this device's own add put on
-  /// the server at a revision [op] was not made from: made while the queue
-  /// stored that add's answer, before the canvas heard of it, it is an edit
-  /// of the added item, and goes as one, checked against the revision the
-  /// add landed at. Any other [op] as it is.
-  StrategyOp _asEditOfOwnAdd(EntitySyncKey key, StrategyOp op) {
-    if (op is! ElementAddOp && op is! LineupAddOp) return op;
-    final landed = _ownAddsLanded[DurableOutboxRecord.createStorageKey(
+  /// [op] for [key], made from a version older than the one this device's
+  /// last change to the item landed at: the canvas made it before it heard
+  /// that change landed (while the queue stored its answer, say). It goes
+  /// as it would have had it been made a moment sooner, waiting behind that
+  /// change: as its successor, promoted onto the revision it landed at
+  /// ([_landedBehind]). An add behind this device's add is an edit of the
+  /// added item, and a merge names the fields the landed change wrote, from
+  /// what it wrote. Any other [op] as it is.
+  StrategyOp _behindOwnLanded(EntitySyncKey key, StrategyOp op) {
+    final landed = _ownLanded[DurableOutboxRecord.createStorageKey(
       accountId: state.accountId!,
       strategyPublicId: state.strategyPublicId!,
       entityKey: key,
     )];
-    if (landed == null || (op.expectedRevision ?? 0) >= landed) return op;
-    return _rebaseRejectedOp(op, landed, preserveAdd: false);
+    if (landed == null || (op.expectedRevision ?? 0) >= landed.revision) {
+      return op;
+    }
+    return _landedBehind(
+      _asSuccessorOf(op, landed.op, drawn: landed.drawn),
+      predecessor: landed.op,
+      revision: landed.revision,
+    );
   }
 
   /// Whether [record]'s op was sent and no answer came, so it may have
@@ -3964,6 +3965,25 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       record.status == DurableOutboxStatus.inFlight ||
       record.pending.attempts > 0 ||
       record.pending.lastAttemptAt != null;
+
+  /// [successor], waiting behind [predecessor], once [predecessor] landed at
+  /// [revision]: rebased onto it (an add behind an add becomes an edit),
+  /// as [_onLandedPredecessor] allows.
+  StrategyOp _landedBehind(
+    StrategyOp successor, {
+    required StrategyOp predecessor,
+    required int revision,
+  }) =>
+      _onLandedPredecessor(
+        _rebaseRejectedOp(
+          successor,
+          revision,
+          preserveAdd:
+              predecessor is! ElementAddOp && predecessor is! LineupAddOp,
+        ),
+        original: successor,
+        predecessor: predecessor,
+      );
 
   bool _sameIntent(StrategyOp left, StrategyOp right) {
     return left.kind == right.kind &&

@@ -9,6 +9,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/field_merge.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -223,7 +224,10 @@ final class Editor {
                 placeMergeField: known.sortIndex,
             },
           );
-    if (merge != null && merge.fields.isEmpty) return null;
+    // Back to the version the editor knows, nothing to write, unless work
+    // for the item is still waiting: it will write something else, so this
+    // goes behind it (live sync's _needsSuccessor).
+    if (merge != null && merge.fields.isEmpty && !_waits(id)) return null;
     return lineup
         ? LineupPatchOp(
             opId: opId,
@@ -243,6 +247,16 @@ final class Editor {
             expectedElementRevision: known.revision,
             merge: merge,
           );
+  }
+
+  bool _waits(String id) {
+    bool forItem(QueuedEntityIntent intent) =>
+        intent.pending.op.entityPublicId == id;
+    final queue = app.queueState;
+    return queue.queuedByEntityKey.values.any(forItem) ||
+        queue.successorByEntityKey.values.any(forItem) ||
+        queue.inFlightByEntityKey.values
+            .any((intent) => intent.pending.op.entityPublicId == id);
   }
 
   Future<void> setPageSettings(Map<String, Object?> settings) async {
