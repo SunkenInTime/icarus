@@ -9,6 +9,7 @@ import 'package:icarus/collab/field_merge.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -45,6 +46,42 @@ void main() {
         expectedElementRevision: revision,
         merge: FieldMerge(fields: base.keys.toList(), base: base),
       );
+
+  test('a delete made against what the user saw is checked against it',
+      () async {
+    final server = _Server(row: agent('A', 'none'));
+    // Saved before a restart, never drawn by this canvas: a whole write.
+    final (container, queue) = _startRecovered(
+      server,
+      ElementPatchOp(
+        opId: 'recovered',
+        elementPublicId: 'agent-1',
+        pagePublicId: 'page-1',
+        payload: agent('C', 'none'),
+        sortIndex: 0,
+        expectedElementRevision: 1,
+      ),
+    );
+    await _until(() => container.read(strategyOpQueueProvider).pending.isEmpty);
+    expect(server.row, agent('C', 'none'));
+
+    // The canvas still shows revision 1, and the user deletes the agent.
+    await queue.enqueue(const ElementDeleteOp(
+      opId: 'delete',
+      elementPublicId: 'agent-1',
+      pagePublicId: 'page-1',
+      expectedElementRevision: 1,
+    ));
+    await queue.flushNow();
+    await _until(
+      () => container.read(strategyOpQueueProvider).needsAttention,
+    );
+
+    // The server holds work the user never saw: they are asked, and the
+    // agent stays.
+    expect(server.refused, ['delete']);
+    expect(server.deleted, isFalse);
+  });
 
   test('an edit made while an answer is stored keeps the queued field',
       () async {
@@ -85,6 +122,23 @@ void main() {
     expect(server.row, agent('A', 'vandal'));
     expect(server.refused, isEmpty);
   });
+}
+
+(ProviderContainer, StrategyOpQueueNotifier) _startRecovered(
+  _Server server,
+  StrategyOp recovered,
+) {
+  final store = MemoryDurableStrategyOutboxStore();
+  unawaited(store.put(DurableOutboxRecord(
+    accountId: 'account-a',
+    strategyPublicId: 'strategy-1',
+    entityKey: const EntitySyncKey.element('page-1', 'agent-1'),
+    pending: PendingOp(op: recovered, clientId: 'client-a'),
+    status: DurableOutboxStatus.queued,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  )));
+  return _start(store, server);
 }
 
 (ProviderContainer, StrategyOpQueueNotifier) _start(
@@ -140,6 +194,7 @@ final class _Server extends ConvexStrategyRepository {
   _Server({required this.row}) : super(IcarusConvexApi(_NoTransport()));
 
   Map<String, dynamic> row;
+  bool deleted = false;
   int _revision = 1;
   bool holdAnswers = false;
   final reached = Completer<void>();
@@ -155,7 +210,7 @@ final class _Server extends ConvexStrategyRepository {
     required List<StrategyOp> ops,
     String? accountSubject,
   }) async {
-    final acks = [for (final op in ops) _apply(op as ElementPatchOp)];
+    final acks = [for (final op in ops) _apply(op)];
     if (holdAnswers) {
       holdAnswers = false;
       reached.complete();
@@ -164,8 +219,30 @@ final class _Server extends ConvexStrategyRepository {
     return acks;
   }
 
-  OpAck _apply(ElementPatchOp op) {
-    final merge = op.merge!;
+  OpAck _apply(StrategyOp op) {
+    OpAck refuse(OpRejectionReason reason) {
+      refused.add(op.opId);
+      return RejectedOpAck(opId: op.opId, rejectionReason: reason);
+    }
+
+    if (op is ElementDeleteOp) {
+      if (op.expectedElementRevision != _revision) {
+        return refuse(OpRejectionReason.revisionMismatch);
+      }
+      deleted = true;
+      _revision += 1;
+      return AppliedOpAck(opId: op.opId, revision: _revision);
+    }
+    op as ElementPatchOp;
+    final merge = op.merge;
+    if (merge == null) {
+      if (op.expectedElementRevision != _revision) {
+        return refuse(OpRejectionReason.revisionMismatch);
+      }
+      row = Map<String, dynamic>.from(op.payload!);
+      _revision += 1;
+      return AppliedOpAck(opId: op.opId, revision: _revision);
+    }
     final data = Map<String, dynamic>.from(row['data'] as Map);
     final wanted = op.payload!['data'] as Map;
     for (final field in merge.fields) {

@@ -437,8 +437,10 @@ final class SavePathGauntlet {
   Future<void> _editWhileAddAnswered(int seed, Editor editor) async {
     // Moves made before the editor heard the add landed: made as adds.
     var raced = 0;
-    // Edits made before the editor heard a move landed, while the queue
-    // promotes the change waiting behind it.
+    // Edits made after a move's answer reached the app and before the editor
+    // heard it: some reach the queue while it promotes the change waiting
+    // behind the move (test/strategy_op_queue_stale_patch_test.dart holds
+    // that moment for certain).
     var racedPromotion = 0;
     for (var step = 0; step < 6; step += 1) {
       final id = '${_prefix(seed)}element-answered-$step';
@@ -507,9 +509,9 @@ final class SavePathGauntlet {
       await _settle(seed);
     }
     _progress.current['movesMadeAsAdds'] = raced;
-    _progress.current['editsMadeWhilePromoting'] = racedPromotion;
+    _progress.current['editsMadeBeforeMoveHeard'] = racedPromotion;
     if (raced > 0) _faults['editWhileAddAnswered'] = true;
-    if (racedPromotion > 0) _faults['editWhileSuccessorPromoted'] = true;
+    if (racedPromotion > 0) _faults['editBeforeMoveAnswerHeard'] = true;
   }
 
   bool _waitsInOutbox(String id) =>
@@ -1298,7 +1300,7 @@ final class SavePathGauntlet {
           'deleteDuringSendSweep': false,
           'lostPageChangeAnswer': false,
           'editWhileAddAnswered': false,
-          'editWhileSuccessorPromoted': false,
+          'editBeforeMoveAnswerHeard': false,
           'authRefresh': false,
           'processRestart': false,
         },
