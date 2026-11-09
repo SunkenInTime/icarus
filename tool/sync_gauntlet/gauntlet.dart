@@ -398,6 +398,8 @@ final class SavePathGauntlet {
   /// that answer, before the editor hears of it: made as an add, it must
   /// land as a move of the added item.
   Future<void> _editWhileAddAnswered(int seed, Editor editor) async {
+    // Moves made before the editor heard the add landed: made as adds.
+    var raced = 0;
     for (var step = 0; step < 6; step += 1) {
       final id = '${_prefix(seed)}element-answered-$step';
       Map<String, dynamic> at(double dx) =>
@@ -418,12 +420,23 @@ final class SavePathGauntlet {
           });
       final answered = _app.transport.batchAnswered.first;
       await editor.draw(id, payload: at(300), sortIndex: 3000 + step);
-      await answered;
+      await answered.timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => throw GauntletFailure(
+          'timeout',
+          'The add of $id was never answered',
+        ),
+      );
       await Future<void>.delayed(Duration(microseconds: step * 500));
+      if (!_app.queueState.lastAckBatch
+          .any((acked) => acked.op.entityPublicId == id)) {
+        raced += 1;
+      }
       await editor.draw(id, payload: at(340), sortIndex: 3000 + step);
       await _settle(seed);
     }
-    _faults['editWhileAddAnswered'] = true;
+    _progress.current['movesMadeAsAdds'] = raced;
+    if (raced > 0) _faults['editWhileAddAnswered'] = true;
   }
 
   bool _waitsInOutbox(String id) =>

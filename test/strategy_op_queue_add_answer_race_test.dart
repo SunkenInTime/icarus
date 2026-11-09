@@ -53,6 +53,27 @@ void main() {
     expect(server.received, ['element.add', 'element.patch']);
   });
 
+  test('an item a teammate deleted and the user brings back is added again',
+      () async {
+    final server = _Server();
+    final (container, queue) =
+        _start(MemoryDurableStrategyOutboxStore(), server);
+
+    await queue.enqueue(add('add', 'a'));
+    await queue.flushNow();
+    // A teammate deletes it (revision 2); this device's queue still
+    // remembers its own add at 1. The canvas reads the delete and the user
+    // brings the item back over it.
+    server.teammateDeletes();
+    await queue.enqueue(add('again', 'c', expectedRevision: 2));
+    await queue.flushNow();
+    await _until(() => container.read(strategyOpQueueProvider).pending.isEmpty);
+
+    expect(server.refused, isEmpty);
+    expect(server.row, {'value': 'c'});
+    expect(server.deleted, isFalse);
+  });
+
   test('an item deleted and drawn again is added again', () async {
     final server = _Server();
     final (container, queue) =
@@ -100,6 +121,7 @@ Future<void> _until(bool Function() done) async {
   for (var i = 0; i < 300 && !done(); i += 1) {
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
+  expect(done(), isTrue, reason: 'still waiting after 3 s');
 }
 
 /// Holds the first record removal (an answered op leaving the outbox) until
@@ -128,6 +150,12 @@ final class _Server extends ConvexStrategyRepository {
   bool deleted = false;
   int _revision = 0;
   final List<String> received = [];
+
+  void teammateDeletes() {
+    deleted = true;
+    _revision += 1;
+  }
+
   final List<String> refused = [];
 
   @override
