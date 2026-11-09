@@ -56,6 +56,11 @@ final class FaultyTransport implements ConvexTransport {
   final StreamController<void> _sent = StreamController.broadcast();
   Stream<void> get batchSent => _sent.stream;
 
+  /// Completes each time the server's answer to an ops:applyBatch reaches
+  /// the app.
+  final StreamController<void> _answered = StreamController.broadcast();
+  Stream<void> get batchAnswered => _answered.stream;
+
   /// Applies [fault] to the next ops:applyBatch the app sends.
   void inject(BatchFault fault) => _pending.add(fault);
 
@@ -102,6 +107,7 @@ final class FaultyTransport implements ConvexTransport {
       (result.toDart() as Map).cast<String, Object?>(),
       delivered: delivered,
     ));
+    if (delivered) _answered.add(null);
     return result;
   }
 

@@ -164,35 +164,10 @@ final class Editor {
     required Map<String, dynamic>? payload,
     required int sortIndex,
   }) async {
-    if (payload != null) await _untilAddAnswered(id);
     drawn[id] = Drawn(payload: payload, sortIndex: sortIndex);
     final op = _opFor(id, payload, sortIndex);
     if (op == null) return;
     await app.queue.enqueue(op);
-  }
-
-  /// Waits, while an add of [id] is being sent, until the editor has its
-  /// answer. An op is made before it waits its turn in the queue, so one
-  /// made while the queue applies the add's answer is still an add, and
-  /// lands behind the add as new work the server refuses (already_exists).
-  /// Live sync makes its ops the same way, so the app likely has this race
-  /// too; the gauntlet leaves it for its own change.
-  Future<void> _untilAddAnswered(String id) async {
-    bool addInFlight() => app.queueState.inFlightByEntityKey.values.any(
-          (intent) =>
-              intent.pending.op.entityPublicId == id &&
-              (intent.pending.op is ElementAddOp ||
-                  intent.pending.op is LineupAddOp),
-        );
-    bool known() => _known[id]?.deleted == false;
-    if (!addInFlight() || known()) return;
-    final deadline = DateTime.now().add(const Duration(seconds: 20));
-    while (!known()) {
-      if (DateTime.now().isAfter(deadline)) {
-        throw StateError('The add of $id was never answered');
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-    }
   }
 
   StrategyOp? _opFor(String id, Map<String, dynamic>? payload, int sortIndex) {
