@@ -2722,9 +2722,11 @@ final class OpsApplyBatchResultResultsItemNoop
   const OpsApplyBatchResultResultsItemNoop({
     required this.opId,
     this.currentRevision = const ConvexOptional.absent(),
+    this.wasApplied = const ConvexOptional.absent(),
   });
   final ConvexOptional<double> currentRevision;
   final String opId;
+  final ConvexOptional<bool> wasApplied;
 
   factory OpsApplyBatchResultResultsItemNoop.decode(
     ConvexValue value,
@@ -2744,6 +2746,11 @@ final class OpsApplyBatchResultResultsItemNoop
         object.value['opId'] ?? _missing(path, 'opId'),
         '$path.opId',
       ),
+      wasApplied: object.value.containsKey('wasApplied')
+          ? ConvexOptional.present(
+              _decodeBoolean(object.value['wasApplied']!, '$path.wasApplied'),
+            )
+          : const ConvexOptional.absent(),
     );
   }
 
@@ -2757,6 +2764,7 @@ final class OpsApplyBatchResultResultsItemNoop
           '$path.currentRevision',
         ),
       'opId': ConvexString(opId),
+      if (wasApplied.isPresent) 'wasApplied': ConvexBoolean(wasApplied.value),
     });
   }
 }
@@ -6097,6 +6105,7 @@ ConvexObject encodeOpsApplyBatchArgs({
   required String clientId,
   required double clientProtocolVersion,
   ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
+  ConvexOptional<bool> includeWasApplied = const ConvexOptional.absent(),
   required List<OpsApplyBatchArgsOpsItem> ops,
   required String strategyPublicId,
 }) => ConvexObject({
@@ -6120,6 +6129,8 @@ ConvexObject encodeOpsApplyBatchArgs({
       elementFieldLevel.value,
       'ops.js:applyBatch.args.elementFieldLevel',
     ),
+  if (includeWasApplied.isPresent)
+    'includeWasApplied': ConvexBoolean(includeWasApplied.value),
   'ops': ConvexArray(
     ops.indexed
         .map(
