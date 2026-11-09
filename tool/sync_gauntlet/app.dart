@@ -201,12 +201,6 @@ final class GauntletApp {
     ].where((record) => record.accountId == auth.accountId).toList();
   }
 
-  /// Ends the process's app as a crash would: nothing is flushed or
-  /// cancelled beyond what Hive already wrote.
-  Future<void> crash() async {
-    await Hive.close();
-  }
-
   Future<void> close() async {
     container.dispose();
     _authHandle?.dispose();
