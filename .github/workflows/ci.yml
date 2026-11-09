@@ -206,12 +206,13 @@ jobs:
           lane presence '^presence/' guarded
           lane contract '^(convex/|tool/|lib/collab/)' guarded
           lane bridge '^third_party/'
-          # Sync: the op path on the server (convex/ops.ts, what it imports
-          # from convex/lib/, and the functions the gauntlet calls), the
-          # native client, and the gauntlet itself. Not lib/collab/: the
-          # gauntlet sends its own copy of the wire format, so the app's
-          # queue isn't under test yet.
-          lane gauntlet '^(third_party/convex_(flutter|rs)/|convex/(ops|schema|strategy|strategies|folders|users)\.ts$|convex/lib/|tool/convex_client_gauntlet/runtime/)' guarded
+          # Sync: the app's save path (its op queue, outbox, repository and
+          # the providers under lib/providers/collab/, the save state and the
+          # cloud startup that opens the outbox), the op path on the server
+          # (convex/ops.ts, what it imports from convex/lib/, and the
+          # functions the gauntlet calls), the native client, and the
+          # gauntlet itself.
+          lane gauntlet '^(lib/collab/|lib/providers/collab/|lib/providers/strategy_save_state_provider\.dart$|lib/startup/cloud_bootstrap\.dart$|third_party/convex_(flutter|rs)/|convex/(ops|schema|strategy|strategies|folders|users)\.ts$|convex/lib/|tool/sync_gauntlet/|tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment\.mjs$)' guarded
           # The desktop builds and the upgrade/rollback test, for changes to
           # what a shipped build finds in its Hive store, the installer, the
           # release scripts, or the test itself. The release runs the same
@@ -499,14 +500,17 @@ jobs:
           cargo test --manifest-path third_party/convex_flutter/rust/Cargo.toml
           cargo test --manifest-path third_party/convex_rs/Cargo.toml
 
-  # The sync fault-injection run in tool/convex_client_gauntlet/runtime:
-  # three seeds of 1,000 ops through the native client the desktop app uses,
-  # with offline queuing, duplicate delivery, a subscription restart, a
-  # rejected token and its refresh, a reconnect, revision conflicts,
-  # delete/recreate and a process restart. Each seed must end holding every
-  # write the server accepted. It runs against a throwaway local Convex
-  # deployment and signs in with tokens from an issuer made for the run, so
-  # it needs no secrets and reaches no cloud deployment.
+  # The save-path gauntlet in tool/sync_gauntlet: three seeds of a user
+  # editing cloud strategies through the app's own op queue, Hive outbox,
+  # repository and native client, while answers are lost, delayed and
+  # repeated, the network drops, the native client reconnects, the token is
+  # refused and refreshed, a teammate edits and deletes the same items, and
+  # the process dies with a batch in flight. At every check the sync chip
+  # must tell the truth: synced means the outbox is empty and the server
+  # holds every edit; anything else must list each edit the server lacks,
+  # kept in the outbox. It runs against a throwaway local Convex deployment
+  # and signs in with tokens from an issuer made for the run, so it needs no
+  # secrets and reaches no cloud deployment.
   gauntlet:
     needs: changes
     if: needs.changes.outputs.gauntlet == 'true'
@@ -541,10 +545,6 @@ jobs:
       # FRB_DART_LOAD_EXTERNAL_LIBRARY_NATIVE_LIB_DIR instead of an app bundle.
       - name: Build Native Convex Bridge
         run: cargo build --release --locked --manifest-path third_party/convex_flutter/rust/Cargo.toml
-
-      - name: Get Gauntlet Dependencies
-        working-directory: tool/convex_client_gauntlet/runtime
-        run: fvm flutter pub get
 
       - name: Run Gauntlet
         env:

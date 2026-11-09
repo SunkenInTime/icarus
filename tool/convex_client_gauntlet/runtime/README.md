@@ -13,19 +13,18 @@ canonical final-state and `.ica` round-trip verification.
 
 ## The CI lane
 
-The `gauntlet` lane in `.github/workflows/ci.yml` runs three seeds through
-`convex_flutter` on Linux whenever sync code changes. Three is enough for
-every fault: seed 0 refreshes auth, seed 1 restarts the process. Each seed
-must end holding the last write the trace sent to every element, lineup and
-page (`expectedFinalContent`), and the batch sent under the rejected token must
-land once the fresh token is accepted.
+The `gauntlet` lane in `.github/workflows/ci.yml` no longer runs this
+package's workload. It runs the save-path gauntlet (`tool/sync_gauntlet`),
+which makes its edits through the app's own op queue and outbox instead of a
+copy of the wire format. This package stays for comparing Convex clients.
 
 `tool/run_with_local_deployment.mjs` does the whole run, on Linux or macOS,
 with no Supabase project and no credentials. It copies `convex/` into a
 temporary directory, replaces the copy's `auth.config.ts` with one issuer
 whose key it generates and never writes down, starts an anonymous local
 deployment from the copy, mints two access tokens, and runs
-`test/live_deployment_test.dart`, starting it again after the checkpoint. The
+`test/live_deployment_test.dart` when `GAUNTLET_ADAPTER` names a client
+(`convex_flutter` or `dartvex`), starting it again after the checkpoint. The
 repository's `convex/auth.config.ts` is never touched. The test loads the
 native bridge from a cargo build instead of an app bundle:
 
@@ -33,7 +32,7 @@ native bridge from a cargo build instead of an app bundle:
 npm ci
 cargo build --release --manifest-path third_party/convex_flutter/rust/Cargo.toml
 (cd tool/convex_client_gauntlet/runtime && fvm flutter pub get)
-FLUTTER="fvm flutter" node tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment.mjs
+GAUNTLET_ADAPTER=convex_flutter FLUTTER="fvm flutter" node tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment.mjs
 ```
 
 `GAUNTLET_SEEDS`, `GAUNTLET_PORT` (default 3410), `GAUNTLET_ADAPTER` and
