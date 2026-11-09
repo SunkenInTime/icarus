@@ -1,4 +1,7 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/settings.dart';
@@ -85,6 +88,62 @@ void main() {
     await tester.pump();
     await tester.pump(Settings.pressDuration);
     expect(_paintedScale(tester), 1);
+  });
+
+  testWidgets('the press is painted about the middle, not a corner',
+      (tester) async {
+    final frame = GlobalKey();
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Center(
+          child: RepaintBoundary(
+            key: frame,
+            child: SizedBox(
+              width: 200,
+              height: 100,
+              child: Center(
+                child: PressScale(
+                  child: Container(
+                    width: 80,
+                    height: 40,
+                    color: const Color(0xFFFFFFFF),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // The white box's edges, read from the painted pixels.
+    Future<Rect> paintedBox() async {
+      final boundary =
+          frame.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      final bytes = (await tester.runAsync(() async {
+        final image = await boundary.toImage();
+        return (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+      }))!;
+      double white(int x, int y) => bytes.getUint8((y * 200 + x) * 4) / 255;
+      final row = [for (var x = 0; x < 200; x++) white(x, 50)];
+      final column = [for (var y = 0; y < 100; y++) white(100, y)];
+      final width = row.reduce((a, b) => a + b);
+      final height = column.reduce((a, b) => a + b);
+      final left = row.takeWhile((c) => c < 1).fold(0.0, (a, c) => a + 1 - c);
+      final top = column.takeWhile((c) => c < 1).fold(0.0, (a, c) => a + 1 - c);
+      return Rect.fromLTWH(left, top, width, height);
+    }
+
+    final rest = await paintedBox();
+    await tester.startGesture(tester.getCenter(find.byType(PressScale)));
+    await tester.pump();
+    await tester.pump(Settings.pressDuration);
+    final held = await paintedBox();
+
+    expect(held.width, closeTo(rest.width * Settings.pressScale, 0.05));
+    expect(held.center.dx, closeTo(rest.center.dx, 0.05));
+    expect(held.center.dy, closeTo(rest.center.dy, 0.05));
   });
 
   testWidgets('the click lands on release, no later than without the press',
