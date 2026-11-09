@@ -742,14 +742,21 @@ void main() {
         flushImmediately: false,
       );
 
-      final pending = container!.read(strategyOpQueueProvider).pending.single;
-      expect(pending.op.opId, isNot(anyOf('applied-a', 'work-b')));
-      expect(pending.op.payload, {'value': 'b'});
+      // applied-a may have landed: it goes again as it was, and the new
+      // work waits behind it under an id of its own.
+      final queueState = container!.read(strategyOpQueueProvider);
+      const key = EntitySyncKey.element('page-1', 'element-1');
+      final waiting = queueState.queuedByEntityKey[key]!.pending.op;
+      final behind = queueState.successorByEntityKey[key]!.pending.op;
+      expect(waiting.opId, 'applied-a');
+      expect(behind.opId, isNot('applied-a'));
+      expect(behind.payload, {'value': 'b'});
       final durable = DurableOutboxRecord.fromJson(
         Map<String, dynamic>.from(store.values.values.single as Map),
       );
-      expect(durable.pending.op.opId, pending.op.opId);
-      expect(durable.pending.op.payload, {'value': 'b'});
+      expect(durable.pending.op.opId, 'applied-a');
+      expect(durable.successorPending!.op.opId, behind.opId);
+      expect(durable.successorPending!.op.payload, {'value': 'b'});
     });
   });
 

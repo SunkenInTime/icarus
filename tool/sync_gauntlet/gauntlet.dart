@@ -266,16 +266,13 @@ final class SavePathGauntlet {
     await _edit(seed, editor, random, round);
     final losesBatch = round == _loseAnswerRound || round == _loseRequestRound;
     if (losesBatch) {
-      // The batch holding the round's last edits fails. Nothing more is
-      // edited until its retry lands: an edit made meanwhile is folded into
-      // the failed op under a new op id, and if the lost answer was an
-      // accept, the server refuses the fold as a conflict with this
-      // device's own write. A bug the gauntlet found and leaves for its own
-      // change.
+      // The batch holding the round's last edits fails, and the user edits
+      // the same items again before it is sent again.
       _app.transport.inject(round == _loseAnswerRound
           ? BatchFault.loseAnswer
           : BatchFault.loseRequest);
       _faults[round == _loseAnswerRound ? 'lostAnswer' : 'lostRequest'] = true;
+      await _editWhileResendWaits(seed, editor, round);
     }
     if (round == _reconnectRound) {
       final connected = await _reconnect();
@@ -283,7 +280,6 @@ final class SavePathGauntlet {
       _faults['reconnect'] = true;
     }
     await _pageWork(seed, editor, round);
-    if (losesBatch) await _settle(seed);
 
     if (round == _offlineRound) {
       // Everything made offline is waiting, and the chip must say so.
@@ -360,6 +356,46 @@ final class SavePathGauntlet {
       'abilitySize': 20 + round,
       'useNeutralTeamColors': round.isEven,
     });
+  }
+
+  /// Waits for the batch holding the round's last edits to fail, then edits
+  /// again what it held, before the queue sends it again: the page's
+  /// settings and its elements. When the lost answer was an accept, the
+  /// server holds the first edits, and the second ones must still land,
+  /// unasked.
+  Future<void> _editWhileResendWaits(int seed, Editor editor, int round) async {
+    List<StrategyOp> failed() => [
+          for (final intent in _app.queueState.queuedByEntityKey.values)
+            if (intent.pending.attempts > 0) intent.pending.op,
+        ];
+    await _waitFor('the batch to fail', () => failed().isNotEmpty);
+    // Whether an edit was queued behind the failed op of its own item,
+    // which is what this round is for.
+    var waitedBehind = false;
+    bool behindFailed(StrategyOp op) {
+      final key = EntitySyncKey.forStrategyOp(op)!;
+      return _app.queueState.queuedByEntityKey[key]?.pending.op.opId ==
+              op.opId &&
+          _app.queueState.successorByEntityKey.containsKey(key);
+    }
+
+    for (final op in failed()) {
+      if (op is PageContentPatchOp) {
+        await editor.setPageSettings({
+          ...?editor.pageSettings,
+          'agentSize': 60 + round,
+        });
+        waitedBehind |= behindFailed(op);
+        continue;
+      }
+      final id = op.entityPublicId;
+      if (id == null || Editor.isLineup(id)) continue;
+      final index = int.tryParse(id.split('element-').last);
+      if (index == null || editor.drawn[id]?.payload == null) continue;
+      await _drawElement(editor, seed, index, variant: round * 100 + 99);
+      waitedBehind |= behindFailed(op);
+    }
+    if (waitedBehind) _faults['editedWhileResendWaits'] = true;
   }
 
   /// Adds an item and deletes it just after the queue starts sending the
@@ -1155,6 +1191,7 @@ final class SavePathGauntlet {
           'duplicatedDelivery': false,
           'lostAnswer': false,
           'lostRequest': false,
+          'editedWhileResendWaits': false,
           'revisionConflictMerged': false,
           'revisionConflictRefused': false,
           'offlineQueuedEdits': false,

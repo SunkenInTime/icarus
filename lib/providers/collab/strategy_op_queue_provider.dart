@@ -458,9 +458,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     return record.copyWith(
       status: DurableOutboxStatus.queued,
+      // Its count of attempts starts again, but an earlier send of it may
+      // have landed (see _mayHaveLanded).
       pending: PendingOp(
         op: record.pending.op,
         clientId: record.pending.clientId,
+        lastAttemptAt: record.pending.lastAttemptAt,
       ),
       clearError: true,
     );
@@ -732,11 +735,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     final list = _pageChangeRecords(accountId, strategyPublicId);
     bool forPage(DurableOutboxRecord record) =>
         record.pending.op.pagePublicId == pageId;
-    // Never claimed for a send: a send that failed counts an attempt, and
-    // one cut short leaves the record in flight.
     bool neverSent(DurableOutboxRecord record) =>
         record.status == DurableOutboxStatus.queued &&
-        record.pending.attempts == 0 &&
+        !_mayHaveLanded(record) &&
         !_uncertainDurableRecords.contains(record.storageKey);
     try {
       final newest = list.where(forPage).lastOrNull;
@@ -1045,7 +1046,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           add is! PageAddOp ||
           add.copyContentFromPagePublicId == null ||
           waiting.status != DurableOutboxStatus.queued ||
-          waiting.pending.attempts > 0 ||
+          _mayHaveLanded(waiting) ||
           _uncertainDurableRecords.contains(waiting.storageKey) ||
           !identical(_recordsByStorageKey[waiting.storageKey], waiting)) {
         return false;
@@ -1495,6 +1496,40 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         }
 
         final base = pausedIntent ?? existing;
+        final baseRecord = base == null ? null : _recordForActiveKey(key);
+        if (base != null &&
+            baseRecord?.pending.op.opId == base.pending.op.opId &&
+            _mayHaveLanded(baseRecord!)) {
+          // It was sent and no answer came, so it may have landed. It goes
+          // again as it is, under its own op id, and this edit waits behind
+          // it, as behind work being sent: folded into it under a new id,
+          // the edit would be checked against what the server held before
+          // the user's own change.
+          if (successorIntent != null &&
+              _sameIntent(successorIntent.pending.op, desired)) {
+            continue;
+          }
+          final pending = PendingOp(
+            op: _asSuccessorOf(
+              successorIntent == null
+                  ? desired
+                  : _mergeQueuedIntent(successorIntent.pending.op, desired) ??
+                      desired,
+              base.pending.op,
+              drawn: _canvasOpIds.contains(base.pending.op.opId),
+            ),
+            clientId: successorIntent?.pending.clientId ?? state.clientId!,
+          );
+          writtenByCanvas(pending, desired, from: successorIntent?.pending.op);
+          await _putRecord(baseRecord.copyWith(
+            successorPending: pending,
+            updatedAt: DateTime.now(),
+          ));
+          successors[key] =
+              QueuedEntityIntent(entityKey: key, pending: pending);
+          changed = true;
+          continue;
+        }
         final merged = base == null
             ? desired
             : _mergeQueuedIntent(base.pending.op, desired);
@@ -1638,9 +1673,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       );
       try {
         for (final entry in state.pausedByEntityKey.entries) {
+          // A fresh count of attempts, but it keeps when it was last sent:
+          // sent before, it may have landed (see _mayHaveLanded).
           final pending = PendingOp(
             op: entry.value.pending.op,
             clientId: entry.value.pending.clientId,
+            lastAttemptAt: entry.value.pending.lastAttemptAt,
           );
           final isOversized = cloudOperationExceedsPolicy(pending.op);
           await _putRecord(_recordFor(
@@ -3863,6 +3901,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _offlineRetryCount += 1;
     return Duration(milliseconds: 300 * (1 << exponent));
   }
+
+  /// Whether [record]'s op was sent and no answer came, so it may have
+  /// landed: a send that failed counts an attempt and notes when it was
+  /// made (which the user's Retry keeps, though it starts the count again),
+  /// and one cut short (the app closed mid-send) leaves the record in
+  /// flight.
+  static bool _mayHaveLanded(DurableOutboxRecord record) =>
+      record.status == DurableOutboxStatus.inFlight ||
+      record.pending.attempts > 0 ||
+      record.pending.lastAttemptAt != null;
 
   bool _sameIntent(StrategyOp left, StrategyOp right) {
     return left.kind == right.kind &&

@@ -7,7 +7,8 @@ the native Convex client, against a throwaway local deployment. The faults
 sit below that path, where real ones happen:
 
 - `FaultyTransport`, under the repository: an `ops:applyBatch` whose answer
-  is lost after the server applied it, one lost before it arrives, one
+  is lost after the server applied it, one lost before it arrives (after
+  each, the user edits the same items again before the queue resends it), one
   delivered twice, one delayed, one held while the token goes bad, and one
   whose answer never comes because the process dies.
 - `SocketProxy`, under the native client: the network goes away and comes
@@ -54,14 +55,9 @@ save state, the outbox as the Hive box holds it, and then the server:
 
 ## Bugs it found that it steps around
 
-The first two start with a lost answer, after which the queue cannot tell
-its own landed change from a teammate's. All three are left for changes of
-their own, and the gauntlet avoids them so the lane passes until then:
+Both are left for changes of their own, and the gauntlet avoids them so
+the lane passes until then:
 
-- An edit made while a failed batch waits to be resent is folded into the
-  failed op under a new op id. When the lost answer was an accept, the
-  server refuses the fold as a conflict with this device's own write. The
-  gauntlet edits nothing until a lost batch has been resent.
 - When the network drops while a page change is being sent, its resend is
   answered as a replay, which does not move other waiting strategy changes
   onto the revision it made. A strategy rename made offline is then refused
