@@ -788,16 +788,32 @@ final class SavePathGauntlet {
     }
   }
 
-  /// The work the outbox holds back, and why, for failure messages.
-  String _held() => [
-        for (final record in _app.outboxOnDisk())
-          if (record.status.name == 'attention' ||
-              record.status.name == 'paused')
-            '${record.entityKey} ${record.pending.op.type.wireName} at '
-                '${record.pending.op.expectedRevision} '
-                '(${record.lastError}; server at '
-                '${record.latestServerRevision})',
-      ].join('; ');
+  /// What the server answered for each item this process sent, for
+  /// failure messages.
+  final Map<String, List<String>> _history = {};
+
+  /// The work the outbox holds back, why, and what the server answered for
+  /// it before, for failure messages.
+  String _held() {
+    _recordAnswersQuietly();
+    return [
+      for (final record in _app.outboxOnDisk())
+        if (record.status.name == 'attention' || record.status.name == 'paused')
+          '${record.entityKey} ${record.pending.op.type.wireName} at '
+              '${record.pending.op.expectedRevision} '
+              '(${record.lastError}; server at '
+              '${record.latestServerRevision}); sent before: '
+              '${(_history[_subjectOf(record.pending.op)] ?? const []).join(' | ')}',
+    ].join('; ');
+  }
+
+  void _recordAnswersQuietly() {
+    try {
+      _recordAnswers();
+    } on GauntletFailure {
+      // The failure being reported comes first.
+    }
+  }
 
   /// The chip's promise, checked against the outbox on disk and the server.
   Future<CloudSyncStatus> _check(int seed, String moment) async {
@@ -883,14 +899,25 @@ final class SavePathGauntlet {
           _subjectOf(record.pending.op):
               (record.successorPending ?? record.pending).op,
       };
+      final editor = _editor!;
       for (final id in missing) {
-        final drawn = _editor!.drawn[id];
         final op = newest[id];
-        if (drawn == null || op == null) continue;
-        final writesDrawn = drawn.payload == null
-            ? op is ElementDeleteOp || op is LineupDeleteOp
-            : _same(op.payload, drawn.payload) &&
-                op.sortIndex == drawn.sortIndex;
+        if (op == null) continue;
+        final drawn = editor.drawn[id];
+        // Page changes wait as an ordered list, not as one newest op.
+        final bool writesDrawn;
+        if (op is PageContentPatchOp) {
+          writesDrawn = _same(op.settings, editor.pageSettings);
+        } else if (op is StrategyPatchOp) {
+          writesDrawn = op.payload['name'] == editor.strategyName;
+        } else if (drawn == null) {
+          continue;
+        } else {
+          writesDrawn = drawn.payload == null
+              ? op is ElementDeleteOp || op is LineupDeleteOp
+              : _same(op.payload, drawn.payload) &&
+                  op.sortIndex == drawn.sortIndex;
+        }
         if (!writesDrawn) {
           fail(
             'latest_edit_not_kept',
@@ -1003,7 +1030,23 @@ final class SavePathGauntlet {
     for (final batch in _app.transport.seen) {
       count('batches');
       if (!batch.delivered) count('lost');
-      for (final result in (batch.result['results'] as List).cast<Map>()) {
+      final ops = (batch.args['ops'] as List).cast<Map>();
+      final results = (batch.result['results'] as List).cast<Map>();
+      for (final (index, result) in results.indexed) {
+        final op = ops[index];
+        final subject = op['elementPublicId'] ??
+            op['lineupPublicId'] ??
+            op['pagePublicId'] ??
+            'strategy';
+        (_history[subject as String] ??= []).add(
+          'round ${_progress.round} batch ${counts['batches']} '
+          '${op['type']} at '
+          '${op['expectedElementRevision'] ?? op['expectedLineupRevision'] ?? op['expectedStrategyRevision'] ?? op['expectedPageRevision'] ?? op['expectedPageContentRevision']} '
+          '${(op['opId'] as String).substring(0, 8)}'
+          '${op['merge'] == null ? '' : ' merged'}${batch.delivered ? '' : ' (answer lost)'}: '
+          '${result['status']}${result['reason'] == null ? '' : ' ${result['reason']}'}'
+          '${result['revision'] == null ? '' : ' at ${result['revision']}'}',
+        );
         final status = result['status'] as String;
         count(status);
         if (status != 'applied') continue;
