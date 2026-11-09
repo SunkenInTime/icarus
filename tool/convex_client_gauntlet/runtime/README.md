@@ -11,6 +11,35 @@ rejected-token refresh, reconnect, revision conflicts, delete/recreate cycles,
 and a persisted mid-run process checkpoint. A fresh Dartvex client performs the
 canonical final-state and `.ica` round-trip verification.
 
+## The CI lane
+
+The `gauntlet` lane in `.github/workflows/ci.yml` no longer runs this
+package's workload. It runs the save-path gauntlet (`tool/sync_gauntlet`),
+which makes its edits through the app's own op queue and outbox instead of a
+copy of the wire format. This package stays for comparing Convex clients.
+
+`tool/run_with_local_deployment.mjs` does the whole run, on Linux or macOS,
+with no Supabase project and no credentials. It copies `convex/` into a
+temporary directory, replaces the copy's `auth.config.ts` with one issuer
+whose key it generates and never writes down, starts an anonymous local
+deployment from the copy, mints two access tokens, and runs
+`test/live_deployment_test.dart` when `GAUNTLET_ADAPTER` names a client
+(`convex_flutter` or `dartvex`), starting it again after the checkpoint. The
+repository's `convex/auth.config.ts` is never touched. The test loads the
+native bridge from a cargo build instead of an app bundle:
+
+```sh
+npm ci
+cargo build --release --manifest-path third_party/convex_flutter/rust/Cargo.toml
+(cd tool/convex_client_gauntlet/runtime && fvm flutter pub get)
+GAUNTLET_ADAPTER=convex_flutter FLUTTER="fvm flutter" node tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment.mjs
+```
+
+`GAUNTLET_SEEDS`, `GAUNTLET_PORT` (default 3410), `GAUNTLET_ADAPTER` and
+`GAUNTLET_REPORT` change the run; the script's header lists them. The runner
+keeps its progress in the system temporary directory under the adapter's name,
+so two runs of one adapter on one machine must not overlap.
+
 ## Verify and build
 
 ```sh

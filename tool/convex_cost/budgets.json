@@ -1,0 +1,73 @@
+{
+  "backend": "precompiled-2026-10-22-1447815",
+  "scenarios": {
+    "move": {
+      "title": "Move 20 strategies into a 150-strategy library",
+      "about": "Moving local work to the cloud while the library is open at the top level, half the strategies into a folder. Each move is createWithInitialPage, getShell, two pages:add, two applyBatch (75 items), getFullSnapshot and finishMove, with the folder tree and the top-level list live. Oct 22: every move write re-ran both lists, each re-run reading the whole library (#388).",
+      "metrics": {
+        "listReruns": {
+          "today": 20,
+          "budget": 24
+        },
+        "listReadBytes": {
+          "today": 1191241,
+          "budget": 1489052
+        },
+        "readBytes": {
+          "today": 4704701,
+          "budget": 5880877
+        }
+      }
+    },
+    "agentDrag": {
+      "title": "Drag an agent",
+      "about": "One element.patch of an agent's position through ops:applyBatch, on a page of 60 items watched in slices, with the library lists live behind the editor. Oct 19: the drag re-read every agent of the strategy to rebuild its agent summary (75 KB, #348).",
+      "metrics": {
+        "applyBatchReadBytes": {
+          "today": 4343,
+          "budget": 5429
+        },
+        "applyBatchWriteBytes": {
+          "today": 2198,
+          "budget": 2748
+        },
+        "liveQueryReruns": {
+          "today": 1,
+          "budget": 1
+        },
+        "readBytes": {
+          "today": 12487,
+          "budget": 15609
+        }
+      }
+    },
+    "sliceEdit": {
+      "title": "Edit a page watched in slices",
+      "about": "One item moved on a page of 60 items that the editor watches as page:getFrame plus four page:getElementSlice ranges (#350). The edit should re-run the one slice holding the item: 17.4 KB per save in slices against 56.5 KB for the whole page when slices shipped.",
+      "metrics": {
+        "pageReruns": {
+          "today": 1,
+          "budget": 1
+        },
+        "pageReadBytes": {
+          "today": 16846,
+          "budget": 21058
+        },
+        "otherReruns": {
+          "today": 0,
+          "budget": 0
+        }
+      }
+    },
+    "concurrentEdits": {
+      "title": "Two devices edit one strategy at once",
+      "about": "Two signed-in devices each send 10 single-drag applyBatch calls to the same strategy at the same time, on different items of one page. Oct 22: a per-strategy counter row made concurrent batches lose write conflicts and retry (#391's design).",
+      "metrics": {
+        "conflictRetries": {
+          "today": 0,
+          "budget": 0
+        }
+      }
+    }
+  }
+}
