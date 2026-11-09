@@ -2337,12 +2337,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         await _putRecord(inFlight);
         claimed.add(inFlight);
       }
-      // Shown as being sent before this write ends: the next write queued
-      // behind it (an edit made during these puts) runs before the flush
-      // that claimed them goes on, and reads the queue's state. Seeing the
-      // op as still queued, it would fold the edit into the record being
-      // sent, so the op's answer would find no record of it and the edit
-      // would be lost or refused (a delete folded into an add drops both).
+      // Shown in flight before this write ends: an edit queued behind it
+      // runs before the flush goes on, and must see these records as sent
+      // or it folds itself into one (a delete folded into an add drops both).
       if (claimed.isNotEmpty) _refreshActiveQueueView();
       return claimed;
     });
