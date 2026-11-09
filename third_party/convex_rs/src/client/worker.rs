@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     convert::Infallible,
+    sync::Arc,
     time::Duration,
 };
 
@@ -8,10 +9,13 @@ use convex_sync_types::{
     backoff::Backoff,
     UdfPath,
 };
+use rand::Rng;
 use tokio::sync::{
     broadcast,
     mpsc,
     oneshot,
+    watch,
+    Notify,
 };
 use tokio_stream::wrappers::BroadcastStream;
 
@@ -41,16 +45,54 @@ use crate::{
 
 const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
 const MAX_BACKOFF: Duration = Duration::from_secs(15);
+/// The longest wait before the first retry after the server refuses auth.
+/// The retry asks the token callback for a fresh token, and an expired token
+/// usually gets one right away, so this stays short.
 const AUTH_RETRY_DELAY: Duration = Duration::from_millis(250);
+/// After this many refusals in a row, [`AuthRecovery::refused`] reports the
+/// session as refused. With the waits doubling from AUTH_RETRY_DELAY, the
+/// retries have spent a couple of seconds by then, far longer than a token
+/// refresh takes.
+pub const AUTH_REFUSALS_TO_REPORT: u32 = 5;
 
 fn is_auth_rejection(reason: &str) -> bool {
     reason.starts_with("AuthError:")
 }
 
-#[derive(Default)]
+/// How long to wait before retrying after the server refused auth
+/// `refusals` times in a row: AUTH_RETRY_DELAY, doubling with each refusal
+/// up to MAX_BACKOFF, less up to half at random so clients refused together
+/// don't retry together.
+fn auth_retry_delay(refusals: u32) -> Duration {
+    let doublings = refusals.saturating_sub(1).min(16);
+    let full = AUTH_RETRY_DELAY
+        .saturating_mul(1 << doublings)
+        .min(MAX_BACKOFF);
+    full.mul_f64(rand::rng().random_range(0.5..=1.0))
+}
+
 struct AuthRecovery {
     active: bool,
-    fresh_token_in_flight: bool,
+    /// Auth went to the server again since its last refusal, on a new
+    /// connection or as a different token. The server's next answer proves
+    /// it accepted that auth.
+    auth_resent: bool,
+    /// Refusals since the server last accepted a token.
+    refusals: u32,
+    /// True once the server has refused AUTH_REFUSALS_TO_REPORT times in a
+    /// row, until it accepts a token again.
+    refused: watch::Sender<bool>,
+}
+
+impl AuthRecovery {
+    fn new(refused: watch::Sender<bool>) -> Self {
+        Self {
+            active: false,
+            auth_resent: false,
+            refusals: 0,
+            refused,
+        }
+    }
 }
 
 pub enum ClientRequest {
@@ -103,9 +145,11 @@ pub async fn worker<T: SyncProtocol>(
     mut watch_sender: broadcast::Sender<QueryResults>,
     mut base_client: BaseConvexClient,
     mut protocol_manager: T,
+    reconnect_requested: Arc<Notify>,
+    auth_refused: watch::Sender<bool>,
 ) -> Infallible {
     let mut backoff = Backoff::new(INITIAL_BACKOFF, MAX_BACKOFF);
-    let mut auth_recovery = AuthRecovery::default();
+    let mut auth_recovery = AuthRecovery::new(auth_refused);
     loop {
         let e = loop {
             match _worker_once(
@@ -115,6 +159,7 @@ pub async fn worker<T: SyncProtocol>(
                 &mut base_client,
                 &mut protocol_manager,
                 &mut auth_recovery,
+                &reconnect_requested,
             )
             .await
             {
@@ -123,27 +168,42 @@ pub async fn worker<T: SyncProtocol>(
             }
         };
 
-        if is_auth_rejection(&e) {
+        // A server auth rejection is not a network outage. The reconnect
+        // below invokes the stored token callback with `force_refresh=true`,
+        // so the first retry comes quickly, in case the callback has a fresh
+        // token. Each refusal after that doubles the wait: a token the server
+        // keeps refusing (a removed account, a misconfigured issuer, a clock
+        // that's off) must not reconnect several times a second forever.
+        let auth_refused = is_auth_rejection(&e);
+        let delay = if auth_refused {
             auth_recovery.active = true;
-            auth_recovery.fresh_token_in_flight = false;
-        }
-
-        // A server auth rejection and the protocol errors cascading from that
-        // rejected socket are not network outages. The reconnect below
-        // invokes the stored token callback with `force_refresh=true`, so retry
-        // it at a small fixed cadence while the auth provider obtains a fresh
-        // token. Applying the generic exponential network backoff here can
-        // otherwise delay a ready token for up to MAX_BACKOFF.
-        let delay = if auth_recovery.active {
+            auth_recovery.auth_resent = false;
+            auth_recovery.refusals += 1;
+            if auth_recovery.refusals == AUTH_REFUSALS_TO_REPORT {
+                auth_recovery.refused.send_replace(true);
+            }
             backoff.reset();
-            AUTH_RETRY_DELAY
+            auth_retry_delay(auth_recovery.refusals)
         } else {
             backoff.fail(&mut rand::rng())
         };
         tracing::error!(
             "Convex Client Worker failed: {e:?}. Backing off for {delay:?} and retrying."
         );
-        tokio::time::sleep(delay).await;
+        if auth_refused {
+            // The app asks for a reconnect when it has new auth for the
+            // client, such as a token its provider just refreshed, or when
+            // the user retries. Don't keep that waiting behind the backoff,
+            // even if it asked just before this wait began: `reconnect_now`
+            // leaves a permit for that.
+            let reconnect_requested = reconnect_requested.notified();
+            tokio::select! {
+                _ = tokio::time::sleep(delay) => {},
+                _ = reconnect_requested => {},
+            }
+        } else {
+            tokio::time::sleep(delay).await;
+        }
 
         // Tell the sync protocol to reconnect followed by an immediate resend of
         // ongoing queries/mutations. It's important these happen together to
@@ -175,9 +235,16 @@ pub async fn worker<T: SyncProtocol>(
                 &mut auth_recovery,
             );
         }
-        let auth_token_changed = base_client.resend_ongoing_queries_mutations().await;
-        if auth_recovery.active && auth_token_changed {
-            auth_recovery.fresh_token_in_flight = true;
+        let sends_auth = base_client.resend_ongoing_queries_mutations().await;
+        // Everything the old connection sent was handled above, so from here
+        // on answers come from the new connection, and the server only
+        // answers there after accepting the auth this resend sends first.
+        // That's true of the same token too: the server may accept a token it
+        // refused before (its auth config was fixed, say). A resend without
+        // auth proves nothing: the server answers anonymous clients too, and
+        // auth an earlier connection sent is gone with it.
+        if auth_recovery.active {
+            auth_recovery.auth_resent = sends_auth;
         }
         // We'll flush messages from base_client inside the next call to
         // `_worker_once`.
@@ -195,8 +262,10 @@ mod tests {
 
     use async_trait::async_trait;
     use convex_sync_types::{
+        AuthenticationToken,
         ClientMessage,
         LogLinesMessage,
+        StateVersion,
         UdfPath,
     };
     use parking_lot::Mutex;
@@ -204,6 +273,8 @@ mod tests {
         broadcast,
         mpsc,
         oneshot,
+        watch,
+        Notify,
     };
     use url::Url;
 
@@ -212,9 +283,13 @@ mod tests {
         worker,
         ActionRequest,
         ClientRequest,
+        AUTH_REFUSALS_TO_REPORT,
     };
     use crate::{
-        base_client::BaseConvexClient,
+        base_client::{
+            AuthTokenFetcher,
+            BaseConvexClient,
+        },
         sync::{
             ProtocolResponse,
             ReconnectRequest,
@@ -244,6 +319,17 @@ mod tests {
         late_responses: Arc<Mutex<Vec<ProtocolResponse>>>,
         sent: Arc<Mutex<Vec<ClientMessage>>>,
         reconnects: Arc<Mutex<Vec<String>>>,
+        /// What the server does on each new connection.
+        server: Arc<Mutex<Server>>,
+    }
+
+    #[derive(Clone, Copy)]
+    enum Server {
+        Quiet,
+        /// Refuses the client's auth, as it does a token it can't accept.
+        RefuseAuth,
+        /// Accepts the client's auth and answers with a transition.
+        AcceptAuth,
     }
 
     impl FakeProtocol {
@@ -253,6 +339,7 @@ mod tests {
                 late_responses: Arc::default(),
                 sent: Arc::default(),
                 reconnects: Arc::default(),
+                server: Arc::new(Mutex::new(Server::Quiet)),
             }
         }
 
@@ -294,6 +381,7 @@ mod tests {
         async fn reconnect(&mut self, request: ReconnectRequest) {
             self.reconnects.lock().push(request.reason);
             let late_responses = std::mem::take(&mut *self.late_responses.lock());
+            let server = *self.server.lock();
             let response_sender = self.response_sender.clone();
             tokio::spawn(async move {
                 for response in late_responses {
@@ -302,27 +390,78 @@ mod tests {
                 let _ = response_sender
                     .send(ProtocolResponse::ReconnectAcknowledged)
                     .await;
+                let first_response = match server {
+                    Server::Quiet => return,
+                    Server::RefuseAuth => auth_error(),
+                    Server::AcceptAuth => ServerMessage::Transition {
+                        start_version: StateVersion::initial(),
+                        end_version: StateVersion {
+                            ts: StateVersion::initial().ts.succ().unwrap(),
+                            ..StateVersion::initial()
+                        },
+                        modifications: vec![],
+                        client_clock_skew: None,
+                        server_ts: None,
+                    },
+                };
+                let _ = response_sender
+                    .send(ProtocolResponse::ServerMessage(first_response))
+                    .await;
             });
         }
+    }
+
+    fn auth_error() -> ServerMessage {
+        ServerMessage::AuthError {
+            error_message: "No auth provider found matching the given token".into(),
+            base_version: None,
+            auth_update_attempted: Some(true),
+        }
+    }
+
+    struct TestWorker {
+        requests: mpsc::UnboundedSender<ClientRequest>,
+        reconnect_requested: Arc<Notify>,
+        auth_refused: watch::Receiver<bool>,
+        handle: tokio::task::JoinHandle<std::convert::Infallible>,
     }
 
     fn start_worker(
         protocol: &FakeProtocol,
         response_receiver: mpsc::Receiver<ProtocolResponse>,
-    ) -> (
-        mpsc::UnboundedSender<ClientRequest>,
-        tokio::task::JoinHandle<std::convert::Infallible>,
-    ) {
-        let (request_sender, request_receiver) = mpsc::unbounded_channel();
+    ) -> TestWorker {
+        let (requests, request_receiver) = mpsc::unbounded_channel();
         let (watch_sender, _watch_receiver) = broadcast::channel(1);
+        let reconnect_requested = Arc::new(Notify::new());
+        let (auth_refused_sender, auth_refused) = watch::channel(false);
         let handle = tokio::spawn(worker(
             response_receiver,
             request_receiver,
             watch_sender,
             BaseConvexClient::new(),
             protocol.clone(),
+            reconnect_requested.clone(),
+            auth_refused_sender,
         ));
-        (request_sender, handle)
+        TestWorker {
+            requests,
+            reconnect_requested,
+            auth_refused,
+            handle,
+        }
+    }
+
+    /// Like the app's auth callback: a new token every time it's asked.
+    fn changing_token() -> AuthTokenFetcher {
+        let calls = Arc::new(Mutex::new(0));
+        Box::new(move |_force_refresh| {
+            let calls = calls.clone();
+            Box::pin(async move {
+                let mut calls = calls.lock();
+                *calls += 1;
+                Ok(AuthenticationToken::User(format!("token {calls}")))
+            })
+        })
     }
 
     #[tokio::test]
@@ -335,7 +474,7 @@ mod tests {
             .late_responses
             .lock()
             .push(ProtocolResponse::Failure);
-        let (_request_sender, worker) = start_worker(&protocol, response_receiver);
+        let worker = start_worker(&protocol, response_receiver).handle;
 
         response_sender
             .send(ProtocolResponse::ServerMessage(ServerMessage::AuthError {
@@ -359,7 +498,11 @@ mod tests {
     async fn test_action_answered_by_the_old_socket_is_not_sent_again() -> anyhow::Result<()> {
         let (response_sender, response_receiver) = mpsc::channel(1);
         let protocol = FakeProtocol::new(response_sender.clone());
-        let (request_sender, worker) = start_worker(&protocol, response_receiver);
+        let TestWorker {
+            requests: request_sender,
+            handle: worker,
+            ..
+        } = start_worker(&protocol, response_receiver);
 
         let (tx, rx) = oneshot::channel();
         request_sender.send(ClientRequest::Action(
@@ -412,6 +555,186 @@ mod tests {
         );
         Ok(())
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_refused_token_backs_off_and_is_reported() -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        *protocol.server.lock() = Server::RefuseAuth;
+        let worker = start_worker(&protocol, response_receiver);
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(changing_token())))?;
+        response_sender
+            .send(ProtocolResponse::ServerMessage(auth_error()))
+            .await?;
+
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        worker.handle.abort();
+        // Retrying every 250 ms would be about 240 reconnects a minute. The
+        // waits double from 250 ms to 15 s, which allows 8 to 12.
+        let reconnects = protocol.reconnects.lock().len();
+        assert!(
+            (8..=12).contains(&reconnects),
+            "{reconnects} reconnects in a minute"
+        );
+        assert!(*worker.auth_refused.borrow());
+        Ok(())
+    }
+
+    /// The server refuses auth `times` times, each after the client's retry
+    /// has reconnected.
+    async fn refuse(
+        response_sender: &mpsc::Sender<ProtocolResponse>,
+        times: usize,
+    ) -> anyhow::Result<()> {
+        for _ in 0..times {
+            response_sender
+                .send(ProtocolResponse::ServerMessage(auth_error()))
+                .await?;
+            // Longer than the longest wait.
+            tokio::time::sleep(Duration::from_secs(20)).await;
+        }
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_reconnect_request_ends_the_auth_wait() -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        let worker = start_worker(&protocol, response_receiver);
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(changing_token())))?;
+        refuse(&response_sender, 7).await?;
+        assert!(*worker.auth_refused.borrow());
+        // The next wait is at least 7.5 s.
+        response_sender
+            .send(ProtocolResponse::ServerMessage(auth_error()))
+            .await?;
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let reconnects = protocol.reconnects.lock().len();
+
+        // The app has a fresh token and asks for a reconnect, the way
+        // ConvexClient::reconnect_now does.
+        *protocol.server.lock() = Server::AcceptAuth;
+        worker
+            .requests
+            .send(ClientRequest::Reconnect("convex_flutter:manual".into()))?;
+        worker.reconnect_requested.notify_one();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            protocol.reconnects.lock().len() > reconnects,
+            "still waiting out the backoff"
+        );
+        // The server accepts the token, so it's no longer refused. (The
+        // worker also reconnects once more for the request itself.)
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(!*worker.auth_refused.borrow());
+        worker.handle.abort();
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_reconnect_requested_just_before_the_wait_ends_it() -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        let worker = start_worker(&protocol, response_receiver);
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(changing_token())))?;
+        refuse(&response_sender, 7).await?;
+        let reconnects = protocol.reconnects.lock().len();
+
+        // The app asks for a reconnect just before another refusal arrives.
+        worker.reconnect_requested.notify_one();
+        response_sender
+            .send(ProtocolResponse::ServerMessage(auth_error()))
+            .await?;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            protocol.reconnects.lock().len() > reconnects,
+            "still waiting out the backoff"
+        );
+        worker.handle.abort();
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_same_token_accepted_again_ends_the_refusal() -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        let worker = start_worker(&protocol, response_receiver);
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(Box::new(
+                |_force_refresh| Box::pin(async { Ok(AuthenticationToken::User("token".into())) }),
+            ))))?;
+        refuse(&response_sender, AUTH_REFUSALS_TO_REPORT as usize).await?;
+        assert!(*worker.auth_refused.borrow());
+
+        // The server accepts the same token again (its auth config was
+        // fixed, say) on the next retry.
+        *protocol.server.lock() = Server::AcceptAuth;
+        response_sender
+            .send(ProtocolResponse::ServerMessage(auth_error()))
+            .await?;
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        assert!(!*worker.auth_refused.borrow());
+        worker.handle.abort();
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_answer_without_auth_does_not_end_the_refusal() -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        let token = Arc::new(Mutex::new(Some("token".to_string())));
+        let callback_token = token.clone();
+        let worker = start_worker(&protocol, response_receiver);
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(Box::new(
+                move |_force_refresh| {
+                    let token = callback_token.lock().clone();
+                    Box::pin(async move {
+                        Ok(token.map_or(AuthenticationToken::None, AuthenticationToken::User))
+                    })
+                },
+            ))))?;
+        refuse(&response_sender, AUTH_REFUSALS_TO_REPORT as usize).await?;
+        assert!(*worker.auth_refused.borrow());
+
+        // The last retry's connection, which sent the token, drops before
+        // the server answers. The callback has no token for the next one, so
+        // the client reconnects without auth, and the server answers it
+        // anonymously.
+        *token.lock() = None;
+        *protocol.server.lock() = Server::AcceptAuth;
+        response_sender.send(ProtocolResponse::Failure).await?;
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        assert!(*worker.auth_refused.borrow());
+        worker.handle.abort();
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_refusals_the_next_token_ends_are_not_reported() -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        // An expiring token: each refusal's retry gets a fresh token the
+        // server accepts. Many refusals, but never several in a row.
+        *protocol.server.lock() = Server::AcceptAuth;
+        let worker = start_worker(&protocol, response_receiver);
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(changing_token())))?;
+        refuse(&response_sender, 2 * AUTH_REFUSALS_TO_REPORT as usize).await?;
+        worker.handle.abort();
+        assert!(!worker.auth_refused.has_changed()?);
+        assert!(!*worker.auth_refused.borrow());
+        Ok(())
+    }
 }
 
 async fn _worker_once<T: SyncProtocol>(
@@ -421,6 +744,7 @@ async fn _worker_once<T: SyncProtocol>(
     base_client: &mut BaseConvexClient,
     protocol_manager: &mut T,
     auth_recovery: &mut AuthRecovery,
+    reconnect_requested: &Notify,
 ) -> Result<(), ReconnectProtocolReason> {
     // If there are any outgoing messages to flush (e.g. from an outer reconnect),
     // do so first.
@@ -550,7 +874,7 @@ async fn _worker_once<T: SyncProtocol>(
                 ClientRequest::Authenticate(fetcher) => {
                     let token_changed = base_client.set_auth_fetcher(fetcher).await;
                     if auth_recovery.active && token_changed {
-                        auth_recovery.fresh_token_in_flight = true;
+                        auth_recovery.auth_resent = true;
                     }
                     communicate(
                         base_client,
@@ -561,7 +885,12 @@ async fn _worker_once<T: SyncProtocol>(
                     )
                     .await?;
                 },
-                ClientRequest::Reconnect(reason) => return Err(reason),
+                ClientRequest::Reconnect(reason) => {
+                    // This reconnect happens now, so its wake-up must not end
+                    // a later wait.
+                    let _ = futures::FutureExt::now_or_never(reconnect_requested.notified());
+                    return Err(reason);
+                },
             }
         },
         // TODO: this else branch will lead to an infinite loop if both channels
@@ -618,12 +947,16 @@ fn handle_protocol_response(
                 // Notify watchers of the new consistent query results at new timestamp
                 let _ = watch_sender.send(subscriber_id_to_latest_value);
             }
-            if proves_protocol_auth && auth_recovery.fresh_token_in_flight {
-                // Only a response after the refresh callback produced a
-                // different token proves recovery. Transitions buffered while
-                // the rejected token was still current cannot clear this state.
+            if proves_protocol_auth && auth_recovery.auth_resent {
+                // Only an answer to auth sent after the last refusal proves
+                // recovery. Messages the refused connection had already sent
+                // are handled before the resend, so they can't clear this.
                 auth_recovery.active = false;
-                auth_recovery.fresh_token_in_flight = false;
+                auth_recovery.auth_resent = false;
+                auth_recovery.refusals = 0;
+                auth_recovery
+                    .refused
+                    .send_if_modified(|refused| std::mem::take(refused));
             }
         },
         ProtocolResponse::Failure => {

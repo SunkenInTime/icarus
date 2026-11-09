@@ -14,6 +14,13 @@ reconnect. The old adapter owned a separate expiry timer and called static
 `set_auth`, which could leave the client disconnected after the server rejected
 an expired token.
 
+An auth handle reports `onAuthChange(false)` when the server keeps refusing the
+tokens the callback returns (the patched crate's `watch_auth_refused`), and
+`onAuthChange(true)` once it accepts one again. The published package only
+reported a missing token, so a session the server refused looked signed in on
+desktop: the app showed "offline" and reconnected four times a second instead
+of asking the user to reconnect or sign out, as it does on web.
+
 Auth handles also carry an internal generation. Disposal only clears auth when
 the handle still owns the current generation, so a delayed cancellation from a
 replaced handle cannot erase the fresh callback.
@@ -36,7 +43,7 @@ changes are limited to the Dart client implementation, `rust/src/lib.rs`, and
 the local `convex` dependency in `rust/Cargo.toml`.
 
 ```sh
-cd third_party/convex_flutter/rust
+cd third_party/convex_flutter
 flutter_rust_bridge_codegen generate
 ```
 
