@@ -251,6 +251,7 @@ final class SavePathGauntlet {
         await _teammateEditsShared(seed);
         _faults['revisionConflictMerged'] = true;
       case _offlineRound:
+        await _losePageChangeAnswer(seed, editor);
         await _goOffline();
         _faults['offlineQueuedEdits'] = true;
       case _authOrRestartRound when seed == 0:
@@ -664,13 +665,27 @@ final class SavePathGauntlet {
 
   // --- Faults at the network and process. ---
 
+  /// The user adds a page and the answer to it is lost, after the server
+  /// applied it. The strategy changes the user then makes offline are made
+  /// against the revision before the add, and must land once the add is
+  /// sent again.
+  Future<void> _losePageChangeAnswer(int seed, Editor editor) async {
+    await _settle(seed);
+    _app.transport.inject(BatchFault.loseAnswer);
+    await editor.addPage('${_prefix(seed)}page-3', 'Lurk', 2);
+    await _waitFor(
+      'the page add to fail',
+      () => _app.queueState.pending.any(
+        (pending) => pending.op is PageAddOp && pending.attempts > 0,
+      ),
+    );
+    _faults['lostPageChangeAnswer'] = true;
+  }
+
   Future<void> _goOffline() async {
-    // Cut once nothing is being sent. A cut that loses the answer to a page
-    // change makes the server answer its resend as a replay, which the
-    // queue cannot tell from a teammate's change, so a strategy change
-    // made offline is refused as a conflict: a bug the gauntlet found and
-    // leaves for its own change.
-    await _settle(_progress.seed);
+    // Cut whatever is being sent, a page change included: its answer is
+    // lost, and the strategy changes made offline must still land once it
+    // is sent again.
     _app.proxy.goOffline();
     await _waitFor(
       'the app to see it is offline',
@@ -1195,6 +1210,7 @@ final class SavePathGauntlet {
           'reconnect': false,
           'deleteRecreate': false,
           'deleteDuringSendSweep': false,
+          'lostPageChangeAnswer': false,
           'editWhileAddAnswered': false,
           'authRefresh': false,
           'processRestart': false,

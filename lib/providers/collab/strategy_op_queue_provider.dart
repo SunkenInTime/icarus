@@ -2434,6 +2434,22 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 : null);
     final nextOp = next?.pending.op;
     final nextPage = nextOp?.pagePublicId;
+    // A change to the strategy's revision that was sent and got no answer
+    // may have landed. Its answer moves the strategy's other waiting
+    // changes onto the revision it made (see _advanceOwnStrategyRevision),
+    // so until it comes they are not sent: the server would check them
+    // against the revision before it.
+    bool sentBefore(DurableOutboxRecord record) =>
+        record.status == DurableOutboxStatus.inFlight ||
+        record.pending.attempts > 0;
+    final strategyChangeUnanswered = records.any((record) =>
+        _takesStrategyRevision(record.pending.op) &&
+        sentBefore(record) &&
+        waiting(record));
+    bool waitsForStrategyAnswer(DurableOutboxRecord record) =>
+        strategyChangeUnanswered &&
+        _takesStrategyRevision(record.pending.op) &&
+        !sentBefore(record);
     final others = records
         .where((record) =>
             !_isPageChange(record) &&
@@ -2443,7 +2459,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             // One change to a page's side or name per batch: the second
             // waits to be moved onto the revision the first lands at.
             !(nextOp is PagePatchOp &&
-                record.entityKey == EntitySyncKey.pageDescriptor(nextPage!)))
+                record.entityKey == EntitySyncKey.pageDescriptor(nextPage!)) &&
+            !waitsForStrategyAnswer(record))
         .toList(growable: false);
 
     final batchClientId = (others.firstOrNull ?? next)?.pending.clientId;
@@ -2463,7 +2480,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       if (selected.length + room >= _maxBatchSize || !fits(candidate)) break;
       selected.add(candidate);
     }
-    if (room == 1 && fits(next!)) {
+    if (room == 1 && !waitsForStrategyAnswer(next!) && fits(next)) {
       // A delete takes its page's last edits to the trash, and a copy on the
       // server takes its source page as it is then: either goes only once
       // all of that page's waiting work is in this batch ahead of it.
@@ -2486,12 +2503,17 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   /// The revision [ack] says this device's own change moved its row to, or
-  /// null when it cannot say the change was this device's. Only an applied
-  /// answer can: a no-change answer carries the row's revision now, which
+  /// null when it cannot say the change was this device's. An applied
+  /// answer can, and so can the no-change answer to an op sent again whose
+  /// first send the server applied (wasApplied): its revision is the one
+  /// that write made. Any other no-change answer carries a revision that
   /// may be a teammate's (an add sent again after its op record expired on
   /// the server is answered that way too).
-  static int? _ownRevision(OpAck ack) =>
-      ack is AppliedOpAck ? ack.revision : null;
+  static int? _ownRevision(OpAck ack) => switch (ack) {
+        AppliedOpAck(:final revision) => revision,
+        NoopOpAck(wasApplied: true, :final currentRevision) => currentRevision,
+        _ => null,
+      };
 
   /// [delete], this device's delete of a page, landed: the renames and side
   /// changes made after it (see [_isBehindDelete]) go with the page, unsent.
@@ -2723,9 +2745,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         _landedStrategyPatches[sent.strategyPublicId] =
             (payload: payload, revision: revision);
       }
-      if (ack case AppliedOpAck(:final revision)
-          when sent.pending.op is PagePatchOp) {
-        await _advanceOwnPageRevision(sent, revision);
+      if (ownRevision != null && sent.pending.op is PagePatchOp) {
+        await _advanceOwnPageRevision(sent, ownRevision);
       }
       if ((ack.isAck, ownRevision ?? ack.appliedRevision)
           case (true, final revision?)

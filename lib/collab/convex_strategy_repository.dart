@@ -615,6 +615,9 @@ class ConvexStrategyRepository {
       // This client keeps an image's picture id (PlacedImage.assetId).
       acceptsPictureIds: const ConvexOptional.present(true),
       elementFieldLevel: _elementFieldLevel,
+      // This client moves its waiting work onto the revision a resent op
+      // made (StrategyOpQueueNotifier._ownRevision).
+      includeWasApplied: const ConvexOptional.present(true),
     );
     return result.results.map(_opAck).toList(growable: false);
   }
@@ -1483,11 +1486,16 @@ OpAck _opAck(OpsApplyBatchResultResultsItem result) {
       :final appliedRevision
     ) =>
       AppliedOpAck(opId: opId, revision: appliedRevision.toInt()),
-    OpsApplyBatchResultResultsItemNoop(:final opId, :final currentRevision) =>
+    OpsApplyBatchResultResultsItemNoop(
+      :final opId,
+      :final currentRevision,
+      :final wasApplied,
+    ) =>
       NoopOpAck(
         opId: opId,
         currentRevision:
             currentRevision.isPresent ? currentRevision.value.toInt() : null,
+        wasApplied: wasApplied.isPresent && wasApplied.value,
       ),
     OpsApplyBatchResultResultsItemRejected(
       :final opId,

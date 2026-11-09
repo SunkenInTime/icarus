@@ -52,21 +52,15 @@ save state, the outbox as the Hive box holds it, and then the server:
   item back only after its delete has landed, and leaves an item deleted
   offline alone until the network is back.
 
-## Bugs it found that it steps around
+## A bug it found that it steps around
 
-The first two start with a lost answer, after which the queue cannot tell
-its own landed change from a teammate's. Both are left for changes of their
-own, and the gauntlet avoids them so the lane passes until then:
+It is left for a change of its own, and the gauntlet avoids it so the lane
+passes until then:
 
 - An edit made while a failed batch waits to be resent is folded into the
   failed op under a new op id. When the lost answer was an accept, the
   server refuses the fold as a conflict with this device's own write. The
   gauntlet edits nothing until a lost batch has been resent.
-- When the network drops while a page change is being sent, its resend is
-  answered as a replay, which does not move other waiting strategy changes
-  onto the revision it made. A strategy rename made offline is then refused
-  as a conflict. The gauntlet cuts the network only when nothing is being
-  sent.
 
 ## Run it
 
