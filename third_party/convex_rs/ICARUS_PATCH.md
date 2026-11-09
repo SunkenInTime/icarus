@@ -84,4 +84,5 @@ refusing auth, a dropped socket) dropped the channel: the caller got
 reconnect, where the server ran it. Icarus took that error as a failed save and
 sent the work again, and the server refused the resend as a conflict with the
 write it had already applied. Now the caller waits through the reconnect and
-gets the server's answer.
+gets the server's answer, as long as that comes before its own timeout (the
+`convex_flutter` bridge gives up on a call after 30 seconds by default).
