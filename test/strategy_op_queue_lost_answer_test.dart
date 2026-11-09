@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
@@ -146,6 +147,93 @@ void main() {
     expect(server.refused, isEmpty);
   });
 
+  test('a delete after an update resumes a lost add is not dropped', () async {
+    final server = _Server();
+    final add = ElementAddOp(
+      opId: 'add',
+      elementPublicId: 'element-1',
+      pagePublicId: 'page-1',
+      payload: text('a'),
+      sortIndex: 0,
+    );
+    // The add landed and its answer was lost; its resend was refused
+    // because this build was too old. The user updated and reopened.
+    server.appliedEarlier(add);
+    final store = MemoryDurableStrategyOutboxStore();
+    await store.put(DurableOutboxRecord(
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-1',
+      entityKey: key,
+      pending: PendingOp(
+        op: add,
+        clientId: 'client-a',
+        attempts: 1,
+        lastAttemptAt: DateTime(2026),
+      ),
+      status: DurableOutboxStatus.paused,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+      lastError: clientUpgradeRequiredQueueError,
+    ));
+    final (container, queue) = _start(server, store: store);
+
+    await queue.syncDesiredOpsForPage(
+      pageId: 'page-1',
+      desiredOpsByEntityKey: {
+        key: const ElementDeleteOp(
+          opId: 'delete',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          expectedElementRevision: 0,
+        ),
+      },
+    );
+    await queue.flushNow();
+    await _until(() => container.read(strategyOpQueueProvider).pending.isEmpty);
+
+    expect(server.deleted, isTrue);
+    expect(server.refused, isEmpty);
+  });
+
+  test('a page rename after Retry on a lost rename does not replace it',
+      () async {
+    final server = _Server();
+    PagePatchOp renamePage(String opId, String name) => PagePatchOp(
+          opId: opId,
+          pagePublicId: 'page-1',
+          payload: {'name': name},
+          expectedPageRevision: 1,
+        );
+    final first = renamePage('first', 'Defaults');
+    server.appliedEarlier(first);
+    final store = MemoryDurableStrategyOutboxStore();
+    await store.put(DurableOutboxRecord(
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-1',
+      entityKey: const EntitySyncKey.pageChange('rename'),
+      pending: PendingOp(
+        op: first,
+        clientId: 'client-a',
+        attempts: 8,
+        lastAttemptAt: DateTime(2026),
+      ),
+      status: DurableOutboxStatus.paused,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+      pageChangeSequence: 1,
+    ));
+    final (_, queue) = _start(server, store: store);
+
+    await queue.retryPaused(flushImmediately: false);
+    await queue.enqueuePageChange(renamePage('second', 'Retakes'));
+    await queue.flushNow();
+    await _until(() => server.received.isNotEmpty);
+
+    // The lost rename goes again under its own id, never replaced by a
+    // new one checked against the revision before it.
+    expect(server.received.first, 'first');
+  });
+
   test('a delete after a lost add is not dropped with the add', () async {
     final server = _Server();
     final (container, queue) = _start(server);
@@ -218,9 +306,14 @@ final class _Server extends ConvexStrategyRepository {
 
   Map<String, dynamic>? row;
   bool deleted = false;
+  String pageName = 'Page 1';
+  int _pageRevision = 1;
 
   /// [op] reached the server and was applied before the test starts.
-  void appliedEarlier(StrategyOp op) => _apply(op);
+  void appliedEarlier(StrategyOp op) {
+    _apply(op);
+    received.removeLast();
+  }
 
   int _revision;
   bool loseNextAnswer = false;
@@ -283,6 +376,14 @@ final class _Server extends ConvexStrategyRepository {
           }
           row = {...row!, 'data': data};
         }
+      case PagePatchOp(:final payload):
+        if (op.expectedPageRevision != _pageRevision) {
+          return refuse(OpRejectionReason.revisionMismatch);
+        }
+        pageName = payload['name'] as String? ?? pageName;
+        _pageRevision += 1;
+        _landed[op.opId] = _pageRevision;
+        return AppliedOpAck(opId: op.opId, revision: _pageRevision);
       case ElementDeleteOp():
         if (row == null || deleted) return refuse(OpRejectionReason.deleted);
         if (op.expectedElementRevision != _revision) {

@@ -458,9 +458,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     return record.copyWith(
       status: DurableOutboxStatus.queued,
+      // Its count of attempts starts again, but an earlier send of it may
+      // have landed (see _mayHaveLanded).
       pending: PendingOp(
         op: record.pending.op,
         clientId: record.pending.clientId,
+        lastAttemptAt: record.pending.lastAttemptAt,
       ),
       clearError: true,
     );
@@ -732,11 +735,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     final list = _pageChangeRecords(accountId, strategyPublicId);
     bool forPage(DurableOutboxRecord record) =>
         record.pending.op.pagePublicId == pageId;
-    // Never claimed for a send: a send that failed counts an attempt, and
-    // one cut short leaves the record in flight.
     bool neverSent(DurableOutboxRecord record) =>
         record.status == DurableOutboxStatus.queued &&
-        record.pending.attempts == 0 &&
+        !_mayHaveLanded(record) &&
         !_uncertainDurableRecords.contains(record.storageKey);
     try {
       final newest = list.where(forPage).lastOrNull;
@@ -1045,7 +1046,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           add is! PageAddOp ||
           add.copyContentFromPagePublicId == null ||
           waiting.status != DurableOutboxStatus.queued ||
-          waiting.pending.attempts > 0 ||
+          _mayHaveLanded(waiting) ||
           _uncertainDurableRecords.contains(waiting.storageKey) ||
           !identical(_recordsByStorageKey[waiting.storageKey], waiting)) {
         return false;
