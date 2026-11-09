@@ -1495,6 +1495,40 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         }
 
         final base = pausedIntent ?? existing;
+        final baseRecord = base == null ? null : _recordForActiveKey(key);
+        if (base != null &&
+            baseRecord?.pending.op.opId == base.pending.op.opId &&
+            _mayHaveLanded(baseRecord!)) {
+          // It was sent and no answer came, so it may have landed. It goes
+          // again as it is, under its own op id, and this edit waits behind
+          // it, as behind work being sent: folded into it under a new id,
+          // the edit would be checked against what the server held before
+          // the user's own change.
+          if (successorIntent != null &&
+              _sameIntent(successorIntent.pending.op, desired)) {
+            continue;
+          }
+          final pending = PendingOp(
+            op: _asSuccessorOf(
+              successorIntent == null
+                  ? desired
+                  : _mergeQueuedIntent(successorIntent.pending.op, desired) ??
+                      desired,
+              base.pending.op,
+              drawn: _canvasOpIds.contains(base.pending.op.opId),
+            ),
+            clientId: successorIntent?.pending.clientId ?? state.clientId!,
+          );
+          writtenByCanvas(pending, desired, from: successorIntent?.pending.op);
+          await _putRecord(baseRecord.copyWith(
+            successorPending: pending,
+            updatedAt: DateTime.now(),
+          ));
+          successors[key] =
+              QueuedEntityIntent(entityKey: key, pending: pending);
+          changed = true;
+          continue;
+        }
         final merged = base == null
             ? desired
             : _mergeQueuedIntent(base.pending.op, desired);
@@ -3863,6 +3897,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _offlineRetryCount += 1;
     return Duration(milliseconds: 300 * (1 << exponent));
   }
+
+  /// Whether [record]'s op was sent and no answer came, so it may have
+  /// landed: a send that failed counts an attempt, and one cut short (the
+  /// app closed mid-send) leaves the record in flight.
+  static bool _mayHaveLanded(DurableOutboxRecord record) =>
+      record.status == DurableOutboxStatus.inFlight ||
+      record.pending.attempts > 0;
 
   bool _sameIntent(StrategyOp left, StrategyOp right) {
     return left.kind == right.kind &&
