@@ -400,9 +400,12 @@ final class SavePathGauntlet {
   Future<void> _editWhileAddAnswered(int seed, Editor editor) async {
     // Moves made before the editor heard the add landed: made as adds.
     var raced = 0;
+    // Edits made before the editor heard a move landed, while the queue
+    // promotes the change waiting behind it.
+    var racedPromotion = 0;
     for (var step = 0; step < 6; step += 1) {
       final id = '${_prefix(seed)}element-answered-$step';
-      Map<String, dynamic> at(double dx) =>
+      Map<String, dynamic> at(double dx, {double diameter = 8.0}) =>
           cloudElementPayload(kind: 'utility', data: {
             'id': id,
             'isDeleted': false,
@@ -412,7 +415,7 @@ final class SavePathGauntlet {
             'length': 0.0,
             'angle': 0.0,
             'attachedAgentId': null,
-            'customDiameter': 8.0,
+            'customDiameter': diameter,
             'customWidth': null,
             'customLength': null,
             'customColorValue': 4282090230,
@@ -434,9 +437,42 @@ final class SavePathGauntlet {
       }
       await editor.draw(id, payload: at(340), sortIndex: 3000 + step);
       await _settle(seed);
+
+      // The user moves it away, and while the move is sent moves it back
+      // and resizes it: the resize waits behind the move, and names the
+      // way back too. As the move's answer arrives, the user resizes it
+      // again: made before the editor hears the move landed, it must keep
+      // the way back.
+      final moveSent = _app.transport.batchSent.first;
+      final moveAnswered = _app.transport.batchAnswered.first;
+      final heard = _app.queueState.lastAckBatch;
+      await editor.draw(id, payload: at(380), sortIndex: 3000 + step);
+      await moveSent;
+      await editor.draw(
+        id,
+        payload: at(340, diameter: 9),
+        sortIndex: 3000 + step,
+      );
+      await moveAnswered.timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => throw GauntletFailure(
+          'timeout',
+          'The move of $id was never answered',
+        ),
+      );
+      await Future<void>.delayed(Duration(microseconds: step * 500));
+      if (identical(_app.queueState.lastAckBatch, heard)) racedPromotion += 1;
+      await editor.draw(
+        id,
+        payload: at(340, diameter: 10),
+        sortIndex: 3000 + step,
+      );
+      await _settle(seed);
     }
     _progress.current['movesMadeAsAdds'] = raced;
+    _progress.current['editsMadeWhilePromoting'] = racedPromotion;
     if (raced > 0) _faults['editWhileAddAnswered'] = true;
+    if (racedPromotion > 0) _faults['editWhileSuccessorPromoted'] = true;
   }
 
   bool _waitsInOutbox(String id) =>
@@ -1209,6 +1245,7 @@ final class SavePathGauntlet {
           'deleteRecreate': false,
           'deleteDuringSendSweep': false,
           'editWhileAddAnswered': false,
+          'editWhileSuccessorPromoted': false,
           'authRefresh': false,
           'processRestart': false,
         },
