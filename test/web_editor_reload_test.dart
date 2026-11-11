@@ -181,14 +181,15 @@ void main() {
     expect(heldCode.read(), code);
     expect(page.path, '/share/$code');
 
-    // A second code arrived and could not be opened, so it is the one held.
-    // The address still names the link whose strategy is on screen.
-    strategy.open('mine', StrategySource.cloud);
+    // A second link arrived and has not opened yet (the cloud was not
+    // ready). It is not left behind: opening a strategy keeps its code, so
+    // a reload still retries it.
+    const waiting = 'ICR-XXXX-XXXX-XXXX-XXXX';
     await container
         .read(shareLinkControllerProvider.notifier)
-        .redeemToken('ICR-XXXX-XXXX-XXXX-XXXX');
-    strategy.open('shared', StrategySource.cloud);
-    expect(heldCode.read(), code);
+        .redeemToken(waiting);
+    strategy.open('mine', StrategySource.cloud);
+    expect(heldCode.read(), waiting);
     expect(page.path, '/share/$code');
   });
 

@@ -498,8 +498,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
   }
 }
 
-/// The bug-report link at the end of the editor strip: text when there is
-/// room, the glyph alone when there isn't.
 /// The editor's way out, at the left of the window strip: the house back to
 /// the library, or a back arrow when [backTooltip] names somewhere else.
 class _LeaveButton extends StatelessWidget {
@@ -531,6 +529,8 @@ class _LeaveButton extends StatelessWidget {
   }
 }
 
+/// The bug-report link at the end of the editor strip: text when there is
+/// room, the glyph alone when there isn't.
 class _DiscordLink extends StatelessWidget {
   const _DiscordLink();
 

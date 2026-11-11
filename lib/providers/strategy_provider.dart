@@ -100,6 +100,11 @@ typedef NewPageGaps = ({
 });
 
 class StrategyProvider extends Notifier<StrategyState> {
+  /// Bumped when a strategy starts to open and when the open one is closed.
+  /// A local load that finds it moved on gave way to something newer (the
+  /// reader left, or opened another strategy) and opens nothing.
+  int _openAttempt = 0;
+
   @override
   StrategyState build() {
     _registerPersistenceTrackingListeners();
@@ -349,6 +354,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     cancelPendingSave();
     ref.read(strategySaveStateProvider.notifier).reset();
+    _openAttempt += 1;
 
     await ref
         .read(remoteEditorSnapshotProvider.notifier)
@@ -797,6 +803,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> clearCurrentStrategy() async {
+    _openAttempt += 1;
     cancelPendingSave();
     ref.read(strategyThemeProvider.notifier).fromStrategy();
     ref.read(strategySaveStateProvider.notifier).reset();
@@ -2045,6 +2052,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       throw StateError('This strategy is moving to the cloud.');
     }
     cancelPendingSave();
+    final attempt = ++_openAttempt;
     final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .values
         .where((StrategyData strategy) {
@@ -2085,6 +2093,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final newDir =
         kIsWeb ? null : await setStorageDirectory(migratedStrategy.id);
+    // Left, or another strategy opened, while this one was being read from
+    // disk: opening it now would replace what the reader moved on to.
+    if (attempt != _openAttempt) return;
     state = StrategyState(
       strategyId: migratedStrategy.id,
       strategyName: migratedStrategy.name,
