@@ -161,11 +161,22 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
   bool get canvasHeld => _canvasHeld;
   bool _canvasHeld = false;
 
-  /// Records whether the canvas could be handed to the op queue. A handover
+  /// Records whether the canvas could be handed to the op queue, by a
+  /// handover that started when [dirtyMarks] was [marksBefore]. A handover
   /// that failed holds the canvas only while it carries an unsaved mark: with
-  /// none, nothing on it is unsaved.
-  void noteCanvasHandover({required bool handedOver}) {
+  /// none, nothing on it is unsaved. One that ends a hold may queue nothing,
+  /// and then no queue change comes to settle the mark the hold kept, so it
+  /// is settled here, unless something was marked unsaved since the handover
+  /// looked.
+  void noteCanvasHandover({
+    required bool handedOver,
+    required int marksBefore,
+  }) {
+    final wasHeld = _canvasHeld;
     _canvasHeld = !handedOver && state.isDirty;
+    if (wasHeld && handedOver && _dirtyMarks == marksBefore) {
+      clearStaleCloudMark();
+    }
   }
 
   void markSaving(bool value) {
@@ -186,8 +197,9 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
   /// Clears an unsaved mark no op stands behind. Edits to a page the server
   /// no longer has leave one: they produce no op, so the queue never changes
   /// to clear it. Callers have seen that the canvas holds nothing unsent,
-  /// so it no longer counts as held.
+  /// so it no longer counts as held, even while other work keeps the mark.
   void clearStaleCloudMark() {
+    _canvasHeld = false;
     final queue = ref.read(strategyOpQueueProvider);
     if (!state.isDirty ||
         state.hasPendingMediaSync ||
@@ -196,7 +208,6 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
         queue.lastError != null) {
       return;
     }
-    _canvasHeld = false;
     state = state.copyWith(
       isDirty: false,
       isSaving: false,

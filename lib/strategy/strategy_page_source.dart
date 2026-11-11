@@ -322,11 +322,14 @@ class CloudStrategyPageSource implements StrategyPageSource {
   /// so the save state keeps them unsaved until a handover works.
   @override
   Future<bool> flushCurrentPage() async {
+    final saveState = ref.read(strategySaveStateProvider.notifier);
+    final marksBefore = saveState.dirtyMarks;
     final handedOver = await _handOverCanvas();
     if (ref.read(strategyProvider).strategyId == strategyId) {
-      ref
-          .read(strategySaveStateProvider.notifier)
-          .noteCanvasHandover(handedOver: handedOver);
+      saveState.noteCanvasHandover(
+        handedOver: handedOver,
+        marksBefore: marksBefore,
+      );
     }
     return handedOver;
   }
