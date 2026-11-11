@@ -227,10 +227,10 @@ d15a9c96, before #530 and #532. Everything ran on Windows 11 under
 
 | Scenario | Our client, without the fix | Our client on `main` | Dartvex 0.3.0 |
 | --- | --- | --- | --- |
-| Action's answer reaches the old socket while the app redoes auth and reconnects (#512) | ran twice, on 72887a96 | ran once, caller gets it | ran once; caller told `Connection lost while action was in flight`, marked retryable |
+| Action's answer held back until the app redoes auth and reconnects (#512's setting) | ran twice, on 72887a96: the old socket closed before the answer came, and the client sent the action again | ran once; the answer came on the old socket just before it closed, and the caller got it | ran once; the old socket closed first, and the caller was told `Connection lost while action was in flight`, marked retryable |
 | Same, for a save | not run | ran once, caller gets it | ran once; caller told `Authentication changed before the request completed`. Fine when the token is pushed with `updateAuthToken` instead |
-| Token the server always refuses, 60 s, then the user signs in again (#514) | 236 sockets; never reported signed out, on 72887a96 | 11 to 13 sockets; signed out reported at 3.3 s; the held save times out for its caller at 30 s, then runs once after sign-in | 5 sockets, then stays connected signed out; reported at 0.2 s; the held save goes out signed out and the server refuses it with `UNAUTHENTICATED` |
-| Save and subscribe sent 0 to 7 ms after the socket dies (#530, #532) | 2 of 84 saves told `channel closed` although they ran, on d15a9c96 | 0 of 120 | 0 of 84; median save 1,039 ms, against our 116 to 139 ms |
+| Token the server always refuses, 60 s, then the user signs in again (#514) | 236 sockets; never reported signed out, on 72887a96 | 11 to 13 sockets; signed out reported at 3.3 s; the held save times out for its caller at 30 s, then runs once after sign-in | 5 sockets, then stays connected signed out; signed out reported at 0.2 s; at 2.7 s the held save goes out signed out and the server refuses it with `UNAUTHENTICATED` |
+| Save and subscribe sent 0 to 7 ms after asking the proxy to drop the socket (#530, #532) | 2 of 84 saves told `channel closed` although they ran, on d15a9c96 | 0 of 120 | 0 of 84; median save 1,039 ms, against our 116 to 139 ms |
 | Save answered, answer lost with the socket | not run | ran once, 138 ms | ran once, 1,087 ms |
 | Save lost on the way, socket drops | not run | ran once, 153 ms | ran once, 1,504 ms |
 | Subscribe lost with the socket | not run | first value at 211 ms; cancel removes it on the server | 625 ms; cancel removes it |
@@ -240,13 +240,16 @@ d15a9c96, before #530 and #532. Everything ran on Windows 11 under
 | Grouped read of two queries under 40 writes | not run | never mixed | never mixed |
 | Grouped read, one query first answered from the cache of a cancelled subscription while the other is live | not run | never mixed | mixed, count 0 beside a list of 3, in 2 of 2 runs |
 | 5 live queries, a save every 500 ms, 3 min | not run | save median 17 ms, p95 22; 286 ms CPU a minute; 134 to 144 MB | 18 ms, 23; 349 ms CPU a minute; 130 to 139 MB |
-| Comparison gauntlet, 50 seeds of 1,000 ops, process restart at seed 25 | not run | pass; 221 s; reconnect-to-live median 56 ms | pass after the runner change below; 220 s; 109 ms. Same final state and `.ica` hash as ours in all 50 seeds |
+| Comparison gauntlet, 50 seeds of 1,000 ops, process restart at seed 25 | not run | pass; 221 s; reconnect-to-live median 56 ms | pass after the runner change below; 220 s; 109 ms. Same final state and `.ica` hash as ours in all 50 seeds. The `.ica` there is the runner's own archive encoding, not the app's export |
 
-The harness reproduced three of the four bugs on builds without their fix:
-#512, #514 and #530. #532 never fired in 84 rounds on a build without it.
-Dartvex showed none of the three, with no patches. On `main` our client
-passes everything above too, so the question is the next bug of this kind,
-not a current one.
+On builds without their fix, the test program saw the failures #514 and
+#530 fixed, and an action running twice in #512's setting. #532 never fired
+in 84 rounds on a build without it. Not every drop round can be shown to have
+hit a dead socket, since the drop request and the save race each other.
+Dartvex showed none of these failures, with no patches. On `main` our client
+gets the right outcome in every scenario above too, so the question is the
+next bug of this kind, not a current one. The scenarios measure; they assert
+nothing, so they aren't a regression gate as written.
 
 The CPU numbers flatter our client. Under debug JIT Dartvex runs as
 unoptimized Dart, while our client's Rust is a release build. Our client also calls every
@@ -261,19 +264,23 @@ sent the old one.
 ### What Dartvex would change for Icarus
 
 1. **Auth refresh.** Icarus redoes the whole auth setup and reconnects on
-   every token refresh. Dartvex treats that as a change of user, so any save
-   or action in flight fails even when the server ran it. The adapter has to
-   push a same-user token with `updateAuthToken`. A real change of user still
-   fails work in flight; the op queue resends by op ID and the server answers
-   it as a replay, so nothing is lost, but each one counts as a failure.
-2. **Refused token.** Dartvex gives up in 0.2 s and sends what it holds signed
-   out. The op queue keeps a batch that fails with `UNAUTHENTICATED` and raises
+   every token refresh. Dartvex treats that as a change of user, so a save or
+   action whose answer hasn't arrived by the reconnect that follows fails,
+   even when the server ran it. A save the server already answered is kept.
+   The adapter has to push a same-user token with `updateAuthToken`. A real
+   change of user still fails such work; the op queue resends by op ID, and
+   the server answers it as a replay if it landed or applies it if it didn't.
+   Nothing is lost, but each one counts as a failed attempt.
+2. **Refused token.** Dartvex reports signed out at 0.2 s and, once it
+   has given up on the token, sends what it holds signed out. The op queue keeps a batch that fails with `UNAUTHENTICATED` and raises
    the signed-out prompt, near line 2319 of `strategy_op_queue_provider.dart`.
-   I read that code; I didn't run it. The gauntlet requires a batch sent under a refused
+   I read that code; I didn't run it. Each failure counts as an attempt, so
+   enough of them pause the batch until the user retries. The gauntlet requires a batch sent under a refused
    token to land without a resend, which is how our client behaves. Dartvex
    passed only after I relaxed that check in a scratch copy, so that a batch
-   the client answered with an error passes if the runner's next send applies
-   it.
+   that didn't land passes if the runner's next send applies it. That check
+   can't tell a client error from the runner's own 10 s timeout; the
+   refused-token row above is where the error itself was seen.
 3. **Grouped reads.** A page's frame and slices arrive through
    `subscribeValues`. With the web adapter's grouping over Dartvex, a group
    mixed two server states when one query came from Dartvex's cache of a
@@ -283,21 +290,24 @@ sent the old one.
 4. **Reconnect speed and actions.** After an unexpected drop Dartvex waits
    its 1 s initial backoff, which `ConvexClientConfig.initialBackoff` sets. It
    never resends an action across a reconnect, so a caller like a picture
-   upload gets a retryable error instead.
+   upload gets an error marked retryable. Retryable here means the action may
+   have run. `images:generateUploadUrl` starts a new upload attempt each time,
+   so each action needs its own decision about whether a retry is safe.
 
 ### Recommendation
 
 Switch the desktop transport to Dartvex, after the four changes above. It is
 not a drop-in. Our client passes today, so nothing forces
-the move. Switching means the next ordering bug is no longer ours to find in
-1,265 lines of Rust patches nobody else reads.
+the move. Switching moves the socket and auth state machine upstream, out of
+1,265 lines of Rust patches nobody else reads. We still own the adapter and
+what the user sees.
 
 The migration, in three pieces:
 
 - One PR on the sync path, with a staged rollout. A `DartvexValueSource`
   replaces the 284-line `convex_client_native.dart`, with same-user refresh
-  through `updateAuthToken`, `initialBackoff` near 100 ms, a retry for actions
-  that fail as retryable, grouping that ignores cached first values, and the
+  through `updateAuthToken`, `initialBackoff` near 100 ms, a per-action answer to
+  whether a failed action may be retried, grouping that ignores cached first values, and the
   scenarios above as tests. Roughly 600 to 900 lines with tests. No server
   change, and shipped desktop builds keep our client.
 - One upstream Dartvex PR, for `subscribe` without the cache seed.
@@ -327,15 +337,17 @@ the clients directly, not through the op queue.
    Nov 10, except the macOS timing trials; section 4 adds four changes that
    come first.
 2. One `DartvexValueSource implements ConvexClientValueSource` replaces
-   `convex_client_native.dart` and `convex_client_web.dart`.
+   `convex_client_native.dart`, and later `convex_client_web.dart` once
+   Dartvex has run in a browser.
    `subscribeValues` uses the web adapter's microtask grouping. Errors map from
    `data['code']`.
 3. The transport conformance tests and the drive scripts pass on Windows, macOS
    and web. Sign-in, sign-out and an offline-then-online edit are seen in a
    running build.
 4. Staged rollout, since this is the sync path. Then delete
-   `third_party/convex_flutter`, `third_party/convex_rs`, the FRB pin,
-   `web/convex.browser.bundle.js` and `check_convex_web_binding.mjs`.
+   `third_party/convex_flutter`, `third_party/convex_rs` and the FRB pin.
+   `web/convex.browser.bundle.js` and `check_convex_web_binding.mjs` go only
+   when web moves too.
 
 ## Reproduce
 
