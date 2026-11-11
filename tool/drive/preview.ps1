@@ -47,6 +47,11 @@ $keyLine = Get-Content -LiteralPath $KeyFile |
   Select-Object -First 1
 if (-not $keyLine) { throw "No CONVEX_PREVIEW_DEPLOY_KEY in $KeyFile" }
 $key = $keyLine.Substring('CONVEX_PREVIEW_DEPLOY_KEY='.Length).Trim()
+# Any other deploy key wins over --preview-name: a production key pasted here
+# would deploy this branch to production.
+if (-not $key.StartsWith('preview:dara-adedeji:icarus-46d47|')) {
+  throw "$KeyFile does not hold a preview deploy key for icarus-46d47."
+}
 $api = 'https://api.convex.dev/v1'
 $headers = @{ Authorization = "Bearer $key" }
 
@@ -60,50 +65,57 @@ function Find-Preview {
   $found | Select-Object -First 1
 }
 
-# npx convex reads these; a stray one would pick another deployment.
+# npx convex reads these, and a stray one would pick another deployment.
+# They are put back as they were however the script ends.
+$savedDeployment = $env:CONVEX_DEPLOYMENT
+$savedDeployKey = $env:CONVEX_DEPLOY_KEY
 $env:CONVEX_DEPLOYMENT = $null
 $env:CONVEX_DEPLOY_KEY = $null
-
-if ($Delete) {
-  $preview = Find-Preview
-  if (-not $preview) { Write-Host "No preview named $Name."; return }
-  Invoke-RestMethod -Method Post -Headers $headers "$api/deployments/$($preview.name)/delete" | Out-Null
-  Write-Host "Deleted preview $Name ($($preview.name))."
-  return
-}
-
-if (-not (Test-Path -LiteralPath 'node_modules\convex')) { throw 'Run npm ci first.' }
-
-# Read dev's variables before deploying, so a dev that would hand the preview
-# the production bucket stops the run before anything is made.
-$env:CONVEX_DEPLOYMENT = $devDeployment
-$devEnv = @(npx convex env list)
-$env:CONVEX_DEPLOYMENT = $null
-if ($LASTEXITCODE -ne 0) { throw "Could not read $devDeployment's environment variables." }
-$bucket = $devEnv | Where-Object { $_ -match '^R2_BUCKET=' } | ForEach-Object { $_.Substring(10).Trim() }
-if (-not $bucket) { throw "$devDeployment has no R2_BUCKET." }
-if ($productionBuckets -contains $bucket) {
-  throw "$devDeployment points at the production bucket $bucket; a preview would upload into it."
-}
-
-$env:CONVEX_DEPLOY_KEY = $key
 try {
+  if ($Delete) {
+    $preview = Find-Preview
+    if (-not $preview) { Write-Host "No preview named $Name."; return }
+    Invoke-RestMethod -Method Post -Headers $headers "$api/deployments/$($preview.name)/delete" | Out-Null
+    Write-Host "Deleted preview $Name ($($preview.name))."
+    return
+  }
+
+  if (-not (Test-Path -LiteralPath 'node_modules\convex')) { throw 'Run npm ci first.' }
+
+  # Read dev's variables before deploying, so a dev that would hand the preview
+  # the production bucket stops the run before anything is made.
+  $env:CONVEX_DEPLOYMENT = $devDeployment
+  $devEnv = @(npx convex env list)
+  $env:CONVEX_DEPLOYMENT = $null
+  if ($LASTEXITCODE -ne 0) { throw "Could not read $devDeployment's environment variables." }
+  $bucket = $devEnv | Where-Object { $_ -match '^R2_BUCKET=' } | ForEach-Object { $_.Substring(10).Trim() }
+  if (-not $bucket) { throw "$devDeployment has no R2_BUCKET." }
+  if ($productionBuckets -contains $bucket) {
+    throw "$devDeployment points at the production bucket $bucket; a preview would upload into it."
+  }
+
+  $env:CONVEX_DEPLOY_KEY = $key
   # --codegen disable: convex/_generated is committed, and codegen rewrites
   # its line endings on Windows.
   npx convex deploy --preview-name $Name --typecheck enable --codegen disable -y | Out-Host
-  if ($LASTEXITCODE -ne 0) { throw 'npx convex deploy failed.' }
+  $deployed = $LASTEXITCODE -eq 0
+  # The preview can exist even when the push failed, so it gets its expiry
+  # either way, before anything else can fail.
   $preview = Find-Preview
+  if ($preview) {
+    $expiresAt = [DateTimeOffset]::UtcNow.AddHours($Hours).ToUnixTimeMilliseconds()
+    Invoke-RestMethod -Method Patch -Headers $headers -ContentType 'application/json' `
+      -Body (@{ expiresAt = $expiresAt } | ConvertTo-Json) `
+      "$api/deployments/$($preview.name)" | Out-Null
+  }
+  if (-not $deployed) { throw 'npx convex deploy failed.' }
   if (-not $preview) { throw "Deployed, but no preview named $Name is listed." }
-  # Expiry first, so a preview whose setup fails below still goes away.
-  $expiresAt = [DateTimeOffset]::UtcNow.AddHours($Hours).ToUnixTimeMilliseconds()
-  Invoke-RestMethod -Method Patch -Headers $headers -ContentType 'application/json' `
-    -Body (@{ expiresAt = $expiresAt } | ConvertTo-Json) `
-    "$api/deployments/$($preview.name)" | Out-Null
   $devEnv | npx convex env set --force --deployment $preview.name | Out-Host
   if ($LASTEXITCODE -ne 0) { throw "Could not copy dev's environment variables to $($preview.name)." }
-} finally {
-  $env:CONVEX_DEPLOY_KEY = $null
-}
 
-Write-Host "Preview $Name is $($preview.name), bucket $bucket, expires in $Hours h."
-$preview.deploymentUrl
+  Write-Host "Preview $Name is $($preview.name), bucket $bucket, expires in $Hours h."
+  $preview.deploymentUrl
+} finally {
+  $env:CONVEX_DEPLOYMENT = $savedDeployment
+  $env:CONVEX_DEPLOY_KEY = $savedDeployKey
+}
