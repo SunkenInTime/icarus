@@ -53,6 +53,14 @@ void main() {
       await notifier.flushNow();
       await _settle();
     }
+    // The server has the last batch before the outbox has dropped it: a
+    // change stays listed until its removal from disk finishes, which a slow
+    // machine can stretch past the turns above.
+    final giveUp = DateTime.now().add(const Duration(seconds: 5));
+    while (queue().inFlightByEntityKey.isNotEmpty &&
+        DateTime.now().isBefore(giveUp)) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
   }
 
   /// The page change as the pages bar and page menu make it, against what
