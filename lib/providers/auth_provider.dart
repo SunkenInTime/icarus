@@ -1977,8 +1977,8 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   void _clearAuthIncident() {
-    // The session is accepted again, or ended: a prompt still asking about
-    // it would say the connection is lost while it isn't.
+    // The session is accepted again, ended, or about to be judged again on
+    // a retry: a prompt still asking about it would say more than is known.
     final prompt = _incidentPromptContext;
     if (prompt != null &&
         prompt.mounted &&

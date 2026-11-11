@@ -77,10 +77,13 @@ struct AuthRecovery {
     /// connection or as a different token. The server's next answer proves
     /// it accepted that auth.
     auth_resent: bool,
-    /// Refusals since the server last accepted a token.
+    /// Refusals since the server last accepted a token. New auth from the
+    /// app doesn't reset this, so the backoff holds while it keeps refusing.
     refusals: u32,
     /// True once the server has refused AUTH_REFUSALS_TO_REPORT times in a
-    /// row, until it accepts a token again.
+    /// row, until it accepts a token again or the app sets new auth. Past
+    /// that many, each refusal sets it again, so new auth the server refuses
+    /// too is reported on its first refusal.
     refused: watch::Sender<bool>,
 }
 
@@ -179,8 +182,10 @@ pub async fn worker<T: SyncProtocol>(
             auth_recovery.active = true;
             auth_recovery.auth_resent = false;
             auth_recovery.refusals += 1;
-            if auth_recovery.refusals == AUTH_REFUSALS_TO_REPORT {
-                auth_recovery.refused.send_replace(true);
+            if auth_recovery.refusals >= AUTH_REFUSALS_TO_REPORT {
+                auth_recovery
+                    .refused
+                    .send_if_modified(|refused| !std::mem::replace(refused, true));
             }
             backoff.reset();
             auth_retry_delay(auth_recovery.refusals)
@@ -843,9 +848,6 @@ mod tests {
         times: usize,
     ) -> anyhow::Result<()> {
         for _ in 0..times {
-            // Requests already sent, such as new auth, reach the worker
-            // first; new auth would otherwise start the count over.
-            tokio::time::sleep(Duration::from_millis(1)).await;
             response_sender
                 .send(ProtocolResponse::ServerMessage(auth_error()))
                 .await?;
@@ -943,7 +945,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_new_auth_is_judged_again() -> anyhow::Result<()> {
+    async fn test_new_auth_refused_again_is_reported() -> anyhow::Result<()> {
         let (response_sender, response_receiver) = mpsc::channel(1);
         let protocol = FakeProtocol::new(response_sender.clone());
         let worker = start_worker(&protocol, response_receiver);
@@ -953,19 +955,54 @@ mod tests {
         refuse(&response_sender, AUTH_REFUSALS_TO_REPORT as usize).await?;
         assert!(*worker.auth_refused.borrow());
 
-        // The user retries, so the app hands over new auth. Until the server
-        // has refused that, the client doesn't call it refused.
+        // The user retries, so the app hands over new auth. The server
+        // hasn't judged it yet.
         worker
             .requests
             .send(ClientRequest::Authenticate(Some(changing_token())))?;
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(!*worker.auth_refused.borrow());
 
-        // The server refuses the new auth as often, and the client says so
-        // again: a change the app hears.
-        refuse(&response_sender, AUTH_REFUSALS_TO_REPORT as usize).await?;
+        // It refuses the new auth too: the client says so again at once.
+        refuse(&response_sender, 1).await?;
         assert!(*worker.auth_refused.borrow());
         worker.handle.abort();
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_new_auth_keeps_the_backoff() -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        *protocol.server.lock() = Server::RefuseAuth;
+        let worker = start_worker(&protocol, response_receiver);
+        let token = || -> AuthTokenFetcher {
+            Box::new(|_force_refresh| {
+                Box::pin(async { Ok(AuthenticationToken::User("token".into())) })
+            })
+        };
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(token())))?;
+        response_sender
+            .send(ProtocolResponse::ServerMessage(auth_error()))
+            .await?;
+
+        // The app sets the same refused token up again every few seconds,
+        // as its automatic retries do while Supabase can't refresh it.
+        for _ in 0..12 {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            worker
+                .requests
+                .send(ClientRequest::Authenticate(Some(token())))?;
+        }
+        worker.handle.abort();
+        // The same pace as without the new auth: 8 to 12 a minute.
+        let reconnects = protocol.reconnects.lock().len();
+        assert!(
+            (8..=12).contains(&reconnects),
+            "{reconnects} reconnects in a minute"
+        );
         Ok(())
     }
 
@@ -1169,11 +1206,11 @@ async fn _worker_once<T: SyncProtocol>(
                     .await?;
                 },
                 ClientRequest::Authenticate(fetcher) => {
-                    // New auth from the app gets its own verdict: refusals of
-                    // the auth it replaces don't count toward it. Otherwise a
-                    // client still marked refused never tells the app that the
-                    // new auth is refused too, since nothing changed.
-                    auth_recovery.refusals = 0;
+                    // The server hasn't judged new auth from the app yet. A
+                    // client still marked refused would otherwise never tell
+                    // the app that the new auth is refused too, since nothing
+                    // changed. The count stays: if the server refuses this
+                    // auth as well, that one refusal marks it refused again.
                     auth_recovery
                         .refused
                         .send_if_modified(|refused| std::mem::take(refused));

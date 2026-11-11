@@ -35,13 +35,16 @@ out the backoff.
 times in a row, and false again once it accepts a token. The `convex_flutter`
 bridge reports that to the app as signed out of the cloud.
 
-New auth from the app (`set_auth`, `set_auth_callback`) starts the count over
-and turns the flag false, so the server judges the new auth on its own. Before
-Nov 2026 the flag stayed true until the server accepted something. An auth
-handle made while it was true (the user pressing Reconnect on a refused
-session) began refused, so the server refusing again was no change, and the
-app never heard of it. The app then waited, timed out with the socket down
-between refusals, and showed the session as offline.
+New auth from the app (`set_auth`, `set_auth_callback`) turns the flag false,
+since the server hasn't judged it yet. The refusal count, and with it the
+backoff, stays until the server accepts a token, and while the count is past
+five, each refusal sets the flag again. So new auth the server refuses too is
+reported on its first refusal, without the app's own retries restarting the
+short waits. Before Nov 2026 the flag stayed true until the server accepted
+something: an auth handle made while it was true (the user pressing Reconnect
+on a refused session) began refused, the server refusing it again was no
+change, and the app never heard of it. It waited, timed out with the socket
+down between refusals, and showed the session as offline.
 
 The reconnect request carries that auth-recovery state to the WebSocket worker.
 The client worker already paces those attempts, so the WebSocket worker resets
