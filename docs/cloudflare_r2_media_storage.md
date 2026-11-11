@@ -18,7 +18,7 @@ New uploads fail with an actionable Convex error if the required R2 env vars are
 ## Buckets
 
 - `icarus-media`: production only, public at `media.icarus-strats.xyz` (and `media.icarusstrats.com`).
-- `icarus-media-dev`: the dev deployment and every preview (`tool/drive/preview.ps1` copies dev's variables), public at `media-dev.icarus-strats.xyz`. Its S3 token reaches only this bucket, so a test upload can't land in production's. Pictures dev uploaded before Nov 8 2026 were copied over from `icarus-media` and are still there too.
+- `icarus-media-dev`: the dev deployment and every preview (`tool/drive/preview.ps1` copies dev's variables), public at `media-dev.icarus-strats.xyz`. Its S3 token (`icarus-media-dev-objects`, Object Read & Write on this bucket only) reaches nothing else, so a test upload can't land in production's. Dev switched on Nov 10 2026: the 162 pictures dev had uploaded into `icarus-media` were copied here at the same keys and then removed from `icarus-media`. Rows store only the object key and the URL is built from `R2_PUBLIC_BASE_URL` when read, so moving them needed no row changes.
 
 ## Runtime Flow
 
