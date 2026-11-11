@@ -361,17 +361,22 @@ void main() {
     expect(handlesShow(), isTrue);
     await mouse.moveTo(box.center + const Offset(0, 4000));
     await tester.pump(const Duration(milliseconds: 100));
+    expect(handlesShow(), isTrue);
+    expect(shape().outlineVisible, isTrue);
     await mouse.moveTo(offMarker);
     await tester.pump();
     expect(handlesShow(), isTrue);
 
-    // Leaving for good puts the shape back to rest.
+    // Gone for good, the shape goes back to rest, and coming back over it
+    // shows the marker alone again.
     await mouse.moveTo(box.center + const Offset(0, 4000));
     await tester.pump(const Duration(seconds: 1));
-    await mouse.moveTo(offMarker);
-    await tester.pump();
     expect(handlesShow(), isFalse);
     expect(shape().outlineVisible, isFalse);
+    await mouse.moveTo(offMarker);
+    await tester.pump();
+    expect(shape().centerMarkerVisible, isTrue);
+    expect(handlesShow(), isFalse);
   });
 
   testWidgets('rectangle rotation handle communicates hover and active states',

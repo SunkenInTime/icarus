@@ -72,8 +72,13 @@ class MapFloorClip extends SingleChildRenderObjectWidget {
     BuildContext context,
     covariant RenderObject renderObject,
   ) {
-    (renderObject as _RenderMapFloorClip).floor =
-        context.dependOnInheritedWidgetOfExactType<_MapFloorScope>()?.floor;
+    (renderObject as _RenderMapFloorClip)
+      ..floor =
+          context.dependOnInheritedWidgetOfExactType<_MapFloorScope>()?.floor
+      // The clip depends on where this box sits on the canvas, and a parent
+      // can move it without repainting it (a page transition slides items
+      // inside layers it keeps). A rebuild is the sign it may have moved.
+      ..markNeedsPaint();
   }
 }
 
@@ -112,6 +117,7 @@ class _RenderMapFloorClip extends RenderProxyBox {
     }
     // The floor is clipped in the canvas's coordinates, where its path is
     // kept, so the path is never rebuilt for a shape that moves or turns.
+    // Drawn straight on the canvas: the child must not be composited.
     final canvas = context.canvas;
     canvas
       ..save()

@@ -89,12 +89,12 @@ class _PlacedCustomRectangleWidgetState
   bool _isShapeHovered = false;
 
   /// The pointer has been to the center marker since it came over the
-  /// shape. Until then only the marker shows, so a shape someone is just
-  /// passing over stays quiet.
+  /// shape, and has not been gone from it for long. Until then only the
+  /// marker shows, so a shape someone is just passing over stays quiet.
   bool _reachedFor = false;
 
-  /// Forgets [_reachedFor] a moment after the pointer leaves, so slipping
-  /// past the edge on the way to a handle does not hide the handles.
+  /// Forgets [_reachedFor] a moment after the pointer leaves: the handles
+  /// stay up and usable through a slip past the edge on the way to one.
   Timer? _forgetReach;
   static const _reachGrace = Duration(milliseconds: 400);
   _RectangleResizeHandle _activeHandle = _RectangleResizeHandle.none;
@@ -187,7 +187,7 @@ class _PlacedCustomRectangleWidgetState
     // changing the shape.
     final showHandles = !_isDragging &&
         !isScreenshot &&
-        ((_isShapeHovered && _reachedFor) ||
+        (_reachedFor ||
             _isRotating ||
             _activeHandle != _RectangleResizeHandle.none);
 
