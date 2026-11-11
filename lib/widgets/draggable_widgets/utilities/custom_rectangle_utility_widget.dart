@@ -7,6 +7,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_context_menu.dart';
+import 'package:icarus/widgets/map_floor_clip.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
 class CustomRectangleUtilityWidget extends ConsumerWidget {
@@ -20,6 +21,8 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
     this.mapScale,
     this.showCenterMarker = true,
     this.centerMarkerVisible = true,
+    this.outlineVisible = false,
+    this.onMarkerHover,
   });
 
   final String? id;
@@ -33,6 +36,13 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
   /// When false the center marker fades out but keeps its hit area, so the
   /// shape can still be grabbed the moment hover reveals it.
   final bool centerMarkerVisible;
+
+  /// The rectangle's whole edge, walls and all. Off at rest, where only the
+  /// map's floor takes the colour; on while the shape is being changed.
+  final bool outlineVisible;
+
+  /// The pointer reached the center marker: the user is going for the shape.
+  final VoidCallback? onMarkerHover;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -76,11 +86,24 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
         children: [
           Positioned.fill(
             child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
+              child: MapFloorClip(
+                child: ColoredBox(
                   color: color.withValues(alpha: fillOpacity),
-                  border: Border.all(color: color, width: coord.scale(2)),
-                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: outlineVisible ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 150),
+                curve: Settings.easeOut,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: color, width: coord.scale(2)),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
               ),
             ),
@@ -95,18 +118,22 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
                 contextMenuItems: (id?.isNotEmpty ?? false) && utility != null
                     ? buildCustomShapeContextMenuItems(context, ref, utility)
                     : null,
-                child: AnimatedOpacity(
-                  opacity: centerMarkerVisible ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 150),
-                  curve: Settings.easeOut,
-                  child: Container(
-                    width: markerSize,
-                    height: markerSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.9),
-                      border: Border.all(
-                          color: Colors.white, width: coord.scale(2)),
+                child: MouseRegion(
+                  opaque: false,
+                  onEnter: (_) => onMarkerHover?.call(),
+                  child: AnimatedOpacity(
+                    opacity: centerMarkerVisible ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 150),
+                    curve: Settings.easeOut,
+                    child: Container(
+                      width: markerSize,
+                      height: markerSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.9),
+                        border: Border.all(
+                            color: Colors.white, width: coord.scale(2)),
+                      ),
                     ),
                   ),
                 ),

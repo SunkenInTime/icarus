@@ -89,7 +89,9 @@
 //                                      keeps frames coming, then logs the worst
 //                                      gap between two of them
 // Recording
-//   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?}
+//   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?,
+//                                       "during": step?}  shots while step runs,
+//                                      to catch what it sets moving
 //   {"logWalls": tag}                  every ability's position and wall path
 //   {"logUtilities": tag}              every utility's type, position and door
 //   {"logDoors": tag}                  the map doors changed on the page
@@ -1414,12 +1416,18 @@ Future<void> _run(Map<String, dynamic> step) async {
           'build ${times(_frameTimings.map((t) => t.buildDuration))} '
           'raster ${times(_frameTimings.map((t) => t.rasterDuration))}');
     case 'burst':
+      // Its failure is held until the shots are in, then fails this step.
+      final during = step['during'] == null
+          ? null
+          : _run((step['during'] as Map).cast<String, dynamic>())
+              .then<Object?>((_) => null, onError: (Object error) => error);
       for (var i = 0; i < ((step['count'] ?? 10) as int); i++) {
         await _run({'shot': '$value-${i.toString().padLeft(3, '0')}.png'});
         await Future<void>.delayed(
           Duration(milliseconds: (step['every'] ?? 100) as int),
         );
       }
+      if (await during case final Object failure) throw failure;
     case 'logLineups':
       final lineUps = c.read(lineUpProvider);
       String at(Offset? p) => p == null

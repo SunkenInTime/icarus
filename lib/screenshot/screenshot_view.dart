@@ -24,6 +24,7 @@ import 'package:icarus/screenshot/caption_export_layout.dart';
 import 'package:icarus/screenshot/caption_export_overlay.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/canonical_map_artwork.dart';
+import 'package:icarus/widgets/map_floor_clip.dart';
 import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
@@ -247,175 +248,179 @@ class ScreenshotView extends ConsumerWidget {
     final name = pageName?.trim();
     final hasName = name?.isNotEmpty ?? false;
 
-    return SizedBox(
-      height: CoordinateSystem.screenShotSize.height,
-      width: CoordinateSystem.screenShotSize.width,
-      child: Stack(
-        children: [
-          if (!transparentBackground)
-            Positioned.fill(
-              child: ScreenshotBackdrop(dotOpacity: backgroundDotOpacity),
-            ),
-          Positioned(
-            left: mapLeft,
-            top: 0,
-            width: mapWidth,
-            height: CoordinateSystem.screenShotSize.height,
-            child: CanonicalMapArtwork(
-              map: mapValue,
-              isAttack: isAttack,
-              child: AssetSvg(
-                assetName,
-                colorMapper: mapColorMapper,
-                semanticsLabel: 'Map',
-                fit: BoxFit.contain,
+    return MapFloor(
+      map: mapValue,
+      isAttack: isAttack,
+      child: SizedBox(
+        height: CoordinateSystem.screenShotSize.height,
+        width: CoordinateSystem.screenShotSize.width,
+        child: Stack(
+          children: [
+            if (!transparentBackground)
+              Positioned.fill(
+                child: ScreenshotBackdrop(dotOpacity: backgroundDotOpacity),
+              ),
+            Positioned(
+              left: mapLeft,
+              top: 0,
+              width: mapWidth,
+              height: CoordinateSystem.screenShotSize.height,
+              child: CanonicalMapArtwork(
+                map: mapValue,
+                isAttack: isAttack,
+                child: AssetSvg(
+                  assetName,
+                  colorMapper: mapColorMapper,
+                  semanticsLabel: 'Map',
+                  fit: BoxFit.contain,
+                ),
               ),
             ),
-          ),
-          // View cones: the map as they reveal it, shown wherever one
-          // reaches, as in the editor.
-          Positioned.fill(
-            child: ConeCoverageLayer(
-              coverage: cones,
-              opacity: ref.watch(appPreferencesProvider).viewConeOpacity,
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: mapLeft,
-                    top: 0,
-                    width: mapWidth,
-                    height: CoordinateSystem.screenShotSize.height,
-                    child: CanonicalMapArtwork(
-                      map: mapValue,
-                      isAttack: isAttack,
-                      child: AssetSvg(
-                        assetName,
-                        colorMapper:
-                            MapSvgColorMapper.revealed(effectivePalette),
-                        fit: BoxFit.contain,
+            // View cones: the map as they reveal it, shown wherever one
+            // reaches, as in the editor.
+            Positioned.fill(
+              child: ConeCoverageLayer(
+                coverage: cones,
+                opacity: ref.watch(appPreferencesProvider).viewConeOpacity,
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: mapLeft,
+                      top: 0,
+                      width: mapWidth,
+                      height: CoordinateSystem.screenShotSize.height,
+                      child: CanonicalMapArtwork(
+                        map: mapValue,
+                        isAttack: isAttack,
+                        child: AssetSvg(
+                          assetName,
+                          colorMapper:
+                              MapSvgColorMapper.revealed(effectivePalette),
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
+                  ],
+                ),
+              ),
+            ),
+            if (showSpawnBarrier)
+              Positioned(
+                left: mapLeft,
+                top: 0,
+                width: mapWidth,
+                height: CoordinateSystem.screenShotSize.height,
+                child: Transform.flip(
+                  flipX: !isAttack,
+                  flipY: !isAttack,
+                  child: AssetSvg(
+                    barrierAssetName,
+                    semanticsLabel: 'Barrier',
+                    fit: BoxFit.contain,
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
-          if (showSpawnBarrier)
-            Positioned(
-              left: mapLeft,
-              top: 0,
-              width: mapWidth,
-              height: CoordinateSystem.screenShotSize.height,
-              child: Transform.flip(
-                flipX: !isAttack,
-                flipY: !isAttack,
+            if (showRegionNames)
+              Positioned(
+                left: mapLeft,
+                top: 0,
+                width: mapWidth,
+                height: CoordinateSystem.screenShotSize.height,
                 child: AssetSvg(
-                  barrierAssetName,
-                  semanticsLabel: 'Barrier',
+                  calloutsAssetName,
+                  semanticsLabel: 'Callouts',
                   fit: BoxFit.contain,
                 ),
               ),
-            ),
-          if (showRegionNames)
-            Positioned(
-              left: mapLeft,
-              top: 0,
-              width: mapWidth,
-              height: CoordinateSystem.screenShotSize.height,
-              child: AssetSvg(
-                calloutsAssetName,
-                semanticsLabel: 'Callouts',
-                fit: BoxFit.contain,
-              ),
-            ),
-          if (showUltOrbs)
-            Positioned(
-              left: mapLeft,
-              top: 0,
-              width: mapWidth,
-              height: CoordinateSystem.screenShotSize.height,
-              child: Transform.flip(
-                flipX: !isAttack,
-                flipY: !isAttack,
-                child: AssetSvg(
-                  ultOrbsAssetName,
-                  semanticsLabel: 'Ult Orbs',
-                  fit: BoxFit.contain,
+            if (showUltOrbs)
+              Positioned(
+                left: mapLeft,
+                top: 0,
+                width: mapWidth,
+                height: CoordinateSystem.screenShotSize.height,
+                child: Transform.flip(
+                  flipX: !isAttack,
+                  flipY: !isAttack,
+                  child: AssetSvg(
+                    ultOrbsAssetName,
+                    semanticsLabel: 'Ult Orbs',
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
-            ),
-          Positioned.fill(
-            child: MapDoorBars(
-              map: mapValue,
-              isAttack: isAttack,
-              changed: changedMapDoors(utilities, mapValue),
-              transition: doorTransition,
-            ),
-          ),
-          Positioned.fill(
-            child: ConeCoverageScope(
-              coverage: cones,
-              // Lets the captions find the items by their drawn outlines.
-              child: CanvasItemRegistryScope(
-                registry: ref.read(canvasItemRegistryProvider),
-                child: placedWidgetsOverride ?? const PlacedWidgetBuilder(),
-              ),
-            ),
-          ),
-
-          //Painting
-          Positioned.fill(
-            // Mirror the live map so defense-side screenshots flip drawings too.
-            child: Opacity(
-              opacity: drawingsOpacity,
-              child: Transform.flip(
-                flipX: !isAttack,
-                flipY: !isAttack,
-                child: InteractivePainter(
-                  mapScaleOverride: Maps.mapScale[mapValue] ?? 1.0,
-                  isAttackOverride: isAttack,
-                ),
-              ),
-            ),
-          ),
-          if (hasName)
-            Positioned(
-              left: _pageNameLeft,
-              bottom: _pageNameBottom,
-              child: SizedBox(
-                width:
-                    CoordinateSystem.screenShotSize.width - 2 * _pageNameLeft,
-                child: Text(
-                  name!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: _pageNameStyle,
-                ),
-              ),
-            ),
-          if (includeCaptions)
             Positioned.fill(
-              child: CaptionExportOverlay(
-                items: captionExportItems([
-                  ...agents,
-                  ...abilities,
-                  ...text,
-                  ...images,
-                  ...withoutMapDoors(utilities, mapValue),
-                ]),
-                drawings: drawings,
+              child: MapDoorBars(
+                map: mapValue,
                 isAttack: isAttack,
-                mapLeft: artLeft,
-                mapRight: artLeft + artWidth,
-                pageName: hasName ? _pageNameRect(context, name!) : null,
-                onLayout: onCaptionLayout,
+                changed: changedMapDoors(utilities, mapValue),
+                transition: doorTransition,
               ),
             ),
-          if (fadingCaptions.isNotEmpty)
             Positioned.fill(
-              child: FadingCaptionsLayer(captions: fadingCaptions),
+              child: ConeCoverageScope(
+                coverage: cones,
+                // Lets the captions find the items by their drawn outlines.
+                child: CanvasItemRegistryScope(
+                  registry: ref.read(canvasItemRegistryProvider),
+                  child: placedWidgetsOverride ?? const PlacedWidgetBuilder(),
+                ),
+              ),
             ),
-        ],
+
+            //Painting
+            Positioned.fill(
+              // Mirror the live map so defense-side screenshots flip drawings too.
+              child: Opacity(
+                opacity: drawingsOpacity,
+                child: Transform.flip(
+                  flipX: !isAttack,
+                  flipY: !isAttack,
+                  child: InteractivePainter(
+                    mapScaleOverride: Maps.mapScale[mapValue] ?? 1.0,
+                    isAttackOverride: isAttack,
+                  ),
+                ),
+              ),
+            ),
+            if (hasName)
+              Positioned(
+                left: _pageNameLeft,
+                bottom: _pageNameBottom,
+                child: SizedBox(
+                  width:
+                      CoordinateSystem.screenShotSize.width - 2 * _pageNameLeft,
+                  child: Text(
+                    name!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _pageNameStyle,
+                  ),
+                ),
+              ),
+            if (includeCaptions)
+              Positioned.fill(
+                child: CaptionExportOverlay(
+                  items: captionExportItems([
+                    ...agents,
+                    ...abilities,
+                    ...text,
+                    ...images,
+                    ...withoutMapDoors(utilities, mapValue),
+                  ]),
+                  drawings: drawings,
+                  isAttack: isAttack,
+                  mapLeft: artLeft,
+                  mapRight: artLeft + artWidth,
+                  pageName: hasName ? _pageNameRect(context, name!) : null,
+                  onLayout: onCaptionLayout,
+                ),
+              ),
+            if (fadingCaptions.isNotEmpty)
+              Positioned.fill(
+                child: FadingCaptionsLayer(captions: fadingCaptions),
+              ),
+          ],
+        ),
       ),
     );
   }
