@@ -868,6 +868,46 @@ void main() {
     expect(state.activeAuthIncidentId, isNull);
   });
 
+  test(
+      'a retry queued behind a setup still running clears the incident when '
+      'it starts', () async {
+    supabaseApi.currentSession = fakeSession();
+    AuthProvider.debugOfflineRetryDelay = (_) => const Duration(hours: 1);
+    final ensureCurrentUser = Completer<void>();
+    convexApi.mutationCompleter = ensureCurrentUser;
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(authProvider);
+    await pumpMicrotasks();
+    final firstSetupHears = convexApi.lastOnAuthChange!;
+    firstSetupHears(false);
+    await pumpMicrotasks();
+
+    // Reconnect while the first setup still waits; the retry queues. The
+    // first setup's client reports the refusal once more meanwhile.
+    unawaited(
+      container.read(authProvider.notifier).reinitializeConvexAuth(),
+    );
+    await pumpMicrotasks();
+    firstSetupHears(false);
+    await pumpMicrotasks();
+
+    // The first setup gives up, and the retry finds the cloud out of reach.
+    convexApi
+      ..mutationCompleter = null
+      ..connected = false
+      ..reconnectResult = false
+      ..autoAuthenticateOnSetAuth = false
+      ..emitAuthState(false);
+    ensureCurrentUser.completeError(TimeoutException('mutation timed out'));
+    await pumpMicrotasks();
+    await pumpMicrotasks();
+
+    final state = container.read(authProvider);
+    expect(state.convexAuthStatus, ConvexAuthStatus.offline);
+    expect(state.activeAuthIncidentId, isNull);
+  });
+
   test('a handle a later setup replaced reports nothing about the session',
       () async {
     supabaseApi.currentSession = fakeSession();

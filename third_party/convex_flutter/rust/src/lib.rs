@@ -665,7 +665,10 @@ impl MobileConvexClient {
             // Until this handle is disposed, report the server refusing or
             // accepting the session again.
             loop {
+                // Disposal comes first: a replaced handle must not report the
+                // new auth clearing the refused flag as its own.
                 tokio::select! {
+                    biased;
                     _ = &mut cancel_receiver => break,
                     changed = refused.changed() => {
                         if changed.is_err() {

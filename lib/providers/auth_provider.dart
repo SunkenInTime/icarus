@@ -593,6 +593,10 @@ class AuthProvider extends Notifier<AppAuthState> {
   /// its setup is the latest.
   int _convexAuthSetups = 0;
 
+  /// The user asked to try again; the next setup to start clears the
+  /// incident so the server judges the session afresh.
+  bool _retryRequested = false;
+
   /// Whether this run ever gave Convex a token. Until it has, there is no
   /// auth to clear, and clearing it would open the Convex socket for a
   /// signed-out user who never asked for the cloud.
@@ -1531,10 +1535,7 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   Future<void> reinitializeConvexAuth({String source = 'manual'}) async {
-    // A retry asks the server to judge the session again, so a refusal of
-    // an earlier try doesn't stand for it: if the server refuses again, that
-    // is a new incident, and the prompt says so again.
-    _clearAuthIncident();
+    _retryRequested = true;
     await _configureConvexAuth(trigger: 'reinitialize:$source');
   }
 
@@ -1765,6 +1766,14 @@ class AuthProvider extends Notifier<AppAuthState> {
       clearError: true,
     );
 
+    // A retry asks the server to judge the session again, so a refusal of
+    // an earlier try doesn't stand for it: if the server refuses again, that
+    // is a new incident, and the prompt says so again. Cleared as the retry
+    // starts, not when asked for, since it may wait for a setup still running.
+    if (_retryRequested) {
+      _retryRequested = false;
+      _clearAuthIncident();
+    }
     final setup = ++_convexAuthSetups;
     final incidentBeforeSetup = state.activeAuthIncidentId;
     try {
