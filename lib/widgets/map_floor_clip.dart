@@ -203,12 +203,16 @@ class _RenderMapFloorClip extends RenderProxyBox {
       ..translate(offset.dx, offset.dy)
       ..transform(fromBox.storage);
     if (floor != null) canvas.clipPath(floor);
+    final reach = above.isEmpty ? Rect.zero : _outlineIn(box).getBounds();
     for (final clip in above) {
+      final outline = clip._outlineIn(box);
+      // Most shapes on a page are nowhere near each other.
+      if (!outline.getBounds().overlaps(reach)) continue;
       canvas.clipPath(
         Path.combine(
           PathOperation.difference,
           Path()..addRect(Offset.zero & box.size),
-          clip._outlineIn(box),
+          outline,
         ),
       );
     }
