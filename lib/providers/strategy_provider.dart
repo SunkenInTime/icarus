@@ -355,10 +355,11 @@ class StrategyProvider extends Notifier<StrategyState> {
         .openStrategy(strategyID, activePagePublicId: pageId);
     final snapshotState = ref.read(remoteEditorSnapshotProvider);
     final snapshot = snapshotState.valueOrNull;
-    if (snapshot == null) {
+    if (snapshot == null || snapshot.header.publicId != strategyID) {
       // Returning silently here used to leave the editor on an eternal
       // skeleton with no feedback. Throw so callers can surface the failure
-      // and back out.
+      // and back out. The same goes for a strategy that was closed, or gave
+      // way to another, while it loaded: it must not open after the fact.
       throw StateError(
         'Cloud strategy snapshot unavailable for $strategyID'
         '${snapshotState.hasError ? ': ${snapshotState.error}' : ''}',

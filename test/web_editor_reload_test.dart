@@ -134,7 +134,7 @@ void main() {
   });
 
   test('a reload reopens the strategy that is open, not a link left behind',
-      () {
+      () async {
     // A reader opened a view link, then their own strategy, in one tab. Both
     // used to stay set for the reload: the link in the address and the held
     // code, their own strategy in the store. The reload opened two editors
@@ -153,6 +153,10 @@ void main() {
       sharePageUrlProvider.overrideWithValue(() => page),
       replaceBrowserUrlProvider.overrideWithValue((url) => page = url),
       strategyProvider.overrideWith(() => strategy),
+      // Signed in, the cloud not ready yet: a new code waits, held.
+      authProvider.overrideWith(
+        () => _FixedAuth(_auth(ConvexAuthStatus.configuring)),
+      ),
     ]);
     addTearDown(container.dispose);
     container.read(shareLinkViewProvider.notifier).state =
@@ -174,6 +178,16 @@ void main() {
     // and it is what a reload reopens again.
     strategy.open('shared', StrategySource.cloud);
     expect(open.read(), isNull);
+    expect(heldCode.read(), code);
+    expect(page.path, '/share/$code');
+
+    // A second code arrived and could not be opened, so it is the one held.
+    // The address still names the link whose strategy is on screen.
+    strategy.open('mine', StrategySource.cloud);
+    await container
+        .read(shareLinkControllerProvider.notifier)
+        .redeemToken('ICR-XXXX-XXXX-XXXX-XXXX');
+    strategy.open('shared', StrategySource.cloud);
     expect(heldCode.read(), code);
     expect(page.path, '/share/$code');
   });

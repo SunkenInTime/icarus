@@ -170,6 +170,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       return;
     }
 
+    // What was open before this load: only a strategy opened since then
+    // means this load gave way to another.
+    final openBefore = ref.read(strategyProvider).strategyId;
     try {
       switch (source) {
         case StrategySource.local:
@@ -190,6 +193,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                 pageId: widget.initialPageId,
               );
       }
+      // The reader left while it loaded (the home button works from the
+      // first frame); the load was dropped with the editor.
+      if (!mounted) return;
       final loadedStrategy = ref.read(strategyProvider);
       if (loadedStrategy.strategyId != strategyId ||
           loadedStrategy.strategyName == null) {
@@ -203,29 +209,28 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         error: error,
         stackTrace: stackTrace,
       );
+      if (!mounted) return;
       // Refused: the access-lost dialog says so over the skeleton, and
       // leads out (see StrategyAccessWatcher).
       if (ref.read(strategyAccessLostProvider)) return;
       // Another strategy was opened while this one loaded, in an editor of
       // its own: nothing failed that the reader should hear about.
-      final open = ref.read(strategyProvider);
-      if (open.isOpen && open.strategyId != strategyId) {
-        if (mounted) _leaveAfterFailedLoad();
+      final open = ref.read(strategyProvider).strategyId;
+      if (open != null && open != strategyId && open != openBefore) {
+        _leaveAfterFailedLoad();
         return;
       }
       final notKept = ref.read(remoteEditorSnapshotProvider).error
           is StrategyNotKeptOffline;
-      if (mounted) {
-        Settings.showToast(
-          message: notKept
-              ? context.l10n.syncStatusStrategyNeedsConnection
-              : context.l10n.strategyViewLoadFailed,
-          backgroundColor: notKept
-              ? Settings.tacticalVioletTheme.secondary
-              : Settings.tacticalVioletTheme.destructive,
-        );
-        _leaveAfterFailedLoad();
-      }
+      Settings.showToast(
+        message: notKept
+            ? context.l10n.syncStatusStrategyNeedsConnection
+            : context.l10n.strategyViewLoadFailed,
+        backgroundColor: notKept
+            ? Settings.tacticalVioletTheme.secondary
+            : Settings.tacticalVioletTheme.destructive,
+      );
+      _leaveAfterFailedLoad();
     } finally {
       if (mounted) {
         setState(() => _isInitialLoadPending = false);

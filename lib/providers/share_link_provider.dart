@@ -292,15 +292,17 @@ class ShareLinkController extends Notifier<String?> {
   /// The link stays held in memory either way, so going back to its strategy
   /// in this tab still reads through it.
   void reopenOnReload(bool reopen) {
-    final token = state;
-    if (token == null) return;
+    if (state == null) return;
+    // The link whose strategy is on screen. A code that arrived later and
+    // could not be opened may be the one held.
+    final viewed = reopen ? ref.read(shareLinkViewProvider)?.token : null;
     final store = ref.read(pendingShareCodeStoreProvider);
-    if (reopen) {
-      store.write(token);
+    if (viewed != null) {
+      store.write(viewed);
     } else {
       store.clear();
     }
-    _pointPageUrlAt(reopen ? token : null);
+    _pointPageUrlAt(viewed);
   }
 
   /// Whether [token]'s attempt is stale: a newer code arrived, or sign-in
