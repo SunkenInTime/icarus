@@ -311,6 +311,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// is marked restored, since the canvas was drawn without it. Cleared by
   /// [forgetCanvasWork].
   final Set<String> _canvasOpIds = {};
+
+  /// The canvas's last change to each item of the active strategy that
+  /// landed, by storage key: the op, the revision it landed at, and the
+  /// canvas session that drew it. Kept until the canvas makes an op from
+  /// that revision or newer, or is drawn fresh (see [_behindOwnLanded]).
+  final Map<String, ({StrategyOp op, int revision, int session})> _ownLanded =
+      {};
   int _canvasSession = 0;
 
   /// Op IDs of work made while connected, with no disconnect since: it is
@@ -493,6 +500,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _retryTimer?.cancel();
     _awaitingRemoteAdoption.clear();
     _landedPageChanges.clear();
+    _ownLanded.clear();
     _offlineRetryCount = 0;
     final matching = accountId == null || strategyPublicId == null
         ? const <DurableOutboxRecord>[]
@@ -608,10 +616,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   void forgetCanvasWork() {
     _canvasSession++;
     _canvasOpIds.clear();
+    _ownLanded.clear();
   }
 
   /// How many op IDs are remembered as the canvas's work; for tests.
   int get canvasWorkCount => _canvasOpIds.length;
+
+  /// How many items' last landed change is remembered; for tests.
+  int get landedCanvasWorkCount => _ownLanded.length;
 
   /// Whether [opId] is work the canvas holds: queued from its edits, or
   /// drawn on it from the outbox ([noteDrawnWork]).
@@ -1269,14 +1281,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         // Page changes wait in their list, which reconciling a page's
         // content never touches.
         if (key.kind == EntitySyncKeyKind.pageChange) continue;
-        final desired = desiredOps[key];
+        final made = desiredOps[key];
         final existing = queued[key];
         final inFlightIntent = state.inFlightByEntityKey[key];
         final inFlight = inFlightIntent?.pending.op;
         final successorIntent = successors[key];
         final pausedIntent = paused[key];
         final attentionIntent = attention[key];
-        if (desired != null && heldOpIds.contains(desired.opId)) {
+        if (made != null && heldOpIds.contains(made.opId)) {
           // Kept work that has landed or been replaced since is not written
           // again.
           if (![
@@ -1285,7 +1297,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             successorIntent?.pending,
             pausedIntent?.pending,
             attentionIntent?.pending,
-          ].any((pending) => pending?.op.opId == desired.opId)) {
+          ].any((pending) => pending?.op.opId == made.opId)) {
             continue;
           }
           // Kept paused or refused work stays as it is, unless its record
@@ -1301,6 +1313,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             continue;
           }
         }
+        final desired = made == null || heldOpIds.contains(made.opId)
+            ? made
+            : _behindOwnLanded(key, made);
 
         // A rejected op remains the durable authority until the user
         // explicitly retries it. Reconciliation may update its successor, but
@@ -2464,6 +2479,21 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 : null);
     final nextOp = next?.pending.op;
     final nextPage = nextOp?.pagePublicId;
+    // A change to the strategy's revision that was sent and got no answer
+    // may have landed. Its answer moves the strategy's other waiting
+    // changes onto the revision it made (see _advanceOwnStrategyRevision),
+    // so until it comes they are not sent: the server would check them
+    // against the revision before it.
+    // One paused after failing still has no answer, and holds the others
+    // until the user retries it.
+    final strategyChangeUnanswered = records.any((record) =>
+        _takesStrategyRevision(record.pending.op) &&
+        _mayHaveLanded(record) &&
+        (waiting(record) || record.status == DurableOutboxStatus.paused));
+    bool waitsForStrategyAnswer(DurableOutboxRecord record) =>
+        strategyChangeUnanswered &&
+        _takesStrategyRevision(record.pending.op) &&
+        !_mayHaveLanded(record);
     final others = records
         .where((record) =>
             !_isPageChange(record) &&
@@ -2473,7 +2503,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             // One change to a page's side or name per batch: the second
             // waits to be moved onto the revision the first lands at.
             !(nextOp is PagePatchOp &&
-                record.entityKey == EntitySyncKey.pageDescriptor(nextPage!)))
+                record.entityKey == EntitySyncKey.pageDescriptor(nextPage!)) &&
+            !waitsForStrategyAnswer(record))
         .toList(growable: false);
 
     final batchClientId = (others.firstOrNull ?? next)?.pending.clientId;
@@ -2493,7 +2524,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       if (selected.length + room >= _maxBatchSize || !fits(candidate)) break;
       selected.add(candidate);
     }
-    if (room == 1 && fits(next!)) {
+    if (room == 1 && !waitsForStrategyAnswer(next!) && fits(next)) {
       // A delete takes its page's last edits to the trash, and a copy on the
       // server takes its source page as it is then: either goes only once
       // all of that page's waiting work is in this batch ahead of it.
@@ -2516,12 +2547,17 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   /// The revision [ack] says this device's own change moved its row to, or
-  /// null when it cannot say the change was this device's. Only an applied
-  /// answer can: a no-change answer carries the row's revision now, which
+  /// null when it cannot say the change was this device's. An applied
+  /// answer can, and so can the no-change answer to an op sent again whose
+  /// first send the server applied (wasApplied): its revision is the one
+  /// that write made. Any other no-change answer carries a revision that
   /// may be a teammate's (an add sent again after its op record expired on
   /// the server is answered that way too).
-  static int? _ownRevision(OpAck ack) =>
-      ack is AppliedOpAck ? ack.revision : null;
+  static int? _ownRevision(OpAck ack) => switch (ack) {
+        AppliedOpAck(:final revision) => revision,
+        NoopOpAck(wasApplied: true, :final currentRevision) => currentRevision,
+        _ => null,
+      };
 
   /// [delete], this device's delete of a page, landed: the renames and side
   /// changes made after it (see [_isBehindDelete]) go with the page, unsent.
@@ -2753,9 +2789,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         _landedStrategyPatches[sent.strategyPublicId] =
             (payload: payload, revision: revision);
       }
-      if (ack case AppliedOpAck(:final revision)
-          when sent.pending.op is PagePatchOp) {
-        await _advanceOwnPageRevision(sent, revision);
+      if (ownRevision != null && sent.pending.op is PagePatchOp) {
+        await _advanceOwnPageRevision(sent, ownRevision);
       }
       if ((ack.isAck, ownRevision ?? ack.appliedRevision)
           case (true, final revision?)
@@ -2773,6 +2808,21 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       if (ownRevision != null) {
         await _advanceSeenPage(sent, ownRevision, batch);
       }
+      if (!_isPageChange(sent)) {
+        // Only the canvas's own work, drawn in this session: the canvas
+        // made its later ops on top of it.
+        if ((ack.isAck, ack.appliedRevision) case (true, final revision?)
+            when _canvasOpIds.contains(sent.pending.op.opId) &&
+                _isActive(sent.accountId, sent.strategyPublicId)) {
+          _ownLanded[sent.storageKey] = (
+            op: sent.pending.op,
+            revision: revision,
+            session: _canvasSession,
+          );
+        } else {
+          _ownLanded.remove(sent.storageKey);
+        }
+      }
       final current = _recordsByStorageKey[sent.storageKey];
       if (current?.pending.op.opId != ack.opId) continue;
       final successor = current!.successorPending;
@@ -2780,17 +2830,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       // promotion. A rejected predecessor leaves both intents in attention.
       final successorRevision = ack.appliedRevision;
       if (successor != null && ack.isAck && successorRevision != null) {
-        final predecessorCreatedEntity =
-            sent.pending.op is ElementAddOp || sent.pending.op is LineupAddOp;
         final promoted = PendingOp(
-          op: _onLandedPredecessor(
-            _rebaseRejectedOp(
-              successor.op,
-              successorRevision,
-              preserveAdd: !predecessorCreatedEntity,
-            ),
-            original: successor.op,
+          op: _landedBehind(
+            successor.op,
             predecessor: sent.pending.op,
+            revision: successorRevision,
           ),
           clientId: successor.clientId,
         );
@@ -3902,6 +3946,38 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     return Duration(milliseconds: 300 * (1 << exponent));
   }
 
+  /// [op] for [key], made from a version older than the one this device's
+  /// last change to the item landed at: the canvas made it before it heard
+  /// that change landed (while the queue stored its answer, say). It goes
+  /// as it would have had it been made a moment sooner, waiting behind that
+  /// change: as its successor, promoted onto the revision it landed at
+  /// ([_landedBehind]). An add behind this device's add is an edit of the
+  /// added item, and a merge names the fields the landed change wrote, from
+  /// what it wrote. A change the canvas never drew (recovered after a
+  /// restart, or landed as the canvas was drawn fresh) is not what the user
+  /// saw, so [op] keeps the version it was made from and is checked against
+  /// it. Any other [op] as it is.
+  StrategyOp _behindOwnLanded(EntitySyncKey key, StrategyOp op) {
+    final storageKey = DurableOutboxRecord.createStorageKey(
+      accountId: state.accountId!,
+      strategyPublicId: state.strategyPublicId!,
+      entityKey: key,
+    );
+    final landed = _ownLanded[storageKey];
+    if (landed == null) return op;
+    if (landed.session != _canvasSession ||
+        (op.expectedRevision ?? 0) >= landed.revision) {
+      // Drawn by another canvas, or this one has heard it landed.
+      _ownLanded.remove(storageKey);
+      return op;
+    }
+    return _landedBehind(
+      _asSuccessorOf(op, landed.op, drawn: true),
+      predecessor: landed.op,
+      revision: landed.revision,
+    );
+  }
+
   /// Whether [record]'s op was sent and no answer came, so it may have
   /// landed: a send that failed counts an attempt and notes when it was
   /// made (which the user's Retry keeps, though it starts the count again),
@@ -3911,6 +3987,25 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       record.status == DurableOutboxStatus.inFlight ||
       record.pending.attempts > 0 ||
       record.pending.lastAttemptAt != null;
+
+  /// [successor], waiting behind [predecessor], once [predecessor] landed at
+  /// [revision]: rebased onto it (an add behind an add becomes an edit),
+  /// as [_onLandedPredecessor] allows.
+  StrategyOp _landedBehind(
+    StrategyOp successor, {
+    required StrategyOp predecessor,
+    required int revision,
+  }) =>
+      _onLandedPredecessor(
+        _rebaseRejectedOp(
+          successor,
+          revision,
+          preserveAdd:
+              predecessor is! ElementAddOp && predecessor is! LineupAddOp,
+        ),
+        original: successor,
+        predecessor: predecessor,
+      );
 
   bool _sameIntent(StrategyOp left, StrategyOp right) {
     return left.kind == right.kind &&

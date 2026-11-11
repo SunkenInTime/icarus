@@ -9,6 +9,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/field_merge.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -164,35 +165,10 @@ final class Editor {
     required Map<String, dynamic>? payload,
     required int sortIndex,
   }) async {
-    if (payload != null) await _untilAddAnswered(id);
     drawn[id] = Drawn(payload: payload, sortIndex: sortIndex);
     final op = _opFor(id, payload, sortIndex);
     if (op == null) return;
     await app.queue.enqueue(op);
-  }
-
-  /// Waits, while an add of [id] is being sent, until the editor has its
-  /// answer. An op is made before it waits its turn in the queue, so one
-  /// made while the queue applies the add's answer is still an add, and
-  /// lands behind the add as new work the server refuses (already_exists).
-  /// Live sync makes its ops the same way, so the app likely has this race
-  /// too; the gauntlet leaves it for its own change.
-  Future<void> _untilAddAnswered(String id) async {
-    bool addInFlight() => app.queueState.inFlightByEntityKey.values.any(
-          (intent) =>
-              intent.pending.op.entityPublicId == id &&
-              (intent.pending.op is ElementAddOp ||
-                  intent.pending.op is LineupAddOp),
-        );
-    bool known() => _known[id]?.deleted == false;
-    if (!addInFlight() || known()) return;
-    final deadline = DateTime.now().add(const Duration(seconds: 20));
-    while (!known()) {
-      if (DateTime.now().isAfter(deadline)) {
-        throw StateError('The add of $id was never answered');
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-    }
   }
 
   StrategyOp? _opFor(String id, Map<String, dynamic>? payload, int sortIndex) {
@@ -248,7 +224,10 @@ final class Editor {
                 placeMergeField: known.sortIndex,
             },
           );
-    if (merge != null && merge.fields.isEmpty) return null;
+    // Back to the version the editor knows, nothing to write, unless work
+    // for the item is still waiting: it will write something else, so this
+    // goes behind it (live sync's _needsSuccessor).
+    if (merge != null && merge.fields.isEmpty && !_waits(id)) return null;
     return lineup
         ? LineupPatchOp(
             opId: opId,
@@ -268,6 +247,16 @@ final class Editor {
             expectedElementRevision: known.revision,
             merge: merge,
           );
+  }
+
+  bool _waits(String id) {
+    bool forItem(QueuedEntityIntent intent) =>
+        intent.pending.op.entityPublicId == id;
+    final queue = app.queueState;
+    return queue.queuedByEntityKey.values.any(forItem) ||
+        queue.successorByEntityKey.values.any(forItem) ||
+        queue.inFlightByEntityKey.values
+            .any((intent) => intent.pending.op.entityPublicId == id);
   }
 
   Future<void> setPageSettings(Map<String, Object?> settings) async {

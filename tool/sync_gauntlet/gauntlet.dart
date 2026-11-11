@@ -240,6 +240,7 @@ final class SavePathGauntlet {
           await _drawLineup(editor, seed, index, variant: 0);
         }
         await _deleteWhileClaiming(seed, editor);
+        await _editWhileAddAnswered(seed, editor);
       case _delayRound:
         _app.transport.inject(BatchFault.delay);
         _faults['delayedDelivery'] = true;
@@ -250,6 +251,7 @@ final class SavePathGauntlet {
         await _teammateEditsShared(seed);
         _faults['revisionConflictMerged'] = true;
       case _offlineRound:
+        await _losePageChangeAnswer(seed, editor);
         await _goOffline();
         _faults['offlineQueuedEdits'] = true;
       case _authOrRestartRound when seed == 0:
@@ -426,6 +428,90 @@ final class SavePathGauntlet {
       await editor.draw(id, payload: null, sortIndex: 2000 + step);
     }
     _faults['deleteDuringSendSweep'] = true;
+  }
+
+  /// Adds an item and moves it as the answer to the add reaches the app,
+  /// a moment later each time, so some move is made while the queue stores
+  /// that answer, before the editor hears of it: made as an add, it must
+  /// land as a move of the added item.
+  Future<void> _editWhileAddAnswered(int seed, Editor editor) async {
+    // Moves made before the editor heard the add landed: made as adds.
+    var raced = 0;
+    // Edits made after a move's answer reached the app and before the editor
+    // heard it: some reach the queue while it promotes the change waiting
+    // behind the move (test/strategy_op_queue_stale_patch_test.dart holds
+    // that moment for certain).
+    var racedPromotion = 0;
+    for (var step = 0; step < 6; step += 1) {
+      final id = '${_prefix(seed)}element-answered-$step';
+      Map<String, dynamic> at(double dx, {double diameter = 8.0}) =>
+          cloudElementPayload(kind: 'utility', data: {
+            'id': id,
+            'isDeleted': false,
+            'position': {'dx': dx, 'dy': 400.0 + step},
+            'type': 'customCircle',
+            'rotation': 0.0,
+            'length': 0.0,
+            'angle': 0.0,
+            'attachedAgentId': null,
+            'customDiameter': diameter,
+            'customWidth': null,
+            'customLength': null,
+            'customColorValue': 4282090230,
+            'customOpacityPercent': 30,
+          });
+      final answered = _app.transport.batchAnswered.first;
+      await editor.draw(id, payload: at(300), sortIndex: 3000 + step);
+      await answered.timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => throw GauntletFailure(
+          'timeout',
+          'The add of $id was never answered',
+        ),
+      );
+      await Future<void>.delayed(Duration(microseconds: step * 500));
+      if (!_app.queueState.lastAckBatch
+          .any((acked) => acked.op.entityPublicId == id)) {
+        raced += 1;
+      }
+      await editor.draw(id, payload: at(340), sortIndex: 3000 + step);
+      await _settle(seed);
+
+      // The user moves it away, and while the move is sent moves it back
+      // and resizes it: the resize waits behind the move, and names the
+      // way back too. As the move's answer arrives, the user resizes it
+      // again: made before the editor hears the move landed, it must keep
+      // the way back.
+      final moveSent = _app.transport.batchSent.first;
+      final moveAnswered = _app.transport.batchAnswered.first;
+      final heard = _app.queueState.lastAckBatch;
+      await editor.draw(id, payload: at(380), sortIndex: 3000 + step);
+      await moveSent;
+      await editor.draw(
+        id,
+        payload: at(340, diameter: 9),
+        sortIndex: 3000 + step,
+      );
+      await moveAnswered.timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => throw GauntletFailure(
+          'timeout',
+          'The move of $id was never answered',
+        ),
+      );
+      await Future<void>.delayed(Duration(microseconds: step * 500));
+      if (identical(_app.queueState.lastAckBatch, heard)) racedPromotion += 1;
+      await editor.draw(
+        id,
+        payload: at(340, diameter: 10),
+        sortIndex: 3000 + step,
+      );
+      await _settle(seed);
+    }
+    _progress.current['movesMadeAsAdds'] = raced;
+    _progress.current['editsMadeBeforeMoveHeard'] = racedPromotion;
+    if (raced > 0) _faults['editWhileAddAnswered'] = true;
+    if (racedPromotion > 0) _faults['editBeforeMoveAnswerHeard'] = true;
   }
 
   bool _waitsInOutbox(String id) =>
@@ -666,13 +752,27 @@ final class SavePathGauntlet {
 
   // --- Faults at the network and process. ---
 
+  /// The user adds a page and the answer to it is lost, after the server
+  /// applied it. The strategy changes the user then makes offline are made
+  /// against the revision before the add, and must land once the add is
+  /// sent again.
+  Future<void> _losePageChangeAnswer(int seed, Editor editor) async {
+    await _settle(seed);
+    _app.transport.inject(BatchFault.loseAnswer);
+    await editor.addPage('${_prefix(seed)}page-3', 'Lurk', 2);
+    await _waitFor(
+      'the page add to fail',
+      () => _app.queueState.pending.any(
+        (pending) => pending.op is PageAddOp && pending.attempts > 0,
+      ),
+    );
+    _faults['lostPageChangeAnswer'] = true;
+  }
+
   Future<void> _goOffline() async {
-    // Cut once nothing is being sent. A cut that loses the answer to a page
-    // change makes the server answer its resend as a replay, which the
-    // queue cannot tell from a teammate's change, so a strategy change
-    // made offline is refused as a conflict: a bug the gauntlet found and
-    // leaves for its own change.
-    await _settle(_progress.seed);
+    // Cut whatever is being sent, a page change included: its answer is
+    // lost, and the strategy changes made offline must still land once it
+    // is sent again.
     _app.proxy.goOffline();
     await _waitFor(
       'the app to see it is offline',
@@ -1198,6 +1298,9 @@ final class SavePathGauntlet {
           'reconnect': false,
           'deleteRecreate': false,
           'deleteDuringSendSweep': false,
+          'lostPageChangeAnswer': false,
+          'editWhileAddAnswered': false,
+          'editBeforeMoveAnswerHeard': false,
           'authRefresh': false,
           'processRestart': false,
         },
