@@ -276,7 +276,12 @@ class _PagesBarState extends ConsumerState<PagesBar> {
         (newName == shownName && !page.isAutoNamed)) {
       return;
     }
-    await ref.read(strategyProvider.notifier).renamePage(page.id, newName);
+    // Confirming an unnamed page's name as shown keeps the saved "Page 3",
+    // not its translation, which teammates would read in the wrong language.
+    await ref.read(strategyProvider.notifier).renamePage(
+          page.id,
+          newName == shownName ? page.name : newName,
+        );
   }
 
   Future<void> _deletePage(PageListItemViewModel page, int pageCount) async {

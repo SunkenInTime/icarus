@@ -135,7 +135,9 @@ class WelcomeReplayPicture extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      const Expanded(child: _TileName('Lotus')),
+                      Expanded(
+                        child: _TileName(context.l10n.mapName(MapValue.lotus)),
+                      ),
                       Text('31:11', style: muted),
                     ],
                   ),

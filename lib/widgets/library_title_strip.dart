@@ -36,6 +36,21 @@ const double _tabRadius = 6;
 const double _sortMenuWidth = 168;
 const double _newMenuWidth = 140;
 const double _accountMenuWidth = 200;
+
+/// A menu at least [minWidth] wide, wider when its longest label needs it:
+/// the same words run longer in some languages.
+class _MenuBox extends StatelessWidget {
+  const _MenuBox({required this.minWidth, required this.child});
+
+  final double minWidth;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ConstrainedBox(
+        constraints: BoxConstraints(minWidth: minWidth, maxWidth: 360),
+        child: IntrinsicWidth(child: child),
+      );
+}
 const double _menuItemHorizontalPadding = 8;
 const double _menuIconWidth = 18;
 const double _menuItemGap = 8;
@@ -413,8 +428,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         childAlignment: Alignment.topRight,
         overlayAlignment: Alignment.bottomRight,
       ),
-      popover: (context) => SizedBox(
-        width: _newMenuWidth + 24,
+      popover: (context) => _MenuBox(
+        minWidth: _newMenuWidth + 24,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -487,8 +502,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         childAlignment: Alignment.topRight,
         overlayAlignment: Alignment.bottomRight,
       ),
-      popover: (context) => SizedBox(
-        width: _sortMenuWidth,
+      popover: (context) => _MenuBox(
+        minWidth: _sortMenuWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -566,8 +581,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         childAlignment: Alignment.topRight,
         overlayAlignment: Alignment.bottomRight,
       ),
-      popover: (context) => SizedBox(
-        width: _newMenuWidth,
+      popover: (context) => _MenuBox(
+        minWidth: _newMenuWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -681,8 +696,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         childAlignment: Alignment.topRight,
         overlayAlignment: Alignment.bottomRight,
       ),
-      popover: (context) => SizedBox(
-        width: _accountMenuWidth,
+      popover: (context) => _MenuBox(
+        minWidth: _accountMenuWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
