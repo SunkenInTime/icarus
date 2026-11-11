@@ -162,18 +162,27 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
   bool _canvasHeld = false;
 
   /// Records whether the canvas could be handed to the op queue, by a
-  /// handover that started when [dirtyMarks] was [marksBefore]. A handover
-  /// that failed holds the canvas only while it carries an unsaved mark: with
-  /// none, nothing on it is unsaved. One that ends a hold may queue nothing,
-  /// and then no queue change comes to settle the mark the hold kept, so it
-  /// is settled here, unless something was marked unsaved since the handover
-  /// looked.
+  /// handover that started when [dirtyMarks] was [marksBefore] and the
+  /// strategy was unsaved if [dirtyBefore].
+  ///
+  /// A handover that failed holds the canvas when it carried an unsaved mark
+  /// as the handover started or does now: with none, nothing on it is
+  /// unsaved. The queue can empty while the handover waits and clear that
+  /// mark, so the hold puts it back.
+  ///
+  /// One that ends a hold may queue nothing, and then no queue change comes
+  /// to settle the mark the hold kept, so it is settled here, unless
+  /// something was marked unsaved since the handover looked.
   void noteCanvasHandover({
     required bool handedOver,
     required int marksBefore,
+    required bool dirtyBefore,
   }) {
     final wasHeld = _canvasHeld;
-    _canvasHeld = !handedOver && state.isDirty;
+    _canvasHeld = !handedOver && (dirtyBefore || state.isDirty);
+    if (_canvasHeld && (!state.isDirty || !state.hasPendingCloudSync)) {
+      state = state.copyWith(isDirty: true, hasPendingCloudSync: true);
+    }
     if (wasHeld && handedOver && _dirtyMarks == marksBefore) {
       clearStaleCloudMark();
     }

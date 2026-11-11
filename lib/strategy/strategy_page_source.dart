@@ -324,11 +324,13 @@ class CloudStrategyPageSource implements StrategyPageSource {
   Future<bool> flushCurrentPage() async {
     final saveState = ref.read(strategySaveStateProvider.notifier);
     final marksBefore = saveState.dirtyMarks;
+    final dirtyBefore = ref.read(strategySaveStateProvider).isDirty;
     final handedOver = await _handOverCanvas();
     if (ref.read(strategyProvider).strategyId == strategyId) {
       saveState.noteCanvasHandover(
         handedOver: handedOver,
         marksBefore: marksBefore,
+        dirtyBefore: dirtyBefore,
       );
     }
     return handedOver;
