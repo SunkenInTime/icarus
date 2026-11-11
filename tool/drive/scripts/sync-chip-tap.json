@@ -49,12 +49,17 @@
   {"probe": "online-settled"},
   {"wait": 3},
 
+  {"signal": "go-slow"},
+  {"waitFile": "{out}/slow", "seconds": 60},
   {"dragAgent": "a{run}", "by": [60, 40]},
-  {"tapKey": "cloud-sync-button-editing", "optional": true},
-  {"tapKey": "cloud-sync-button-syncing", "optional": true},
-  {"tapKey": "cloud-sync-button-synced", "optional": true},
-  {"probe": "edit-tapped"},
+  {"wait": 1},
+  {"probe": "in-flight-before-tap"},
+  {"tapKey": "cloud-sync-button-syncing"},
+  {"probe": "in-flight-tapped"},
+  {"shot": "{out}/in-flight-tapped.png"},
+  {"waitText": "Saved on this device. Syncing…", "seconds": 3},
   {"waitSettled": 60},
-  {"probe": "edit-settled"},
+  {"probe": "in-flight-settled"},
+  {"waitText": "Saved", "gone": true, "seconds": 10},
   {"exit": 1}
 ]
