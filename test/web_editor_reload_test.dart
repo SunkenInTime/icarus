@@ -5,8 +5,11 @@ import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/open_cloud_strategy_store.dart';
+import 'package:icarus/share/pending_share_code_store.dart';
+import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
@@ -128,6 +131,51 @@ void main() {
     editor.close();
     await Future<void>.delayed(Duration.zero);
     expect(store.read(), isNull, reason: 'leaving the editor clears it');
+  });
+
+  test('a reload reopens the strategy that is open, not a link left behind',
+      () {
+    // A reader opened a view link, then their own strategy, in one tab. Both
+    // used to stay set for the reload: the link in the address and the held
+    // code, their own strategy in the store. The reload opened two editors
+    // and one was left on its loading screen.
+    const code = 'ICR-2345-6789-ABCD-EFGH';
+    var page = icarusProductionShareOrigin.replace(
+      path: '/share/$code',
+      fragment: '/strategy_view',
+    );
+    final open = MemoryOpenCloudStrategyStore();
+    final heldCode = MemoryPendingShareCodeStore()..write(code);
+    final strategy = _SettableStrategy();
+    final container = ProviderContainer(overrides: [
+      openCloudStrategyStoreProvider.overrideWithValue(open),
+      pendingShareCodeStoreProvider.overrideWithValue(heldCode),
+      sharePageUrlProvider.overrideWithValue(() => page),
+      replaceBrowserUrlProvider.overrideWithValue((url) => page = url),
+      strategyProvider.overrideWith(() => strategy),
+    ]);
+    addTearDown(container.dispose);
+    container.read(shareLinkViewProvider.notifier).state =
+        (strategyPublicId: 'shared', token: code);
+    container.listen(openCloudStrategyRecorderProvider, (_, __) {});
+
+    strategy.open('shared', StrategySource.cloud);
+    expect(open.read(), isNull);
+    expect(heldCode.read(), code);
+    expect(page.path, '/share/$code');
+
+    strategy.open('mine', StrategySource.cloud);
+    expect(open.read(), 'mine');
+    expect(heldCode.read(), isNull, reason: 'a reload must not reopen it');
+    expect(page.path, '/', reason: 'the address follows what is open');
+    expect(page.fragment, '/strategy_view', reason: 'the route stays');
+
+    // Back to the shared strategy in the same tab: the link still reads it,
+    // and it is what a reload reopens again.
+    strategy.open('shared', StrategySource.cloud);
+    expect(open.read(), isNull);
+    expect(heldCode.read(), code);
+    expect(page.path, '/share/$code');
   });
 
   testWidgets('the web beta toolbar never offers a local Save', (tester) async {

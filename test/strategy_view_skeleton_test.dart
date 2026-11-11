@@ -18,6 +18,48 @@ class _FixedPreferences extends AppPreferencesNotifier {
 }
 
 void main() {
+  testWidgets('the leave button works while the skeleton shows',
+      (tester) async {
+    // The rest of the skeleton takes no clicks. Without a live way out, a
+    // load that never finished held the reader on this screen.
+    CoordinateSystem(playAreaSize: const Size(1120, 630));
+    var left = 0;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appPreferencesProvider.overrideWith(_FixedPreferences.new),
+        ],
+        child: ShadApp(
+          themeMode: ThemeMode.dark,
+          darkTheme: ShadThemeData(
+            brightness: Brightness.dark,
+            colorScheme: Settings.tacticalVioletTheme,
+          ),
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(800, 630),
+              disableAnimations: true,
+            ),
+            child: StrategyViewSkeleton(
+              leading: IconButton(
+                onPressed: () => left++,
+                icon: const Icon(Icons.home),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final button = tester.getRect(find.byType(IconButton));
+    final strip = tester.getRect(find.byType(AppWindowStrip));
+    expect(button.center.dy, closeTo(strip.center.dy, 0.5));
+    await tester.tap(find.byType(IconButton));
+    expect(left, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('loading skeleton fits the minimum desktop window',
       (tester) async {
     // DotGrid reads the play area at paint time.

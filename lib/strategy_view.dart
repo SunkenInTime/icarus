@@ -182,7 +182,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           if (!viewingThroughLink && !await _waitForCloudWorkspace()) {
             // Signed out, or the cloud is unreachable: nothing failed to
             // load, and the library says which, so go back without an error.
-            if (mounted) Navigator.maybePop(context);
+            if (mounted) _leaveAfterFailedLoad();
             return;
           }
           await ref.read(strategyProvider.notifier).openCloudStrategy(
@@ -206,6 +206,13 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       // Refused: the access-lost dialog says so over the skeleton, and
       // leads out (see StrategyAccessWatcher).
       if (ref.read(strategyAccessLostProvider)) return;
+      // Another strategy was opened while this one loaded, in an editor of
+      // its own: nothing failed that the reader should hear about.
+      final open = ref.read(strategyProvider);
+      if (open.isOpen && open.strategyId != strategyId) {
+        if (mounted) _leaveAfterFailedLoad();
+        return;
+      }
       final notKept = ref.read(remoteEditorSnapshotProvider).error
           is StrategyNotKeptOffline;
       if (mounted) {
@@ -217,12 +224,25 @@ class _StrategyViewState extends ConsumerState<StrategyView>
               ? Settings.tacticalVioletTheme.secondary
               : Settings.tacticalVioletTheme.destructive,
         );
-        Navigator.maybePop(context);
+        _leaveAfterFailedLoad();
       }
     } finally {
       if (mounted) {
         setState(() => _isInitialLoadPending = false);
       }
+    }
+  }
+
+  /// Takes this editor off the screen after its strategy failed to open.
+  /// Another screen may have been pushed over it meanwhile (a share link
+  /// opening its own editor), and a plain pop would close that one and
+  /// leave this one behind it, showing its loading screen for good.
+  void _leaveAfterFailedLoad() {
+    final route = ModalRoute.of(context);
+    if (route == null || route.isCurrent) {
+      Navigator.maybePop(context);
+    } else if (route.isActive) {
+      Navigator.of(context).removeRoute(route);
     }
   }
 
@@ -299,12 +319,31 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         onLeave: _leaveToLibrary,
         child: Scaffold(
           // The skeleton is the desktop editor's shape, panels and all.
+          // The way back to the library works from the first frame: a load
+          // that never finishes must not hold the reader here.
           body: touch
-              ? const Center(child: WingDotLoader())
+              ? Stack(
+                  children: [
+                    const Center(child: WingDotLoader()),
+                    SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: _LeaveButton(
+                          onPressed: _leaveToLibrary,
+                          backTooltip: widget.backTooltip,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
               : StrategyViewSkeleton(
                   strategyName: widget.initialStrategyName,
                   mapValue: widget.initialMapValue,
                   isAttack: widget.initialIsAttack,
+                  leading: _LeaveButton(
+                    onPressed: _leaveToLibrary,
+                    backTooltip: widget.backTooltip,
+                  ),
                 ),
         ),
       );
@@ -333,25 +372,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                 Row(
                   children: [
                     const SizedBox(width: 6),
-                    ShadTooltip(
-                      builder: (context) =>
-                          Text(widget.backTooltip ??
-                              context.l10n.strategyViewBackToLibraryTooltip),
-                      child: ShadIconButton.ghost(
-                        width: 28,
-                        height: 28,
-                        foregroundColor:
-                            Settings.tacticalVioletTheme.mutedForeground,
-                        hoverForegroundColor:
-                            Settings.tacticalVioletTheme.foreground,
-                        onPressed: _leaveToLibrary,
-                        icon: Icon(
-                          widget.backTooltip == null
-                              ? LucideIcons.house300
-                              : LucideIcons.chevronLeft300,
-                          size: 18,
-                        ),
-                      ),
+                    _LeaveButton(
+                      onPressed: _leaveToLibrary,
+                      backTooltip: widget.backTooltip,
                     ),
                     const IcarusWordmark(),
                     const Expanded(
@@ -472,6 +495,37 @@ class _StrategyViewState extends ConsumerState<StrategyView>
 
 /// The bug-report link at the end of the editor strip: text when there is
 /// room, the glyph alone when there isn't.
+/// The editor's way out, at the left of the window strip: the house back to
+/// the library, or a back arrow when [backTooltip] names somewhere else.
+class _LeaveButton extends StatelessWidget {
+  const _LeaveButton({required this.onPressed, this.backTooltip});
+
+  final VoidCallback onPressed;
+  final String? backTooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return ShadTooltip(
+      builder: (context) => Text(
+        backTooltip ?? context.l10n.strategyViewBackToLibraryTooltip,
+      ),
+      child: ShadIconButton.ghost(
+        width: 28,
+        height: 28,
+        foregroundColor: Settings.tacticalVioletTheme.mutedForeground,
+        hoverForegroundColor: Settings.tacticalVioletTheme.foreground,
+        onPressed: onPressed,
+        icon: Icon(
+          backTooltip == null
+              ? LucideIcons.house300
+              : LucideIcons.chevronLeft300,
+          size: 18,
+        ),
+      ),
+    );
+  }
+}
+
 class _DiscordLink extends StatelessWidget {
   const _DiscordLink();
 

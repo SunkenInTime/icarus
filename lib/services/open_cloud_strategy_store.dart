@@ -45,16 +45,24 @@ final openCloudStrategyStoreProvider = Provider<OpenCloudStrategyStore>(
 /// editor goes away the store is cleared. A strategy open through a share
 /// link is not recorded: its page keeps the /share/<code> URL, and a reload
 /// reopens it through the link.
+///
+/// A reload reopens one strategy, so the two never both hold: while the
+/// reader's own strategy is recorded, the link is told not to reopen, and
+/// it is told to again when its strategy is the open one.
 final openCloudStrategyRecorderProvider = Provider.autoDispose<void>((ref) {
   final store = ref.watch(openCloudStrategyStoreProvider);
   void record() {
     final open = ref.read(strategyProvider);
     final id = open.strategyId;
-    final throughLink = ref.read(shareLinkViewProvider)?.strategyPublicId == id;
+    final throughLink =
+        id != null && ref.read(shareLinkViewProvider)?.strategyPublicId == id;
+    final link = ref.read(shareLinkControllerProvider.notifier);
     if (open.source == StrategySource.cloud && id != null && !throughLink) {
       store.write(id);
+      link.reopenOnReload(false);
     } else {
       store.clear();
+      if (throughLink) link.reopenOnReload(true);
     }
   }
 

@@ -16,14 +16,42 @@ class StrategyViewSkeleton extends StatelessWidget {
     this.strategyName,
     this.mapValue,
     this.isAttack = true,
+    this.leading,
   });
 
   final String? strategyName;
   final MapValue? mapValue;
   final bool isAttack;
 
+  /// The editor's leave button. It sits where the editor will show it and
+  /// is the one part of the skeleton that takes clicks.
+  final Widget? leading;
+
   @override
   Widget build(BuildContext context) {
+    final leading = this.leading;
+    if (leading == null) return _buildSkeleton(showLeadingBlock: true);
+    return Stack(
+      children: [
+        _buildSkeleton(showLeadingBlock: false),
+        Positioned(
+          top: 0,
+          left: 0,
+          height: kWindowStripHeight,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const MacTrafficLightInset(),
+              const SizedBox(width: 6),
+              leading,
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSkeleton({required bool showLeadingBlock}) {
     final resolvedMap = mapValue ?? MapValue.ascent;
     return ExcludeSemantics(
       child: IgnorePointer(
@@ -34,6 +62,7 @@ class StrategyViewSkeleton extends StatelessWidget {
                 strategyName: strategyName,
                 mapValue: resolvedMap,
                 isAttack: isAttack,
+                showLeadingBlock: showLeadingBlock,
               ),
               Expanded(
                 child: Stack(
@@ -161,6 +190,7 @@ class _SkeletonTopBar extends StatelessWidget {
   const _SkeletonTopBar({
     required this.mapValue,
     required this.isAttack,
+    required this.showLeadingBlock,
     this.strategyName,
   });
 
@@ -168,20 +198,26 @@ class _SkeletonTopBar extends StatelessWidget {
   final MapValue mapValue;
   final bool isAttack;
 
+  /// False when the real leave button is drawn over this spot.
+  final bool showLeadingBlock;
+
   @override
   Widget build(BuildContext context) {
     final title = strategyName?.trim();
     return AppWindowStrip(
       child: Stack(
         children: [
-          const Row(
+          Row(
             children: [
-              SizedBox(width: 6),
-              _SkeletonBlock(width: 28, height: 28, radius: 8),
-              IcarusWordmark(),
-              Spacer(),
-              _SkeletonBlock(width: 200, height: 28, radius: 8),
-              SizedBox(width: 10),
+              const SizedBox(width: 6),
+              if (showLeadingBlock)
+                const _SkeletonBlock(width: 28, height: 28, radius: 8)
+              else
+                const SizedBox(width: 28),
+              const IcarusWordmark(),
+              const Spacer(),
+              const _SkeletonBlock(width: 200, height: 28, radius: 8),
+              const SizedBox(width: 10),
             ],
           ),
           Center(
