@@ -1,0 +1,10 @@
+# Generated code lives only in lib/. Without this, build_runner also reads
+# tool/, test/ and the nested packages inside them (tool/convex_client_gauntlet
+# and friends), compiling their files at this package's language version.
+targets:
+  $default:
+    sources:
+      - $package$
+      - lib/$lib$
+      - lib/**
+      - pubspec.yaml
