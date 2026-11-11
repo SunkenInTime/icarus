@@ -243,6 +243,10 @@ export const operationResultValidator = v.union(
     opId: v.string(),
     status: v.literal("noop"),
     currentRevision: v.optional(v.number()),
+    // Sent only to clients that ask (applyBatch's includeWasApplied): this
+    // op ID was applied when the server first received it, and
+    // currentRevision is the revision that write made.
+    wasApplied: v.optional(v.boolean()),
   }),
   v.object({
     opId: v.string(),

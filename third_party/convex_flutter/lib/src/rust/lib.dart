@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'lib.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `connected_client`, `group_step`, `handle_direct_function_result`, `internal_action`, `internal_mutation`, `internal_set_auth`, `internal_subscribe`, `new`, `new`, `parse_json_args`
+// These functions are ignored because they are not marked as `pub`: `connected_client`, `group_step`, `handle_direct_function_result`, `internal_action`, `internal_mutation`, `internal_set_auth`, `internal_subscribe`, `new`, `new`, `parse_json_args`, `report_auth`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `GroupStep`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
@@ -104,6 +104,11 @@ abstract class MobileConvexClient implements RustOpaqueInterface {
   ///
   /// The callback is owned by the upstream Convex client so authentication
   /// and query state are replayed together after a disconnect.
+  ///
+  /// `on_auth_change(false)` reports that the client holds no session the
+  /// server accepts: `fetch_token` returned no token, or the server keeps
+  /// refusing the tokens it returns. `on_auth_change(true)` follows once a
+  /// token is accepted again.
   ///
   /// Returns an AuthHandle that can be used to dispose the auth session.
   Future<AuthHandle> setAuthWithRefresh({

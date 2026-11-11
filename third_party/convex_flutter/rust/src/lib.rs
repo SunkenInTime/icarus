@@ -611,6 +611,11 @@ impl MobileConvexClient {
     /// The callback is owned by the upstream Convex client so authentication
     /// and query state are replayed together after a disconnect.
     ///
+    /// `on_auth_change(false)` reports that the client holds no session the
+    /// server accepts: `fetch_token` returned no token, or the server keeps
+    /// refusing the tokens it returns. `on_auth_change(true)` follows once a
+    /// token is accepted again.
+    ///
     /// Returns an AuthHandle that can be used to dispose the auth session.
     #[frb]
     pub async fn set_auth_with_refresh(
@@ -624,21 +629,27 @@ impl MobileConvexClient {
 
         let mut client = self.connected_client().await?;
         let fetch_token = Arc::new(fetch_token);
-        let on_auth_change = Arc::new(on_auth_change);
+        let on_auth_change: Arc<dyn Fn(bool) -> DartFnFuture<()> + Send + Sync> =
+            Arc::new(on_auth_change);
         let cancel_on_auth_change = on_auth_change.clone();
+        let refused_on_auth_change = on_auth_change.clone();
         let callback_is_authenticated = is_authenticated.clone();
+        let refused_is_authenticated = is_authenticated.clone();
+        let has_token = Arc::new(AtomicBool::new(false));
+        let callback_has_token = has_token.clone();
+        let callback_refused = client.watch_auth_refused();
+        let mut refused = client.watch_auth_refused();
         let callback: AuthTokenFetcher = Box::new(move |_force_refresh| {
             let fetch_token = fetch_token.clone();
             let on_auth_change = on_auth_change.clone();
             let is_authenticated = callback_is_authenticated.clone();
+            let has_token = callback_has_token.clone();
+            let refused = callback_refused.clone();
             Box::pin(async move {
                 let token = (fetch_token)().await;
-                let next_is_authenticated = token.is_some();
-                let changed = is_authenticated.swap(next_is_authenticated, Ordering::SeqCst)
-                    != next_is_authenticated;
-                if changed {
-                    let _ = (on_auth_change)(next_is_authenticated).await;
-                }
+                has_token.store(token.is_some(), Ordering::SeqCst);
+                let next_is_authenticated = token.is_some() && !*refused.borrow();
+                report_auth(&is_authenticated, &on_auth_change, next_is_authenticated).await;
                 Ok(match token {
                     Some(token) => AuthenticationToken::User(token),
                     None => AuthenticationToken::None,
@@ -650,7 +661,28 @@ impl MobileConvexClient {
         let cancel_is_authenticated = is_authenticated.clone();
         let cancel_auth_generation = self.auth_generation.clone();
         self.rt.spawn(async move {
-            let _ = cancel_receiver.await;
+            let mut cancel_receiver = cancel_receiver;
+            // Until this handle is disposed, report the server refusing or
+            // accepting the session again.
+            loop {
+                tokio::select! {
+                    _ = &mut cancel_receiver => break,
+                    changed = refused.changed() => {
+                        if changed.is_err() {
+                            let _ = (&mut cancel_receiver).await;
+                            break;
+                        }
+                        let next_is_authenticated =
+                            has_token.load(Ordering::SeqCst) && !*refused.borrow_and_update();
+                        report_auth(
+                            &refused_is_authenticated,
+                            &refused_on_auth_change,
+                            next_is_authenticated,
+                        )
+                        .await;
+                    }
+                }
+            }
             if cancel_auth_generation
                 .compare_exchange(
                     generation,
@@ -670,6 +702,18 @@ impl MobileConvexClient {
         });
 
         Ok(AuthHandle::new(cancel_sender, is_authenticated))
+    }
+}
+
+/// Records whether the client holds a session the server accepts, and tells
+/// Dart when that changes.
+async fn report_auth(
+    is_authenticated: &AtomicBool,
+    on_auth_change: &Arc<dyn Fn(bool) -> DartFnFuture<()> + Send + Sync>,
+    next_is_authenticated: bool,
+) {
+    if is_authenticated.swap(next_is_authenticated, Ordering::SeqCst) != next_is_authenticated {
+        let _ = (on_auth_change)(next_is_authenticated).await;
     }
 }
 

@@ -1,0 +1,15 @@
+{
+  "about": "Result values the server sends only to clients that ask for them, so builds that don't know them never receive them. tool/check_convex_shipped_clients.mjs reads this list. \"path\" is a result path as the check prints it; \"sentOnlyWith\" lists the optional argument paths that make the server send it.",
+  "optIns": [
+    {
+      "function": "strategy:getFullSnapshot",
+      "path": "result.contentVersion",
+      "sentOnlyWith": ["args.includeContentVersion"]
+    },
+    {
+      "function": "ops:applyBatch",
+      "path": "result.results[]<status=noop>.wasApplied",
+      "sentOnlyWith": ["args.includeWasApplied"]
+    }
+  ]
+}

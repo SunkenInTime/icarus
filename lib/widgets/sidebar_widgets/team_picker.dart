@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/widgets/press_scale.dart';
 import 'package:icarus/providers/team_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -65,20 +66,22 @@ class _TeamTextButtonState extends State<_TeamTextButton> {
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: widget.onTap,
-        child: AnimatedDefaultTextStyle(
-          duration: const Duration(milliseconds: 150),
-          curve: Settings.easeOut,
-          style: ShadTheme.of(context).textTheme.small.copyWith(
-                color: widget.isSelected
-                    ? widget.selectedColor
-                    : (isHovered
-                        ? widget.selectedColor.withValues(alpha: 0.7)
-                        : Settings.tacticalVioletTheme.mutedForeground),
-                // fontSize: 14,
-              ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2.0),
-            child: Text(widget.label),
+        child: PressScale(
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 150),
+            curve: Settings.easeOut,
+            style: ShadTheme.of(context).textTheme.small.copyWith(
+                  color: widget.isSelected
+                      ? widget.selectedColor
+                      : (isHovered
+                          ? widget.selectedColor.withValues(alpha: 0.7)
+                          : Settings.tacticalVioletTheme.mutedForeground),
+                  // fontSize: 14,
+                ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2.0),
+              child: Text(widget.label),
+            ),
           ),
         ),
       ),

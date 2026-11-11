@@ -771,6 +771,7 @@ abstract interface class OpsModule {
     required String clientId,
     required double clientProtocolVersion,
     ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
+    ConvexOptional<bool> includeWasApplied = const ConvexOptional.absent(),
     required List<OpsApplyBatchArgsOpsItem> ops,
     required String strategyPublicId,
   });
@@ -790,6 +791,7 @@ final class _OpsModule implements OpsModule {
     required String clientId,
     required double clientProtocolVersion,
     ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
+    ConvexOptional<bool> includeWasApplied = const ConvexOptional.absent(),
     required List<OpsApplyBatchArgsOpsItem> ops,
     required String strategyPublicId,
   }) {
@@ -802,6 +804,7 @@ final class _OpsModule implements OpsModule {
       clientId: clientId,
       clientProtocolVersion: clientProtocolVersion,
       elementFieldLevel: elementFieldLevel,
+      includeWasApplied: includeWasApplied,
       ops: ops,
       strategyPublicId: strategyPublicId,
     );

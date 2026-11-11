@@ -177,6 +177,10 @@ impl WebSocketWorker {
                     tracing::debug!("Reconnecting websocket due to {}", reconnect.reason);
                     last_close_reason = reconnect.reason;
                     max_observed_timestamp = reconnect.max_observed_timestamp;
+                    let _ = worker
+                        .on_response
+                        .send(ProtocolResponse::ReconnectAcknowledged)
+                        .await;
                     continue;
                 },
                 Err(e) => e,
@@ -204,6 +208,10 @@ impl WebSocketWorker {
                     break reconnect;
                 }
             };
+            let _ = worker
+                .on_response
+                .send(ProtocolResponse::ReconnectAcknowledged)
+                .await;
             if reconnect.auth_retry {
                 // Auth retries are paced by the client worker while it polls
                 // the token callback. A second exponential backoff here can
@@ -371,5 +379,97 @@ impl WebSocketInternal {
             .send(message)
             .await
             .context("WebsocketClosedOnSend")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use tokio::{
+        net::{
+            TcpListener,
+            TcpStream,
+        },
+        sync::mpsc,
+    };
+    use tokio_tungstenite::{
+        accept_async,
+        WebSocketStream,
+    };
+    use url::Url;
+
+    use super::WebSocketManager;
+    use crate::sync::{
+        ProtocolResponse,
+        ReconnectRequest,
+        SyncProtocol,
+    };
+
+    /// A local WebSocket server that hands over every connection it accepts.
+    async fn server() -> anyhow::Result<(Url, mpsc::UnboundedReceiver<WebSocketStream<TcpStream>>)>
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let url = format!("ws://{}/api/sync", listener.local_addr()?).parse()?;
+        let (sockets_sender, sockets) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                if let Ok(socket) = accept_async(stream).await {
+                    let _ = sockets_sender.send(socket);
+                }
+            }
+        });
+        Ok((url, sockets))
+    }
+
+    async fn next<T>(receiver: &mut mpsc::Receiver<T>) -> anyhow::Result<T> {
+        tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("closed"))
+    }
+
+    fn request(reason: &str) -> ReconnectRequest {
+        ReconnectRequest {
+            reason: reason.into(),
+            max_observed_timestamp: None,
+            auth_retry: false,
+        }
+    }
+
+    // The client worker waits for an acknowledgement after every reconnect
+    // it asks for, so a path that doesn't send one stops the client for good.
+    #[tokio::test]
+    async fn test_every_reconnect_request_is_acknowledged() -> anyhow::Result<()> {
+        let (url, mut sockets) = server().await?;
+        let (response_sender, mut responses) = mpsc::channel(8);
+        let mut manager = WebSocketManager::open(url, response_sender, None, "test").await?;
+        let _first = tokio::time::timeout(Duration::from_secs(5), sockets.recv()).await?;
+
+        // A reconnect the client asks for while the socket is up.
+        manager.reconnect(request("convex_flutter:manual")).await;
+        assert!(matches!(
+            next(&mut responses).await?,
+            ProtocolResponse::ReconnectAcknowledged
+        ));
+        let second = tokio::time::timeout(Duration::from_secs(5), sockets.recv())
+            .await?
+            .unwrap();
+
+        // The server drops the socket: the worker reports the failure, then
+        // acknowledges the reconnect the client asks for in reply.
+        drop(second);
+        assert!(matches!(
+            next(&mut responses).await?,
+            ProtocolResponse::Failure
+        ));
+        manager.reconnect(request("ProtocolFailure")).await;
+        assert!(matches!(
+            next(&mut responses).await?,
+            ProtocolResponse::ReconnectAcknowledged
+        ));
+        tokio::time::timeout(Duration::from_secs(5), sockets.recv())
+            .await?
+            .unwrap();
+        Ok(())
     }
 }

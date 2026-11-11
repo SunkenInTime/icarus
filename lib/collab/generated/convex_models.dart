@@ -37,14 +37,6 @@ String _fieldPath(String path, String field) => '$path.$field';
 
 String _indexPath(String path, int index) => '$path[$index]';
 
-void _checkObjectFields(ConvexObject object, String path, Set<String> allowed) {
-  for (final field in object.value.keys) {
-    if (!allowed.contains(field)) {
-      throw ConvexDecodingException('$path.$field', 'unexpected field');
-    }
-  }
-}
-
 Null _decodeNull(ConvexValue value, String path) {
   if (value is ConvexNull) return null;
   throw ConvexDecodingException(path, 'expected null');
@@ -640,18 +632,6 @@ final class ElementsListForPageResultItem {
 
   factory ElementsListForPageResultItem.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'createdAt',
-      'deleted',
-      'elementType',
-      'pagePublicId',
-      'payload',
-      'publicId',
-      'revision',
-      'sortIndex',
-      'strategyPublicId',
-      'updatedAt',
-    });
     return ElementsListForPageResultItem(
       createdAt: _decodeNumber(
         object.value['createdAt'] ?? _missing(path, 'createdAt'),
@@ -724,7 +704,6 @@ final class FoldersDeleteResult {
 
   factory FoldersDeleteResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'ok'});
     return FoldersDeleteResult(
       ok: _expectLiteral(
         _decodeBoolean(object.value['ok'] ?? _missing(path, 'ok'), '$path.ok'),
@@ -777,23 +756,6 @@ final class FoldersListTreeResultItem {
 
   factory FoldersListTreeResultItem.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'agentTypes',
-      'color',
-      'createdAt',
-      'customColorValue',
-      'iconCodePoint',
-      'iconFontFamily',
-      'iconFontPackage',
-      'iconId',
-      'mapPeeks',
-      'name',
-      'parentFolderPublicId',
-      'publicId',
-      'role',
-      'strategyCount',
-      'updatedAt',
-    });
     return FoldersListTreeResultItem(
       agentTypes:
           _decodeArray(
@@ -958,7 +920,6 @@ final class ImagesCompleteUploadResultConvex
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'provider', 'ok'});
     return ImagesCompleteUploadResultConvex(
       ok: _expectLiteral(
         _decodeBoolean(object.value['ok'] ?? _missing(path, 'ok'), '$path.ok'),
@@ -984,7 +945,6 @@ final class ImagesCompleteUploadResultR2 extends ImagesCompleteUploadResult {
 
   factory ImagesCompleteUploadResultR2.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'provider', 'ok', 'url'});
     return ImagesCompleteUploadResultR2(
       ok: _expectLiteral(
         _decodeBoolean(object.value['ok'] ?? _missing(path, 'ok'), '$path.ok'),
@@ -1028,15 +988,6 @@ final class ImagesGenerateUploadUrlResult {
 
   factory ImagesGenerateUploadUrlResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'expiresAt',
-      'maxBytes',
-      'objectKey',
-      'provider',
-      'requiredHeaders',
-      'uploadId',
-      'uploadUrl',
-    });
     return ImagesGenerateUploadUrlResult(
       expiresAt: _decodeNumber(
         object.value['expiresAt'] ?? _missing(path, 'expiresAt'),
@@ -1100,7 +1051,6 @@ final class ImagesGetAssetUrlResult {
 
   factory ImagesGetAssetUrlResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'url'});
     return ImagesGetAssetUrlResult(
       url: (object.value['url'] ?? _missing(path, 'url')) is ConvexNull
           ? null
@@ -1149,19 +1099,6 @@ final class ImagesListForStrategyResultItem {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'byteSize',
-      'fileExtension',
-      'height',
-      'legacyStoragePath',
-      'mimeType',
-      'provider',
-      'publicId',
-      'uploadedAt',
-      'uploadStatus',
-      'url',
-      'width',
-    });
     return ImagesListForStrategyResultItem(
       byteSize:
           (object.value['byteSize'] ?? _missing(path, 'byteSize')) is ConvexNull
@@ -1279,7 +1216,6 @@ final class InvitesRedeemResult {
 
   factory InvitesRedeemResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'ok', 'role', 'strategyPublicId'});
     return InvitesRedeemResult(
       ok: _expectLiteral(
         _decodeBoolean(object.value['ok'] ?? _missing(path, 'ok'), '$path.ok'),
@@ -1333,17 +1269,6 @@ final class LineupsListForPageResultItem {
 
   factory LineupsListForPageResultItem.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'createdAt',
-      'deleted',
-      'pagePublicId',
-      'payload',
-      'publicId',
-      'revision',
-      'sortIndex',
-      'strategyPublicId',
-      'updatedAt',
-    });
     return LineupsListForPageResultItem(
       createdAt: _decodeNumber(
         object.value['createdAt'] ?? _missing(path, 'createdAt'),
@@ -1426,15 +1351,6 @@ final class OpsApplyBatchArgsOpsItemElementAdd
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'elementPublicId',
-      'expectedElementRevision',
-      'opId',
-      'pagePublicId',
-      'payload',
-      'sortIndex',
-    });
     return OpsApplyBatchArgsOpsItemElementAdd(
       elementPublicId: _decodeString(
         object.value['elementPublicId'] ?? _missing(path, 'elementPublicId'),
@@ -1509,14 +1425,6 @@ final class OpsApplyBatchArgsOpsItemElementDelete
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'elementPublicId',
-      'expectedElementRevision',
-      'lastWriterWins',
-      'opId',
-      'pagePublicId',
-    });
     return OpsApplyBatchArgsOpsItemElementDelete(
       elementPublicId: _decodeString(
         object.value['elementPublicId'] ?? _missing(path, 'elementPublicId'),
@@ -1587,16 +1495,6 @@ final class OpsApplyBatchArgsOpsItemElementPatch
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'elementPublicId',
-      'expectedElementRevision',
-      'merge',
-      'opId',
-      'pagePublicId',
-      'payload',
-      'sortIndex',
-    });
     return OpsApplyBatchArgsOpsItemElementPatch(
       elementPublicId: _decodeString(
         object.value['elementPublicId'] ?? _missing(path, 'elementPublicId'),
@@ -1681,7 +1579,6 @@ final class OpsApplyBatchArgsOpsItemElementPatchMerge {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'base', 'fields'});
     return OpsApplyBatchArgsOpsItemElementPatchMerge(
       baseValue: object.value.containsKey('base')
           ? ConvexOptional.present(
@@ -1743,7 +1640,6 @@ final class OpsApplyBatchArgsOpsItemElementPatchMergeBaseItem {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'field', 'value'});
     return OpsApplyBatchArgsOpsItemElementPatchMergeBaseItem(
       field: _decodeString(
         object.value['field'] ?? _missing(path, 'field'),
@@ -1794,14 +1690,6 @@ final class OpsApplyBatchArgsOpsItemElementReorder
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'elementPublicId',
-      'expectedElementRevision',
-      'opId',
-      'pagePublicId',
-      'sortIndex',
-    });
     return OpsApplyBatchArgsOpsItemElementReorder(
       elementPublicId: _decodeString(
         object.value['elementPublicId'] ?? _missing(path, 'elementPublicId'),
@@ -1864,15 +1752,6 @@ final class OpsApplyBatchArgsOpsItemLineupAdd extends OpsApplyBatchArgsOpsItem {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'expectedLineupRevision',
-      'lineupPublicId',
-      'opId',
-      'pagePublicId',
-      'payload',
-      'sortIndex',
-    });
     return OpsApplyBatchArgsOpsItemLineupAdd(
       expectedLineupRevision: object.value.containsKey('expectedLineupRevision')
           ? ConvexOptional.present(
@@ -1946,14 +1825,6 @@ final class OpsApplyBatchArgsOpsItemLineupDelete
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'expectedLineupRevision',
-      'lastWriterWins',
-      'lineupPublicId',
-      'opId',
-      'pagePublicId',
-    });
     return OpsApplyBatchArgsOpsItemLineupDelete(
       expectedLineupRevision: _decodeNumber(
         object.value['expectedLineupRevision'] ??
@@ -2024,16 +1895,6 @@ final class OpsApplyBatchArgsOpsItemLineupPatch
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'expectedLineupRevision',
-      'lineupPublicId',
-      'merge',
-      'opId',
-      'pagePublicId',
-      'payload',
-      'sortIndex',
-    });
     return OpsApplyBatchArgsOpsItemLineupPatch(
       expectedLineupRevision: _decodeNumber(
         object.value['expectedLineupRevision'] ??
@@ -2124,14 +1985,6 @@ final class OpsApplyBatchArgsOpsItemLineupReorder
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'expectedLineupRevision',
-      'lineupPublicId',
-      'opId',
-      'pagePublicId',
-      'sortIndex',
-    });
     return OpsApplyBatchArgsOpsItemLineupReorder(
       expectedLineupRevision: _decodeNumber(
         object.value['expectedLineupRevision'] ??
@@ -2194,15 +2047,6 @@ final class OpsApplyBatchArgsOpsItemPageAdd extends OpsApplyBatchArgsOpsItem {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'copyContentFromPagePublicId',
-      'expectedStrategyRevision',
-      'opId',
-      'pagePublicId',
-      'payload',
-      'sortIndex',
-    });
     return OpsApplyBatchArgsOpsItemPageAdd(
       copyContentFromPagePublicId:
           object.value.containsKey('copyContentFromPagePublicId')
@@ -2274,12 +2118,6 @@ final class OpsApplyBatchArgsOpsItemPageAddPayload {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'isAttack',
-      'isAutoNamed',
-      'name',
-      'settings',
-    });
     return OpsApplyBatchArgsOpsItemPageAddPayload(
       isAttack: object.value.containsKey('isAttack')
           ? ConvexOptional.present(
@@ -2334,11 +2172,6 @@ final class OpsApplyBatchArgsOpsItemPageAddPayloadSettings {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'abilitySize',
-      'agentSize',
-      'useNeutralTeamColors',
-    });
     return OpsApplyBatchArgsOpsItemPageAddPayloadSettings(
       abilitySize: _decodeNumber(
         object.value['abilitySize'] ?? _missing(path, 'abilitySize'),
@@ -2383,13 +2216,6 @@ final class OpsApplyBatchArgsOpsItemPageContentPatch
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'expectedPageContentRevision',
-      'opId',
-      'pagePublicId',
-      'settings',
-    });
     return OpsApplyBatchArgsOpsItemPageContentPatch(
       expectedPageContentRevision: _decodeNumber(
         object.value['expectedPageContentRevision'] ??
@@ -2442,12 +2268,6 @@ final class OpsApplyBatchArgsOpsItemPageDelete
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'expectedStrategyRevision',
-      'opId',
-      'pagePublicId',
-    });
     return OpsApplyBatchArgsOpsItemPageDelete(
       expectedStrategyRevision: _decodeNumber(
         object.value['expectedStrategyRevision'] ??
@@ -2496,13 +2316,6 @@ final class OpsApplyBatchArgsOpsItemPagePatch extends OpsApplyBatchArgsOpsItem {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'expectedPageRevision',
-      'opId',
-      'pagePublicId',
-      'payload',
-    });
     return OpsApplyBatchArgsOpsItemPagePatch(
       expectedPageRevision: _decodeNumber(
         object.value['expectedPageRevision'] ??
@@ -2557,13 +2370,6 @@ final class OpsApplyBatchArgsOpsItemPageReorder
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'expectedStrategyRevision',
-      'opId',
-      'pagePublicId',
-      'sortIndex',
-    });
     return OpsApplyBatchArgsOpsItemPageReorder(
       expectedStrategyRevision: _decodeNumber(
         object.value['expectedStrategyRevision'] ??
@@ -2616,12 +2422,6 @@ final class OpsApplyBatchArgsOpsItemStrategyPatch
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'type',
-      'expectedStrategyRevision',
-      'opId',
-      'payload',
-    });
     return OpsApplyBatchArgsOpsItemStrategyPatch(
       expectedStrategyRevision: _decodeNumber(
         object.value['expectedStrategyRevision'] ??
@@ -2677,14 +2477,6 @@ final class OpsApplyBatchArgsOpsItemStrategyPatchPayload {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'clearThemeOverridePalette',
-      'clearThemeProfileId',
-      'mapData',
-      'name',
-      'themeOverridePalette',
-      'themeProfileId',
-    });
     return OpsApplyBatchArgsOpsItemStrategyPatchPayload(
       clearThemeOverridePalette:
           object.value.containsKey('clearThemeOverridePalette')
@@ -2767,7 +2559,6 @@ final class OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'base', 'detail', 'highlight'});
     return OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette(
       baseValue: _decodeString(
         object.value['base'] ?? _missing(path, 'base'),
@@ -2803,7 +2594,6 @@ final class OpsApplyBatchResult {
 
   factory OpsApplyBatchResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'results', 'strategyPublicId'});
     return OpsApplyBatchResult(
       results:
           _decodeArray(
@@ -2852,11 +2642,6 @@ final class OpsApplyBatchResultResultsItemApplied
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'status',
-      'appliedRevision',
-      'opId',
-    });
     return OpsApplyBatchResultResultsItemApplied(
       appliedRevision: _decodeNumber(
         object.value['appliedRevision'] ?? _missing(path, 'appliedRevision'),
@@ -2900,13 +2685,6 @@ final class OpsApplyBatchResultResultsItemFailed
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'status',
-      'code',
-      'message',
-      'opId',
-      'rawCode',
-    });
     return OpsApplyBatchResultResultsItemFailed(
       code: _decodeString(
         object.value['code'] ?? _missing(path, 'code'),
@@ -2944,20 +2722,17 @@ final class OpsApplyBatchResultResultsItemNoop
   const OpsApplyBatchResultResultsItemNoop({
     required this.opId,
     this.currentRevision = const ConvexOptional.absent(),
+    this.wasApplied = const ConvexOptional.absent(),
   });
   final ConvexOptional<double> currentRevision;
   final String opId;
+  final ConvexOptional<bool> wasApplied;
 
   factory OpsApplyBatchResultResultsItemNoop.decode(
     ConvexValue value,
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'status',
-      'currentRevision',
-      'opId',
-    });
     return OpsApplyBatchResultResultsItemNoop(
       currentRevision: object.value.containsKey('currentRevision')
           ? ConvexOptional.present(
@@ -2971,6 +2746,11 @@ final class OpsApplyBatchResultResultsItemNoop
         object.value['opId'] ?? _missing(path, 'opId'),
         '$path.opId',
       ),
+      wasApplied: object.value.containsKey('wasApplied')
+          ? ConvexOptional.present(
+              _decodeBoolean(object.value['wasApplied']!, '$path.wasApplied'),
+            )
+          : const ConvexOptional.absent(),
     );
   }
 
@@ -2984,6 +2764,7 @@ final class OpsApplyBatchResultResultsItemNoop
           '$path.currentRevision',
         ),
       'opId': ConvexString(opId),
+      if (wasApplied.isPresent) 'wasApplied': ConvexBoolean(wasApplied.value),
     });
   }
 }
@@ -3004,12 +2785,6 @@ final class OpsApplyBatchResultResultsItemRejected
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'status',
-      'current',
-      'opId',
-      'reason',
-    });
     return OpsApplyBatchResultResultsItemRejected(
       current: object.value.containsKey('current')
           ? ConvexOptional.present(
@@ -3058,7 +2833,6 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentElement
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'type', 'revision', 'value'});
     return OpsApplyBatchResultResultsItemRejectedCurrentElement(
       revision: _decodeNumber(
         object.value['revision'] ?? _missing(path, 'revision'),
@@ -3098,7 +2872,6 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentLineup
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'type', 'revision', 'value'});
     return OpsApplyBatchResultResultsItemRejectedCurrentLineup(
       revision: _decodeNumber(
         object.value['revision'] ?? _missing(path, 'revision'),
@@ -3140,7 +2913,6 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPage
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'type', 'revision', 'value'});
     return OpsApplyBatchResultResultsItemRejectedCurrentPage(
       revision: _decodeNumber(
         object.value['revision'] ?? _missing(path, 'revision'),
@@ -3177,7 +2949,6 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPageContent
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'type', 'revision', 'value'});
     return OpsApplyBatchResultResultsItemRejectedCurrentPageContent(
       revision: _decodeNumber(
         object.value['revision'] ?? _missing(path, 'revision'),
@@ -3212,7 +2983,6 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPageContentValue {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'settings'});
     return OpsApplyBatchResultResultsItemRejectedCurrentPageContentValue(
       settings:
           (object.value['settings'] ?? _missing(path, 'settings')) is ConvexNull
@@ -3250,12 +3020,6 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPageValue {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'isAttack',
-      'isAutoNamed',
-      'name',
-      'sortIndex',
-    });
     return OpsApplyBatchResultResultsItemRejectedCurrentPageValue(
       isAttack: _decodeBoolean(
         object.value['isAttack'] ?? _missing(path, 'isAttack'),
@@ -3302,7 +3066,6 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentStrategy
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'type', 'revision', 'value'});
     return OpsApplyBatchResultResultsItemRejectedCurrentStrategy(
       revision: _decodeNumber(
         object.value['revision'] ?? _missing(path, 'revision'),
@@ -3343,12 +3106,6 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentStrategyValue {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'mapData',
-      'name',
-      'themeOverridePalette',
-      'themeProfileId',
-    });
     return OpsApplyBatchResultResultsItemRejectedCurrentStrategyValue(
       mapData: _decodeString(
         object.value['mapData'] ?? _missing(path, 'mapData'),
@@ -3404,7 +3161,6 @@ final class PageGetElementSliceResult {
 
   factory PageGetElementSliceResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'assets', 'elements'});
     return PageGetElementSliceResult(
       assets:
           _decodeArray(
@@ -3468,12 +3224,6 @@ final class PageGetFrameResult {
 
   factory PageGetFrameResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'assets',
-      'content',
-      'lineups',
-      'page',
-    });
     return PageGetFrameResult(
       assets:
           _decodeArray(
@@ -3546,12 +3296,6 @@ final class PageGetFrameResultContent {
 
   factory PageGetFrameResultContent.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'createdAt',
-      'revision',
-      'settings',
-      'updatedAt',
-    });
     return PageGetFrameResultContent(
       createdAt: _decodeNumber(
         object.value['createdAt'] ?? _missing(path, 'createdAt'),
@@ -3611,17 +3355,6 @@ final class PageGetFrameResultPage {
 
   factory PageGetFrameResultPage.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'createdAt',
-      'isAttack',
-      'isAutoNamed',
-      'name',
-      'publicId',
-      'revision',
-      'sortIndex',
-      'strategyPublicId',
-      'updatedAt',
-    });
     return PageGetFrameResultPage(
       createdAt: _decodeNumber(
         object.value['createdAt'] ?? _missing(path, 'createdAt'),
@@ -3695,13 +3428,6 @@ final class PageGetSnapshotResult {
 
   factory PageGetSnapshotResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'assets',
-      'content',
-      'elements',
-      'lineups',
-      'page',
-    });
     return PageGetSnapshotResult(
       assets:
           _decodeArray(
@@ -3798,14 +3524,6 @@ final class PagesListTrashedResultItem {
 
   factory PagesListTrashedResultItem.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'deletedAt',
-      'deletedByName',
-      'deletedByYou',
-      'name',
-      'publicId',
-      'restorableUntil',
-    });
     return PagesListTrashedResultItem(
       deletedAt: _decodeNumber(
         object.value['deletedAt'] ?? _missing(path, 'deletedAt'),
@@ -3867,7 +3585,6 @@ final class PresenceIssueRoomPassResult {
 
   factory PresenceIssueRoomPassResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'expiresAt', 'pass', 'url'});
     return PresenceIssueRoomPassResult(
       expiresAt: _decodeNumber(
         object.value['expiresAt'] ?? _missing(path, 'expiresAt'),
@@ -3906,7 +3623,6 @@ final class SharesListFolderAccessResultItem {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'name', 'publicId'});
     return SharesListFolderAccessResultItem(
       name: _decodeString(
         object.value['name'] ?? _missing(path, 'name'),
@@ -3941,12 +3657,6 @@ final class SharesListLinkJoinsResultItem {
 
   factory SharesListLinkJoinsResultItem.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'joined',
-      'more',
-      'names',
-      'token',
-    });
     return SharesListLinkJoinsResultItem(
       joined: _decodeNumber(
         object.value['joined'] ?? _missing(path, 'joined'),
@@ -3999,7 +3709,6 @@ final class SharesListMembersResult {
 
   factory SharesListMembersResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'members', 'nextCursor'});
     return SharesListMembersResult(
       members:
           _decodeArray(
@@ -4061,14 +3770,6 @@ final class SharesListMembersResultMembersItem {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'avatarUrl',
-      'displayName',
-      'joinedAt',
-      'memberId',
-      'role',
-      'shareLinkToken',
-    });
     return SharesListMembersResultMembersItem(
       avatarUrl:
           (object.value['avatarUrl'] ?? _missing(path, 'avatarUrl'))
@@ -4145,12 +3846,6 @@ final class SharesListResultItem {
 
   factory SharesListResultItem.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'createdAt',
-      'revokedAt',
-      'role',
-      'token',
-    });
     return SharesListResultItem(
       createdAt: _decodeNumber(
         object.value['createdAt'] ?? _missing(path, 'createdAt'),
@@ -4204,13 +3899,6 @@ final class SharesPreviewResultFolder extends SharesPreviewResult {
 
   factory SharesPreviewResultFolder.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'targetType',
-      'linkRole',
-      'myRole',
-      'name',
-      'publicId',
-    });
     return SharesPreviewResultFolder(
       linkRole: InvitesCreateArgsRole.fromWireName(
         _decodeString(
@@ -4267,13 +3955,6 @@ final class SharesPreviewResultStrategy extends SharesPreviewResult {
 
   factory SharesPreviewResultStrategy.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'targetType',
-      'linkRole',
-      'myRole',
-      'name',
-      'publicId',
-    });
     return SharesPreviewResultStrategy(
       linkRole: InvitesCreateArgsRole.fromWireName(
         _decodeString(
@@ -4330,13 +4011,6 @@ final class SharesRedeemResultFolder extends SharesRedeemResult {
 
   factory SharesRedeemResultFolder.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'targetType',
-      'alreadyHadAccess',
-      'folderPublicId',
-      'ok',
-      'role',
-    });
     return SharesRedeemResultFolder(
       alreadyHadAccess: object.value.containsKey('alreadyHadAccess')
           ? ConvexOptional.present(
@@ -4394,14 +4068,6 @@ final class SharesRedeemResultStrategy extends SharesRedeemResult {
 
   factory SharesRedeemResultStrategy.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'targetType',
-      'alreadyHadAccess',
-      'folderPublicId',
-      'ok',
-      'role',
-      'strategyPublicId',
-    });
     return SharesRedeemResultStrategy(
       alreadyHadAccess: object.value.containsKey('alreadyHadAccess')
           ? ConvexOptional.present(
@@ -4461,7 +4127,6 @@ final class SharesResolveResultFolder extends SharesResolveResult {
 
   factory SharesResolveResultFolder.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'targetType', 'role'});
     return SharesResolveResultFolder(
       role: InvitesCreateArgsRole.fromWireName(
         _decodeString(
@@ -4492,11 +4157,6 @@ final class SharesResolveResultStrategy extends SharesResolveResult {
 
   factory SharesResolveResultStrategy.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'targetType',
-      'role',
-      'strategyPublicId',
-    });
     return SharesResolveResultStrategy(
       role: InvitesCreateArgsRole.fromWireName(
         _decodeString(
@@ -4529,7 +4189,6 @@ final class StrategiesAbandonMoveResult {
 
   factory StrategiesAbandonMoveResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'ok', 'outcome'});
     return StrategiesAbandonMoveResult(
       ok: _expectLiteral(
         _decodeBoolean(object.value['ok'] ?? _missing(path, 'ok'), '$path.ok'),
@@ -4579,17 +4238,6 @@ final class StrategiesGetHeaderResult {
 
   factory StrategiesGetHeaderResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'createdAt',
-      'mapData',
-      'name',
-      'publicId',
-      'revision',
-      'role',
-      'themeOverridePalette',
-      'themeProfileId',
-      'updatedAt',
-    });
     return StrategiesGetHeaderResult(
       createdAt: _decodeNumber(
         object.value['createdAt'] ?? _missing(path, 'createdAt'),
@@ -4697,20 +4345,6 @@ final class StrategiesListForFolderResultItem {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'agentTypes',
-      'attackLabel',
-      'createdAt',
-      'folderPublicId',
-      'mapData',
-      'name',
-      'publicId',
-      'revision',
-      'role',
-      'themeOverridePalette',
-      'themeProfileId',
-      'updatedAt',
-    });
     return StrategiesListForFolderResultItem(
       agentTypes: object.value.containsKey('agentTypes')
           ? ConvexOptional.present(
@@ -4834,7 +4468,6 @@ final class StrategiesListInventoryResult {
 
   factory StrategiesListInventoryResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'folders', 'strategies'});
     return StrategiesListInventoryResult(
       folders:
           _decodeArray(
@@ -4897,10 +4530,6 @@ final class StrategiesListInventoryResultFoldersItem {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'parentFolderPublicId',
-      'publicId',
-    });
     return StrategiesListInventoryResultFoldersItem(
       parentFolderPublicId:
           (object.value['parentFolderPublicId'] ??
@@ -4942,7 +4571,6 @@ final class StrategiesListInventoryResultStrategiesItem {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'folderPublicId', 'publicId'});
     return StrategiesListInventoryResultStrategiesItem(
       folderPublicId:
           (object.value['folderPublicId'] ?? _missing(path, 'folderPublicId'))
@@ -4988,14 +4616,6 @@ final class StrategyGetFullSnapshotResult {
 
   factory StrategyGetFullSnapshotResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'assets',
-      'contentVersion',
-      'elements',
-      'header',
-      'lineups',
-      'pages',
-    });
     return StrategyGetFullSnapshotResult(
       assets:
           _decodeArray(
@@ -5136,21 +4756,6 @@ final class StrategyGetFullSnapshotResultPagesItem {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'contentCreatedAt',
-      'contentRevision',
-      'contentUpdatedAt',
-      'createdAt',
-      'isAttack',
-      'isAutoNamed',
-      'name',
-      'publicId',
-      'revision',
-      'settings',
-      'sortIndex',
-      'strategyPublicId',
-      'updatedAt',
-    });
     return StrategyGetFullSnapshotResultPagesItem(
       contentCreatedAt: _decodeNumber(
         object.value['contentCreatedAt'] ?? _missing(path, 'contentCreatedAt'),
@@ -5249,7 +4854,6 @@ final class StrategyGetShellResult {
 
   factory StrategyGetShellResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'header', 'pages'});
     return StrategyGetShellResult(
       header: StrategiesGetHeaderResult.decode(
         object.value['header'] ?? _missing(path, 'header'),
@@ -5300,12 +4904,6 @@ final class StrategyListContentVersionsResultItemFound
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'status',
-      'contentVersion',
-      'header',
-      'strategyPublicId',
-    });
     return StrategyListContentVersionsResultItemFound(
       contentVersion: _decodeNumber(
         object.value['contentVersion'] ?? _missing(path, 'contentVersion'),
@@ -5345,7 +4943,6 @@ final class StrategyListContentVersionsResultItemGone
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'status', 'strategyPublicId'});
     return StrategyListContentVersionsResultItemGone(
       strategyPublicId: _decodeString(
         object.value['strategyPublicId'] ?? _missing(path, 'strategyPublicId'),
@@ -5381,14 +4978,6 @@ final class UsersMeResult {
 
   factory UsersMeResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {
-      'avatarUrl',
-      'createdAt',
-      'displayName',
-      'externalId',
-      'id',
-      'updatedAt',
-    });
     return UsersMeResult(
       avatarUrl:
           (object.value['avatarUrl'] ?? _missing(path, 'avatarUrl'))
@@ -5849,7 +5438,6 @@ bool _validateFoldersCreateResult(ConvexValue value) =>
 
 bool _matchesRaw0(ConvexValue value) =>
     value is ConvexObject &&
-    value.value.keys.every(const {'ok'}.contains) &&
     (value.value['ok'] != null && _matchesRaw1(value.value['ok']!));
 
 bool _matchesRaw1(ConvexValue value) =>
@@ -5857,7 +5445,6 @@ bool _matchesRaw1(ConvexValue value) =>
 
 bool _matchesRaw2(ConvexValue value) =>
     value is ConvexObject &&
-    value.value.keys.every(const {'ok', 'reused'}.contains) &&
     (value.value['ok'] != null && _matchesRaw1(value.value['ok']!)) &&
     (value.value['reused'] != null && _matchesRaw1(value.value['reused']!));
 
@@ -5866,17 +5453,6 @@ bool _validateInvitesGetResult(ConvexValue value) =>
 
 bool _matchesRaw3(ConvexValue value) =>
     value is ConvexObject &&
-    value.value.keys.every(
-      const {
-        'createdAt',
-        'expiresAt',
-        'hasAccessAlready',
-        'inviteRole',
-        'revoked',
-        'strategyPublicId',
-        'token',
-      }.contains,
-    ) &&
     (value.value['createdAt'] != null &&
         _matchesRaw4(value.value['createdAt']!)) &&
     (value.value['expiresAt'] != null &&
@@ -5916,16 +5492,6 @@ bool _matchesRaw12(ConvexValue value) =>
 
 bool _matchesRaw13(ConvexValue value) =>
     value is ConvexObject &&
-    value.value.keys.every(
-      const {
-        'createdAt',
-        'expiresAt',
-        'redeemed',
-        'revokedAt',
-        'role',
-        'token',
-      }.contains,
-    ) &&
     (value.value['createdAt'] != null &&
         _matchesRaw4(value.value['createdAt']!)) &&
     (value.value['expiresAt'] != null &&
@@ -6027,13 +5593,11 @@ bool _validatePagesAddResult(ConvexValue value) =>
 
 bool _matchesRaw32(ConvexValue value) =>
     value is ConvexObject &&
-    value.value.keys.every(const {'ok', 'revision'}.contains) &&
     (value.value['ok'] != null && _matchesRaw1(value.value['ok']!)) &&
     (value.value['revision'] != null && _matchesRaw4(value.value['revision']!));
 
 bool _matchesRaw33(ConvexValue value) =>
     value is ConvexObject &&
-    value.value.keys.every(const {'ok', 'reused', 'revision'}.contains) &&
     (value.value['ok'] != null && _matchesRaw1(value.value['ok']!)) &&
     (value.value['reused'] != null && _matchesRaw1(value.value['reused']!)) &&
     (value.value['revision'] != null && _matchesRaw4(value.value['revision']!));
@@ -6541,6 +6105,7 @@ ConvexObject encodeOpsApplyBatchArgs({
   required String clientId,
   required double clientProtocolVersion,
   ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
+  ConvexOptional<bool> includeWasApplied = const ConvexOptional.absent(),
   required List<OpsApplyBatchArgsOpsItem> ops,
   required String strategyPublicId,
 }) => ConvexObject({
@@ -6564,6 +6129,8 @@ ConvexObject encodeOpsApplyBatchArgs({
       elementFieldLevel.value,
       'ops.js:applyBatch.args.elementFieldLevel',
     ),
+  if (includeWasApplied.isPresent)
+    'includeWasApplied': ConvexBoolean(includeWasApplied.value),
   'ops': ConvexArray(
     ops.indexed
         .map(

@@ -1303,6 +1303,7 @@ sealed class OpAck {
       'noop' => NoopOpAck(
           opId: opId,
           currentRevision: (json['currentRevision'] as num?)?.toInt(),
+          wasApplied: json['wasApplied'] == true,
         ),
       'rejected' => RejectedOpAck(
           opId: opId,
@@ -1334,10 +1335,18 @@ final class AppliedOpAck extends OpAck {
 }
 
 final class NoopOpAck extends OpAck {
-  const NoopOpAck({required this.opId, this.currentRevision});
+  const NoopOpAck({
+    required this.opId,
+    this.currentRevision,
+    this.wasApplied = false,
+  });
   @override
   final String opId;
   final int? currentRevision;
+
+  /// The op was sent before and applied when the server first got it:
+  /// [currentRevision] is the revision that write made.
+  final bool wasApplied;
 }
 
 final class RejectedOpAck extends OpAck {

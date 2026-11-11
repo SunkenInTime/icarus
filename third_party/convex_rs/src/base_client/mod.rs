@@ -251,16 +251,17 @@ impl LocalSyncState {
         )
     }
 
+    /// Also returns whether the messages authenticate the new connection.
     async fn restart(&mut self) -> (Vec<ClientMessage>, bool) {
         self.identity_version = 0;
         let mut messages = Vec::new();
-        let mut auth_token_changed = false;
+        let mut sends_auth = false;
 
         // If we have a fetcher, get a fresh token for the new connection.
         if let Some(ref fetcher) = self.auth_fetcher {
             match fetcher(true).await {
                 Ok(token) if token != AuthenticationToken::None => {
-                    auth_token_changed = token != self.last_auth_token;
+                    sends_auth = true;
                     self.last_auth_token = token.clone();
                     messages.push(ClientMessage::Authenticate {
                         base_version: 0,
@@ -300,7 +301,7 @@ impl LocalSyncState {
             modifications,
         });
 
-        (messages, auth_token_changed)
+        (messages, sends_auth)
     }
 }
 
@@ -768,6 +769,9 @@ impl BaseConvexClient {
 
     /// Resend all subscribed queries and ongoing mutations. Should be used once
     /// the websocket closes and reconnects.
+    ///
+    /// Returns whether the resend authenticates the new connection: false
+    /// when there's no auth fetcher, or it failed or returned no token.
     pub async fn resend_ongoing_queries_mutations(&mut self) -> bool {
         // Clear any stale messages from the queue. During reconnection
         // retries, messages can accumulate from previous failed attempts
@@ -777,7 +781,7 @@ impl BaseConvexClient {
         // that conflict with the fresh restart messages.
         self.outgoing_message_queue.clear();
 
-        let (state_restart_messages, auth_token_changed) = self.state.restart().await;
+        let (state_restart_messages, sends_auth) = self.state.restart().await;
         let mut ongoing_mutation_messages = self.request_manager.restart();
 
         self.remote_query_set = RemoteQuerySet::new();
@@ -786,7 +790,7 @@ impl BaseConvexClient {
         }
         self.outgoing_message_queue
             .append(&mut ongoing_mutation_messages);
-        auth_token_changed
+        sends_auth
     }
 
     fn on_query_result_changes(
@@ -905,7 +909,7 @@ mod tests {
         while client.pop_next_message().is_some() {}
 
         // --- Connection drops, first reconnect attempt ---
-        assert!(!client.resend_ongoing_queries_mutations().await);
+        assert!(client.resend_ongoing_queries_mutations().await);
 
         // Simulate partial drain: the first message (Authenticate) was
         // popped and handed to the WebSocket layer, but the connection
@@ -913,7 +917,7 @@ mod tests {
         let _ = client.pop_next_message();
 
         // --- Connection still down, second reconnect attempt ---
-        assert!(!client.resend_ongoing_queries_mutations().await);
+        assert!(client.resend_ongoing_queries_mutations().await);
 
         // Connection finally succeeds — all queued messages are flushed.
         let mut messages = vec![];

@@ -126,12 +126,14 @@ async function applyOps(
   owner: Harness,
   clientId: string,
   ops: Array<Record<string, unknown>>,
+  options: { includeWasApplied?: boolean } = {},
 ) {
   return (await owner.mutation(applyBatch, {
     strategyPublicId,
     clientId,
     clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
     ops: ops.map(toProtocol3Op),
+    ...options,
   })) as {
     strategyPublicId: string;
     results: Array<Record<string, unknown>>;
@@ -1821,6 +1823,58 @@ describe("a resent op whose ack was lost", () => {
       ),
     );
     expect(row).toMatchObject({ revision: 3, payload: textPayload("theirs") });
+  });
+});
+
+describe("a resent op says whether it was applied", () => {
+  const addPage = {
+    opId: "add-page",
+    type: "page.add",
+    pagePublicId: pageB,
+    payload: { name: "Retake", isAttack: false },
+    sortIndex: 1,
+    expectedStrategyRevision: 0,
+  };
+
+  test("only to a client that asks, and only when the op was applied", async () => {
+    const { owner } = await createHarness();
+    await createBaseStrategy(owner);
+    const first = await applyOps(owner, "client", [addPage]);
+    expect(first.results[0]).toMatchObject({
+      status: "applied",
+      appliedRevision: 1,
+    });
+
+    // The client never heard back and sends the add again.
+    const asked = await applyOps(owner, "client", [addPage], {
+      includeWasApplied: true,
+    });
+    expect(asked.results[0]).toEqual({
+      opId: "add-page",
+      status: "noop",
+      currentRevision: 1,
+      wasApplied: true,
+    });
+    // A client that doesn't ask gets the noop it always got.
+    const unasked = await applyOps(owner, "client", [addPage]);
+    expect(unasked.results[0]).toEqual({
+      opId: "add-page",
+      status: "noop",
+      currentRevision: 1,
+    });
+
+    // An op that was a noop when first received made no write of its own.
+    const again = await applyOps(owner, "other-client", [
+      { ...addPage, opId: "add-page-again" },
+    ]);
+    expect(again.results[0]).toMatchObject({ status: "noop" });
+    const resentNoop = await applyOps(
+      owner,
+      "other-client",
+      [{ ...addPage, opId: "add-page-again" }],
+      { includeWasApplied: true },
+    );
+    expect(resentNoop.results[0]).not.toHaveProperty("wasApplied");
   });
 });
 

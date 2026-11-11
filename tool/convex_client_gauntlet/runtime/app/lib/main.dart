@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
+import 'package:icarus_convex_runtime_gauntlet/auth.dart';
 import 'package:icarus_convex_runtime_gauntlet/runner.dart';
 import 'package:icarus_convex_runtime_gauntlet/transport.dart';
 
@@ -13,27 +14,13 @@ Future<void> main() async {
   try {
     final deploymentUrl = _setting('CONVEX_URL');
     final adapterName = _setting('ADAPTER');
-    final supabaseUrl = _setting('SUPABASE_URL');
-    final supabaseKey = _setting('SUPABASE_KEY');
-    final email = _setting('TEST_EMAIL');
-    final password = _setting('TEST_PASSWORD');
-    if ([
-      deploymentUrl,
-      adapterName,
-      supabaseUrl,
-      supabaseKey,
-      email,
-      password,
-    ].any((value) => value.isEmpty)) {
+    if (deploymentUrl.isEmpty || adapterName.isEmpty) {
       throw StateError('Required gauntlet settings are missing');
     }
     final runner = GauntletRunner(
       adapter: adapterName,
       deploymentUrl: deploymentUrl,
-      supabaseUrl: supabaseUrl,
-      supabaseKey: supabaseKey,
-      email: email,
-      password: password,
+      account: gauntletAuthFromSettings(_setting),
       seedCount: int.tryParse(_setting('SEED_COUNT')) ?? 50,
       gitCommit: _setting('GIT_COMMIT'),
       transportFactory: () async => switch (adapterName) {
