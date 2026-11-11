@@ -3407,7 +3407,7 @@
   "@sidebarVisionConeToolsTooltip": {
     "description": "Tooltip on the sidebar button that opens the vision cone presets."
   },
-  "sidebarCustomShapesTooltip": "Custom Shapes",
+  "sidebarCustomShapesTooltip": "Shapes",
   "@sidebarCustomShapesTooltip": {
     "description": "Tooltip on the sidebar button that opens the custom shape tools."
   },
@@ -3566,7 +3566,7 @@
       }
     }
   },
-  "shapeToolsTitle": "Custom Shapes",
+  "shapeToolsTitle": "Shapes",
   "@shapeToolsTitle": {
     "description": "Heading of the custom shape tools panel in the sidebar."
   },
@@ -3601,10 +3601,6 @@
   "shapeToolsColorLabel": "Color",
   "@shapeToolsColorLabel": {
     "description": "Label above the shape color swatches."
-  },
-  "shapeToolsPlaceShapeButton": "+ Place Shape",
-  "@shapeToolsPlaceShapeButton": {
-    "description": "Button that places the configured shape in the middle of the map."
   },
   "canvasItemTextPlaceholder": "Write here...",
   "@canvasItemTextPlaceholder": {
@@ -5966,5 +5962,25 @@
         "type": "String"
       }
     }
+  },
+  "shapeToolsCircle": "Circle",
+  "@shapeToolsCircle": {
+    "description": "The shape kind button for a circle, a range drawn over the map."
+  },
+  "shapeToolsZone": "Zone",
+  "@shapeToolsZone": {
+    "description": "The shape kind button for a zone: a rectangle that colours the map floor inside it."
+  },
+  "shapeToolsZoneHint": "Drag or click to place. Colours the map floor inside it.",
+  "@shapeToolsZoneHint": {
+    "description": "Hint under the shape tools while Zone is picked. Small italic text."
+  },
+  "shapeToolsPlaceZoneButton": "+ Place zone",
+  "@shapeToolsPlaceZoneButton": {
+    "description": "Button that places a zone at the middle of the map."
+  },
+  "shapeToolsPlaceCircleButton": "+ Place circle",
+  "@shapeToolsPlaceCircleButton": {
+    "description": "Button that places a circle at the middle of the map."
   }
 }

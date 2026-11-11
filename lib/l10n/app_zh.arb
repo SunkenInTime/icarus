@@ -762,7 +762,7 @@
   "sidebarImageUploadFailed": "上传失败",
   "sidebarAddLineupTooltip": "添加点位",
   "sidebarVisionConeToolsTooltip": "视野锥工具",
-  "sidebarCustomShapesTooltip": "自定义形状",
+  "sidebarCustomShapesTooltip": "形状",
   "sidebarAgentRolesTooltip": "英雄定位",
   "sidebarTagColorLabel": "标签颜色",
   "sidebarPlaceTextButton": "+ 放置文字",
@@ -801,7 +801,7 @@
   "drawingToolsWalkingTooltip": "持刀静步",
   "drawingToolsAbilityWithKnifeTooltip": "{abilityName}（持刀）",
   "drawingToolsAgentRunTooltip": "{agentName}疾跑",
-  "shapeToolsTitle": "自定义形状",
+  "shapeToolsTitle": "形状",
   "shapeToolsDiameterLabel": "直径",
   "shapeToolsDiameterShortLabel": "直径",
   "shapeToolsDiameterHint": "输入直径",
@@ -813,7 +813,6 @@
   "shapeToolsOpacityLabel": "不透明度",
   "shapeToolsOpacityHint": "输入不透明度",
   "shapeToolsColorLabel": "颜色",
-  "shapeToolsPlaceShapeButton": "+ 放置形状",
   "canvasItemTextPlaceholder": "在此输入...",
   "canvasItemPlacedTextSemanticLabel": "已放置的文字",
   "shapeToolsRotationShortLabel": "旋转",
@@ -1271,5 +1270,10 @@
   "sightlineReportBuildFailed": "无法生成视线报告。",
   "sightlineReportSaveFailed": "已复制视线报告，但无法保存其文件。",
   "sightlineReportCropLabelAttack": "{map} 进攻 · 视线高度 {height} m",
-  "sightlineReportCropLabelDefense": "{map} 防守 · 视线高度 {height} m"
+  "sightlineReportCropLabelDefense": "{map} 防守 · 视线高度 {height} m",
+  "shapeToolsCircle": "圆形",
+  "shapeToolsZone": "区域",
+  "shapeToolsZoneHint": "拖动或点击以放置，会为范围内的地图地面上色。",
+  "shapeToolsPlaceZoneButton": "+ 放置区域",
+  "shapeToolsPlaceCircleButton": "+ 放置圆形"
 }

@@ -762,7 +762,7 @@
   "sidebarImageUploadFailed": "アップロードに失敗しました",
   "sidebarAddLineupTooltip": "定点を追加",
   "sidebarVisionConeToolsTooltip": "視界コーンツール",
-  "sidebarCustomShapesTooltip": "カスタム図形",
+  "sidebarCustomShapesTooltip": "図形",
   "sidebarAgentRolesTooltip": "エージェントロール",
   "sidebarTagColorLabel": "タグの色",
   "sidebarPlaceTextButton": "+ テキストを配置",
@@ -801,7 +801,7 @@
   "drawingToolsWalkingTooltip": "ナイフ装備で歩く",
   "drawingToolsAbilityWithKnifeTooltip": "{abilityName}（ナイフ装備）",
   "drawingToolsAgentRunTooltip": "{agentName}のスプリント",
-  "shapeToolsTitle": "カスタム図形",
+  "shapeToolsTitle": "図形",
   "shapeToolsDiameterLabel": "直径",
   "shapeToolsDiameterShortLabel": "径",
   "shapeToolsDiameterHint": "直径を入力",
@@ -813,7 +813,6 @@
   "shapeToolsOpacityLabel": "不透明度",
   "shapeToolsOpacityHint": "不透明度を入力",
   "shapeToolsColorLabel": "色",
-  "shapeToolsPlaceShapeButton": "+ 図形を配置",
   "canvasItemTextPlaceholder": "ここに入力...",
   "canvasItemPlacedTextSemanticLabel": "配置したテキスト",
   "shapeToolsRotationShortLabel": "回転",
@@ -1271,5 +1270,10 @@
   "sightlineReportBuildFailed": "視線レポートを作成できませんでした。",
   "sightlineReportSaveFailed": "視線レポートはコピーしましたが、ファイルを保存できませんでした。",
   "sightlineReportCropLabelAttack": "{map} 攻め · 目線 {height} m",
-  "sightlineReportCropLabelDefense": "{map} 守り · 目線 {height} m"
+  "sightlineReportCropLabelDefense": "{map} 守り · 目線 {height} m",
+  "shapeToolsCircle": "サークル",
+  "shapeToolsZone": "ゾーン",
+  "shapeToolsZoneHint": "ドラッグかクリックで配置。範囲内のマップの床に色を付けます。",
+  "shapeToolsPlaceZoneButton": "+ ゾーンを配置",
+  "shapeToolsPlaceCircleButton": "+ サークルを配置"
 }
