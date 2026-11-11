@@ -589,6 +589,10 @@ class AuthProvider extends Notifier<AppAuthState> {
   StreamSubscription<AuthState>? _supabaseAuthSub;
   AuthProviderAuthHandle? _convexAuthHandle;
 
+  /// Counts Convex auth setups, so a handle's reports are heard only while
+  /// its setup is the latest.
+  int _convexAuthSetups = 0;
+
   /// Whether this run ever gave Convex a token. Until it has, there is no
   /// auth to clear, and clearing it would open the Convex socket for a
   /// signed-out user who never asked for the cloud.
@@ -1747,6 +1751,8 @@ class AuthProvider extends Notifier<AppAuthState> {
       clearError: true,
     );
 
+    final setup = ++_convexAuthSetups;
+    final incidentBeforeSetup = state.activeAuthIncidentId;
     try {
       _convexAuthHandle?.dispose();
       final wasAuthenticatedBeforeSetup = _convexApi.isAuthenticated;
@@ -1755,10 +1761,13 @@ class AuthProvider extends Notifier<AppAuthState> {
       final authHandle = await _convexApi.setAuthWithRefresh(
         fetchToken: _fetchSupabaseAccessToken,
         onAuthChange: (isAuthenticated) {
-          if (!_isAuthContextCurrent(
-            generation: generation,
-            sessionFingerprint: sessionFingerprint,
-          )) {
+          // A replaced handle reports false as it is disposed, which says
+          // nothing about the session.
+          if (setup != _convexAuthSetups ||
+              !_isAuthContextCurrent(
+                generation: generation,
+                sessionFingerprint: sessionFingerprint,
+              )) {
             return;
           }
           if (isAuthenticated) {
@@ -1767,18 +1776,15 @@ class AuthProvider extends Notifier<AppAuthState> {
           if (_supabaseApi.currentSession == null) {
             return;
           }
-          // Still setting up, or out of reach: the server hasn't judged
-          // the session, so this is no incident.
-          if (state.convexAuthStatus == ConvexAuthStatus.configuring ||
-              state.convexAuthStatus == ConvexAuthStatus.offline) {
-            return;
-          }
 
           // No error to pass: reportConvexUnauthenticated checks an error
           // for the server's UNAUTHENTICATED code, and this is the Convex
-          // client's own report that it holds no accepted session. (The web
-          // client sends it when the server rejects the token; the native
-          // one only when no token can be fetched.)
+          // client's own report that it holds no accepted session. Both
+          // clients send it when the server keeps refusing the token (the
+          // native one after a few refusals in a row) or no token can be
+          // fetched, never because the server is out of reach. So it holds
+          // while setting up or offline too: a token refused at sign-in is
+          // a session to sign in to again, not an outage.
           unawaited(
             reportConvexUnauthenticated(source: 'convex:onAuthChange'),
           );
@@ -1881,6 +1887,14 @@ class AuthProvider extends Notifier<AppAuthState> {
         generation: generation,
         sessionFingerprint: sessionFingerprint,
       )) {
+        return;
+      }
+
+      // The server refused this session while it was setting up, and the
+      // prompt already says so. This failure is that refusal (the setup's
+      // wait timed out, with the socket down between refusals), not an
+      // outage, so the incident stands.
+      if (state.activeAuthIncidentId != incidentBeforeSetup) {
         return;
       }
 
