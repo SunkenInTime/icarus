@@ -13,7 +13,7 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
 import 'package:icarus/widgets/numeric_drag_input.dart';
-import 'package:icarus/widgets/selectable_icon_button.dart';
+import 'package:icarus/widgets/press_scale.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_library.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -55,7 +55,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Custom Shapes"),
+          const Text("Shapes"),
           const SizedBox(height: 4),
           _buildShapeSelector(),
           const SizedBox(height: 4),
@@ -63,7 +63,11 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Text(
-              "Drag or click to place",
+              // A zone is the rectangle: it colours the map itself, where a
+              // circle is drawn over everything.
+              _shape == _CustomShapeKind.rectangle
+                  ? "Drag or click to place. Colours the map floor inside it."
+                  : "Drag or click to place",
               style: TextStyle(
                 fontSize: 11,
                 fontStyle: FontStyle.italic,
@@ -93,21 +97,38 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
           mainAxisSize: MainAxisSize.min,
           spacing: 4,
           children: [
-            SelectableIconButton(
-              icon: const Icon(LucideIcons.circle, size: 20),
-              isSelected: _shape == _CustomShapeKind.circle,
-              onPressed: () => setState(() => _shape = _CustomShapeKind.circle),
-            ),
-            SelectableIconButton(
-              icon: const Icon(LucideIcons.square, size: 20),
-              isSelected: _shape == _CustomShapeKind.rectangle,
-              onPressed: () =>
-                  setState(() => _shape = _CustomShapeKind.rectangle),
+            _kindButton(_CustomShapeKind.circle, LucideIcons.circle, "Circle"),
+            _kindButton(
+              _CustomShapeKind.rectangle,
+              LucideIcons.squareDashed,
+              "Zone",
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// One of the two kinds, named: an icon alone does not say that one is a
+  /// range drawn over the map and the other colours the map.
+  Widget _kindButton(_CustomShapeKind kind, IconData icon, String label) {
+    final selected = _shape == kind;
+    Widget button = ShadButton.secondary(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      leading: Icon(icon, size: 20),
+      backgroundColor: selected ? Colors.transparent : null,
+      hoverBackgroundColor: selected ? Colors.transparent : null,
+      onPressed: () => setState(() => _shape = kind),
+      child: Text(label),
+    );
+    if (selected) {
+      button = DecoratedBox(
+        decoration: Settings.raised(Settings.tacticalVioletTheme.primary, 6),
+        child: button,
+      );
+    }
+    return PressScale(child: button);
   }
 
   Widget _buildPanel(CustomShapeToolData draggableData, double mapScale) {
@@ -217,7 +238,11 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
             child: ShadButton(
               backgroundColor: Settings.tacticalVioletTheme.primary,
               onPressed: () => _placeAtCenter(mapScale),
-              child: const Text("+ Place Shape"),
+              child: Text(
+                _shape == _CustomShapeKind.rectangle
+                    ? "+ Place zone"
+                    : "+ Place circle",
+              ),
             ),
           ),
         ),

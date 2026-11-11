@@ -270,7 +270,7 @@ class ToolGrid extends ConsumerWidget {
                     currentInteractionState == InteractionState.visionCone,
               ),
               SelectableIconButton(
-                tooltip: "Custom Shapes",
+                tooltip: "Shapes",
                 onPressed: () {
                   switch (currentInteractionState) {
                     case InteractionState.customShapes:
