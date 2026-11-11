@@ -6,6 +6,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/l10n/l10n.dart';
+import 'package:icarus/l10n/page_names.dart';
 import 'package:icarus/providers/collab/drawn_cloud_pages_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
@@ -44,14 +45,9 @@ class PageListItemViewModel {
   final String name;
   final bool isAutoNamed;
 
-  /// The name as drawn. A page nobody named is saved as "Page 3" whatever
-  /// the language, so each person reads it in their own.
-  String shownName(AppLocalizations l10n) {
-    final number = isAutoNamed ? _autoName.firstMatch(name)?.group(1) : null;
-    return number == null ? name : l10n.pagesBarAutoName(int.parse(number));
-  }
-
-  static final _autoName = RegExp(r'^Page (\d{1,9})$');
+  /// The name as drawn (see [shownPageName]).
+  String shownName(AppLocalizations l10n) =>
+      shownPageName(l10n, name: name, isAutoNamed: isAutoNamed);
 }
 
 class PagesBar extends ConsumerStatefulWidget {
@@ -276,12 +272,10 @@ class _PagesBarState extends ConsumerState<PagesBar> {
         (newName == shownName && !page.isAutoNamed)) {
       return;
     }
-    // Confirming an unnamed page's name as shown keeps the saved "Page 3",
-    // not its translation, which teammates would read in the wrong language.
-    await ref.read(strategyProvider.notifier).renamePage(
-          page.id,
-          newName == shownName ? page.name : newName,
-        );
+    // An unnamed page confirmed under its translated name stays unnamed:
+    // saving the translation would show it to teammates in this language.
+    if (newName == shownName && shownName != page.name) return;
+    await ref.read(strategyProvider.notifier).renamePage(page.id, newName);
   }
 
   Future<void> _deletePage(PageListItemViewModel page, int pageCount) async {

@@ -221,7 +221,7 @@
   "exportVideoPagesSelected": "{selected}/{total}",
   "exportVideoClearAll": "すべてクリア",
   "exportVideoSelectAll": "すべて選択",
-  "exportVideoQualityPotato": "ポテト",
+  "exportVideoQualityPotato": "低画質",
   "exportVideoQualitySocial": "SNS",
   "exportVideoQualityMax": "最高",
   "exportVideoQualityPotatoCaption": "約10 MB",

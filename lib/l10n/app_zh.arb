@@ -221,7 +221,7 @@
   "exportVideoPagesSelected": "{selected}/{total}",
   "exportVideoClearAll": "全部取消",
   "exportVideoSelectAll": "全选",
-  "exportVideoQualityPotato": "土豆",
+  "exportVideoQualityPotato": "低画质",
   "exportVideoQualitySocial": "社交",
   "exportVideoQualityMax": "最高",
   "exportVideoQualityPotatoCaption": "约 10 MB",
