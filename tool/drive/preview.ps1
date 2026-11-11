@@ -94,16 +94,16 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'npx convex deploy failed.' }
   $preview = Find-Preview
   if (-not $preview) { throw "Deployed, but no preview named $Name is listed." }
+  # Expiry first, so a preview whose setup fails below still goes away.
+  $expiresAt = [DateTimeOffset]::UtcNow.AddHours($Hours).ToUnixTimeMilliseconds()
+  Invoke-RestMethod -Method Patch -Headers $headers -ContentType 'application/json' `
+    -Body (@{ expiresAt = $expiresAt } | ConvertTo-Json) `
+    "$api/deployments/$($preview.name)" | Out-Null
   $devEnv | npx convex env set --force --deployment $preview.name | Out-Host
   if ($LASTEXITCODE -ne 0) { throw "Could not copy dev's environment variables to $($preview.name)." }
 } finally {
   $env:CONVEX_DEPLOY_KEY = $null
 }
-
-$expiresAt = [DateTimeOffset]::UtcNow.AddHours($Hours).ToUnixTimeMilliseconds()
-Invoke-RestMethod -Method Patch -Headers $headers -ContentType 'application/json' `
-  -Body (@{ expiresAt = $expiresAt } | ConvertTo-Json) `
-  "$api/deployments/$($preview.name)" | Out-Null
 
 Write-Host "Preview $Name is $($preview.name), bucket $bucket, expires in $Hours h."
 $preview.deploymentUrl

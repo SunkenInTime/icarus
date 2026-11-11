@@ -51,7 +51,7 @@ Strategy/page/lineup payloads store image IDs and local metadata only. Public re
 
 ## Web beta
 
-**Required step. Applied on both buckets; any new bucket needs it too** (`npx wrangler r2 bucket cors set <bucket> --file <rules.json>` does it without the dashboard). The web beta adds images and lineups from the browser, so the browser talks to R2 directly: it PUTs bytes to the presigned S3 URL (`https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com/...`) and GETs them from `R2_PUBLIC_BASE_URL` to paint them. Both are cross-origin, so the bucket must allow the web beta origins. Without this rule the upload's preflight fails, the media job retries and stays unsynced, and images the browser cannot fetch fall back to a plain `<img>` element.
+**Required step. Applied on both buckets; any new bucket needs it too** (`npx wrangler r2 bucket cors set <bucket> --file <rules.json>` does it without the dashboard, but wrangler wants its own shape, shown after the dashboard one). The web beta adds images and lineups from the browser, so the browser talks to R2 directly: it PUTs bytes to the presigned S3 URL (`https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com/...`) and GETs them from `R2_PUBLIC_BASE_URL` to paint them. Both are cross-origin, so the bucket must allow the web beta origins. Without this rule the upload's preflight fails, the media job retries and stays unsynced, and images the browser cannot fetch fall back to a plain `<img>` element.
 
 In the Cloudflare dashboard: R2 > the media bucket > Settings > CORS Policy > Add CORS policy, and paste:
 
@@ -70,6 +70,12 @@ In the Cloudflare dashboard: R2 > the media bucket > Settings > CORS Policy > Ad
     "MaxAgeSeconds": 3600
   }
 ]
+```
+
+The same rule as a wrangler `--file`:
+
+```json
+{"rules":[{"allowed":{"origins":["https://beta.icarusstrats.com","https://icarus-web-a50.pages.dev","http://localhost:8765","http://127.0.0.1:8765"],"methods":["PUT","GET","HEAD"],"headers":["Content-Type"]},"exposeHeaders":["ETag"],"maxAgeSeconds":3600}]}
 ```
 
 - `PUT` with `Content-Type` is the presigned upload; `Content-Type` is the only header the client sets. The URL also signs `host` and `content-length`, which the browser fills in itself, so neither needs a CORS entry.

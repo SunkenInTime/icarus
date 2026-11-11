@@ -29,6 +29,8 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..\..')
 $defines = @('--dart-define=ICARUS_CLOUD_ENVIRONMENT=development')
+# An empty -Convex (say, preview.ps1 failed) must not quietly build against dev.
+if ($PSBoundParameters.ContainsKey('Convex') -and -not $Convex) { throw '-Convex is empty.' }
 if ($Convex) {
   if ($Convex -notmatch '^https://([a-z0-9-]+)\.convex\.cloud/?$') {
     throw "-Convex must be a https://<deployment>.convex.cloud URL, got $Convex"
