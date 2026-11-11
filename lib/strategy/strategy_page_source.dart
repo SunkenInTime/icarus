@@ -20,12 +20,13 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/strategy/cloud_element_decoding.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:uuid/uuid.dart';
 
@@ -317,9 +318,20 @@ class CloudStrategyPageSource implements StrategyPageSource {
   /// The canvas can only be diffed against the server's version of the
   /// page it was drawn from. Without that version (a read failed or is
   /// reloading, the page is still loading, or a teammate deleted it) nothing
-  /// is queued and this is false: edits on screen may be held nowhere else.
+  /// is queued and this is false: edits on screen may be held nowhere else,
+  /// so the save state keeps them unsaved until a handover works.
   @override
   Future<bool> flushCurrentPage() async {
+    final handedOver = await _handOverCanvas();
+    if (ref.read(strategyProvider).strategyId == strategyId) {
+      ref
+          .read(strategySaveStateProvider.notifier)
+          .noteCanvasHandover(handedOver: handedOver);
+    }
+    return handedOver;
+  }
+
+  Future<bool> _handOverCanvas() async {
     // Whether this work is made live is judged as the canvas hands it over,
     // before it waits on anything (see StrategyOpQueueNotifier.liveStamp).
     final pageId = activePageId();

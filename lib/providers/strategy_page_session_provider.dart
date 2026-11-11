@@ -222,6 +222,18 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             );
           }
           _resendEditsForPagesBack(snapshot);
+          // Edits the canvas could not hand over while it had no read of
+          // its page to diff them against go now.
+          if (snapshot.activePage?.page.publicId == state.activePageId &&
+              ref.read(strategySaveStateProvider.notifier).canvasHeld) {
+            scheduleMicrotask(() {
+              if (_disposed ||
+                  !ref.read(strategySaveStateProvider.notifier).canvasHeld) {
+                return;
+              }
+              unawaited(flushCurrentPage());
+            });
+          }
         }
 
         final pageIds = [...snapshot.pages]

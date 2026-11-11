@@ -1112,6 +1112,9 @@ class _FakeServer {
   /// Every page added through this server, in order.
   final List<RemotePage> addedPages = [];
 
+  /// Pages a teammate deleted: the server no longer lists them.
+  final Set<String> deletedPageIds = {};
+
   /// The revision the batch being applied was made from, once one of its
   /// ops landed from it: later ops made from it too land after it, as the
   /// real server chains them (see applyBatch in convex/ops.ts).
@@ -7824,7 +7827,10 @@ void main() {
         server.strategyThemeProfileId = themeProfileId;
       var shown = page.publicId;
       RemoteEditorSnapshot read() => _editorSnapshot(
-            pages: [page, ...otherPages, ...server.addedPages],
+            pages: [
+              for (final listed in [page, ...otherPages, ...server.addedPages])
+                if (!server.deletedPageIds.contains(listed.publicId)) listed,
+            ],
             mapData: server.strategyMap,
             shellRevision: server.strategyRevision,
             themeProfileId: server.strategyThemeProfileId,
@@ -8027,6 +8033,100 @@ void main() {
       final saveState = container.read(strategySaveStateProvider);
       expect(saveState.isDirty, isTrue);
       expect(saveState.canLeaveSafely, isFalse);
+
+      // The read comes back: the text is handed over and lands.
+      showServer();
+      await _until(() =>
+          batches.isNotEmpty &&
+          container.read(strategyOpQueueProvider).pending.isEmpty &&
+          !container.read(strategyOpQueueProvider).isFlushing);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(server.elements.map((element) => element.publicId), ['local']);
+      expect(container.read(strategySaveStateProvider).canLeaveSafely, isTrue);
+      expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.synced);
+    });
+
+    test(
+        'an edit on a page a teammate deleted stays unsaved when an earlier '
+        'change lands', () async {
+      final source = _page('page-1', 0);
+      final target = _page('page-2', 1);
+      server = _FakeServer(target.publicId);
+      final (container, batches) = await openOnRealQueue(
+        target,
+        otherPages: [source],
+        otherElements: {
+          source.publicId: [
+            _textElement(source.publicId, 'text-1', 'one', worldSized: true),
+          ],
+        },
+      );
+      readPage(source.publicId);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          source.publicId);
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+
+      // The user copies the text to the next page; the copy is sent and its
+      // answer is slow.
+      final hold = repository.hold = Completer<void>();
+      expect(
+        await container
+            .read(strategyProvider.notifier)
+            .copyPlacedWidgetToAdjacentPage(
+              widgetId: 'text-1',
+              direction: PageTransitionDirection.forward,
+            ),
+        PageCopyResult.copied,
+      );
+      await _until(() => batches.isNotEmpty);
+
+      // Meanwhile a teammate deletes the page on screen, and the read moves
+      // to the next page. The canvas stays while the copy is on its way.
+      server
+        ..deletedPageIds.add(source.publicId)
+        ..strategyRevision += 1;
+      readPage(target.publicId);
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          source.publicId);
+
+      // The user moves the text. Nothing on the server can take it, so it
+      // is held only on screen, and the deleted-page notice opens.
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(40, 40), 'text-1');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
+          source.publicId);
+
+      // The copy's answer arrives and empties the queue. The move was never
+      // handed to it, so it is still unsaved: closing the window must still
+      // ask, and the sync button must not say synced.
+      hold.complete();
+      await _until(
+          () => queueState().pending.isEmpty && !queueState().isFlushing);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(batches, hasLength(1));
+      final saveState = container.read(strategySaveStateProvider);
+      expect(saveState.isDirty, isTrue);
+      expect(saveState.canLeaveSafely, isFalse);
+      expect(
+        container.read(cloudSyncStatusProvider),
+        isNot(CloudSyncStatus.synced),
+      );
     });
 
     test(

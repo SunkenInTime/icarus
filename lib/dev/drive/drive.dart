@@ -168,7 +168,9 @@ import 'package:icarus/widgets/replay/replay_library_content.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/share/share_link_format.dart';
@@ -879,6 +881,9 @@ String _probe() {
         '${job.assetPublicId}:${job.state.name}',
     ],
     'syncStatus': c.read(cloudSyncStatusProvider).name,
+    'unsaved': c.read(strategySaveStateProvider).isDirty,
+    'canLeave': c.read(strategySaveStateProvider).canLeaveSafely,
+    'deletedPage': c.read(strategyPageSessionProvider).deletedPage?.name,
   });
 }
 
