@@ -113,14 +113,19 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
   /// range drawn over the map and the other colours the map.
   Widget _kindButton(_CustomShapeKind kind, IconData icon, String label) {
     final selected = _shape == kind;
-    Widget button = ShadButton.secondary(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      leading: Icon(icon, size: 20),
-      backgroundColor: selected ? Colors.transparent : null,
-      hoverBackgroundColor: selected ? Colors.transparent : null,
-      onPressed: () => setState(() => _shape = kind),
-      child: Text(label),
+    // The raised fill sits outside the Shad button, so the press goes around
+    // both and the Shad button's own press is turned off.
+    Widget button = ShadButtonWrapper(
+      wrap: (context, {required pressable, required child}) => child,
+      child: ShadButton.secondary(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        leading: Icon(icon, size: 20),
+        backgroundColor: selected ? Colors.transparent : null,
+        hoverBackgroundColor: selected ? Colors.transparent : null,
+        onPressed: () => setState(() => _shape = kind),
+        child: Text(label),
+      ),
     );
     if (selected) {
       button = DecoratedBox(
