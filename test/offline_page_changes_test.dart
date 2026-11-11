@@ -49,17 +49,18 @@ void main() {
   /// Brings the connection back and sends until nothing is left to send.
   Future<void> reconnectAndSend(StrategyOpQueueNotifier notifier) async {
     online.state = true;
+    final giveUp = DateTime.now().add(const Duration(seconds: 5));
     for (var i = 0; i < 12 && queue().queuedByEntityKey.isNotEmpty; i++) {
       await notifier.flushNow();
       await _settle();
-    }
-    // The server has the last batch before the outbox has dropped it: a
-    // change stays listed until its removal from disk finishes, which a slow
-    // machine can stretch past the turns above.
-    final giveUp = DateTime.now().add(const Duration(seconds: 5));
-    while (queue().inFlightByEntityKey.isNotEmpty &&
-        DateTime.now().isBefore(giveUp)) {
-      await Future<void>.delayed(const Duration(milliseconds: 1));
+      // The server has a batch before the outbox has dropped it: a change
+      // stays listed until its removal from disk finishes, which a slow
+      // machine can stretch past the turns above. Work behind that batch is
+      // queued only once it has gone, so the loop looks again after it.
+      while (queue().inFlightByEntityKey.isNotEmpty &&
+          DateTime.now().isBefore(giveUp)) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
     }
   }
 
