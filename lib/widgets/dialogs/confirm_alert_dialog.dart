@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class ConfirmAlertDialog extends ConsumerWidget {
@@ -7,8 +8,8 @@ class ConfirmAlertDialog extends ConsumerWidget {
     super.key,
     required this.title,
     required this.content,
-    this.confirmText = "Confirm",
-    this.cancelText = "Cancel",
+    this.confirmText,
+    this.cancelText,
     this.isDestructive = false,
     this.body,
   });
@@ -18,12 +19,14 @@ class ConfirmAlertDialog extends ConsumerWidget {
 
   /// Shown instead of [content] when the message needs styling.
   final Widget? body;
-  final String confirmText;
-  final String cancelText;
+  final String? confirmText;
+  final String? cancelText;
   final bool isDestructive; // For dangerous actions like delete
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final confirmText = this.confirmText ?? context.l10n.confirmDialogConfirm;
+    final cancelText = this.cancelText ?? context.l10n.commonCancel;
     void cancel() => Navigator.of(context).pop(false);
     void confirm() => Navigator.of(context).pop(true);
 
@@ -78,8 +81,8 @@ class ConfirmAlertDialog extends ConsumerWidget {
     required BuildContext context,
     required String title,
     required String content,
-    String confirmText = "Confirm",
-    String cancelText = "Cancel",
+    String? confirmText,
+    String? cancelText,
     bool isDestructive = false,
     Widget? body,
   }) async {

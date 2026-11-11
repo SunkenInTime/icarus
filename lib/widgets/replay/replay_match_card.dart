@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/settings.dart';
@@ -65,6 +66,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
       MaterialLocalizations.of(context).formatShortDate(date ?? DateTime.now());
 
   Future<void> _captureMoment() async {
+    final l10n = context.l10n;
     final playback = widget.playback;
     playback.pause();
     try {
@@ -79,7 +81,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
       _strategyIds.add(strategy.id);
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
-        "Couldn't capture this moment.",
+        l10n.replayMatchCaptureFailed,
         error: error,
         stackTrace: stackTrace,
         source: 'ReplayMatchCard.capture',
@@ -127,15 +129,12 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     List<ReplayCaptureRecord> waiting,
   ) {
     final failure = waiting.firstWhere(queue.needsUser).failure;
+    final l10n = context.l10n;
     Settings.showToast(
       message: switch (failure) {
-        CaptureFailureKind.deleted =>
-          "This strategy was deleted, so it can't be opened.",
-        CaptureFailureKind.mapChanged =>
-          "This strategy is on another map now, so the replay's captures "
-              "can't go there.",
-        _ => "A capture couldn't be saved, so the strategy can't open on "
-            'it yet. Retry or discard it first.',
+        CaptureFailureKind.deleted => l10n.replayMatchStrategyDeleted,
+        CaptureFailureKind.mapChanged => l10n.replayMatchStrategyMapChanged,
+        _ => l10n.replayMatchCaptureUnsaved,
       },
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
@@ -169,7 +168,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
         initialMapValue: strategy.map,
         initialIsAttack: strategy.lastPageIsAttack,
         initialPageId: pageId,
-        backTooltip: 'Back to replay',
+        backTooltip: context.l10n.replayMatchBackToReplay,
       ),
     );
     if (!mounted) return;
@@ -190,13 +189,14 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
   }
 
   Future<void> _retry(List<ReplayCaptureRecord> failed) async {
+    final l10n = context.l10n;
     try {
       await ref
           .read(replayCaptureQueueProvider.notifier)
           .retry([for (final capture in failed) capture.id]);
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
-        "Couldn't retry the capture.",
+        l10n.replayMatchRetryFailed,
         error: error,
         stackTrace: stackTrace,
         source: 'ReplayMatchCard.retry',
@@ -205,6 +205,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
   }
 
   Future<void> _discard(List<ReplayCaptureRecord> failed) async {
+    final l10n = context.l10n;
     final bool mayHaveLanded;
     try {
       mayHaveLanded = await ref
@@ -212,7 +213,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
           .discard([for (final capture in failed) capture.id]);
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
-        "Couldn't discard the capture.",
+        l10n.replayMatchDiscardFailed,
         error: error,
         stackTrace: stackTrace,
         source: 'ReplayMatchCard.discard',
@@ -221,7 +222,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     }
     if (mayHaveLanded) {
       Settings.showToast(
-        message: 'Discarded. It may still appear in your library.',
+        message: l10n.replayMatchDiscarded,
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
     }
@@ -231,6 +232,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
+    final l10n = context.l10n;
     ref.listen(replayCaptureQueueProvider, (_, next) => _queueChanged(next));
     final strategy = _capture.strategy;
     final inCloud = strategy?.source == StrategySource.cloud;
@@ -284,7 +286,9 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
                 textBaseline: TextBaseline.alphabetic,
                 children: [
                   Text(
-                    round == null ? 'Warmup' : 'Round ${round.index + 1}',
+                    round == null
+                        ? l10n.replayMatchWarmup
+                        : l10n.replayRoundNumber(round.index + 1),
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -292,7 +296,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    isAttack ? 'Attack' : 'Defense',
+                    isAttack ? l10n.replayMatchAttack : l10n.replayMatchDefense,
                     style: theme.textTheme.muted,
                   ),
                   const Spacer(),
@@ -307,7 +311,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
                       height: 32,
                       onPressed: _captureMoment,
                       leading: const Icon(LucideIcons.camera, size: 16),
-                      child: const Text('Capture'),
+                      child: Text(l10n.replayMatchCapture),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -325,16 +329,16 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
                           _ToolButton(
                             icon: LucideIcons.pencil,
                             tooltip: drawing
-                                ? 'Stop drawing ($drawKey)'
-                                : 'Draw ($drawKey)',
+                                ? l10n.replayMatchStopDrawingTooltip(drawKey)
+                                : l10n.replayMatchDrawTooltip(drawKey),
                             selected: drawing,
                             onPressed: widget.drawing.toggle,
                           ),
                           _ToolButton(
                             icon: CustomIcons.eraser,
                             tooltip: erasing
-                                ? 'Stop erasing ($eraseKey)'
-                                : 'Eraser ($eraseKey)',
+                                ? l10n.replayMatchStopErasingTooltip(eraseKey)
+                                : l10n.replayMatchEraserTooltip(eraseKey),
                             selected: erasing,
                             onPressed: widget.drawing.toggleEraser,
                           ),
@@ -345,7 +349,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
                   const SizedBox(width: 8),
                   ShadTooltip(
                     builder: (context) =>
-                        const Text("See the other team's side"),
+                        Text(l10n.replayMatchSwitchSideTooltip),
                     child: ShadIconButton.outline(
                       width: 32,
                       height: 32,
@@ -363,9 +367,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
                   children: [
                     Expanded(
                       child: Text(
-                        captured == 1
-                            ? '1 page captured'
-                            : '$captured pages captured',
+                        l10n.replayMatchPagesCaptured(captured),
                         style: theme.textTheme.muted,
                       ),
                     ),
@@ -374,7 +376,9 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
                       padding: EdgeInsets.zero,
                       onPressed: _openStrategy,
                       child: Text(
-                        _awaitingPageId == null ? 'Open' : 'Sending…',
+                        _awaitingPageId == null
+                            ? l10n.replayMatchOpenStrategy
+                            : l10n.replayMatchSending,
                       ),
                     ),
                   ],
@@ -438,6 +442,7 @@ class _CloudStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
+    final l10n = context.l10n;
     final failed = [
       for (final capture in unsaved)
         if (queue.needsUser(capture)) capture,
@@ -451,15 +456,14 @@ class _CloudStatus extends StatelessWidget {
         padding: const EdgeInsets.only(top: 4),
         child: Text(
           sending == 0
-              ? 'Saved to your cloud library'
+              ? l10n.replayMatchCloudSaved
               : upgradeRequired
-                  ? 'Update Icarus to finish saving $sending'
+                  ? l10n.replayMatchCloudUpdateRequired(sending)
                   : !online
-                      ? '$sending waiting for the connection'
+                      ? l10n.replayMatchCloudWaiting(sending)
                       : unconfirmed
-                          ? "$sending sending. Couldn't confirm the last "
-                              'send, trying again.'
-                          : '$sending sending',
+                          ? l10n.replayMatchCloudUnconfirmed(sending)
+                          : l10n.replayMatchCloudSending(sending),
           style: theme.textTheme.muted.copyWith(fontSize: 12),
         ),
       );
@@ -476,16 +480,18 @@ class _CloudStatus extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            failed.length == 1
-                ? "1 capture couldn't be saved"
-                : "${failed.length} captures couldn't be saved",
+            l10n.replayMatchCapturesFailed(failed.length),
             style: TextStyle(
               fontSize: 12,
               color: theme.colorScheme.destructive,
             ),
           ),
           Text(
-            queue.stuck[failed.first.id] ?? _reason(failed.first),
+            switch (queue.stuck[failed.first.id]) {
+              ReplayCaptureStuckCause.storage => l10n.replayMatchStuckStorage,
+              ReplayCaptureStuckCause.device => l10n.replayMatchStuckDevice,
+              null => _reason(l10n, failed.first),
+            },
             style: theme.textTheme.muted.copyWith(fontSize: 12),
           ),
           Row(
@@ -495,7 +501,7 @@ class _CloudStatus extends StatelessWidget {
                   height: 24,
                   padding: EdgeInsets.zero,
                   onPressed: () => onRetry(retryable),
-                  child: const Text('Retry'),
+                  child: Text(l10n.commonRetry),
                 ),
                 const SizedBox(width: 12),
               ],
@@ -503,7 +509,7 @@ class _CloudStatus extends StatelessWidget {
                 height: 24,
                 padding: EdgeInsets.zero,
                 onPressed: () => onDiscard(failed),
-                child: const Text('Discard'),
+                child: Text(l10n.commonDiscard),
               ),
             ],
           ),
@@ -512,12 +518,15 @@ class _CloudStatus extends StatelessWidget {
     );
   }
 
-  static String _reason(ReplayCaptureRecord capture) =>
+  static String _reason(
+    AppLocalizations l10n,
+    ReplayCaptureRecord capture,
+  ) =>
       switch (capture.failure) {
-        CaptureFailureKind.deleted => 'Its strategy was deleted.',
-        CaptureFailureKind.mapChanged => 'Its strategy is on another map now.',
-        CaptureFailureKind.pageDeleted => 'Its page was deleted.',
-        _ => 'The cloud refused it.',
+        CaptureFailureKind.deleted => l10n.replayMatchFailureDeleted,
+        CaptureFailureKind.mapChanged => l10n.replayMatchFailureMapChanged,
+        CaptureFailureKind.pageDeleted => l10n.replayMatchFailurePageDeleted,
+        _ => l10n.replayMatchFailureRefused,
       };
 }
 
@@ -551,7 +560,7 @@ class _DrawingTools extends StatelessWidget {
                   height: 24,
                   padding: EdgeInsets.zero,
                   onPressed: drawing.clear,
-                  child: const Text('Clear'),
+                  child: Text(context.l10n.commonClear),
                 ),
               ),
           ],

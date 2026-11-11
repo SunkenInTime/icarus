@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:app_links/app_links.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/config/drive_build.dart';
@@ -316,6 +317,7 @@ Future<void> main(List<String> args) async {
         error: error,
         stackTrace: stackTrace,
         source: 'main.runZonedGuarded',
+        toastMessage: _crashToastWords().appErrorUnexpected,
       );
     },
   );
@@ -368,6 +370,7 @@ void _installGlobalErrorHandlers() {
       error: details.exception,
       stackTrace: details.stack,
       source: 'FlutterError.onError',
+      toastMessage: _crashToastWords().appErrorUi,
     );
   };
 
@@ -377,10 +380,19 @@ void _installGlobalErrorHandlers() {
       error: error,
       stackTrace: stackTrace,
       source: 'PlatformDispatcher.onError',
+      toastMessage: _crashToastWords().appErrorAsync,
     );
     return true;
   };
 }
+
+/// The words for a crash toast. These handlers can run before the provider
+/// container exists, so this follows the system's languages and not one
+/// picked in settings.
+AppLocalizations _crashToastWords() => lookupAppLocalizations(
+      resolveAppLocale(
+          picked: null, system: PlatformDispatcher.instance.locales),
+    );
 
 Future<void> _initializePersistedDebugLog() async {
   if (kIsWeb) return;
@@ -456,19 +468,20 @@ class _MyAppState extends ConsumerState<MyApp> {
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
     try {
       showImportResult(
+        ref.read(l10nProvider),
         await StrategyImportExportService(ref).loadFromFilePath(filePath),
         source: 'MyApp._loadFromFilePathWithWarning',
       );
     } on NewerVersionImportException catch (error, stackTrace) {
       AppErrorReporter.reportError(
-        NewerVersionImportException.userMessage,
+        NewerVersionImportException.userMessage(ref.read(l10nProvider)),
         error: error,
         stackTrace: stackTrace,
         source: 'MyApp._loadFromFilePathWithWarning',
       );
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
-        'Failed to import strategy file.',
+        ref.read(l10nProvider).appImportFailed,
         error: error,
         stackTrace: stackTrace,
         source: 'MyApp._loadFromFilePathWithWarning',
@@ -601,10 +614,17 @@ class _MyAppState extends ConsumerState<MyApp> {
       final cloudUnavailableReason =
           ref.read(cloudStartupProvider).unavailableReason;
       if (cloudUnavailableReason != null) {
+        final l10n = ref.read(l10nProvider);
         AppErrorReporter.reportWarning(
           cloudUnavailableReason,
           source: 'main.cloudStartup',
           promptUser: true,
+          toastMessage: switch (cloudUnavailableReason) {
+            cloudOutboxUnavailableReason => l10n.startupCloudOutboxUnavailable,
+            cloudClientsUnavailableReason =>
+              l10n.startupCloudClientsUnavailable,
+            _ => cloudUnavailableReason,
+          },
         );
       }
 
@@ -714,6 +734,7 @@ class _MyAppState extends ConsumerState<MyApp> {
 
     await _discordPresence.update(
       DiscordPresenceData.fromAppState(
+        l10n: ref.read(l10nProvider),
         strategy: ref.read(strategyProvider),
         map: ref.read(mapProvider),
         agentCount: ref.read(agentProvider).length,
@@ -786,6 +807,9 @@ class _MyAppState extends ConsumerState<MyApp> {
       ),
       child: ShadApp(
         navigatorKey: appNavigatorKey,
+        locale: ref.watch(appLocaleProvider),
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
         navigatorObservers: [mouseNavigationRouteObserver],
         themeMode: ThemeMode.dark,
         darkTheme: ShadThemeData(

@@ -8,7 +8,6 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
-import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -26,6 +25,7 @@ import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/role_badge.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile_sections.dart';
 import 'package:icarus/config/platform_policy.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -87,7 +87,7 @@ class StrategyTileActionsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = 'More actions for $strategyName';
+    final label = context.l10n.strategyTileMoreActions(strategyName);
     return Semantics(
       label: label,
       button: true,
@@ -161,8 +161,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   }
 
   StrategyTileViewData get _viewData => widget.strategyData != null
-      ? StrategyTileViewData.fromStrategy(widget.strategyData!)
-      : StrategyTileViewData.fromCloudEntry(widget.cloudStrategy!);
+      ? StrategyTileViewData.fromStrategy(widget.strategyData!, context.l10n)
+      : StrategyTileViewData.fromCloudEntry(
+          widget.cloudStrategy!,
+          context.l10n,
+        );
 
   @override
   void dispose() {
@@ -432,16 +435,20 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   /// at once, with the reason. Each of these needs the server.
   bool _refusedOffline() =>
       _isCloud &&
-      refuseCloudChangeWhileOffline(ref.read(cloudLibraryShowsCopyProvider));
+      refuseCloudChangeWhileOffline(
+        ref.read(l10nProvider),
+        ref.read(cloudLibraryShowsCopyProvider),
+      );
 
   List<ShadContextMenuItem> _buildMenuItems() {
+    final l10n = context.l10n;
     final pinned = ref.watch(pinnedItemsProvider);
     final id = _strategyId;
     final isPinned = pinned.containsKey(id);
     return [
       ShadContextMenuItem(
         leading: Icon(isPinned ? LucideIcons.pinOff : LucideIcons.pin),
-        child: Text(isPinned ? 'Unpin' : 'Pin'),
+        child: Text(isPinned ? l10n.strategyTileUnpin : l10n.strategyTilePin),
         onPressed: () {
           _closeMenus();
           ref.read(pinnedItemsProvider.notifier).togglePin(id);
@@ -457,7 +464,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                 _showRenameDialog();
               }
             : null,
-        child: const Text('Rename'),
+        child: Text(l10n.commonRename),
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.copy),
@@ -469,13 +476,13 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                 _duplicateStrategy();
               }
             : null,
-        child: const Text('Duplicate'),
+        child: Text(l10n.strategyTileDuplicate),
       ),
       // Signed in, a strategy on this device can join the cloud library.
       if (widget.showDeviceBadge)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.cloudUpload),
-          child: const Text('Move to cloud'),
+          child: Text(l10n.strategyTileMoveToCloud),
           onPressed: () {
             _closeMenus();
             ref.read(moveToCloudProvider.notifier).moveStrategy(_strategyId);
@@ -483,7 +490,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.upload),
-        child: const Text('Export'),
+        child: Text(l10n.commonExport),
         onPressed: () {
           _closeMenus();
           if (_refusedOffline()) return;
@@ -493,7 +500,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       if (_canShare)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.link2),
-          child: const Text('Share'),
+          child: Text(l10n.commonShare),
           onPressed: () {
             _closeMenus();
             if (_refusedOffline()) return;
@@ -504,7 +511,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         ShadContextMenuItem(
           key: const ValueKey('strategy-tile-leave'),
           leading: const Icon(LucideIcons.logOut),
-          child: const Text('Leave'),
+          child: Text(l10n.commonLeave),
           onPressed: () {
             _closeMenus();
             if (_refusedOffline()) return;
@@ -528,7 +535,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                 _showDeleteDialog();
               }
             : null,
-        child: Text('Delete',
+        child: Text(l10n.commonDelete,
             style: TextStyle(color: Settings.tacticalVioletTheme.destructive)),
       ),
     ];
@@ -548,7 +555,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         ref.read(cloudOfflineProvider) &&
         !ref.read(strategyKeptOfflineProvider(_strategyId))) {
       Settings.showToast(
-        message: strategyNeedsConnectionMessage,
+        message: context.l10n.syncStatusStrategyNeedsConnection,
         // Not an error: the neutral surface, as for other offline refusals.
         backgroundColor: Settings.tacticalVioletTheme.secondary,
       );

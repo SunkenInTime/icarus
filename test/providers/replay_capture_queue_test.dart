@@ -292,7 +292,7 @@ void main() {
 
     final waiting = queued().captures.single;
     expect(queued().needsUser(waiting), isTrue);
-    expect(queued().stuck[waiting.id], contains('this device'));
+    expect(queued().stuck[waiting.id], ReplayCaptureStuckCause.storage);
     expect(queued().isReliable, isFalse);
 
     // Another strategy's capture still goes.

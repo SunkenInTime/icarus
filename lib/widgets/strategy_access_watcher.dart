@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
@@ -47,7 +48,7 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
       return;
     }
     Settings.showToast(
-      message: 'Your access to this strategy changed to view only.',
+      message: context.l10n.strategyAccessChangedToViewOnly,
       backgroundColor: Settings.tacticalVioletTheme.primary,
     );
   }
@@ -89,16 +90,17 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
   /// Discards [accountId]'s unsent work for [strategyId] once the server
   /// has refused it again, and says what happened otherwise.
   Future<void> _discard(String strategyId, String accountId) async {
+    final l10n = context.l10n;
     void tell(String message) => Settings.showToast(
           message: message,
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
     switch (await _recheck(strategyId, accountId)) {
       case _Recheck.openAgain:
-        tell('You can open this strategy again, so nothing was discarded.');
+        tell(l10n.strategyAccessCanOpenAgain);
         return;
       case _Recheck.unsure:
-        tell("Couldn't confirm you lost access, so nothing was discarded.");
+        tell(l10n.strategyAccessCouldNotConfirm);
         return;
       case _Recheck.refused:
         break;
@@ -113,17 +115,9 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
             .read(cloudMediaUploadQueueProvider.notifier)
             .discardUnreferencedJobs(strategyId, accountId: accountId);
     if (!uploadsGone) {
-      tell("Couldn't discard everything. Try again from the library.");
+      tell(l10n.strategyAccessDiscardFailed);
     }
   }
-
-  static String _unsentNote(int unsent) => switch (unsent) {
-        0 => '',
-        1 => " 1 change you made here hasn't reached the cloud and can't be "
-            'saved.',
-        _ => " $unsent changes you made here haven't reached the cloud and "
-            "can't be saved.",
-      };
 
   Future<void> _showAccessLost() async {
     if (_showingAccessLost) return;
@@ -135,30 +129,31 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
         lost is StrategyAccessLost ? lost.strategyPublicId : open.strategyId;
     final name =
         open.strategyId == strategyId ? open.strategyName?.trim() : null;
-    final strategy = name == null || name.isEmpty ? 'this strategy' : '"$name"';
     final accountId = ref.read(strategyOpQueueProvider).accountId;
     final unsent = _unsentChanges(strategyId);
+    final l10n = context.l10n;
     bool? discard;
     try {
       discard = await showShadDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (context) => ShadDialog.alert(
-          title: const Text('You no longer have access'),
+          title: Text(l10n.strategyAccessLostTitle),
           description: Text(
-            'The owner removed you from $strategy, or stopped sharing it.'
-            '${_unsentNote(unsent)}',
+            name == null || name.isEmpty
+                ? l10n.strategyAccessLostBodyUnnamed(unsent)
+                : l10n.strategyAccessLostBodyNamed(name, unsent),
           ),
           actions: [
             if (unsent > 0)
               ShadButton.destructive(
                 key: const ValueKey('access-lost-discard'),
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Discard'),
+                child: Text(l10n.commonDiscard),
               ),
             ShadButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Back to library'),
+              child: Text(l10n.strategyAccessBackToLibrary),
             ),
           ],
         ),
@@ -174,7 +169,7 @@ class _StrategyAccessWatcherState extends ConsumerState<StrategyAccessWatcher> {
         await _discard(strategyId, accountId);
       } catch (_) {
         Settings.showToast(
-          message: "Couldn't discard everything. Try again from the library.",
+          message: l10n.strategyAccessDiscardFailed,
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
       }

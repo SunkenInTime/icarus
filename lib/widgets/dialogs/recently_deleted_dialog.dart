@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -94,20 +95,20 @@ class _RecentlyDeletedDialogState extends ConsumerState<RecentlyDeletedDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return ShadDialog(
-      title: const Text('Recently deleted'),
-      description: const Text(
-        'Deleted pages stay here for $pageTrashRetentionDays days, then they '
-        'are gone for good.',
+      title: Text(l10n.recentlyDeletedTitle),
+      description: Text(
+        l10n.recentlyDeletedDescription(pageTrashRetentionDays),
       ),
       child: SizedBox(
         width: 440,
-        child: _body(ShadTheme.of(context)),
+        child: _body(ShadTheme.of(context), l10n),
       ),
     );
   }
 
-  Widget _body(ShadThemeData theme) {
+  Widget _body(ShadThemeData theme, AppLocalizations l10n) {
     final muted = theme.textTheme.small.copyWith(
       color: theme.colorScheme.mutedForeground,
       fontWeight: FontWeight.w400,
@@ -119,8 +120,7 @@ class _RecentlyDeletedDialogState extends ConsumerState<RecentlyDeletedDialog> {
           children: [
             Expanded(
               child: Text(
-                'Could not load deleted pages. Check your connection and '
-                'try again.',
+                l10n.recentlyDeletedLoadFailed,
                 style: muted,
               ),
             ),
@@ -128,7 +128,7 @@ class _RecentlyDeletedDialogState extends ConsumerState<RecentlyDeletedDialog> {
             ShadButton.secondary(
               size: ShadButtonSize.sm,
               onPressed: _load,
-              child: const Text('Try again'),
+              child: Text(l10n.commonTryAgain),
             ),
           ],
         ),
@@ -138,7 +138,7 @@ class _RecentlyDeletedDialogState extends ConsumerState<RecentlyDeletedDialog> {
     if (pages == null) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Text('Loading…', style: muted),
+        child: Text(l10n.recentlyDeletedLoading, style: muted),
       );
     }
     if (pages.isEmpty) {
@@ -154,7 +154,7 @@ class _RecentlyDeletedDialogState extends ConsumerState<RecentlyDeletedDialog> {
                 color: theme.colorScheme.mutedForeground,
               ),
               const SizedBox(height: 8),
-              Text('No deleted pages.', style: muted),
+              Text(l10n.recentlyDeletedEmpty, style: muted),
             ],
           ),
         ),
@@ -195,13 +195,13 @@ class _TrashedPageRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     final now = clock.now();
+    final l10n = context.l10n;
     // Past its time here too, as when the server says so.
     final gone = state == _RowState.gone || !page.restorableUntil.isAfter(now);
     final error = gone
-        ? 'It can no longer be restored.'
+        ? l10n.recentlyDeletedGone
         : state == _RowState.failed
-            ? 'Could not confirm the restore. Check your connection and try '
-                'again.'
+            ? l10n.recentlyDeletedRestoreFailed
             : null;
     // Type roles from DESIGN.md: title for the name, label for the rest.
     final label = theme.textTheme.small.copyWith(
@@ -233,9 +233,11 @@ class _TrashedPageRow extends StatelessWidget {
                 ),
                 Text(
                   gone
-                      ? deletedLabel(page, now)
-                      : '${deletedLabel(page, now)} · '
-                          '${timeLeftLabel(page, now)}',
+                      ? deletedLabel(l10n, page, now)
+                      : l10n.recentlyDeletedRowDetail(
+                          deletedLabel(l10n, page, now),
+                          timeLeftLabel(l10n, page, now),
+                        ),
                   style: label.copyWith(
                     color: theme.colorScheme.mutedForeground,
                   ),
@@ -258,7 +260,9 @@ class _TrashedPageRow extends StatelessWidget {
               size: ShadButtonSize.sm,
               onPressed: state == _RowState.restoring ? null : onRestore,
               child: Text(
-                state == _RowState.restoring ? 'Restoring…' : 'Restore',
+                state == _RowState.restoring
+                    ? l10n.recentlyDeletedRestoring
+                    : l10n.recentlyDeletedRestore,
               ),
             ),
           ],
@@ -271,24 +275,27 @@ class _TrashedPageRow extends StatelessWidget {
 /// "Deleted by Sam, 2 days ago", "Deleted by you, 5 minutes ago", or
 /// "Deleted 2 days ago" when who deleted it is not known.
 @visibleForTesting
-String deletedLabel(TrashedPage page, DateTime now) {
-  final by = page.deletedByYou ? 'you' : page.deletedByName;
-  final when = _ago(now.difference(page.deletedAt));
-  return by == null ? 'Deleted $when' : 'Deleted by $by, $when';
+String deletedLabel(AppLocalizations l10n, TrashedPage page, DateTime now) {
+  final when = _ago(l10n, now.difference(page.deletedAt));
+  if (page.deletedByYou) return l10n.recentlyDeletedByYou(when);
+  final by = page.deletedByName;
+  return by == null
+      ? l10n.recentlyDeletedWhen(when)
+      : l10n.recentlyDeletedBy(by, when);
 }
 
 /// "28 days left", "1 day left", "Less than a day left".
 @visibleForTesting
-String timeLeftLabel(TrashedPage page, DateTime now) {
+String timeLeftLabel(AppLocalizations l10n, TrashedPage page, DateTime now) {
   final days = page.restorableUntil.difference(now).inDays;
-  if (days < 1) return 'Less than a day left';
-  return days == 1 ? '1 day left' : '$days days left';
+  if (days < 1) return l10n.recentlyDeletedLessThanADayLeft;
+  return l10n.recentlyDeletedDaysLeft(days);
 }
 
-String _ago(Duration elapsed) {
-  String count(int n, String unit) => n == 1 ? '1 $unit' : '$n ${unit}s';
-  if (elapsed.inMinutes < 1) return 'just now';
-  if (elapsed.inHours < 1) return '${count(elapsed.inMinutes, 'minute')} ago';
-  if (elapsed.inDays < 1) return '${count(elapsed.inHours, 'hour')} ago';
-  return '${count(elapsed.inDays, 'day')} ago';
+String _ago(AppLocalizations l10n, Duration elapsed) {
+  if (elapsed.inMinutes < 1) return l10n.recentlyDeletedJustNow;
+  if (elapsed.inHours < 1)
+    return l10n.recentlyDeletedMinutesAgo(elapsed.inMinutes);
+  if (elapsed.inDays < 1) return l10n.recentlyDeletedHoursAgo(elapsed.inHours);
+  return l10n.recentlyDeletedDaysAgo(elapsed.inDays);
 }

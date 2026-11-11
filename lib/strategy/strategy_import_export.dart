@@ -21,6 +21,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -72,26 +73,21 @@ final cloudStrategyExporterProvider = Provider<CloudStrategyExporter>(
 /// An export that holds cloud work stopped before writing anything: a
 /// backup missing part of the library must never look complete.
 class LibraryExportIncomplete implements Exception {
-  const LibraryExportIncomplete.cloudUnreadable({this.cause})
-      : userMessage = "Couldn't read your cloud library, so nothing was "
-            'exported. Check your connection and try again.';
+  LibraryExportIncomplete.cloudUnreadable(AppLocalizations l10n, {this.cause})
+      : userMessage = l10n.importExportCloudUnreadable;
 
-  const LibraryExportIncomplete.cloudNotSynced()
-      : userMessage = "Some of your cloud changes haven't synced yet, so "
-            'nothing was exported. Let them sync, or review them in your '
-            'library, then try again.',
+  LibraryExportIncomplete.cloudNotSynced(AppLocalizations l10n)
+      : userMessage = l10n.importExportCloudNotSynced,
         cause = null;
 
   /// Saved cloud work on this device could not be read, so no strategy can
   /// be shown to have none waiting.
-  const LibraryExportIncomplete.cloudWorkUnreadable()
-      : userMessage = "Icarus can't read some cloud changes saved on this "
-            'device, so nothing was exported. Review them, then try again.',
+  LibraryExportIncomplete.cloudWorkUnreadable(AppLocalizations l10n)
+      : userMessage = l10n.importExportCloudWorkUnreadable,
         cause = null;
 
-  const LibraryExportIncomplete.cloudChanged({this.cause})
-      : userMessage = 'Your cloud library changed while exporting, so '
-            'nothing was exported. Try again.';
+  LibraryExportIncomplete.cloudChanged(AppLocalizations l10n, {this.cause})
+      : userMessage = l10n.importExportCloudChanged;
 
   final String userMessage;
   final Object? cause;
@@ -109,9 +105,8 @@ class NewerVersionImportException implements Exception {
   final int importedVersion;
   final int currentVersion;
 
-  static const String userMessage =
-      'This file was created in a newer version of Icarus. '
-      'Please update the app and try again.';
+  static String userMessage(AppLocalizations l10n) =>
+      l10n.importExportNewerVersion;
 
   @override
   String toString() {
@@ -2300,6 +2295,7 @@ class StrategyImportExportService {
       // The staging directory holds one directory, named for the folder.
       final folderDirectory = stagingDirectory.listSync().single;
       final outputFile = await chooseExportPath(
+        ref.read(l10nProvider),
         '${path.basename(folderDirectory.path)}.zip',
       );
 
@@ -2324,6 +2320,7 @@ class StrategyImportExportService {
 
     try {
       final outputFile = await chooseExportPath(
+        ref.read(l10nProvider),
         buildLibraryBackupFileName(DateTime.now()),
       );
 
@@ -2559,7 +2556,7 @@ class StrategyImportExportService {
     for (final id in folderIds) {
       final folder = tree[id];
       if (folder == null || folder.parentID != inventory.folders[id]) {
-        throw const LibraryExportIncomplete.cloudChanged();
+        throw LibraryExportIncomplete.cloudChanged(ref.read(l10nProvider));
       }
       folders.add(folder);
     }
@@ -2599,7 +2596,10 @@ class StrategyImportExportService {
           );
         } catch (error, stackTrace) {
           Error.throwWithStackTrace(
-            LibraryExportIncomplete.cloudUnreadable(cause: error),
+            LibraryExportIncomplete.cloudUnreadable(
+              ref.read(l10nProvider),
+              cause: error,
+            ),
             stackTrace,
           );
         }
@@ -2631,7 +2631,7 @@ class StrategyImportExportService {
     if (!auth.isConvexUserReady ||
         auth.hasActiveAuthIncident ||
         !ref.read(convexConnectionSnapshotProvider)) {
-      throw const LibraryExportIncomplete.cloudUnreadable();
+      throw LibraryExportIncomplete.cloudUnreadable(ref.read(l10nProvider));
     }
     await _waitUntilCloudWorkSent();
     return ref.read(convexStrategyRepositoryProvider);
@@ -2646,8 +2646,14 @@ class StrategyImportExportService {
     } catch (error, stackTrace) {
       Error.throwWithStackTrace(
         isTypedConvexNotFoundError(error)
-            ? LibraryExportIncomplete.cloudChanged(cause: error)
-            : LibraryExportIncomplete.cloudUnreadable(cause: error),
+            ? LibraryExportIncomplete.cloudChanged(
+                ref.read(l10nProvider),
+                cause: error,
+              )
+            : LibraryExportIncomplete.cloudUnreadable(
+                ref.read(l10nProvider),
+                cause: error,
+              ),
         stackTrace,
       );
     }
@@ -2664,8 +2670,8 @@ class StrategyImportExportService {
       _cloudAccountCheck = await sendCloudWork(ref.read);
     } on CloudWorkNotSent catch (error) {
       throw error.unreadable
-          ? const LibraryExportIncomplete.cloudWorkUnreadable()
-          : const LibraryExportIncomplete.cloudNotSynced();
+          ? LibraryExportIncomplete.cloudWorkUnreadable(ref.read(l10nProvider))
+          : LibraryExportIncomplete.cloudNotSynced(ref.read(l10nProvider));
     }
   }
 
@@ -2674,7 +2680,7 @@ class StrategyImportExportService {
     try {
       _cloudAccountCheck?.call();
     } on CloudWorkNotSent {
-      throw const LibraryExportIncomplete.cloudChanged();
+      throw LibraryExportIncomplete.cloudChanged(ref.read(l10nProvider));
     }
   }
 
@@ -2960,6 +2966,7 @@ class StrategyImportExportService {
     await _ensureRemoteAssetsCached(snapshot);
     final strategy = strategyDataFromRemoteSnapshot(snapshot);
     final outputFile = await chooseExportPath(
+      ref.read(l10nProvider),
       '${sanitizeStrategyFileName(strategy.name)}.ica',
     );
     if (outputFile == null) return false;
@@ -2970,8 +2977,10 @@ class StrategyImportExportService {
   Future<void> exportFile(String id) async {
     await ref.read(strategyProvider.notifier).forceSaveNow(id);
 
+    final AppLocalizations l10n = ref.read(l10nProvider);
     final outputFile = await chooseExportPath(
-      '${sanitizeStrategyFileName(ref.read(strategyProvider).strategyName ?? "new strategy")}.ica',
+      l10n,
+      '${sanitizeStrategyFileName(ref.read(strategyProvider).strategyName ?? l10n.importExportDefaultStrategyFileName)}.ica',
     );
 
     if (outputFile == null) return;

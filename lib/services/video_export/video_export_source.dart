@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/l10n/page_names.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/sort_index_order.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -25,15 +27,19 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 /// A page the export dialog offers.
 typedef VideoExportPageChoice = ({String id, String name});
 
-/// The open strategy's pages in order, from wherever the strategy lives.
+/// The open strategy's pages in order, from wherever the strategy lives,
+/// named as the pages bar names them.
 List<VideoExportPageChoice> videoExportPageChoices(WidgetRef ref) {
   final strategy = ref.read(strategyProvider);
+  final l10n = ref.read(l10nProvider);
+  String shown(String name, bool? isAutoNamed) =>
+      shownPageName(l10n, name: name, isAutoNamed: isAutoNamed == true);
   return switch (strategy.source) {
     StrategySource.cloud => [
         for (final page in [
           ...?ref.read(remoteEditorSnapshotProvider).valueOrNull?.pages,
         ]..sortBySortIndex((page) => page.sortIndex))
-          (id: page.publicId, name: page.name),
+          (id: page.publicId, name: shown(page.name, page.isAutoNamed)),
       ],
     StrategySource.local => [
         for (final page in [
@@ -41,7 +47,7 @@ List<VideoExportPageChoice> videoExportPageChoices(WidgetRef ref) {
               .get(strategy.strategyId)
               ?.pages,
         ]..sortBySortIndex((page) => page.sortIndex))
-          (id: page.id, name: page.name),
+          (id: page.id, name: shown(page.name, page.isAutoNamed)),
       ],
     null => const [],
   };
@@ -52,9 +58,7 @@ List<VideoExportPageChoice> videoExportPageChoices(WidgetRef ref) {
 class VideoExportNotSynced implements Exception {
   const VideoExportNotSynced();
 
-  String get userMessage =>
-      "Your latest changes haven't synced yet. Export once the strategy "
-      'shows as synced.';
+  String userMessage(AppLocalizations l10n) => l10n.videoExportNotSynced;
 
   @override
   String toString() => 'VideoExportNotSynced';
@@ -65,8 +69,7 @@ class VideoExportNotSynced implements Exception {
 class VideoExportPagesChanged implements Exception {
   const VideoExportPagesChanged();
 
-  String get userMessage =>
-      'A page you selected was deleted. Check the pages and export again.';
+  String userMessage(AppLocalizations l10n) => l10n.videoExportPagesChanged;
 
   @override
   String toString() => 'VideoExportPagesChanged';
@@ -177,8 +180,8 @@ Future<SavedStrategyRead> readSavedStrategy(
       }
       checkCancelled();
       return (
-        strategy:
-            StrategyImportExportService.strategyDataFromRemoteSnapshot(snapshot),
+        strategy: StrategyImportExportService.strategyDataFromRemoteSnapshot(
+            snapshot),
         assets: snapshot.assetsById,
       );
     case StrategySource.local || null:

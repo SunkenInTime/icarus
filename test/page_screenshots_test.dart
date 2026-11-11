@@ -20,6 +20,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -935,7 +936,7 @@ void main() {
     return container;
   }
 
-  final refusal = captionsDontFitMessage(null);
+  final refusal = captionsDontFitMessage(_english, null);
   bool saveEnabled(WidgetTester tester) => tester
       .widget<ShadButton>(find.ancestor(
         of: find.text('Save screenshot').last,
@@ -1341,3 +1342,5 @@ void main() {
     expect(archive.files.last.content, [2]);
   });
 }
+
+final _english = lookupAppLocalizations(const Locale('en'));

@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' show Locale;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/video_export/quicktime_animation_sink.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 
@@ -84,7 +86,7 @@ void main() {
       (busy, 3),
       (base, 1),
     ];
-    final sink = QuickTimeAnimationSink(fps: _fps);
+    final sink = QuickTimeAnimationSink(fps: _fps, l10n: _english);
     await sink.start(
       width: _width,
       height: _height,
@@ -166,7 +168,11 @@ void main() {
     final path = '${dir.path}${Platform.pathSeparator}strategy.mov';
     await File(path).writeAsString('the video already there');
 
-    final sink = QuickTimeAnimationSink(fps: _fps, outputPath: path);
+    final sink = QuickTimeAnimationSink(
+      fps: _fps,
+      outputPath: path,
+      l10n: _english,
+    );
     await sink.start(
       width: _width,
       height: _height,
@@ -183,3 +189,5 @@ void main() {
     expect(dir.listSync(), hasLength(1));
   });
 }
+
+final _english = lookupAppLocalizations(const Locale('en'));

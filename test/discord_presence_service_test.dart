@@ -1,5 +1,8 @@
+import 'dart:ui';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/discord_presence_service.dart';
@@ -8,6 +11,7 @@ void main() {
   group('DiscordPresenceData', () {
     test('uses a generic library presence when no strategy is open', () {
       final presence = DiscordPresenceData.fromAppState(
+        l10n: _english,
         strategy: const StrategyState(
           isSaved: true,
           stratName: null,
@@ -24,6 +28,7 @@ void main() {
 
     test('shares map and side without sharing the strategy name', () {
       final presence = DiscordPresenceData.fromAppState(
+        l10n: _english,
         strategy: const StrategyState(
           isSaved: false,
           stratName: 'Secret tournament execute',
@@ -46,6 +51,7 @@ void main() {
     test('summarizes what is on the board', () {
       DiscordPresenceData build({int agents = 0, int abilities = 0}) =>
           DiscordPresenceData.fromAppState(
+            l10n: _english,
             strategy: const StrategyState(
               isSaved: false,
               stratName: 'A-site rush',
@@ -69,3 +75,5 @@ void main() {
     });
   });
 }
+
+final _english = lookupAppLocalizations(const Locale('en'));

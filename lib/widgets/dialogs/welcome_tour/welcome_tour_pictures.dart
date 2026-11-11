@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -18,30 +19,31 @@ class WelcomeLibraryPicture extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _Stage(
+    final l10n = context.l10n;
+    return _Stage(
       child: Center(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             _MiniTile(
-              name: 'A site execute',
+              name: l10n.welcomeTourPictureASiteExecute,
               map: MapValue.ascent,
               icon: LucideIcons.monitor,
-              meta: 'On this device',
+              meta: l10n.welcomeTourPictureOnThisDevice,
             ),
-            SizedBox(width: 10),
+            const SizedBox(width: 10),
             _MiniTile(
-              name: 'B retake vs Viper',
+              name: l10n.welcomeTourPictureBRetake,
               map: MapValue.lotus,
               icon: LucideIcons.monitor,
-              meta: 'On this device',
+              meta: l10n.welcomeTourPictureOnThisDevice,
             ),
-            SizedBox(width: 10),
+            const SizedBox(width: 10),
             _MiniTile(
-              name: 'Pistol defaults',
+              name: l10n.welcomeTourPicturePistolDefaults,
               map: MapValue.haven,
               icon: LucideIcons.monitor,
-              meta: 'On this device',
+              meta: l10n.welcomeTourPictureOnThisDevice,
             ),
           ],
         ),
@@ -57,7 +59,8 @@ class WelcomeCloudPicture extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _Stage(
+    final l10n = context.l10n;
+    return _Stage(
       child: Stack(
         children: [
           Center(
@@ -68,24 +71,24 @@ class WelcomeCloudPicture extends StatelessWidget {
                 Opacity(
                   opacity: 0.45,
                   child: _MiniTile(
-                    name: 'A site execute',
+                    name: l10n.welcomeTourPictureASiteExecute,
                     map: MapValue.ascent,
                     icon: LucideIcons.cloudUpload,
-                    meta: 'Moving…',
+                    meta: l10n.welcomeTourPictureMoving,
                   ),
                 ),
-                SizedBox(width: 10),
+                const SizedBox(width: 10),
                 _MiniTile(
-                  name: 'Retake drills',
+                  name: l10n.welcomeTourPictureRetakeDrills,
                   map: MapValue.pearl,
                   icon: LucideIcons.cloud,
-                  meta: 'In your account',
+                  meta: l10n.welcomeTourPictureInYourAccount,
                 ),
               ],
             ),
           ),
-          Positioned(left: 150, top: 126, child: _MiniMenu()),
-          Positioned(
+          const Positioned(left: 150, top: 126, child: _MiniMenu()),
+          const Positioned(
             right: 26,
             top: 20,
             child: _Teammates(
@@ -132,12 +135,14 @@ class WelcomeReplayPicture extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      const Expanded(child: _TileName('Lotus')),
+                      Expanded(
+                        child: _TileName(context.l10n.mapName(MapValue.lotus)),
+                      ),
                       Text('31:11', style: muted),
                     ],
                   ),
                   const SizedBox(height: 2),
-                  Text('Tue, Oct 13', style: muted),
+                  Text(context.l10n.welcomeTourPictureReplayDate, style: muted),
                   const SizedBox(height: 6),
                   // Ten players spread across the tile, about 3px apart.
                   Row(
@@ -323,14 +328,17 @@ class _MiniMenu extends StatelessWidget {
         boxShadow: const [Settings.floatingMenuShadow],
       ),
       // As wide as its longest item, so the highlight spans the menu.
-      child: const IntrinsicWidth(
+      child: IntrinsicWidth(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _MiniMenuItem(icon: LucideIcons.link, label: 'Share'),
+            _MiniMenuItem(
+              icon: LucideIcons.link,
+              label: context.l10n.commonShare,
+            ),
             _MiniMenuItem(
               icon: LucideIcons.cloudUpload,
-              label: 'Move to cloud',
+              label: context.l10n.welcomeTourPictureMoveToCloud,
               highlighted: true,
             ),
           ],
@@ -453,7 +461,7 @@ class _CaptureButton extends StatelessWidget {
           Icon(LucideIcons.camera, size: 13, color: ink),
           const SizedBox(width: 6),
           Text(
-            'Capture',
+            context.l10n.welcomeTourPictureCapture,
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 typedef GuardedSignOutRequest = Future<bool> Function(BuildContext context);
@@ -13,18 +14,15 @@ final guardedSignOutRequestProvider = Provider<GuardedSignOutRequest>(
     await showShadDialog<void>(
       context: context,
       builder: (context) => ShadDialog.alert(
-        title: const Text("Can't sign out yet"),
-        description: const Padding(
-          padding: EdgeInsets.all(8),
-          child: Text(
-            'Icarus could not verify pending cloud work. Stay signed in and '
-            'try again.',
-          ),
+        title: Text(context.l10n.signOutGuardCantSignOutTitle),
+        description: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Text(context.l10n.signOutGuardUnverifiedDescription),
         ),
         actions: [
           ShadButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Stay Signed In'),
+            child: Text(context.l10n.signOutGuardStaySignedIn),
           ),
         ],
       ),

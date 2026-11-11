@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -129,6 +130,8 @@ Widget _app(PresenceRoomState state, Widget child) => ProviderScope(
       child: ShadApp(home: Scaffold(body: Center(child: child))),
     );
 
+final _en = lookupAppLocalizations(const Locale('en'));
+
 void main() {
   testWidgets('shows nothing when you are alone', (tester) async {
     await tester.pumpWidget(_app(
@@ -204,22 +207,23 @@ void main() {
     final cy = _peer('s4', 'cy', 'Cy', 'editor');
 
     test('names one editor', () {
-      expect(lineUpEditorsText([sam]), 'Sam is editing this lineup right now.');
-      expect(lineUpEditorsText([sam], lineups: true),
+      expect(lineUpEditorsText(_en, [sam]),
+          'Sam is editing this lineup right now.');
+      expect(lineUpEditorsText(_en, [sam], lineups: true),
           'Sam is editing these lineups right now.');
     });
 
     test('names two editors', () {
-      expect(lineUpEditorsText([sam, ana]),
+      expect(lineUpEditorsText(_en, [sam, ana]),
           'Sam and Ana are editing this lineup right now.');
-      expect(lineUpEditorsText([sam, ana], lineups: true),
+      expect(lineUpEditorsText(_en, [sam, ana], lineups: true),
           'Sam and Ana are editing these lineups right now.');
     });
 
     test('counts the rest past one editor when there are three or more', () {
-      expect(lineUpEditorsText([sam, ana, ben]),
+      expect(lineUpEditorsText(_en, [sam, ana, ben]),
           'Sam and 2 others are editing this lineup right now.');
-      expect(lineUpEditorsText([sam, ana, ben, cy], lineups: true),
+      expect(lineUpEditorsText(_en, [sam, ana, ben, cy], lineups: true),
           'Sam and 3 others are editing these lineups right now.');
     });
   });

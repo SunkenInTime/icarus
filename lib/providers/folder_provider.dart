@@ -8,6 +8,7 @@ import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
@@ -48,6 +49,7 @@ class FolderProvider extends Notifier<String?> {
 
     if (targetWorkspace == LibraryWorkspace.cloud) {
       if (refuseCloudChangeWhileOffline(
+        ref.read(l10nProvider),
         ref.read(cloudLibraryShowsCopyProvider),
       )) {
         throw StateError(cloudNeedsConnectionMessage);
@@ -76,8 +78,7 @@ class FolderProvider extends Notifier<String?> {
         // Do NOT fall through to the local write: that silently created a
         // local folder from the cloud view whenever the server call failed.
         Settings.showToast(
-          message: "Couldn't create the cloud folder. Check your connection "
-              'and try again.',
+          message: ref.read(l10nProvider).folderMsgCreateCloudFailed,
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
         rethrow;
@@ -208,7 +209,7 @@ class FolderProvider extends Notifier<String?> {
         return true;
       },
       source: 'folder:delete',
-      failureMessage: "Couldn't delete this cloud folder. Try again.",
+      failureMessage: ref.read(l10nProvider).folderMsgDeleteCloudFailed,
     );
     // Refused or offline before anything went: the library is as it was.
     if (!result.didSucceed && deletedStrategies.isEmpty) return result;
@@ -251,8 +252,7 @@ class FolderProvider extends Notifier<String?> {
     final moving = ref.read(movingToCloudProvider);
     if (folderIds.any(moving.contains) || strategyIds.any(moving.contains)) {
       return CloudLibraryActionResult.failed(
-        'Something in this folder is moving to the cloud. Delete it once '
-        'the move ends.',
+        ref.read(l10nProvider).folderMsgDeleteWhileMoving,
       );
     }
 
@@ -306,7 +306,7 @@ class FolderProvider extends Notifier<String?> {
           return true;
         },
         source: 'folder:update',
-        failureMessage: "Couldn't update this cloud folder. Try again.",
+        failureMessage: ref.read(l10nProvider).folderMsgUpdateCloudFailed,
       );
       if (!result.didSucceed) return result;
 
@@ -339,7 +339,7 @@ class FolderProvider extends Notifier<String?> {
           return true;
         },
         source: 'folder:move',
-        failureMessage: "Couldn't move this cloud folder. Try again.",
+        failureMessage: ref.read(l10nProvider).folderMsgMoveCloudFailed,
         showFailureMessage: true,
       );
       if (!result.didSucceed) return result;
@@ -365,6 +365,7 @@ class FolderProvider extends Notifier<String?> {
     bool showFailureMessage = false,
   }) async {
     if (refuseCloudChangeWhileOffline(
+      ref.read(l10nProvider),
       ref.read(cloudLibraryShowsCopyProvider),
     )) {
       return CloudLibraryActionResult.cancelled;

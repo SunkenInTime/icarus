@@ -165,6 +165,10 @@ class AppPreferences extends HiveObject {
   /// updating users are told once.
   final bool canvasSelectionHintSeen;
 
+  /// The language the user picked in settings ('en', 'ja', 'zh'), or null to
+  /// follow the computer's or browser's language.
+  final String? languageCode;
+
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
     this.autosaveEnabled = true,
@@ -193,6 +197,7 @@ class AppPreferences extends HiveObject {
     this.includeScreenshotCaptions = false,
     this.includeVideoCaptions = false,
     this.canvasSelectionHintSeen = false,
+    this.languageCode,
   })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
         customShortcutBindings =
             Map.unmodifiable(customShortcutBindings ?? const {});
@@ -225,6 +230,8 @@ class AppPreferences extends HiveObject {
     bool? includeScreenshotCaptions,
     bool? includeVideoCaptions,
     bool? canvasSelectionHintSeen,
+    // A function, so that null (follow the system) can be told from unchanged.
+    String? Function()? languageCode,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
@@ -268,6 +275,7 @@ class AppPreferences extends HiveObject {
       includeVideoCaptions: includeVideoCaptions ?? this.includeVideoCaptions,
       canvasSelectionHintSeen:
           canvasSelectionHintSeen ?? this.canvasSelectionHintSeen,
+      languageCode: languageCode == null ? this.languageCode : languageCode(),
     );
   }
 }
@@ -653,6 +661,13 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
   Future<void> setAutosaveEnabled(bool enabled) {
     return _updatePreferences(
       (current) => current.copyWith(autosaveEnabled: enabled),
+    );
+  }
+
+  /// [code] is a supported language, or null to follow the system.
+  Future<void> setLanguageCode(String? code) {
+    return _updatePreferences(
+      (current) => current.copyWith(languageCode: () => code),
     );
   }
 

@@ -2,6 +2,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/widgets/replay/open_replays.dart';
@@ -9,7 +10,10 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Says what came in and what didn't. Updating is the one thing a user can do
 /// about files from a newer Icarus, so the summary always asks for it.
-String buildImportSummaryMessage(ImportBatchResult result) {
+String buildImportSummaryMessage(
+  AppLocalizations l10n,
+  ImportBatchResult result,
+) {
   final newerCount = result.issues
       .where((issue) => issue.code == ImportIssueCode.newerVersion)
       .length;
@@ -17,81 +21,77 @@ String buildImportSummaryMessage(ImportBatchResult result) {
       newerCount > 0 &&
       newerCount == result.issues.length) {
     return newerCount == 1
-        ? NewerVersionImportException.userMessage
-        : 'These files were created in a newer version of Icarus. '
-            'Please update the app and try again.';
+        ? NewerVersionImportException.userMessage(l10n)
+        : l10n.icaDropAllNewerVersion;
   }
 
-  final summary = _countedImportSummary(result);
+  final summary = _countedImportSummary(l10n, result);
   if (newerCount == 0) return summary;
-  final wasLabel = newerCount == 1 ? 'was' : 'were';
-  return '$summary $newerCount $wasLabel created in a newer version of Icarus. '
-      'Please update the app and try again.';
+  return '$summary${l10n.commonSentenceSpace}'
+      '${l10n.icaDropSomeNewerVersion(newerCount)}';
 }
 
-String _countedImportSummary(ImportBatchResult result) {
+String _countedImportSummary(AppLocalizations l10n, ImportBatchResult result) {
   final skippedCount = result.issues.length;
-  final skippedLabel = skippedCount == 1 ? 'file' : 'files';
+  final space = l10n.commonSentenceSpace;
   final extraSegments = <String>[];
 
   if (result.themeProfilesImported > 0) {
-    final profilesLabel =
-        result.themeProfilesImported == 1 ? 'theme profile' : 'theme profiles';
     extraSegments.add(
-      'Imported ${result.themeProfilesImported} $profilesLabel.',
+      l10n.icaDropImportedThemeProfiles(result.themeProfilesImported),
     );
   }
   if (result.globalStateRestored) {
-    extraSegments.add('Restored library settings.');
+    extraSegments.add(l10n.icaDropRestoredLibrarySettings);
   }
 
   if (!result.hasImports) {
-    const baseMessage = 'No compatible strategies or folders were imported.';
+    final baseMessage = l10n.icaDropNothingImported;
     if (skippedCount == 0) {
       return baseMessage;
     }
-    return '$baseMessage Skipped $skippedCount $skippedLabel.';
+    return '$baseMessage$space${l10n.icaDropSkippedFiles(skippedCount)}';
   }
 
   String message;
   if (result.strategiesImported == 0 &&
       result.foldersCreated == 0 &&
       extraSegments.isNotEmpty) {
-    message = extraSegments.join(' ');
+    message = extraSegments.join(space);
     extraSegments.clear();
   } else if (result.strategiesImported > 0 && result.foldersCreated > 0) {
-    final strategiesLabel =
-        result.strategiesImported == 1 ? 'strategy' : 'strategies';
-    final foldersLabel = result.foldersCreated == 1 ? 'folder' : 'folders';
-    message = 'Imported ${result.strategiesImported} $strategiesLabel into '
-        '${result.foldersCreated} $foldersLabel.';
+    message = l10n.icaDropImportedStrategiesIntoFolders(
+      result.strategiesImported,
+      result.foldersCreated,
+    );
   } else if (result.strategiesImported > 0) {
-    final strategiesLabel =
-        result.strategiesImported == 1 ? 'strategy' : 'strategies';
-    message = 'Imported ${result.strategiesImported} $strategiesLabel.';
+    message = l10n.icaDropImportedStrategies(result.strategiesImported);
   } else {
-    final foldersLabel = result.foldersCreated == 1 ? 'folder' : 'folders';
-    message = 'Imported ${result.foldersCreated} $foldersLabel.';
+    message = l10n.icaDropImportedFolders(result.foldersCreated);
   }
 
   if (skippedCount == 0) {
     if (extraSegments.isEmpty) {
       return message;
     }
-    return '$message ${extraSegments.join(' ')}';
+    return '$message$space${extraSegments.join(space)}';
   }
 
   final extraSuffix =
-      extraSegments.isEmpty ? '' : ' ${extraSegments.join(' ')}';
-  return '$message$extraSuffix Skipped $skippedCount $skippedLabel.';
+      extraSegments.isEmpty ? '' : '$space${extraSegments.join(space)}';
+  return '$message$extraSuffix$space${l10n.icaDropSkippedFiles(skippedCount)}';
 }
 
 /// Tells the user how an import went: what came in, what was skipped, or that
 /// nothing did.
-void showImportResult(ImportBatchResult result, {required String source}) {
+void showImportResult(
+  AppLocalizations l10n,
+  ImportBatchResult result, {
+  required String source,
+}) {
   if (!result.hasImports && result.issues.isEmpty) return;
 
-  final message = buildImportSummaryMessage(result);
+  final message = buildImportSummaryMessage(l10n, result);
   if (!result.hasImports) {
     AppErrorReporter.reportError(message, source: source);
     return;
@@ -147,14 +147,15 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
         // A replay in the same drop switches to the Replays tab, which
         // disposes this widget mid-import; the app's container outlives it.
         final container = ProviderScope.containerOf(context, listen: false);
+        final l10n = container.read(l10nProvider);
         try {
           final result = await StrategyImportExportService(container)
               .loadFromFileDrop(files);
 
-          showImportResult(result, source: 'IcaDropTarget.onDragDone');
+          showImportResult(l10n, result, source: 'IcaDropTarget.onDragDone');
         } catch (error, stackTrace) {
           AppErrorReporter.reportError(
-            'Failed to import dropped items.',
+            l10n.icaDropImportFailed,
             error: error,
             stackTrace: stackTrace,
             source: 'IcaDropTarget.onDragDone',
@@ -171,19 +172,19 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
               ),
             ),
           if (isDragging)
-            const Positioned.fill(
+            Positioned.fill(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(LucideIcons.download, size: 60),
-                    SizedBox(
+                    const Icon(LucideIcons.download, size: 60),
+                    const SizedBox(
                       height: 10,
                     ),
                     Text(
-                      "Import strategies, folders, backups, or replays",
-                      style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      context.l10n.icaDropOverlayLabel,
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold),
                     )
                   ],
                 ),

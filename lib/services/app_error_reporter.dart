@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart'
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/widgets/dialogs/in_app_debug_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -109,6 +110,7 @@ class AppErrorReporter {
     Object? error,
     StackTrace? stackTrace,
     bool promptUser = false,
+    String? toastMessage,
   }) {
     final entry = addDebugLog(
       message,
@@ -119,7 +121,7 @@ class AppErrorReporter {
     );
 
     if (promptUser) {
-      _showInteractiveNotificationIfNeeded(entry);
+      _showInteractiveNotificationIfNeeded(entry, toastMessage);
     }
   }
 
@@ -129,6 +131,7 @@ class AppErrorReporter {
     StackTrace? stackTrace,
     String? source,
     bool promptUser = true,
+    String? toastMessage,
   }) {
     final entry = addDebugLog(
       message,
@@ -139,7 +142,7 @@ class AppErrorReporter {
     );
 
     if (promptUser) {
-      _showInteractiveNotificationIfNeeded(entry);
+      _showInteractiveNotificationIfNeeded(entry, toastMessage);
     }
   }
 
@@ -290,7 +293,11 @@ class AppErrorReporter {
       appNavigatorKey.currentContext != null ||
       appNavigatorKey.currentState?.overlay?.context != null;
 
-  static void _showInteractiveNotificationIfNeeded(DebugLogEntry entry) {
+  /// Shows [toastMessage] when given, else the logged message.
+  static void _showInteractiveNotificationIfNeeded(
+    DebugLogEntry entry, [
+    String? toastMessage,
+  ]) {
     if (!_canShowInteractiveUi) return;
 
     final now = DateTime.now();
@@ -308,9 +315,12 @@ class AppErrorReporter {
         (existingState ?? _InteractiveNotificationState())..lastSeenAt = now;
 
     Settings.showToast(
-      message: entry.message,
+      message: toastMessage ?? entry.message,
       backgroundColor: Settings.tacticalVioletTheme.destructive,
-      actionLabel: 'Open Logs',
+      actionLabel: (appNavigatorKey.currentContext ??
+              appNavigatorKey.currentState!.overlay!.context)
+          .l10n
+          .serviceMsgOpenLogs,
       onActionPressed: () {
         unawaited(openDebugLog());
       },

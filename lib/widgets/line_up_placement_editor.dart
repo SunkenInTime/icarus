@@ -6,6 +6,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -18,18 +19,26 @@ import 'package:icarus/widgets/editor_operation_scope.dart';
 
 /// The one thing to do next while editing placement. Empty once something
 /// has moved: the pill would cover what is being dragged, and Save is lit.
-String lineUpEditStatus(LineUpState state) {
+String lineUpEditStatus(AppLocalizations l10n, LineUpState state) {
   final edit = state.edit;
   if (edit == null || state.editMovesAnything) return '';
   final agentType = edit.originIds
       .map((id) => state.originById(id)?.agent.type)
       .nonNulls
       .firstOrNull;
-  final agentName = AgentData.agents[agentType]?.name ?? 'the agent';
+  final agentName = switch (AgentData.agents[agentType]?.name) {
+    final name? => l10n.gameName(name),
+    null => null,
+  };
   final count = edit.linkIds.length;
-  if (count == 1) return 'Drag $agentName or the ability to its new spot';
-  return 'Drag $agentName or an ability. These $count lineups share a spot, '
-      'so they move together';
+  if (count == 1) {
+    return agentName == null
+        ? l10n.lineupEditStatusOneUnknownAgent
+        : l10n.lineupEditStatusOne(agentName);
+  }
+  return agentName == null
+      ? l10n.lineupEditStatusSharedSpotUnknownAgent(count)
+      : l10n.lineupEditStatusSharedSpot(agentName, count);
 }
 
 /// Placement editing: the lineups being moved, drawn over the dimmed page at
@@ -262,7 +271,8 @@ class _LineUpPlacementEditorState extends ConsumerState<LineUpPlacementEditor> {
               ),
             ),
           ),
-        if (lineUpEditStatus(state) case final status when status.isNotEmpty)
+        if (lineUpEditStatus(context.l10n, state) case final status
+            when status.isNotEmpty)
           LineUpStatusPill(
             key: const ValueKey('lineup-edit-status'),
             text: status,

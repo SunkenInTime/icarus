@@ -1,5 +1,8 @@
+import 'dart:ui';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 
@@ -19,10 +22,13 @@ class CloudLibraryActionResult {
   static const cancelled = CloudLibraryActionResult._(
     CloudLibraryActionStatus.cancelled,
   );
-  static const authenticationRequired = CloudLibraryActionResult._(
-    CloudLibraryActionStatus.authenticationRequired,
-    userMessage: 'Reconnect to Icarus Cloud, then try again.',
-  );
+  factory CloudLibraryActionResult.authenticationRequired(
+    AppLocalizations l10n,
+  ) =>
+      CloudLibraryActionResult._(
+        CloudLibraryActionStatus.authenticationRequired,
+        userMessage: l10n.cloudActionReconnect,
+      );
 
   factory CloudLibraryActionResult.failed(String userMessage) =>
       CloudLibraryActionResult._(
@@ -38,14 +44,19 @@ class CloudLibraryActionResult {
 }
 
 final cloudLibraryActionReporterProvider = Provider<CloudLibraryActionReporter>(
-  (_) => const CloudLibraryActionReporter(),
+  (ref) => CloudLibraryActionReporter(l10n: ref.watch(l10nProvider)),
 );
 
 class CloudLibraryActionReporter {
   const CloudLibraryActionReporter({
+    this.l10n,
     this.showMessage = _showDefaultMessage,
     this.reportTechnicalFailure = _reportDefaultTechnicalFailure,
   });
+
+  /// The words for [CloudLibraryActionResult.authenticationRequired];
+  /// English when none are given.
+  final AppLocalizations? l10n;
 
   final void Function(String message) showMessage;
   final void Function({
@@ -70,7 +81,9 @@ class CloudLibraryActionReporter {
     } catch (error, stackTrace) {
       if (isConvexUnauthenticatedError(error)) {
         await reportAuthenticationFailure(error, stackTrace);
-        return CloudLibraryActionResult.authenticationRequired;
+        return CloudLibraryActionResult.authenticationRequired(
+          l10n ?? lookupAppLocalizations(const Locale('en')),
+        );
       }
 
       reportTechnicalFailure(

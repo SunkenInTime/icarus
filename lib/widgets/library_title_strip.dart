@@ -5,6 +5,7 @@ import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
@@ -35,6 +36,21 @@ const double _tabRadius = 6;
 const double _sortMenuWidth = 168;
 const double _newMenuWidth = 140;
 const double _accountMenuWidth = 200;
+
+/// A menu at least [minWidth] wide, wider when its longest label needs it:
+/// the same words run longer in some languages.
+class _MenuBox extends StatelessWidget {
+  const _MenuBox({required this.minWidth, required this.child});
+
+  final double minWidth;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ConstrainedBox(
+        constraints: BoxConstraints(minWidth: minWidth, maxWidth: 360),
+        child: IntrinsicWidth(child: child),
+      );
+}
 const double _menuItemHorizontalPadding = 8;
 const double _menuIconWidth = 18;
 const double _menuItemGap = 8;
@@ -99,6 +115,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
     // so there is nothing to search, sort, or create.
     final signInRequired = ref.watch(librarySignInRequiredProvider);
     final navigation = ref.read(libraryNavigationProvider);
+    final l10n = context.l10n;
 
     return AppWindowStrip(
       child: Row(
@@ -108,8 +125,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           _TabButton(
             key: const ValueKey('library-tab-library'),
             icon: LucideIcons.folder,
-            label: 'My Library',
-            semanticsLabel: 'My Library',
+            label: l10n.libraryTabMyLibrary,
+            semanticsLabel: l10n.libraryTabMyLibrary,
             selected: tab == LibraryTab.library,
             onTap: navigation.showLibrary,
           ),
@@ -120,8 +137,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             _TabButton(
               key: const ValueKey('library-tab-replays'),
               icon: LucideIcons.film,
-              label: 'Replays',
-              semanticsLabel: 'Replays',
+              label: l10n.libraryTabReplays,
+              semanticsLabel: l10n.libraryTabReplays,
               selected: tab == LibraryTab.replays,
               onTap: navigation.showReplays,
             ),
@@ -130,8 +147,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           _TabButton(
             key: const ValueKey('library-tab-shared'),
             icon: LucideIcons.users,
-            label: 'Shared',
-            semanticsLabel: 'Shared library',
+            label: l10n.libraryTabShared,
+            semanticsLabel: l10n.libraryTabSharedSemantics,
             selected: tab == LibraryTab.shared,
             dimmed: !cloudBrowsable,
             onTap: _showSharedTab,
@@ -140,8 +157,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           _TabButton(
             key: const ValueKey('library-tab-community'),
             icon: LucideIcons.globe,
-            label: 'Community',
-            semanticsLabel: 'Community library',
+            label: l10n.libraryTabCommunity,
+            semanticsLabel: l10n.libraryTabCommunitySemantics,
             selected: tab == LibraryTab.community,
             onTap: navigation.showCommunity,
           ),
@@ -168,7 +185,6 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
                 collapsedWidth: _controlHeight,
                 expandedWidth: 220,
                 compact: true,
-                hintText: 'Search',
               ),
             ),
             const SizedBox(width: 4),
@@ -183,6 +199,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 onPressed: () {
                   if (refuseCloudChangeWhileOffline(
+                    ref.read(l10nProvider),
                     ref.read(cloudLibraryShowsCopyProvider),
                   )) {
                     return;
@@ -190,7 +207,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
                   showAddSharedItemDialog(context);
                 },
                 leading: const Icon(LucideIcons.link, size: 14),
-                child: const Text('Add by Link or Code'),
+                child: Text(l10n.libraryAddByLinkOrCode),
               )
             else
               _buildNewMenu(),
@@ -229,14 +246,15 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         tab != LibraryTab.community &&
         !signInRequired;
     final searching = _phoneSearchOpen && canSearch;
+    final l10n = context.l10n;
 
     final tabs = Row(
       children: [
         Expanded(
           child: _TabButton(
             key: const ValueKey('library-tab-library'),
-            label: 'My Library',
-            semanticsLabel: 'My Library',
+            label: l10n.libraryTabMyLibrary,
+            semanticsLabel: l10n.libraryTabMyLibrary,
             selected: tab == LibraryTab.library,
             height: _phoneControlHeight,
             onTap: navigation.showLibrary,
@@ -246,8 +264,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         Expanded(
           child: _TabButton(
             key: const ValueKey('library-tab-shared'),
-            label: 'Shared',
-            semanticsLabel: 'Shared library',
+            label: l10n.libraryTabShared,
+            semanticsLabel: l10n.libraryTabSharedSemantics,
             selected: tab == LibraryTab.shared,
             dimmed: !cloudBrowsable,
             height: _phoneControlHeight,
@@ -258,8 +276,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         Expanded(
           child: _TabButton(
             key: const ValueKey('library-tab-community'),
-            label: 'Community',
-            semanticsLabel: 'Community library',
+            label: l10n.libraryTabCommunity,
+            semanticsLabel: l10n.libraryTabCommunitySemantics,
             selected: tab == LibraryTab.community,
             height: _phoneControlHeight,
             onTap: navigation.showCommunity,
@@ -296,7 +314,6 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
                       expandedWidth: constraints.maxWidth,
                       compact: true,
                       autofocus: true,
-                      hintText: 'Search',
                     ),
                   ),
                 ),
@@ -334,6 +351,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
                     padding: EdgeInsets.zero,
                     onPressed: () {
                       if (refuseCloudChangeWhileOffline(
+                        ref.read(l10nProvider),
                         ref.read(cloudLibraryShowsCopyProvider),
                       )) {
                         return;
@@ -401,6 +419,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
   /// New is one button on a phone: the strategy goes in the menu with the
   /// folder, since there's no room for its label.
   Widget _buildPhoneNewMenu() {
+    final l10n = context.l10n;
     return ShadPopover(
       controller: _newController,
       padding: const EdgeInsets.all(6),
@@ -409,8 +428,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         childAlignment: Alignment.topRight,
         overlayAlignment: Alignment.bottomRight,
       ),
-      popover: (context) => SizedBox(
-        width: _newMenuWidth + 24,
+      popover: (context) => _MenuBox(
+        minWidth: _newMenuWidth + 24,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -419,21 +438,21 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
               menu: _newController,
               key: const ValueKey('library-new-strategy'),
               icon: LucideIcons.filePlus,
-              label: 'New Strategy',
+              label: l10n.libraryNewStrategy,
               onPressed: widget.onCreateStrategy,
             ),
             _MenuItem(
               menu: _newController,
               key: const ValueKey('library-new-folder'),
               icon: LucideIcons.folderPlus,
-              label: 'New Folder',
+              label: l10n.libraryNewFolder,
               onPressed: widget.onCreateFolder,
             ),
           ],
         ),
       ),
       child: Semantics(
-        label: 'New',
+        label: l10n.libraryNewMenuSemantics,
         button: true,
         child: ShadIconButton(
           key: const ValueKey('library-new-menu'),
@@ -467,13 +486,14 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             if (file.path != null) file.path!,
         ]);
       },
-      child: const Text('Add Replay'),
+      child: Text(context.l10n.libraryAddReplay),
     );
   }
 
   Widget _buildSortMenu({double size = _controlHeight}) {
     final filter = ref.watch(strategyFilterProvider);
     final isAscending = filter.sortOrder == SortOrder.ascending;
+    final l10n = context.l10n;
     return ShadPopover(
       controller: _sortController,
       padding: const EdgeInsets.all(6),
@@ -482,18 +502,18 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         childAlignment: Alignment.topRight,
         overlayAlignment: Alignment.bottomRight,
       ),
-      popover: (context) => SizedBox(
-        width: _sortMenuWidth,
+      popover: (context) => _MenuBox(
+        minWidth: _sortMenuWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const _MenuLabel('Sort by'),
+            _MenuLabel(l10n.librarySortBy),
             for (final value in SortBy.values)
               _MenuItem(
                 menu: _sortController,
                 icon: value == filter.sortBy ? LucideIcons.check : null,
-                label: StrategyFilterProvider.sortByLabels[value]!,
+                label: StrategyFilterProvider.sortByLabel(value, l10n),
                 onPressed: () {
                   ref.read(strategyFilterProvider.notifier).setSortBy(value);
                 },
@@ -504,7 +524,10 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
               icon: isAscending
                   ? LucideIcons.arrowUpNarrowWide
                   : LucideIcons.arrowDownWideNarrow,
-              label: StrategyFilterProvider.sortOrderLabels[filter.sortOrder]!,
+              label: StrategyFilterProvider.sortOrderLabel(
+                filter.sortOrder,
+                l10n,
+              ),
               onPressed: () {
                 ref.read(strategyFilterProvider.notifier).setSortOrder(
                       isAscending ? SortOrder.descending : SortOrder.ascending,
@@ -515,7 +538,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         ),
       ),
       child: Tooltip(
-        message: 'Sort',
+        message: l10n.librarySortTooltip,
         child: ShadIconButton.ghost(
           key: const ValueKey('library-sort-menu'),
           width: size,
@@ -549,6 +572,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
     final policy = ref.watch(platformPolicyProvider);
     final canImport = policy.supports(PlatformFeature.importFiles);
     final canExport = policy.supports(PlatformFeature.exportFiles);
+    final l10n = context.l10n;
     return ShadPopover(
       controller: _newController,
       padding: const EdgeInsets.all(6),
@@ -557,8 +581,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         childAlignment: Alignment.topRight,
         overlayAlignment: Alignment.bottomRight,
       ),
-      popover: (context) => SizedBox(
-        width: _newMenuWidth,
+      popover: (context) => _MenuBox(
+        minWidth: _newMenuWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -567,7 +591,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
               menu: _newController,
               key: const ValueKey('library-new-folder'),
               icon: LucideIcons.folderPlus,
-              label: 'New Folder',
+              label: l10n.libraryNewFolder,
               onPressed: widget.onCreateFolder,
             ),
             if (canImport || canExport) const _MenuDivider(),
@@ -575,13 +599,13 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
               _MenuItem(
                 menu: _newController,
                 icon: LucideIcons.fileDown,
-                label: 'Import .ica',
+                label: l10n.libraryImportIca,
                 onPressed: widget.onImportIca,
               ),
               _MenuItem(
                 menu: _newController,
                 icon: LucideIcons.archiveRestore,
-                label: 'Import Backup',
+                label: l10n.libraryImportBackup,
                 onPressed: widget.onImportBackup,
               ),
             ],
@@ -589,7 +613,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
               _MenuItem(
                 menu: _newController,
                 icon: LucideIcons.archive,
-                label: 'Export Library',
+                label: l10n.libraryExportLibrary,
                 onPressed: widget.onExportLibrary,
               ),
           ],
@@ -609,7 +633,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             ),
             onPressed: widget.onCreateStrategy,
             leading: const Icon(LucideIcons.plus, size: 16),
-            child: const Text('New Strategy'),
+            child: Text(l10n.libraryNewStrategy),
           ),
           // A rounded border must be one colour, so the seam is its own strip.
           const SizedBox(
@@ -635,6 +659,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
 
   Widget _buildAccount({double size = _controlHeight}) {
     final auth = ref.watch(authProvider);
+    final l10n = context.l10n;
     if (auth.isLoading) {
       return SizedBox(
         key: const ValueKey('library-account-action'),
@@ -651,7 +676,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
     }
     if (!auth.isAuthenticated) {
       return Semantics(
-        label: 'Log in to Icarus',
+        label: l10n.libraryLogInSemantics,
         button: true,
         onTap: _showAuthDialog,
         child: ShadButton.secondary(
@@ -659,7 +684,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           height: size,
           padding: const EdgeInsets.symmetric(horizontal: 10),
           onPressed: _showAuthDialog,
-          child: const Text('Log In'),
+          child: Text(l10n.commonLogIn),
         ),
       );
     }
@@ -671,8 +696,8 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         childAlignment: Alignment.topRight,
         overlayAlignment: Alignment.bottomRight,
       ),
-      popover: (context) => SizedBox(
-        width: _accountMenuWidth,
+      popover: (context) => _MenuBox(
+        minWidth: _accountMenuWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -683,7 +708,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    auth.displayName,
+                    auth.displayName(l10n),
                     style: const TextStyle(fontWeight: FontWeight.w600),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -703,14 +728,14 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             _MenuItem(
               menu: _accountController,
               icon: LucideIcons.logOut,
-              label: 'Sign Out',
+              label: l10n.commonSignOut,
               onPressed: _confirmSignOut,
             ),
           ],
         ),
       ),
       child: Semantics(
-        label: 'Account for ${auth.displayName}',
+        label: l10n.libraryAccountSemantics(auth.displayName(l10n)),
         button: true,
         onTap: _accountController.toggle,
         child: ShadButton.ghost(

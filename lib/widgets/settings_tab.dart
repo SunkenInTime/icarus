@@ -8,6 +8,7 @@ import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -37,6 +38,7 @@ enum _SettingsSection {
   strategyObjects,
   strategyMapTheme,
   globalAccount,
+  globalLanguage,
   globalDefaults,
   globalSaving,
   globalMapVisibility,
@@ -176,6 +178,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       case _SettingsSection.strategyMapTheme:
         return _SettingsMode.strategy;
       case _SettingsSection.globalAccount:
+      case _SettingsSection.globalLanguage:
       case _SettingsSection.globalDefaults:
       case _SettingsSection.globalSaving:
       case _SettingsSection.globalMapVisibility:
@@ -199,20 +202,20 @@ class _StrategySettingsSections extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SettingsScopeCard(
           key: sectionKeys[_SettingsSection.strategyObjects],
-          title: "Object styling",
+          title: l10n.settingsObjectStyling,
           child: Column(
             children: [
               _SettingsSliderTile(
                 icon: LucideIcons.personStanding,
                 iconColor: Settings.settingsAgentAccent,
-                title: "Agent markers",
-                description:
-                    "Resize placed agents and view tools for this strategy.",
+                title: l10n.settingsAgentMarkersTitle,
+                description: l10n.settingsAgentMarkersDescription,
                 value: strategySettings.agentSize,
                 min: Settings.agentSizeMin,
                 max: Settings.agentSizeMax,
@@ -238,9 +241,8 @@ class _StrategySettingsSections extends ConsumerWidget {
               _SettingsSliderTile(
                 icon: LucideIcons.sparkles,
                 iconColor: Settings.settingsAbilityAccent,
-                title: "Ability markers",
-                description:
-                    "Resize utility icons and placement helpers for this strategy.",
+                title: l10n.settingsAbilityMarkersTitle,
+                description: l10n.settingsAbilityMarkersDescription,
                 value: strategySettings.abilitySize,
                 min: Settings.abilitySizeMin,
                 max: Settings.abilitySizeMax,
@@ -266,9 +268,8 @@ class _StrategySettingsSections extends ConsumerWidget {
               _SettingsToggleTile(
                 icon: LucideIcons.contrast,
                 iconColor: Settings.settingsNeutralAccent,
-                title: "Neutral team marker colors",
-                description:
-                    "Render ally and enemy marker accents as matching-brightness greys.",
+                title: l10n.settingsNeutralTeamColorsTitle,
+                description: l10n.settingsNeutralTeamColorsDescription,
                 value: strategySettings.useNeutralTeamColors,
                 onChanged: (value) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -315,6 +316,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
         ref.watch(platformPolicyProvider).allowsLocalLibrary;
     final discordPresenceSupported =
         ref.watch(discordPresenceSupportedProvider);
+    final l10n = context.l10n;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -326,16 +328,21 @@ class _GlobalSettingsSections extends ConsumerWidget {
         const _SettingsItemDivider(),
         const SizedBox(height: 20),
         SettingsScopeCard(
+          key: sectionKeys[_SettingsSection.globalLanguage],
+          title: l10n.settingsLanguage,
+          child: _LanguageTile(languageCode: appPreferences.languageCode),
+        ),
+        const SizedBox(height: 28),
+        SettingsScopeCard(
           key: sectionKeys[_SettingsSection.globalDefaults],
-          title: "New strategy defaults",
+          title: l10n.settingsNewStrategyDefaultsTitle,
           child: Column(
             children: [
               _SettingsSliderTile(
                 icon: LucideIcons.personStanding,
                 iconColor: Settings.settingsAgentAccent,
-                title: "Default agent markers",
-                description:
-                    "Default size for agent markers in new strategies.",
+                title: l10n.settingsDefaultAgentMarkersTitle,
+                description: l10n.settingsDefaultAgentMarkersDescription,
                 value: appPreferences.defaultAgentSizeForNewStrategies,
                 min: Settings.agentSizeMin,
                 max: Settings.agentSizeMax,
@@ -350,9 +357,8 @@ class _GlobalSettingsSections extends ConsumerWidget {
               _SettingsSliderTile(
                 icon: LucideIcons.sparkles,
                 iconColor: Settings.settingsAbilityAccent,
-                title: "Default ability markers",
-                description:
-                    "Default size for ability markers in new strategies.",
+                title: l10n.settingsDefaultAbilityMarkersTitle,
+                description: l10n.settingsDefaultAbilityMarkersDescription,
                 value: appPreferences.defaultAbilitySizeForNewStrategies,
                 min: Settings.abilitySizeMin,
                 max: Settings.abilitySizeMax,
@@ -367,9 +373,8 @@ class _GlobalSettingsSections extends ConsumerWidget {
               _SettingsToggleTile(
                 icon: LucideIcons.contrast,
                 iconColor: Settings.settingsNeutralAccent,
-                title: "Neutral marker colors by default",
-                description:
-                    "Use grey ally and enemy accents for new strategies.",
+                title: l10n.settingsDefaultNeutralColorsTitle,
+                description: l10n.settingsDefaultNeutralColorsDescription,
                 value: appPreferences.defaultNeutralTeamColorsForNewStrategies,
                 onChanged: (value) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -387,7 +392,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
           const SizedBox(height: 28),
           SettingsScopeCard(
             key: sectionKeys[_SettingsSection.globalSaving],
-            title: "Workspace behavior",
+            title: l10n.settingsWorkspaceBehaviorTitle,
             child: Column(
               children: [
                 // Autosave only covers strategies on this device.
@@ -395,9 +400,8 @@ class _GlobalSettingsSections extends ConsumerWidget {
                   _SettingsToggleTile(
                     icon: LucideIcons.save,
                     iconColor: Settings.settingsPersistenceAccent,
-                    title: "Autosave",
-                    description:
-                        "Save strategies on this device after 15 seconds idle. When off, Icarus asks before you leave unsaved work. Cloud strategies sync either way.",
+                    title: l10n.settingsAutosaveTitle,
+                    description: l10n.settingsAutosaveDescription,
                     value: appPreferences.autosaveEnabled,
                     onChanged: (value) async {
                       await ref
@@ -412,9 +416,8 @@ class _GlobalSettingsSections extends ConsumerWidget {
                   _SettingsToggleTile(
                     icon: LucideIcons.gamepad2,
                     iconColor: Settings.settingsDiscordAccent,
-                    title: "Discord Rich Presence",
-                    description:
-                        "Show the current map and attack or defense side on your Discord profile. Strategy names are never shared.",
+                    title: l10n.settingsDiscordPresenceTitle,
+                    description: l10n.settingsDiscordPresenceDescription,
                     value: appPreferences.discordPresenceEnabled,
                     onChanged: (value) {
                       ref
@@ -429,15 +432,14 @@ class _GlobalSettingsSections extends ConsumerWidget {
         const SizedBox(height: 28),
         SettingsScopeCard(
           key: sectionKeys[_SettingsSection.globalMapVisibility],
-          title: "Workspace map visibility",
+          title: l10n.settingsMapVisibilityTitle,
           child: Column(
             children: [
               _SettingsToggleTile(
                 icon: LucideIcons.grid3x3,
                 iconColor: Settings.settingsMapAccent,
-                title: "Spawn barriers",
-                description:
-                    "Keep round-start barrier guides visible on the map.",
+                title: l10n.settingsSpawnBarriersTitle,
+                description: l10n.settingsSpawnBarriersDescription,
                 value: mapState.showSpawnBarrier,
                 onChanged: (value) {
                   ref.read(mapProvider.notifier).updateSpawnBarrier(value);
@@ -446,8 +448,8 @@ class _GlobalSettingsSections extends ConsumerWidget {
               _SettingsToggleTile(
                 icon: LucideIcons.mapPin,
                 iconColor: Settings.settingsMapAccent,
-                title: "Region names",
-                description: "Show map callout names directly on the canvas.",
+                title: l10n.settingsRegionNamesTitle,
+                description: l10n.settingsRegionNamesDescription,
                 value: mapState.showRegionNames,
                 onChanged: (value) {
                   ref.read(mapProvider.notifier).updateRegionNames(value);
@@ -456,8 +458,8 @@ class _GlobalSettingsSections extends ConsumerWidget {
               _SettingsToggleTile(
                 icon: LucideIcons.circleDot,
                 iconColor: Settings.settingsMapAccent,
-                title: "Ultimate orbs",
-                description: "Display orb pickup markers on supported maps.",
+                title: l10n.settingsUltOrbsTitle,
+                description: l10n.settingsUltOrbsDescription,
                 value: mapState.showUltOrbs,
                 onChanged: (value) {
                   ref.read(mapProvider.notifier).updateUltOrbs(value);
@@ -466,9 +468,8 @@ class _GlobalSettingsSections extends ConsumerWidget {
               _SettingsToggleTile(
                 icon: LucideIcons.messageSquareText,
                 iconColor: Settings.settingsMapAccent,
-                title: "Captions",
-                description:
-                    "Show the notes kept on placed items. This device only.",
+                title: l10n.settingsCaptionsTitle,
+                description: l10n.settingsCaptionsDescription,
                 value: appPreferences.showCaptions,
                 onChanged: (value) {
                   ref
@@ -479,15 +480,15 @@ class _GlobalSettingsSections extends ConsumerWidget {
               _SettingsSliderTile(
                 icon: LucideIcons.grip,
                 iconColor: Settings.settingsMapAccent,
-                title: "Background dots",
-                description:
-                    "How strongly the dot grid shows behind the map and your library. 0% hides it.",
+                title: l10n.settingsBackgroundDotsTitle,
+                description: l10n.settingsBackgroundDotsDescription,
                 value: appPreferences.backgroundDotOpacity,
                 min: 0,
                 max: 1,
                 divisions: 20,
                 accentColor: Settings.accentInk,
-                valueLabel: (value) => "${(value * 100).round()}%",
+                valueLabel: (value) =>
+                    l10n.settingsPercentValue((value * 100).round()),
                 onChanged: (value) {
                   ref
                       .read(appPreferencesProvider.notifier)
@@ -497,15 +498,15 @@ class _GlobalSettingsSections extends ConsumerWidget {
               _SettingsSliderTile(
                 icon: LucideIcons.eye,
                 iconColor: Settings.settingsMapAccent,
-                title: "View cones",
-                description:
-                    "How strongly view cones show on the map, here and in screenshots and videos.",
+                title: l10n.settingsViewConesTitle,
+                description: l10n.settingsViewConesDescription,
                 value: appPreferences.viewConeOpacity,
                 min: AppPreferences.minViewConeOpacity,
                 max: 1,
                 divisions: 18,
                 accentColor: Settings.accentInk,
-                valueLabel: (value) => "${(value * 100).round()}%",
+                valueLabel: (value) =>
+                    l10n.settingsPercentValue((value * 100).round()),
                 onChanged: (value) {
                   ref
                       .read(appPreferencesProvider.notifier)
@@ -518,13 +519,12 @@ class _GlobalSettingsSections extends ConsumerWidget {
         const SizedBox(height: 28),
         SettingsScopeCard(
           key: sectionKeys[_SettingsSection.globalPrivacy],
-          title: "Privacy",
+          title: l10n.settingsPrivacy,
           child: _SettingsToggleTile(
             icon: LucideIcons.chartColumn,
             iconColor: Settings.settingsPersistenceAccent,
-            title: "Anonymous analytics",
-            description:
-                "Share app opens and a few feature-use events — never strategy content or personal details.",
+            title: l10n.settingsAnalyticsTitle,
+            description: l10n.settingsAnalyticsDescription,
             value: ref.watch(analyticsEnabledProvider),
             onChanged: (value) async {
               await ref
@@ -562,6 +562,7 @@ class _ShortcutSettingsSectionState
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final customBindings = ref.watch(
       appPreferencesProvider.select((prefs) => prefs.customShortcutBindings),
     );
@@ -571,12 +572,14 @@ class _ShortcutSettingsSectionState
             definition,
             _query,
             customBindings,
+            l10n,
           ),
         )
         .toList(growable: false);
+    final snapToMapMatches = _snapToMapMatches(l10n);
 
     return SettingsScopeCard(
-      title: "Keybinds",
+      title: l10n.settingsKeybinds,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -604,7 +607,7 @@ class _ShortcutSettingsSectionState
                             .read(appPreferencesProvider.notifier)
                             .resetAllCustomShortcutBindings();
                       },
-                child: const Text("Restore Defaults"),
+                child: Text(l10n.settingsKeybindsRestoreDefaults),
               ),
             ],
           ),
@@ -612,7 +615,7 @@ class _ShortcutSettingsSectionState
           const _ShortcutTableHeader(),
           const SizedBox(height: 4),
           // The Alt row isn't a definition, but it can be what matched.
-          if (visibleDefinitions.isEmpty && !_snapToMapMatches)
+          if (visibleDefinitions.isEmpty && !snapToMapMatches)
             const _ShortcutEmptySearch()
           else
             for (final definition in visibleDefinitions) ...[
@@ -658,8 +661,10 @@ class _ShortcutSettingsSectionState
                   if (duplicate != null) {
                     triggerShake();
                     setState(() {
-                      _duplicateMessage =
-                          "${binding.displayLabel()} is already bound to ${duplicate.title}.";
+                      _duplicateMessage = l10n.settingsKeybindsAlreadyBound(
+                        binding.displayLabel(),
+                        duplicate.title(l10n),
+                      );
                     });
                     return;
                   }
@@ -677,16 +682,16 @@ class _ShortcutSettingsSectionState
               ),
               const _SettingsItemDivider(),
             ],
-          if (_snapToMapMatches) const _SnapToMapRow(),
+          if (snapToMapMatches) const _SnapToMapRow(),
         ],
       ),
     );
   }
 
-  bool get _snapToMapMatches {
+  bool _snapToMapMatches(AppLocalizations l10n) {
     final query = ShortcutInfo.normalizeSearch(_query);
     return ShortcutInfo.normalizeSearch(
-      '${_SnapToMapRow.title} ${_SnapToMapRow.keys}',
+      '${l10n.settingsKeybindsSnapToMap} ${l10n.settingsKeybindsHoldAlt}',
     ).contains(query);
   }
 }
@@ -697,18 +702,16 @@ class _ShortcutSettingsSectionState
 class _SnapToMapRow extends StatelessWidget {
   const _SnapToMapRow();
 
-  static const title = 'Snap to map lines while dragging';
-  static const keys = 'Hold Alt';
-
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: Row(
         children: [
           Expanded(
             child: Text(
-              title,
+              l10n.settingsKeybindsSnapToMap,
               style: ShadTheme.of(context).textTheme.p.copyWith(
                     color: Settings.tacticalVioletTheme.foreground,
                     fontWeight: FontWeight.w400,
@@ -716,11 +719,14 @@ class _SnapToMapRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 40),
-          const SizedBox(
+          SizedBox(
             width: 132,
             child: Align(
               alignment: Alignment.centerRight,
-              child: _ShortcutBindingPill(label: keys, isEditing: false),
+              child: _ShortcutBindingPill(
+                label: l10n.settingsKeybindsHoldAlt,
+                isEditing: false,
+              ),
             ),
           ),
         ],
@@ -753,7 +759,7 @@ class _ShortcutSearchField extends StatelessWidget {
           cursorColor: Settings.accentInk,
           decoration: InputDecoration(
             isDense: true,
-            hintText: "Search actions or keys...",
+            hintText: context.l10n.settingsKeybindsSearchHint,
             hintStyle: TextStyle(
               color: Settings.tacticalVioletTheme.mutedForeground,
               fontSize: 13,
@@ -793,13 +799,14 @@ class _ShortcutTableHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Row(
         children: [
           Expanded(
             child: Text(
-              "Action",
+              l10n.settingsKeybindsActionColumn,
               style: theme.textTheme.small.copyWith(
                 color: Settings.tacticalVioletTheme.mutedForeground,
                 fontSize: 12,
@@ -811,7 +818,7 @@ class _ShortcutTableHeader extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerRight,
               child: Text(
-                "Binding",
+                l10n.settingsKeybindsBindingColumn,
                 style: theme.textTheme.small.copyWith(
                   color: Settings.tacticalVioletTheme.mutedForeground,
                   fontSize: 12,
@@ -868,7 +875,7 @@ class _ShortcutBindingRow extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  definition.title,
+                  definition.title(context.l10n),
                   style: theme.textTheme.p.copyWith(
                     color: Settings.tacticalVioletTheme.foreground,
                     fontWeight: FontWeight.w400,
@@ -877,7 +884,7 @@ class _ShortcutBindingRow extends StatelessWidget {
               ),
               if (onReset != null)
                 ShadTooltip(
-                  builder: (_) => const Text("Reset to default"),
+                  builder: (_) => Text(context.l10n.settingsKeybindsResetTooltip),
                   child: ShadIconButton.ghost(
                     icon: const Icon(LucideIcons.undo2, size: 15),
                     onPressed: onReset,
@@ -1078,7 +1085,7 @@ class _ShortcutCaptureFieldState extends State<_ShortcutCaptureField>
                   const SizedBox(width: 9),
                   Expanded(
                     child: Text(
-                      "Press new shortcut...",
+                      context.l10n.settingsKeybindsCapturePrompt,
                       style: ShadTheme.of(context).textTheme.small.copyWith(
                             color: Settings.tacticalVioletTheme.foreground,
                           ),
@@ -1087,7 +1094,7 @@ class _ShortcutCaptureFieldState extends State<_ShortcutCaptureField>
                   ShadButton.ghost(
                     size: ShadButtonSize.sm,
                     onPressed: widget.onCancel,
-                    child: const Text("Cancel"),
+                    child: Text(context.l10n.commonCancel),
                   ),
                 ],
               ),
@@ -1111,7 +1118,7 @@ class _ShortcutCaptureFieldState extends State<_ShortcutCaptureField>
                 : Padding(
                     padding: const EdgeInsets.only(top: 7),
                     child: Text(
-                      "Escape cancels. Ctrl and Cmd are saved as one platform-aware Primary modifier.",
+                      context.l10n.settingsKeybindsCaptureHelp,
                       style: ShadTheme.of(context).textTheme.small.copyWith(
                             color: Settings.tacticalVioletTheme.mutedForeground,
                           ),
@@ -1133,7 +1140,7 @@ class _ShortcutEmptySearch extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 28),
       child: Center(
         child: Text(
-          "No shortcuts match that search.",
+          context.l10n.settingsKeybindsNoMatches,
           style: ShadTheme.of(context).textTheme.small.copyWith(
                 color: Settings.tacticalVioletTheme.mutedForeground,
               ),
@@ -1149,12 +1156,13 @@ class AccountSettingsSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
+    final l10n = context.l10n;
 
     return SettingsScopeCard(
-      title: 'Account',
+      title: l10n.settingsAccount,
       description: authState.isAuthenticated
-          ? 'Your cloud identity and sync connection.'
-          : 'Sign in to sync strategies to the cloud and share them.',
+          ? l10n.settingsAccountSignedInDescription
+          : l10n.settingsAccountSignedOutDescription,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 180),
         switchInCurve: Settings.easeOut,
@@ -1177,7 +1185,7 @@ class AccountSettingsSection extends ConsumerWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Not signed in',
+                        l10n.settingsAccountNotSignedIn,
                         style: TextStyle(
                           color: Settings.tacticalVioletTheme.mutedForeground,
                         ),
@@ -1193,7 +1201,7 @@ class AccountSettingsSection extends ConsumerWidget {
                                 builder: (_) => const AuthDialog(),
                               );
                             },
-                      child: const Text('Log In'),
+                      child: Text(l10n.commonLogIn),
                     ),
                   ],
                 ),
@@ -1216,37 +1224,38 @@ class _SignedInAccountRow extends ConsumerWidget {
     // The server refuses this build. Reconnecting can't help; reloading or
     // updating can, so this row says what the sync button says.
     final needsNewerIcarus = ref.watch(clientUpgradeRequiredProvider);
+    final l10n = context.l10n;
 
     final (String statusLabel, IconData statusIcon, Color statusColor) =
         needsNewerIcarus
             ? (
-                'Cloud sync needs a newer Icarus',
+                l10n.settingsSyncNeedsNewerIcarus,
                 LucideIcons.circleAlert,
                 theme.destructive,
               )
             : switch (authState.convexAuthStatus) {
                 ConvexAuthStatus.ready => (
-                    'Cloud sync active',
+                    l10n.settingsSyncActive,
                     LucideIcons.cloudCheck,
                     theme.mutedForeground,
                   ),
                 ConvexAuthStatus.configuring => (
-                    'Connecting to cloud…',
+                    l10n.settingsSyncConnecting,
                     LucideIcons.refreshCw,
                     theme.mutedForeground,
                   ),
                 ConvexAuthStatus.offline => (
-                    "Offline. Cloud sync resumes when you're back online",
+                    l10n.settingsSyncOffline,
                     LucideIcons.cloudOff,
                     theme.mutedForeground,
                   ),
                 ConvexAuthStatus.incident => (
-                    'Cloud connection needs attention',
+                    l10n.settingsSyncNeedsAttention,
                     LucideIcons.circleAlert,
                     theme.destructive,
                   ),
                 ConvexAuthStatus.signedOut => (
-                    'Cloud sync inactive',
+                    l10n.settingsSyncInactive,
                     LucideIcons.cloudOff,
                     theme.mutedForeground,
                   ),
@@ -1261,7 +1270,7 @@ class _SignedInAccountRow extends ConsumerWidget {
             backgroundColor: theme.muted,
             avatarUrl: avatarUrl,
             fallback: Text(
-              authState.displayName.characters.first.toUpperCase(),
+              authState.displayName(l10n).characters.first.toUpperCase(),
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
@@ -1275,11 +1284,11 @@ class _SignedInAccountRow extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  authState.displayName,
+                  authState.displayName(l10n),
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-                if (email != null && email != authState.displayName)
+                if (email != null && email != authState.displayName(l10n))
                   Text(
                     email,
                     overflow: TextOverflow.ellipsis,
@@ -1325,7 +1334,7 @@ class _SignedInAccountRow extends ConsumerWidget {
                     .read(authProvider.notifier)
                     .reinitializeConvexAuth(source: 'settings_account');
               },
-              child: const Text('Reconnect'),
+              child: Text(l10n.commonReconnect),
             ),
             const SizedBox(width: 8),
           ],
@@ -1337,7 +1346,7 @@ class _SignedInAccountRow extends ConsumerWidget {
                 : () async {
                     await ref.read(guardedSignOutRequestProvider)(context);
                   },
-            child: const Text('Sign Out'),
+            child: Text(l10n.commonSignOut),
           ),
         ],
       ),
@@ -1358,6 +1367,7 @@ class _SettingsNavigationRail extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final allowsLocalLibrary =
         ref.watch(platformPolicyProvider).allowsLocalLibrary;
+    final l10n = context.l10n;
 
     return Container(
       width: SettingsTab._navigationWidth,
@@ -1367,65 +1377,71 @@ class _SettingsNavigationRail extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "Settings",
+            l10n.settingsTitle,
             style: ShadTheme.of(context).textTheme.h4.copyWith(
                   color: Settings.tacticalVioletTheme.foreground,
                   fontWeight: FontWeight.w500,
                 ),
           ),
           const SizedBox(height: 20),
-          const _SettingsNavHeader(label: "Current strategy"),
+          _SettingsNavHeader(label: l10n.settingsNavCurrentStrategy),
           const SizedBox(height: 4),
           _SettingsNavItem(
             icon: LucideIcons.slidersHorizontal,
-            label: "Object styling",
+            label: l10n.settingsObjectStyling,
             isSelected: selectedSection == _SettingsSection.strategyObjects,
             onTap: () => onSectionSelected(_SettingsSection.strategyObjects),
           ),
           _SettingsNavItem(
             icon: LucideIcons.palette,
-            label: "Map theme",
+            label: l10n.mapThemeTitle,
             isSelected: selectedSection == _SettingsSection.strategyMapTheme,
             onTap: () => onSectionSelected(_SettingsSection.strategyMapTheme),
           ),
           const SizedBox(height: 20),
-          const _SettingsNavHeader(label: "App-wide"),
+          _SettingsNavHeader(label: l10n.settingsNavAppWide),
           const SizedBox(height: 4),
           _SettingsNavItem(
             icon: LucideIcons.user,
-            label: "Account",
+            label: l10n.settingsAccount,
             isSelected: selectedSection == _SettingsSection.globalAccount,
             onTap: () => onSectionSelected(_SettingsSection.globalAccount),
           ),
           _SettingsNavItem(
+            icon: LucideIcons.languages,
+            label: l10n.settingsLanguage,
+            isSelected: selectedSection == _SettingsSection.globalLanguage,
+            onTap: () => onSectionSelected(_SettingsSection.globalLanguage),
+          ),
+          _SettingsNavItem(
             icon: LucideIcons.wandSparkles,
-            label: "Defaults",
+            label: l10n.settingsNavDefaults,
             isSelected: selectedSection == _SettingsSection.globalDefaults,
             onTap: () => onSectionSelected(_SettingsSection.globalDefaults),
           ),
           if (allowsLocalLibrary)
             _SettingsNavItem(
               icon: LucideIcons.save,
-              label: "Autosave",
+              label: l10n.settingsNavAutosave,
               isSelected: selectedSection == _SettingsSection.globalSaving,
               onTap: () => onSectionSelected(_SettingsSection.globalSaving),
             ),
           _SettingsNavItem(
             icon: LucideIcons.map,
-            label: "Map layers",
+            label: l10n.settingsNavMapLayers,
             isSelected: selectedSection == _SettingsSection.globalMapVisibility,
             onTap: () =>
                 onSectionSelected(_SettingsSection.globalMapVisibility),
           ),
           _SettingsNavItem(
             icon: LucideIcons.shield,
-            label: "Privacy",
+            label: l10n.settingsPrivacy,
             isSelected: selectedSection == _SettingsSection.globalPrivacy,
             onTap: () => onSectionSelected(_SettingsSection.globalPrivacy),
           ),
           _SettingsNavItem(
             icon: LucideIcons.keyboard,
-            label: "Keybinds",
+            label: l10n.settingsKeybinds,
             isSelected: selectedSection == _SettingsSection.shortcuts,
             onTap: () => onSectionSelected(_SettingsSection.shortcuts),
           ),
@@ -1449,7 +1465,7 @@ class _VersionFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
     return ShadTooltip(
-      builder: (context) => const Text('Copy version'),
+      builder: (context) => Text(context.l10n.settingsCopyVersionTooltip),
       child: ShadButton.ghost(
         key: const ValueKey('settings-version'),
         height: 24,
@@ -1459,7 +1475,7 @@ class _VersionFooter extends StatelessWidget {
         onPressed: () {
           Clipboard.setData(const ClipboardData(text: _label));
           Settings.showToast(
-            message: 'Version copied',
+            message: context.l10n.settingsVersionCopied,
             backgroundColor: theme.primary,
           );
         },
@@ -1741,6 +1757,77 @@ class _SettingsToggleTile extends StatelessWidget {
   }
 }
 
+/// Picks the language Icarus shows. Each language is listed under its own
+/// name, so it can be found by someone who can't read the current one.
+class _LanguageTile extends ConsumerWidget {
+  const _LanguageTile({required this.languageCode});
+
+  /// The language picked, or null while Icarus follows the system.
+  final String? languageCode;
+
+  static const _system = '';
+  static const _names = {'en': 'English', 'ja': '日本語', 'zh': '简体中文'};
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
+    String label(String code) =>
+        code == _system ? l10n.settingsLanguageSystem : _names[code]!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 24,
+            height: 24,
+            child: Icon(
+              LucideIcons.languages,
+              size: 20,
+              color: Settings.settingsPersistenceAccent,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l10n.settingsLanguageTitle),
+                const SizedBox(height: 2),
+                Text(
+                  l10n.settingsLanguageDescription,
+                  style: ShadTheme.of(context).textTheme.small.copyWith(
+                        color: Settings.tacticalVioletTheme.mutedForeground,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          ShadSelect<String>(
+            // Keyed by the language shown, so the list's own words follow it.
+            key: ValueKey('language-${l10n.localeName}-$languageCode'),
+            initialValue: languageCode ?? _system,
+            minWidth: 168,
+            selectedOptionBuilder: (context, value) => Text(label(value)),
+            options: [
+              for (final code in [_system, ..._names.keys])
+                ShadOption(value: code, child: Text(label(code))),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              ref
+                  .read(appPreferencesProvider.notifier)
+                  .setLanguageCode(value == _system ? null : value);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SettingsItemDivider extends StatelessWidget {
   const _SettingsItemDivider();
 
@@ -1798,7 +1885,7 @@ class _PageMarkerSizesSyncBannerState
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Marker sizes differ across pages. Apply these sizes everywhere?',
+                context.l10n.settingsMarkerSizesDiffer,
                 style: ShadTheme.of(context).textTheme.small.copyWith(
                       color: Settings.tacticalVioletTheme.mutedForeground,
                       height: 1.35,
@@ -1819,7 +1906,11 @@ class _PageMarkerSizesSyncBannerState
                           if (mounted) setState(() => _busy = false);
                         }
                       },
-                child: Text(_busy ? 'Applying…' : 'Apply to all pages'),
+                child: Text(
+                  _busy
+                      ? context.l10n.settingsApplyingMarkerSizes
+                      : context.l10n.settingsApplyMarkerSizesToAllPages,
+                ),
               ),
             ],
           ),

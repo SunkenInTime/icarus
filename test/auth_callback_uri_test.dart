@@ -1,6 +1,9 @@
+import 'dart:ui';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart';
 import 'package:http/testing.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -88,7 +91,10 @@ void main() {
           reason: link,
         );
       }
-      expect(AuthLinkNotice.linkExpired.message, isNot(contains('confirmed.')));
+      expect(
+          AuthLinkNotice.linkExpired
+              .message(lookupAppLocalizations(const Locale('en'))),
+          isNot(contains('confirmed.')));
     });
 
     test('anything else is a real failure', () {

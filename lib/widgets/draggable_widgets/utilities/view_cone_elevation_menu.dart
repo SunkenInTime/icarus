@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -35,6 +36,7 @@ ShadContextMenuItem buildViewConeElevationMenuItem({
 }
 
 ShadContextMenuItem buildSvgHeightElevationMenuItem({
+  required AppLocalizations l10n,
   required SvgHeightVisibility model,
   required Offset origin,
   required double? selectedElevationCm,
@@ -53,29 +55,37 @@ ShadContextMenuItem buildSvgHeightElevationMenuItem({
   final unmatched =
       selectedElevationCm != null && support == null && !groundSelected;
   final automaticSelected = selectedElevationCm == null || unmatched;
+  final automaticSurface =
+      automatic?.label ?? l10n.canvasItemViewElevationGround;
   return ShadContextMenuItem(
     leading: const Icon(Icons.layers_outlined),
     trailing: Text(automaticSelected
-        ? '${automatic?.label ?? 'Ground'} (auto${unmatched ? '*' : ''})'
-        : support?.label ?? 'Ground'),
+        ? (unmatched
+            ? l10n.canvasItemViewElevationAutoUnmatchedTrailing(
+                automaticSurface)
+            : l10n.canvasItemViewElevationAutoTrailing(automaticSurface))
+        : support?.label ?? l10n.canvasItemViewElevationGround),
     items: [
       _elevationItem(
         label: unmatched
-            ? 'Automatic (saved height unavailable)'
-            : 'Automatic (${automatic?.label ?? 'Ground'})',
+            ? l10n.canvasItemViewElevationAutomaticUnavailable
+            : l10n.canvasItemViewElevationAutomatic(automaticSurface),
         selected: automaticSelected,
         onPressed: () => onChanged(null),
       ),
       if (groundEye != null && automatic != null)
         _elevationItem(
-          label: 'Ground (${formatVisionElevation(groundEye * 100)})',
+          label: l10n.canvasItemViewElevationGroundHeight(
+              formatVisionElevation(groundEye * 100)),
           selected: groundSelected && !automaticSelected,
           onPressed: () => onChanged(groundEye * 100),
         ),
       for (final choice in choices)
         _elevationItem(
-          label: '${choice.label ?? choice.id} '
-              '(${formatVisionElevation(choice.surfaceElevationAt(origin)! * 100 + model.defaultCameraHeightMeters * 100)})',
+          label: l10n.canvasItemViewElevationSurfaceHeight(
+              choice.label ?? choice.id,
+              formatVisionElevation(choice.surfaceElevationAt(origin)! * 100 +
+                  model.defaultCameraHeightMeters * 100)),
           selected: !automaticSelected && identical(choice, support),
           onPressed: () => onChanged(
             choice.surfaceElevationAt(origin)! * 100 +
@@ -83,7 +93,7 @@ ShadContextMenuItem buildSvgHeightElevationMenuItem({
           ),
         ),
     ],
-    child: const Text('View elevation'),
+    child: Text(l10n.canvasItemViewElevationMenu),
   );
 }
 

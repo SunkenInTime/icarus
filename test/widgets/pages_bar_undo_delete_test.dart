@@ -8,6 +8,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
@@ -458,18 +459,22 @@ void main() {
 
   test('Undo failure messages', () {
     expect(
-      undoFailedMessage('Page 2', DeletedPageRestore.failed,
+      undoFailedMessage(lookupAppLocalizations(const Locale('en')), 'Page 2',
+          DeletedPageRestore.failed,
           strategyName: null),
       "Could not confirm that 'Page 2' was restored. Once you're connected, "
       'check the pages list or Recently deleted.',
     );
     expect(
-      undoFailedMessage('Page 2', DeletedPageRestore.failed, strategyName: ''),
+      undoFailedMessage(lookupAppLocalizations(const Locale('en')), 'Page 2',
+          DeletedPageRestore.failed,
+          strategyName: ''),
       "Could not confirm that 'Page 2' was restored. Once you're connected, "
       "check the pages list or its strategy's Recently deleted.",
     );
     expect(
-      undoFailedMessage('Page 2', DeletedPageRestore.gone,
+      undoFailedMessage(lookupAppLocalizations(const Locale('en')), 'Page 2',
+          DeletedPageRestore.gone,
           strategyName: 'Strategy A'),
       "'Page 2' can no longer be restored.",
     );

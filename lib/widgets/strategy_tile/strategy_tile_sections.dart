@@ -3,6 +3,7 @@ import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -31,30 +32,36 @@ class StrategyTileViewData {
     this.cloudBadge,
   });
 
-  factory StrategyTileViewData.fromStrategy(StrategyData strategy) {
+  factory StrategyTileViewData.fromStrategy(
+    StrategyData strategy,
+    AppLocalizations l10n,
+  ) {
     return StrategyTileViewData(
       name: strategy.name,
-      mapName: _mapName(strategy.mapData),
-      attackLabel: _attackLabel(strategy.pages),
+      mapName: l10n.mapNameOf(_mapName(strategy.mapData)),
+      attackLabel: _attackLabelText(l10n, _attackLabel(strategy.pages)),
       attackColor: _attackColor(_attackLabel(strategy.pages)),
       thumbnailAsset:
           'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
-      lastEditedLabel: _timeAgo(strategy.lastEdited),
+      lastEditedLabel: _timeAgo(l10n, strategy.lastEdited),
       agentTypes: _collectAgentTypes(strategy.pages),
     );
   }
 
-  factory StrategyTileViewData.fromCloudEntry(CloudStrategyEntry entry) {
+  factory StrategyTileViewData.fromCloudEntry(
+    CloudStrategyEntry entry,
+    AppLocalizations l10n,
+  ) {
     final strategy = entry.strategy;
     final attackLabel = entry.attackLabel;
     return StrategyTileViewData(
       name: strategy.name,
-      mapName: _mapName(strategy.mapData),
-      attackLabel: attackLabel,
+      mapName: l10n.mapNameOf(_mapName(strategy.mapData)),
+      attackLabel: _attackLabelText(l10n, attackLabel),
       attackColor: _attackColor(attackLabel),
       thumbnailAsset:
           'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
-      lastEditedLabel: _timeAgo(strategy.lastEdited),
+      lastEditedLabel: _timeAgo(l10n, strategy.lastEdited),
       agentTypes: _inRoleOrder(entry.agentTypes),
       cloudBadge: cloudBadgeKindForRole(entry.role),
     );
@@ -97,6 +104,17 @@ class StrategyTileViewData {
     return first ? 'Attack' : 'Defend';
   }
 
+  /// The words for an attack label, which is 'Attack', 'Defend', 'Mixed' or
+  /// 'Unknown' (the server's names). Anything else is shown as it came.
+  static String _attackLabelText(AppLocalizations l10n, String label) =>
+      switch (label) {
+        'Attack' => l10n.strategyTileSideAttack,
+        'Defend' => l10n.strategyTileSideDefend,
+        'Mixed' => l10n.strategyTileSideMixed,
+        'Unknown' => l10n.strategyTileSideUnknown,
+        _ => label,
+      };
+
   static Color _attackColor(String label) {
     switch (label) {
       case 'Attack':
@@ -131,27 +149,20 @@ class StrategyTileViewData {
     ];
   }
 
-  static String _timeAgo(DateTime date) {
+  static String _timeAgo(AppLocalizations l10n, DateTime date) {
     final difference = DateTime.now().difference(date);
-    if (difference.inMinutes < 1) return 'Just now';
+    if (difference.inMinutes < 1) return l10n.strategyTileEditedJustNow;
     if (difference.inMinutes < 60) {
-      final minutes = difference.inMinutes;
-      final plural = minutes == 1 ? '' : 's';
-      return '$minutes min$plural ago';
+      return l10n.strategyTileEditedMinutesAgo(difference.inMinutes);
     }
     if (difference.inHours < 24) {
-      final hours = difference.inHours;
-      final plural = hours == 1 ? '' : 's';
-      return '$hours hour$plural ago';
+      return l10n.strategyTileEditedHoursAgo(difference.inHours);
     }
     if (difference.inDays < 30) {
-      final days = difference.inDays;
-      final plural = days == 1 ? '' : 's';
-      return '$days day$plural ago';
+      return l10n.strategyTileEditedDaysAgo(difference.inDays);
     }
     final months = (difference.inDays / 30).floor();
-    final plural = months == 1 ? '' : 's';
-    return '$months month$plural ago';
+    return l10n.strategyTileEditedMonthsAgo(months);
   }
 }
 

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
@@ -22,26 +23,27 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:icarus/widgets/loading_spinner.dart';
 
 /// Headline like: Share "My Strategy Name" (`"` in [name] become `'`).
-String _shareDialogHeadline(String name) {
+String _shareDialogHeadline(AppLocalizations l10n, String name) {
   final safe = name.replaceAll('"', "'");
-  return 'Share "$safe"';
+  return l10n.shareLinksTitle(safe);
 }
 
 const _stateSwitchDuration = Duration(milliseconds: 180);
 const _hoverDuration = Duration(milliseconds: 120);
 const _copiedFlashDuration = Duration(milliseconds: 1200);
 
-String _relativeTime(DateTime time) {
+String _relativeTime(AppLocalizations l10n, DateTime time) {
   final diff = DateTime.now().difference(time);
-  if (diff.inMinutes < 1) return 'just now';
-  if (diff.inHours < 1) return '${diff.inMinutes}m ago';
-  if (diff.inDays < 1) return '${diff.inHours}h ago';
-  if (diff.inDays < 30) return '${diff.inDays}d ago';
+  if (diff.inMinutes < 1) return l10n.shareLinksJustNow;
+  if (diff.inHours < 1) return l10n.shareLinksMinutesAgo(diff.inMinutes);
+  if (diff.inDays < 1) return l10n.shareLinksHoursAgo(diff.inHours);
+  if (diff.inDays < 30) return l10n.shareLinksDaysAgo(diff.inDays);
   return '${time.year}-${time.month.toString().padLeft(2, '0')}'
       '-${time.day.toString().padLeft(2, '0')}';
 }
 
-String _memberName(ShareMember member) => member.displayName ?? 'Teammate';
+String _memberName(AppLocalizations l10n, ShareMember member) =>
+    member.displayName ?? l10n.shareLinksTeammateFallback;
 
 /// The owner's own name as teammates see it: an email sign-in shows the
 /// part before the @, as the server stores it.
@@ -204,7 +206,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
     } catch (_) {
       if (!mounted || generation != _peopleGeneration) return;
       Settings.showToast(
-        message: "Couldn't load more people.",
+        message: context.l10n.shareLinksLoadMoreFailed,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       // The cursor itself may be what the server refused; start over.
@@ -245,6 +247,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   }
 
   Future<void> _createLink() async {
+    final l10n = context.l10n;
     setState(() => _isCreating = true);
     final token = generateIcarusShareCode();
     try {
@@ -259,13 +262,13 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
       await Clipboard.setData(ClipboardData(
           text: buildIcarusShareLink(token, origin: currentShareOrigin())));
       Settings.showToast(
-        message: 'Share link copied to clipboard.',
+        message: l10n.shareLinksLinkCopied,
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
       await _load(showLoading: false);
     } catch (_) {
       Settings.showToast(
-        message: 'Failed to create share link.',
+        message: l10n.shareLinksCreateFailed,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     } finally {
@@ -296,7 +299,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
       disabled = true;
     } catch (_) {
       Settings.showToast(
-        message: ShareLinkCopy.disableFailure,
+        message: ShareLinkCopy.disableFailure(ref.read(l10nProvider)),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     }
@@ -322,7 +325,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
       ProductMetrics.instance.shareMembership('role_changed');
     } catch (_) {
       Settings.showToast(
-        message: ShareLinkCopy.roleChangeFailure,
+        message: ShareLinkCopy.roleChangeFailure(ref.read(l10nProvider)),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     }
@@ -337,9 +340,12 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   Future<void> _remove(ShareMember member) async {
     final confirmed = await ConfirmAlertDialog.show(
       context: context,
-      title: ShareLinkCopy.removeMemberTitle(_memberName(member)),
-      content: ShareLinkCopy.removeMemberDescription,
-      confirmText: ShareLinkCopy.removeMemberAction,
+      title: ShareLinkCopy.removeMemberTitle(
+        context.l10n,
+        _memberName(context.l10n, member),
+      ),
+      content: ShareLinkCopy.removeMemberDescription(context.l10n),
+      confirmText: ShareLinkCopy.removeMemberAction(context.l10n),
       isDestructive: true,
     );
     if (!confirmed || !mounted) {
@@ -356,7 +362,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
       await _load(showLoading: false);
     } catch (_) {
       Settings.showToast(
-        message: ShareLinkCopy.removeMemberFailure,
+        message: ShareLinkCopy.removeMemberFailure(ref.read(l10nProvider)),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     } finally {
@@ -370,14 +376,16 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     final maxBodyHeight = MediaQuery.sizeOf(context).height - 280;
+    final l10n = context.l10n;
 
     return ShadDialog(
       title: Text(
-        _shareDialogHeadline(widget.title),
+        _shareDialogHeadline(l10n, widget.title),
         softWrap: true,
       ),
       description: Text(
         ShareLinkCopy.dialogDescription(
+          context.l10n,
           widget.targetType,
           // Links made on web point at the web app (see currentShareOrigin).
           opensInBrowser: kIsWeb,
@@ -386,7 +394,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
       actions: [
         ShadButton.secondary(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Done'),
+          child: Text(l10n.commonDone),
         ),
       ],
       child: SizedBox(
@@ -421,12 +429,12 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         return _LinkListMessage(
           key: const ValueKey('error'),
           icon: LucideIcons.circleAlert,
-          message: "Couldn't load the share links.",
+          message: context.l10n.shareLinksLoadFailed,
           action: ShadButton.ghost(
             size: ShadButtonSize.sm,
             onPressed: _load,
             leading: const Icon(LucideIcons.refreshCw, size: 14),
-            child: const Text('Retry'),
+            child: Text(context.l10n.commonRetry),
           ),
         );
       case _LoadStatus.ready:
@@ -450,13 +458,14 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   Widget _buildPeople() {
     final auth = ref.watch(authProvider);
     final theme = ShadTheme.of(context);
+    final l10n = context.l10n;
     return Column(
       key: const ValueKey('share-people'),
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _SectionLabel(
-          label: 'People with access',
+          label: l10n.shareLinksPeopleWithAccess,
           // Counted only once everyone is here.
           count: _membersFailed || _nextCursor != null
               ? null
@@ -464,7 +473,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         ),
         const SizedBox(height: 6),
         _PersonRow(
-          name: _ownerName(auth.displayName),
+          name: _ownerName(auth.displayName(context.l10n)),
           isYou: true,
           avatarUrl: auth.avatarUrl,
           subtitle: null,
@@ -474,20 +483,20 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
           _LinkListMessage(
             key: const ValueKey('share-people-error'),
             icon: LucideIcons.circleAlert,
-            message: "Couldn't load who else has access.",
+            message: l10n.shareLinksLoadPeopleFailed,
             action: ShadButton.ghost(
               size: ShadButtonSize.sm,
               onPressed: () => _load(showLoading: false),
               leading: const Icon(LucideIcons.refreshCw, size: 14),
-              child: const Text('Retry'),
+              child: Text(l10n.commonRetry),
             ),
           ),
         for (final member in _members)
           _PersonRow(
             key: ValueKey('share-member-${member.memberId}'),
-            name: _memberName(member),
+            name: _memberName(l10n, member),
             avatarUrl: member.avatarUrl,
-            subtitle: _joinedSubtitle(member),
+            subtitle: _joinedSubtitle(l10n, member),
             trailing: _MemberControls(
               member: member,
               revision: _roleRevisions[member.memberId] ?? 0,
@@ -503,7 +512,9 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
               key: const ValueKey('share-people-more'),
               size: ShadButtonSize.sm,
               onPressed: _loadingMore ? null : _loadMore,
-              child: Text(_loadingMore ? 'Loading…' : 'Show more'),
+              child: Text(_loadingMore
+                  ? l10n.shareLinksLoadingMore
+                  : l10n.shareLinksShowMore),
             ),
           ),
         // A folder's people are managed from the folder; here they are one
@@ -521,8 +532,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'People with access to the folder "$folder" can open '
-                    'this too.',
+                    l10n.shareLinksFolderAccess(folder),
                     style: theme.textTheme.small.copyWith(
                       color: theme.colorScheme.mutedForeground,
                       fontSize: 12,
@@ -537,27 +547,27 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
     );
   }
 
-  String _joinedSubtitle(ShareMember member) {
-    final when = _relativeTime(member.joinedAt);
+  String _joinedSubtitle(AppLocalizations l10n, ShareMember member) {
+    final when = _relativeTime(l10n, member.joinedAt);
     final token = member.shareLinkToken;
     if (token == null) {
-      return 'Joined $when';
+      return l10n.shareLinksJoined(when);
     }
     final link = _links.where((link) => link.token == token).firstOrNull;
-    final through = switch (link?.role) {
-      'editor' => 'an edit link',
-      'viewer' => 'a view link',
-      _ => 'a link',
+    return switch (link?.role) {
+      'editor' => l10n.shareLinksJoinedThroughEditLink(when),
+      'viewer' => l10n.shareLinksJoinedThroughViewLink(when),
+      _ => l10n.shareLinksJoinedThroughLink(when),
     };
-    return 'Joined through $through · $when';
   }
 
   Widget _buildNewLink(ShadThemeData theme) {
+    final l10n = context.l10n;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _SectionLabel(label: 'New link'),
+        _SectionLabel(label: l10n.shareLinksNewLink),
         const SizedBox(height: 8),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -567,23 +577,23 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
                 key: const ValueKey('share-link-role-select'),
                 initialValue: _selectedRole,
                 selectedOptionBuilder: (context, value) => Text(
-                  value == 'editor' ? 'Can edit' : 'View only',
+                  value == 'editor'
+                      ? l10n.shareLinksCanEdit
+                      : l10n.shareLinksViewOnly,
                 ),
-                options: const [
+                options: [
                   ShadOption(
                     value: 'viewer',
                     child: _RoleOptionLabel(
-                      label: 'View only',
-                      description: 'Anyone with the link can open every page',
+                      label: l10n.shareLinksViewOnly,
+                      description: l10n.shareLinksViewOnlyLinkDescription,
                     ),
                   ),
                   ShadOption(
                     value: 'editor',
                     child: _RoleOptionLabel(
-                      label: 'Can edit',
-                      description:
-                          'Anyone with the link can change pages, drawings, '
-                          'and media',
+                      label: l10n.shareLinksCanEdit,
+                      description: l10n.shareLinksCanEditLinkDescription,
                     ),
                   ),
                 ],
@@ -608,7 +618,9 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
                       ),
                     )
                   : const Icon(LucideIcons.link, size: 16),
-              child: Text(_isCreating ? 'Creating…' : 'Create & copy'),
+              child: Text(_isCreating
+                  ? l10n.shareLinksCreating
+                  : l10n.shareLinksCreateAndCopy),
             ),
           ],
         ),
@@ -634,7 +646,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          ShareLinkCopy.editLinkWarning,
+                          ShareLinkCopy.editLinkWarning(context.l10n),
                           style: theme.textTheme.small.copyWith(
                             color: theme.colorScheme.mutedForeground,
                             fontSize: 12,
@@ -652,20 +664,21 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   }
 
   Widget _buildLinks() {
+    final l10n = context.l10n;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _SectionLabel(
-          label: 'Active links',
+          label: l10n.shareLinksActiveLinks,
           count: _activeLinkCount > 0 ? _activeLinkCount : null,
         ),
         const SizedBox(height: 10),
         if (_links.isEmpty)
-          const _LinkListMessage(
-            key: ValueKey('empty'),
+          _LinkListMessage(
+            key: const ValueKey('empty'),
             icon: LucideIcons.link2,
-            message: 'No links yet. Create one above to share it.',
+            message: l10n.shareLinksNoLinks,
           )
         else
           for (final (index, link) in _links.indexed) ...[
@@ -791,7 +804,7 @@ class _PersonRow extends StatelessWidget {
                     children: [
                       if (isYou)
                         TextSpan(
-                          text: ' (you)',
+                          text: context.l10n.shareLinksYouSuffix,
                           style: TextStyle(
                             color: theme.colorScheme.mutedForeground,
                             fontWeight: FontWeight.w400,
@@ -839,7 +852,7 @@ class _OwnerLabel extends StatelessWidget {
       // Lines up with the role switches, which sit left of a 32px X.
       padding: const EdgeInsets.only(right: 40),
       child: Text(
-        'Owner',
+        context.l10n.shareLinksOwner,
         style: theme.textTheme.small.copyWith(
           color: theme.colorScheme.mutedForeground,
           fontWeight: FontWeight.w400,
@@ -869,7 +882,8 @@ class _MemberControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final name = _memberName(member);
+    final l10n = context.l10n;
+    final name = _memberName(l10n, member);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -883,21 +897,21 @@ class _MemberControls extends StatelessWidget {
           initialValue: member.role,
           minWidth: 112,
           selectedOptionBuilder: (context, value) => Text(
-            value == 'editor' ? 'Can edit' : 'Can view',
+            value == 'editor' ? l10n.shareLinksCanEdit : l10n.shareLinksCanView,
           ),
-          options: const [
+          options: [
             ShadOption(
               value: 'viewer',
               child: _RoleOptionLabel(
-                label: 'Can view',
-                description: 'Opens every page, changes nothing',
+                label: l10n.shareLinksCanView,
+                description: l10n.shareLinksCanViewMemberDescription,
               ),
             ),
             ShadOption(
               value: 'editor',
               child: _RoleOptionLabel(
-                label: 'Can edit',
-                description: 'Changes pages, drawings, and media',
+                label: l10n.shareLinksCanEdit,
+                description: l10n.shareLinksCanEditMemberDescription,
               ),
             ),
           ],
@@ -906,13 +920,13 @@ class _MemberControls extends StatelessWidget {
           },
         ),
         Semantics(
-          label: 'Remove $name',
+          label: l10n.shareLinksRemoveMember(name),
           button: true,
           enabled: !busy,
           onTap: busy ? null : onRemove,
           excludeSemantics: true,
           child: Tooltip(
-            message: 'Remove $name',
+            message: l10n.shareLinksRemoveMember(name),
             child: ShadButton.ghost(
               key: ValueKey('share-member-remove-${member.memberId}'),
               size: ShadButtonSize.sm,
@@ -962,14 +976,14 @@ class _DisableLinkDialogState extends State<_DisableLinkDialog> {
     final anyone = joins.joined > 0;
     final others = joins.more || joins.joined > joins.names.length;
     return ShadDialog.alert(
-      title: const Text(ShareLinkCopy.disableTitle),
+      title: Text(ShareLinkCopy.disableTitle(context.l10n)),
       description: Padding(
         padding: const EdgeInsets.all(8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(ShareLinkCopy.disableDescription),
+            Text(ShareLinkCopy.disableDescription(context.l10n)),
             if (anyone) ...[
               const SizedBox(height: 14),
               ShadCheckbox(
@@ -978,6 +992,7 @@ class _DisableLinkDialogState extends State<_DisableLinkDialog> {
                 onChanged: (value) => setState(() => _removeJoined = value),
                 label: Text(
                   ShareLinkCopy.removeJoinedLabel(
+                    context.l10n,
                     joins.joined,
                     more: joins.more,
                   ),
@@ -986,7 +1001,12 @@ class _DisableLinkDialogState extends State<_DisableLinkDialog> {
                   ),
                 ),
                 sublabel: Text(
-                  '${joins.names.join(', ')}${others ? ' and others' : ''}',
+                  others
+                      ? context.l10n.shareLinksJoinedNamesAndOthers(
+                          joins.names
+                              .join(context.l10n.shareLinksNameSeparator),
+                        )
+                      : joins.names.join(context.l10n.shareLinksNameSeparator),
                   style: theme.textTheme.small.copyWith(
                     color: theme.colorScheme.mutedForeground,
                     fontSize: 12,
@@ -1002,12 +1022,12 @@ class _DisableLinkDialogState extends State<_DisableLinkDialog> {
         ShadButton.secondary(
           key: const ValueKey('share-link-disable-cancel'),
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.commonCancel),
         ),
         ShadButton.destructive(
           key: const ValueKey('share-link-disable-confirm'),
           onPressed: () => Navigator.of(context).pop(anyone && _removeJoined),
-          child: const Text(ShareLinkCopy.disableAction),
+          child: Text(ShareLinkCopy.disableAction(context.l10n)),
         ),
       ],
     );
@@ -1031,13 +1051,15 @@ class _LinkKindBadge extends StatelessWidget {
       background = theme.colorScheme.destructive.withValues(alpha: 0.14);
       foreground = theme.colorScheme.destructive;
       icon = null;
-      label = ShareLinkCopy.disabledStatus;
+      label = ShareLinkCopy.disabledStatus(context.l10n);
     } else {
       // Neutral for both kinds: violet marks actions, and a badge is not one.
       background = theme.colorScheme.muted;
       foreground = theme.colorScheme.mutedForeground;
       icon = role == 'editor' ? LucideIcons.pencil : LucideIcons.eye;
-      label = role == 'editor' ? 'Edit' : 'View';
+      label = role == 'editor'
+          ? context.l10n.shareLinksEditBadge
+          : context.l10n.shareLinksViewBadge;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
@@ -1096,11 +1118,15 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
     final link = widget.link;
     final url = buildIcarusShareLink(link.token, origin: currentShareOrigin());
     final joins = widget.joins;
-    final joined = widget.removing
-        ? ' · Removing people…'
+    final l10n = context.l10n;
+    final created = _relativeTime(l10n, link.createdAt);
+    final createdLine = widget.removing
+        ? l10n.shareLinksCreatedRemoving(created)
         : joins.joined == 0
-            ? ''
-            : ' · ${joins.joined}${joins.more ? '+' : ''} joined';
+            ? l10n.shareLinksCreated(created)
+            : joins.more
+                ? l10n.shareLinksCreatedJoinedMore(created, joins.joined)
+                : l10n.shareLinksCreatedJoined(created, joins.joined);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -1150,7 +1176,7 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Created ${_relativeTime(link.createdAt)}$joined',
+                        createdLine,
                         style: theme.textTheme.small.copyWith(
                           color: theme.colorScheme.mutedForeground,
                           fontSize: 11,
@@ -1163,24 +1189,24 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
               const SizedBox(width: 8),
               _CopyIconButton(
                 buttonKey: ValueKey('share-link-copy-link-${link.token}'),
-                tooltip: 'Copy link',
+                tooltip: l10n.shareLinksCopyLinkTooltip,
                 icon: LucideIcons.link,
                 enabled: !link.isRevoked,
                 textToCopy: url,
-                toastMessage: 'Share link copied to clipboard.',
+                toastMessage: l10n.shareLinksLinkCopied,
               ),
               _CopyIconButton(
                 buttonKey: ValueKey('share-link-copy-code-${link.token}'),
-                tooltip: 'Copy code',
+                tooltip: l10n.shareLinksCopyCodeTooltip,
                 icon: LucideIcons.hash,
                 enabled: !link.isRevoked,
                 textToCopy: link.token,
-                toastMessage: 'Share code copied to clipboard.',
+                toastMessage: l10n.shareLinksCodeCopied,
               ),
               Semantics(
                 label: link.isRevoked
-                    ? ShareLinkCopy.disabledTooltip
-                    : ShareLinkCopy.disableTooltip,
+                    ? ShareLinkCopy.disabledTooltip(l10n)
+                    : ShareLinkCopy.disableTooltip(l10n),
                 button: true,
                 enabled: !link.isRevoked && !widget.isDisabling,
                 onTap: link.isRevoked || widget.isDisabling
@@ -1189,8 +1215,8 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
                 excludeSemantics: true,
                 child: Tooltip(
                   message: link.isRevoked
-                      ? ShareLinkCopy.disabledTooltip
-                      : ShareLinkCopy.disableTooltip,
+                      ? ShareLinkCopy.disabledTooltip(l10n)
+                      : ShareLinkCopy.disableTooltip(l10n),
                   child: ShadButton.ghost(
                     key: ValueKey('share-link-disable-${link.token}'),
                     size: ShadButtonSize.sm,
@@ -1442,11 +1468,12 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
       _controller.text,
       currentOrigin: currentShareOrigin(),
     );
+    final l10n = context.l10n;
     if (token == null || token.isEmpty) {
       setState(() {
         _errorText = _controller.text.trim().isEmpty
-            ? 'Paste a share link or code first.'
-            : "That doesn't look like an Icarus share link or code.";
+            ? l10n.addSharedItemEmpty
+            : l10n.addSharedItemInvalid;
       });
       return;
     }
@@ -1462,8 +1489,7 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
       Navigator.of(context).pop();
     } else {
       setState(() {
-        _errorText = "Couldn't add that item. The link may be revoked, "
-            'or you may need to sign in.';
+        _errorText = l10n.addSharedItemFailed;
       });
     }
   }
@@ -1472,17 +1498,17 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     final hasError = _errorText != null;
+    final l10n = context.l10n;
 
     return ShadDialog(
-      title: const Text('Add Shared Item'),
-      description: const Text(
-        'Paste an Icarus share link or enter a share code to add it to '
-        'Shared with Me.',
+      title: Text(l10n.addSharedItemTitle),
+      description: Text(
+        l10n.addSharedItemDescription,
       ),
       actions: [
         ShadButton.secondary(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.commonCancel),
         ),
         ShadButton(
           onPressed: _isSubmitting ? null : _submit,
@@ -1496,7 +1522,8 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
                   ),
                 )
               : null,
-          child: Text(_isSubmitting ? 'Adding…' : 'Add'),
+          child: Text(
+              _isSubmitting ? l10n.addSharedItemAdding : l10n.addSharedItemAdd),
         ),
       ],
       child: Column(
@@ -1508,7 +1535,7 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
               controller: _controller,
               autofocus: true,
               placeholder: Text(
-                '${currentShareOrigin()}/share/… or ICR-XXXX-XXXX-XXXX-XXXX',
+                l10n.addSharedItemPlaceholder(currentShareOrigin().toString()),
               ),
               onSubmitted: (_) => _submit(),
               onChanged: (_) {
@@ -1579,12 +1606,12 @@ Future<void> leaveSharedItem({
   required String targetPublicId,
   required String name,
 }) async {
+  final l10n = context.l10n;
   final confirmed = await ConfirmAlertDialog.show(
     context: context,
-    title: 'Leave "${name.replaceAll('"', "'")}"?',
-    content: 'You lose access, and it leaves your Shared tab. You can only '
-        'get it back through a link from its owner.',
-    confirmText: 'Leave',
+    title: l10n.leaveSharedTitle(name.replaceAll('"', "'")),
+    content: l10n.leaveSharedDescription,
+    confirmText: l10n.commonLeave,
     isDestructive: true,
   );
   if (!confirmed) return;
@@ -1596,7 +1623,7 @@ Future<void> leaveSharedItem({
     ProductMetrics.instance.shareMembership('left');
   } catch (_) {
     Settings.showToast(
-      message: "Couldn't leave it. Check your connection and try again.",
+      message: l10n.leaveSharedFailed,
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
   }

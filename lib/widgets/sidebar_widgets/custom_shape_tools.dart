@@ -6,6 +6,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
@@ -55,7 +56,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Shapes"),
+          Text(context.l10n.shapeToolsTitle),
           const SizedBox(height: 4),
           _buildShapeSelector(),
           const SizedBox(height: 4),
@@ -66,8 +67,8 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
               // A zone is the rectangle: it colours the map itself, where a
               // circle is drawn over everything.
               _shape == _CustomShapeKind.rectangle
-                  ? "Drag or click to place. Colours the map floor inside it."
-                  : "Drag or click to place",
+                  ? context.l10n.shapeToolsZoneHint
+                  : context.l10n.sidebarDragOrClickToPlace,
               style: TextStyle(
                 fontSize: 11,
                 fontStyle: FontStyle.italic,
@@ -97,11 +98,15 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
           mainAxisSize: MainAxisSize.min,
           spacing: 4,
           children: [
-            _kindButton(_CustomShapeKind.circle, LucideIcons.circle, "Circle"),
+            _kindButton(
+              _CustomShapeKind.circle,
+              LucideIcons.circle,
+              context.l10n.shapeToolsCircle,
+            ),
             _kindButton(
               _CustomShapeKind.rectangle,
               LucideIcons.squareDashed,
-              "Zone",
+              context.l10n.shapeToolsZone,
             ),
           ],
         ),
@@ -137,11 +142,12 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
   }
 
   Widget _buildPanel(CustomShapeToolData draggableData, double mapScale) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (_shape == _CustomShapeKind.circle) ...[
-          const Text("Diameter"),
+          Text(l10n.shapeToolsDiameterLabel),
           const SizedBox(height: 4),
           SizedBox(
             height: 40,
@@ -151,14 +157,14 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
               onChanged: (v) => setState(() => _diameterMeters = v),
               min: 1.0,
               max: CustomCircleUtility.maxDiameterMeters,
-              label: 'D',
-              hintText: 'Enter Diameter',
+              label: l10n.shapeToolsDiameterShortLabel,
+              hintText: l10n.shapeToolsDiameterHint,
               suffix: 'm',
             ),
           ),
           const SizedBox(height: 4),
         ] else ...[
-          const Text("Dimensions"),
+          Text(l10n.shapeToolsDimensionsLabel),
           const SizedBox(height: 4),
           Row(spacing: 4, children: [
             Flexible(
@@ -170,8 +176,8 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
                   onChanged: (v) => setState(() => _rectLengthMeters = v),
                   min: 1,
                   max: CustomRectangleUtility.maxSideMeters,
-                  label: 'L',
-                  hintText: 'Enter Length',
+                  label: l10n.shapeToolsLengthShortLabel,
+                  hintText: l10n.shapeToolsLengthHint,
                   suffix: 'm',
                 ),
               ),
@@ -185,8 +191,8 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
                   onChanged: (v) => setState(() => _rectWidthMeters = v),
                   min: 0.5,
                   max: CustomRectangleUtility.maxSideMeters,
-                  label: 'W',
-                  hintText: 'Enter Width',
+                  label: l10n.shapeToolsWidthShortLabel,
+                  hintText: l10n.shapeToolsWidthHint,
                   suffix: 'm',
                 ),
               ),
@@ -194,7 +200,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
           ]),
           const SizedBox(height: 4),
         ],
-        const Text("Opacity"),
+        Text(l10n.shapeToolsOpacityLabel),
         const SizedBox(height: 4),
         SizedBox(
           height: 40,
@@ -207,12 +213,12 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
             leading: Icon(LucideIcons.droplet,
                 size: 16, color: Settings.tacticalVioletTheme.mutedForeground),
             // label: 'O',
-            hintText: 'Enter Opacity',
+            hintText: l10n.shapeToolsOpacityHint,
             suffix: '%',
           ),
         ),
         const SizedBox(height: 4),
-        const Text("Color"),
+        Text(l10n.shapeToolsColorLabel),
         const SizedBox(height: 4),
         _buildColorPicker(),
         const SizedBox(height: 4),
@@ -245,8 +251,8 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
               onPressed: () => _placeAtCenter(mapScale),
               child: Text(
                 _shape == _CustomShapeKind.rectangle
-                    ? "+ Place zone"
-                    : "+ Place circle",
+                    ? l10n.shapeToolsPlaceZoneButton
+                    : l10n.shapeToolsPlaceCircleButton,
               ),
             ),
           ),

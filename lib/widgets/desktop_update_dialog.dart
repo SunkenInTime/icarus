@@ -2,6 +2,7 @@ import 'package:desktop_updater/desktop_updater.dart';
 import 'package:flutter/material.dart';
 import 'package:icarus/const/release_notes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/windows_desktop_update_controller.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
@@ -170,11 +171,13 @@ class DesktopUpdateDialog extends StatelessWidget {
                           ),
                         ),
                         if (controller.isMandatory)
-                          const Positioned(
+                          Positioned(
                             top: 10,
                             left: 10,
                             child: ShadBadge.destructive(
-                              child: Text('Required'),
+                              child: Text(
+                                context.l10n.desktopUpdateRequiredBadge,
+                              ),
                             ),
                           ),
                         if (canDismiss)
@@ -306,7 +309,8 @@ class _UpdateButton extends StatelessWidget {
         onPressed: () => _confirmRestart(context),
         leading: const Icon(LucideIcons.rotateCcw),
         child: Text(
-          controller.getLocalization?.restartText ?? 'Restart to update',
+          controller.getLocalization?.restartText ??
+              context.l10n.desktopUpdateRestartToUpdate,
         ),
       );
     }
@@ -316,17 +320,19 @@ class _UpdateButton extends StatelessWidget {
       onPressed: () => _startDownload(context),
       leading: const Icon(LucideIcons.download),
       child: Text(
-        controller.getLocalization?.downloadText ?? 'Download Update',
+        controller.getLocalization?.downloadText ??
+            context.l10n.desktopUpdateDownload,
       ),
     );
   }
 
   Future<void> _startDownload(BuildContext context) async {
+    final l10n = context.l10n;
     try {
       await controller.downloadUpdate();
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
-        'Failed to download the desktop update. Please try again.',
+        l10n.desktopUpdateDownloadFailed,
         error: error,
         stackTrace: stackTrace,
         source: 'DesktopUpdateDialog.downloadUpdate',
@@ -335,13 +341,17 @@ class _UpdateButton extends StatelessWidget {
   }
 
   Future<void> _confirmRestart(BuildContext context) async {
+    final l10n = context.l10n;
     final bool confirmed = await ConfirmAlertDialog.show(
       context: context,
-      title: controller.getLocalization?.warningTitleText ?? 'Restart Required',
+      title: controller.getLocalization?.warningTitleText ??
+          l10n.desktopUpdateRestartRequiredTitle,
       content: controller.getLocalization?.restartWarningText ??
-          'A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?',
-      confirmText: controller.getLocalization?.warningConfirmText ?? 'Restart',
-      cancelText: controller.getLocalization?.warningCancelText ?? 'Not now',
+          l10n.desktopUpdateRestartWarning,
+      confirmText: controller.getLocalization?.warningConfirmText ??
+          l10n.desktopUpdateRestartConfirm,
+      cancelText: controller.getLocalization?.warningCancelText ??
+          l10n.desktopUpdateRestartCancel,
     );
 
     if (confirmed) {
@@ -349,7 +359,7 @@ class _UpdateButton extends StatelessWidget {
         await controller.restartApp();
       } catch (error, stackTrace) {
         AppErrorReporter.reportError(
-          'Failed to apply the downloaded desktop update. Please try downloading it again.',
+          l10n.desktopUpdateApplyFailed,
           error: error,
           stackTrace: stackTrace,
           source: 'DesktopUpdateDialog.restartToUpdate',
@@ -398,7 +408,7 @@ class _DownloadFillButton extends StatelessWidget {
                 ),
                 Center(
                   child: Text(
-                    'Downloading… $percent%',
+                    context.l10n.desktopUpdateDownloading(percent),
                     style: theme.textTheme.small.copyWith(
                       color: theme.colorScheme.foreground,
                       fontWeight: FontWeight.w500,

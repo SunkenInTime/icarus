@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:ui' show Locale;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
 
@@ -109,6 +111,7 @@ void main() {
 
       final invocations = <List<String>>[];
       final encoder = FfmpegVideoEncoder(
+        l10n: _english,
         processStarter: (
           executable,
           arguments, {
@@ -176,3 +179,5 @@ class _SuccessfulProcess implements Process {
   @override
   bool kill([ProcessSignal signal = ProcessSignal.sigterm]) => true;
 }
+
+final _english = lookupAppLocalizations(const Locale('en'));

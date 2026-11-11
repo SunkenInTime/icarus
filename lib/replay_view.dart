@@ -14,6 +14,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/replay/replay_cone_cuts.dart';
 import 'package:icarus/replay/replay_cone_worker.dart';
 import 'package:icarus/replay/replay_decoder.dart';
@@ -27,6 +28,7 @@ import 'package:icarus/replay/replay_playback.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/widgets/replay/replay_canvas.dart';
 import 'package:icarus/widgets/replay/replay_dock.dart';
+import 'package:icarus/widgets/replay/replay_failure_text.dart';
 import 'package:icarus/widgets/replay/replay_match_card.dart';
 import 'package:icarus/widgets/replay/replay_roster.dart';
 import 'package:icarus/widgets/window_chrome.dart';
@@ -395,7 +397,8 @@ class _ReplayStrip extends StatelessWidget {
             children: [
               const SizedBox(width: 6),
               ShadTooltip(
-                builder: (context) => const Text('Replays'),
+                builder: (context) =>
+                    Text(context.l10n.replayBackToLibraryTooltip),
                 child: ShadIconButton.ghost(
                   width: 28,
                   height: 28,
@@ -515,6 +518,7 @@ class _ReplayLoading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
+    final l10n = context.l10n;
     final failure = error;
     return Center(
       child: SizedBox(
@@ -524,18 +528,23 @@ class _ReplayLoading extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              failure == null ? 'Reading replay' : "Couldn't open this replay",
+              failure == null
+                  ? l10n.replayReading
+                  : l10n.replayOpenThisFailed,
               style: theme.textTheme.p,
             ),
             const SizedBox(height: 12),
             if (failure == null)
               ShadProgress(value: progress <= 0 ? null : progress)
             else ...[
-              Text(failure.message, style: theme.textTheme.muted),
+              Text(
+                replayFailureText(l10n, failure),
+                style: theme.textTheme.muted,
+              ),
               const SizedBox(height: 16),
               ShadButton.secondary(
                 onPressed: onBack,
-                child: const Text('Back to replays'),
+                child: Text(l10n.replayBackToReplays),
               ),
             ],
           ],

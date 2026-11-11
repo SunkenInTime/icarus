@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/pending_media_bytes_store.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/local_image_file.dart';
 
 /// The bytes one cloud media upload sends.
@@ -57,7 +58,7 @@ class MediaTooLargeException implements Exception {
   const MediaTooLargeException(this.byteSize);
   final int byteSize;
 
-  String get userMessage => 'This image is over 15 MB. Pick a smaller one.';
+  String userMessage(AppLocalizations l10n) => l10n.mediaUploadImageTooLarge;
 
   @override
   String toString() =>

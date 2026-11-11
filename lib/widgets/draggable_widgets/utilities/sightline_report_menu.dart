@@ -8,6 +8,7 @@ import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_doors_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/view_cone/sightline_report.dart';
@@ -20,6 +21,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 /// One click turns "this cone looks wrong" into everything we need to fix it:
 /// the report on the clipboard, and the same report plus a crop on disk.
 ShadContextMenuItem buildSightlineReportMenuItem({
+  required AppLocalizations l10n,
   required MapValue map,
   required bool isAttack,
   required SvgHeightVisibility? model,
@@ -41,7 +43,7 @@ ShadContextMenuItem buildSightlineReportMenuItem({
       lengthVirtual: lengthVirtual,
       visionElevationCm: visionElevationCm,
     ),
-    child: const Text('Copy sightline report'),
+    child: Text(l10n.sightlineReportCopy),
   );
 }
 
@@ -66,6 +68,7 @@ void copySightlineReport({
   final svgOrigin =
       transform.sourceFromSideWorld(sideOrigin, isAttack: isAttack);
   final mapName = Maps.mapNames[map] ?? map.name;
+  final l10n = appProviderContainer.read(l10nProvider);
   final SightlineReport report;
   final String encoded;
   try {
@@ -92,13 +95,14 @@ void copySightlineReport({
       error: error,
       stackTrace: stack,
       source: 'copySightlineReport.$mapName',
+      toastMessage: l10n.sightlineReportBuildFailed,
     );
     return;
   }
 
   unawaited(Clipboard.setData(ClipboardData(text: encoded)));
   Settings.showToast(
-    message: 'Sightline report copied',
+    message: l10n.sightlineReportCopied,
     backgroundColor: Settings.tacticalVioletTheme.primary,
   );
 
@@ -108,8 +112,13 @@ void copySightlineReport({
     model: model,
     svgOrigin: svgOrigin,
     stem: sightlineReportFileStem(mapName, isAttack, DateTime.now()),
-    label: '$mapName ${isAttack ? 'attack' : 'defense'} · eye '
-        '${report.eyeElevationMeters?.toStringAsFixed(2) ?? '—'} m',
+    label: (isAttack
+        ? l10n.sightlineReportCropLabelAttack
+        : l10n.sightlineReportCropLabelDefense)(
+      mapName,
+      report.eyeElevationMeters?.toStringAsFixed(2) ?? '—',
+    ),
+    saveFailedMessage: l10n.sightlineReportSaveFailed,
   ));
 }
 
@@ -120,6 +129,7 @@ Future<void> _saveSightlineReport({
   required Offset svgOrigin,
   required String stem,
   required String label,
+  required String saveFailedMessage,
 }) async {
   try {
     final directory = Directory(
@@ -144,6 +154,7 @@ Future<void> _saveSightlineReport({
       error: error,
       stackTrace: stack,
       source: 'copySightlineReport.save',
+      toastMessage: saveFailedMessage,
     );
   }
 }

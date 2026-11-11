@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/video_export/ffmpeg_png_sequence_writer.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
@@ -16,13 +17,14 @@ class FfmpegVideoSink implements VideoFrameSink {
     required this.binary,
     required this.outputPath,
     required this.quality,
-  });
+    required AppLocalizations l10n,
+  }) : _encoder = FfmpegVideoEncoder(l10n: l10n);
 
   final String binary;
   final String outputPath;
   final VideoExportQuality quality;
 
-  final FfmpegVideoEncoder _encoder = FfmpegVideoEncoder();
+  final FfmpegVideoEncoder _encoder;
   final List<String> _concatLines = ['ffconcat version 1.0'];
   Directory? _tempDir;
   FfmpegPngSequenceWriter? _frameWriter;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/widgets/custom_segmented_tabs.dart';
 
@@ -13,18 +14,18 @@ class AgentFilter extends ConsumerWidget {
     return CustomSegmentedTabs<FilterState>(
       compactness: compactness,
       value: ref.watch(agentFilterProvider).currentFilter,
-      items: const [
+      items: [
         SegmentedTabItem<FilterState>(
           value: FilterState.all,
-          child: Text("All"),
+          child: Text(context.l10n.sidebarFilterAll),
         ),
         SegmentedTabItem<FilterState>(
           value: FilterState.onMap,
-          child: Text("On Map"),
+          child: Text(context.l10n.sidebarFilterOnMap),
         ),
         SegmentedTabItem<FilterState>(
           value: FilterState.role,
-          child: Text("Role"),
+          child: Text(context.l10n.sidebarFilterRole),
         ),
       ],
       onChanged: (value) {

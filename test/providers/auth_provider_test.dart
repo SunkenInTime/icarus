@@ -7,7 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
-import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
@@ -16,6 +15,8 @@ import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/l10n/cloud_sync_error_text.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
@@ -26,6 +27,8 @@ import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+final _english = lookupAppLocalizations(const Locale('en'));
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -1341,7 +1344,7 @@ void main() {
 
     final state = container.read(authProvider);
     expect(state.convexAuthStatus, ConvexAuthStatus.incident);
-    expect(state.errorMessage, clientUpgradeRequiredMessage());
+    expect(state.errorMessage, clientUpgradeRequiredMessage(_english));
     expect(container.read(clientUpgradeRequiredProvider), isTrue);
   });
 

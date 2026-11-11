@@ -5,6 +5,8 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/l10n/l10n.dart';
+import 'package:icarus/l10n/page_names.dart';
 import 'package:icarus/providers/collab/drawn_cloud_pages_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
@@ -42,6 +44,10 @@ class PageListItemViewModel {
   final String id;
   final String name;
   final bool isAutoNamed;
+
+  /// The name as drawn (see [shownPageName]).
+  String shownName(AppLocalizations l10n) =>
+      shownPageName(l10n, name: name, isAutoNamed: isAutoNamed);
 }
 
 class PagesBar extends ConsumerStatefulWidget {
@@ -221,6 +227,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     final caps = ref.read(currentStrategyCapabilitiesProvider);
     if (!caps.canAddPage) return;
     showNewPageGaps(
+      ref.read(l10nProvider),
       await ref.read(strategyProvider.notifier).addPage(),
     );
   }
@@ -233,22 +240,23 @@ class _PagesBarState extends ConsumerState<PagesBar> {
   Future<void> _renamePage(PageListItemViewModel page) async {
     final caps = ref.read(currentStrategyCapabilitiesProvider);
     if (!caps.canRenamePage) return;
-    final controller = TextEditingController(text: page.name);
+    final shownName = page.shownName(context.l10n);
+    final controller = TextEditingController(text: shownName);
     final newName = await showShadDialog<String>(
       context: context,
       builder: (ctx) => ShadDialog(
-        title: const Text("Rename page"),
-        description: const Text("Enter a new name for the page:"),
+        title: Text(ctx.l10n.pagesBarRenameTitle),
+        description: Text(ctx.l10n.pagesBarRenameDescription),
         actions: [
           ShadButton.secondary(
             onPressed: () => Navigator.of(ctx).pop(),
             backgroundColor: Settings.tacticalVioletTheme.border,
-            child: const Text("Cancel"),
+            child: Text(ctx.l10n.commonCancel),
           ),
           ShadButton(
             onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
             leading: const Icon(LucideIcons.type, size: 16),
-            child: const Text("Rename"),
+            child: Text(ctx.l10n.commonRename),
           ),
         ],
         child: CustomTextField(
@@ -261,9 +269,12 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     controller.dispose();
     if (newName == null ||
         newName.isEmpty ||
-        (newName == page.name && !page.isAutoNamed)) {
+        (newName == shownName && !page.isAutoNamed)) {
       return;
     }
+    // An unnamed page confirmed under its translated name stays unnamed:
+    // saving the translation would show it to teammates in this language.
+    if (newName == shownName && shownName != page.name) return;
     await ref.read(strategyProvider.notifier).renamePage(page.id, newName);
   }
 
@@ -277,7 +288,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       context,
       ref,
       pageId: page.id,
-      pageName: page.name,
+      pageName: page.shownName(context.l10n),
     );
 
     if (confirm != true || !_showing(strategyId)) return;
@@ -290,12 +301,13 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     // from the strategy it was deleted in.
     if (!deleted || !isCloud || !_showing(strategyId)) return;
     _dismissUndo();
+    final l10n = ref.read(l10nProvider);
     late final ToastificationItem toast;
     toast = Settings.showToast(
-      message: "Deleted '${page.name}'",
+      message: l10n.pagesBarPageDeleted(page.shownName(l10n)),
       backgroundColor: Settings.tacticalVioletTheme.secondary,
       autoCloseDuration: const Duration(seconds: 6),
-      actionLabel: 'Undo',
+      actionLabel: l10n.pagesBarUndo,
       onActionPressed: () {
         // Taken once: a second tap finds nothing to undo.
         if (!identical(_undoToast, toast)) return;
@@ -343,6 +355,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
   }) async {
     bool stillHere() => _showing(strategyId);
     if (!stillHere()) return;
+    final l10n = context.l10n;
     final session = ref.read(strategyPageSessionProvider.notifier);
     final strategyName = ref.read(strategyProvider).strategyName;
     final outcome = await session.restorePageFromTrash(page.id);
@@ -350,7 +363,8 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       // Said even after leaving, so no one thinks Undo worked.
       Settings.showToast(
         message: undoFailedMessage(
-          page.name,
+          l10n,
+          page.shownName(l10n),
           outcome,
           strategyName: stillHere() ? null : (strategyName ?? ''),
         ),
@@ -365,7 +379,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     if (!_lists(page.id)) {
       // The server has it back; the list shows it when it next loads.
       Settings.showToast(
-        message: "Restored '${page.name}'.",
+        message: l10n.pagesBarRestored(page.shownName(l10n)),
         backgroundColor: Settings.tacticalVioletTheme.secondary,
       );
       return;
@@ -379,9 +393,8 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       if (!stillHere()) return;
       Settings.showToast(
         message: _lists(page.id)
-            ? "Restored '${page.name}', but could not open it. It is in the "
-                'pages list.'
-            : "Restored '${page.name}', but could not open it.",
+            ? l10n.pagesBarRestoredNotOpenedListed(page.shownName(l10n))
+            : l10n.pagesBarRestoredNotOpened(page.shownName(l10n)),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     }
@@ -593,7 +606,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
           (page) => page.id == resolvedActiveId,
           orElse: () => pages.first,
         )
-        .name;
+        .shownName(context.l10n);
     return _PageBarData(
       pages: pages,
       activePageId: resolvedActiveId,
@@ -637,7 +650,7 @@ class _CollapsedPill extends StatelessWidget {
           _SquareIconButton(
             icon: LucideIcons.plus,
             onTap: onAdd,
-            tooltip: "Add page",
+            tooltip: context.l10n.pagesBarAddPageTooltip,
             color: Settings.tacticalVioletTheme.primary,
             shortcutLabel: 'C',
           ),
@@ -861,14 +874,15 @@ class _ExpandedPanel extends ConsumerWidget {
                 _SquareIconButton(
                   icon: LucideIcons.plus,
                   onTap: canAddPage ? onAdd : null,
-                  tooltip: "Add page",
+                  tooltip: context.l10n.pagesBarAddPageTooltip,
                   color: Settings.tacticalVioletTheme.primary,
                   shortcutLabel: 'C',
                 ),
                 const Spacer(),
                 if (onOpenRecentlyDeleted != null)
                   ShadTooltip(
-                    builder: (context) => const Text('Recently deleted'),
+                    builder: (context) =>
+                        Text(context.l10n.pagesBarRecentlyDeletedTooltip),
                     child: ShadIconButton.ghost(
                       width: _pagesBarControlSize,
                       height: _pagesBarControlSize,
@@ -1142,7 +1156,7 @@ class _PageRowState extends State<_PageRow> {
                         children: [
                           Expanded(
                             child: Text(
-                              widget.page.name,
+                              widget.page.shownName(context.l10n),
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.titleMedium?.copyWith(
                                 color: Colors.white,
@@ -1167,7 +1181,8 @@ class _PageRowState extends State<_PageRow> {
                           // resting a step under white, white on hover.
                           if (showActions) ...[
                             ShadTooltip(
-                              builder: (context) => const Text("Rename"),
+                              builder: (context) =>
+                                  Text(context.l10n.commonRename),
                               child: ShadIconButton.ghost(
                                 width: 24,
                                 enabled: widget.canRename,
@@ -1182,7 +1197,8 @@ class _PageRowState extends State<_PageRow> {
                             ),
                             const SizedBox(width: 2),
                             ShadTooltip(
-                              builder: (context) => const Text("Delete"),
+                              builder: (context) =>
+                                  Text(context.l10n.commonDelete),
                               // Red is barely there on violet (1.5:1), so on
                               // a violet row the trash lights up as a red
                               // button instead.
@@ -1225,7 +1241,7 @@ class _PageRowState extends State<_PageRow> {
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.pencil, size: 16),
           onPressed: _rename,
-          child: const Text('Rename'),
+          child: Text(context.l10n.commonRename),
         ),
       if (widget.onDelete != null)
         ShadContextMenuItem(
@@ -1236,7 +1252,7 @@ class _PageRowState extends State<_PageRow> {
           ),
           enabled: !widget.disableDelete,
           onPressed: widget.disableDelete ? null : _delete,
-          child: const Text('Delete'),
+          child: Text(context.l10n.commonDelete),
         ),
     ];
     if (menuItems.isEmpty) return row;
@@ -1318,18 +1334,17 @@ class _SquareIconButton extends StatelessWidget {
 /// may be a reply that never arrived, so it says what it does not know.
 @visibleForTesting
 String undoFailedMessage(
+  AppLocalizations l10n,
   String pageName,
   DeletedPageRestore outcome, {
   required String? strategyName,
 }) {
   if (outcome == DeletedPageRestore.gone) {
-    return "'$pageName' can no longer be restored.";
+    return l10n.pagesBarRestoreGone(pageName);
   }
-  final (where, trash) = switch (strategyName) {
-    null => ('', 'Recently deleted'),
-    '' => ('', "its strategy's Recently deleted"),
-    final name => (' in $name', "that strategy's Recently deleted"),
+  return switch (strategyName) {
+    null => l10n.pagesBarRestoreUnconfirmed(pageName),
+    '' => l10n.pagesBarRestoreUnconfirmedLeft(pageName),
+    final name => l10n.pagesBarRestoreUnconfirmedIn(pageName, name),
   };
-  return "Could not confirm that '$pageName' was restored$where. Once "
-      "you're connected, check the pages list or $trash.";
 }

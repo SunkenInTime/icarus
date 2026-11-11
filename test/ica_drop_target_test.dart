@@ -1,10 +1,15 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
+
+final _en = lookupAppLocalizations(const Locale('en'));
 
 void main() {
   test('summary uses folder-only success phrasing', () {
     final summary = buildImportSummaryMessage(
+      _en,
       const ImportBatchResult(
         strategiesImported: 0,
         foldersCreated: 1,
@@ -17,6 +22,7 @@ void main() {
 
   test('summary uses folder-only partial phrasing', () {
     final summary = buildImportSummaryMessage(
+      _en,
       const ImportBatchResult(
         strategiesImported: 0,
         foldersCreated: 1,
@@ -34,6 +40,7 @@ void main() {
 
   test('summary uses no-import wording when everything is skipped', () {
     final summary = buildImportSummaryMessage(
+      _en,
       const ImportBatchResult(
         strategiesImported: 0,
         foldersCreated: 0,
@@ -58,6 +65,7 @@ void main() {
 
   test('summary uses mixed success phrasing for clean imports', () {
     final summary = buildImportSummaryMessage(
+      _en,
       const ImportBatchResult(
         strategiesImported: 10,
         foldersCreated: 3,
@@ -86,14 +94,14 @@ void main() {
 
     test('one file, and nothing else', () {
       expect(
-        buildImportSummaryMessage(resultOf(0, const [newer])),
-        NewerVersionImportException.userMessage,
+        buildImportSummaryMessage(_en, resultOf(0, const [newer])),
+        NewerVersionImportException.userMessage(_en),
       );
     });
 
     test('several files, and nothing else', () {
       expect(
-        buildImportSummaryMessage(resultOf(0, const [newer, newer])),
+        buildImportSummaryMessage(_en, resultOf(0, const [newer, newer])),
         'These files were created in a newer version of Icarus. '
         'Please update the app and try again.',
       );
@@ -101,7 +109,7 @@ void main() {
 
     test('beside files that did import', () {
       expect(
-        buildImportSummaryMessage(resultOf(2, const [newer])),
+        buildImportSummaryMessage(_en, resultOf(2, const [newer])),
         'Imported 2 strategies. Skipped 1 file. 1 was created in a newer '
         'version of Icarus. Please update the app and try again.',
       );
@@ -110,6 +118,7 @@ void main() {
     test('beside files that could never import', () {
       expect(
         buildImportSummaryMessage(
+          _en,
           resultOf(0, const [newer, newer, unsupported]),
         ),
         'No compatible strategies or folders were imported. Skipped 3 files. '
@@ -121,6 +130,7 @@ void main() {
 
   test('summary mentions restored library globals', () {
     final summary = buildImportSummaryMessage(
+      _en,
       const ImportBatchResult(
         strategiesImported: 2,
         foldersCreated: 1,

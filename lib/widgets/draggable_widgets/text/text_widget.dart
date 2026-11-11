@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
@@ -213,12 +214,12 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
               children: [
                 if (_controller.text.isEmpty)
                   Text(
-                    'Write here...',
+                    context.l10n.canvasItemTextPlaceholder,
                     style: bodyStyle.copyWith(color: Colors.grey),
                   ),
                 MergeSemantics(
                   child: Semantics(
-                    label: 'Placed text',
+                    label: context.l10n.canvasItemPlacedTextSemanticLabel,
                     child: TextField(
                       focusNode: _focusNode,
                       controller: _controller,
@@ -244,7 +245,7 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
               builder: (context, _) => FormattedTextView(
                 text: _controller.text,
                 style: bodyStyle,
-                hintText: 'Write here...',
+                hintText: context.l10n.canvasItemTextPlaceholder,
               ),
             ),
           );
@@ -365,7 +366,7 @@ class _FeedbackTextWidget extends StatelessWidget {
       child: FormattedTextView(
         text: text,
         style: style,
-        hintText: 'Write here...',
+        hintText: context.l10n.canvasItemTextPlaceholder,
       ),
     );
   }

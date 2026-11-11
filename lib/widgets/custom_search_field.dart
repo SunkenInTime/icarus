@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -21,7 +22,7 @@ class SearchTextField extends ConsumerStatefulWidget {
   const SearchTextField({
     super.key,
     this.controller,
-    this.hintText = 'Search',
+    this.hintText,
     this.onSubmitted,
     this.collapsedWidth = 44,
     this.expandedWidth = 260,
@@ -33,7 +34,7 @@ class SearchTextField extends ConsumerStatefulWidget {
   });
 
   final TextEditingController? controller;
-  final String hintText;
+  final String? hintText;
   final ValueChanged<String>? onSubmitted;
   final double collapsedWidth;
   final double expandedWidth;
@@ -175,7 +176,8 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
           borderRadius: BorderRadius.circular(8.0),
           borderSide: BorderSide.none,
         ),
-        hintText: _expanded ? widget.hintText : null,
+        hintText:
+            _expanded ? widget.hintText ?? context.l10n.searchFieldHint : null,
         hintStyle: TextStyle(
           color: Colors.white54,
           fontSize: compact ? 14 : 16,
@@ -198,7 +200,7 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
         ),
         suffixIcon: _hasText
             ? IconButton(
-                tooltip: 'Clear',
+                tooltip: context.l10n.commonClear,
                 icon: Icon(
                   LucideIcons.x,
                   size: compact ? 18 : 20,

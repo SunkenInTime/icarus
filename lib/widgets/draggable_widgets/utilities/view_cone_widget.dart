@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
@@ -278,6 +279,7 @@ class ViewConeWidget extends ConsumerWidget {
       // Only a placed cone carries a context menu; a drag preview has none.
       if (placedUtility != null) {
         sightlineReportItem = buildSightlineReportMenuItem(
+          l10n: context.l10n,
           map: mapState.currentMap,
           isAttack: mapState.isAttack,
           model: svgHeightModel,
@@ -297,6 +299,7 @@ class ViewConeWidget extends ConsumerWidget {
         : [
             if (svgHeightModel != null && svgHeightOrigin != null)
               buildSvgHeightElevationMenuItem(
+                l10n: context.l10n,
                 model: svgHeightModel,
                 origin: svgHeightOrigin,
                 selectedElevationCm: placedUtility.visionElevation,

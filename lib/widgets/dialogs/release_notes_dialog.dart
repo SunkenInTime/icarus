@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/release_notes.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/release_notes_provider.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/dialogs/welcome_tour/welcome_tour_dialog.dart';
@@ -32,9 +33,10 @@ class ReleaseNotesDialog extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final notes = ref.watch(releaseNotesProvider);
     final theme = ShadTheme.of(context);
+    final l10n = context.l10n;
 
     return ShadDialog(
-      title: const Text("What's new"),
+      title: Text(l10n.releaseNotesTitle),
       // The web beta never shows the tour, so it has nothing to go back to.
       description: ref.watch(platformPolicyProvider).isWebBeta
           ? null
@@ -47,7 +49,7 @@ class ReleaseNotesDialog extends ConsumerWidget {
                 foregroundColor: theme.colorScheme.mutedForeground,
                 hoverForegroundColor: theme.colorScheme.foreground,
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Show the welcome tour'),
+                child: Text(l10n.releaseNotesShowWelcomeTour),
               ),
             ),
       constraints: const BoxConstraints(maxWidth: _width),
@@ -118,10 +120,11 @@ class _ReleaseCard extends StatelessWidget {
               ),
               if (entry.isInstalled) ...[
                 const SizedBox(width: 10),
-                const ShadBadge.outline(child: Text('Installed')),
+                ShadBadge.outline(
+                    child: Text(context.l10n.releaseNotesInstalled)),
               ] else if (entry.isNewerThanInstalled) ...[
                 const SizedBox(width: 10),
-                const ShadBadge(child: Text('Available')),
+                ShadBadge(child: Text(context.l10n.releaseNotesAvailable)),
               ],
               const Spacer(),
               if (entry.date != null)
@@ -162,7 +165,7 @@ class _Unavailable extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            "Couldn't load patch notes. Check your connection and try again.",
+            context.l10n.releaseNotesLoadFailed,
             textAlign: TextAlign.center,
             style: theme.textTheme.small.copyWith(
               color: theme.colorScheme.mutedForeground,
@@ -173,7 +176,7 @@ class _Unavailable extends StatelessWidget {
           ShadButton.secondary(
             onPressed: onRetry,
             leading: const Icon(LucideIcons.refreshCw, size: 16),
-            child: const Text('Try again'),
+            child: Text(context.l10n.commonTryAgain),
           ),
         ],
       ),

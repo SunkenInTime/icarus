@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/canvas_clipboard_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
@@ -262,8 +263,7 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     if (preferences.canvasSelectionHintSeen) return;
     ref.read(appPreferencesProvider.notifier).markCanvasSelectionHintSeen();
     Settings.showToast(
-      message: 'Dragging on the map now selects. Hold Space and drag to '
-          'move the map.',
+      message: context.l10n.canvasSelectionHint,
       backgroundColor: Settings.tacticalVioletTheme.primary,
       autoCloseDuration: const Duration(seconds: 8),
     );

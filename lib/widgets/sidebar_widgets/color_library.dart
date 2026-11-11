@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/widgets/better_color_picker.dart';
 import 'package:icarus/widgets/context_menu_region.dart';
@@ -50,7 +51,7 @@ class ColorLibrary extends ConsumerWidget {
                     items: [
                       ShadContextMenuItem(
                         leading: const Icon(LucideIcons.pencil, size: 14),
-                        child: const Text('Edit'),
+                        child: Text(context.l10n.commonEdit),
                         onPressed: () => _editColor(context, ref, entry),
                       ),
                       ShadContextMenuItem(
@@ -60,7 +61,7 @@ class ColorLibrary extends ConsumerWidget {
                           color: Settings.tacticalVioletTheme.destructive,
                         ),
                         child: Text(
-                          'Delete',
+                          context.l10n.commonDelete,
                           style: TextStyle(
                             color: Settings.tacticalVioletTheme.destructive,
                           ),
@@ -100,7 +101,7 @@ class ColorLibrary extends ConsumerWidget {
     final picked = await showIcarusColorPickerDialog(
       context: context,
       initialColor: Colors.white,
-      title: 'Add color',
+      title: context.l10n.sidebarAddColorTitle,
     );
     if (picked == null) return;
     await ref.read(colorLibraryControllerProvider.notifier).addColor(picked);
@@ -115,7 +116,7 @@ class ColorLibrary extends ConsumerWidget {
     final picked = await showIcarusColorPickerDialog(
       context: context,
       initialColor: entry.color,
-      title: 'Edit color',
+      title: context.l10n.sidebarEditColorTitle,
     );
     if (picked == null) return;
     await ref
@@ -141,11 +142,11 @@ Future<Color?> showIcarusColorPickerDialog({
             actions: [
               ShadButton.secondary(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
+                child: Text(context.l10n.commonCancel),
               ),
               ShadButton(
                 onPressed: () => Navigator.of(context).pop(workingColor),
-                child: const Text('Apply'),
+                child: Text(context.l10n.commonApply),
               ),
             ],
             child: Material(

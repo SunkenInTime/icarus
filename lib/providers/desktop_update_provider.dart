@@ -4,23 +4,25 @@ import 'package:desktop_updater/desktop_updater.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/windows_desktop_update_controller.dart';
 
-const desktopUpdateLocalization = DesktopUpdateLocalization(
-  updateAvailableText: 'Update Available',
-  newVersionAvailableText: '{} {} is available',
-  newVersionLongText:
-      'A desktop update is ready. Downloading will fetch {} MB of files.',
-  downloadText: 'Download Update',
-  restartText: 'Restart to update',
-  skipThisVersionText: 'Later',
-  warningTitleText: 'Restart Required',
-  restartWarningText:
-      'Icarus needs to restart to finish installing the update. Unsaved changes will be lost. Restart now?',
-  warningCancelText: 'Not now',
-  warningConfirmText: 'Restart',
-);
+/// The updater's words. The package fills each `{}` in order (app name,
+/// version, download size).
+DesktopUpdateLocalization desktopUpdateLocalization(AppLocalizations l10n) =>
+    DesktopUpdateLocalization(
+      updateAvailableText: l10n.updateMsgUpdateAvailable,
+      newVersionAvailableText: l10n.updateMsgNewVersionAvailable('{}', '{}'),
+      newVersionLongText: l10n.updateMsgNewVersionLong('{}'),
+      downloadText: l10n.updateMsgDownload,
+      restartText: l10n.updateMsgRestartToUpdate,
+      skipThisVersionText: l10n.updateMsgLater,
+      warningTitleText: l10n.updateMsgRestartRequiredTitle,
+      restartWarningText: l10n.updateMsgRestartWarning,
+      warningCancelText: l10n.updateMsgRestartCancel,
+      warningConfirmText: l10n.updateMsgRestartConfirm,
+    );
 
 /// The in-app updater for direct Windows installs. Null everywhere else:
 /// the Store, macOS, and web update through their own channels, and the
@@ -29,8 +31,9 @@ final desktopUpdateControllerProvider =
     Provider<WindowsDesktopUpdateController?>((ref) {
   if (kDebugMode && kDebugForceDesktopUpdateDialog) {
     final controller = WindowsDesktopUpdateController.debugPreview(
-      localization: desktopUpdateLocalization,
+      localization: desktopUpdateLocalization(ref.read(l10nProvider)),
     );
+    _followLanguage(ref, controller);
     ref.onDispose(controller.dispose);
     return controller;
   }
@@ -47,8 +50,17 @@ final desktopUpdateControllerProvider =
   );
   final controller = WindowsDesktopUpdateController(
     appArchiveUrl: Settings.desktopUpdaterArchiveUrl,
-    localization: desktopUpdateLocalization,
+    localization: desktopUpdateLocalization(ref.read(l10nProvider)),
   );
+  _followLanguage(ref, controller);
   ref.onDispose(controller.dispose);
   return controller;
 });
+
+/// Keeps the updater's words in the app's language without replacing the
+/// controller, which may be mid-download.
+void _followLanguage(Ref ref, WindowsDesktopUpdateController controller) {
+  ref.listen(l10nProvider, (_, l10n) {
+    controller.localization = desktopUpdateLocalization(l10n);
+  });
+}

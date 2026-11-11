@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
@@ -59,13 +60,14 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text(notice.message), findsOneWidget);
+      expect(find.text(notice.message(_english)), findsOneWidget);
       expect(find.byIcon(icon), findsOneWidget);
     }
 
     await tester.tap(find.byKey(const ValueKey('auth-mode-switch')));
     await tester.pumpAndSettle();
-    expect(find.text(AuthLinkNotice.linkExpired.message), findsNothing);
+    expect(
+        find.text(AuthLinkNotice.linkExpired.message(_english)), findsNothing);
   });
 
   testWidgets('a link landing while the dialog is open speaks through it',
@@ -78,7 +80,8 @@ void main() {
         .show(AuthLinkNotice.linkExpired);
     await tester.pumpAndSettle();
 
-    expect(find.text(AuthLinkNotice.linkExpired.message), findsOneWidget);
+    expect(find.text(AuthLinkNotice.linkExpired.message(_english)),
+        findsOneWidget);
     expect(find.byType(AuthDialog), findsOneWidget);
   });
 
@@ -94,7 +97,8 @@ void main() {
         .show(AuthLinkNotice.emailConfirmed);
     await tester.pumpAndSettle();
 
-    expect(find.text(AuthLinkNotice.emailConfirmed.message), findsOneWidget);
+    expect(find.text(AuthLinkNotice.emailConfirmed.message(_english)),
+        findsOneWidget);
     expect(find.text('Create account'), findsNothing);
     expect(find.text('a@b.co'), findsOneWidget);
     expect(
@@ -118,7 +122,8 @@ void main() {
       find.text('Failed to complete login. Please try again.'),
       findsOneWidget,
     );
-    expect(find.text(AuthLinkNotice.emailConfirmed.message), findsNothing);
+    expect(find.text(AuthLinkNotice.emailConfirmed.message(_english)),
+        findsNothing);
   });
 
   testWidgets('a reset link that timed out opens on asking for a new one',
@@ -140,7 +145,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(AuthLinkNotice.resetLinkTimedOut.message), findsOneWidget);
+    expect(find.text(AuthLinkNotice.resetLinkTimedOut.message(_english)),
+        findsOneWidget);
     expect(find.text('Send reset link'), findsOneWidget);
   });
 
@@ -266,3 +272,5 @@ class _FakeAuthProvider extends AuthProvider {
     return (message: 'Link sent.', sent: true);
   }
 }
+
+final _english = lookupAppLocalizations(const Locale('en'));

@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/l10n/l10n.dart';
+import 'package:icarus/l10n/page_names.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
@@ -253,7 +255,15 @@ Future<List<PageScreenshot>> captureStrategyPages(
         if (includeCaptions && captions[page.id]?.fits != true) {
           throw CaptionsDontFit(number);
         }
-        shots.add((number: number, name: page.name, png: png));
+        shots.add((
+          number: number,
+          name: shownPageName(
+            ref.read(l10nProvider),
+            name: page.name,
+            isAutoNamed: page.isAutoNamed == true,
+          ),
+          png: png,
+        ));
       },
       isCancelled: isCancelled,
     );
@@ -464,6 +474,7 @@ Future<void> _renderPages<T>(
             final view = ScreenshotView.forPage(
               strategy,
               entry.page,
+              l10n: ref.read(l10nProvider),
               strategyState: strategyState,
               mapState: mapState,
               backgroundDotOpacity: dotOpacity,
@@ -543,20 +554,31 @@ String? _activePageName(WidgetRef ref) {
   final strategy = ref.read(strategyProvider);
   final pageId = ref.read(strategyPageSessionProvider).activePageId;
   if (pageId == null) return null;
-  return switch (strategy.source) {
-    StrategySource.cloud => ref
-        .read(remoteEditorSnapshotProvider)
-        .valueOrNull
-        ?.pages
-        .where((page) => page.publicId == pageId)
-        .firstOrNull
-        ?.name,
-    StrategySource.local => Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .get(strategy.strategyId)
-        ?.pages
-        .where((page) => page.id == pageId)
-        .firstOrNull
-        ?.name,
+  final (String name, bool? isAutoNamed)? page = switch (strategy.source) {
+    StrategySource.cloud => switch (ref
+          .read(remoteEditorSnapshotProvider)
+          .valueOrNull
+          ?.pages
+          .where((page) => page.publicId == pageId)
+          .firstOrNull) {
+        final page? => (page.name, page.isAutoNamed),
+        null => null,
+      },
+    StrategySource.local => switch (
+          Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+              .get(strategy.strategyId)
+              ?.pages
+              .where((page) => page.id == pageId)
+              .firstOrNull) {
+        final page? => (page.name, page.isAutoNamed),
+        null => null,
+      },
     null => null,
   };
+  if (page == null) return null;
+  return shownPageName(
+    ref.read(l10nProvider),
+    name: page.$1,
+    isAutoNamed: page.$2 == true,
+  );
 }

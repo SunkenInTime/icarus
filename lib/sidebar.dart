@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
 import 'package:icarus/widgets/sidebar_widgets/agent_dragable.dart';
@@ -66,13 +67,13 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                   const SizedBox(
                     height: 16,
                   ),
-                  const Align(
+                  Align(
                     alignment: Alignment.centerLeft,
                     child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
-                        "Agents",
-                        style: TextStyle(fontSize: 20),
+                        context.l10n.sidebarAgentsTitle,
+                        style: const TextStyle(fontSize: 20),
                       ),
                     ),
                   ),
@@ -92,8 +93,10 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                                 ShadTooltip(
                                   builder: (context) => Text(
                                     filterState.favoritesOnly
-                                        ? "Show all agents"
-                                        : "Show only favorite agents",
+                                        ? context
+                                            .l10n.sidebarShowAllAgentsTooltip
+                                        : context.l10n
+                                            .sidebarShowFavoriteAgentsTooltip,
                                   ),
                                   child: SelectableIconButton(
                                     isSelected: filterState.favoritesOnly,
@@ -129,20 +132,23 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                             switchInCurve: Settings.easeOut,
                             switchOutCurve: Settings.easeOut.flipped,
                             child: filterState.favoritesOnly
-                                ? const Padding(
-                                    key: ValueKey("favorites-only-indicator"),
-                                    padding: EdgeInsets.only(top: 6, left: 2),
+                                ? Padding(
+                                    key: const ValueKey(
+                                        "favorites-only-indicator"),
+                                    padding:
+                                        const EdgeInsets.only(top: 6, left: 2),
                                     child: Row(
                                       spacing: 6,
                                       children: [
-                                        Icon(
+                                        const Icon(
                                           LucideIcons.star,
                                           size: 12,
                                           color: Color(0xFFFF9800),
                                         ),
                                         Text(
-                                          "Filtering: Favorites only",
-                                          style: TextStyle(
+                                          context.l10n
+                                              .sidebarFavoritesOnlyIndicator,
+                                          style: const TextStyle(
                                             fontSize: 12,
                                             color: Color(0xFFFF9800),
                                             fontWeight: FontWeight.w600,
@@ -163,10 +169,11 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                   ),
                   Expanded(
                     child: agentList.isEmpty
-                        ? const Center(
+                        ? Center(
                             child: Text(
-                              "No agent available",
-                              style: TextStyle(fontWeight: FontWeight.w500),
+                              context.l10n.sidebarNoAgentAvailable,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w500),
                             ),
                           )
                         : RawScrollbar(

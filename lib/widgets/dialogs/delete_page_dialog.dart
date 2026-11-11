@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/providers/collab/strategy_presence_provider.dart';
@@ -19,27 +20,25 @@ Future<bool> confirmDeletePage(
   required String pageId,
   required String pageName,
 }) {
+  final l10n = context.l10n;
   final peers = ref.read(strategyPresenceProvider).peopleOn(pageId).toList();
   final afterwards = ref.read(strategyProvider).source == StrategySource.cloud
-      ? "You can restore it from Recently deleted for "
-          "$pageTrashRetentionDays days."
-      : "This action cannot be undone.";
-  final warning = " on this page right now. Delete it anyway? $afterwards";
+      ? l10n.deletePageRestorableFor(pageTrashRetentionDays)
+      : l10n.deletePageCannotUndo;
   return ConfirmAlertDialog.show(
     context: context,
-    title: "Delete '$pageName'?",
+    title: l10n.deletePageTitle(pageName),
     content: peers.isEmpty
-        ? "Are you sure you want to delete this page? $afterwards"
-        : "${_peopleHere([for (final peer in peers) peer.name])}$warning",
+        ? l10n.deletePageConfirm(afterwards)
+        : _peopleHere(l10n, [for (final peer in peers) peer.name], afterwards),
     // Each name in bold, in the colour their cursor has on the map.
     body: peers.isEmpty
         ? null
-        : Text.rich(TextSpan(children: [
-            ..._peopleHereSpans(peers),
-            TextSpan(text: warning),
-          ])),
-    confirmText: peers.isEmpty ? "Delete" : "Delete anyway",
-    cancelText: "Cancel",
+        : Text.rich(
+            TextSpan(children: _peopleHereSpans(l10n, peers, afterwards))),
+    confirmText:
+        peers.isEmpty ? l10n.commonDelete : l10n.deletePageDeleteAnyway,
+    cancelText: l10n.commonCancel,
     isDestructive: true,
   );
 }
@@ -52,33 +51,48 @@ TextSpan _name(PresencePeer peer) => TextSpan(
       ),
     );
 
-/// [_peopleHere] with each named teammate styled by [_name].
-List<InlineSpan> _peopleHereSpans(List<PresencePeer> peers) => switch (peers) {
-      [final only] => [_name(only), const TextSpan(text: ' is')],
-      [final first, final second] => [
-          _name(first),
-          const TextSpan(text: ' and '),
-          _name(second),
-          const TextSpan(text: ' are'),
-        ],
-      [final first, final second, ...final rest] => [
-          _name(first),
-          const TextSpan(text: ', '),
-          _name(second),
-          TextSpan(
-            text: ' and ${rest.length} '
-                '${rest.length == 1 ? 'other' : 'others'} are',
-          ),
-        ],
-      [] => const [],
-    };
+/// [_peopleHere] with each named teammate styled by [_name]: the warning is
+/// built with a marker in place of each name, then cut at the markers.
+List<InlineSpan> _peopleHereSpans(
+  AppLocalizations l10n,
+  List<PresencePeer> peers,
+  String afterwards,
+) {
+  final named = peers.take(2).toList();
+  final markers = [for (var i = 0; i < named.length; i++) '\u{E000}$i\u{E000}'];
+  final warning = _peopleHere(
+    l10n,
+    [...markers, for (final peer in peers.skip(2)) peer.name],
+    afterwards,
+  );
+  final spans = <InlineSpan>[];
+  var rest = warning;
+  while (rest.isNotEmpty) {
+    final at = rest.indexOf('\u{E000}');
+    if (at < 0) {
+      spans.add(TextSpan(text: rest));
+      break;
+    }
+    if (at > 0) spans.add(TextSpan(text: rest.substring(0, at)));
+    final end = rest.indexOf('\u{E000}', at + 1);
+    spans.add(_name(named[int.parse(rest.substring(at + 1, end))]));
+    rest = rest.substring(end + 1);
+  }
+  return spans;
+}
 
-/// "Alex is", "Alex and Sam are", "Alex, Sam and 2 others are".
-String _peopleHere(List<String> names) => switch (names) {
-      [final only] => '$only is',
-      [final first, final second] => '$first and $second are',
+/// "Alex is on this page right now…", "Alex and Sam are…", "Alex, Sam and 2
+/// others are…", followed by [afterwards].
+String _peopleHere(
+  AppLocalizations l10n,
+  List<String> names,
+  String afterwards,
+) =>
+    switch (names) {
+      [final only] => l10n.deletePagePeerOne(only, afterwards),
+      [final first, final second] =>
+        l10n.deletePagePeersTwo(first, second, afterwards),
       [final first, final second, ...final rest] =>
-        '$first, $second and ${rest.length} '
-            '${rest.length == 1 ? 'other' : 'others'} are',
+        l10n.deletePagePeersMany(first, second, rest.length, afterwards),
       [] => '',
     };

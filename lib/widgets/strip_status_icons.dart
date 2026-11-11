@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
@@ -50,7 +51,7 @@ class WhatsNewIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return StripIcon(
       key: const ValueKey('strip-whats-new'),
-      tooltip: "What's new",
+      tooltip: context.l10n.stripWhatsNewTooltip,
       icon: LucideIcons.inbox,
       onPressed: () => ReleaseNotesDialog.show(context),
     );
@@ -68,16 +69,18 @@ class UpdateAvailableIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return WaitingUpdateBuilder(
       builder: (context, openUpdate, _) =>
-          openUpdate == null ? const SizedBox.shrink() : _icon(openUpdate),
+          openUpdate == null
+              ? const SizedBox.shrink()
+              : _icon(context, openUpdate),
     );
   }
 
-  Widget _icon(VoidCallback onPressed) {
+  Widget _icon(BuildContext context, VoidCallback onPressed) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: StripIcon(
         key: const ValueKey('strip-update-available'),
-        tooltip: 'Update available',
+        tooltip: context.l10n.stripUpdateAvailableTooltip,
         icon: LucideIcons.download,
         foregroundColor: Settings.tacticalVioletTheme.primary,
         onPressed: onPressed,

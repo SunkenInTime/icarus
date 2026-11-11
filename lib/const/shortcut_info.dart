@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:icarus/l10n/l10n.dart';
 
 enum IcarusShortcutAction {
   undo,
@@ -175,19 +176,43 @@ class IcarusKeyBinding {
 class IcarusShortcutDefinition {
   const IcarusShortcutDefinition({
     required this.action,
-    required this.title,
     required this.defaultBinding,
     required this.intent,
     this.searchAliases = const [],
   });
 
   final IcarusShortcutAction action;
-  final String title;
   final IcarusKeyBinding defaultBinding;
   final Intent intent;
   final List<String> searchAliases;
 
   String get id => action.name;
+
+  String title(AppLocalizations l10n) => switch (action) {
+        IcarusShortcutAction.undo => l10n.shortcutUndo,
+        IcarusShortcutAction.redo => l10n.shortcutRedo,
+        IcarusShortcutAction.draw => l10n.shortcutDraw,
+        IcarusShortcutAction.erase => l10n.shortcutEraser,
+        IcarusShortcutAction.addText => l10n.shortcutAddText,
+        IcarusShortcutAction.navigation => l10n.shortcutNavigation,
+        IcarusShortcutAction.toggleAgentFilter =>
+          l10n.shortcutToggleAgentFilter,
+        IcarusShortcutAction.forwardPage => l10n.shortcutNextPage,
+        IcarusShortcutAction.backwardPage => l10n.shortcutPreviousPage,
+        IcarusShortcutAction.addPage => l10n.shortcutAddPage,
+        IcarusShortcutAction.addLineup => l10n.shortcutAddLineup,
+        IcarusShortcutAction.switchSide => l10n.shortcutSwitchSide,
+        IcarusShortcutAction.switchSideThisPage =>
+          l10n.shortcutSwitchSideThisPage,
+        IcarusShortcutAction.openDeleteMenu => l10n.shortcutOpenDeleteMenu,
+        IcarusShortcutAction.selectAll => l10n.shortcutSelectAll,
+        IcarusShortcutAction.rotateClockwise => l10n.shortcutRotateClockwise,
+        IcarusShortcutAction.rotateCounterclockwise =>
+          l10n.shortcutRotateCounterclockwise,
+        IcarusShortcutAction.saveStrategy => l10n.shortcutSaveStrategy,
+        IcarusShortcutAction.pasteImage => l10n.shortcutPaste,
+        IcarusShortcutAction.openInAppDebug => l10n.shortcutOpenDebugLog,
+      };
 }
 
 class ShortcutInfo {
@@ -196,7 +221,6 @@ class ShortcutInfo {
   static const reservedShortcuts = [
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.undo,
-      title: 'Undo',
       defaultBinding: IcarusKeyBinding(
         trigger: LogicalKeyboardKey.keyZ,
         primary: true,
@@ -205,7 +229,6 @@ class ShortcutInfo {
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.redo,
-      title: 'Redo',
       defaultBinding: IcarusKeyBinding(
         trigger: LogicalKeyboardKey.keyZ,
         primary: true,
@@ -222,75 +245,64 @@ class ShortcutInfo {
   static const editableShortcuts = [
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.draw,
-      title: 'Draw',
       defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.keyQ),
       intent: ToggleDrawingIntent(),
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.erase,
-      title: 'Eraser',
       defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.keyW),
       intent: ToggleErasingIntent(),
       searchAliases: ['erase'],
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.addText,
-      title: 'Add Text',
       defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.keyT),
       intent: AddedTextIntent(),
       searchAliases: ['text'],
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.navigation,
-      title: 'Navigation',
       defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.keyS),
       intent: NavigationActionIntent(),
       searchAliases: ['select', 'pointer'],
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.toggleAgentFilter,
-      title: 'Toggle Agent Filter',
       defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.keyR),
       intent: ToggleAgentFilterIntent(),
       searchAliases: ['agents', 'filter'],
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.forwardPage,
-      title: 'Next Page',
       defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.keyD),
       intent: ForwardPageIntent(),
       searchAliases: ['forward'],
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.backwardPage,
-      title: 'Previous Page',
       defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.keyA),
       intent: BackwardPageIntent(),
       searchAliases: ['backward', 'back'],
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.addPage,
-      title: 'Add Page',
       defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.keyC),
       intent: AddPageIntent(),
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.addLineup,
-      title: 'Add Lineup',
       defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.keyG),
       intent: ToggleLineupIntent(),
       searchAliases: ['lineup'],
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.switchSide,
-      title: 'Switch Side',
       defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.keyF),
       intent: SwitchSideIntent(),
       searchAliases: ['attack', 'defense', 'defend', 'flip', 'side'],
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.switchSideThisPage,
-      title: 'Switch Side (This Page)',
       defaultBinding: IcarusKeyBinding(
         trigger: LogicalKeyboardKey.keyF,
         shift: true,
@@ -300,7 +312,6 @@ class ShortcutInfo {
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.openDeleteMenu,
-      title: 'Open Delete Menu',
       defaultBinding: IcarusKeyBinding(trigger: openDeleteMenuKey),
       intent: ContextualDeleteIntent(),
       searchAliases: ['delete'],
@@ -309,7 +320,6 @@ class ShortcutInfo {
     // fixed Delete, Backspace and Escape.
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.selectAll,
-      title: 'Select All',
       defaultBinding: IcarusKeyBinding(
         trigger: LogicalKeyboardKey.keyA,
         primary: true,
@@ -319,14 +329,12 @@ class ShortcutInfo {
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.rotateClockwise,
-      title: 'Rotate Clockwise',
       defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.keyX),
       intent: RotateHoveredIntent(clockwise: true),
       searchAliases: ['rotate', 'turn', 'clockwise'],
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.rotateCounterclockwise,
-      title: 'Rotate Counterclockwise',
       defaultBinding: IcarusKeyBinding(
         trigger: LogicalKeyboardKey.keyX,
         shift: true,
@@ -336,7 +344,6 @@ class ShortcutInfo {
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.saveStrategy,
-      title: 'Save Strategy',
       defaultBinding: IcarusKeyBinding(
         trigger: LogicalKeyboardKey.keyS,
         primary: true,
@@ -346,7 +353,6 @@ class ShortcutInfo {
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.pasteImage,
-      title: 'Paste',
       defaultBinding: IcarusKeyBinding(
         trigger: LogicalKeyboardKey.keyV,
         primary: true,
@@ -356,7 +362,6 @@ class ShortcutInfo {
     ),
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.openInAppDebug,
-      title: 'Open Debug Log',
       defaultBinding: IcarusKeyBinding(trigger: LogicalKeyboardKey.f12),
       intent: OpenInAppDebugIntent(),
       searchAliases: ['debug', 'log'],
@@ -472,12 +477,13 @@ class ShortcutInfo {
   static bool matchesSearch(
     IcarusShortcutDefinition definition,
     String query,
-    Map<String, String> customBindings, {
+    Map<String, String> customBindings,
+    AppLocalizations l10n, {
     TargetPlatform? platform,
   }) {
     final normalizedQuery = normalizeSearch(query);
     if (normalizedQuery.isEmpty) return true;
-    final title = normalizeSearch(definition.title);
+    final title = normalizeSearch(definition.title(l10n));
     final aliases = definition.searchAliases.map(normalizeSearch).join(' ');
     final binding = effectiveBindingFor(definition.id, customBindings);
     return title.contains(normalizedQuery) ||

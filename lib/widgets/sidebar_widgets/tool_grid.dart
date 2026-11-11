@@ -8,6 +8,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -96,6 +97,7 @@ class ToolGrid extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final currentInteractionState = ref.watch(interactionStateProvider);
     final shortcutBindings =
         ref.watch(appPreferencesProvider).customShortcutBindings;
@@ -115,11 +117,11 @@ class ToolGrid extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Text(
-            "Tools",
-            style: TextStyle(fontSize: 20),
+            l10n.sidebarToolsTitle,
+            style: const TextStyle(fontSize: 20),
           ),
         ),
         Padding(
@@ -132,7 +134,7 @@ class ToolGrid extends ConsumerWidget {
             children: [
               SelectableIconButton(
                 icon: const Icon(LucideIcons.pencil, size: 22),
-                tooltip: "Draw",
+                tooltip: l10n.sidebarDrawTooltip,
                 shortcutLabel: shortcutLabel(IcarusShortcutAction.draw),
                 onPressed: () {
                   switch (currentInteractionState) {
@@ -149,7 +151,7 @@ class ToolGrid extends ConsumerWidget {
                 isSelected: currentInteractionState == InteractionState.drawing,
               ),
               SelectableIconButton(
-                tooltip: "Eraser",
+                tooltip: l10n.sidebarEraserTooltip,
                 shortcutLabel: shortcutLabel(IcarusShortcutAction.erase),
                 onPressed: () async {
                   await ref.read(penProvider.notifier).buildCursors();
@@ -171,7 +173,7 @@ class ToolGrid extends ConsumerWidget {
                 isSelected: currentInteractionState == InteractionState.erasing,
               ),
               SelectableIconButton(
-                tooltip: "Add Text",
+                tooltip: l10n.sidebarAddTextTooltip,
                 shortcutLabel: shortcutLabel(IcarusShortcutAction.addText),
                 onPressed: () {
                   switch (currentInteractionState) {
@@ -190,7 +192,7 @@ class ToolGrid extends ConsumerWidget {
                     currentInteractionState == InteractionState.textTools,
               ),
               ShadTooltip(
-                builder: (context) => const Text("Add Image"),
+                builder: (context) => Text(l10n.sidebarAddImageTooltip),
                 child: ShadIconButton.secondary(
                   onPressed: () async {
                     if (!ensureFeatureAvailable(
@@ -216,7 +218,7 @@ class ToolGrid extends ConsumerWidget {
                         );
                     if (!added) {
                       Settings.showToast(
-                        message: 'Upload failed',
+                        message: l10n.sidebarImageUploadFailed,
                         backgroundColor:
                             Settings.tacticalVioletTheme.destructive,
                       );
@@ -226,7 +228,7 @@ class ToolGrid extends ConsumerWidget {
                 ),
               ),
               SelectableIconButton(
-                tooltip: "Add Lineup",
+                tooltip: l10n.sidebarAddLineupTooltip,
                 shortcutLabel: shortcutLabel(IcarusShortcutAction.addLineup),
                 onPressed: () async {
                   if (!ensureFeatureAvailable(
@@ -252,7 +254,7 @@ class ToolGrid extends ConsumerWidget {
                     InteractionState.lineUpPlacing,
               ),
               SelectableIconButton(
-                tooltip: "Vision Cone Tools",
+                tooltip: l10n.sidebarVisionConeToolsTooltip,
                 onPressed: () {
                   switch (currentInteractionState) {
                     case InteractionState.visionCone:
@@ -270,7 +272,7 @@ class ToolGrid extends ConsumerWidget {
                     currentInteractionState == InteractionState.visionCone,
               ),
               SelectableIconButton(
-                tooltip: "Shapes",
+                tooltip: l10n.sidebarCustomShapesTooltip,
                 onPressed: () {
                   switch (currentInteractionState) {
                     case InteractionState.customShapes:
@@ -288,7 +290,7 @@ class ToolGrid extends ConsumerWidget {
                     currentInteractionState == InteractionState.customShapes,
               ),
               SelectableIconButton(
-                tooltip: "Agent Roles",
+                tooltip: l10n.sidebarAgentRolesTooltip,
                 onPressed: () {
                   switch (currentInteractionState) {
                     case InteractionState.roleIcons:
@@ -307,7 +309,7 @@ class ToolGrid extends ConsumerWidget {
                     currentInteractionState == InteractionState.roleIcons,
               ),
               ShadTooltip(
-                builder: (context) => const Text("Spike"),
+                builder: (context) => Text(context.l10n.gameSpike),
                 child: Draggable<SpikeToolData>(
                   data: SpikeToolData.fromUtility(
                     UtilityData.utilityWidgets[UtilityType.spike]!

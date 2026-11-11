@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/collab/cloud_sync_error_message.dart';
+import 'package:icarus/l10n/cloud_sync_error_text.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
@@ -31,29 +32,28 @@ Future<UnsavedStrategyDecision> showUnsavedStrategyDialog(
   final result = await showShadDialog<UnsavedStrategyDecision>(
     context: context,
     builder: (context) {
+      final l10n = context.l10n;
       return ShadDialog.alert(
-        title: const Text('Save changes?'),
-        description: const Text(
-          'This strategy has unsaved changes. Do you want to save before leaving?',
-        ),
+        title: Text(l10n.unsavedGuardTitle),
+        description: Text(l10n.unsavedGuardDescription),
         actions: [
           ShadButton.ghost(
             onPressed: () {
               Navigator.of(context).pop(UnsavedStrategyDecision.cancel);
             },
-            child: const Text('Cancel'),
+            child: Text(l10n.commonCancel),
           ),
           ShadButton.destructive(
             onPressed: () {
               Navigator.of(context).pop(UnsavedStrategyDecision.dontSave);
             },
-            child: const Text("Don't save"),
+            child: Text(l10n.unsavedGuardDontSave),
           ),
           ShadButton(
             onPressed: () {
               Navigator.of(context).pop(UnsavedStrategyDecision.save);
             },
-            child: const Text('Save'),
+            child: Text(l10n.commonSave),
           ),
         ],
       );
@@ -72,8 +72,9 @@ Future<CloudExitDecision> _showCloudSyncBlockedDialog(
   final result = await showShadDialog<CloudExitDecision>(
     context: context,
     builder: (context) {
+      final l10n = context.l10n;
       return ShadDialog.alert(
-        title: const Text('Cloud sync pending'),
+        title: Text(l10n.unsavedGuardCloudPendingTitle),
         description: Text(message),
         // One row that wraps when the labels need more room: the quiet way
         // out first, the command last.
@@ -88,27 +89,27 @@ Future<CloudExitDecision> _showCloudSyncBlockedDialog(
                   onPressed: () {
                     Navigator.of(context).pop(CloudExitDecision.stay);
                   },
-                  child: const Text('Stay here'),
+                  child: Text(l10n.unsavedGuardStayHere),
                 ),
                 if (showRetryAuth)
                   ShadButton.secondary(
                     onPressed: () {
                       Navigator.of(context).pop(CloudExitDecision.retryAuth);
                     },
-                    child: const Text('Retry sign-in'),
+                    child: Text(l10n.unsavedGuardRetrySignIn),
                   ),
                 if (allowLeaveAnyway)
                   ShadButton.secondary(
                     onPressed: () {
                       Navigator.of(context).pop(CloudExitDecision.leaveAnyway);
                     },
-                    child: const Text('Leave anyway'),
+                    child: Text(l10n.unsavedGuardLeaveAnyway),
                   ),
                 ShadButton(
                   onPressed: () {
                     Navigator.of(context).pop(CloudExitDecision.retrySync);
                   },
-                  child: const Text('Retry sync'),
+                  child: Text(l10n.unsavedGuardRetrySync),
                 ),
               ],
             ),
@@ -153,6 +154,7 @@ Future<bool> _guardCloudStrategyExit({
   required WidgetRef ref,
   required Future<void> Function() onContinue,
 }) async {
+  final l10n = context.l10n;
   final openingStrategy = ref.read(strategyProvider);
   final openingSaveState = ref.read(strategySaveStateProvider);
   if ((ref.read(textDraftProvider).isNotEmpty || openingSaveState.isDirty) &&
@@ -164,7 +166,7 @@ Future<bool> _guardCloudStrategyExit({
           .forceSaveNow(openingStrategy.strategyId!);
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
-        'Failed to sync the active text edit before leaving.',
+        l10n.unsavedGuardTextEditSyncFailed,
         error: error,
         stackTrace: stackTrace,
         source: 'cloud_media.exit_guard',
@@ -288,6 +290,7 @@ Future<bool> _guardCloudStrategyExit({
     final decision = await _showCloudSyncBlockedDialog(
       context,
       message: _cloudSyncBlockedMessage(
+        l10n: context.l10n,
         isConnected: isConnected,
         cloudError: cloudError,
         mediaErrorCount: saveState.mediaSyncErrorCount,
@@ -339,6 +342,7 @@ Future<bool> _guardCloudStrategyExit({
 }
 
 String _cloudSyncBlockedMessage({
+  required AppLocalizations l10n,
   required bool isConnected,
   required String? cloudError,
   required int mediaErrorCount,
@@ -348,32 +352,27 @@ String _cloudSyncBlockedMessage({
   required bool hasPausedWork,
 }) {
   final base = !isConnected
-      ? 'Icarus is offline, so these changes have not reached the cloud.'
+      ? l10n.unsavedGuardOffline
       : (cloudError != null
-          ? friendlyCloudSyncError(cloudError)
+          ? friendlyCloudSyncError(l10n, cloudError)
           : (mediaErrorCount > 0
-              ? 'Some images have not reached the cloud.'
-              : 'Icarus is still sending cloud edits and images.'));
+              ? l10n.unsavedGuardImagesPending
+              : l10n.unsavedGuardStillSending));
   if (canLeaveWithDurableWork) {
     if (hasUnreadableSavedWork) {
-      return '$base Leaving will not delete the saved device records. You '
-          'can return to this strategy and retry.';
+      return l10n.unsavedGuardLeaveKeepsUnreadable(base);
     }
     // Refused work waits for the user's choice; nothing retries it.
     if (hasRefusedWork) {
-      return '$base You can leave; when you come back, choose what to keep '
-          'from the sync button.';
+      return l10n.unsavedGuardLeaveChooseLater(base);
     }
     // Paused work is sent again only when the user retries it.
     if (hasPausedWork) {
-      return '$base You can leave; nothing is sent until you retry from the '
-          'sync button.';
+      return l10n.unsavedGuardLeaveRetryFromButton(base);
     }
-    return '$base The pending work is saved on this device. You can leave '
-        'and Icarus will retry it later.';
+    return l10n.unsavedGuardLeaveRetriesLater(base);
   }
-  return '$base Stay here and retry because Icarus could not confirm that '
-      'all pending work is saved on this device.';
+  return l10n.unsavedGuardStayAndRetry(base);
 }
 
 Future<bool> guardUnsavedStrategyExit({
@@ -382,6 +381,7 @@ Future<bool> guardUnsavedStrategyExit({
   required Future<void> Function() onContinue,
   required String source,
 }) async {
+  final l10n = context.l10n;
   final strategyState = ref.read(strategyProvider);
   final saveState = ref.read(strategySaveStateProvider);
   if (strategyState.source == StrategySource.cloud) {
@@ -409,7 +409,7 @@ Future<bool> guardUnsavedStrategyExit({
     }
   } catch (error, stackTrace) {
     AppErrorReporter.reportError(
-      'Failed to save strategy before leaving.',
+      l10n.unsavedGuardSaveFailed,
       error: error,
       stackTrace: stackTrace,
       source: source,
@@ -432,7 +432,7 @@ Future<bool> guardUnsavedStrategyExit({
         await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
       } catch (error, stackTrace) {
         AppErrorReporter.reportError(
-          'Failed to save strategy before leaving.',
+          l10n.unsavedGuardSaveFailed,
           error: error,
           stackTrace: stackTrace,
           source: source,

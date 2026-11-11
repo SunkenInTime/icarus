@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/browser_paste.dart';
 import 'package:image/image.dart' as img;
@@ -107,8 +108,8 @@ class ClipboardService {
   static const _name = 'Clipboard File';
 
   /// What to tell someone when the clipboard stayed busy.
-  static const busyMessage =
-      'Another program is using the clipboard. Try again in a moment.';
+  static String busyMessage(AppLocalizations l10n) =>
+      l10n.serviceMsgClipboardBusy;
 
   /// Programs open the clipboard for a moment whenever it changes: clipboard
   /// managers, screen sharing, Deskflow. Windows then refuses everyone else.

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/widgets/press_scale.dart';
 import 'package:icarus/providers/team_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -20,14 +21,14 @@ class TeamPicker extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           _TeamTextButton(
-            label: 'Ally',
+            label: context.l10n.sidebarTeamAlly,
             isSelected: isAlly,
             selectedColor: Settings.allyOutlineColor.withValues(alpha: 1),
             onTap: () => notifier.isAlly(true),
           ),
           const SizedBox(height: 4),
           _TeamTextButton(
-            label: 'Enemy',
+            label: context.l10n.sidebarTeamEnemy,
             isSelected: !isAlly,
             selectedColor: Settings.enemyOutlineColor.withValues(alpha: 1),
             onTap: () => notifier.isAlly(false),

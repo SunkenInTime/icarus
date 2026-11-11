@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/const/weapons.dart';
@@ -322,7 +323,7 @@ class _PlacedCircleAgentWidgetState
                 child: FractionalTranslation(
                   translation: const Offset(-0.5, -1.0),
                   child: CustomShapeResizeTooltip(
-                    label: 'D',
+                    label: context.l10n.shapeToolsDiameterShortLabel,
                     valueMeters: diameterMeters,
                   ),
                 ),

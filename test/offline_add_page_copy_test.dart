@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show Locale;
 
 import 'package:flutter/services.dart';
 
@@ -7,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
-import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
@@ -18,6 +18,8 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/l10n/cloud_sync_error_text.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
@@ -35,6 +37,8 @@ import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 import 'collab/strategy_copy_fixtures.dart';
 import 'collab/subscribe_together_from_each.dart';
+
+final _english = lookupAppLocalizations(const Locale('en'));
 
 /// "+" in a cloud strategy while the server can't make the copy: this
 /// computer copies the page, the new page opens and takes edits at once,
@@ -470,7 +474,10 @@ void main() {
         expect(server.missingPageReads, 0);
         // Back online, the sync button says why.
         expect(
-          friendlyCloudSyncError(app.read(strategyOpQueueProvider).lastError!),
+          friendlyCloudSyncError(
+            _english,
+            app.read(strategyOpQueueProvider).lastError!,
+          ),
           "The copy of Page 2 didn't finish saving on this computer, so it "
           'was not sent. Copy the page again, or choose Use cloud to '
           'discard it.',

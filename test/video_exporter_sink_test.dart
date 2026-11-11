@@ -12,6 +12,7 @@ import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
@@ -132,6 +133,7 @@ VideoExporter _exporter(
   bool transparent = false,
 }) {
   return VideoExporter(
+    l10n: _english,
     strategy: StrategyData(
       id: 'cloud-strategy',
       name: 'Cloud strat',
@@ -333,6 +335,7 @@ void main() {
         binary: _ffmpeg!,
         outputPath: outputPath,
         quality: VideoExportQuality.social,
+        l10n: _english,
       ),
     );
 
@@ -387,7 +390,11 @@ void main() {
       tester,
       _exporter(pages, transparent: true),
       pages,
-      QuickTimeAnimationSink(fps: 30, outputPath: outputPath),
+      QuickTimeAnimationSink(
+        fps: 30,
+        outputPath: outputPath,
+        l10n: _english,
+      ),
     );
 
     expect(outcome, isNull);
@@ -417,3 +424,5 @@ void main() {
     );
   }, skip: _ffmpeg == null || _ffprobe == null);
 }
+
+final _english = lookupAppLocalizations(const Locale('en'));

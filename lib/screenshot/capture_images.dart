@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/painting.dart';
 import 'package:http/http.dart' as http;
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 
 /// An image a capture would paint is not ready: its cloud copy is still
@@ -15,10 +16,9 @@ class CaptureImagesUnavailable implements Exception {
   /// Why the image could not be loaded; null while it is still loading.
   final Object? cause;
 
-  String get userMessage => cause == null
-      ? 'Images on this page are still loading. Try again in a moment.'
-      : "Couldn't load the images on this page. Check your connection and "
-          'try again.';
+  String userMessage(AppLocalizations l10n) => cause == null
+      ? l10n.screenshotImagesStillLoading
+      : l10n.screenshotImagesLoadFailed;
 
   @override
   String toString() => cause == null

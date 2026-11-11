@@ -15,6 +15,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
@@ -1174,8 +1175,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final name = ref.read(drawnCloudPagesProvider)?.byId(pageId)?.name;
     try {
       Settings.showToast(
-        message: "Couldn't open ${name ?? 'that page'}. Check your "
-            'connection and try again.',
+        message: name == null
+            ? ref.read(l10nProvider).strategyMsgPageUnreachableUnnamed
+            : ref.read(l10nProvider).strategyMsgPageUnreachable(name),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     } catch (error) {
@@ -1449,7 +1451,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         .where((page) => page.publicId == pageId)
         .firstOrNull;
     state = state.copyWith(
-      deletedPage: (pageId: pageId, name: lastSeen?.name ?? 'This page'),
+      deletedPage: (
+        pageId: pageId,
+        name: lastSeen?.name ??
+            ref.read(l10nProvider).strategyMsgDeletedPageFallbackName,
+      ),
     );
     return true;
   }

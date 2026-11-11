@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -29,13 +30,14 @@ class _PlacingButtons extends ConsumerWidget {
 
     final hasOrigin = placement.hasOrigin;
     final hasLanding = placement.hasLanding;
+    final l10n = context.l10n;
     final tooltipMessage = !hasOrigin && !hasLanding
-        ? "Place an agent and ability to continue"
+        ? l10n.lineupControlPlaceBoth
         : !hasOrigin
-            ? "Place an agent to continue"
+            ? l10n.lineupControlPlaceAgent
             : !hasLanding
-                ? "Place an ability to continue"
-                : "Finalize lineup details";
+                ? l10n.lineupControlPlaceAbility
+                : l10n.lineupControlFinalize;
 
     return _ButtonRow(
       primary: ShadTooltip(
@@ -52,7 +54,7 @@ class _PlacingButtons extends ConsumerWidget {
                 },
               );
             },
-            child: const Text("Next"),
+            child: Text(l10n.lineupControlNext),
           ),
         ),
       ),
@@ -76,7 +78,7 @@ class _EditingButtons extends ConsumerWidget {
               .read(interactionStateProvider.notifier)
               .update(InteractionState.navigation);
         },
-        child: const Text("Save"),
+        child: Text(context.l10n.commonSave),
       ),
     );
   }
@@ -96,7 +98,7 @@ class _ButtonRow extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           ShadTooltip(
-            builder: (_) => const Text("Cancel"),
+            builder: (_) => Text(context.l10n.commonCancel),
             child: ShadIconButton.secondary(
               width: 40,
               height: 40,

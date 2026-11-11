@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/widgets/asset_svg.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
@@ -343,7 +344,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                               child: AssetSvg(
                                                 assetName,
                                                 colorMapper: mapColorMapper,
-                                                semanticsLabel: 'Map',
+                                                semanticsLabel: context.l10n.strategyViewMapSemanticLabel,
                                                 fit: BoxFit.contain,
                                               ),
                                             ),
@@ -408,7 +409,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                             flipY: !isAttack,
                                             child: AssetSvg(
                                               barrierAssetName,
-                                              semanticsLabel: 'Barrier',
+                                              semanticsLabel: context.l10n.strategyViewBarrierSemanticLabel,
                                               fit: BoxFit.contain,
                                             ),
                                           ),
@@ -423,7 +424,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                           height: height,
                                           child: AssetSvg(
                                             calloutsAssetName,
-                                            semanticsLabel: 'Callouts',
+                                            semanticsLabel: context.l10n.strategyViewCalloutsSemanticLabel,
                                             fit: BoxFit.contain,
                                           ),
                                         ),
@@ -438,7 +439,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                             flipY: !isAttack,
                                             child: AssetSvg(
                                               ultOrbsAssetName,
-                                              semanticsLabel: 'Ult Orbs',
+                                              semanticsLabel: context.l10n.strategyViewUltOrbsSemanticLabel,
                                               fit: BoxFit.contain,
                                             ),
                                           ),

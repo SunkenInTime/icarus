@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_markup.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -65,7 +66,7 @@ class TextFormatBar extends StatelessWidget {
                   EditorToolbarButton(
                     style: style,
                     showTooltip: false,
-                    tooltip: 'Bold (Ctrl+B)',
+                    tooltip: context.l10n.canvasItemBoldTooltip('Ctrl+B'),
                     active: MarkupEditing.isInlineActive(value, '**'),
                     onPressed: () => onApply(
                       MarkupEditing.toggleInline(value, '**'),
@@ -75,7 +76,7 @@ class TextFormatBar extends StatelessWidget {
                   EditorToolbarButton(
                     style: style,
                     showTooltip: false,
-                    tooltip: 'Italic (Ctrl+I)',
+                    tooltip: context.l10n.canvasItemItalicTooltip('Ctrl+I'),
                     active: MarkupEditing.isInlineActive(value, '*'),
                     onPressed: () => onApply(
                       MarkupEditing.toggleInline(value, '*'),
@@ -85,7 +86,7 @@ class TextFormatBar extends StatelessWidget {
                   EditorToolbarButton(
                     style: style,
                     showTooltip: false,
-                    tooltip: 'Bullet list',
+                    tooltip: context.l10n.canvasItemBulletListTooltip,
                     active: MarkupEditing.lineKindAt(value) ==
                         MarkupLineKind.bullet,
                     onPressed: () => onApply(
@@ -97,7 +98,7 @@ class TextFormatBar extends StatelessWidget {
                   EditorToolbarButton(
                     style: style,
                     showTooltip: false,
-                    tooltip: 'Numbered list',
+                    tooltip: context.l10n.canvasItemNumberedListTooltip,
                     active: MarkupEditing.lineKindAt(value) ==
                         MarkupLineKind.numbered,
                     onPressed: () => onApply(
@@ -111,7 +112,7 @@ class TextFormatBar extends StatelessWidget {
                   EditorToolbarButton(
                     style: style,
                     showTooltip: false,
-                    tooltip: 'Heading',
+                    tooltip: context.l10n.canvasItemHeadingTooltip,
                     active: MarkupEditing.lineKindAt(value) ==
                         MarkupLineKind.heading,
                     onPressed: () => onApply(

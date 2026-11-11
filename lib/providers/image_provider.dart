@@ -21,6 +21,7 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:path/path.dart' as path;
@@ -184,7 +185,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
       );
     } on MediaTooLargeException catch (error) {
       Settings.showToast(
-        message: error.userMessage,
+        message: error.userMessage(ref.read(l10nProvider)),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;

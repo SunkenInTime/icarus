@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -72,7 +73,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
     _view = notice == AuthLinkNotice.resetLinkTimedOut
         ? _AuthView.resetPassword
         : _AuthView.signIn;
-    _message = notice.message;
+    _message = notice.message(ref.read(l10nProvider));
     _messageIsInfo = notice.isInfo;
     _errorField = null;
   }
@@ -111,12 +112,13 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
   Future<void> _submit() async {
     // Enter in a field still submits while a request is out.
     if (_submitting || ref.read(authProvider).isLoading) return;
+    final l10n = context.l10n;
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     final confirm = _confirmController.text;
 
     if (!_emailShape.hasMatch(email)) {
-      _setValidationError('Enter a valid email address.', _AuthField.email);
+      _setValidationError(l10n.authInvalidEmail, _AuthField.email);
       return;
     }
 
@@ -127,14 +129,14 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
 
     if (password.length < 6) {
       _setValidationError(
-        'Password must be at least 6 characters.',
+        l10n.authPasswordTooShort,
         _AuthField.password,
       );
       return;
     }
 
     if (_isSignUp && password != confirm) {
-      _setValidationError('Passwords do not match.', _AuthField.confirm);
+      _setValidationError(l10n.authPasswordsDoNotMatch, _AuthField.confirm);
       return;
     }
 
@@ -161,9 +163,8 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
       _message = error;
       // These outcomes come back through the error channel but are good
       // news — present them as info, not failure.
-      _messageIsInfo = error != null &&
-          (error.startsWith('Account created') ||
-              error.startsWith('We already sent'));
+      _messageIsInfo = error == l10n.authMsgSignUpCheckInbox ||
+          error == l10n.authMsgSignUpAlreadySent;
     });
   }
 
@@ -231,7 +232,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
       setState(() {
         if (_waitingForDiscord) {
           _waitingForDiscord = false;
-          _message = 'Failed to complete login. Please try again.';
+          _message = context.l10n.authDiscordLoginFailed;
           _messageIsInfo = false;
         } else {
           _applyNotice(notice);
@@ -241,19 +242,18 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
 
     final resetting = _view == _AuthView.resetPassword;
     final theme = ShadTheme.of(context);
+    final l10n = context.l10n;
 
     return ShadDialog(
       title: Text(switch (_view) {
-        _AuthView.signIn => 'Sign in',
-        _AuthView.signUp => 'Create account',
-        _AuthView.resetPassword => 'Reset password',
+        _AuthView.signIn => l10n.authSignInTitle,
+        _AuthView.signUp => l10n.authSignUpTitle,
+        _AuthView.resetPassword => l10n.authResetPasswordTitle,
       }),
       description: Text(switch (_view) {
-        _AuthView.signIn => 'Sign in with email and password.',
-        _AuthView.signUp => 'Use email and password to create an account.',
-        _AuthView.resetPassword =>
-          "Enter your account's email and we'll send a link to set a new "
-              'password. It works for accounts made with Discord too.',
+        _AuthView.signIn => l10n.authSignInDescription,
+        _AuthView.signUp => l10n.authSignUpDescription,
+        _AuthView.resetPassword => l10n.authResetPasswordDescription,
       }),
       child: SizedBox(
         width: 420,
@@ -267,7 +267,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
               focusNode: _emailFocusNode,
               keyboardType: TextInputType.emailAddress,
               autofillHints: const [AutofillHints.email],
-              hintText: 'Email',
+              hintText: l10n.authEmailHint,
               textInputAction:
                   resetting ? TextInputAction.done : TextInputAction.next,
               onSubmitted: resetting ? (_) => _submit() : null,
@@ -281,7 +281,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
                 focusNode: _passwordFocusNode,
                 obscureText: true,
                 autofillHints: const [AutofillHints.password],
-                hintText: 'Password',
+                hintText: l10n.authPasswordHint,
                 textInputAction:
                     _isSignUp ? TextInputAction.next : TextInputAction.done,
                 onSubmitted: _isSignUp ? null : (_) => _submit(),
@@ -297,10 +297,9 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
                   padding: EdgeInsets.zero,
                   foregroundColor: theme.colorScheme.mutedForeground,
                   hoverForegroundColor: theme.colorScheme.foreground,
-                  onPressed: busy
-                      ? null
-                      : () => _showView(_AuthView.resetPassword),
-                  child: const Text('Forgot password?'),
+                  onPressed:
+                      busy ? null : () => _showView(_AuthView.resetPassword),
+                  child: Text(l10n.authForgotPassword),
                 ),
               ),
             if (_isSignUp) ...[
@@ -311,7 +310,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
                 focusNode: _confirmFocusNode,
                 obscureText: true,
                 autofillHints: const [AutofillHints.password],
-                hintText: 'Confirm password',
+                hintText: l10n.authConfirmPasswordHint,
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _submit(),
                 hasError: _errorField == _AuthField.confirm,
@@ -360,9 +359,9 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
                                   : _AuthView.signIn,
                             ),
                     child: Text(switch (_view) {
-                      _AuthView.signIn => 'Create an account',
-                      _AuthView.signUp => 'Sign in instead',
-                      _AuthView.resetPassword => 'Back to sign in',
+                      _AuthView.signIn => l10n.authSwitchToSignUp,
+                      _AuthView.signUp => l10n.authSwitchToSignIn,
+                      _AuthView.resetPassword => l10n.authBackToSignIn,
                     }),
                   ),
                 ),
@@ -374,7 +373,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
                 key: const ValueKey('auth-discord-button'),
                 onPressed:
                     busy || _waitingForDiscord ? null : _startDiscordSignIn,
-                child: const Text('Continue with Discord'),
+                child: Text(l10n.authContinueWithDiscord),
               ),
               const SizedBox(height: 10),
             ],
@@ -389,12 +388,12 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
                     )
                   : null,
               child: Text(switch ((_view, busy)) {
-                (_AuthView.signIn, false) => 'Sign in',
-                (_AuthView.signIn, true) => 'Signing in…',
-                (_AuthView.signUp, false) => 'Create account',
-                (_AuthView.signUp, true) => 'Creating…',
-                (_AuthView.resetPassword, false) => 'Send reset link',
-                (_AuthView.resetPassword, true) => 'Sending…',
+                (_AuthView.signIn, false) => l10n.authSignInButton,
+                (_AuthView.signIn, true) => l10n.authSigningIn,
+                (_AuthView.signUp, false) => l10n.authSignUpButton,
+                (_AuthView.signUp, true) => l10n.authCreating,
+                (_AuthView.resetPassword, false) => l10n.authSendResetLink,
+                (_AuthView.resetPassword, true) => l10n.authSending,
               }),
             ),
           ],
@@ -479,8 +478,7 @@ class _DiscordPendingBanner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Finish signing in with Discord in your browser — this dialog '
-              'will close automatically.',
+              context.l10n.authDiscordPending,
               style: theme.textTheme.small.copyWith(
                 color: theme.colorScheme.mutedForeground,
                 fontSize: 12,
@@ -492,7 +490,7 @@ class _DiscordPendingBanner extends StatelessWidget {
           ShadButton.ghost(
             size: ShadButtonSize.sm,
             onPressed: onCancel,
-            child: const Text('Cancel'),
+            child: Text(context.l10n.commonCancel),
           ),
         ],
       ),

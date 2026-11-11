@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/presence/presence_models.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/editing_presence_provider.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -43,7 +44,7 @@ class LineUpEditorsNotice extends ConsumerWidget {
           const SizedBox(width: 8),
           Flexible(
             child: Text(
-              lineUpEditorsText(editors, lineups: lineups),
+              lineUpEditorsText(context.l10n, editors, lineups: lineups),
               // The label role: 12px/600.
               style: theme.textTheme.small.copyWith(
                 color: theme.colorScheme.mutedForeground,
@@ -59,13 +60,20 @@ class LineUpEditorsNotice extends ConsumerWidget {
 }
 
 /// "Sam is editing this lineup right now." and its plural forms.
-String lineUpEditorsText(List<PresencePeer> editors, {bool lineups = false}) {
-  final what = lineups ? 'these lineups' : 'this lineup';
-  final who = switch (editors) {
-    [final one] => '${one.name} is',
-    [final a, final b] => '${a.name} and ${b.name} are',
-    [final a, ...final rest] => '${a.name} and ${rest.length} others are',
-    [] => '',
-  };
-  return '$who editing $what right now.';
-}
+String lineUpEditorsText(
+  AppLocalizations l10n,
+  List<PresencePeer> editors, {
+  bool lineups = false,
+}) =>
+    switch (editors) {
+      [final one] => lineups
+          ? l10n.lineupEditorsOneOnLineups(one.name)
+          : l10n.lineupEditorsOneOnLineup(one.name),
+      [final a, final b] => lineups
+          ? l10n.lineupEditorsTwoOnLineups(a.name, b.name)
+          : l10n.lineupEditorsTwoOnLineup(a.name, b.name),
+      [final a, ...final rest] => lineups
+          ? l10n.lineupEditorsManyOnLineups(a.name, rest.length)
+          : l10n.lineupEditorsManyOnLineup(a.name, rest.length),
+      [] => '',
+    };

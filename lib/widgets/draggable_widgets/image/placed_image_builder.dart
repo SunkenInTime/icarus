@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
@@ -253,7 +254,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
   List<ShadContextMenuItem> _buildTagColorItems(WidgetRef ref) {
     return [
       ShadContextMenuItem(
-        child: const Text('Reset tag to gray'),
+        child: Text(context.l10n.canvasItemResetTagToGray),
         onPressed: () {
           ref
               .read(placedImageProvider.notifier)
@@ -285,11 +286,12 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
   }
 
   String _labelForColor(ColorLibraryEntry entry) {
-    final kind = entry.isCustom ? 'custom' : 'default';
     final hex = (entry.color.toARGB32() & 0x00FFFFFF)
         .toRadixString(16)
         .padLeft(6, '0')
         .toUpperCase();
-    return '#$hex $kind tag';
+    return entry.isCustom
+        ? context.l10n.canvasItemCustomColorTag(hex)
+        : context.l10n.canvasItemDefaultColorTag(hex);
   }
 }

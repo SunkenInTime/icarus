@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -176,7 +177,7 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
   String? get _captionRefusal {
     for (final (index, page) in _pages.indexed) {
       if (_selected.contains(page.id) && _captionMisfits.contains(page.id)) {
-        return captionsDontFitMessage(_single ? null : index + 1);
+        return captionsDontFitMessage(context.l10n, _single ? null : index + 1);
       }
     }
     return null;
@@ -223,7 +224,9 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     if (_busy || _selected.isEmpty || _captionRefusal != null) return;
     final strategy = ref.read(strategyProvider);
     if (strategy.strategyId == null) return;
-    final strategyName = strategy.strategyName ?? 'new image';
+    final l10n = context.l10n;
+    final strategyName =
+        strategy.strategyName ?? l10n.screenshotDialogDefaultFileName;
     final pageIds = {..._selected};
     // The page on the canvas now, which a teammate's delete can change while
     // the dialog is up: a ticked page that is no longer it is read as saved.
@@ -237,12 +240,12 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     if (pageIds.length > 1 && !kIsWeb) {
       try {
         folder = await FilePicker.platform.getDirectoryPath(
-          dialogTitle: 'Choose a folder for the screenshots',
+          dialogTitle: l10n.screenshotDialogChooseFolder,
         );
       } catch (error, stackTrace) {
         _busy = false;
         AppErrorReporter.reportError(
-          "Couldn't open the folder picker. Please try again.",
+          l10n.screenshotDialogFolderPickerFailed,
           error: error,
           stackTrace: stackTrace,
           source: 'ScreenshotDialog.save',
@@ -272,6 +275,7 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
         // Desktop asks where to save and writes the bytes there; the
         // browser downloads them.
         await saveExportBytes(
+          l10n,
           '${sanitizeStrategyFileName(strategyName)}.png',
           png,
         );
@@ -295,14 +299,17 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
       if (mounted) setState(() => _setCaptured(shots.length));
       if (shots.length == 1) {
         await saveExportBytes(
+          l10n,
           pageScreenshotFileName(strategyName, shots.single),
           shots.single.png,
         );
       } else if (folder != null) {
         await writeScreenshotsToFolder(folder, strategyName, shots);
         Settings.showToast(
-          message: 'Saved ${shots.length} screenshots to '
-              '${p.basename(folder)}.',
+          message: l10n.screenshotDialogSavedToFolder(
+            shots.length,
+            p.basename(folder),
+          ),
           backgroundColor: Settings.tacticalVioletTheme.primary,
         );
       } else {
@@ -315,22 +322,22 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
       }
     } on VideoExportCancelled {
       Settings.showToast(
-        message: 'Screenshots cancelled.',
+        message: l10n.screenshotDialogCancelled,
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
     } on VideoExportNotSynced catch (error, stackTrace) {
-      _reportWarning(error.userMessage, error, stackTrace);
+      _reportWarning(error.userMessage(l10n), error, stackTrace);
     } on VideoExportPagesChanged catch (error, stackTrace) {
-      _reportWarning(error.userMessage, error, stackTrace);
+      _reportWarning(error.userMessage(l10n), error, stackTrace);
     } on CaptureImagesUnavailable catch (error, stackTrace) {
-      _reportWarning(error.userMessage, error, stackTrace);
+      _reportWarning(error.userMessage(l10n), error, stackTrace);
     } on CaptionsDontFit catch (error, stackTrace) {
-      _reportWarning(error.userMessage, error, stackTrace);
+      _reportWarning(error.userMessage(l10n), error, stackTrace);
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
         pageIds.length > 1
-            ? 'Could not export the screenshots. Please try again.'
-            : 'Could not export the screenshot. Please try again.',
+            ? l10n.screenshotDialogExportFailedMany
+            : l10n.screenshotDialogExportFailedOne,
         error: error,
         stackTrace: stackTrace,
         source: 'ScreenshotDialog.save',
@@ -385,12 +392,13 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     final refusal = _captionRefusal;
     final saving = _saving != null;
     final count = _selected.length;
+    final l10n = context.l10n;
 
     final title = switch ((saving, count > 1)) {
-      (true, true) => 'Saving screenshots',
-      (true, false) => 'Saving screenshot',
-      (false, _) when _single => 'Save screenshot',
-      _ => 'Save screenshots',
+      (true, true) => l10n.screenshotDialogSavingManyTitle,
+      (true, false) => l10n.screenshotDialogSavingOneTitle,
+      (false, _) when _single => l10n.screenshotDialogSaveOneTitle,
+      _ => l10n.screenshotDialogSaveManyTitle,
     };
 
     final columns = _pages.length <= 4 ? 2 : 3;
@@ -409,7 +417,8 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
             dotOpacity: dotOpacity,
             selected: _single || _selected.contains(page.id),
             showCheckbox: !_single && !saving,
-            status: _statusOf(page.id),
+            status: _statusOf(l10n, page.id),
+            captured: _isCaptured(page.id),
             onTap: _single || saving ? null : () => _toggle(page.id),
           ),
         ),
@@ -421,15 +430,15 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
       onChanged: (value) => ref
           .read(appPreferencesProvider.notifier)
           .setTransparentScreenshotBackground(value),
-      label: const Text('Transparent background'),
+      label: Text(l10n.screenshotDialogTransparentBackground),
     );
     final captionsToggle = ShadCheckbox(
       value: includeCaptions,
       enabled: !saving,
       onChanged: _setIncludeCaptions,
-      label: const Text('Include captions'),
+      label: Text(l10n.screenshotDialogIncludeCaptions),
       sublabel: refusal == null
-          ? const Text('Numbers on the map, notes in the side margins.')
+          ? Text(l10n.screenshotDialogIncludeCaptionsDescription)
           : Text(
               refusal,
               style: TextStyle(color: theme.colorScheme.destructive),
@@ -446,14 +455,16 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
     );
     final cancel = ShadButton.secondary(
       onPressed: () => Navigator.of(context).maybePop(),
-      child: const Text('Cancel'),
+      child: Text(l10n.commonCancel),
     );
     final save = ShadButton(
       autofocus: true,
       enabled: count > 0 && refusal == null,
       onPressed: _save,
       leading: const Icon(LucideIcons.camera, size: 16),
-      child: Text(count > 1 ? 'Save $count screenshots' : 'Save screenshot'),
+      child: Text(count > 1
+          ? l10n.screenshotDialogSaveManyButton(count)
+          : l10n.screenshotDialogSaveOneButton),
     );
 
     final Widget footer;
@@ -473,7 +484,9 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
             ShadButton.destructive(
               onPressed:
                   _stopping ? null : () => setState(() => _stopping = true),
-              child: Text(_stopping ? 'Stopping…' : 'Stop'),
+              child: Text(_stopping
+                  ? l10n.screenshotDialogStoppingButton
+                  : l10n.screenshotDialogStop),
             ),
           ],
         ],
@@ -521,7 +534,9 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
               ShadButton.ghost(
                 size: ShadButtonSize.sm,
                 onPressed: _toggleAll,
-                child: Text(_allSelected ? 'Clear all' : 'Select all'),
+                child: Text(_allSelected
+                    ? l10n.screenshotDialogClearAll
+                    : l10n.screenshotDialogSelectAll),
               ),
             // Clear of the close button in the corner.
             const SizedBox(width: 16),
@@ -564,17 +579,24 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
 
   /// What a tile says while the save runs: captured, capturing, or nothing
   /// for a page waiting its turn or left out.
-  String? _statusOf(String pageId) {
+  String? _statusOf(AppLocalizations l10n, String pageId) {
     final order = _saving;
     if (order == null) return null;
     final index = order.indexOf(pageId);
     if (index < 0) return null;
-    if (index < _captured) return 'Captured';
+    if (index < _captured) return l10n.screenshotDialogCaptured;
     if (index == _captured) {
-      if (_stopping) return 'Stopping';
-      return _waitingForPictures ? 'Waiting for pictures' : 'Capturing';
+      if (_stopping) return l10n.screenshotDialogStoppingStatus;
+      return _waitingForPictures
+          ? l10n.screenshotDialogWaitingForPictures
+          : l10n.screenshotDialogCapturing;
     }
     return null;
+  }
+
+  bool _isCaptured(String pageId) {
+    final index = _saving?.indexOf(pageId) ?? -1;
+    return index >= 0 && index < _captured;
   }
 }
 
@@ -591,6 +613,7 @@ class _PageTile extends StatefulWidget {
     required this.selected,
     required this.showCheckbox,
     required this.status,
+    required this.captured,
     required this.onTap,
   });
 
@@ -608,6 +631,9 @@ class _PageTile extends StatefulWidget {
   final bool selected;
   final bool showCheckbox;
   final String? status;
+
+  /// Whether [status] says the page is captured.
+  final bool captured;
   final VoidCallback? onTap;
 
   @override
@@ -703,7 +729,7 @@ class _PageTileState extends State<_PageTile> {
                       top: 10,
                       child: _StatusChip(
                         text: status,
-                        done: status == 'Captured',
+                        done: widget.captured,
                       ),
                     ),
                 ],

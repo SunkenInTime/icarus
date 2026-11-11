@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/shortcut_info.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/canvas_clipboard_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
@@ -186,7 +187,14 @@ void main() {
     await pressPaste(tester);
     await tester.pump(const Duration(seconds: 1));
 
-    expect(find.text(ClipboardService.busyMessage), findsOneWidget);
+    expect(
+      find.text(
+        ClipboardService.busyMessage(
+          lookupAppLocalizations(const Locale('en')),
+        ),
+      ),
+      findsOneWidget,
+    );
     expect(items.pastes, 0);
     await tester.pump(const Duration(seconds: 4));
   });

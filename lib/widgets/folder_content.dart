@@ -8,6 +8,7 @@ import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
@@ -243,14 +244,13 @@ class FolderContent extends ConsumerWidget {
         folders: _filterFolders(ref, folders),
         strategies: _filterStrategies(ref, strategies),
         acceptsIcaDrops: _acceptsIcaDrops(ref),
-        emptyStateTitle: 'No strategies in this folder',
-        emptyStateSubtitle:
-            'Create a new strategy or drop strategies, folders, or .zip archives',
+        emptyStateTitle: context.l10n.folderEmptyTitle,
+        emptyStateSubtitle: context.l10n.folderEmptyLocalSubtitle,
         emptyStateAction: ShadButton(
           key: const ValueKey('folder-empty-create-strategy'),
           onPressed: onCreateStrategy,
           leading: const Icon(LucideIcons.plus),
-          child: const Text('Create Strategy'),
+          child: Text(context.l10n.folderCreateStrategy),
         ),
       ),
     );
@@ -363,16 +363,15 @@ class FolderContent extends ConsumerWidget {
                                 : null,
                 emptyStateKey: const ValueKey('library-empty-state'),
                 emptyStateIcon: LucideIcons.folder,
-                emptyStateTitle: 'Your library is empty',
+                emptyStateTitle: context.l10n.folderLibraryEmptyTitle,
                 emptyStateSubtitle: cloudAvailable
-                    ? 'Strategies you make are saved to your account.'
-                    : 'Create a new strategy or drop strategies, folders, '
-                        'or .zip archives here.',
+                    ? context.l10n.folderLibraryEmptyCloudSubtitle
+                    : context.l10n.folderLibraryEmptyLocalSubtitle,
                 emptyStateAction: ShadButton(
                   key: const ValueKey('library-empty-create-strategy'),
                   onPressed: onCreateStrategy,
                   leading: const Icon(LucideIcons.plus),
-                  child: const Text('Create Strategy'),
+                  child: Text(context.l10n.folderCreateStrategy),
                 ),
               ),
             ),
@@ -499,6 +498,7 @@ class FolderContent extends ConsumerWidget {
         LibraryStrategyRow.cloud(entry),
     ];
     final isSharedWithMe = cloudSection == CloudLibrarySection.sharedWithMe;
+    final l10n = context.l10n;
     return KeyedSubtree(
       key: const ValueKey('cloud-content'),
       child: _buildScaffold(
@@ -514,19 +514,20 @@ class FolderContent extends ConsumerWidget {
         emptyStateIcon:
             isSharedWithMe && folder == null ? LucideIcons.users : null,
         emptyStateTitle: isSharedWithMe && folder == null
-            ? 'Nothing shared with you yet'
-            : 'No strategies in this folder',
+            ? l10n.folderSharedEmptyTitle
+            : l10n.folderEmptyTitle,
         emptyStateSubtitle: isSharedWithMe && folder == null
-            ? 'Add a share link or code from a teammate to keep it here.'
+            ? l10n.folderSharedEmptySubtitle
             : isSharedWithMe
-                ? 'Strategies shared into this folder will show up here.'
-                : 'Create a new strategy to fill it.',
+                ? l10n.folderSharedFolderEmptySubtitle
+                : l10n.folderEmptyCloudSubtitle,
         emptyStateAction: isSharedWithMe
             ? (folder == null
                 ? ShadButton(
                     key: const ValueKey('shared-empty-add-item'),
                     onPressed: () {
                       if (refuseCloudChangeWhileOffline(
+                        ref.read(l10nProvider),
                         ref.read(cloudLibraryShowsCopyProvider),
                       )) {
                         return;
@@ -534,14 +535,14 @@ class FolderContent extends ConsumerWidget {
                       showAddSharedItemDialog(context);
                     },
                     leading: const Icon(LucideIcons.link),
-                    child: const Text('Add by Link or Code'),
+                    child: Text(l10n.libraryAddByLinkOrCode),
                   )
                 : null)
             : ShadButton(
                 key: const ValueKey('cloud-empty-create-strategy'),
                 onPressed: onCreateStrategy,
                 leading: const Icon(LucideIcons.plus),
-                child: const Text('Create Strategy'),
+                child: Text(l10n.folderCreateStrategy),
               ),
       ),
     );
@@ -601,8 +602,10 @@ class FolderContent extends ConsumerWidget {
     // and offer nothing to create.
     final searching = ref.watch(strategySearchQueryProvider).trim().isNotEmpty;
     final icon = searching ? null : emptyStateIcon;
-    final title = searching ? 'No matches' : emptyStateTitle;
-    final subtitle = searching ? 'Try a different search' : emptyStateSubtitle;
+    final title =
+        searching ? context.l10n.folderNoMatchesTitle : emptyStateTitle;
+    final subtitle =
+        searching ? context.l10n.folderNoMatchesSubtitle : emptyStateSubtitle;
     final action = searching ? null : emptyStateAction;
     final Widget emptyState = Center(
       key: emptyStateKey,
@@ -774,15 +777,14 @@ class FolderContent extends ConsumerWidget {
     // A live session that cannot reach the cloud retries; only a signed-out
     // user is asked to log in.
     final signedIn = ref.watch(authProvider).isAuthenticated;
+    final l10n = context.l10n;
     return _LibraryMessageState(
       icon: LucideIcons.cloudOff,
       iconColor: Settings.tacticalVioletTheme.mutedForeground,
-      title: 'Cloud unavailable',
+      title: l10n.folderCloudUnavailableTitle,
       subtitle: signedIn
-          ? 'Retry to reach your online strategies, or go back to your '
-              'library to keep working.'
-          : 'Sign in again to reach your online strategies, or go back '
-              'to your library to keep working.',
+          ? l10n.folderCloudUnavailableRetrySubtitle
+          : l10n.folderCloudUnavailableSignInSubtitle,
       actions: [
         if (signedIn)
           ShadButton(
@@ -790,7 +792,7 @@ class FolderContent extends ConsumerWidget {
             onPressed: () => ref
                 .read(authProvider.notifier)
                 .reinitializeConvexAuth(source: 'cloud_unavailable_retry'),
-            child: const Text('Retry'),
+            child: Text(l10n.commonRetry),
           )
         else
           ShadButton(
@@ -800,11 +802,11 @@ class FolderContent extends ConsumerWidget {
                 builder: (_) => const AuthDialog(),
               );
             },
-            child: const Text('Log In'),
+            child: Text(l10n.commonLogIn),
           ),
         ShadButton.secondary(
           onPressed: ref.read(libraryNavigationProvider).showLibrary,
-          child: const Text('Back to My Library'),
+          child: Text(l10n.folderBackToMyLibrary),
         ),
       ],
     );
@@ -817,21 +819,22 @@ class FolderContent extends ConsumerWidget {
     WidgetRef ref, {
     bool offerLibrary = true,
   }) {
+    final l10n = context.l10n;
     return _LibraryMessageState(
       icon: LucideIcons.cloudOff,
       iconColor: Settings.tacticalVioletTheme.destructive,
-      title: "Couldn't load your cloud library",
-      subtitle: 'Check your connection and try again.',
+      title: l10n.folderCloudLoadFailedTitle,
+      subtitle: l10n.folderCheckConnectionSubtitle,
       actions: [
         ShadButton(
           leading: const Icon(LucideIcons.refreshCw, size: 14),
           onPressed: () => _retryCloud(ref),
-          child: const Text('Retry'),
+          child: Text(l10n.commonRetry),
         ),
         if (offerLibrary)
           ShadButton.secondary(
             onPressed: ref.read(libraryNavigationProvider).showLibrary,
-            child: const Text('Back to My Library'),
+            child: Text(l10n.folderBackToMyLibrary),
           ),
       ],
     );
@@ -842,18 +845,18 @@ class FolderContent extends ConsumerWidget {
   Widget _buildNotKeptState(BuildContext context, WidgetRef ref) {
     final isShared = ref.watch(cloudLibrarySectionProvider) ==
         CloudLibrarySection.sharedWithMe;
+    final l10n = context.l10n;
     return _LibraryMessageState(
       icon: LucideIcons.cloudOff,
       iconColor: Settings.tacticalVioletTheme.mutedForeground,
       title: isShared && folder == null
-          ? "Shared isn't on this computer yet"
-          : "This folder isn't on this computer yet",
-      subtitle: 'Icarus keeps what you open while online. This loads when '
-          "you're back online.",
+          ? l10n.folderSharedNotKeptTitle
+          : l10n.folderNotKeptTitle,
+      subtitle: l10n.folderNotKeptSubtitle,
       actions: [
         ShadButton.secondary(
           onPressed: ref.read(libraryNavigationProvider).showLibrary,
-          child: const Text('Back to My Library'),
+          child: Text(l10n.folderBackToMyLibrary),
         ),
       ],
     );
@@ -865,6 +868,7 @@ class FolderContent extends ConsumerWidget {
   /// cloud gets a retry, never a second login over the one it has.
   Widget _buildSignInState(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authProvider);
+    final l10n = context.l10n;
     final restoring =
         auth.isLoading || auth.convexAuthStatus == ConvexAuthStatus.configuring;
     if (restoring) {
@@ -880,7 +884,7 @@ class FolderContent extends ConsumerWidget {
             builder: (context, message, action) => _LibraryMessageState(
               icon: LucideIcons.cloudOff,
               iconColor: Settings.tacticalVioletTheme.destructive,
-              title: 'Your cloud library needs a newer Icarus',
+              title: l10n.folderCloudNeedsUpgradeTitle,
               subtitle: message,
               actions: [if (action != null) action],
             ),
@@ -892,8 +896,8 @@ class FolderContent extends ConsumerWidget {
         child: _LibraryMessageState(
           icon: LucideIcons.cloudOff,
           iconColor: Settings.tacticalVioletTheme.destructive,
-          title: "Couldn't reach your cloud library",
-          subtitle: auth.errorMessage ?? 'Check your connection and try again.',
+          title: l10n.folderCloudUnreachableTitle,
+          subtitle: auth.errorMessage ?? l10n.folderCheckConnectionSubtitle,
           actions: [
             ShadButton(
               key: const ValueKey('library-cloud-retry'),
@@ -901,7 +905,7 @@ class FolderContent extends ConsumerWidget {
               onPressed: () => ref
                   .read(authProvider.notifier)
                   .reinitializeConvexAuth(source: 'library_retry'),
-              child: const Text('Retry'),
+              child: Text(l10n.commonRetry),
             ),
           ],
         ),
@@ -912,9 +916,8 @@ class FolderContent extends ConsumerWidget {
       child: _LibraryMessageState(
         icon: LucideIcons.logIn,
         iconColor: Settings.tacticalVioletTheme.mutedForeground,
-        title: 'Log in to use the web beta',
-        subtitle: 'Strategies you make here are saved to your Icarus '
-            'account.',
+        title: l10n.folderSignInTitle,
+        subtitle: l10n.folderSignInSubtitle,
         actions: [
           ShadButton(
             key: const ValueKey('library-sign-in-action'),
@@ -924,7 +927,7 @@ class FolderContent extends ConsumerWidget {
                 builder: (_) => const AuthDialog(),
               );
             },
-            child: const Text('Log In'),
+            child: Text(l10n.commonLogIn),
           ),
         ],
       ),
@@ -935,13 +938,12 @@ class FolderContent extends ConsumerWidget {
     return _LibraryMessageState(
       icon: LucideIcons.globe,
       iconColor: Settings.tacticalVioletTheme.primary,
-      title: 'Community strats are coming soon',
-      subtitle:
-          'This space is reserved for public lineups, team executes, and discoverable strategy packs.',
+      title: context.l10n.folderCommunityTitle,
+      subtitle: context.l10n.folderCommunitySubtitle,
       actions: [
         ShadButton.secondary(
           onPressed: ref.read(libraryNavigationProvider).showLibrary,
-          child: const Text('Back to My Library'),
+          child: Text(context.l10n.folderBackToMyLibrary),
         ),
       ],
     );
@@ -964,8 +966,7 @@ class _CloudLoadingBanner extends StatelessWidget {
           color: Settings.tacticalVioletTheme.mutedForeground,
         ),
       ),
-      message: "Loading your cloud library. Showing what's on this computer "
-          'for now.',
+      message: context.l10n.folderCloudLoadingBanner,
     );
   }
 }
@@ -987,9 +988,9 @@ class _CloudOfflineBanner extends StatelessWidget {
         size: 16,
         color: Settings.tacticalVioletTheme.mutedForeground,
       ),
-      message: 'Offline. Showing your cloud library as of '
-          '${cloudCopyTimeLabel(context, matchedAt, now: DateTime.now())}. '
-          "Changes sync when you're back online.",
+      message: context.l10n.folderCloudOfflineBanner(
+        cloudCopyTimeLabel(context, matchedAt, now: DateTime.now()),
+      ),
     );
   }
 }
@@ -1012,7 +1013,12 @@ String cloudCopyTimeLabel(
   final sameDay = local.year == today.year &&
       local.month == today.month &&
       local.day == today.day;
-  return sameDay ? time : '${localizations.formatShortMonthDay(local)}, $time';
+  return sameDay
+      ? time
+      : context.l10n.folderCopyDateTime(
+          localizations.formatShortMonthDay(local),
+          time,
+        );
 }
 
 /// Shown above the My Library root when the cloud half failed to load. The
@@ -1031,8 +1037,7 @@ class _CloudErrorBanner extends StatelessWidget {
         size: 16,
         color: Settings.tacticalVioletTheme.destructive,
       ),
-      message: "Couldn't load your cloud library. Showing what's on this "
-          'computer.',
+      message: context.l10n.folderCloudErrorBanner,
       action: ShadButton.ghost(
         // The button's usual vertical padding leaves too little of 28 for a
         // line of text, and clips the y of Retry.
@@ -1040,7 +1045,7 @@ class _CloudErrorBanner extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         leading: const Icon(LucideIcons.refreshCw, size: 14),
         onPressed: onRetry,
-        child: const Text('Retry'),
+        child: Text(context.l10n.commonRetry),
       ),
     );
   }

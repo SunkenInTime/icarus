@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:icarus/widgets/loading_spinner.dart';
 
@@ -87,10 +88,10 @@ class DeviceOnlyBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const StrategyBadge(
+    return StrategyBadge(
       icon: LucideIcons.monitor,
-      label: 'On this device',
-      tooltip: 'Saved only on this computer',
+      label: context.l10n.strategyBadgeDeviceOnly,
+      tooltip: context.l10n.strategyBadgeDeviceOnlyTooltip,
     );
   }
 }
@@ -102,10 +103,10 @@ class NeedsConnectionBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const StrategyBadge(
+    return StrategyBadge(
       icon: LucideIcons.cloudOff,
-      label: 'Needs a connection',
-      tooltip: 'Needs a connection the first time you open it',
+      label: context.l10n.strategyBadgeNeedsConnection,
+      tooltip: context.l10n.strategyBadgeNeedsConnectionTooltip,
     );
   }
 }
@@ -128,8 +129,8 @@ class MovingToCloudBadge extends StatelessWidget {
           color: Settings.tacticalVioletTheme.foreground,
         ),
       ),
-      label: 'Moving to cloud',
-      tooltip: 'Stays on this computer until all of it is in the cloud',
+      label: context.l10n.strategyBadgeMovingToCloud,
+      tooltip: context.l10n.strategyBadgeMovingToCloudTooltip,
     );
   }
 }
@@ -146,16 +147,16 @@ class CloudRoleBadge extends StatelessWidget {
       case CloudBadgeKind.owned:
         return const SizedBox.shrink();
       case CloudBadgeKind.editor:
-        return const StrategyBadge(
+        return StrategyBadge(
           icon: LucideIcons.users,
-          label: 'Shared · Can edit',
-          tooltip: 'Shared with you. You can edit it.',
+          label: context.l10n.strategyBadgeSharedCanEdit,
+          tooltip: context.l10n.strategyBadgeSharedCanEditTooltip,
         );
       case CloudBadgeKind.viewer:
-        return const StrategyBadge(
+        return StrategyBadge(
           icon: LucideIcons.users,
-          label: 'Shared · View only',
-          tooltip: 'Shared with you. Ask the owner for edit access.',
+          label: context.l10n.strategyBadgeSharedViewOnly,
+          tooltip: context.l10n.strategyBadgeSharedViewOnlyTooltip,
         );
     }
   }

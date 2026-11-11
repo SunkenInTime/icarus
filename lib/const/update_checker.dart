@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl;
 
@@ -225,27 +226,28 @@ class UpdateChecker {
   }
 
   static void showUpdateDialog(BuildContext context, UpdateCheckResult result) {
+    final l10n = context.l10n;
     final String remoteVersion = result.remoteVersion ?? Settings.versionName;
     final String titleText =
         (result.updateTitle != null && result.updateTitle!.trim().isNotEmpty)
             ? result.updateTitle!
-            : 'Version $remoteVersion is available';
+            : l10n.serviceMsgStoreUpdateVersionAvailable(remoteVersion);
     final String releaseNotes =
-        result.releaseNotes ??
-        'An update is available in the Microsoft Store.';
+        result.releaseNotes ?? l10n.serviceMsgStoreUpdateDefaultNotes;
     final List<String> features = result.features ?? const <String>[];
 
     showDialog(
       context: context,
       builder: (BuildContext context) => ShadDialog.alert(
-        title: const Text('Update Available'),
+        title: Text(l10n.serviceMsgStoreUpdateTitle),
         description: Text.rich(
           TextSpan(
             text: '$titleText\n\n',
             children: [
-              const TextSpan(text: 'Release Notes:\n'),
+              TextSpan(text: '${l10n.serviceMsgStoreUpdateReleaseNotes}\n'),
               TextSpan(text: '$releaseNotes\n'),
-              if (features.isNotEmpty) const TextSpan(text: '\nWhat is new:\n'),
+              if (features.isNotEmpty)
+                TextSpan(text: '\n${l10n.serviceMsgStoreUpdateWhatsNew}\n'),
               if (features.isNotEmpty)
                 TextSpan(
                   text: features.map((feature) => '- $feature').join('\n'),
@@ -258,7 +260,7 @@ class UpdateChecker {
             onPressed: () {
               Navigator.of(context).pop();
             },
-            child: const Text('Later'),
+            child: Text(l10n.serviceMsgStoreUpdateLater),
           ),
           TextButton(
             onPressed: () async {
@@ -270,7 +272,7 @@ class UpdateChecker {
 
               Navigator.of(context).pop();
             },
-            child: const Text('Update Now'),
+            child: Text(l10n.serviceMsgStoreUpdateNow),
           ),
         ],
       ),

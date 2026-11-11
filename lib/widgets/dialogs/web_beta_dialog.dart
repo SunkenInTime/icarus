@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl;
 
@@ -14,23 +15,23 @@ class WebBetaDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final policy = ref.watch(platformPolicyProvider);
+    final l10n = context.l10n;
     return ShadDialog(
       key: const ValueKey('web-beta-dialog'),
-      title: const Text('Icarus web beta'),
-      description: const Text(
-        'Strategies you make here are saved to your Icarus account and open '
-        'in the desktop app too.',
+      title: Text(l10n.webBetaTitle),
+      description: Text(
+        l10n.webBetaDescription,
       ),
       actions: [
         ShadButton.secondary(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Close'),
+          child: Text(l10n.commonClose),
         ),
         ShadButton(
           key: const ValueKey('web-beta-download'),
           leading: const Icon(LucideIcons.download, size: 16),
           onPressed: () => launchUrl(Settings.stableWindowsInstallerLink),
-          child: const Text('Download for Windows'),
+          child: Text(l10n.webBetaDownloadForWindows),
         ),
       ],
       child: SizedBox(
@@ -43,7 +44,7 @@ class WebBetaDialog extends ConsumerWidget {
             children: [
               if (policy.desktopOnly.isNotEmpty)
                 _FeatureList(
-                  heading: 'Desktop-only for now',
+                  heading: l10n.webBetaDesktopOnly,
                   features: policy.desktopOnly,
                 ),
               if (policy.desktopOnly.isNotEmpty &&
@@ -51,7 +52,7 @@ class WebBetaDialog extends ConsumerWidget {
                 const SizedBox(height: 12),
               if (policy.comingToWebBeta.isNotEmpty)
                 _FeatureList(
-                  heading: 'Coming to the web beta',
+                  heading: l10n.webBetaComing,
                   features: policy.comingToWebBeta,
                 ),
             ],
@@ -84,7 +85,8 @@ class _FeatureList extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          [for (final feature in features) feature.label].join(' · '),
+          [for (final feature in features) feature.label(context.l10n)]
+              .join(' · '),
           style: TextStyle(fontSize: 14, color: theme.foreground),
         ),
       ],

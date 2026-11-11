@@ -16,6 +16,7 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -298,8 +299,10 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   /// A change to the cloud library asked for while the library shows this
   /// computer's copy: refused at once, with the reason on screen.
-  bool _refuseCloudChangeOffline() =>
-      refuseCloudChangeWhileOffline(ref.read(cloudLibraryShowsCopyProvider));
+  bool _refuseCloudChangeOffline() => refuseCloudChangeWhileOffline(
+        ref.read(l10nProvider),
+        ref.read(cloudLibraryShowsCopyProvider),
+      );
 
   bool _selectedWorkspaceIsCloud() {
     return ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
@@ -2212,8 +2215,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           stackTrace: stackTrace,
         );
         Settings.showToast(
-          message: 'Strategy created, but it could not be opened. '
-              'Open it from your cloud library.',
+          message: ref.read(l10nProvider).strategyMsgCreatedNotOpened,
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
       }
@@ -2328,7 +2330,11 @@ class StrategyProvider extends Notifier<StrategyState> {
             sameAccount();
           } on CloudWorkNotSent catch (error) {
             reporter.showMessage(
-              cloudStrategyCopyRefusal(error, "it wasn't duplicated"),
+              cloudStrategyCopyRefusal(
+                ref.read(l10nProvider),
+                error,
+                CloudStrategyCopy.duplicate,
+              ),
             );
             return false;
           }
@@ -2344,14 +2350,14 @@ class StrategyProvider extends Notifier<StrategyState> {
             // was made. Say why.
             if (!isStrategyTooLargeToDuplicateError(error)) rethrow;
             reporter.showMessage(
-              "This strategy is too large to duplicate.",
+              ref.read(l10nProvider).strategyMsgTooLargeToDuplicate,
             );
             return false;
           }
           return true;
         },
         source: sourceName,
-        failureMessage: "Couldn't duplicate this strategy. Try again.",
+        failureMessage: ref.read(l10nProvider).strategyMsgDuplicateFailed,
         showFailureMessage: true,
         reportAuthenticationFailure: (error, stackTrace) =>
             ref.read(authProvider.notifier).reportConvexUnauthenticated(
@@ -2409,7 +2415,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         // Only disk space; no strategy points at this folder.
       }
       ref.read(cloudLibraryActionReporterProvider).showMessage(
-            "Couldn't duplicate this strategy: its images could not be copied.",
+            ref.read(l10nProvider).strategyMsgDuplicateImagesFailed,
           );
       return;
     }
@@ -2429,11 +2435,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     await strategyBox.put(duplicatedStrategy.id, duplicatedStrategy);
     if (missingPictures > 0) {
       ref.read(cloudLibraryActionReporterProvider).showMessage(
-            missingPictures == 1
-                ? 'Duplicated. One picture was already missing from the '
-                    'original, so the copy is missing it too.'
-                : 'Duplicated. $missingPictures pictures were already missing '
-                    'from the original, so the copy is missing them too.',
+            ref
+                .read(l10nProvider)
+                .strategyMsgDuplicatedMissingPictures(missingPictures),
           );
     }
   }
@@ -2460,7 +2464,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               return true;
             },
             source: sourceName,
-            failureMessage: "Couldn't delete this cloud strategy. Try again.",
+            failureMessage: ref.read(l10nProvider).strategyMsgDeleteCloudFailed,
             reportAuthenticationFailure: (error, stackTrace) =>
                 ref.read(authProvider.notifier).reportConvexUnauthenticated(
                       source: sourceName,
@@ -2479,7 +2483,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     // starts while this delete waits is never undercut.
     if (ref.read(movingToCloudProvider).contains(strategyID)) {
       return CloudLibraryActionResult.failed(
-        'This strategy is moving to the cloud. Delete it once the move ends.',
+        ref.read(l10nProvider).strategyMsgDeleteWhileMoving,
       );
     }
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(strategyID);
@@ -2846,7 +2850,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               return true;
             },
             source: sourceName,
-            failureMessage: "Couldn't move this cloud strategy. Try again.",
+            failureMessage: ref.read(l10nProvider).strategyMsgMoveCloudFailed,
             showFailureMessage: true,
             reportAuthenticationFailure: (error, stackTrace) =>
                 ref.read(authProvider.notifier).reportConvexUnauthenticated(
@@ -2870,7 +2874,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     } else {
       log("Strategy with ID $strategyID not found.");
       return CloudLibraryActionResult.failed(
-        "Couldn't move this strategy. Try again.",
+        ref.read(l10nProvider).strategyMsgMoveFailed,
       );
     }
   }

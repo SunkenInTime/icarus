@@ -4,6 +4,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -35,7 +36,7 @@ class _TextToolsState extends ConsumerState<TextTools> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Tag Color"),
+          Text(context.l10n.sidebarTagColorLabel),
           const SizedBox(height: 4),
           _buildColorPicker(),
           const SizedBox(height: 4),
@@ -62,7 +63,7 @@ class _TextToolsState extends ConsumerState<TextTools> {
               child: ZoomTransform(
                 child: TextWidget(
                   id: "text-tool-preview",
-                  text: "Write here...",
+                  text: context.l10n.canvasItemTextPlaceholder,
                   size: draggableData.width,
                   fontSize: 16,
                   tagColorValue: draggableData.tagColorValue,
@@ -75,14 +76,14 @@ class _TextToolsState extends ConsumerState<TextTools> {
               child: ShadButton(
                 backgroundColor: Settings.tacticalVioletTheme.primary,
                 onPressed: _placeAtCenter,
-                child: const Text("+ Place Text"),
+                child: Text(context.l10n.sidebarPlaceTextButton),
               ),
             ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Text(
-              "Drag or click to place",
+              context.l10n.sidebarDragOrClickToPlace,
               style: TextStyle(
                 fontSize: 11,
                 fontStyle: FontStyle.italic,

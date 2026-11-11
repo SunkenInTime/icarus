@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/shortcut_info.dart';
+import 'package:icarus/l10n/l10n.dart';
 
 void main() {
   test('primary modifier displays as the active platform modifier', () {
@@ -43,8 +44,9 @@ void main() {
       customBindings: const {},
     );
 
-    expect(undoDuplicate?.title, 'Undo');
-    expect(redoDuplicate?.title, 'Redo');
+    final l10n = lookupAppLocalizations(const Locale('en'));
+    expect(undoDuplicate?.title(l10n), 'Undo');
+    expect(redoDuplicate?.title(l10n), 'Redo');
   });
 
   test('effective bindings ignore custom bindings reserved for undo and redo',
@@ -73,6 +75,7 @@ void main() {
         saveDefinition,
         'save',
         bindings,
+        lookupAppLocalizations(const Locale('en')),
         platform: TargetPlatform.windows,
       ),
       isTrue,
@@ -82,6 +85,7 @@ void main() {
         saveDefinition,
         'ctrl s',
         bindings,
+        lookupAppLocalizations(const Locale('en')),
         platform: TargetPlatform.windows,
       ),
       isTrue,

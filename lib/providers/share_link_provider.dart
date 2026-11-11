@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
@@ -55,7 +56,7 @@ class ShareLinkController extends Notifier<String?> {
     );
     if (token == null || token.isEmpty) {
       Settings.showToast(
-        message: 'That share link is missing a share code.',
+        message: ref.read(l10nProvider).shareMsgMissingCode,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return true;
@@ -130,8 +131,8 @@ class ShareLinkController extends Notifier<String?> {
             .shareJoined(role: response.role, target: response.targetType);
         Settings.showToast(
           message: response.targetType == 'folder'
-              ? 'Shared folder added to your library.'
-              : 'Shared strategy added to your library.',
+              ? ref.read(l10nProvider).shareMsgFolderAdded
+              : ref.read(l10nProvider).shareMsgStrategyAdded,
           backgroundColor: Settings.tacticalVioletTheme.primary,
         );
       }
@@ -155,7 +156,7 @@ class ShareLinkController extends Notifier<String?> {
       _release(generation);
       if (showFailureToasts) {
         Settings.showToast(
-          message: 'Failed to redeem share link.',
+          message: ref.read(l10nProvider).shareMsgRedeemFailed,
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
       }
@@ -180,7 +181,7 @@ class ShareLinkController extends Notifier<String?> {
       if (strategyPublicId == null) {
         // Browsing a folder needs the cloud library, which needs an account.
         Settings.showToast(
-          message: 'Sign in to open this shared folder.',
+          message: ref.read(l10nProvider).shareMsgSignInForFolder,
           backgroundColor: Settings.tacticalVioletTheme.primary,
         );
         return false;
@@ -196,16 +197,15 @@ class ShareLinkController extends Notifier<String?> {
         _release(generation);
         Settings.showToast(
           message: revoked
-              ? 'This share link was disabled by its owner.'
-              : 'This share link does not exist.',
+              ? ref.read(l10nProvider).shareMsgLinkDisabled
+              : ref.read(l10nProvider).shareMsgLinkNotFound,
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
         return false;
       }
       // Most likely offline. The code stays held for a reload to retry.
       Settings.showToast(
-        message: 'Could not open the shared strategy. Check your connection '
-            'and reload.',
+        message: ref.read(l10nProvider).shareMsgOpenStrategyFailed,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return false;
@@ -242,8 +242,8 @@ class ShareLinkController extends Notifier<String?> {
         _release(generation);
         Settings.showToast(
           message: revoked
-              ? 'This share link was disabled by its owner.'
-              : 'This share link does not exist.',
+              ? ref.read(l10nProvider).shareMsgLinkDisabled
+              : ref.read(l10nProvider).shareMsgLinkNotFound,
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
         return false;
@@ -251,8 +251,7 @@ class ShareLinkController extends Notifier<String?> {
       // Most likely offline. The code stays held, so a reload or the next
       // sign-in update tries again.
       Settings.showToast(
-        message: 'Could not open the shared link. Check your connection and '
-            'try again.',
+        message: ref.read(l10nProvider).shareMsgOpenLinkFailed,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return false;

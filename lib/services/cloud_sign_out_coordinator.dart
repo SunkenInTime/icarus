@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
@@ -158,19 +159,16 @@ Future<void> _showPersistenceBlocked(BuildContext context) {
     context: context,
     barrierDismissible: false,
     builder: (context) => ShadDialog.alert(
-      title: const Text("Can't sign out yet"),
-      description: const Padding(
-        padding: EdgeInsets.all(8),
-        child: Text(
-          'Icarus could not confirm that all pending cloud work is saved on '
-          'this device. Stay signed in and try again.',
-        ),
+      title: Text(context.l10n.signOutGuardCantSignOutTitle),
+      description: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Text(context.l10n.signOutGuardUnconfirmedDescription),
       ),
       actions: [
         ShadButton(
           key: const ValueKey('sign-out-persistence-blocked'),
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Stay Signed In'),
+          child: Text(context.l10n.signOutGuardStaySignedIn),
         ),
       ],
     ),
@@ -185,6 +183,7 @@ Future<bool> _showSignOutConfirmation(
   required String? currentStrategyName,
   required Map<String, String> strategyNames,
 }) async {
+  final l10n = context.l10n;
   final hasPendingWork = workCount > 0;
   final strategyLabels = strategyIds
       .map((id) => id == currentStrategyId &&
@@ -192,38 +191,44 @@ Future<bool> _showSignOutConfirmation(
           ? currentStrategyName!.trim()
           : (strategyNames[id]?.trim().isNotEmpty == true
               ? strategyNames[id]!.trim()
-              : 'a cloud strategy'))
+              : l10n.signOutGuardUnnamedStrategy))
       .toSet()
       .join(', ');
   final result = await showShadDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (context) => ShadDialog.alert(
-      title: Text(hasPendingWork ? 'Cloud work is still waiting' : 'Sign out?'),
+      title: Text(
+        hasPendingWork
+            ? l10n.signOutGuardPendingTitle
+            : l10n.signOutGuardConfirmTitle,
+      ),
       description: Padding(
         padding: const EdgeInsets.all(8),
         child: Text(
           hasPendingWork
-              ? '$workCount saved ${workCount == 1 ? 'change' : 'changes'} '
-                  'across ${strategyIds.length} '
-                  '${strategyIds.length == 1 ? 'strategy is' : 'strategies are'} '
-                  'still waiting: $strategyLabels. The work remains on this '
-                  'device and resumes only when this same account signs in '
-                  'again.'
-              : 'Cloud strategies stay online. Pending work on this device '
-                  'will remain tied to this account.',
+              ? l10n.signOutGuardPendingDescription(
+                  workCount,
+                  strategyIds.length,
+                  strategyLabels,
+                )
+              : l10n.signOutGuardNoPendingDescription,
         ),
       ),
       actions: [
         ShadButton.secondary(
           key: const ValueKey('sign-out-cancel'),
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
+          child: Text(l10n.commonCancel),
         ),
         ShadButton.destructive(
           key: const ValueKey('sign-out-confirm'),
           onPressed: () => Navigator.of(context).pop(true),
-          child: Text(hasPendingWork ? 'Sign Out Anyway' : 'Sign Out'),
+          child: Text(
+            hasPendingWork
+                ? l10n.signOutGuardSignOutAnyway
+                : l10n.commonSignOut,
+          ),
         ),
       ],
     ),
@@ -235,15 +240,15 @@ Future<void> _showSignOutFailed(BuildContext context, String? message) {
   return showShadDialog<void>(
     context: context,
     builder: (context) => ShadDialog.alert(
-      title: const Text('Sign out failed'),
+      title: Text(context.l10n.signOutGuardFailedTitle),
       description: Padding(
         padding: const EdgeInsets.all(8),
-        child: Text(message ?? 'Icarus could not sign out. Please try again.'),
+        child: Text(message ?? context.l10n.signOutGuardFailedFallback),
       ),
       actions: [
         ShadButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('OK'),
+          child: Text(context.l10n.signOutGuardOk),
         ),
       ],
     ),

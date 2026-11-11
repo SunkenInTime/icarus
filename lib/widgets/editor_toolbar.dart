@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -62,6 +63,8 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     final allowsLocalSave =
         ref.watch(platformPolicyProvider).allowsLocalLibrary;
 
+    final l10n = context.l10n;
+
     // The strategy view owns the spacing around this card, so it aligns
     // with the map card above it.
     return Row(
@@ -80,7 +83,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                 if (viewingThroughLink && !signedIn)
                   EditorToolbarButton(
                     style: style,
-                    tooltip: 'View only · Sign in to add it to your library',
+                    tooltip: l10n.editorToolbarViewOnlySignIn,
                     onPressed: () => showDialog<void>(
                       context: context,
                       builder: (_) => const AuthDialog(),
@@ -91,7 +94,7 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                   EditorToolbarButton(
                     key: const ValueKey('editor-add-to-library'),
                     style: style,
-                    tooltip: 'View only · Add to my library',
+                    tooltip: l10n.editorToolbarViewOnlyAddToLibrary,
                     onPressed: () => ref
                         .read(shareLinkControllerProvider.notifier)
                         .addViewedLinkToLibrary(),
@@ -103,26 +106,26 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
                   const AutoSaveButton(style: style),
                 EditorToolbarButton(
                   style: style,
-                  tooltip: 'Export .ica',
+                  tooltip: l10n.editorToolbarExportIca,
                   onPressed: _exportStrategy,
                   icon: const Icon(LucideIcons.upload200),
                 ),
                 EditorToolbarButton(
                   style: style,
-                  tooltip: 'Export video',
+                  tooltip: l10n.editorToolbarExportVideo,
                   onPressed: _exportVideo,
                   icon: const Icon(LucideIcons.clapperboard200),
                 ),
                 EditorToolbarButton(
                   style: style,
-                  tooltip: 'Screenshot',
+                  tooltip: l10n.editorToolbarScreenshot,
                   onPressed: _openScreenshotDialog,
                   icon: const Icon(LucideIcons.camera200),
                 ),
                 const EditorToolbarDivider(),
                 EditorToolbarButton(
                   style: style,
-                  tooltip: 'Settings',
+                  tooltip: l10n.editorToolbarSettings,
                   onPressed: () {
                     showShadDialog(
                       context: context,

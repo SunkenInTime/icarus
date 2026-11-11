@@ -12,6 +12,8 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/cloud_sync_error_text.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
@@ -170,7 +172,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
 
     if (nextName.isEmpty) {
       Settings.showToast(
-        message: 'Strategy name cannot be empty.',
+        message: context.l10n.quickSwitcherNameEmpty,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -209,8 +211,8 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
       _cancelEditingName();
       Settings.showToast(
         message: isTypedConvexForbiddenError(error)
-            ? "You can't rename this strategy."
-            : friendlyCloudSyncError('$error'),
+            ? context.l10n.quickSwitcherCannotRename
+            : friendlyCloudSyncError(context.l10n, '$error'),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     }
@@ -244,6 +246,14 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     return first ? 'Attack' : 'Defend';
   }
 
+  String _attackLabelText(AppLocalizations l10n, String attackLabel) =>
+      switch (attackLabel) {
+        'Attack' => l10n.strategyTileSideAttack,
+        'Defend' => l10n.strategyTileSideDefend,
+        'Mixed' => l10n.strategyTileSideMixed,
+        _ => l10n.strategyTileSideUnknown,
+      };
+
   Color _attackColor(String attackLabel) {
     switch (attackLabel) {
       case 'Attack':
@@ -255,27 +265,20 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     }
   }
 
-  String _timeAgo(DateTime date) {
+  String _timeAgo(AppLocalizations l10n, DateTime date) {
     final difference = DateTime.now().difference(date);
-    if (difference.inMinutes < 1) return 'Just now';
+    if (difference.inMinutes < 1) return l10n.strategyTileEditedJustNow;
     if (difference.inMinutes < 60) {
-      final minutes = difference.inMinutes;
-      final plural = minutes == 1 ? '' : 's';
-      return '$minutes min$plural ago';
+      return l10n.strategyTileEditedMinutesAgo(difference.inMinutes);
     }
     if (difference.inHours < 24) {
-      final hours = difference.inHours;
-      final plural = hours == 1 ? '' : 's';
-      return '$hours hour$plural ago';
+      return l10n.strategyTileEditedHoursAgo(difference.inHours);
     }
     if (difference.inDays < 30) {
-      final days = difference.inDays;
-      final plural = days == 1 ? '' : 's';
-      return '$days day$plural ago';
+      return l10n.strategyTileEditedDaysAgo(difference.inDays);
     }
     final months = (difference.inDays / 30).floor();
-    final plural = months == 1 ? '' : 's';
-    return '$months month$plural ago';
+    return l10n.strategyTileEditedMonthsAgo(months);
   }
 
   @override
@@ -285,7 +288,9 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     if (currentStrategyId == null) {
       return const SizedBox.shrink();
     }
-    final strategyName = currentStrategy.strategyName ?? 'Untitled Strategy';
+    final l10n = context.l10n;
+    final strategyName =
+        currentStrategy.strategyName ?? l10n.quickSwitcherUntitled;
     final canRename = currentStrategy.strategyName != null &&
         ref.watch(currentStrategyCapabilitiesProvider).canRenameStrategy;
     final strategiesBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
@@ -359,7 +364,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                                   _menuInset + 6,
                                 ),
                                 child: Text(
-                                  'No recent strategies',
+                                  l10n.quickSwitcherNoRecent,
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Settings
@@ -376,15 +381,18 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                                 itemBuilder: (context, index) {
                                   final strategy = recents[index];
                                   final attackLabel = _attackLabel(strategy);
-                                  final mapName = _mapName(strategy);
+                                  final mapName =
+                                      l10n.mapNameOf(_mapName(strategy));
                                   final thumbnail =
                                       'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp';
                                   return _StrategyQuickSwitchItem(
                                     strategyName: strategy.name,
                                     mapName: mapName,
-                                    attackLabel: attackLabel,
+                                    attackLabel:
+                                        _attackLabelText(l10n, attackLabel),
                                     attackColor: _attackColor(attackLabel),
-                                    lastEdited: _timeAgo(strategy.lastEdited),
+                                    lastEdited:
+                                        _timeAgo(l10n, strategy.lastEdited),
                                     thumbnailPath: thumbnail,
                                     onTap: _isSwitching || _isEditingName
                                         ? null
@@ -462,7 +470,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                                         isDense: true,
                                         contentPadding: EdgeInsets.zero,
                                         border: InputBorder.none,
-                                        hintText: 'Untitled Strategy',
+                                        hintText: l10n.quickSwitcherUntitled,
                                         hintStyle: ShadTheme.of(context)
                                             .textTheme
                                             .small
@@ -480,10 +488,10 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                           : ShadTooltip(
                               builder: (context) => Text(
                                 currentStrategy.strategyName == null
-                                    ? 'Load a strategy to rename it'
+                                    ? l10n.quickSwitcherLoadToRename
                                     : canRename
-                                        ? 'Rename strategy'
-                                        : "You can view this strategy but not rename it",
+                                        ? l10n.quickSwitcherRenameTooltip
+                                        : l10n.quickSwitcherViewOnlyTooltip,
                               ),
                               child: Material(
                                 color: Colors.transparent,

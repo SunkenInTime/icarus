@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -262,7 +263,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
   List<ShadContextMenuItem> _buildTagColorItems() {
     return [
       ShadContextMenuItem(
-        child: const Text('Reset tag to gray'),
+        child: Text(context.l10n.canvasItemResetTagToGray),
         onPressed: () {
           ref
               .read(textProvider.notifier)
@@ -296,17 +297,17 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
 
   String _labelForColor(Color color) {
     if (color.toARGB32() == const Color(0xFF22C55E).toARGB32()) {
-      return 'Green tag';
+      return context.l10n.canvasItemGreenTag;
     }
     if (color.toARGB32() == const Color(0xFF3B82F6).toARGB32()) {
-      return 'Blue tag';
+      return context.l10n.canvasItemBlueTag;
     }
     if (color.toARGB32() == const Color(0xFFF59E0B).toARGB32()) {
-      return 'Amber tag';
+      return context.l10n.canvasItemAmberTag;
     }
     if (color.toARGB32() == const Color(0xFFEF4444).toARGB32()) {
-      return 'Red tag';
+      return context.l10n.canvasItemRedTag;
     }
-    return 'Purple tag';
+    return context.l10n.canvasItemPurpleTag;
   }
 }

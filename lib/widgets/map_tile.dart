@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show SynchronousFuture;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/settings.dart';
 
 class MapTile extends ConsumerStatefulWidget {
@@ -73,7 +74,7 @@ class _MapTileState extends ConsumerState<MapTile> {
                 Align(
                   alignment: Alignment.center,
                   child: Text(
-                    widget.name.toUpperCase(),
+                    context.l10n.mapNameOf(widget.name).toUpperCase(),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,

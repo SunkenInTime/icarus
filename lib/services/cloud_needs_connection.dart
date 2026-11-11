@@ -1,4 +1,5 @@
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 
 /// Said, at once, when a change to the cloud library is asked for while
 /// the library shows this computer's copy of it.
@@ -10,11 +11,11 @@ const cloudNeedsConnectionMessage =
 /// cloudLibraryShowsCopyProvider): the cloud isn't ready, so the change
 /// could only fail after a wait, under a banner that says changes sync
 /// later. Shows the reason and returns true when it refuses.
-bool refuseCloudChangeWhileOffline(bool showsCopy) {
+bool refuseCloudChangeWhileOffline(AppLocalizations l10n, bool showsCopy) {
   if (!showsCopy) return false;
   // Not an error: the neutral surface, as for a feature this platform lacks.
   Settings.showToast(
-    message: cloudNeedsConnectionMessage,
+    message: l10n.cloudActionNeedsConnection,
     backgroundColor: Settings.tacticalVioletTheme.secondary,
   );
   return true;

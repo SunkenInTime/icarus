@@ -4,6 +4,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -50,6 +51,7 @@ void main() {
         pages: pages,
       );
       final exporter = VideoExporter(
+        l10n: _english,
         strategy: strategy,
         strategyState: StrategyState(
             isSaved: true,
@@ -72,6 +74,7 @@ void main() {
               binary: 'must-not-run',
               outputPath: 'must-not-create.mp4',
               quality: VideoExportQuality.social,
+              l10n: _english,
             ),
             quality: VideoExportQuality.social,
             onProgress: (_, label) {
@@ -90,3 +93,5 @@ void main() {
     });
   }
 }
+
+final _english = lookupAppLocalizations(const Locale('en'));

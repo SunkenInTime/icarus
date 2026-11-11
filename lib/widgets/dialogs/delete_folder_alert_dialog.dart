@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -29,6 +30,7 @@ class _DeleteFolderAlertDialogState
 
   Future<void> _delete() async {
     if (_isDeleting) return;
+    final l10n = context.l10n;
     setState(() {
       _isDeleting = true;
       _failureMessage = null;
@@ -50,7 +52,7 @@ class _DeleteFolderAlertDialogState
       );
       if (mounted) {
         setState(() {
-          _failureMessage = "Couldn't delete this folder. Try again.";
+          _failureMessage = l10n.deleteFolderFailed;
         });
       }
     } finally {
@@ -62,21 +64,22 @@ class _DeleteFolderAlertDialogState
       return;
     }
     if (result != null) {
-      setState(() => _failureMessage =
-          result!.userMessage ?? "Couldn't delete this folder. Try again.");
+      setState(() =>
+          _failureMessage = result!.userMessage ?? l10n.deleteFolderFailed);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return ShadDialog.alert(
-      title: Text("Delete '${widget.folder.name}'?"),
+      title: Text(l10n.deleteFolderTitle(widget.folder.name)),
       description: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'This also removes every strategy and subfolder inside it.',
+          Text(
+            l10n.deleteFolderDescription,
           ),
           if (_failureMessage != null) ...[
             const SizedBox(height: 10),
@@ -93,12 +96,13 @@ class _DeleteFolderAlertDialogState
       actions: [
         ShadButton.secondary(
           onPressed: _isDeleting ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.commonCancel),
         ),
         ShadButton.destructive(
           key: const ValueKey('delete-folder-confirm'),
           onPressed: _isDeleting ? null : _delete,
-          child: Text(_isDeleting ? 'Deleting...' : 'Delete'),
+          child:
+              Text(_isDeleting ? l10n.deleteFolderDeleting : l10n.commonDelete),
         ),
       ],
     );

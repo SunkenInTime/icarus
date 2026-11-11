@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -130,7 +131,6 @@ final openStrategyUnsentChangesProvider = Provider<int>((ref) {
 
 /// The sync status while offline, with [waiting] changes saved on this
 /// computer that have not reached the server.
-String offlineSyncLabel(int waiting) => waiting == 0
-    ? 'Offline, changes stay on this device'
-    : 'Offline · $waiting ${waiting == 1 ? 'change' : 'changes'} saved on '
-        'this computer';
+String offlineSyncLabel(AppLocalizations l10n, int waiting) => waiting == 0
+    ? l10n.syncStatusOfflineNothingWaiting
+    : l10n.syncStatusOfflineChangesSaved(waiting);

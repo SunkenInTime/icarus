@@ -13,6 +13,8 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/l10n/cloud_sync_error_text.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
@@ -38,6 +40,8 @@ import 'package:toastification/toastification.dart';
 Finder _tileInThePool() => find.byKey(
       ValueKey('create-strategy-map-${Maps.mapNames[Maps.availableMaps.first]}'),
     );
+
+final _english = lookupAppLocalizations(const Locale('en'));
 
 void main() {
   late Directory tempDir;
@@ -273,7 +277,7 @@ void main() {
         tester,
         policy: PlatformPolicy.webBeta,
         auth: _unreachable.copyWith(
-          errorMessage: clientUpgradeRequiredMessage(),
+          errorMessage: clientUpgradeRequiredMessage(_english),
         ),
       );
       ProviderScope.containerOf(tester.element(find.byType(FolderNavigator)))
@@ -286,6 +290,7 @@ void main() {
       // Tests run as desktop, where this harness knows of no update yet.
       expect(
         find.text(clientUpgradeRequiredMessage(
+          _english,
           update: ClientUpdateAvailability.unavailable,
         )),
         findsOneWidget,
@@ -436,7 +441,8 @@ void main() {
     test('desktop offers every feature', () {
       for (final feature in PlatformFeature.values) {
         expect(PlatformPolicy.desktop.supports(feature), isTrue);
-        expect(PlatformPolicy.desktop.unavailableMessage(feature), isNull);
+        expect(PlatformPolicy.desktop.unavailableMessage(_english, feature),
+            isNull);
       }
       expect(PlatformPolicy.desktop.allowsLocalLibrary, isTrue);
       expect(PlatformPolicy.desktop.requiresSignIn, isFalse);
@@ -445,7 +451,7 @@ void main() {
     test('web beta names the feature and why it is missing', () {
       const policy = PlatformPolicy.webBeta;
       expect(
-        policy.unavailableMessage(PlatformFeature.exportFiles),
+        policy.unavailableMessage(_english, PlatformFeature.exportFiles),
         'Export is desktop-only for now.',
       );
       expect(policy.allowsLocalLibrary, isFalse);
@@ -459,7 +465,7 @@ void main() {
         PlatformFeature.addLineups,
       ]) {
         expect(policy.supports(feature), isTrue);
-        expect(policy.unavailableMessage(feature), isNull);
+        expect(policy.unavailableMessage(_english, feature), isNull);
       }
       expect(policy.comingToWebBeta, isEmpty);
     });
@@ -474,7 +480,7 @@ void main() {
       );
       expect(policy.supports(PlatformFeature.addLineups), isFalse);
       expect(
-        policy.unavailableMessage(PlatformFeature.addLineups),
+        policy.unavailableMessage(_english, PlatformFeature.addLineups),
         'Adding lineups is coming to the web beta.',
       );
     });

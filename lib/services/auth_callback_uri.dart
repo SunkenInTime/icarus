@@ -1,3 +1,4 @@
+import 'package:icarus/l10n/l10n.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'
     show AuthChangeEvent, AuthException, ErrorCode;
 
@@ -70,21 +71,18 @@ AuthCallback classifyAuthCallbackUri(Uri uri, {required Uri redirectUri}) {
 /// Why a link from an auth email can't finish here, in the words the sign-in
 /// dialog opens with.
 enum AuthLinkNotice {
-  emailConfirmed('Your email is confirmed. Sign in to continue.', isInfo: true),
-  linkExpired(
-    'This link has expired or was already used. Try signing in. If your email '
-    "isn't confirmed yet, create your account again to get a new link.",
-    isInfo: false,
-  ),
-  resetLinkTimedOut(
-    'This reset link took too long to open. Send a new one and open it within '
-    '5 minutes.',
-    isInfo: false,
-  );
+  emailConfirmed(isInfo: true),
+  linkExpired(isInfo: false),
+  resetLinkTimedOut(isInfo: false);
 
-  const AuthLinkNotice(this.message, {required this.isInfo});
+  const AuthLinkNotice({required this.isInfo});
 
-  final String message;
+  String message(AppLocalizations l10n) => switch (this) {
+        emailConfirmed => l10n.serviceMsgAuthEmailConfirmed,
+        linkExpired => l10n.serviceMsgAuthLinkExpired,
+        resetLinkTimedOut => l10n.serviceMsgAuthResetLinkTimedOut,
+      };
+
   final bool isInfo;
 }
 

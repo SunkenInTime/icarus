@@ -7,6 +7,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
@@ -23,19 +24,23 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
 /// The one thing the user has to do next. Empty once both ends are down.
-String lineUpPlacementStatus(LineUpPlacement placement) {
+String lineUpPlacementStatus(
+  AppLocalizations l10n,
+  LineUpPlacement placement,
+) {
   if (placement.isComplete) return '';
   switch (placement.mode) {
     case LineUpPlacementMode.fresh:
       return placement.hasOrigin
-          ? 'Drag the ability to where it lands'
-          : 'Drag an agent to where you throw from';
+          ? l10n.lineupPlacementDragAbility
+          : l10n.lineupPlacementDragAnAgent;
     case LineUpPlacementMode.fromPinnedOrigin:
-      return 'Drag the ability to where it lands';
+      return l10n.lineupPlacementDragAbility;
     case LineUpPlacementMode.toPinnedLanding:
-      final agentName =
-          AgentData.agents[placement.pinnedAgentType]?.name ?? 'the agent';
-      return 'Drag $agentName to where you throw from';
+      final agentName = AgentData.agents[placement.pinnedAgentType]?.name;
+      return agentName == null
+          ? l10n.lineupPlacementDragUnknownAgent
+          : l10n.lineupPlacementDragAgent(l10n.gameName(agentName));
   }
 }
 
@@ -172,7 +177,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                 if (placement != null && !placement.isComplete)
                   LineUpStatusPill(
                     key: const ValueKey('lineup-placement-status'),
-                    text: lineUpPlacementStatus(placement),
+                    text: lineUpPlacementStatus(context.l10n, placement),
                   ),
                 if (draftAbility != null)
                   EditorEntityLayer(

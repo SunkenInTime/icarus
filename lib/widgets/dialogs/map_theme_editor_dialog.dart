@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -161,7 +162,7 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
                   mapAsset,
                   colorMapper: MapSvgColorMapper.forPalette(_palette),
                   fit: BoxFit.contain,
-                  semanticsLabel: 'Map theme preview',
+                  semanticsLabel: context.l10n.mapThemeEditorPreviewLabel,
                 ),
               ),
             ),
@@ -172,10 +173,11 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
   }
 
   Widget _buildControls(BuildContext context) {
+    final l10n = context.l10n;
     final title = switch (widget.mode) {
-      MapThemeEditorMode.createProfile => "New profile",
-      MapThemeEditorMode.editProfile => "Edit profile",
-      MapThemeEditorMode.customizeStrategy => "Customize map theme",
+      MapThemeEditorMode.createProfile => l10n.mapThemeEditorNewProfileTitle,
+      MapThemeEditorMode.editProfile => l10n.mapThemeEditorEditProfileTitle,
+      MapThemeEditorMode.customizeStrategy => l10n.mapThemeEditorCustomizeTitle,
     };
     final showNameField = widget.mode != MapThemeEditorMode.customizeStrategy;
 
@@ -198,7 +200,7 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
           if (widget.mode == MapThemeEditorMode.customizeStrategy) ...[
             const SizedBox(height: 4),
             Text(
-              "Only this strategy is affected.",
+              l10n.mapThemeEditorCustomizeDescription,
               style: ShadTheme.of(context).textTheme.small.copyWith(
                     color: Settings.tacticalVioletTheme.mutedForeground,
                   ),
@@ -213,7 +215,7 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
                   if (showNameField) ...[
                     CustomTextField(
                       controller: _nameController,
-                      hintText: "Profile name",
+                      hintText: l10n.mapThemeEditorProfileNameHint,
                     ),
                     const SizedBox(height: 14),
                   ],
@@ -240,6 +242,7 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
 
   Widget _buildSlotTabs(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
+    final l10n = context.l10n;
 
     return FittedBox(
       fit: BoxFit.scaleDown,
@@ -253,11 +256,13 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildSlotTab(context, _PaletteSlot.base, "Base"),
+            _buildSlotTab(context, _PaletteSlot.base, l10n.mapThemeEditorBase),
             const SizedBox(width: 2),
-            _buildSlotTab(context, _PaletteSlot.detail, "Detail"),
+            _buildSlotTab(
+                context, _PaletteSlot.detail, l10n.mapThemeEditorDetail),
             const SizedBox(width: 2),
-            _buildSlotTab(context, _PaletteSlot.highlight, "Highlight"),
+            _buildSlotTab(
+                context, _PaletteSlot.highlight, l10n.mapThemeEditorHighlight),
           ],
         ),
       ),
@@ -338,6 +343,7 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
   }
 
   Widget _buildFooter(BuildContext context) {
+    final l10n = context.l10n;
     return FittedBox(
       fit: BoxFit.scaleDown,
       alignment: Alignment.centerRight,
@@ -347,24 +353,24 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
           ShadButton.ghost(
             size: ShadButtonSize.sm,
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text("Cancel"),
+            child: Text(l10n.commonCancel),
           ),
           const SizedBox(width: 6),
           switch (widget.mode) {
             MapThemeEditorMode.createProfile => ShadButton(
                 size: ShadButtonSize.sm,
                 onPressed: _saveNewProfile,
-                child: const Text("Save profile"),
+                child: Text(l10n.mapThemeEditorSaveProfile),
               ),
             MapThemeEditorMode.editProfile => ShadButton(
                 size: ShadButtonSize.sm,
                 onPressed: _saveProfileEdits,
-                child: const Text("Save changes"),
+                child: Text(l10n.mapThemeEditorSaveChanges),
               ),
             MapThemeEditorMode.customizeStrategy => ShadButton(
                 size: ShadButtonSize.sm,
                 onPressed: _applyToStrategy,
-                child: const Text("Apply"),
+                child: Text(l10n.commonApply),
               ),
           },
         ],
@@ -373,12 +379,13 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
   }
 
   Future<void> _saveNewProfile() async {
+    final l10n = context.l10n;
     final created = await ref
         .read(mapThemeProfilesProvider.notifier)
         .createProfile(name: _nameController.text.trim(), palette: _palette);
     if (created == null) {
       Settings.showToast(
-        message: "Profile limit reached or invalid name.",
+        message: l10n.mapThemeEditorCreateFailed,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -392,8 +399,9 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
     if (!mounted) return;
     Navigator.of(context).pop();
     Settings.showToast(
-      message:
-          hasActiveStrategy ? "Profile saved and applied." : "Profile saved.",
+      message: hasActiveStrategy
+          ? l10n.mapThemeEditorSavedAndApplied
+          : l10n.mapThemeEditorSaved,
       backgroundColor: Settings.tacticalVioletTheme.primary,
     );
   }
@@ -401,9 +409,10 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
   Future<void> _saveProfileEdits() async {
     final profile = widget.profile!;
     final trimmedName = _nameController.text.trim();
+    final l10n = context.l10n;
     if (trimmedName.isEmpty) {
       Settings.showToast(
-        message: "Enter a profile name.",
+        message: l10n.mapThemeEditorEnterName,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -415,7 +424,7 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
     );
     if (!paletteSaved) {
       Settings.showToast(
-        message: "Couldn't update this profile.",
+        message: l10n.mapThemeEditorUpdateFailed,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -431,8 +440,8 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
     Navigator.of(context).pop();
     Settings.showToast(
       message: renamed
-          ? "Profile updated."
-          : "Colors saved, but the name couldn't be changed.",
+          ? l10n.mapThemeEditorUpdated
+          : l10n.mapThemeEditorRenameFailed,
       backgroundColor: renamed
           ? Settings.tacticalVioletTheme.primary
           : Settings.tacticalVioletTheme.destructive,

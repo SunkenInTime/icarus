@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -28,14 +29,25 @@ class CloudWorkNotSent implements Exception {
   String toString() => 'CloudWorkNotSent(unreadable: $unreadable)';
 }
 
-/// What to tell the user when a copy of one cloud strategy was refused;
-/// [outcome] says what did not happen ("nothing was exported").
-String cloudStrategyCopyRefusal(CloudWorkNotSent error, String outcome) =>
-    error.unreadable
-        ? "Icarus can't read some cloud changes saved on this device, so "
-            '$outcome. Review them, then try again.'
-        : "Some changes to this strategy haven't synced yet, so $outcome. "
-            'Let them sync, or review them, then try again.';
+/// A copy of one cloud strategy that [sendCloudWork] can refuse.
+enum CloudStrategyCopy { export, duplicate }
+
+/// What to tell the user when [copy] of one cloud strategy was refused.
+String cloudStrategyCopyRefusal(
+  AppLocalizations l10n,
+  CloudWorkNotSent error,
+  CloudStrategyCopy copy,
+) =>
+    switch ((copy, error.unreadable)) {
+      (CloudStrategyCopy.export, true) =>
+        l10n.cloudActionExportRefusedUnreadable,
+      (CloudStrategyCopy.export, false) =>
+        l10n.cloudActionExportRefusedNotSynced,
+      (CloudStrategyCopy.duplicate, true) =>
+        l10n.cloudActionDuplicateRefusedUnreadable,
+      (CloudStrategyCopy.duplicate, false) =>
+        l10n.cloudActionDuplicateRefusedNotSynced,
+    };
 
 /// Checks, right before a copy is read or made, that the account whose work
 /// [sendCloudWork] waited on is still the one signed in. Throws

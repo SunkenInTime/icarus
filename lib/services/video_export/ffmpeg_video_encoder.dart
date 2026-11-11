@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:path/path.dart' as p;
@@ -64,9 +65,13 @@ Future<Process> _startFfmpegProcess(
 /// Encodes a rendered frame sequence into an .mp4 by invoking a bundled (or
 /// PATH-installed) ffmpeg binary as a child process (ADR 0001).
 class FfmpegVideoEncoder {
-  FfmpegVideoEncoder({FfmpegProcessStarter? processStarter})
-      : _processStarter = processStarter ?? _startFfmpegProcess;
+  FfmpegVideoEncoder({
+    required AppLocalizations l10n,
+    FfmpegProcessStarter? processStarter,
+  })  : _l10n = l10n,
+        _processStarter = processStarter ?? _startFfmpegProcess;
 
+  final AppLocalizations _l10n;
   final FfmpegProcessStarter _processStarter;
   Process? _process;
   bool _cancelled = false;
@@ -257,7 +262,7 @@ class FfmpegVideoEncoder {
           } on Object catch (error) {
             await removePartialOutput();
             throw VideoExportException(
-              'Could not write the video to the selected location: $error',
+              _l10n.videoExportWriteFailed('$error'),
             );
           }
           onProgress?.call(1.0);

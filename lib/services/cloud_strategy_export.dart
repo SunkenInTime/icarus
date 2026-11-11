@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/services/cloud_work_sent.dart';
@@ -9,6 +10,7 @@ Future<CloudLibraryActionResult> runCloudStrategyExport(
   String strategyId,
 ) {
   const source = 'strategy:export';
+  final l10n = ref.read(l10nProvider);
   final reporter = ref.read(cloudLibraryActionReporterProvider);
   return reporter.run(
     action: () async {
@@ -17,13 +19,17 @@ Future<CloudLibraryActionResult> runCloudStrategyExport(
       } on CloudWorkNotSent catch (error) {
         // Not a failure to retry at once: the file would leave out work.
         reporter.showMessage(
-          cloudStrategyCopyRefusal(error, 'nothing was exported'),
+          cloudStrategyCopyRefusal(
+            l10n,
+            error,
+            CloudStrategyCopy.export,
+          ),
         );
         return false;
       }
     },
     source: source,
-    failureMessage: "Couldn't export this cloud strategy. Try again.",
+    failureMessage: l10n.cloudActionExportFailed,
     showFailureMessage: true,
     reportAuthenticationFailure: (error, stackTrace) =>
         ref.read(authProvider.notifier).reportConvexUnauthenticated(

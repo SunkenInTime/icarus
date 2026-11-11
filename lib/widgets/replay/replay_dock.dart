@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_drawing.dart';
 import 'package:icarus/replay/replay_playback.dart';
@@ -355,7 +356,9 @@ class _PlaybackRow extends StatelessWidget {
         level(_ViewToggle(
           icon: LucideIcons.pin,
           checked: pinned,
-          tooltip: pinned ? 'Unpin round story' : 'Pin round story',
+          tooltip: pinned
+              ? context.l10n.replayDockUnpinStoryTooltip
+              : context.l10n.replayDockPinStoryTooltip,
           onPressed: onPin,
         )),
       ],
@@ -548,7 +551,7 @@ class _RoundStripState extends State<_RoundStrip> {
           height: _RoundStrip._slot,
           child: Center(
             child: Text(
-              'OT',
+              context.l10n.replayDockOvertimeMark,
               style: TextStyle(
                 fontSize: 9,
                 fontWeight: FontWeight.w600,
@@ -659,7 +662,8 @@ class _RoundSlot extends StatelessWidget {
     return ShadTooltip(
       // Its colour says who won and its glyph how; the number is all the
       // slot itself doesn't show.
-      builder: (context) => Text('Round ${round.index + 1}'),
+      builder: (context) =>
+          Text(context.l10n.replayRoundNumber(round.index + 1)),
       // A Shad gesture detector, so the tooltip hears the hover.
       child: ShadGestureDetector(
         cursor: SystemMouseCursors.click,
@@ -1647,7 +1651,7 @@ class _SpeedButton extends StatelessWidget {
         ? '${playback.speed.round()}×'
         : '${playback.speed}×';
     return ShadTooltip(
-      builder: (context) => const Text('Playback speed'),
+      builder: (context) => Text(context.l10n.replayDockPlaybackSpeedTooltip),
       child: ShadButton.outline(
         height: 24,
         width: 40,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -51,35 +52,35 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (widget.header != null) widget.header!,
         if (widget.nameController != null) ...[
           Text(
-            "Name",
+            l10n.lineupMediaName,
             style: TextStyle(color: Settings.tacticalVioletTheme.foreground),
           ),
           const SizedBox(height: 8),
           CustomTextField(
             controller: widget.nameController!,
-            hintText:
-                "Optional, for telling this apart from other lineups here",
+            hintText: l10n.lineupMediaNameHint,
           ),
           const SizedBox(height: 24),
         ],
         Text(
-          "Youtube link",
+          l10n.lineupMediaYoutubeLink,
           style: TextStyle(color: Settings.tacticalVioletTheme.foreground),
         ),
         const SizedBox(height: 8),
         CustomTextField(
           controller: widget.youtubeLinkController,
-          hintText: "Paste YouTube link here...",
+          hintText: l10n.lineupMediaYoutubeLinkHint,
         ),
         const SizedBox(height: 24),
         Text(
-          "Images",
+          l10n.lineupMediaImages,
           style: TextStyle(color: Settings.tacticalVioletTheme.foreground),
         ),
         const SizedBox(height: 8),
@@ -98,12 +99,12 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: Text(
-            "Notes",
+            l10n.lineupMediaNotes,
             style: TextStyle(color: Settings.tacticalVioletTheme.foreground),
           ),
         ),
         CustomTextField(
-          hintText: "Add any notes here...",
+          hintText: l10n.lineupMediaNotesHint,
           controller: widget.notesController,
           // onEnterPressed: (intent) {
           //   // Handle enter pressed if needed
@@ -131,7 +132,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    "Click here to add images",
+                    context.l10n.lineupMediaAddImages,
                     style: TextStyle(
                         color: Settings.tacticalVioletTheme.cardForeground),
                   ),
@@ -216,7 +217,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
               _pasteGlyph(),
               const SizedBox(height: 4),
               Text(
-                "Paste",
+                context.l10n.lineupMediaPaste,
                 style: TextStyle(
                   color: Settings.tacticalVioletTheme.secondaryForeground,
                   fontSize: 12,
@@ -247,7 +248,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
               _pasteGlyph(size: 16),
               const SizedBox(width: 6),
               Text(
-                "Paste from clipboard",
+                context.l10n.lineupMediaPasteFromClipboard,
                 style: TextStyle(
                   color: Settings.tacticalVioletTheme.secondaryForeground,
                 ),

@@ -13,6 +13,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/caption_card_provider.dart';
@@ -31,14 +32,20 @@ import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// The name a caption card shows for [item].
-String captionItemName(PlacedWidget item) => switch (item) {
-      PlacedAgentNode() => AgentData.agents[item.type]?.name ?? 'Agent',
-      PlacedAbility() => item.data.name,
-      PlacedText() => 'Text',
-      PlacedImage() => 'Image',
-      PlacedUtility() when item.type == UtilityType.spike => 'Spike',
-      PlacedUtility() when UtilityData.isViewCone(item.type) => 'Vision cone',
-      _ => 'Shape',
+String captionItemName(AppLocalizations l10n, PlacedWidget item) =>
+    switch (item) {
+      PlacedAgentNode() =>
+        switch (AgentData.agents[item.type]?.name) {
+          final name? => l10n.gameName(name),
+          null => l10n.captionCardAgentName,
+        },
+      PlacedAbility() => l10n.gameName(item.data.name),
+      PlacedText() => l10n.captionCardTextName,
+      PlacedImage() => l10n.captionCardImageName,
+      PlacedUtility() when item.type == UtilityType.spike => l10n.gameSpike,
+      PlacedUtility() when UtilityData.isViewCone(item.type) =>
+        l10n.captionCardVisionConeName,
+      _ => l10n.captionCardShapeName,
     };
 
 /// The caption card of the item that's open, above that item, or below it
@@ -300,7 +307,7 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
     }
 
     final draft = open.writing ? _draftFor(open, caption) : null;
-    final name = captionItemName(item);
+    final name = captionItemName(context.l10n, item);
     final placement = _placement ??= _Placement();
     return CustomSingleChildLayout(
       delegate: _CaptionCardLayout(
@@ -356,8 +363,7 @@ void _save(ProviderContainer container, _Draft draft) {
   // written.
   unawaited(Clipboard.setData(ClipboardData(text: text)));
   Settings.showToast(
-    message: "That item is gone, so your note wasn't saved. "
-        "It's on your clipboard.",
+    message: container.read(l10nProvider).captionCardItemGone,
     backgroundColor: Settings.tacticalVioletTheme.destructive,
   );
 }
@@ -741,7 +747,7 @@ class _CaptionEditor extends StatelessWidget {
       textInputAction: TextInputAction.newline,
       inputFormatters: [LengthLimitingTextInputFormatter(captionMaxLength)],
       decoration: InputDecoration.collapsed(
-        hintText: 'Write a caption',
+        hintText: context.l10n.captionCardHint,
         hintStyle: style.copyWith(
           color: Settings.tacticalVioletTheme.mutedForeground,
         ),
@@ -764,7 +770,11 @@ class _CaptionEditor extends StatelessWidget {
           onTap: draft.focus.requestFocus,
           child: _CardFrame(
             name: name,
-            trailing: Text(_mac ? '⌘Enter to save' : 'Ctrl+Enter to save'),
+            trailing: Text(
+              context.l10n.captionCardSaveShortcut(
+                _mac ? '⌘Enter' : 'Ctrl+Enter',
+              ),
+            ),
             // Keys bound to the app's shortcuts stop at the field, so a letter
             // typed into a note never deletes or turns what's under the
             // pointer.

@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
+import 'package:icarus/l10n/cloud_sync_error_text.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/browser_url.dart';
@@ -36,7 +38,7 @@ class ClientUpgradeNotice extends StatelessWidget {
     if (isWeb) {
       return builder(
         context,
-        clientUpgradeRequiredMessage(isWeb: true),
+        clientUpgradeRequiredMessage(context.l10n, isWeb: true),
         _ReloadButton(size: buttonSize, onReload: onReload),
       );
     }
@@ -45,10 +47,10 @@ class ClientUpgradeNotice extends StatelessWidget {
         if (openUpdate != null) {
           return builder(
             context,
-            clientUpgradeRequiredMessage(isWeb: false),
+            clientUpgradeRequiredMessage(context.l10n, isWeb: false),
             _button(
               icon: LucideIcons.download,
-              label: 'Update',
+              label: context.l10n.clientUpgradeUpdate,
               size: buttonSize,
               onPressed: openUpdate,
             ),
@@ -57,6 +59,7 @@ class ClientUpgradeNotice extends StatelessWidget {
         return builder(
           context,
           clientUpgradeRequiredMessage(
+            context.l10n,
             isWeb: false,
             update: isChecking
                 ? ClientUpdateAvailability.checking
@@ -100,7 +103,7 @@ class _ReloadButtonState extends ConsumerState<_ReloadButton> {
   Widget build(BuildContext context) {
     return _button(
       icon: LucideIcons.refreshCw,
-      label: 'Reload',
+      label: context.l10n.clientUpgradeReload,
       size: widget.size,
       onPressed: _leaving ? null : _reload,
     );
@@ -116,7 +119,7 @@ class _CheckAgainButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return _button(
       icon: LucideIcons.refreshCw,
-      label: 'Check again',
+      label: context.l10n.clientUpgradeCheckAgain,
       size: size,
       onPressed: () {
         ref.invalidate(appUpdateStatusProvider);

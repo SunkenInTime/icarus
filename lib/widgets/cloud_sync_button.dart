@@ -7,6 +7,8 @@ import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/cloud_sync_error_text.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -128,9 +130,8 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         .firstOrNull;
     Settings.showToast(
       message: specificReason != null
-          ? friendlyCloudSyncError(specificReason)
-          : 'Another edit reached the cloud first. Your version is still on '
-              'this device and needs attention.',
+          ? friendlyCloudSyncError(context.l10n, specificReason)
+          : context.l10n.syncButtonConflictToast,
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
     ref.read(strategyConflictProvider.notifier).clearAll();
@@ -172,6 +173,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
 
   Future<void> _useCloudVersions() async {
     if (_isResolving) return;
+    final l10n = context.l10n;
     setState(() {
       _isResolving = true;
       _resolutionError = null;
@@ -185,8 +187,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         ProductMetrics.instance.conflictResolved('use_cloud');
         _popoverController.hide();
       } else {
-        resolutionError = 'Could not load the cloud version. '
-            'Your saved version was not changed.';
+        resolutionError = l10n.syncButtonUseCloudFailed;
       }
     } catch (error, stackTrace) {
       log(
@@ -195,8 +196,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         error: error,
         stackTrace: stackTrace,
       );
-      resolutionError = 'Could not load the cloud version. '
-          'Your saved version was not changed.';
+      resolutionError = l10n.syncButtonUseCloudFailed;
     } finally {
       if (mounted) {
         setState(() {
@@ -212,21 +212,25 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
   Future<void> _keepHeldPages(
     Map<EntitySyncKey, ({String page, bool checked, String opId})> held,
   ) =>
-      _resolveHeldDeletes('keep_page', () => ref
-              .read(strategyOpQueueProvider.notifier)
-              .discardRejected(held.keys.toSet(), onlyIf: {
-            for (final entry in held.entries)
-              entry.key: (entry.value.opId, null),
-          }));
+      _resolveHeldDeletes(
+          'keep_page',
+          () => ref
+                  .read(strategyOpQueueProvider.notifier)
+                  .discardRejected(held.keys.toSet(), onlyIf: {
+                for (final entry in held.entries)
+                  entry.key: (entry.value.opId, null),
+              }));
 
   /// Delete anyway: the held deletes the user saw are sent, unread.
   Future<void> _deleteHeldPagesAnyway(
     Map<EntitySyncKey, ({String page, bool checked, String opId})> held,
   ) =>
-      _resolveHeldDeletes('delete_anyway', () =>
-          ref.read(strategyOpQueueProvider.notifier).deleteHeldPagesAnyway({
-            for (final entry in held.entries) entry.key: entry.value.opId,
-          }));
+      _resolveHeldDeletes(
+          'delete_anyway',
+          () =>
+              ref.read(strategyOpQueueProvider.notifier).deleteHeldPagesAnyway({
+                for (final entry in held.entries) entry.key: entry.value.opId,
+              }));
 
   Future<void> _resolveHeldDeletes(
     String choice,
@@ -248,6 +252,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
 
   Future<void> _keepBoth() async {
     if (_isResolving) return;
+    final l10n = context.l10n;
     setState(() {
       _isResolving = true;
       _resolutionError = null;
@@ -261,11 +266,9 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
           ProductMetrics.instance.conflictResolved('keep_both');
           _popoverController.hide();
         case KeepBothOutcome.unchanged:
-          resolutionError = 'Could not load the cloud version. '
-              'Nothing was changed.';
+          resolutionError = l10n.syncButtonKeepBothUnchanged;
         case KeepBothOutcome.copiesOnly:
-          resolutionError = 'Your version was added as a copy, but the '
-              'conflict is still open.';
+          resolutionError = l10n.syncButtonKeepBothCopiesOnly;
       }
     } catch (error, stackTrace) {
       log(
@@ -274,8 +277,7 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
         error: error,
         stackTrace: stackTrace,
       );
-      resolutionError = 'Could not keep both versions. '
-          'Your version is still saved on this device.';
+      resolutionError = l10n.syncButtonKeepBothFailed;
     } finally {
       if (mounted) {
         setState(() {
@@ -341,11 +343,16 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     final waiting = ref.watch(openStrategyUnsentChangesProvider);
     final syncTooltip = status == _SyncStatus.offline && shownCopy != null
         ? _copyTooltip(context, shownCopy.copiedAt, waiting: waiting)
-        : _tooltip(status, saveState.lastPersistedAt, waiting: waiting);
+        : _tooltip(
+            context.l10n,
+            status,
+            saveState.lastPersistedAt,
+            waiting: waiting,
+          );
     // The editor carries no status chips, so a viewer learns here why their
     // edits do not stick.
     final tooltip = ref.watch(lastKnownCloudRoleProvider) == 'viewer'
-        ? 'View only · $syncTooltip'
+        ? context.l10n.syncButtonViewOnlyTooltip(syncTooltip)
         : syncTooltip;
     final foreground = status == _SyncStatus.attention
         ? Settings.tacticalVioletTheme.destructive
@@ -455,11 +462,8 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     DateTime? copiedAt, {
     required int waiting,
   }) {
-    final saved = waiting == 0
-        ? '; changes stay on this device'
-        : ' · $waiting ${waiting == 1 ? 'change' : 'changes'} saved on this '
-            'computer';
-    if (copiedAt == null) return "Offline. Showing this computer's copy$saved";
+    final l10n = context.l10n;
+    if (copiedAt == null) return l10n.syncButtonOfflineCopyTooltip(waiting);
     final localizations = MaterialLocalizations.of(context);
     final local = copiedAt.toLocal();
     final now = DateTime.now();
@@ -470,13 +474,18 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     final sameDay = local.year == now.year &&
         local.month == now.month &&
         local.day == now.day;
-    final when =
-        sameDay ? time : '${localizations.formatShortMonthDay(local)}, $time';
-    return "Offline. Showing this computer's copy from $when$saved";
+    final when = sameDay
+        ? time
+        : l10n.syncButtonCopyDateTime(
+            localizations.formatShortMonthDay(local),
+            time,
+          );
+    return l10n.syncButtonOfflineCopyFromTooltip(when, waiting);
   }
 
   /// One line, what the glyph means and what a press will do.
   static String _tooltip(
+    AppLocalizations l10n,
     _SyncStatus status,
     DateTime? lastSynced, {
     required int waiting,
@@ -484,16 +493,18 @@ class _CloudSyncButtonState extends ConsumerState<CloudSyncButton> {
     switch (status) {
       case _SyncStatus.synced:
         return lastSynced == null
-            ? 'Synced'
-            : 'Synced at ${_SyncStatusPopover._formatTime(lastSynced)}';
+            ? l10n.syncButtonSyncedTooltip
+            : l10n.syncButtonSyncedAtTooltip(
+                _SyncStatusPopover._formatTime(lastSynced),
+              );
       case _SyncStatus.editing:
-        return 'Edit not synced yet';
+        return l10n.syncButtonEditNotSynced;
       case _SyncStatus.syncing:
-        return 'Syncing…';
+        return l10n.syncButtonSyncingTooltip;
       case _SyncStatus.offline:
-        return offlineSyncLabel(waiting);
+        return offlineSyncLabel(l10n, waiting);
       case _SyncStatus.attention:
-        return 'Sync needs attention';
+        return l10n.syncButtonNeedsAttention;
     }
   }
 }
@@ -589,8 +600,9 @@ class _SyncStatusPopover extends StatelessWidget {
   bool get _holdsIncompleteCopy =>
       isIncompletePageCopyReason(saveState.cloudSyncError);
 
-  String get _heldExplanation =>
-      [for (final held in heldPages) heldPageDeleteMessage(held)].join(' ');
+  String _heldExplanation(AppLocalizations l10n) => [
+        for (final held in heldPages) heldPageDeleteMessage(l10n, held),
+      ].join(l10n.commonSentenceSpace);
 
   @override
   Widget build(BuildContext context) {
@@ -606,6 +618,7 @@ class _SyncStatusPopover extends StatelessWidget {
         ),
       );
     }
+    final l10n = context.l10n;
     final acts = status == _SyncStatus.attention &&
         (!hasOtherStrategyAttention || hasActiveStrategyAttention);
     final holds = acts && heldPages.isNotEmpty;
@@ -619,22 +632,21 @@ class _SyncStatusPopover extends StatelessWidget {
           size: ShadButtonSize.sm,
           expands: false,
           onPressed: isResolving ? null : onDeleteHeldPagesAnyway,
-          child: const Text('Delete anyway'),
+          child: Text(l10n.syncButtonDeleteAnyway),
         ),
         ShadButton(
           size: ShadButtonSize.sm,
           expands: false,
           onPressed: isResolving ? null : onKeepHeldPages,
-          child:
-              Text(heldPages.length == 1 ? 'Keep the page' : 'Keep the pages'),
+          child: Text(l10n.syncButtonKeepHeldPages(heldPages.length)),
         ),
       ],
     );
     return _layout(
       context,
       explanation: [
-        if (holds) _heldExplanation,
-        if (!holds || others) _explanation,
+        if (holds) _heldExplanation(l10n),
+        if (!holds || others) _explanation(l10n),
       ].join('\n\n'),
       actions: holds && !others
           ? heldActions
@@ -644,16 +656,16 @@ class _SyncStatusPopover extends StatelessWidget {
                   children: [
                     heldActions,
                     const SizedBox(height: 8),
-                    _otherActions,
+                    _otherActions(l10n),
                   ],
                 )
               : others
-                  ? _otherActions
+                  ? _otherActions(l10n)
                   : null,
     );
   }
 
-  Widget get _otherActions => Wrap(
+  Widget _otherActions(AppLocalizations l10n) => Wrap(
         alignment: WrapAlignment.end,
         spacing: 8,
         runSpacing: 8,
@@ -663,14 +675,14 @@ class _SyncStatusPopover extends StatelessWidget {
               size: ShadButtonSize.sm,
               expands: false,
               onPressed: isResolving ? null : onUseCloudVersions,
-              child: const Text('Use cloud'),
+              child: Text(l10n.syncButtonUseCloud),
             ),
           if (_shownLineupConflicts != null)
             ShadButton.secondary(
               size: ShadButtonSize.sm,
               expands: false,
               onPressed: isResolving ? null : onKeepBoth,
-              child: const Text('Keep both'),
+              child: Text(l10n.syncButtonKeepBoth),
             ),
           // A copy that didn't finish saving can't be kept: there is
           // nothing whole to send. Copying the page again, or Use cloud,
@@ -683,8 +695,8 @@ class _SyncStatusPopover extends StatelessWidget {
               onPressed: isResolving ? null : onRetry,
               child: Text(
                 hasRejectedWork && !_holdsIncompleteCopy
-                    ? 'Keep mine'
-                    : 'Retry sync',
+                    ? l10n.syncButtonKeepMine
+                    : l10n.syncButtonRetrySync,
               ),
             ),
         ],
@@ -696,6 +708,7 @@ class _SyncStatusPopover extends StatelessWidget {
     required Widget? actions,
   }) {
     final theme = ShadTheme.of(context);
+    final l10n = context.l10n;
     final lastSynced = saveState.lastPersistedAt;
 
     // Text alignment is inherited from the editor, which centers, so pin it
@@ -709,7 +722,7 @@ class _SyncStatusPopover extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              _title,
+              _title(l10n),
               style: theme.textTheme.small.copyWith(
                 color: theme.colorScheme.foreground,
               ),
@@ -737,7 +750,7 @@ class _SyncStatusPopover extends StatelessWidget {
             if (lastSynced != null) ...[
               const SizedBox(height: 8),
               Text(
-                'Last synced at ${_formatTime(lastSynced)}',
+                l10n.syncButtonLastSyncedAt(_formatTime(lastSynced)),
                 style: theme.textTheme.small.copyWith(
                   color: theme.colorScheme.mutedForeground,
                   fontSize: 11,
@@ -754,50 +767,44 @@ class _SyncStatusPopover extends StatelessWidget {
     );
   }
 
-  String get _title {
+  String _title(AppLocalizations l10n) {
     switch (status) {
       case _SyncStatus.synced:
-        return 'All changes synced';
+        return l10n.syncButtonSyncedTitle;
       case _SyncStatus.editing:
-        return 'Edit not synced yet';
+        return l10n.syncButtonEditNotSynced;
       case _SyncStatus.syncing:
-        return 'Syncing changes';
+        return l10n.syncButtonSyncingTitle;
       case _SyncStatus.offline:
-        return 'Working offline';
+        return l10n.syncButtonOfflineTitle;
       case _SyncStatus.attention:
-        return 'Sync needs attention';
+        return l10n.syncButtonNeedsAttention;
     }
   }
 
-  String get _explanation {
+  String _explanation(AppLocalizations l10n) {
     switch (status) {
       case _SyncStatus.synced:
-        return 'Your strategy is safely stored in the cloud.';
+        return l10n.syncButtonSyncedExplanation;
       case _SyncStatus.editing:
-        return 'Finish editing or switch pages to send this change to the '
-            'cloud.';
+        return l10n.syncButtonEditingExplanation;
       case _SyncStatus.syncing:
         return hasOtherStrategyWork
-            ? 'Saved changes from your cloud library are being sent in the '
-                'background.'
-            : 'Your edits are being sent to the cloud. You can keep '
-                'working — this happens in the background.';
+            ? l10n.syncButtonSyncingOtherExplanation
+            : l10n.syncButtonSyncingExplanation;
       case _SyncStatus.offline:
-        return 'Changes are kept on this device and will sync automatically '
-            'when your connection returns.';
+        return l10n.syncButtonOfflineExplanation;
       case _SyncStatus.attention:
-        const otherStrategyExplanation =
-            'Saved work in another strategy also needs attention. Open it '
-            'from the Cloud library to review the reason.';
-        if (!hasOtherStrategyAttention) return _attentionExplanation;
+        if (!hasOtherStrategyAttention) return _attentionExplanation(l10n);
         if (hasActiveStrategyAttention) {
-          return '$_attentionExplanation $otherStrategyExplanation';
+          return '${_attentionExplanation(l10n)}${l10n.commonSentenceSpace}'
+              '${l10n.syncButtonOtherStrategyAlsoNeedsAttention}';
         }
-        return otherStrategyExplanation.replaceFirst(' also', '');
+        return l10n.syncButtonOtherStrategyNeedsAttention;
     }
   }
 
-  String get _attentionExplanation {
+  String _attentionExplanation(AppLocalizations l10n) {
     final mediaErrors = saveState.mediaSyncErrorCount;
     final parts = <String>[];
     final saved = saveState.cloudSyncError;
@@ -806,35 +813,14 @@ class _SyncStatusPopover extends StatelessWidget {
     final hasSpecificReason = error != null && isSpecificAttentionReason(error);
     final listsWholeGroups = _shownLineupConflicts != null && _noLongerFits;
     if (listsWholeGroups) {
-      parts.add(
-        'A teammate changed these lineups while you were working on them, '
-        'so your change was not sent. The page shows your version, still '
-        'saved on this device.',
-      );
-      parts.add(
-        'Keep mine saves these lineups exactly as shown, replacing all of '
-        'their changes, even to lineups you did not edit. Use cloud replaces '
-        'yours, and Keep both adds yours beside theirs as a copy.',
-      );
+      parts.add(l10n.syncButtonLineupsNoLongerFit);
+      parts.add(l10n.syncButtonLineupsNoLongerFitChoices);
     } else if (_shownLineupConflicts != null) {
-      parts.add(
-        'A teammate changed these lineups while you were working on them. '
-        'Your version remains saved on this device.',
-      );
-      parts.add(
-        'Keep mine replaces their changes, Use cloud replaces yours, and '
-        'Keep both adds yours beside theirs as a copy.',
-      );
+      parts.add(l10n.syncButtonLineupConflict);
+      parts.add(l10n.syncButtonLineupConflictChoices);
     } else if (hasRejectedWork && !hasSpecificReason) {
-      parts.add(
-        'Another edit reached the cloud first. Your version remains saved '
-        'on this device.',
-      );
-      parts.add(
-        rejectedCount == 1
-            ? 'Choose which version to keep for this conflicting change.'
-            : 'Your choice applies to all $rejectedCount conflicting changes.',
-      );
+      parts.add(l10n.syncButtonRejected);
+      parts.add(l10n.syncButtonRejectedChoice(rejectedCount));
     }
     final retryUnavailable =
         error?.toLowerCase().contains('cannot be retried automatically') ??
@@ -842,32 +828,22 @@ class _SyncStatusPopover extends StatelessWidget {
     if (error != null &&
         !listsWholeGroups &&
         (!hasRejectedWork || retryUnavailable || hasSpecificReason)) {
-      parts.add(friendlyCloudSyncError(error));
+      parts.add(friendlyCloudSyncError(l10n, error));
     }
     if (error?.contains(otherWorkNeedsAttentionNote) ?? false) {
-      parts.add(
-        'Other changes here were not saved either. They remain on this '
-        'device.',
-      );
+      parts.add(l10n.syncButtonOtherChangesNotSaved);
     }
     if (hasRejectedWork && hasSpecificReason && rejectedCount > 1) {
-      parts.add(
-        'Your choice applies to all $rejectedCount changes that need '
-        'attention.',
-      );
+      parts.add(l10n.syncButtonChoiceAppliesToAll(rejectedCount));
     }
     if (mediaErrors > 0) {
-      parts.add(
-        mediaErrors == 1
-            ? 'One image failed to upload.'
-            : '$mediaErrors images failed to upload.',
-      );
+      parts.add(l10n.syncButtonImagesFailed(mediaErrors));
     }
     if (parts.isEmpty) {
-      parts.add("Some changes haven't reached the cloud yet.");
+      parts.add(l10n.syncButtonChangesNotSent);
     }
-    if (!hasRejectedWork) parts.add('Retry to send them now.');
-    return parts.join(' ');
+    if (!hasRejectedWork) parts.add(l10n.syncButtonRetryHint);
+    return parts.join(l10n.commonSentenceSpace);
   }
 
   static String _formatTime(DateTime time) {
@@ -890,6 +866,7 @@ class _LineupConflictList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final yours = [for (final conflict in conflicts) ...conflict.yours];
     // Without the version both sides started from, only the difference
     // between them can be shown, not who made it.
@@ -898,7 +875,7 @@ class _LineupConflictList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 10),
-          _section(context, 'How your version differs from the cloud', yours),
+          _section(context, l10n.syncButtonLineupDiffTitle, yours),
         ],
       );
     }
@@ -907,9 +884,9 @@ class _LineupConflictList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 10),
-        _section(context, 'Your changes', yours),
+        _section(context, l10n.syncButtonYourChangesTitle, yours),
         const SizedBox(height: 8),
-        _section(context, 'Cloud changes', cloud),
+        _section(context, l10n.syncButtonCloudChangesTitle, cloud),
       ],
     );
   }
@@ -920,6 +897,7 @@ class _LineupConflictList extends StatelessWidget {
     List<LineupChange> changes,
   ) {
     final theme = ShadTheme.of(context);
+    final l10n = context.l10n;
     final lineStyle = theme.textTheme.small.copyWith(
       color: theme.colorScheme.foreground,
       fontSize: 12,
@@ -942,13 +920,17 @@ class _LineupConflictList extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        if (changes.isEmpty) Text('No lineup changes', style: mutedStyle),
+        if (changes.isEmpty)
+          Text(l10n.syncButtonNoLineupChanges, style: mutedStyle),
         for (final change in shown)
           Text.rich(
             TextSpan(
               children: [
-                TextSpan(text: change.label),
-                TextSpan(text: ' · ${change.description}', style: mutedStyle),
+                TextSpan(text: change.label(l10n)),
+                TextSpan(
+                  text: ' · ${change.description(l10n)}',
+                  style: mutedStyle,
+                ),
               ],
             ),
             style: lineStyle,
@@ -957,7 +939,7 @@ class _LineupConflictList extends StatelessWidget {
           ),
         if (hidden > 0)
           Text(
-            hidden == 1 ? 'and 1 more lineup' : 'and $hidden more lineups',
+            l10n.syncButtonMoreLineups(hidden),
             style: mutedStyle,
           ),
       ],

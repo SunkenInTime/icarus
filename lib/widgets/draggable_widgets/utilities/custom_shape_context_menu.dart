@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
@@ -23,7 +24,7 @@ List<ShadContextMenuItem> buildCustomShapeContextMenuItems(
             : Color(currentColorValue),
       ),
       items: [_CustomShapeColorItems(utility: utility)],
-      child: const Text('Color'),
+      child: Text(context.l10n.shapeToolsColorMenu),
     ),
     ...buildCaptionMenuItems(context, ref, utility.id),
     ...buildAdjacentPageCopyMenuItems(ref, utility.id),
@@ -55,7 +56,7 @@ class _CustomShapeColorItems extends ConsumerWidget {
                     colorValue: entry.color.toARGB32(),
                   );
             },
-            child: Text(_colorLabel(entry)),
+            child: Text(_colorLabel(context.l10n, entry)),
           ),
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.palette, size: 14),
@@ -66,7 +67,7 @@ class _CustomShapeColorItems extends ConsumerWidget {
               initialColor: currentColorValue == null
                   ? Colors.white
                   : Color(currentColorValue),
-              title: 'Custom color',
+              title: context.l10n.shapeToolsCustomColorTitle,
             );
             if (picked == null) return;
             utilityNotifier.updateCustomShapeColor(
@@ -74,27 +75,28 @@ class _CustomShapeColorItems extends ConsumerWidget {
               colorValue: picked.toARGB32(),
             );
           },
-          child: const Text('Custom color…'),
+          child: Text(context.l10n.shapeToolsCustomColorMenu),
         ),
       ],
     );
   }
 }
 
-String _colorLabel(ColorLibraryEntry entry) {
+String _colorLabel(AppLocalizations l10n, ColorLibraryEntry entry) {
   if (!entry.isCustom) {
-    if (entry.color.toARGB32() == Colors.white.toARGB32()) return 'White';
-    if (entry.color.toARGB32() == Colors.red.toARGB32()) return 'Red';
-    if (entry.color.toARGB32() == Colors.blue.toARGB32()) return 'Blue';
-    if (entry.color.toARGB32() == Colors.yellow.toARGB32()) return 'Yellow';
-    if (entry.color.toARGB32() == Colors.green.toARGB32()) return 'Green';
+    final color = entry.color.toARGB32();
+    if (color == Colors.white.toARGB32()) return l10n.shapeToolsColorWhite;
+    if (color == Colors.red.toARGB32()) return l10n.shapeToolsColorRed;
+    if (color == Colors.blue.toARGB32()) return l10n.shapeToolsColorBlue;
+    if (color == Colors.yellow.toARGB32()) return l10n.shapeToolsColorYellow;
+    if (color == Colors.green.toARGB32()) return l10n.shapeToolsColorGreen;
   }
 
   final hex = (entry.color.toARGB32() & 0x00FFFFFF)
       .toRadixString(16)
       .padLeft(6, '0')
       .toUpperCase();
-  return entry.isCustom ? 'Saved #$hex' : '#$hex';
+  return entry.isCustom ? l10n.shapeToolsSavedColor(hex) : '#$hex';
 }
 
 class _ColorSwatch extends StatelessWidget {

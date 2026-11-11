@@ -6,6 +6,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -26,7 +27,7 @@ class AgentRoleIconTools extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Agent Role Icons"),
+          Text(context.l10n.sidebarAgentRoleIconsTitle),
           const SizedBox(height: 8),
           Container(
             decoration: BoxDecoration(
@@ -69,7 +70,7 @@ class AgentRoleIconTools extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Text(
-              "Drag or click to place",
+              context.l10n.sidebarDragOrClickToPlace,
               style: TextStyle(
                 fontSize: 12,
                 fontStyle: FontStyle.italic,
@@ -132,7 +133,7 @@ class _RoleIconTile extends ConsumerWidget {
         ),
       ),
       child: ShadTooltip(
-        builder: (context) => Text(label),
+        builder: (context) => Text(context.l10n.gameName(label)),
         child: GestureDetector(
           onTap: () => _placeAtCenter(ref),
           child: utility.createWidget(

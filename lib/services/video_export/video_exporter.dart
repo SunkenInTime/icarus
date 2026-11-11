@@ -8,6 +8,7 @@ import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/page_transition/transition_planner.dart';
@@ -44,6 +45,7 @@ class VideoExporter {
     this.imageSources = const {},
     this.navigation,
     this.requireNavigation = false,
+    required this.l10n,
   });
 
   final StrategyData strategy;
@@ -69,6 +71,7 @@ class VideoExporter {
   final Map<String, StrategyImageSource> imageSources;
   final NavigationGeometryMap? navigation;
   final bool requireNavigation;
+  final AppLocalizations l10n;
 
   static int transitionFrameCountFor(int fps) {
     if (fps <= 0) throw ArgumentError.value(fps, 'fps');
@@ -111,7 +114,7 @@ class VideoExporter {
     void Function(double fraction, String label)? onProgress,
   }) async {
     if (pages.isEmpty) {
-      throw VideoExportException('No pages selected.');
+      throw VideoExportException(l10n.videoExportNoPagesSelected);
     }
     if (requireNavigation &&
         navigation == null &&
@@ -127,8 +130,7 @@ class VideoExporter {
         if (entries.any((entry) =>
             entry.kind == TransitionKind.move &&
             entry.visualWidget is PlacedAgentNode)) {
-          throw VideoExportException(
-              'Movement paths could not load. Please try the export again.');
+          throw VideoExportException(l10n.videoExportMovementPathsFailed);
         }
       }
     }
@@ -172,7 +174,7 @@ class VideoExporter {
     try {
       final offscreenContainer = createCaptureContainer(images: imageSources);
       captureContainer = offscreenContainer;
-      onProgress?.call(0, 'Preparing map');
+      onProgress?.call(0, l10n.videoExportProgressPreparingMap);
       captureGeometry = await prepareCaptureGeometry(
         offscreenContainer,
         strategy.mapData,
@@ -185,7 +187,7 @@ class VideoExporter {
         isCancelled: () => _cancelled,
         onWaitingForPictures: () => onProgress?.call(
           renderedFrames / totalFrames * _renderWeight,
-          'Waiting for pictures',
+          l10n.videoExportProgressWaitingForPictures,
         ),
         wrapWidget: (child) =>
             wrapForOffscreenCapture(child, container: offscreenContainer),
@@ -211,7 +213,7 @@ class VideoExporter {
         renderedFrames++;
         onProgress?.call(
           renderedFrames / totalFrames * _renderWeight,
-          'Rendering frames ($renderedFrames/$totalFrames)',
+          l10n.videoExportProgressRenderingFrames(renderedFrames, totalFrames),
         );
       }
 
@@ -274,11 +276,11 @@ class VideoExporter {
       }
 
       if (_cancelled) throw VideoExportCancelled();
-      onProgress?.call(_renderWeight, 'Encoding video');
+      onProgress?.call(_renderWeight, l10n.videoExportProgressEncoding);
       return await sink.finish(
         onProgress: (fraction) => onProgress?.call(
           _renderWeight + fraction * (1 - _renderWeight),
-          'Encoding video',
+          l10n.videoExportProgressEncoding,
         ),
       );
     } finally {
@@ -355,6 +357,7 @@ class VideoExporter {
       ScreenshotView.forPage(
         strategy,
         page,
+        l10n: l10n,
         strategyState: strategyState,
         mapState: mapState,
         backgroundDotOpacity: backgroundDotOpacity,

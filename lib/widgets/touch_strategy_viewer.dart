@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/drawn_cloud_pages_provider.dart';
@@ -138,7 +139,7 @@ class _ViewerStrip extends ConsumerWidget {
       child: Row(
         children: [
           Semantics(
-            label: backTooltip ?? 'Library',
+            label: backTooltip ?? context.l10n.touchViewerLibrary,
             button: true,
             child: ShadIconButton.ghost(
               key: const ValueKey('viewer-leave'),
@@ -171,7 +172,7 @@ class _ViewerStrip extends ConsumerWidget {
                   ),
                 ),
                 Text(
-                  'View only',
+                  context.l10n.touchViewerViewOnly,
                   style: TextStyle(
                     fontSize: 12,
                     color: theme.mutedForeground,
@@ -217,7 +218,7 @@ class _ViewerAction extends ConsumerWidget {
             .read(shareLinkControllerProvider.notifier)
             .addViewedLinkToLibrary(),
         leading: const Icon(LucideIcons.bookmarkPlus, size: 16),
-        child: const Text('Add to library'),
+        child: Text(context.l10n.touchViewerAddToLibrary),
       );
     }
     return ShadButton(
@@ -228,7 +229,7 @@ class _ViewerAction extends ConsumerWidget {
         context: context,
         builder: (_) => const AuthDialog(),
       ),
-      child: const Text('Log In'),
+      child: Text(context.l10n.commonLogIn),
     );
   }
 }

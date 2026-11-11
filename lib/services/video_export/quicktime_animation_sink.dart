@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/video_export/mp4_muxer.dart';
 import 'package:icarus/services/video_export/quicktime_animation_encoder.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
@@ -20,10 +21,15 @@ import 'package:icarus/services/video_export/video_frame_sink.dart';
 /// With an [outputPath] (desktop) the finished file is written there and
 /// [finish] returns null; without one (the browser) [finish] returns it.
 class QuickTimeAnimationSink implements VideoFrameSink {
-  QuickTimeAnimationSink({required this.fps, this.outputPath});
+  QuickTimeAnimationSink({
+    required this.fps,
+    this.outputPath,
+    required this.l10n,
+  });
 
   final int fps;
   final String? outputPath;
+  final AppLocalizations l10n;
 
   static const _maxKeyFrameIntervalSeconds = 2;
 
@@ -117,9 +123,7 @@ class QuickTimeAnimationSink implements VideoFrameSink {
       await partial.writeAsBytes(video, flush: true);
     } on Object catch (error) {
       await removePartial();
-      throw VideoExportException(
-        'Could not write the video to the selected location: $error',
-      );
+      throw VideoExportException(l10n.videoExportWriteFailed('$error'));
     }
     // A cancel that arrived during the write still wins: the rename is the
     // only step that touches the destination.
@@ -131,9 +135,7 @@ class QuickTimeAnimationSink implements VideoFrameSink {
       await partial.rename(path);
     } on Object catch (error) {
       await removePartial();
-      throw VideoExportException(
-        'Could not write the video to the selected location: $error',
-      );
+      throw VideoExportException(l10n.videoExportWriteFailed('$error'));
     }
     onProgress?.call(1);
     return null;

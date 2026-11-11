@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/strategy_presence_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
@@ -76,8 +77,8 @@ const _belowStrip = ShadAnchor(
   overlayAlignment: Alignment.bottomCenter,
 );
 
-String _describe(PresencePeer peer) =>
-    peer.role == 'viewer' ? '${peer.name} (viewing)' : peer.name;
+String _describe(AppLocalizations l10n, PresencePeer peer) =>
+    peer.role == 'viewer' ? l10n.strategyPresenceViewing(peer.name) : peer.name;
 
 class _PresenceAvatar extends StatelessWidget {
   const _PresenceAvatar({required this.peer, required this.size});
@@ -90,7 +91,7 @@ class _PresenceAvatar extends StatelessWidget {
     const theme = Settings.tacticalVioletTheme;
     final initial = peer.name.isEmpty ? '?' : peer.name.characters.first;
     return ShadTooltip(
-      builder: (context) => Text(_describe(peer)),
+      builder: (context) => Text(_describe(context.l10n, peer)),
       // The strip is the top of the window; there is no room above it.
       anchor: _belowStrip,
       child: _Ring(
@@ -124,7 +125,9 @@ class _OverflowAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
     return ShadTooltip(
-      builder: (context) => Text(people.map(_describe).join('\n')),
+      builder: (context) => Text(
+        people.map((peer) => _describe(context.l10n, peer)).join('\n'),
+      ),
       anchor: _belowStrip,
       child: _Ring(
         color: theme.border,

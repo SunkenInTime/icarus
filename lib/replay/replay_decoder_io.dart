@@ -90,7 +90,7 @@ class _Library {
     } on ArgumentError catch (error) {
       throw ReplayDecodeException(
         'io',
-        'The replay decoder is missing from this install ($error).',
+        '$replayDecoderMissingPrefix$error).',
       );
     }
     return _instance = _Library(library);

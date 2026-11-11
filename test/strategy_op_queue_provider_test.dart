@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show Locale;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +12,8 @@ import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/collab/field_merge.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/l10n/cloud_sync_error_text.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
@@ -18,6 +21,8 @@ import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+final _english = lookupAppLocalizations(const Locale('en'));
 
 void main() {
   group('Entity sync revision domains', () {
@@ -976,7 +981,7 @@ void main() {
       final durable = store.load().records.single;
       expect(durable.status, DurableOutboxStatus.attention);
       expect(
-        friendlyCloudSyncError(durable.lastError!),
+        friendlyCloudSyncError(_english, durable.lastError!),
         contains('clashes with one on another page'),
       );
     });
@@ -1008,7 +1013,7 @@ void main() {
       final durable = store.load().records.single;
       expect(durable.status, DurableOutboxStatus.attention);
       expect(durable.lastError, lineupOverlapMessage);
-      expect(friendlyCloudSyncError(durable.lastError!),
+      expect(friendlyCloudSyncError(_english, durable.lastError!),
           contains('shares a spot'));
     });
 
@@ -1137,7 +1142,10 @@ void main() {
       final error = container.read(strategyOpQueueProvider).lastError!;
       expect(error, undrawableWorkMessage);
       expect(isSpecificAttentionReason(error), isTrue);
-      expect(friendlyCloudSyncError(error), contains('no longer fits'));
+      expect(
+        friendlyCloudSyncError(_english, error),
+        contains('no longer fits'),
+      );
     });
 
     test('an old-format lineup add is shown, never sent, and kept on restart',
@@ -1181,7 +1189,7 @@ void main() {
       expect(current.lastError, retiredLineupOpMessage);
       expect(isSpecificAttentionReason(current.lastError!), isTrue);
       expect(
-        friendlyCloudSyncError(current.lastError!),
+        friendlyCloudSyncError(_english, current.lastError!),
         contains('older version of Icarus'),
       );
       // Only the copy in memory changed: the saved record is as the older
@@ -4307,7 +4315,7 @@ void main() {
         expect(current.pausedByEntityKey.keys, [key]);
         expect(current.queuedByEntityKey, isEmpty);
         expect(current.lastError, editAccessRemovedMessage);
-        expect(friendlyCloudSyncError(current.lastError!),
+        expect(friendlyCloudSyncError(_english, current.lastError!),
             editAccessRemovedMessage);
 
         // Kept on this device, and not sent again on its own.

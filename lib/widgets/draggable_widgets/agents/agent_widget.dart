@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/weapons.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_weapon_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_weapon_badge.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -283,6 +284,7 @@ class AgentWidget extends ConsumerWidget {
         : const <ShadContextMenuItem>[];
     final hasContextMenuItemsBelow = canInteract &&
         (lineUpId != null || isLineUpDraft || placedAgentNode != null);
+    final l10n = context.l10n;
     final contextMenuItems = <ShadContextMenuItem>[
       if (canInteract)
         ShadContextMenuItem.raw(
@@ -304,7 +306,7 @@ class AgentWidget extends ConsumerWidget {
       if (canInteract && lineUpId != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.plus, size: 16),
-          child: const Text('Add lineup'),
+          child: Text(l10n.agentMenuAddLineup),
           onPressed: () {
             if (!ensureFeatureAvailable(ref, PlatformFeature.addLineups)) {
               return;
@@ -324,7 +326,7 @@ class AgentWidget extends ConsumerWidget {
       if (canInteract && lineUpId != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.move, size: 16),
-          child: const Text('Edit placement'),
+          child: Text(l10n.agentMenuEditPlacement),
           onPressed: () {
             final links =
                 ref.read(lineUpProvider.notifier).linksFromOrigin(lineUpId!);
@@ -341,7 +343,7 @@ class AgentWidget extends ConsumerWidget {
             size: 16,
             color: Settings.tacticalVioletTheme.destructive,
           ),
-          child: const Text('Delete origin'),
+          child: Text(l10n.agentMenuDeleteOrigin),
           onPressed: () {
             ref.read(lineUpProvider.notifier).deleteOrigin(lineUpId!);
           },
@@ -349,6 +351,7 @@ class AgentWidget extends ConsumerWidget {
       if (canInteract && viewConeAgent != null)
         if (svgHeightModel != null && svgHeightOrigin != null)
           buildSvgHeightElevationMenuItem(
+            l10n: l10n,
             model: svgHeightModel,
             origin: svgHeightOrigin,
             selectedElevationCm: viewConeAgent.visionElevation,
@@ -360,6 +363,7 @@ class AgentWidget extends ConsumerWidget {
           ),
       if (canInteract && viewConeAgent != null && mapState != null)
         buildSightlineReportMenuItem(
+          l10n: l10n,
           map: mapState.currentMap,
           isAttack: mapState.isAttack,
           model: svgHeightModel,
@@ -379,13 +383,13 @@ class AgentWidget extends ConsumerWidget {
       if (canInteract && viewConeAgent != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.unlink, size: 16),
-          child: const Text('Detach view cone'),
+          child: Text(l10n.agentMenuDetachViewCone),
           onPressed: () => detachFromAgent(ref.read, viewConeAgent),
         ),
       if (canInteract && viewConeAgent != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.eyeOff, size: 16),
-          child: const Text('Remove view cone'),
+          child: Text(l10n.agentMenuRemoveViewCone),
           onPressed: () {
             ref.read(actionProvider.notifier).performTransaction(
               groups: const [ActionGroup.agent],
@@ -400,13 +404,13 @@ class AgentWidget extends ConsumerWidget {
       if (canInteract && circleAgent != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.unlink, size: 16),
-          child: const Text('Detach circle'),
+          child: Text(l10n.agentMenuDetachCircle),
           onPressed: () => detachFromAgent(ref.read, circleAgent),
         ),
       if (canInteract && circleAgent != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.circleOff, size: 16),
-          child: const Text('Remove circle'),
+          child: Text(l10n.agentMenuRemoveCircle),
           onPressed: () {
             ref.read(actionProvider.notifier).performTransaction(
               groups: const [ActionGroup.agent],
@@ -424,7 +428,7 @@ class AgentWidget extends ConsumerWidget {
           plainAgent.id.isNotEmpty)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.plus, size: 16),
-          child: const Text('Create lineup'),
+          child: Text(l10n.agentMenuCreateLineup),
           onPressed: () {
             ref.read(abilityBarProvider.notifier).updateData(agent);
             final lineUps = ref.read(lineUpProvider.notifier);
@@ -440,6 +444,7 @@ class AgentWidget extends ConsumerWidget {
               lineUpId != null ||
               onWeaponSelected != null))
         ...buildAgentWeaponMenu(
+          l10n: l10n,
           selectedWeapon: weapon,
           onSelected: (selectedWeapon) {
             if (onWeaponSelected != null) {
@@ -463,7 +468,7 @@ class AgentWidget extends ConsumerWidget {
             size: 16,
             color: Settings.tacticalVioletTheme.destructive,
           ),
-          child: const Text('Delete'),
+          child: Text(l10n.commonDelete),
           onPressed: () => deleteAgentFromMenu(ref, placedAgentNode.id),
         ),
     ];

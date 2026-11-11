@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -53,6 +54,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
   /// is ignored. A failed cloud write keeps the dialog open with the reason.
   Future<void> _submit() async {
     if (_isSubmitting) return;
+    final l10n = context.l10n;
     setState(() {
       _isSubmitting = true;
       _failureMessage = null;
@@ -92,7 +94,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
       );
       if (mounted) {
         setState(() {
-          _failureMessage = "Couldn't save this folder. Try again.";
+          _failureMessage = l10n.folderEditSaveFailed;
         });
       }
     } finally {
@@ -102,8 +104,8 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
     if (result?.didSucceed == true) {
       Navigator.of(context).pop();
     } else if (result != null) {
-      setState(() => _failureMessage =
-          result!.userMessage ?? "Couldn't save this folder. Try again.");
+      setState(() =>
+          _failureMessage = result!.userMessage ?? l10n.folderEditSaveFailed);
     }
   }
 
@@ -130,13 +132,16 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return ShadDialog(
-      title: Text(widget.folder != null ? "Edit Folder" : "Add Folder"),
+      title: Text(widget.folder != null
+          ? l10n.folderEditTitleEdit
+          : l10n.folderEditTitleAdd),
       actions: [
         SizedBox(
           width: 250,
           child: CustomTextField(
-            hintText: "Folder Name",
+            hintText: l10n.folderEditNameHint,
             controller: _folderNameController,
             autofocus: true,
             onSubmitted: (_) {
@@ -151,7 +156,8 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
             key: const ValueKey('folder-edit-submit'),
             leading: _isSubmitting ? null : const Icon(LucideIcons.check),
             onPressed: _isSubmitting ? null : _submit,
-            child: Text(_isSubmitting ? 'Saving...' : 'Done'),
+            child:
+                Text(_isSubmitting ? l10n.folderEditSaving : l10n.commonDone),
           ),
         ),
       ],
@@ -256,10 +262,10 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                         context: context,
                         builder: (context) {
                           return ShadDialog(
-                            title: const Text("Pick a custom color"),
+                            title: Text(l10n.folderEditCustomColorTitle),
                             actions: <Widget>[
                               ShadButton(
-                                child: const Text('Done'),
+                                child: Text(l10n.commonDone),
                                 onPressed: () {
                                   Navigator.of(context).pop();
                                 },
@@ -306,22 +312,22 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                 child: CustomSegmentedTabs<_FolderIconFilter>(
                   compactness: 0.8,
                   value: _iconFilter,
-                  items: const [
+                  items: [
                     SegmentedTabItem<_FolderIconFilter>(
                       value: _FolderIconFilter.all,
-                      child: Text("All"),
+                      child: Text(l10n.folderEditIconFilterAll),
                     ),
                     SegmentedTabItem<_FolderIconFilter>(
                       value: _FolderIconFilter.symbols,
-                      child: Text("Symbols"),
+                      child: Text(l10n.folderEditIconFilterSymbols),
                     ),
                     SegmentedTabItem<_FolderIconFilter>(
                       value: _FolderIconFilter.roles,
-                      child: Text("Roles"),
+                      child: Text(l10n.folderEditIconFilterRoles),
                     ),
                     SegmentedTabItem<_FolderIconFilter>(
                       value: _FolderIconFilter.modes,
-                      child: Text("Modes"),
+                      child: Text(l10n.folderEditIconFilterModes),
                     ),
                   ],
                   onChanged: (value) {
@@ -358,7 +364,9 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                   final iconId = entry.id;
                   const iconSize = 24.0;
                   return IconButton(
-                      tooltip: entry.label.isEmpty ? null : entry.label,
+                      tooltip: entry.label.isEmpty
+                          ? null
+                          : context.l10n.gameName(entry.label),
                       onPressed: () {
                         setState(() {
                           _selectedIconId = iconId;

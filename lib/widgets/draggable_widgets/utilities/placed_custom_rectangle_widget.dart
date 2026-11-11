@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/app_cursors.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
@@ -841,7 +842,9 @@ class _PlacedCustomRectangleWidgetState
       outerSize: outerSize,
     );
     final isLengthAxis = _isLengthHandle(_activeHandle);
-    final label = isLengthAxis ? 'L' : 'W';
+    final label = isLengthAxis
+        ? context.l10n.shapeToolsLengthShortLabel
+        : context.l10n.shapeToolsWidthShortLabel;
     final valueMeters = isLengthAxis ? lengthMeters : widthMeters;
     final gap = coordinateSystem.scale(16);
 
@@ -884,7 +887,7 @@ class _PlacedCustomRectangleWidgetState
       child: FractionalTranslation(
         translation: const Offset(-0.5, -1.0),
         child: CustomShapeResizeTooltip(
-          label: 'R',
+          label: context.l10n.shapeToolsRotationShortLabel,
           valueDegrees: degrees,
         ),
       ),
