@@ -784,6 +784,90 @@ void main() {
     expect(state.activeAuthIncidentId, isNull);
   });
 
+  testWidgets(
+      'Reconnect while the server still refuses the session prompts again',
+      (tester) async {
+    supabaseApi.currentSession = fakeSession();
+    var ensureCurrentUser = Completer<void>();
+    convexApi.mutationCompleter = ensureCurrentUser;
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          navigatorKey: appNavigatorKey,
+          home: const Scaffold(body: SizedBox.shrink()),
+        ),
+      ),
+    );
+    container.read(authProvider);
+    await tester.pump();
+    await tester.pump();
+    // Refused at sign-in; the setup gives up while the prompt is open.
+    convexApi.lastOnAuthChange!(false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    convexApi.connected = false;
+    ensureCurrentUser.completeError(TimeoutException('mutation timed out'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cloud connection lost'), findsOneWidget);
+
+    ensureCurrentUser = Completer<void>();
+    convexApi.mutationCompleter = ensureCurrentUser;
+    await tester.tap(find.text('Reconnect'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cloud connection lost'), findsNothing);
+
+    // The server refuses the new try too.
+    convexApi.lastOnAuthChange!(false);
+    await tester.pumpAndSettle();
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.incident,
+    );
+    expect(find.text('Cloud connection lost'), findsOneWidget);
+
+    ensureCurrentUser.completeError(TimeoutException('mutation timed out'));
+    await tester.pumpAndSettle();
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.incident,
+    );
+    expect(container.read(cloudOfflineProvider), isFalse);
+  });
+
+  test('a retry after a refusal that cannot reach the cloud is offline',
+      () async {
+    supabaseApi.currentSession = fakeSession();
+    AuthProvider.debugOfflineRetryDelay = (_) => const Duration(hours: 1);
+    final ensureCurrentUser = Completer<void>();
+    convexApi.mutationCompleter = ensureCurrentUser;
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(authProvider);
+    await pumpMicrotasks();
+    convexApi.lastOnAuthChange!(false);
+    await pumpMicrotasks();
+    expect(container.read(authProvider).activeAuthIncidentId, isNotNull);
+    convexApi.connected = false;
+    ensureCurrentUser.completeError(TimeoutException('mutation timed out'));
+    await pumpMicrotasks();
+
+    // The user retries while the cloud is out of reach.
+    convexApi
+      ..mutationCompleter = null
+      ..reconnectResult = false
+      ..autoAuthenticateOnSetAuth = false
+      ..emitAuthState(false);
+    await container.read(authProvider.notifier).reinitializeConvexAuth();
+    await pumpMicrotasks();
+
+    final state = container.read(authProvider);
+    expect(state.convexAuthStatus, ConvexAuthStatus.offline);
+    expect(state.activeAuthIncidentId, isNull);
+  });
+
   test('a handle a later setup replaced reports nothing about the session',
       () async {
     supabaseApi.currentSession = fakeSession();

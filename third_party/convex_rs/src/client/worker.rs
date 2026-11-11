@@ -843,6 +843,9 @@ mod tests {
         times: usize,
     ) -> anyhow::Result<()> {
         for _ in 0..times {
+            // Requests already sent, such as new auth, reach the worker
+            // first; new auth would otherwise start the count over.
+            tokio::time::sleep(Duration::from_millis(1)).await;
             response_sender
                 .send(ProtocolResponse::ServerMessage(auth_error()))
                 .await?;
@@ -935,6 +938,33 @@ mod tests {
             .await?;
         tokio::time::sleep(Duration::from_secs(20)).await;
         assert!(!*worker.auth_refused.borrow());
+        worker.handle.abort();
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_new_auth_is_judged_again() -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        let worker = start_worker(&protocol, response_receiver);
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(changing_token())))?;
+        refuse(&response_sender, AUTH_REFUSALS_TO_REPORT as usize).await?;
+        assert!(*worker.auth_refused.borrow());
+
+        // The user retries, so the app hands over new auth. Until the server
+        // has refused that, the client doesn't call it refused.
+        worker
+            .requests
+            .send(ClientRequest::Authenticate(Some(changing_token())))?;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!*worker.auth_refused.borrow());
+
+        // The server refuses the new auth as often, and the client says so
+        // again: a change the app hears.
+        refuse(&response_sender, AUTH_REFUSALS_TO_REPORT as usize).await?;
+        assert!(*worker.auth_refused.borrow());
         worker.handle.abort();
         Ok(())
     }
@@ -1139,6 +1169,14 @@ async fn _worker_once<T: SyncProtocol>(
                     .await?;
                 },
                 ClientRequest::Authenticate(fetcher) => {
+                    // New auth from the app gets its own verdict: refusals of
+                    // the auth it replaces don't count toward it. Otherwise a
+                    // client still marked refused never tells the app that the
+                    // new auth is refused too, since nothing changed.
+                    auth_recovery.refusals = 0;
+                    auth_recovery
+                        .refused
+                        .send_if_modified(|refused| std::mem::take(refused));
                     let token_changed = base_client.set_auth_fetcher(fetcher).await;
                     if auth_recovery.active && token_changed {
                         auth_recovery.auth_resent = true;

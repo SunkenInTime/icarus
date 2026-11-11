@@ -1531,6 +1531,10 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   Future<void> reinitializeConvexAuth({String source = 'manual'}) async {
+    // A retry asks the server to judge the session again, so a refusal of
+    // an earlier try doesn't stand for it: if the server refuses again, that
+    // is a new incident, and the prompt says so again.
+    _clearAuthIncident();
     await _configureConvexAuth(trigger: 'reinitialize:$source');
   }
 
@@ -2056,7 +2060,9 @@ class AuthProvider extends Notifier<AppAuthState> {
 
       switch (action) {
         case _AuthIncidentAction.retry:
-          await reinitializeConvexAuth(source: 'incident_prompt_retry');
+          // Not awaited: this prompt is closed, and the retry's setup can run
+          // for half a minute. A refusal meanwhile prompts again.
+          unawaited(reinitializeConvexAuth(source: 'incident_prompt_retry'));
           break;
         case _AuthIncidentAction.signOut:
           if (navCtx.mounted) {
