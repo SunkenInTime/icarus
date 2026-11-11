@@ -115,10 +115,7 @@ void main() {
   test('every agent, weapon and map has the game\'s own name', () {
     for (final language in ['ja', 'zh']) {
       final l10n = lookupAppLocalizations(Locale(language));
-      // Kayo's data name is its asset folder, not the game's "KAY/O".
-      final agents = AgentData.agents.values
-          .where((agent) => agent.type != AgentType.kayo)
-          .map((agent) => agent.name);
+      final agents = AgentData.agents.values.map((agent) => agent.name);
       final weapons = WeaponType.values
           .where((weapon) => weapon != WeaponType.none)
           .map((weapon) => weapon.displayName);
