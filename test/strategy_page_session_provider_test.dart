@@ -8008,7 +8008,12 @@ void main() {
       container.read(textProvider.notifier).fromHive([
         PlacedText(id: 'local', position: const Offset(5, 5))..text = 'edit',
       ]);
-      container.read(strategyProvider.notifier).setUnsaved();
+      container.read(strategyProvider.notifier)
+        ..setUnsaved()
+        // The save hands the page over itself; the edit's own sync, which
+        // would mark it unsaved again, doesn't run. Only the failed handover
+        // can keep the mark.
+        ..consumeScheduledCloudPageSync();
       final save = container
           .read(strategyProvider.notifier)
           .forceSaveNow('cloud-strategy');
