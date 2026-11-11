@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/page_names.dart';
 import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -68,6 +69,7 @@ class ScreenshotView extends ConsumerWidget {
   factory ScreenshotView.forPage(
     StrategyData strategy,
     StrategyPage page, {
+    required AppLocalizations l10n,
     required StrategyState strategyState,
     required MapState mapState,
     required double backgroundDotOpacity,
@@ -94,7 +96,11 @@ class ScreenshotView extends ConsumerWidget {
         utilities: page.utilityData,
         strategySettings: page.settings,
         strategyState: strategyState,
-        pageName: page.name,
+        pageName: shownPageName(
+          l10n,
+          name: page.name,
+          isAutoNamed: page.isAutoNamed == true,
+        ),
         lineUpGraph: page.lineUpGraph,
         themeProfileId: strategy.themeProfileId,
         themeOverridePalette: strategy.themeOverridePalette,
@@ -316,7 +322,8 @@ class ScreenshotView extends ConsumerWidget {
                   flipY: !isAttack,
                   child: AssetSvg(
                     barrierAssetName,
-                    semanticsLabel: context.l10n.strategyViewBarrierSemanticLabel,
+                    semanticsLabel:
+                        context.l10n.strategyViewBarrierSemanticLabel,
                     fit: BoxFit.contain,
                   ),
                 ),
@@ -329,7 +336,8 @@ class ScreenshotView extends ConsumerWidget {
                 height: CoordinateSystem.screenShotSize.height,
                 child: AssetSvg(
                   calloutsAssetName,
-                  semanticsLabel: context.l10n.strategyViewCalloutsSemanticLabel,
+                  semanticsLabel:
+                      context.l10n.strategyViewCalloutsSemanticLabel,
                   fit: BoxFit.contain,
                 ),
               ),
@@ -344,7 +352,8 @@ class ScreenshotView extends ConsumerWidget {
                   flipY: !isAttack,
                   child: AssetSvg(
                     ultOrbsAssetName,
-                    semanticsLabel: context.l10n.strategyViewUltOrbsSemanticLabel,
+                    semanticsLabel:
+                        context.l10n.strategyViewUltOrbsSemanticLabel,
                     fit: BoxFit.contain,
                   ),
                 ),

@@ -357,6 +357,7 @@ class VideoExporter {
       ScreenshotView.forPage(
         strategy,
         page,
+        l10n: l10n,
         strategyState: strategyState,
         mapState: mapState,
         backgroundDotOpacity: backgroundDotOpacity,
