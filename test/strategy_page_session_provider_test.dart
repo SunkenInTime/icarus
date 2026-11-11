@@ -7993,6 +7993,38 @@ void main() {
     });
 
     test(
+        'pressing save keeps an edit unsaved when the page read goes away '
+        'before the canvas is handed over', () async {
+      final page = _page('page-1', 0);
+      server = _FakeServer(page.publicId);
+      final (container, batches) = await openOnRealQueue(page);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      // The user places text and presses save at once; the page's read
+      // goes away while the save runs, so nothing can diff the canvas
+      // against the server and the text lives only on screen.
+      container.read(textProvider.notifier).fromHive([
+        PlacedText(id: 'local', position: const Offset(5, 5))..text = 'edit',
+      ]);
+      container.read(strategyProvider.notifier).setUnsaved();
+      final save = container
+          .read(strategyProvider.notifier)
+          .forceSaveNow('cloud-strategy');
+      liveRead.failRead();
+      await save;
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      expect(batches, isEmpty);
+      final saveState = container.read(strategySaveStateProvider);
+      expect(saveState.isDirty, isTrue);
+      expect(saveState.canLeaveSafely, isFalse);
+    });
+
+    test(
         'an item copied to the next page shows there when the user gets '
         'there before it lands', () async {
       final source = _page('page-1', 0);

@@ -730,29 +730,45 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> _drainPendingSaves() async {
-    ref.read(strategySaveStateProvider.notifier).markSaving(true);
+    final saveState = ref.read(strategySaveStateProvider.notifier);
+    saveState.markSaving(true);
     try {
+      String? cloudSaved;
+      var handedOver = false;
+      var marksSaved = 0;
       while (_pendingSaveId != null) {
         final id = _pendingSaveId!;
         _pendingSaveId = null;
         ref.read(autoSaveProvider.notifier).ping();
         if (_currentStrategyIsCloud()) {
-          await notifyCloudStrategyMutation(flushImmediately: true);
-          await ref
+          // Marks the strategy unsaved before its first await, so the count
+          // read next includes the save's own mark and no later edit's.
+          final strategySync =
+              notifyCloudStrategyMutation(flushImmediately: true);
+          marksSaved = saveState.dirtyMarks;
+          await strategySync;
+          handedOver = await ref
               .read(strategyPageSessionProvider.notifier)
               .flushCurrentPage(flushImmediately: true);
+          cloudSaved = id;
         } else {
+          cloudSaved = null;
           await saveToHive(id);
         }
       }
       // The save marked the strategy unsaved before it knew whether anything
-      // had changed. When nothing had, no op stands behind the mark, and no
-      // queue change will come to clear it: the button would say "Syncing…"
-      // with nothing on its way. An edit whose sync hasn't run yet keeps it.
-      if (_currentStrategyIsCloud() &&
-          !_cloudMutationSyncScheduled &&
-          !_cloudStrategyMutationSyncScheduled) {
-        ref.read(strategySaveStateProvider.notifier).clearStaleCloudMark();
+      // had changed. When nothing had, no op stands behind the mark and no
+      // queue change will come to clear it, so the button would say
+      // "Syncing…" with nothing on its way. The mark stays when the canvas
+      // could not be handed over (its edits may be held nowhere else), when
+      // anything was marked unsaved since the save looked, or when another
+      // strategy is open now.
+      if (cloudSaved != null &&
+          handedOver &&
+          saveState.dirtyMarks == marksSaved &&
+          _currentStrategyIsCloud() &&
+          state.strategyId == cloudSaved) {
+        saveState.clearStaleCloudMark();
       }
     } finally {
       ref.read(strategySaveStateProvider.notifier).markSaving(false);
