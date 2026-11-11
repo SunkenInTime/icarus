@@ -77,14 +77,24 @@ Widget wrapForOffscreenCapture(
         return MaterialApp(
           theme: Theme.of(context),
           debugShowCheckedModeBanner: false,
-          home: child,
-          builder: (context, child) {
+          // No `home`: with one, the app builds its own navigator, and an
+          // app's navigator reports its route to the browser. Every capture
+          // then rewrote the address of the page to `/`, and a reload after
+          // a screenshot opened the library instead of the strategy. The
+          // navigator below gives the captured view the route and overlay it
+          // expects and reports nothing.
+          builder: (context, _) {
             // The captured view paints its own backdrop, or none for a
             // transparent screenshot, so the shell paints nothing under it.
             return Portal(
               child: ShadAppBuilder(
                 backgroundColor: Colors.transparent,
-                child: child!,
+                child: Navigator(
+                  onGenerateRoute: (settings) => MaterialPageRoute<void>(
+                    settings: settings,
+                    builder: (context) => child,
+                  ),
+                ),
               ),
             );
           },
