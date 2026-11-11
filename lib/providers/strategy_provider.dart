@@ -354,7 +354,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     cancelPendingSave();
     ref.read(strategySaveStateProvider.notifier).reset();
-    _openAttempt += 1;
+    final attempt = ++_openAttempt;
 
     await ref
         .read(remoteEditorSnapshotProvider.notifier)
@@ -375,6 +375,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     final storageDirectory = kIsWeb
         ? null
         : (await setStorageDirectory(snapshot.header.publicId)).path;
+    // Closed, or another strategy opened, while its folder was being made.
+    if (attempt != _openAttempt) {
+      throw StateError('Opening $strategyID gave way to something newer.');
+    }
     state = state.copyWith(
       strategyId: snapshot.header.publicId,
       strategyName: snapshot.header.name,
