@@ -29,10 +29,10 @@ Dartvex can sit under that interface as a plain client, with no Dartvex codegen
 involved, and replace both of today's implementations: the Rust bridge on native
 and the Convex JS bundle on web.
 
-Recommendation: a hybrid. Keep our generator, and move the transport to the
-Dartvex 0.3.0 client once the runtime gauntlet passes for it on today's
-protocol. Until that run passes, keep the fork. The steps are at the end of this
-doc.
+Decision (Nov 10 2026, after the runtime run in section 4): keep our generator
+and our transport for now. Dartvex passed the runtime scenarios but needs four
+changes first, one of them upstream, and our client passes the same scenarios
+today. The steps for a later move are at the end of this doc.
 
 ## 1. Compile-time gate on the real spec
 
@@ -296,13 +296,18 @@ sent the old one.
 
 ### Recommendation
 
-Switch the desktop transport to Dartvex, after the four changes above. It is
-not a drop-in. Our client passes today, so nothing forces
-the move. Switching moves the socket and auth state machine upstream, out of
-1,265 lines of Rust patches nobody else reads. We still own the adapter and
-what the user sees.
+Not now. Our client passes every scenario here today, and Dartvex is not a
+drop-in: it needs the four changes above, one of them in Dartvex itself. The
+gain from switching is maintenance: the socket and auth state machine move
+upstream, out of 1,265 lines of Rust patches nobody else reads. It fixes no
+bug a user hits today, and it costs a staged rollout on the sync path, which
+is where a new bug would cost users their work.
 
-The migration, in three pieces:
+Revisit when either of these happens: the Rust client produces another bug of
+the #512/#514/#530/#532 kind, or Dartvex ships `subscribe` without the cache
+seed (change 3) so the move needs no upstream work from us.
+
+If we move, the migration is three pieces:
 
 - One PR on the sync path, with a staged rollout. A `DartvexValueSource`
   replaces the 284-line `convex_client_native.dart`, with same-user refresh
