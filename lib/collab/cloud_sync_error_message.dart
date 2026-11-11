@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/generated/convex_error_codes.dart';
 import 'package:icarus/collab/page_changes.dart';
@@ -68,6 +67,15 @@ String incompletePageCopyMessage(String pageName) =>
 
 const _incompletePageCopyMark = "didn't finish saving on this computer";
 
+/// The page name in [reason], when it starts as an
+/// [incompletePageCopyMessage] does; null otherwise.
+String? incompletePageCopyPageName(String reason) {
+  const start = 'The copy of ';
+  final end = reason.lastIndexOf(' $_incompletePageCopyMark');
+  if (!reason.startsWith(start) || end < start.length) return null;
+  return reason.substring(start.length, end);
+}
+
 /// Whether [reason] is an [incompletePageCopyMessage].
 bool isIncompletePageCopyReason(String? reason) =>
     reason != null && reason.contains(_incompletePageCopyMark);
@@ -108,131 +116,5 @@ bool isClientUpgradeRequiredReason(String? reason) =>
 const _keptRefusal =
     'ConvexFunctionException($clientUpgradeRequiredCode, Client upgrade required)';
 
-/// What the user is told when the server needs a newer Icarus, with the way
-/// out their platform has. Desktop says what it can only once it knows
-/// whether an update is there to install.
-String clientUpgradeRequiredMessage({
-  bool isWeb = kIsWeb,
-  ClientUpdateAvailability update = ClientUpdateAvailability.available,
-}) {
-  if (isWeb) return 'Icarus was updated. Reload to keep syncing.';
-  return switch (update) {
-    ClientUpdateAvailability.available =>
-      'Icarus was updated. Install the update to keep syncing.',
-    ClientUpdateAvailability.checking =>
-      'Icarus was updated. Looking for the update this app needs to keep '
-          'syncing.',
-    ClientUpdateAvailability.unavailable =>
-      "Icarus was updated, but the update isn't available for this app yet. "
-          'Your saved work stays on this device and syncs once the update is '
-          'installed.',
-  };
-}
-
 /// Whether the update a refused desktop build needs can be installed yet.
 enum ClientUpdateAvailability { available, checking, unavailable }
-
-/// What the user is told about a page delete held for them (see
-/// heldPageDelete). A page this device could not check is never said to
-/// have changed: nothing says it did.
-String heldPageDeleteMessage(({String page, bool checked}) held) => held.checked
-    ? '${held.page} $pageChangedSinceDeleteReason. Review before deleting.'
-    : "Icarus couldn't check ${held.page} for a teammate's changes. "
-        'Review it before deleting.';
-
-String friendlyCloudSyncError(String raw) {
-  if (isClientUpgradeRequiredReason(raw)) {
-    return clientUpgradeRequiredMessage();
-  }
-  if (heldPageDelete(raw) case final held?) {
-    return heldPageDeleteMessage(held);
-  }
-  final lower = raw.toLowerCase();
-  if (lower.contains(_incompletePageCopyMark)) return raw;
-  if (lower.contains('strategy was deleted')) {
-    return 'This strategy was deleted, so its unsent changes cannot be '
-        'saved. Discard them from the library.';
-  }
-  if (lower.contains('unreadable saved work')) {
-    return 'A saved cloud change could not be read. It remains on this '
-        'device; keep this strategy open and recover the outbox before '
-        'continuing.';
-  }
-  if (lower.contains('could not be verified in the durable outbox') ||
-      lower.contains('could not be saved to the durable outbox')) {
-    return unverifiedCloudWorkMessage;
-  }
-  if (lower.contains(editAccessRemovedMessage.toLowerCase())) {
-    return editAccessRemovedMessage;
-  }
-  if (lower.contains('forbidden')) {
-    return 'This account does not have permission to save these changes. '
-        'They remain on this device. Ask the owner for edit access, then '
-        'retry.';
-  }
-  if (lower.contains('retry paused')) {
-    return 'A saved cloud change is paused after repeated failures. Retry '
-        'when the connection and account are healthy.';
-  }
-  if (lower.contains(pageTooLargeToCopyMessage.toLowerCase())) {
-    return 'A new page was too large for the cloud to copy, so it was not '
-        'added. Keep mine tries again; Use cloud drops it.';
-  }
-  if (lower.contains('too large for cloud sync')) {
-    return 'A saved change is too large for cloud sync. It remains saved on '
-        'this device. Reduce it, then choose Keep mine to retry, or Use '
-        'cloud to drop it.';
-  }
-  if (lower.contains(lineupOverlapMessage.toLowerCase())) {
-    return 'This lineup shares a spot with lineups saved separately, so it '
-        'was not saved to the cloud. It remains on this device. Keep mine '
-        'sends it again, and is refused while the spot is still shared; Use '
-        'cloud removes it here.';
-  }
-  if (lower.contains(lineupPageMismatchMessage.toLowerCase())) {
-    return 'This lineup clashes with one on another page, so it was not '
-        'saved to the cloud. It remains on this device; Use cloud removes '
-        'it here.';
-  }
-  if (lower.contains(teammateDeletedCannotRestoreMessage.toLowerCase())) {
-    return 'A teammate deleted what this change edits, and this change '
-        'cannot bring it back. Use cloud to let it go.';
-  }
-  if (lower.contains(teammateDeletedMessage.toLowerCase())) {
-    return 'A teammate deleted what you changed. Keep mine brings it back '
-        'as you have it; Use cloud lets it go.';
-  }
-  if (lower.contains(retiredLineupOpMessage.toLowerCase())) {
-    return 'A lineup change saved by an older version of Icarus cannot be '
-        'sent to the cloud, so it is not in this strategy. Redo it, then '
-        'choose Use cloud to clear this.';
-  }
-  if (lower.contains(undrawableWorkMessage.toLowerCase())) {
-    return 'A saved change no longer fits this page as the cloud has it now, '
-        'so it was not sent. It remains on this device. Keep mine replaces '
-        "the cloud's version with yours, whole; Use cloud drops yours.";
-  }
-  if (lower.contains(pageDeletedMessage.toLowerCase())) {
-    return 'The page these changes were on was deleted, so they were not '
-        'saved. They remain on this device; Use cloud drops them.';
-  }
-  if (lower.contains('needs attention')) {
-    return 'Another edit reached the cloud first. Your version remains '
-        'saved on this device.';
-  }
-  if (lower.contains('cannot be retried automatically')) {
-    return 'The server cannot match this retained edit to a current cloud '
-        'revision. It remains saved on this device.';
-  }
-  if (lower.contains('auth')) {
-    return 'Your cloud session needs to be refreshed — retry, or sign in '
-        'again from the library.';
-  }
-  if (lower.contains('offline') || lower.contains('connection')) {
-    return 'The cloud could not be reached.';
-  }
-  if (lower.contains('setup is not ready')) {
-    return 'Cloud sync is still starting up.';
-  }
-  return "Some changes haven't reached the cloud yet.";
-}

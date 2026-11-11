@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/routes.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
@@ -25,7 +26,8 @@ bool isReplayPath(String path) =>
 /// Opens waiting their turn. Each runs after the one before it finishes,
 /// so two arriving together (a drop and an Explorer open, or two Explorer
 /// opens) never interleave their navigation or stack two guard dialogs.
-final _waiting = <({WidgetRef ref, List<String> paths})>[];
+final _waiting =
+    <({WidgetRef ref, List<String> paths, AppLocalizations l10n})>[];
 var _opening = false;
 
 /// Brings replays opened from outside the Replays tab (dropped anywhere on
@@ -35,7 +37,7 @@ var _opening = false;
 /// toast. Leaving the editor goes through the unsaved-work guard; staying
 /// keeps the editor, with the replays already added.
 Future<void> openReplays(WidgetRef ref, List<String> paths) async {
-  _waiting.add((ref: ref, paths: paths));
+  _waiting.add((ref: ref, paths: paths, l10n: ref.read(l10nProvider)));
   if (_opening) return;
   _opening = true;
   try {
@@ -45,7 +47,7 @@ Future<void> openReplays(WidgetRef ref, List<String> paths) async {
         await _openReplays(next.ref, next.paths);
       } catch (error, stackTrace) {
         AppErrorReporter.reportError(
-          "Couldn't open the replay.",
+          next.l10n.replayOpenFailed,
           error: error,
           stackTrace: stackTrace,
           source: 'openReplays',

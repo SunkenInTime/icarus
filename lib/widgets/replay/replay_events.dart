@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/replay/replay_ability_catalog.dart';
@@ -31,13 +32,15 @@ enum ReplayEventKind {
 
 /// The choices in the killfeed's filter, each showing some kinds of event.
 enum ReplayEventFilter {
-  kills('Kills'),
-  spike('Spike'),
-  abilities('Abilities');
+  kills,
+  spike,
+  abilities;
 
-  const ReplayEventFilter(this.label);
-
-  final String label;
+  String label(AppLocalizations l10n) => switch (this) {
+        kills => l10n.replayRosterFilterKills,
+        spike => l10n.gameSpike,
+        abilities => l10n.replayRosterFilterAbilities,
+      };
 }
 
 /// Which events the killfeed lists and the scrubber marks, kept while the

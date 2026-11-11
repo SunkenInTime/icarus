@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -92,6 +93,7 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
     if (workCount == 0 && !hasDurabilityProblem && deletedStrategies.isEmpty) {
       return const SizedBox.shrink();
     }
+    final l10n = context.l10n;
     if (heldForUpgrade) {
       return ClientUpgradeNotice(
         buttonSize: ShadButtonSize.sm,
@@ -99,10 +101,8 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
           context,
           needsAttention: true,
           connected: connected,
-          title: 'Cloud work is waiting for a newer Icarus',
-          detail: '$workCount saved '
-              '${workCount == 1 ? 'change is' : 'changes are'} kept on this '
-              'device. $message',
+          title: l10n.outboxBannerUpgradeTitle,
+          detail: l10n.outboxBannerUpgradeDetail(workCount, message),
           actions: [if (action != null) action],
         ),
       );
@@ -114,31 +114,27 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
         failedCaptures.isNotEmpty ||
         deletedStrategies.isNotEmpty;
     final title = needsAttention
-        ? 'Cloud work needs attention'
+        ? l10n.outboxBannerAttentionTitle
         : connected
-            ? 'Syncing cloud work'
-            : 'Working offline';
+            ? l10n.outboxBannerSyncingTitle
+            : l10n.outboxBannerOfflineTitle;
     final detail = hasDurabilityProblem
-        ? 'Icarus cannot read some saved cloud work on this device. Stay '
-            'signed in and review it.'
+        ? l10n.outboxBannerUnreadableDetail
         : authBlocked
-            ? 'Reconnect this account before Icarus can send its saved work.'
+            ? l10n.outboxBannerReconnectDetail
             : workCount == 0 && deletedStrategies.isNotEmpty
-                ? '$deletedChangeCount unsent '
-                    '${deletedChangeCount == 1 ? 'change' : 'changes'} to a '
-                    'strategy that was deleted cannot be saved. Discard '
-                    '${deletedChangeCount == 1 ? 'it' : 'them'} to clear this.'
+                ? l10n.outboxBannerDeletedStrategyDetail(deletedChangeCount)
                 : needsAttention
-                    ? '$workCount saved ${workCount == 1 ? 'change needs' : 'changes need'} '
-                        'review across ${strategyIds.length} '
-                        '${strategyIds.length == 1 ? 'strategy' : 'strategies'}.'
+                    ? l10n.outboxBannerAttentionDetail(
+                        workCount,
+                        strategyIds.length,
+                      )
                     : connected
-                        ? '$workCount saved ${workCount == 1 ? 'change is' : 'changes are'} '
-                            'being sent from ${strategyIds.length} '
-                            '${strategyIds.length == 1 ? 'strategy' : 'strategies'}.'
-                        : '$workCount saved ${workCount == 1 ? 'change is' : 'changes are'} '
-                            'waiting on this device and will resume when the '
-                            'connection returns.';
+                        ? l10n.outboxBannerSendingDetail(
+                            workCount,
+                            strategyIds.length,
+                          )
+                        : l10n.outboxBannerOfflineDetail(workCount);
     return _card(
       context,
       needsAttention: needsAttention,
@@ -153,6 +149,7 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
             child: Flexible(
               child: Text(
                 _attentionLabel(
+                  l10n,
                   strategyId,
                   strategyNames[strategyId],
                   opQueue.accountOutbox.strategies[strategyId]?.reason,
@@ -172,9 +169,7 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
                     ),
             child: Flexible(
               child: Text(
-                failedCaptures.length == 1
-                    ? 'Retry replay capture'
-                    : 'Retry replay captures',
+                l10n.outboxBannerRetryCaptures(failedCaptures.length),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -186,9 +181,7 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
             onPressed: () => _discardCaptures(ref, failedCaptures),
             child: Flexible(
               child: Text(
-                failedCaptures.length == 1
-                    ? 'Discard replay capture'
-                    : 'Discard ${failedCaptures.length} replay captures',
+                l10n.outboxBannerDiscardCaptures(failedCaptures.length),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -200,8 +193,11 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
             onPressed: () => _discardDeleted(ref, strategyId),
             child: Flexible(
               child: Text(
-                'Discard changes to '
-                '${strategyNames[strategyId]?.trim().isNotEmpty == true ? strategyNames[strategyId]!.trim() : 'the deleted strategy'}',
+                strategyNames[strategyId]?.trim().isNotEmpty == true
+                    ? l10n.outboxBannerDiscardChangesTo(
+                        strategyNames[strategyId]!.trim(),
+                      )
+                    : l10n.outboxBannerDiscardDeletedStrategyChanges,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -289,12 +285,13 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
     WidgetRef ref,
     List<ReplayCaptureRecord> captures,
   ) async {
+    final l10n = ref.read(l10nProvider);
     final mayHaveLanded = await ref
         .read(replayCaptureQueueProvider.notifier)
         .discard([for (final capture in captures) capture.id]);
     if (mayHaveLanded) {
       Settings.showToast(
-        message: 'Discarded. It may still appear in your library.',
+        message: l10n.outboxBannerCaptureDiscardedToast,
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
     }
@@ -324,6 +321,7 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
   }
 
   String _attentionLabel(
+    AppLocalizations l10n,
     String id,
     String? strategyName,
     String? reason,
@@ -331,14 +329,13 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
   ) {
     final label = strategyName?.trim().isNotEmpty == true
         ? strategyName!.trim()
-        : 'A cloud strategy';
+        : l10n.outboxBannerUnnamedStrategy;
     if (reason != null && reason.isNotEmpty) {
-      return '$label: review sync';
+      return l10n.outboxBannerReviewSync(label);
     }
     if (failedMediaCount > 0) {
-      return '$label: $failedMediaCount '
-          '${failedMediaCount == 1 ? 'image failed' : 'images failed'}';
+      return l10n.outboxBannerImagesFailed(label, failedMediaCount);
     }
-    return '$label: review';
+    return l10n.outboxBannerReview(label);
   }
 }

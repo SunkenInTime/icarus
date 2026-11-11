@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show Locale;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
-import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
@@ -12,11 +12,15 @@ import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/l10n/cloud_sync_error_text.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+final _english = lookupAppLocalizations(const Locale('en'));
 
 /// Page changes made in a cloud strategy without a connection: each one
 /// lands, in the order it was made, against a server that applies page
@@ -562,7 +566,7 @@ void main() {
       expect(queue().queuedByEntityKey, hasLength(1));
       expect(queue().lastError, 'Page 2 $pageChangedSinceDeleteReason');
       expect(
-        friendlyCloudSyncError(queue().lastError!),
+        friendlyCloudSyncError(_english, queue().lastError!),
         'Page 2 changed since you deleted it. Review before deleting.',
       );
     });
@@ -760,14 +764,17 @@ void main() {
         'Page 2 $pageChangedSinceDeleteReason',
       );
       expect(
-        friendlyCloudSyncError(queue().lastError!),
+        friendlyCloudSyncError(_english, queue().lastError!),
         "Icarus couldn't check Page 2 for a teammate's changes. Review it "
         'before deleting.',
       );
       final held = notifier.heldPageDeletes().values.single;
       expect((held.page, held.checked), ('Page 2', false));
       expect(
-        heldPageDeleteMessage((page: held.page, checked: held.checked)),
+        heldPageDeleteMessage(
+          _english,
+          (page: held.page, checked: held.checked),
+        ),
         "Icarus couldn't check Page 2 for a teammate's changes. Review it "
         'before deleting.',
       );

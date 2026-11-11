@@ -1,3 +1,5 @@
+import 'package:icarus/l10n/l10n.dart';
+
 /// Thrown when the user cancels a video export.
 class VideoExportCancelled implements Exception {}
 
@@ -9,12 +11,13 @@ class CaptionsDontFit implements Exception {
 
   final int? page;
 
-  String get userMessage => captionsDontFitMessage(page);
+  String userMessage(AppLocalizations l10n) =>
+      captionsDontFitMessage(l10n, page);
 }
 
-String captionsDontFitMessage(int? page) =>
-    "Captions on ${page == null ? 'this page' : 'page $page'} don't fit. "
-    'Shorten them, or turn off Include captions.';
+String captionsDontFitMessage(AppLocalizations l10n, int? page) => page == null
+    ? l10n.videoExportCaptionsDontFitThisPage
+    : l10n.videoExportCaptionsDontFitPage(page);
 
 /// A video export failure whose [message] can be shown to the user.
 class VideoExportException implements Exception {

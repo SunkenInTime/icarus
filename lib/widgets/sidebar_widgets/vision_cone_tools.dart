@@ -5,6 +5,7 @@ import 'package:icarus/const/default_placement.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -23,7 +24,7 @@ class VisionConeTools extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Vision Cones"),
+          Text(context.l10n.sidebarVisionConesTitle),
           const SizedBox(height: 8),
           Container(
             decoration: BoxDecoration(
@@ -74,7 +75,7 @@ class VisionConeTools extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Text(
-              "Drag to place",
+              context.l10n.sidebarDragToPlace,
               style: TextStyle(
                 fontSize: 12,
                 fontStyle: FontStyle.italic,
@@ -143,7 +144,8 @@ class _VisionConePresetTile extends ConsumerWidget {
         ),
       ),
       child: ShadTooltip(
-        builder: (context) => Text("View Cone $label°"),
+        builder: (context) =>
+            Text(context.l10n.sidebarViewConePresetTooltip(label)),
         child: ShadIconButton.secondary(
           width: 46,
           height: 46,

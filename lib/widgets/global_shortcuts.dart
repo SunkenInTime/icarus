@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -164,6 +165,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
               if (!capabilities.canAddPage) return null;
               _dismissDeleteMenu();
               showNewPageGaps(
+                ref.read(l10nProvider),
                 await ref.read(strategyProvider.notifier).addPage(),
               );
               return null;
@@ -318,19 +320,20 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
               _dismissDeleteMenu();
               final strategyId = ref.read(strategyProvider).strategyId;
               if (strategyId == null) return null;
+              final l10n = context.l10n;
               try {
                 await ref.read(strategyProvider.notifier).forceSaveNow(
                       strategyId,
                     );
                 if (!mounted) return null;
                 Settings.showToast(
-                  message: 'File saved',
+                  message: l10n.globalShortcutsFileSaved,
                   backgroundColor: Colors.green,
                 );
               } catch (_) {
                 if (!mounted) return null;
                 Settings.showToast(
-                  message: 'Save failed',
+                  message: l10n.globalShortcutsSaveFailed,
                   backgroundColor: Colors.red,
                 );
               }

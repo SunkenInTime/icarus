@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
@@ -37,16 +38,17 @@ class _SetPasswordDialogState extends ConsumerState<SetPasswordDialog> {
 
   Future<void> _save() async {
     final password = _passwordController.text;
+    final l10n = context.l10n;
     if (password.length < 6) {
       setState(() {
-        _error = 'Password must be at least 6 characters.';
+        _error = l10n.authPasswordTooShort;
         _confirmHasError = false;
       });
       return;
     }
     if (password != _confirmController.text) {
       setState(() {
-        _error = 'Passwords do not match.';
+        _error = l10n.authPasswordsDoNotMatch;
         _confirmHasError = true;
       });
       return;
@@ -70,8 +72,7 @@ class _SetPasswordDialogState extends ConsumerState<SetPasswordDialog> {
 
     Navigator.of(context).pop();
     Settings.showToast(
-      message: 'Password saved. Sign in with your email and this password '
-          'from now on.',
+      message: l10n.setPasswordSaved,
       backgroundColor: Settings.tacticalVioletTheme.primary,
     );
   }
@@ -79,14 +80,14 @@ class _SetPasswordDialogState extends ConsumerState<SetPasswordDialog> {
   @override
   Widget build(BuildContext context) {
     final email = ref.watch(authProvider.select((state) => state.user?.email));
+    final l10n = context.l10n;
 
     return ShadDialog(
-      title: const Text('Set a new password'),
+      title: Text(l10n.setPasswordTitle),
       description: Text(
         email == null
-            ? 'Choose the password you will sign in with.'
-            : "You're signed in as $email. Choose the password you will "
-                'sign in with.',
+            ? l10n.setPasswordDescription
+            : l10n.setPasswordDescriptionSignedIn(email),
       ),
       child: SizedBox(
         width: 420,
@@ -100,7 +101,7 @@ class _SetPasswordDialogState extends ConsumerState<SetPasswordDialog> {
               focusNode: _passwordFocusNode,
               obscureText: true,
               autofillHints: const [AutofillHints.newPassword],
-              hintText: 'New password',
+              hintText: l10n.setPasswordNewHint,
               textInputAction: TextInputAction.next,
               hasError: _error != null && !_confirmHasError,
             ),
@@ -111,7 +112,7 @@ class _SetPasswordDialogState extends ConsumerState<SetPasswordDialog> {
               focusNode: _confirmFocusNode,
               obscureText: true,
               autofillHints: const [AutofillHints.newPassword],
-              hintText: 'Confirm new password',
+              hintText: l10n.setPasswordConfirmHint,
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _save(),
               hasError: _confirmHasError,
@@ -129,7 +130,7 @@ class _SetPasswordDialogState extends ConsumerState<SetPasswordDialog> {
                     key: const ValueKey('set-password-not-now'),
                     onPressed:
                         _saving ? null : () => Navigator.of(context).pop(),
-                    child: const Text('Not now'),
+                    child: Text(l10n.setPasswordNotNow),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -144,7 +145,9 @@ class _SetPasswordDialogState extends ConsumerState<SetPasswordDialog> {
                             child: LoadingSpinner(strokeWidth: 2),
                           )
                         : null,
-                    child: Text(_saving ? 'Saving…' : 'Save password'),
+                    child: Text(_saving
+                        ? l10n.setPasswordSaving
+                        : l10n.setPasswordSave),
                   ),
                 ),
               ],

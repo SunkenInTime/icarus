@@ -63,6 +63,7 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/transition_provider.dart'
     hide PageTransitionState;
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/strategy/lineup_group_changes.dart';
 import 'package:icarus/strategy/copied_page_check.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -70,6 +71,8 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show User;
 import 'package:uuid/uuid.dart';
+
+final _english = lookupAppLocalizations(const Locale('en'));
 
 class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
   _FakeRemoteEditorNotifier(
@@ -8832,7 +8835,7 @@ void main() {
     /// The changes [changes] lists, each as `label: description`.
     List<String> described(List<LineupChange> changes) => [
           for (final change in changes)
-            '${change.label}: ${change.description}',
+            '${change.label(_english)}: ${change.description(_english)}',
         ];
 
     group('merged by field', () {
@@ -10370,11 +10373,13 @@ void main() {
           // change was made from.
           final conflict = container.read(lineupConflictsProvider)!.single;
           expect(
-            [for (final change in conflict.yours) change.description],
+            [for (final change in conflict.yours) change.description(_english)],
             ['notes edited', 'notes edited'],
           );
           expect(
-            [for (final change in conflict.cloud!) change.description],
+            [
+              for (final change in conflict.cloud!) change.description(_english)
+            ],
             ['deleted'],
           );
 
@@ -10481,7 +10486,7 @@ void main() {
             undrawableWorkMessage);
         String listed(List<LineupChange> changes) => [
               for (final change in changes)
-                '${change.label}: ${change.description}',
+                '${change.label(_english)}: ${change.description(_english)}',
             ].join('; ');
         final conflict = container.read(lineupConflictsProvider)!.single;
         expect(listed(conflict.yours), 'Heaven: notes edited');

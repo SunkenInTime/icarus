@@ -1,21 +1,29 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 
 /// A feature one platform may not offer. [label] names it in user-facing
 /// copy, so it reads as the subject of a sentence.
 enum PlatformFeature {
-  exportFiles('Export'),
-  importFiles('Import'),
-  screenshot('Screenshot'),
-  videoExport('Video export'),
-  fileDrop('Drag and drop'),
-  addImages('Adding images'),
-  addLineups('Adding lineups'),
-  replays('Replays');
+  exportFiles,
+  importFiles,
+  screenshot,
+  videoExport,
+  fileDrop,
+  addImages,
+  addLineups,
+  replays;
 
-  const PlatformFeature(this.label);
-
-  final String label;
+  String label(AppLocalizations l10n) => switch (this) {
+        exportFiles => l10n.serviceMsgFeatureExport,
+        importFiles => l10n.serviceMsgFeatureImport,
+        screenshot => l10n.serviceMsgFeatureScreenshot,
+        videoExport => l10n.serviceMsgFeatureVideoExport,
+        fileDrop => l10n.serviceMsgFeatureFileDrop,
+        addImages => l10n.serviceMsgFeatureAddImages,
+        addLineups => l10n.serviceMsgFeatureAddLineups,
+        replays => l10n.serviceMsgFeatureReplays,
+      };
 }
 
 /// What this build of Icarus offers. The web beta is one value of this
@@ -77,12 +85,12 @@ class PlatformPolicy {
       !desktopOnly.contains(feature) && !comingToWebBeta.contains(feature);
 
   /// Why [feature] is not here, in one short sentence, or null when it is.
-  String? unavailableMessage(PlatformFeature feature) {
+  String? unavailableMessage(AppLocalizations l10n, PlatformFeature feature) {
     if (desktopOnly.contains(feature)) {
-      return '${feature.label} is desktop-only for now.';
+      return l10n.serviceMsgFeatureDesktopOnly(feature.label(l10n));
     }
     if (comingToWebBeta.contains(feature)) {
-      return '${feature.label} is coming to the web beta.';
+      return l10n.serviceMsgFeatureComingToWeb(feature.label(l10n));
     }
     return null;
   }

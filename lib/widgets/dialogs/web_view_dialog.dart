@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -7,19 +8,19 @@ class WebViewDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return ShadDialog.alert(
-      title: const Text('WebView'),
-      description: const Text(
-          'WebView is not installed on your system. Please install it to use youtube videos.'),
+      title: Text(l10n.webViewTitle),
+      description: Text(l10n.webViewNotInstalled),
       actions: [
         ShadButton.secondary(
-          child: const Text('Close'),
+          child: Text(l10n.commonClose),
           onPressed: () {
             Navigator.of(context).pop();
           },
         ),
         ShadButton(
-          child: const Text('Install'),
+          child: Text(l10n.webViewInstall),
           onPressed: () {
             launchUrl(Uri.parse(
                 'https://developer.microsoft.com/en-us/microsoft-edge/webview2/?form=MA13LH'));

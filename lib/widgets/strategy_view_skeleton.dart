@@ -4,6 +4,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/canonical_map_artwork.dart';
@@ -353,7 +354,7 @@ class _MapCanvasSkeleton extends StatelessWidget {
                                     isAttack: isAttack,
                                     child: AssetSvg(
                                       assetName,
-                                      semanticsLabel: 'Map',
+                                      semanticsLabel: context.l10n.strategyViewSkeletonMapSemantics,
                                       fit: BoxFit.contain,
                                     ),
                                   ),

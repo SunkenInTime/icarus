@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Covers the editor on an upright phone, which is too narrow to place
@@ -32,14 +33,17 @@ class TurnPhoneNotice extends StatelessWidget {
                   color: theme.mutedForeground,
                 ),
                 const SizedBox(height: 16),
-                const Text(
-                  'Turn your phone sideways to edit',
+                Text(
+                  context.l10n.turnPhoneTitle,
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'If nothing happens, check that rotation lock is off.',
+                  context.l10n.turnPhoneRotationLockHint,
                   textAlign: TextAlign.center,
                   style: TextStyle(color: theme.mutedForeground),
                 ),
@@ -47,7 +51,9 @@ class TurnPhoneNotice extends StatelessWidget {
                 ShadButton.secondary(
                   key: const ValueKey('turn-phone-leave'),
                   onPressed: onLeave,
-                  child: Text(backTooltip ?? 'Back to My Library'),
+                  child: Text(
+                    backTooltip ?? context.l10n.turnPhoneBackToLibrary,
+                  ),
                 ),
               ],
             ),

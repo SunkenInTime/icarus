@@ -7,6 +7,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/sort_index_order.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -52,9 +53,7 @@ List<VideoExportPageChoice> videoExportPageChoices(WidgetRef ref) {
 class VideoExportNotSynced implements Exception {
   const VideoExportNotSynced();
 
-  String get userMessage =>
-      "Your latest changes haven't synced yet. Export once the strategy "
-      'shows as synced.';
+  String userMessage(AppLocalizations l10n) => l10n.videoExportNotSynced;
 
   @override
   String toString() => 'VideoExportNotSynced';
@@ -65,8 +64,7 @@ class VideoExportNotSynced implements Exception {
 class VideoExportPagesChanged implements Exception {
   const VideoExportPagesChanged();
 
-  String get userMessage =>
-      'A page you selected was deleted. Check the pages and export again.';
+  String userMessage(AppLocalizations l10n) => l10n.videoExportPagesChanged;
 
   @override
   String toString() => 'VideoExportPagesChanged';

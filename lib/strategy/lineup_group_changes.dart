@@ -3,17 +3,57 @@ import 'dart:convert';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:uuid/uuid.dart';
 
 /// What happened to one lineup between two versions of its group.
 class LineupChange {
-  const LineupChange({required this.label, required this.description});
+  const LineupChange({this.name, this.agent, required this.kinds});
+
+  /// What the user called the lineup, or null if they left it unnamed.
+  final String? name;
+
+  /// The lineup's agent, in English as lib/const names it, if it has one.
+  final String? agent;
+
+  /// Everything that changed. [LineupChangeKind.added] and
+  /// [LineupChangeKind.deleted] stand alone.
+  final List<LineupChangeKind> kinds;
 
   /// The lineup as the user knows it: its name, or its agent's.
-  final String label;
+  String label(AppLocalizations l10n) =>
+      name ??
+      switch (agent) {
+        null => l10n.lineupChangeUnnamed,
+        final agent => l10n.lineupChangeAgentLineup(l10n.gameName(agent)),
+      };
 
   /// What changed, e.g. "added" or "notes edited, landing moved".
-  final String description;
+  String description(AppLocalizations l10n) => [
+        for (final kind in kinds)
+          switch (kind) {
+            LineupChangeKind.added => l10n.lineupChangeAdded,
+            LineupChangeKind.deleted => l10n.lineupChangeDeleted,
+            LineupChangeKind.renamed => l10n.lineupChangeRenamed,
+            LineupChangeKind.notesEdited => l10n.lineupChangeNotesEdited,
+            LineupChangeKind.videoChanged => l10n.lineupChangeVideoChanged,
+            LineupChangeKind.imagesChanged => l10n.lineupChangeImagesChanged,
+            LineupChangeKind.standingSpotMoved =>
+              l10n.lineupChangeStandingSpotMoved,
+            LineupChangeKind.landingMoved => l10n.lineupChangeLandingMoved,
+          },
+      ].join(l10n.lineupChangeSeparator);
+}
+
+enum LineupChangeKind {
+  added,
+  deleted,
+  renamed,
+  notesEdited,
+  videoChanged,
+  imagesChanged,
+  standingSpotMoved,
+  landingMoved,
 }
 
 /// The lineups that differ between [from] and [to], one entry each, in
@@ -28,40 +68,36 @@ List<LineupChange> lineupChanges({
   for (final link in to.links) {
     final old = before.links[link.id];
     if (old == null) {
-      changes.add(LineupChange(label: after.label(link), description: 'added'));
+      changes.add(after.change(link, const [LineupChangeKind.added]));
       continue;
     }
     final what = [
-      if (old.name != link.name) 'renamed',
-      if (old.notes != link.notes) 'notes edited',
-      if (old.youtubeLink != link.youtubeLink) 'video changed',
+      if (old.name != link.name) LineupChangeKind.renamed,
+      if (old.notes != link.notes) LineupChangeKind.notesEdited,
+      if (old.youtubeLink != link.youtubeLink) LineupChangeKind.videoChanged,
       if (!_sameJson(
         [for (final image in old.images) image.toJson()],
         [for (final image in link.images) image.toJson()],
       ))
-        'images changed',
+        LineupChangeKind.imagesChanged,
       if (!_sameJson(
         before.origins[old.originId]?.toJson(),
         after.origins[link.originId]?.toJson(),
       ))
-        'standing spot moved',
+        LineupChangeKind.standingSpotMoved,
       if (!_sameJson(
         before.landings[old.landingId]?.toJson(),
         after.landings[link.landingId]?.toJson(),
       ))
-        'landing moved',
+        LineupChangeKind.landingMoved,
     ];
     if (what.isNotEmpty) {
-      changes.add(
-        LineupChange(label: after.label(link), description: what.join(', ')),
-      );
+      changes.add(after.change(link, what));
     }
   }
   for (final link in from.links) {
     if (!after.links.containsKey(link.id)) {
-      changes.add(
-        LineupChange(label: before.label(link), description: 'deleted'),
-      );
+      changes.add(before.change(link, const [LineupChangeKind.deleted]));
     }
   }
   return changes;
@@ -127,10 +163,12 @@ class _Lookup {
   final Map<String, LineUpLanding> landings;
   final Map<String, LineUpLink> links;
 
-  String label(LineUpLink link) {
+  LineupChange change(LineUpLink link, List<LineupChangeKind> kinds) {
     final name = link.name.trim();
-    if (name.isNotEmpty) return name;
-    final agent = AgentData.agents[origins[link.originId]?.agent.type]?.name;
-    return agent == null ? 'Unnamed lineup' : '$agent lineup';
+    return LineupChange(
+      name: name.isEmpty ? null : name,
+      agent: AgentData.agents[origins[link.originId]?.agent.type]?.name,
+      kinds: kinds,
+    );
   }
 }

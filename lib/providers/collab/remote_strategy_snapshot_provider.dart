@@ -41,11 +41,6 @@ class StrategyAccessLost implements Exception {
   String toString() => 'StrategyAccessLost($strategyPublicId)';
 }
 
-/// What a reader is told when they open a cloud strategy offline that this
-/// computer keeps no copy of.
-const strategyNeedsConnectionMessage =
-    'This strategy needs a connection the first time you open it.';
-
 /// The error [remoteEditorSnapshotProvider] holds when a cloud strategy is
 /// opened while the server can't answer and this computer keeps no copy of
 /// it: it has to be opened online once first.

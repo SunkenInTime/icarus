@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
@@ -40,22 +41,21 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return ShadDialog(
-      title: const Text("Rename Strategy"),
+      title: Text(l10n.renameStrategyTitle),
       actions: [
         ShadButton.secondary(
           onPressed: () {
             Navigator.of(context).pop(); // Close the dialog
           },
-          child: const Text("Cancel"),
+          child: Text(l10n.commonCancel),
         ),
         ShadButton(
           onPressed: () async {
             final strategyName = _textController.text;
             if (strategyName.isNotEmpty) {
-              await ref
-                  .read(strategyProvider.notifier)
-                  .renameStrategy(
+              await ref.read(strategyProvider.notifier).renameStrategy(
                     widget.strategyId,
                     strategyName,
                     source: widget.source,
@@ -65,14 +65,14 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
             } else {
               // Optionally, show an error message if the name is empty
               Settings.showToast(
-                message: "Strategy name cannot be empty.",
+                message: l10n.renameStrategyEmptyName,
                 backgroundColor: Settings.tacticalVioletTheme.destructive,
               );
             }
           },
           height: 35,
           leading: const Icon(LucideIcons.pencil),
-          child: const Text("Rename"),
+          child: Text(l10n.commonRename),
         ),
       ],
       child: Padding(
@@ -84,9 +84,7 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
             textAlign: TextAlign.start,
             onSubmitted: (value) async {
               if (value.isNotEmpty) {
-                await ref
-                    .read(strategyProvider.notifier)
-                    .renameStrategy(
+                await ref.read(strategyProvider.notifier).renameStrategy(
                       widget.strategyId,
                       value,
                       source: widget.source,
@@ -98,7 +96,7 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
                 // Optionally, show an error message if the name is empty
 
                 Settings.showToast(
-                  message: "Strategy name cannot be empty.",
+                  message: l10n.renameStrategyEmptyName,
                   backgroundColor: Settings.tacticalVioletTheme.destructive,
                 );
               }

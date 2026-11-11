@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 
 enum SortBy {
@@ -41,16 +42,18 @@ final strategyFilterProvider =
         StrategyFilterProvider.new);
 
 class StrategyFilterProvider extends Notifier<StrategyFilterState> {
-  static Map<SortBy, String> sortByLabels = {
-    SortBy.alphabetical: 'Alphabetical',
-    SortBy.dateCreated: 'Date Created',
-    SortBy.dateUpdated: 'Date Updated',
-  };
+  static String sortByLabel(SortBy sortBy, AppLocalizations l10n) =>
+      switch (sortBy) {
+        SortBy.alphabetical => l10n.prefsMsgSortAlphabetical,
+        SortBy.dateCreated => l10n.prefsMsgSortDateCreated,
+        SortBy.dateUpdated => l10n.prefsMsgSortDateUpdated,
+      };
 
-  static Map<SortOrder, String> sortOrderLabels = {
-    SortOrder.ascending: 'Ascending',
-    SortOrder.descending: 'Descending',
-  };
+  static String sortOrderLabel(SortOrder sortOrder, AppLocalizations l10n) =>
+      switch (sortOrder) {
+        SortOrder.ascending => l10n.prefsMsgSortAscending,
+        SortOrder.descending => l10n.prefsMsgSortDescending,
+      };
 
   @override
   StrategyFilterState build() {
@@ -86,7 +89,7 @@ class StrategyFilterProvider extends Notifier<StrategyFilterState> {
   }
 
   ({IconData icon, String label}) getCurrentSortBy() {
-    final label = sortByLabels[state.sortBy]!;
+    final label = sortByLabel(state.sortBy, ref.read(l10nProvider));
 
     switch (state.sortBy) {
       case SortBy.alphabetical:

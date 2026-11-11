@@ -3,6 +3,7 @@ import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart' as material;
 import 'package:flutter/services.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -403,7 +404,7 @@ class BetterColorPickerField extends material.StatelessWidget {
     this.orientation = material.Axis.vertical,
     this.label,
     this.enabled = true,
-    this.dialogTitle = 'Select color',
+    this.dialogTitle,
     this.style = const BetterColorPickerStyle(),
   });
 
@@ -415,7 +416,7 @@ class BetterColorPickerField extends material.StatelessWidget {
   final material.Axis orientation;
   final String? label;
   final bool enabled;
-  final String dialogTitle;
+  final String? dialogTitle;
   final BetterColorPickerStyle style;
 
   @override
@@ -494,7 +495,7 @@ class BetterColorPickerField extends material.StatelessWidget {
 Future<material.Color?> showBetterColorPickerDialog(
   material.BuildContext context, {
   required material.Color initialColor,
-  String title = 'Select color',
+  String? title,
   BetterColorPickerMode initialMode = BetterColorPickerMode.rgb,
   bool showAlpha = false,
   material.Axis orientation = material.Axis.vertical,
@@ -506,7 +507,7 @@ Future<material.Color?> showBetterColorPickerDialog(
     builder: (context) {
       return _BetterColorPickerDialog(
         initialColor: initialColor,
-        title: title,
+        title: title ?? context.l10n.colorPickerTitle,
         initialMode: initialMode,
         showAlpha: showAlpha,
         orientation: orientation,
@@ -621,11 +622,11 @@ class _BetterColorPickerDialogState
       actions: [
         material.TextButton(
           onPressed: () => material.Navigator.of(context).pop(),
-          child: const material.Text('Cancel'),
+          child: material.Text(context.l10n.commonCancel),
         ),
         material.FilledButton(
           onPressed: () => material.Navigator.of(context).pop(_value),
-          child: const material.Text('Apply'),
+          child: material.Text(context.l10n.commonApply),
         ),
       ],
     );
@@ -658,6 +659,7 @@ class _PickerControls extends material.StatelessWidget {
   @override
   material.Widget build(material.BuildContext context) {
     final palette = style.paletteFor(material.Theme.of(context).brightness);
+    final l10n = context.l10n;
     final fields = <_GroupedFieldData>[
       _GroupedFieldData(
         width: 96,
@@ -674,10 +676,10 @@ class _PickerControls extends material.StatelessWidget {
         ),
       ),
       ...switch (mode) {
-        BetterColorPickerMode.rgb => _buildRgbFields(),
-        BetterColorPickerMode.hsl => _buildHslFields(),
-        BetterColorPickerMode.hsv => _buildHsvFields(),
-        BetterColorPickerMode.hex => _buildHexFields(),
+        BetterColorPickerMode.rgb => _buildRgbFields(l10n),
+        BetterColorPickerMode.hsl => _buildHslFields(l10n),
+        BetterColorPickerMode.hsv => _buildHsvFields(l10n),
+        BetterColorPickerMode.hex => _buildHexFields(l10n),
       },
     ];
     final preferredWidth =
@@ -710,12 +712,12 @@ class _PickerControls extends material.StatelessWidget {
     );
   }
 
-  List<_GroupedFieldData> _buildRgbFields() {
+  List<_GroupedFieldData> _buildRgbFields(AppLocalizations l10n) {
     return [
       _numberField(
         width: 64,
         value: value.red.toString(),
-        placeholder: 'Red',
+        placeholder: l10n.colorPickerRed,
         min: 0,
         max: 255,
         onChanged: (next) => onChanged(value.changeToColorRed(next.toDouble())),
@@ -723,7 +725,7 @@ class _PickerControls extends material.StatelessWidget {
       _numberField(
         width: 64,
         value: value.green.toString(),
-        placeholder: 'Green',
+        placeholder: l10n.colorPickerGreen,
         min: 0,
         max: 255,
         onChanged: (next) =>
@@ -732,7 +734,7 @@ class _PickerControls extends material.StatelessWidget {
       _numberField(
         width: 64,
         value: value.blue.toString(),
-        placeholder: 'Blue',
+        placeholder: l10n.colorPickerBlue,
         min: 0,
         max: 255,
         onChanged: (next) =>
@@ -742,7 +744,7 @@ class _PickerControls extends material.StatelessWidget {
         _numberField(
           width: 64,
           value: (value.opacity * 255).round().toString(),
-          placeholder: 'Alpha',
+          placeholder: l10n.colorPickerAlpha,
           min: 0,
           max: 255,
           onChanged: (next) => onChanged(value.changeToOpacity(next / 255)),
@@ -750,12 +752,12 @@ class _PickerControls extends material.StatelessWidget {
     ];
   }
 
-  List<_GroupedFieldData> _buildHslFields() {
+  List<_GroupedFieldData> _buildHslFields(AppLocalizations l10n) {
     return [
       _numberField(
         width: 64,
         value: value.hslHue.round().toString(),
-        placeholder: 'Hue',
+        placeholder: l10n.colorPickerHue,
         min: 0,
         max: 360,
         onChanged: (next) => onChanged(value.changeToHSLHue(next.toDouble())),
@@ -763,7 +765,7 @@ class _PickerControls extends material.StatelessWidget {
       _numberField(
         width: 64,
         value: (value.hslSat * 100).round().toString(),
-        placeholder: 'Sat',
+        placeholder: l10n.colorPickerSaturation,
         min: 0,
         max: 100,
         onChanged: (next) => onChanged(value.changeToHSLSaturation(next / 100)),
@@ -771,7 +773,7 @@ class _PickerControls extends material.StatelessWidget {
       _numberField(
         width: 64,
         value: (value.hslLightness * 100).round().toString(),
-        placeholder: 'Lum',
+        placeholder: l10n.colorPickerLightness,
         min: 0,
         max: 100,
         onChanged: (next) => onChanged(value.changeToHSLLightness(next / 100)),
@@ -780,7 +782,7 @@ class _PickerControls extends material.StatelessWidget {
         _numberField(
           width: 64,
           value: (value.opacity * 100).round().toString(),
-          placeholder: 'Alpha',
+          placeholder: l10n.colorPickerAlpha,
           min: 0,
           max: 100,
           onChanged: (next) => onChanged(value.changeToOpacity(next / 100)),
@@ -788,12 +790,12 @@ class _PickerControls extends material.StatelessWidget {
     ];
   }
 
-  List<_GroupedFieldData> _buildHsvFields() {
+  List<_GroupedFieldData> _buildHsvFields(AppLocalizations l10n) {
     return [
       _numberField(
         width: 64,
         value: value.hsvHue.round().toString(),
-        placeholder: 'Hue',
+        placeholder: l10n.colorPickerHue,
         min: 0,
         max: 360,
         onChanged: (next) => onChanged(value.changeToHSVHue(next.toDouble())),
@@ -801,7 +803,7 @@ class _PickerControls extends material.StatelessWidget {
       _numberField(
         width: 64,
         value: (value.hsvSat * 100).round().toString(),
-        placeholder: 'Sat',
+        placeholder: l10n.colorPickerSaturation,
         min: 0,
         max: 100,
         onChanged: (next) => onChanged(value.changeToHSVSaturation(next / 100)),
@@ -809,7 +811,7 @@ class _PickerControls extends material.StatelessWidget {
       _numberField(
         width: 64,
         value: (value.hsvValue * 100).round().toString(),
-        placeholder: 'Val',
+        placeholder: l10n.colorPickerValue,
         min: 0,
         max: 100,
         onChanged: (next) => onChanged(value.changeToHSVValue(next / 100)),
@@ -818,7 +820,7 @@ class _PickerControls extends material.StatelessWidget {
         _numberField(
           width: 64,
           value: (value.opacity * 100).round().toString(),
-          placeholder: 'Alpha',
+          placeholder: l10n.colorPickerAlpha,
           min: 0,
           max: 100,
           onChanged: (next) => onChanged(value.changeToOpacity(next / 100)),
@@ -826,7 +828,7 @@ class _PickerControls extends material.StatelessWidget {
     ];
   }
 
-  List<_GroupedFieldData> _buildHexFields() {
+  List<_GroupedFieldData> _buildHexFields(AppLocalizations l10n) {
     return [
       _GroupedFieldData(
         width: 104,
@@ -861,7 +863,7 @@ class _PickerControls extends material.StatelessWidget {
         _numberField(
           width: 64,
           value: (value.opacity * 100).round().toString(),
-          placeholder: 'Alpha',
+          placeholder: l10n.colorPickerAlpha,
           min: 0,
           max: 100,
           onChanged: (next) => onChanged(value.changeToOpacity(next / 100)),

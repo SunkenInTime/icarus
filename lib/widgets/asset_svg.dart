@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/app_assets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -99,10 +100,11 @@ class MissingMapNotice extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text("Map didn't load", style: theme.textTheme.small),
+                  Text(context.l10n.mapArtworkLoadFailedTitle,
+                      style: theme.textTheme.small),
                   const SizedBox(height: 8),
                   Text(
-                    "Trying again. Your strategy isn't affected.",
+                    context.l10n.mapArtworkLoadFailedRetrying,
                     style: theme.textTheme.muted,
                   ),
                 ],

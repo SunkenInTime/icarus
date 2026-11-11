@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
@@ -124,10 +125,11 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
 
   void _startPaste() {
     if (_saving) return;
+    final l10n = context.l10n;
     late final Future<void> paste;
     paste = _pasteImage().catchError((Object error, StackTrace stackTrace) {
       AppErrorReporter.reportError(
-        'Could not add a pasted image: $error',
+        l10n.createLineupPasteFailed('$error'),
         error: error,
         stackTrace: stackTrace,
         source: 'create_lineup_dialog.paste',
@@ -139,13 +141,14 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   }
 
   Future<void> _pasteImage() async {
+    final l10n = context.l10n;
     final ClipboardImage? image;
     try {
       image = await ClipboardService.trySelectImageFromClipboard();
     } on ClipboardBusyException {
       if (mounted) {
         Settings.showToast(
-          message: ClipboardService.busyMessage,
+          message: ClipboardService.busyMessage(l10n),
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
       }
@@ -153,7 +156,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     }
     if (image == null) {
       Settings.showToast(
-        message: 'No image found in clipboard',
+        message: l10n.createLineupNoClipboardImage,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -163,7 +166,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     final fileExtension = PlacedImageSerializer.detectImageFormat(bytes);
     if (fileExtension == null) {
       Settings.showToast(
-        message: 'Clipboard image type not supported',
+        message: l10n.createLineupClipboardTypeUnsupported,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -173,12 +176,13 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   }
 
   Future<void> _addDraftImage(Uint8List bytes, String fileExtension) async {
+    final l10n = context.l10n;
     final SimpleImageData? image;
     try {
       image = await _drafts.add(bytes, fileExtension);
     } on MediaTooLargeException catch (error) {
       Settings.showToast(
-        message: error.userMessage,
+        message: error.userMessage(l10n),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -284,8 +288,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       return false;
     }
     Settings.showToast(
-      message: 'You can no longer edit this strategy, so this lineup was not '
-          'saved.',
+      message: context.l10n.createLineupLostEditAccess,
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
     // A lineup being placed is let go with the dialog.
@@ -309,6 +312,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   /// opens placement editing for it.
   Future<void> _save({bool thenEditPlacement = false}) async {
     if (_closedForLostEditAccess()) return;
+    final l10n = context.l10n;
     final notifier = ref.read(lineUpProvider.notifier);
     final name = _nameController.text.trim();
     final existing = _isEditing ? notifier.linkById(widget.linkId!) : null;
@@ -335,8 +339,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       await _drafts.takeBack(handedOver);
       if (mounted) setState(() => _saving = false);
       Settings.showToast(
-        message: 'Could not queue these images for cloud sync. '
-            'They remain on this device. Try again before closing.',
+        message: l10n.createLineupQueueImagesFailed,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -383,8 +386,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       await _commitLineupMediaJobs(images: imagesNeedingUpload);
     } catch (_) {
       Settings.showToast(
-        message: 'The lineup is kept in the editor, but its cloud work is '
-            'still pending. Use Save before leaving.',
+        message: l10n.createLineupCommitPending,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     }
@@ -416,7 +418,9 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         }
       },
       child: ShadDialog(
-        title: Text(_isEditing ? "Edit Lineup" : "Create Lineup"),
+        title: Text(_isEditing
+            ? context.l10n.createLineupEditTitle
+            : context.l10n.createLineupCreateTitle),
         description:
             _isEditing ? LineUpEditorsNotice(itemId: widget.linkId!) : null,
         // The close button pops directly, past PopScope, so it steps aside
@@ -427,11 +431,11 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
             ShadButton.secondary(
               leading: const Icon(LucideIcons.move),
               onPressed: _saving ? null : () => _save(thenEditPlacement: true),
-              child: const Text("Edit placement"),
+              child: Text(context.l10n.createLineupEditPlacement),
             ),
           ShadButton(
             onPressed: _saving ? null : _save,
-            child: const Text("Done"),
+            child: Text(context.l10n.commonDone),
           ),
         ],
         child: SizedBox(

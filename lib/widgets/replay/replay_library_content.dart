@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/replay/recycle_bin.dart';
 import 'package:icarus/replay/replay_agents.dart';
@@ -18,6 +19,7 @@ import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/hover_dot_grid.dart';
+import 'package:icarus/widgets/replay/replay_failure_text.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile_sections.dart';
 import 'package:path/path.dart' as p;
@@ -44,14 +46,13 @@ class ReplayLibraryContent extends ConsumerWidget {
             child: listings.when(
               loading: () => const SizedBox.shrink(),
               error: (error, _) => _Message(
-                title: "Couldn't list replays",
+                title: context.l10n.replayLibraryListFailed,
                 hint: '$error',
               ),
               data: (listings) => listings.isEmpty
-                  ? const _Message(
-                      title: 'No replays yet',
-                      hint: 'Download a match from your career page in '
-                          'Valorant, or drop a .vrf file here',
+                  ? _Message(
+                      title: context.l10n.replayLibraryEmptyTitle,
+                      hint: context.l10n.replayLibraryEmptyHint,
                     )
                   : _ReplayGrid(listings: listings),
             ),
@@ -200,17 +201,18 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
       });
 
   Future<void> _keep() async {
+    final l10n = context.l10n;
     try {
       await ref.read(replayLibraryProvider.notifier).import(
             widget.listing.file.path,
           );
       Settings.showToast(
-        message: 'Kept in Icarus. Valorant can no longer remove it.',
+        message: l10n.replayLibraryKept,
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
-        "Couldn't keep this replay.",
+        l10n.replayLibraryKeepFailed,
         error: error,
         stackTrace: stackTrace,
         source: 'ReplayTile.keep',
@@ -226,16 +228,14 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
     var file = widget.listing.file;
     while (true) {
       if (!mounted) return;
+      final l10n = context.l10n;
       final confirmed = await ConfirmAlertDialog.show(
         context: context,
-        title: 'Remove this replay?',
+        title: l10n.replayLibraryRemoveTitle,
         content: file.valorantHasCopy
-            ? "This moves Icarus's copy to the Recycle Bin. Valorant still "
-                'has its own, so the replay stays in the list until Valorant '
-                'deletes it.'
-            : 'This moves the replay file to the Recycle Bin. Pages you '
-                'captured from it stay in your strategies.',
-        confirmText: 'Remove',
+            ? l10n.replayLibraryRemoveValorantCopyBody
+            : l10n.replayLibraryRemoveBody,
+        confirmText: l10n.replayLibraryRemoveConfirm,
         isDestructive: true,
       );
       if (!confirmed) return;
@@ -245,10 +245,8 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
       } on RecycleBinUnavailable catch (error) {
         Settings.showToast(
           message: error.deleted
-              ? 'Windows deleted this replay instead of moving it to the '
-                  'Recycle Bin.'
-              : "Windows couldn't move this replay to the Recycle Bin, so "
-                  'Icarus left it where it is.',
+              ? l10n.replayLibraryRecycleBinDeleted
+              : l10n.replayLibraryRecycleBinFailed,
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
         return;
@@ -260,16 +258,14 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
         }
         Settings.showToast(
           message: refused.reason == ReplayRemoveRefusal.fileChanged
-              ? 'This replay changed after you chose Remove. Nothing was '
-                  'deleted.'
-              : "Icarus only removes replays from its own folder. Nothing "
-                  'was deleted.',
+              ? l10n.replayLibraryRemoveFileChanged
+              : l10n.replayLibraryRemoveNotOwned,
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
         return;
       } catch (error, stackTrace) {
         AppErrorReporter.reportError(
-          "Couldn't remove this replay.",
+          l10n.replayLibraryRemoveFailed,
           error: error,
           stackTrace: stackTrace,
           source: 'ReplayTile.remove',
@@ -301,7 +297,7 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
               ShadContextMenuItem(
                 leading: const Icon(LucideIcons.archive),
                 onPressed: _keep,
-                child: const Text('Keep in Icarus'),
+                child: Text(context.l10n.replayLibraryKeepInIcarus),
               )
             // Removing sends the file to the Recycle Bin, which only
             // Windows has.
@@ -310,7 +306,7 @@ class _ReplayTileState extends ConsumerState<ReplayTile> {
                 leading: Icon(LucideIcons.trash2, color: theme.destructive),
                 onPressed: _remove,
                 child: Text(
-                  'Remove from Icarus',
+                  context.l10n.replayLibraryRemoveFromIcarus,
                   style: TextStyle(color: theme.destructive),
                 ),
               ),
@@ -384,7 +380,7 @@ void openReplayListing(BuildContext context, ReplayListing listing) {
   final probe = listing.probe;
   if (probe == null || !probe.supported) {
     Settings.showToast(
-      message: _unavailableReason(listing),
+      message: _unavailableReason(context.l10n, listing),
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
     return;
@@ -392,16 +388,18 @@ void openReplayListing(BuildContext context, ReplayListing listing) {
   Navigator.push(context, ReplayView.route(file: listing.file, probe: probe));
 }
 
-String _unavailableReason(ReplayListing listing) {
+String _unavailableReason(AppLocalizations l10n, ReplayListing listing) {
   final probe = listing.probe;
   if (probe == null) {
-    return listing.error?.message ?? "This file isn't a Valorant replay.";
+    final error = listing.error;
+    return error == null
+        ? l10n.replayLibraryNotAReplay
+        : replayFailureText(l10n, error);
   }
   if (!probe.supported) {
-    return 'Replays from patch ${replayPatchLabel(probe.build)} '
-        "can't be read yet. An Icarus update will add them.";
+    return l10n.replayLibraryPatchUnsupported(replayPatchLabel(probe.build));
   }
-  return "This replay's map isn't in Icarus yet.";
+  return l10n.replayMapNotSupported;
 }
 
 /// `++Ares-Core+release-13.06` reads as `13.06`.
@@ -434,7 +432,9 @@ class _ReplayDetails extends StatelessWidget {
     final probe = listing.probe;
     final theme = ShadTheme.of(context);
     final mapName = map == null
-        ? (probe == null ? 'Unreadable file' : 'Unknown map')
+        ? (probe == null
+            ? context.l10n.replayLibraryUnreadableFile
+            : context.l10n.replayLibraryUnknownMap)
         : Maps.mapNames[map]!.replaceRange(
             0,
             1,
@@ -443,8 +443,9 @@ class _ReplayDetails extends StatelessWidget {
     final date = listing.date;
     final status = probe == null || !listing.canOpen
         ? (probe == null
-            ? 'Not a replay'
-            : 'Patch ${replayPatchLabel(probe.build)}')
+            ? context.l10n.replayLibraryNotAReplayStatus
+            : context.l10n.replayLibraryPatchStatus(
+                replayPatchLabel(probe.build)))
         : replayDurationLabel(probe.durationMs);
 
     return Container(
@@ -502,10 +503,7 @@ class _KeepButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     return ShadTooltip(
-      builder: (context) => const Text(
-        "Only in Valorant's replay folder, which Valorant may clear.\n"
-        'Keep a copy in Icarus.',
-      ),
+      builder: (context) => Text(context.l10n.replayLibraryKeepTooltip),
       child: ShadButton.ghost(
         height: 22,
         padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -513,9 +511,9 @@ class _KeepButton extends StatelessWidget {
         hoverForegroundColor: theme.colorScheme.foreground,
         leading: const Icon(LucideIcons.hourglass, size: 14),
         onPressed: onPressed,
-        child: const Text(
-          'Keep',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        child: Text(
+          context.l10n.replayLibraryKeepButton,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ),
     );
@@ -606,12 +604,13 @@ Future<ReplayAddResult?> addReplays(WidgetRef ref, List<String> paths) async {
   // Read before the add: the widget that asked may be gone when it finishes.
   final library = ref.read(replayLibraryProvider.notifier);
   final reveal = ref.read(replayRevealProvider.notifier);
+  final l10n = ref.read(l10nProvider);
   final ReplayAddResult result;
   try {
     result = await library.add(paths);
   } catch (error, stackTrace) {
     AppErrorReporter.reportError(
-      "Couldn't add replays.",
+      l10n.replayLibraryAddFailed,
       error: error,
       stackTrace: stackTrace,
       source: 'addReplays',
@@ -620,7 +619,7 @@ Future<ReplayAddResult?> addReplays(WidgetRef ref, List<String> paths) async {
   }
   final shown = [...result.added, ...result.alreadyListed];
   Settings.showToast(
-    message: replayAddMessage(result),
+    message: replayAddMessage(l10n, result),
     backgroundColor: shown.isEmpty
         ? Settings.tacticalVioletTheme.destructive
         : Settings.tacticalVioletTheme.primary,
@@ -633,28 +632,23 @@ Future<ReplayAddResult?> addReplays(WidgetRef ref, List<String> paths) async {
 }
 
 /// One toast's worth of what an add did, the way strategy imports report.
-String replayAddMessage(ReplayAddResult result) {
+String replayAddMessage(AppLocalizations l10n, ReplayAddResult result) {
   final added = result.added.length;
   final already = result.alreadyListed.length;
   final unreadable = result.unreadable.length;
   final failed = result.failed.length;
   return [
-    if (added > 0) 'Added ${added == 1 ? '1 replay' : '$added replays'}.',
-    if (already > 0 && added == 0)
-      already == 1
-          ? 'That match is already in Replays.'
-          : 'Those $already matches are already in Replays.',
+    if (added > 0) l10n.replayLibraryAdded(added),
+    if (already > 0 && added == 0) l10n.replayLibraryAlreadyListed(already),
     if (already > 0 && added > 0)
-      already == 1
-          ? '1 was already in Replays.'
-          : '$already were already in Replays.',
+      l10n.replayLibrarySomeAlreadyListed(already),
     if (unreadable == 1)
-      "${p.basename(result.unreadable.single)} isn't a replay Icarus can read.",
-    if (unreadable > 1)
-      "Skipped $unreadable files that aren't replays Icarus can read.",
-    if (failed == 1) "Couldn't copy ${p.basename(result.failed.single)}.",
-    if (failed > 1) "Couldn't copy $failed replays.",
-  ].join(' ');
+      l10n.replayLibraryUnreadableOne(p.basename(result.unreadable.single)),
+    if (unreadable > 1) l10n.replayLibraryUnreadableMany(unreadable),
+    if (failed == 1)
+      l10n.replayLibraryCopyFailedOne(p.basename(result.failed.single)),
+    if (failed > 1) l10n.replayLibraryCopyFailedMany(failed),
+  ].join(l10n.commonSentenceSpace);
 }
 
 /// Says what a drop on the Replays tab will do. The replays in it are taken
@@ -693,17 +687,17 @@ class _ReplayDropTargetState extends ConsumerState<ReplayDropTarget> {
             const Positioned.fill(
               child: ColoredBox(color: Color.fromARGB(118, 2, 2, 2)),
             ),
-            const Positioned.fill(
+            Positioned.fill(
               child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(LucideIcons.download, size: 60),
-                    SizedBox(height: 10),
+                    const Icon(LucideIcons.download, size: 60),
+                    const SizedBox(height: 10),
                     Text(
-                      'Add replays',
-                      style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      context.l10n.replayLibraryDropToAdd,
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),

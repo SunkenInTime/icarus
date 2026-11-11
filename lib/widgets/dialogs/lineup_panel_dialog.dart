@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/editing_presence_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
@@ -51,10 +52,14 @@ Future<void> openLandingLineUps(
   return showLineUpPanel(context, landingId: landingId);
 }
 
-String lineUpDisplayName(LineUpLink link, List<LineUpLink> siblings) {
+String lineUpDisplayName(
+  AppLocalizations l10n,
+  LineUpLink link,
+  List<LineUpLink> siblings,
+) {
   if (link.name.isNotEmpty) return link.name;
   final index = siblings.indexWhere((entry) => entry.id == link.id);
-  return 'Lineup ${index < 0 ? siblings.length : index + 1}';
+  return l10n.lineupPanelUnnamed(index < 0 ? siblings.length : index + 1);
 }
 
 class LineUpPanelDialog extends ConsumerStatefulWidget {
@@ -134,19 +139,20 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
   }
 
   Future<void> _rename(LineUpLink link) async {
+    final l10n = context.l10n;
     final controller = TextEditingController(text: link.name);
     final name = await showShadDialog<String>(
       context: context,
       builder: (context) => ShadDialog(
-        title: const Text('Rename lineup'),
+        title: Text(l10n.lineupPanelRenameTitle),
         actions: [
           ShadButton.outline(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            child: Text(l10n.commonCancel),
           ),
           ShadButton(
             onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Save'),
+            child: Text(l10n.commonSave),
           ),
         ],
         child: SizedBox(
@@ -155,8 +161,7 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
             color: Colors.transparent,
             child: CustomTextField(
               controller: controller,
-              hintText:
-                  'Optional, for telling this apart from other lineups here',
+              hintText: l10n.lineupMediaNameHint,
             ),
           ),
         ),
@@ -167,8 +172,7 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
     // The reader's access changed while the dialog was open.
     if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
       Settings.showToast(
-        message: 'You can no longer edit this strategy, so the name was not '
-            'saved.',
+        message: l10n.lineupPanelRenameLostEditAccess,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -205,12 +209,16 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
         widget.landingId == null ? null : state.landingById(widget.landingId!);
     final origin =
         widget.originId == null ? null : state.originById(widget.originId!);
+    final l10n = context.l10n;
     final title = landing != null
-        ? landing.ability.data.name
-        : AgentData.agents[origin?.agent.type]?.name ?? 'Origin';
+        ? l10n.gameName(landing.ability.data.name)
+        : switch (AgentData.agents[origin?.agent.type]?.name) {
+            final name? => l10n.gameName(name),
+            null => l10n.lineupPanelOriginFallback,
+          };
     final subtitle = landing != null
-        ? '${links.length} lineups land here'
-        : '${links.length} lineups from here';
+        ? l10n.lineupPanelLandHere(links.length)
+        : l10n.lineupPanelFromHere(links.length);
 
     // The media is the point of this dialog, so it takes most of the window
     // and gives the pane whatever the list doesn't need.
@@ -254,7 +262,7 @@ class _LineUpPanelDialogState extends ConsumerState<LineUpPanelDialog> {
                         final link = links[index];
                         return _LineUpRow(
                           link: link,
-                          label: lineUpDisplayName(link, links),
+                          label: lineUpDisplayName(l10n, link, links),
                           agentName: AgentData
                                   .agents[state
                                       .originById(link.originId)
@@ -357,6 +365,7 @@ class _LineUpRowState extends State<_LineUpRow> {
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
+    final l10n = context.l10n;
     final firstImage =
         widget.link.images.isEmpty ? null : widget.link.images.first;
 
@@ -431,17 +440,17 @@ class _LineUpRowState extends State<_LineUpRow> {
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.pencil),
           onPressed: widget.onEditMedia,
-          child: const Text('Edit media'),
+          child: Text(l10n.lineupPanelEditMedia),
         ),
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.textCursorInput),
           onPressed: widget.onRename,
-          child: const Text('Rename'),
+          child: Text(l10n.commonRename),
         ),
         ShadContextMenuItem(
           leading: Icon(LucideIcons.trash2, color: theme.destructive),
           onPressed: widget.onDelete,
-          child: const Text('Delete lineup'),
+          child: Text(l10n.lineupPanelDeleteLineup),
         ),
       ],
       child: row,

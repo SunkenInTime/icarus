@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:icarus/const/youtube_handler.dart';
+import 'package:icarus/l10n/l10n.dart';
 
 import 'package:icarus/main.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
@@ -86,7 +87,7 @@ class _YoutubeViewState extends State<YoutubeView>
         if (video == null) {
           return Center(
             child: Text(
-              "This link doesn't point at a YouTube video.",
+              context.l10n.youtubeNotAVideo,
               style: TextStyle(
                 color: ShadTheme.of(context).colorScheme.mutedForeground,
               ),

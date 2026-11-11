@@ -7,6 +7,7 @@ import 'package:discord_rich_presence/discord_rich_presence.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
@@ -30,15 +31,16 @@ class DiscordPresenceData {
   });
 
   factory DiscordPresenceData.fromAppState({
+    required AppLocalizations l10n,
     required StrategyState strategy,
     required MapState map,
     int agentCount = 0,
     int abilityCount = 0,
   }) {
     if (strategy.stratName == null) {
-      return const DiscordPresenceData(
-        details: 'Browsing the strategy library',
-        state: 'Valorant strategy planner',
+      return DiscordPresenceData(
+        details: l10n.discordPresenceBrowsingLibrary,
+        state: l10n.discordPresenceTagline,
         largeImageKey: 'icarus_logo',
         largeImageText: 'Icarus',
       );
@@ -47,13 +49,19 @@ class DiscordPresenceData {
     final rawMapName = Maps.mapNames[map.currentMap] ?? map.currentMap.name;
     final mapName = rawMapName.isEmpty
         ? rawMapName
-        : '${rawMapName[0].toUpperCase()}${rawMapName.substring(1)}';
+        : l10n.mapNameOf(
+            '${rawMapName[0].toUpperCase()}${rawMapName.substring(1)}',
+          );
 
     return DiscordPresenceData(
       details: map.isAttack
-          ? 'Planning an attack on $mapName'
-          : 'Planning a defense on $mapName',
-      state: _boardSummary(agentCount: agentCount, abilityCount: abilityCount),
+          ? l10n.discordPresencePlanningAttack(mapName)
+          : l10n.discordPresencePlanningDefense(mapName),
+      state: _boardSummary(
+        l10n,
+        agentCount: agentCount,
+        abilityCount: abilityCount,
+      ),
       largeImageKey: '${map.currentMap.name}_thumbnail',
       largeImageText: mapName,
       smallImageKey: 'icarus_logo',
@@ -62,17 +70,18 @@ class DiscordPresenceData {
   }
 
   /// A live tally of what is on the board, e.g. "4 agents · 12 abilities".
-  static String _boardSummary({
+  static String _boardSummary(
+    AppLocalizations l10n, {
     required int agentCount,
     required int abilityCount,
   }) {
-    final parts = [
-      if (agentCount > 0) '$agentCount agent${agentCount == 1 ? '' : 's'}',
-      if (abilityCount > 0)
-        '$abilityCount abilit${abilityCount == 1 ? 'y' : 'ies'}',
-    ];
-    if (parts.isEmpty) return 'Starting from an empty board';
-    return '${parts.join(' · ')} on the board';
+    return switch ((agentCount > 0, abilityCount > 0)) {
+      (false, false) => l10n.discordPresenceEmptyBoard,
+      (true, false) => l10n.discordPresenceBoardAgents(agentCount),
+      (false, true) => l10n.discordPresenceBoardAbilities(abilityCount),
+      (true, true) =>
+        l10n.discordPresenceBoardAgentsAndAbilities(agentCount, abilityCount),
+    };
   }
 
   final String details;

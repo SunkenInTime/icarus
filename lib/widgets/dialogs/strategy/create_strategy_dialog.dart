@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _tileWidth = 220;
@@ -57,7 +58,7 @@ class _CreateStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     return ShadDialog(
-      title: const Text('Pick a map'),
+      title: Text(context.l10n.createStrategyPickMap),
       // Shad caps dialogs at 512; the grid plus padding needs more.
       constraints: const BoxConstraints(maxWidth: _gridWidth + 48),
       child: Material(
@@ -85,7 +86,7 @@ class _CreateStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
                   child: const Icon(LucideIcons.chevronDown, size: 14),
                 ),
                 child: Text(
-                  'Out of rotation',
+                  context.l10n.createStrategyOutOfRotation,
                   style: theme.textTheme.small
                       .copyWith(color: theme.colorScheme.mutedForeground),
                 ),
@@ -178,7 +179,7 @@ class _MapCard extends StatelessWidget {
                 opacity: quiet ? .5 : 1,
                 child: Center(
                   child: Text(
-                    Maps.displayName(map).toUpperCase(),
+                    context.l10n.mapName(map).toUpperCase(),
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,

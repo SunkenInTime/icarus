@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -158,7 +159,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     for (final (index, page) in _pages.indexed) {
       if (_selectedPageIds.contains(page.id) &&
           _captions[page.id]?.fits == false) {
-        return captionsDontFitMessage(index + 1);
+        return captionsDontFitMessage(context.l10n, index + 1);
       }
     }
     return null;
@@ -166,7 +167,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
 
   /// What the Include captions box says: the selected page that takes longest
   /// to read, when that is longer than a step holds.
-  String get _captionHint {
+  String _captionHint(AppLocalizations l10n) {
     var slowestPage = 0;
     var slowestSeconds = 0;
     for (final (index, page) in _pages.indexed) {
@@ -180,10 +181,9 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     }
     final step = _stepDurationSeconds.round();
     if (slowestSeconds <= step) {
-      return 'Numbers on the map, notes in the side margins.';
+      return l10n.exportVideoIncludeCaptionsDescription;
     }
-    return 'Page $slowestPage needs about $slowestSeconds s to read. '
-        'Each step holds for $step s.';
+    return l10n.exportVideoCaptionsTooSlow(slowestPage, slowestSeconds, step);
   }
 
   void _setTransparent(bool value) {
@@ -208,6 +208,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   }
 
   Future<void> _runExport() async {
+    final l10n = context.l10n;
     final transparent = _transparent;
     final includeCaptions = _includeCaptions;
     final quality = _exportQuality;
@@ -222,7 +223,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
           .setVideoExportStepDurationSeconds(_stepDurationSeconds),
     );
     final fileName =
-        "${sanitizeStrategyFileName(ref.read(strategyProvider).stratName ?? "new video")}.$extension";
+        "${sanitizeStrategyFileName(ref.read(strategyProvider).stratName ?? l10n.exportVideoDefaultFileName)}.$extension";
 
     // Where the video goes is settled first, so a dismissed save dialog or
     // a browser that cannot encode video costs nothing.
@@ -232,10 +233,14 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
       // encoder. The browser downloads the finished file.
       String? outputPath;
       if (!kIsWeb) {
-        outputPath = await chooseExportPath(fileName);
+        outputPath = await chooseExportPath(l10n, fileName);
         if (outputPath == null) return;
       }
-      sink = QuickTimeAnimationSink(fps: quality.fps, outputPath: outputPath);
+      sink = QuickTimeAnimationSink(
+        fps: quality.fps,
+        outputPath: outputPath,
+        l10n: l10n,
+      );
     } else if (kIsWeb) {
       final totalSeconds = VideoExporter.plannedDurationSeconds(
         pageCount: pageIds.length,
@@ -247,29 +252,28 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         totalSeconds: totalSeconds,
       )) {
         Settings.showToast(
-          message: 'This browser cannot export video. Try the latest Chrome '
-              'or Edge, or the desktop app.',
+          message: l10n.exportVideoBrowserUnsupported,
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
         return;
       }
-      sink = createBrowserVideoSink(quality);
+      sink = createBrowserVideoSink(quality, l10n);
     } else {
       final ffmpegBinary = await FfmpegVideoEncoder.resolveBinary();
       if (ffmpegBinary == null) {
         Settings.showToast(
-          message:
-              'Video encoder not found. Reinstalling Icarus should fix this.',
+          message: l10n.exportVideoEncoderNotFound,
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
         return;
       }
-      final outputPath = await chooseExportPath(fileName);
+      final outputPath = await chooseExportPath(l10n, fileName);
       if (outputPath == null) return;
       sink = FfmpegVideoSink(
         binary: ffmpegBinary,
         outputPath: outputPath,
         quality: quality,
+        l10n: l10n,
       );
     }
     if (!mounted) return;
@@ -278,7 +282,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
       _preparing = true;
       _cancelRequested = false;
       _progress = 0;
-      _progressLabel = 'Saving your changes';
+      _progressLabel = l10n.exportVideoSavingChanges;
     });
     CaptureImages? images;
     try {
@@ -327,10 +331,11 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         imageSources: images.sources,
         navigation: navigation,
         requireNavigation: requireNavigation,
+        l10n: l10n,
       );
       setState(() {
         _exporter = exporter;
-        _progressLabel = 'Preparing';
+        _progressLabel = l10n.exportVideoPreparing;
       });
 
       final video = await exporter.export(
@@ -375,22 +380,22 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         Navigator.of(context).pop();
       }
       Settings.showToast(
-        message: 'Video exported.',
+        message: l10n.exportVideoExported,
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
     } on VideoExportCancelled {
       Settings.showToast(
-        message: 'Video export cancelled.',
+        message: l10n.exportVideoCancelled,
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
     } on VideoExportNotSynced catch (error) {
       Settings.showToast(
-        message: error.userMessage,
+        message: error.userMessage(l10n),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     } on VideoExportPagesChanged catch (error) {
       Settings.showToast(
-        message: error.userMessage,
+        message: error.userMessage(l10n),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       if (mounted) {
@@ -401,12 +406,12 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
       }
     } on CaptureImagesUnavailable catch (error) {
       Settings.showToast(
-        message: error.userMessage,
+        message: error.userMessage(l10n),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     } on CaptionsDontFit catch (error) {
       Settings.showToast(
-        message: error.userMessage,
+        message: error.userMessage(l10n),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     } on Object catch (error) {
@@ -414,8 +419,8 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         // Closing the dialog mid-preparation can fail the work it cut
         // short; the user asked to stop, so that is what they hear.
         message: _cancelRequested
-            ? 'Video export cancelled.'
-            : 'Video export failed: $error',
+            ? l10n.exportVideoCancelled
+            : l10n.exportVideoFailed('$error'),
         backgroundColor: _cancelRequested
             ? Settings.tacticalVioletTheme.primary
             : Settings.tacticalVioletTheme.destructive,
@@ -452,10 +457,13 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
 
   bool get _allPagesSelected => _selectedPageIds.length == _pages.length;
 
-  static String _formatSeconds(double seconds) {
+  static String _formatSeconds(AppLocalizations l10n, double seconds) {
     final total = seconds.round();
-    if (total < 60) return '${total}s';
-    return '${total ~/ 60}m ${(total % 60).toString().padLeft(2, '0')}s';
+    if (total < 60) return l10n.exportVideoSeconds(total);
+    return l10n.exportVideoMinutesSeconds(
+      total ~/ 60,
+      (total % 60).toString().padLeft(2, '0'),
+    );
   }
 
   void _togglePage(String pageId) {
@@ -476,13 +484,14 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
 
   Widget _buildProgressDialog(BuildContext context) {
     final colors = ShadTheme.of(context).colorScheme;
+    final l10n = context.l10n;
     return ShadDialog(
       constraints: const BoxConstraints(maxWidth: _dialogWidth),
-      title: const Text('Exporting video'),
+      title: Text(l10n.exportVideoExportingTitle),
       actions: [
         ShadButton.destructive(
           onPressed: _cancel,
-          child: const Text('Cancel export'),
+          child: Text(l10n.exportVideoCancelExport),
         ),
       ],
       child: Material(
@@ -514,7 +523,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                 if (kIsWeb) ...[
                   const SizedBox(height: 12),
                   Text(
-                    'Keep this tab open until the video downloads.',
+                    l10n.exportVideoKeepTabOpen,
                     style: TextStyle(
                       fontSize: 12,
                       color: colors.mutedForeground,
@@ -534,13 +543,13 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     final selectedCount = _selectedPageIds.length;
     final estimatedSeconds = selectedCount == 0 ? null : _estimatedVideoSeconds;
     final captionRefusal = _captionRefusal;
+    final l10n = context.l10n;
 
     return ShadDialog(
       constraints: const BoxConstraints(maxWidth: _dialogWidth),
-      title: const Text('Export video'),
-      description: const Text(
-        'Plays the selected pages in order. Each step holds for the step '
-        'duration, then transitions into the next.',
+      title: Text(l10n.exportVideoTitle),
+      description: Text(
+        l10n.exportVideoDescription,
       ),
       child: Material(
         color: Colors.transparent,
@@ -554,9 +563,13 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
               children: [
                 Row(
                   children: [
-                    const _SectionLabel(text: 'Step duration'),
+                    _SectionLabel(text: l10n.exportVideoStepDuration),
                     const Spacer(),
-                    _ValueChip(text: '${_stepDurationSeconds.round()}s'),
+                    _ValueChip(
+                      text: l10n.exportVideoSeconds(
+                        _stepDurationSeconds.round(),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -571,8 +584,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'How long each step holds on screen before its transition '
-                  'plays.',
+                  l10n.exportVideoStepDurationDescription,
                   style: TextStyle(
                     fontSize: 14,
                     color: colors.mutedForeground,
@@ -582,26 +594,25 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                 ShadCheckbox(
                   value: _transparent,
                   onChanged: _setTransparent,
-                  label: const Text('Transparent background'),
-                  sublabel: const Text(
-                    'Leave out the background and dots. Saves a lossless .mov '
-                    'that keeps the transparency, for video editors.',
+                  label: Text(l10n.exportVideoTransparentBackground),
+                  sublabel: Text(
+                    l10n.exportVideoTransparentBackgroundDescription,
                   ),
                 ),
                 const SizedBox(height: 12),
                 ShadCheckbox(
                   value: _includeCaptions,
                   onChanged: _setIncludeCaptions,
-                  label: const Text('Include captions'),
+                  label: Text(l10n.exportVideoIncludeCaptions),
                   sublabel: captionRefusal == null
-                      ? Text(_captionHint)
+                      ? Text(_captionHint(l10n))
                       : Text(
                           captionRefusal,
                           style: TextStyle(color: colors.destructive),
                         ),
                 ),
                 const SizedBox(height: 24),
-                const _SectionLabel(text: 'Quality'),
+                _SectionLabel(text: l10n.exportVideoQuality),
                 const SizedBox(height: 10),
                 // A transparent video is lossless, so the presets sit out:
                 // dimmed, and without a tap they take no clicks or focus.
@@ -637,8 +648,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                 if (_transparent) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'A transparent video is lossless at 30 fps, so these '
-                    "don't apply.",
+                    l10n.exportVideoTransparentQualityNote,
                     style: TextStyle(
                       fontSize: 14,
                       color: colors.mutedForeground,
@@ -648,10 +658,13 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                 const SizedBox(height: 24),
                 Row(
                   children: [
-                    const _SectionLabel(text: 'Pages'),
+                    _SectionLabel(text: l10n.exportVideoPages),
                     const SizedBox(width: 8),
                     Text(
-                      '$selectedCount of ${_pages.length}',
+                      l10n.exportVideoPagesSelected(
+                        selectedCount,
+                        _pages.length,
+                      ),
                       style: TextStyle(
                         fontSize: 12,
                         color: colors.mutedForeground,
@@ -670,8 +683,9 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                           }
                         });
                       },
-                      child:
-                          Text(_allPagesSelected ? 'Clear all' : 'Select all'),
+                      child: Text(_allPagesSelected
+                          ? l10n.exportVideoClearAll
+                          : l10n.exportVideoSelectAll),
                     ),
                   ],
                 ),
@@ -697,19 +711,20 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                                 estimatedSeconds,
                               ),
                         extension: _transparent ? 'mov' : 'mp4',
-                        formatSeconds: _formatSeconds,
+                        formatSeconds: (seconds) =>
+                            _formatSeconds(l10n, seconds),
                       ),
                     ),
                     const SizedBox(width: 16),
                     ShadButton.secondary(
                       onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Cancel'),
+                      child: Text(l10n.commonCancel),
                     ),
                     const SizedBox(width: 8),
                     ShadButton(
                       enabled: _canExport,
                       onPressed: _export,
-                      child: const Text('Export'),
+                      child: Text(l10n.commonExport),
                     ),
                   ],
                 ),
@@ -782,15 +797,17 @@ class _QualityCard extends StatelessWidget {
     VideoExportQuality.max: LucideIcons.gem,
   };
 
-  static const _titles = {
-    VideoExportQuality.potato: 'Potato',
-    VideoExportQuality.social: 'Social',
-    VideoExportQuality.max: 'Max',
-  };
+  static String _title(AppLocalizations l10n, VideoExportQuality quality) =>
+      switch (quality) {
+        VideoExportQuality.potato => l10n.exportVideoQualityPotato,
+        VideoExportQuality.social => l10n.exportVideoQualitySocial,
+        VideoExportQuality.max => l10n.exportVideoQualityMax,
+      };
 
   @override
   Widget build(BuildContext context) {
     final colors = ShadTheme.of(context).colorScheme;
+    final l10n = context.l10n;
     return InkWell(
       mouseCursor:
           onTap == null ? SystemMouseCursors.basic : SystemMouseCursors.click,
@@ -819,14 +836,14 @@ class _QualityCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 7),
                 Text(
-                  _titles[quality]!,
+                  _title(l10n, quality),
                   style: const TextStyle(fontSize: 15),
                 ),
               ],
             ),
             const SizedBox(height: 6),
             Text(
-              videoExportQualityCaption(quality),
+              videoExportQualityCaption(l10n, quality),
               style: TextStyle(
                 fontSize: 12,
                 color: colors.mutedForeground,
@@ -866,20 +883,24 @@ class _ExportSummary extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
           child: estimatedSeconds == null
-              ? Text('Select at least one page to export.', style: muted)
+              ? Text(context.l10n.exportVideoSelectAPage, style: muted)
               : Text.rich(
                   TextSpan(
                     children: [
                       TextSpan(
-                        text: '~${formatSeconds(estimatedSeconds!)} video',
+                        text: context.l10n.exportVideoSummaryLength(
+                          formatSeconds(estimatedSeconds!),
+                        ),
                         style: TextStyle(
                           fontSize: 13,
                           color: colors.foreground,
                         ),
                       ),
                       TextSpan(
-                        text:
-                            ' · ${outputHeight}p · ${extension.toUpperCase()}',
+                        text: context.l10n.exportVideoSummaryFormat(
+                          outputHeight,
+                          extension.toUpperCase(),
+                        ),
                         style: muted,
                       ),
                     ],
@@ -893,10 +914,13 @@ class _ExportSummary extends StatelessWidget {
 
 /// The one fact that distinguishes each quality option; the summary line
 /// carries the live resolution, including Potato's adaptive 720p drop.
-String videoExportQualityCaption(VideoExportQuality quality) {
+String videoExportQualityCaption(
+  AppLocalizations l10n,
+  VideoExportQuality quality,
+) {
   return switch (quality) {
-    VideoExportQuality.potato => '~10 MB',
-    VideoExportQuality.social => '~20 MB',
-    VideoExportQuality.max => '60 fps, no size cap',
+    VideoExportQuality.potato => l10n.exportVideoQualityPotatoCaption,
+    VideoExportQuality.social => l10n.exportVideoQualitySocialCaption,
+    VideoExportQuality.max => l10n.exportVideoQualityMaxCaption,
   };
 }

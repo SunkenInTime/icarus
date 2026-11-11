@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -22,41 +23,42 @@ class DeleteOptions extends ConsumerWidget {
   static const double _panelPadding = 6;
   static const double _controlRadius = _panelRadius - _panelPadding;
 
-  static const List<_DeleteOptionData> _options = [
+  static List<_DeleteOptionData> _options(AppLocalizations l10n) => [
     _DeleteOptionData(
       group: ActionGroup.agent,
       icon: LucideIcons.user,
-      label: 'Agents',
+      clearTooltip: l10n.sidebarClearAgentsTooltip,
     ),
     _DeleteOptionData(
       group: ActionGroup.ability,
       icon: LucideIcons.zap,
-      label: 'Abilities',
+      clearTooltip: l10n.sidebarClearAbilitiesTooltip,
     ),
     _DeleteOptionData(
       group: ActionGroup.drawing,
       icon: LucideIcons.pencil,
-      label: 'Drawings',
+      clearTooltip: l10n.sidebarClearDrawingsTooltip,
     ),
     _DeleteOptionData(
       group: ActionGroup.text,
       icon: LucideIcons.type,
-      label: 'Text',
+      clearTooltip: l10n.sidebarClearTextTooltip,
     ),
     _DeleteOptionData(
       group: ActionGroup.image,
       icon: LucideIcons.image,
-      label: 'Images',
+      clearTooltip: l10n.sidebarClearImagesTooltip,
     ),
     _DeleteOptionData(
       group: ActionGroup.utility,
       icon: LucideIcons.square,
-      label: 'Utilities',
+      clearTooltip: l10n.sidebarClearUtilitiesTooltip,
     ),
   ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final options = _options(context.l10n);
     final panel = Container(
       width: 146,
       height: 98,
@@ -86,7 +88,7 @@ class DeleteOptions extends ConsumerWidget {
             child: SizedBox(
               height: 24,
               child: ShadTooltip(
-                builder: (_) => const Text("Delete all"),
+                builder: (_) => Text(context.l10n.sidebarDeleteAllTooltip),
                 child: ShadButton.destructive(
                   onPressed: () async {
                     ref.read(actionProvider.notifier).clearAllAsAction();
@@ -99,7 +101,7 @@ class DeleteOptions extends ConsumerWidget {
                     ),
                   ),
                   child: Text(
-                    "Delete all",
+                    context.l10n.sidebarDeleteAllButton,
                     style: ShadTheme.of(context).textTheme.small.copyWith(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
@@ -111,7 +113,7 @@ class DeleteOptions extends ConsumerWidget {
           ),
           const SizedBox(height: 6),
           ...List.generate(2, (rowIndex) {
-            final rowOptions = _options.skip(rowIndex * 3).take(3).toList();
+            final rowOptions = options.skip(rowIndex * 3).take(3).toList();
             return Padding(
               padding: EdgeInsets.only(bottom: rowIndex == 0 ? 6 : 0),
               child: Row(
@@ -128,7 +130,7 @@ class DeleteOptions extends ConsumerWidget {
                             .clamp(0.0, 1.0),
                         child: ShadTooltip(
                           builder: (_) =>
-                              Text("Clear ${rowOptions[columnIndex].label}"),
+                              Text(rowOptions[columnIndex].clearTooltip),
                           child: ShadIconButton.secondary(
                             cursor: SystemMouseCursors.click,
                             width: double.infinity,
@@ -254,10 +256,10 @@ class _DeleteOptionData {
   const _DeleteOptionData({
     required this.group,
     required this.icon,
-    required this.label,
+    required this.clearTooltip,
   });
 
   final ActionGroup group;
   final IconData icon;
-  final String label;
+  final String clearTooltip;
 }

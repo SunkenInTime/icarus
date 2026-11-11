@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/widgets/dialogs/web_beta_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -16,7 +17,7 @@ class WebBetaTag extends StatelessWidget {
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
     return Semantics(
-      label: 'About the Icarus web beta',
+      label: context.l10n.webBetaTagSemantics,
       button: true,
       excludeSemantics: true,
       child: ShadButton.outline(
@@ -29,9 +30,9 @@ class WebBetaTag extends StatelessWidget {
           context: context,
           builder: (_) => const WebBetaDialog(),
         ),
-        child: const Text(
-          'Beta',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        child: Text(
+          context.l10n.webBetaTag,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ),
     );

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:developer';
 
 import 'package:icarus/collab/cloud_library_copy.dart';
-import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -12,6 +11,8 @@ import 'package:icarus/config/cloud_startup.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/cloud_sync_error_text.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
@@ -236,7 +237,7 @@ class AppAuthState {
 
   bool get hasActiveAuthIncident => activeAuthIncidentId != null;
 
-  String get displayName {
+  String displayName(AppLocalizations l10n) {
     final metadata = user?.userMetadata ?? const <String, dynamic>{};
     // Metadata values are user/provider controlled — tolerate non-string
     // entries instead of crashing the widget build.
@@ -249,7 +250,9 @@ class AppAuthState {
         stringEntry('name') ??
         stringEntry('user_name') ??
         user?.email;
-    return (name?.isNotEmpty ?? false) ? name! : 'Discord user';
+    return (name?.isNotEmpty ?? false)
+        ? name!
+        : l10n.authMsgDisplayNameFallback;
   }
 
   String? get avatarUrl {
@@ -628,8 +631,10 @@ class AuthProvider extends Notifier<AppAuthState> {
   static const _passwordResetCooldown = Duration(seconds: 60);
 
   /// A reset request still waiting on Supabase, and its address.
-  ({String email, Future<({String message, bool sent})> result})?
-      _pendingPasswordReset;
+  ({
+    String email,
+    Future<({String message, bool sent})> result
+  })? _pendingPasswordReset;
 
   @visibleForTesting
   static AuthProviderSupabaseApi? debugSupabaseApi;
@@ -876,7 +881,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       isLoading: false,
       isConvexUserReady: false,
       convexAuthStatus: ConvexAuthStatus.incident,
-      errorMessage: 'Auth stream error: $error',
+      errorMessage: ref.read(l10nProvider).authMsgStreamError('$error'),
     );
   }
 
@@ -914,7 +919,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         convexAuthStatus: ConvexAuthStatus.incident,
         errorMessage: error is CloudUnavailableException
             ? error.message
-            : 'Discord sign-in failed: $error',
+            : ref.read(l10nProvider).authMsgDiscordSignInFailed('$error'),
       );
       ProductMetrics.instance.signIn(method: 'discord', succeeded: false);
       return;
@@ -941,7 +946,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       );
 
       if (response.session == null) {
-        const message = "Sign in didn't complete. Please try again.";
+        final message = ref.read(l10nProvider).authMsgSignInIncomplete;
         state = state.copyWith(
           isLoading: false,
           isConvexUserReady: false,
@@ -961,7 +966,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         error: error,
         stackTrace: stackTrace,
       );
-      final message = _friendlySignInError(error);
+      final message = _friendlySignInError(error, ref.read(l10nProvider));
       state = state.copyWith(
         isLoading: false,
         isConvexUserReady: false,
@@ -973,61 +978,57 @@ class AuthProvider extends Notifier<AppAuthState> {
     }
   }
 
-  static String _friendlySignInError(Object error) {
+  static String _friendlySignInError(Object error, AppLocalizations l10n) {
     if (error is CloudUnavailableException) return error.message;
     final message = error.toString().toLowerCase();
     if (message.contains('invalid login credentials') ||
         message.contains('invalid_credentials')) {
-      return 'Incorrect email or password.';
+      return l10n.authMsgIncorrectCredentials;
     }
     if (message.contains('email not confirmed')) {
-      return 'Confirm your email first — check your inbox for the '
-          'confirmation link.';
+      return l10n.authMsgEmailNotConfirmed;
     }
     if (message.contains('rate limit') || message.contains('too many')) {
-      return 'Too many attempts. Wait a moment and try again.';
+      return l10n.authMsgTooManyAttempts;
     }
     if (message.contains('socket') ||
         message.contains('network') ||
         message.contains('timed out') ||
         message.contains('failed host lookup')) {
-      return "Couldn't reach the server. Check your connection and try again.";
+      return l10n.authMsgServerUnreachable;
     }
-    return 'Sign in failed. Please try again.';
+    return l10n.authMsgSignInFailed;
   }
 
-  static String _friendlySignUpError(Object error) {
+  static String _friendlySignUpError(Object error, AppLocalizations l10n) {
     if (error is CloudUnavailableException) return error.message;
     final message = error.toString().toLowerCase();
     if (message.contains('already registered') ||
         message.contains('already exists')) {
-      return 'An account with this email already exists. Try signing in '
-          'instead.';
+      return l10n.authMsgSignUpAccountExists;
     }
     // Supabase lets each address ask once a minute, and this one just did:
     // the email from that request is on its way or already there.
     if (message.contains('for security purposes')) {
-      return 'We already sent a confirmation email to this address. Check '
-          'your inbox and spam, then open the link.';
+      return l10n.authMsgSignUpAlreadySent;
     }
     // Supabase hit its project-wide email limit or its mail server failed.
     // No account is created until the confirmation email goes out, and
     // waiting "a moment" doesn't bring the limit back, so say so.
     if (message.contains('over_email_send_rate_limit') ||
         message.contains('error sending confirmation email')) {
-      return "We couldn't send your confirmation email right now. Try again "
-          'later, or continue with Discord.';
+      return l10n.authMsgConfirmationEmailUnavailable;
     }
     if (message.contains('rate limit') || message.contains('too many')) {
-      return 'Too many attempts. Wait a moment and try again.';
+      return l10n.authMsgTooManyAttempts;
     }
     if (message.contains('socket') ||
         message.contains('network') ||
         message.contains('timed out') ||
         message.contains('failed host lookup')) {
-      return "Couldn't reach the server. Check your connection and try again.";
+      return l10n.authMsgServerUnreachable;
     }
-    return 'Sign up failed. Please try again.';
+    return l10n.authMsgSignUpFailed;
   }
 
   Future<String?> signUpWithEmailPassword({
@@ -1052,8 +1053,8 @@ class AuthProvider extends Notifier<AppAuthState> {
       // so strangers can't probe which emails are registered. The account
       // may have been made with Discord, so name both ways back in.
       if (response.user?.identities?.isEmpty ?? false) {
-        const message = 'An account with this email already exists. Sign in '
-            'instead, or continue with Discord if you signed up that way.';
+        final message =
+            ref.read(l10nProvider).authMsgSignUpAccountExistsMaybeDiscord;
         state = state.copyWith(
           isLoading: false,
           isConvexUserReady: false,
@@ -1065,9 +1066,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       }
 
       if (response.session == null) {
-        const message =
-            'Account created! Check your inbox for the confirmation link, '
-            'then sign in.';
+        final message = ref.read(l10nProvider).authMsgSignUpCheckInbox;
         state = state.copyWith(
           isLoading: false,
           isConvexUserReady: false,
@@ -1088,7 +1087,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         error: error,
         stackTrace: stackTrace,
       );
-      final message = _friendlySignUpError(error);
+      final message = _friendlySignUpError(error, ref.read(l10nProvider));
       state = state.copyWith(
         isLoading: false,
         isConvexUserReady: false,
@@ -1108,7 +1107,6 @@ class AuthProvider extends Notifier<AppAuthState> {
     // that exchanges with the verifier this device saves with the request.
     // Supabase drops that request after five minutes, however long the email
     // link itself lasts.
-    const where = kIsWeb ? 'in this browser' : 'on this computer';
     final address = email.toLowerCase();
     final lastSent = _lastPasswordReset;
     // Supabase refuses a second request for an address within a minute, but
@@ -1117,9 +1115,11 @@ class AuthProvider extends Notifier<AppAuthState> {
     if (lastSent != null &&
         lastSent.email == address &&
         DateTime.now().difference(lastSent.at) < _passwordResetCooldown) {
+      final l10n = ref.read(l10nProvider);
       return (
-        message: 'A link is already on its way. Check your inbox and spam, '
-            'and open it $where within 5 minutes.',
+        message: kIsWeb
+            ? l10n.authMsgPasswordResetAlreadySentBrowser
+            : l10n.authMsgPasswordResetAlreadySentComputer,
         sent: true,
       );
     }
@@ -1128,7 +1128,7 @@ class AuthProvider extends Notifier<AppAuthState> {
     final pending = _pendingPasswordReset;
     if (pending != null && pending.email == address) return pending.result;
 
-    final result = _requestPasswordReset(email, where: where);
+    final result = _requestPasswordReset(email);
     _pendingPasswordReset = (email: address, result: result);
     try {
       return await result;
@@ -1140,18 +1140,19 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   Future<({String message, bool sent})> _requestPasswordReset(
-    String email, {
-    required String where,
-  }) async {
+    String email,
+  ) async {
     try {
       await _supabaseApi.resetPasswordForEmail(
         email,
         redirectTo: currentAuthRedirectUri().toString(),
       );
       _lastPasswordReset = (email: email.toLowerCase(), at: DateTime.now());
+      final l10n = ref.read(l10nProvider);
       return (
-        message: 'If an account uses this email, a link to set a new '
-            'password is on its way. Open it $where within 5 minutes.',
+        message: kIsWeb
+            ? l10n.authMsgPasswordResetSentBrowser
+            : l10n.authMsgPasswordResetSentComputer,
         sent: true,
       );
     } catch (error, stackTrace) {
@@ -1161,26 +1162,32 @@ class AuthProvider extends Notifier<AppAuthState> {
         error: error,
         stackTrace: stackTrace,
       );
-      return (message: _friendlyPasswordResetError(error), sent: false);
+      return (
+        message: _friendlyPasswordResetError(error, ref.read(l10nProvider)),
+        sent: false,
+      );
     }
   }
 
-  static String _friendlyPasswordResetError(Object error) {
+  static String _friendlyPasswordResetError(
+    Object error,
+    AppLocalizations l10n,
+  ) {
     if (error is CloudUnavailableException) return error.message;
     final message = error.toString().toLowerCase();
     // Supabase lets each address ask once a minute.
     if (message.contains('for security purposes') ||
         message.contains('over_email_send_rate_limit') ||
         message.contains('rate limit')) {
-      return 'A link was sent a moment ago. Wait a minute, then try again.';
+      return l10n.authMsgPasswordResetRateLimited;
     }
     if (message.contains('socket') ||
         message.contains('network') ||
         message.contains('timed out') ||
         message.contains('failed host lookup')) {
-      return "Couldn't reach the server. Check your connection and try again.";
+      return l10n.authMsgServerUnreachable;
     }
-    return "Couldn't send the email. Please try again.";
+    return l10n.authMsgPasswordResetFailed;
   }
 
   /// Sets the signed-in user's password. Returns an error message, or null
@@ -1197,30 +1204,33 @@ class AuthProvider extends Notifier<AppAuthState> {
         error: error,
         stackTrace: stackTrace,
       );
-      return _friendlyNewPasswordError(error);
+      return _friendlyNewPasswordError(error, ref.read(l10nProvider));
     }
   }
 
-  static String _friendlyNewPasswordError(Object error) {
+  static String _friendlyNewPasswordError(
+    Object error,
+    AppLocalizations l10n,
+  ) {
     if (error is CloudUnavailableException) return error.message;
     if (error is AuthSessionMissingException) {
-      return 'You were signed out. Ask for a new reset link from Sign in.';
+      return l10n.authMsgNewPasswordSignedOut;
     }
     final message = error.toString().toLowerCase();
     if (message.contains('same_password') ||
         message.contains('different from the old password')) {
-      return "That's already your password. Choose a different one.";
+      return l10n.authMsgNewPasswordSame;
     }
     if (message.contains('weak_password')) {
-      return 'Choose a longer password.';
+      return l10n.authMsgNewPasswordWeak;
     }
     if (message.contains('socket') ||
         message.contains('network') ||
         message.contains('timed out') ||
         message.contains('failed host lookup')) {
-      return "Couldn't reach the server. Check your connection and try again.";
+      return l10n.authMsgServerUnreachable;
     }
-    return "Couldn't save your password. Please try again.";
+    return l10n.authMsgNewPasswordFailed;
   }
 
   Future<void> signOut() async {
@@ -1274,7 +1284,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         isLoading: false,
         isConvexUserReady: false,
         convexAuthStatus: ConvexAuthStatus.incident,
-        errorMessage: 'Sign out failed. Please try again.',
+        errorMessage: ref.read(l10nProvider).authMsgSignOutFailed,
       );
       return;
     }
@@ -1282,8 +1292,8 @@ class AuthProvider extends Notifier<AppAuthState> {
     try {
       Settings.showToast(
         message: ref.read(platformPolicyProvider).allowsLocalLibrary
-            ? 'Signed out. Your local strategies stay on this device.'
-            : 'Signed out.',
+            ? ref.read(l10nProvider).authMsgSignedOutLocalKept
+            : ref.read(l10nProvider).authMsgSignedOut,
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
     } catch (error, stackTrace) {
@@ -1369,8 +1379,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       );
       try {
         Settings.showToast(
-          message: "You're already signed in, so that link wasn't used. To "
-              'set a new password, sign out and ask for a new link.',
+          message: ref.read(l10nProvider).authMsgLinkIgnoredWhileSignedIn,
           backgroundColor: Settings.tacticalVioletTheme.secondary,
           autoCloseDuration: const Duration(seconds: 8),
         );
@@ -1446,7 +1455,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       }
 
       // The toast is what the user reads, so the link stays in the logs.
-      const message = 'Failed to complete login. Please try again.';
+      final message = ref.read(l10nProvider).authMsgSignInLinkFailed;
       AppErrorReporter.reportError(
         message,
         source: 'auth',
@@ -1612,9 +1621,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       convexAuthStatus: ConvexAuthStatus.incident,
       activeAuthIncidentId: incidentId,
       lastAuthIncidentSource: source,
-      errorMessage:
-          'Your cloud session expired. Reconnect to resume syncing, or '
-          'sign out.',
+      errorMessage: ref.read(l10nProvider).authMsgCloudSessionExpired,
     );
 
     log(
@@ -1966,8 +1973,8 @@ class AuthProvider extends Notifier<AppAuthState> {
         isConvexUserReady: false,
         convexAuthStatus: ConvexAuthStatus.incident,
         errorMessage: upgradeRequired
-            ? clientUpgradeRequiredMessage()
-            : "Couldn't connect to cloud sync. Please retry.",
+            ? clientUpgradeRequiredMessage(ref.read(l10nProvider))
+            : ref.read(l10nProvider).authMsgCloudSyncConnectFailed,
       );
     }
   }
@@ -2005,10 +2012,8 @@ class AuthProvider extends Notifier<AppAuthState> {
 
     _showingIncidentPrompt = true;
     state = state.copyWith(isAuthIncidentPromptOpen: true);
-    final localStrategiesNote =
-        ref.read(platformPolicyProvider).allowsLocalLibrary
-            ? ' Local strategies are unaffected.'
-            : '';
+    final allowsLocalLibrary =
+        ref.read(platformPolicyProvider).allowsLocalLibrary;
 
     try {
       final action = await showShadDialog<_AuthIncidentAction>(
@@ -2016,14 +2021,15 @@ class AuthProvider extends Notifier<AppAuthState> {
         barrierDismissible: false,
         builder: (context) {
           _incidentPromptContext = context;
+          final l10n = context.l10n;
           return ShadDialog.alert(
-            title: const Text('Cloud connection lost'),
+            title: Text(l10n.authMsgIncidentTitle),
             description: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                'Your cloud session is no longer valid, so syncing is '
-                'paused. Reconnect to keep your cloud strategies up to '
-                'date, or sign out.$localStrategiesNote',
+                allowsLocalLibrary
+                    ? l10n.authMsgIncidentDescriptionWithLocal
+                    : l10n.authMsgIncidentDescription,
               ),
             ),
             actions: [
@@ -2031,19 +2037,19 @@ class AuthProvider extends Notifier<AppAuthState> {
                 onPressed: () {
                   Navigator.of(context).pop(_AuthIncidentAction.dismiss);
                 },
-                child: const Text('Not Now'),
+                child: Text(l10n.authMsgIncidentNotNow),
               ),
               ShadButton.secondary(
                 onPressed: () {
                   Navigator.of(context).pop(_AuthIncidentAction.signOut);
                 },
-                child: const Text('Sign Out'),
+                child: Text(l10n.commonSignOut),
               ),
               ShadButton(
                 onPressed: () {
                   Navigator.of(context).pop(_AuthIncidentAction.retry);
                 },
-                child: const Text('Reconnect'),
+                child: Text(l10n.commonReconnect),
               ),
             ],
           );

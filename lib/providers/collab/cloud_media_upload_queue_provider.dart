@@ -13,6 +13,7 @@ import 'package:icarus/collab/pending_media_bytes_store.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
@@ -571,6 +572,7 @@ class CloudMediaUploadQueueNotifier
         error: error,
         stackTrace: stackTrace,
         source: 'cloud_media.upload_queue',
+        toastMessage: ref.read(l10nProvider).mediaUploadReleaseBytesFailed,
       );
     }
   }
@@ -586,6 +588,7 @@ class CloudMediaUploadQueueNotifier
         error: error,
         stackTrace: stackTrace,
         source: 'cloud_media.upload_queue',
+        toastMessage: ref.read(l10nProvider).mediaUploadPruneBytesFailed,
       );
     }
   }
@@ -1144,7 +1147,7 @@ class CloudMediaUploadQueueNotifier
         .noteError(errorMessage);
     if (showToast && !upgradeRequired) {
       Settings.showToast(
-        message: 'Media upload failed. Tap Save to retry cloud sync.',
+        message: ref.read(l10nProvider).mediaUploadFailedToast,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     }
@@ -1562,6 +1565,7 @@ class CloudMediaUploadQueueNotifier
       error: error,
       stackTrace: stackTrace,
       source: 'cloud_media.upload_queue',
+      toastMessage: ref.read(l10nProvider).mediaUploadOutboxUpdateFailed,
     );
     _refreshState(isProcessing: false);
   }
@@ -1625,8 +1629,8 @@ class CloudMediaUploadQueueNotifier
 
     final toastState = _uploadProgressToastState;
     if (toastState != null && _uploadCompletedJobs.isNotEmpty) {
-      toastState.value = const _UploadProgressToastState(
-        message: 'Image upload complete',
+      toastState.value = _UploadProgressToastState(
+        message: ref.read(l10nProvider).mediaUploadComplete,
         progress: 1,
         isComplete: true,
       );
@@ -1653,9 +1657,7 @@ class CloudMediaUploadQueueNotifier
         : _uploadProgressTotalJobs;
     final progress = totalJobs <= 0 ? 0.0 : _currentUploadProgress(totalJobs);
     return _UploadProgressToastState(
-      message: activeUploadCount == 1
-          ? 'Uploading image...'
-          : 'Uploading $activeUploadCount images...',
+      message: ref.read(l10nProvider).mediaUploadProgress(activeUploadCount),
       progress: progress,
       isComplete: false,
     );

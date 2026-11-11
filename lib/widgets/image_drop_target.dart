@@ -1,6 +1,7 @@
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -79,19 +80,19 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
               ),
             ),
           if (isDragging)
-            const Positioned.fill(
+            Positioned.fill(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(LucideIcons.download, size: 60),
-                    SizedBox(
+                    const Icon(LucideIcons.download, size: 60),
+                    const SizedBox(
                       height: 10,
                     ),
                     Text(
-                      "Import image file (.png, .jpg, .webp, .gif, .bmp)",
-                      style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      context.l10n.imageDropOverlayLabel,
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold),
                     )
                   ],
                 ),

@@ -4,8 +4,10 @@ library;
 import 'dart:async';
 import 'dart:js_interop';
 import 'dart:typed_data';
+import 'dart:ui' show Locale;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/services/video_export/web_codecs_video_encoder.dart';
 
@@ -45,7 +47,7 @@ void main() {
   });
 
   test('encodes held frames into an MP4 the browser plays back', () async {
-    final encoder = WebCodecsMp4Encoder();
+    final encoder = WebCodecsMp4Encoder(_english);
     await encoder.start(
       inputWidth: 640,
       inputHeight: 360,
@@ -88,7 +90,7 @@ void main() {
   });
 
   test('scales 1280x720 frames down to a 640x360 video', () async {
-    final encoder = WebCodecsMp4Encoder();
+    final encoder = WebCodecsMp4Encoder(_english);
     await encoder.start(
       inputWidth: 1280,
       inputHeight: 720,
@@ -120,7 +122,7 @@ void main() {
   });
 
   test('carries fractional frame remainders forward', () async {
-    final encoder = WebCodecsMp4Encoder();
+    final encoder = WebCodecsMp4Encoder(_english);
     await encoder.start(
       inputWidth: 64,
       inputHeight: 64,
@@ -142,7 +144,7 @@ void main() {
   });
 
   test('cancel is idempotent and later calls report the cancel', () async {
-    final encoder = WebCodecsMp4Encoder();
+    final encoder = WebCodecsMp4Encoder(_english);
     await encoder.start(
       inputWidth: 64,
       inputHeight: 64,
@@ -288,3 +290,5 @@ extension type _Url._(JSObject _) implements JSObject {
   external static String createObjectURL(_Blob blob);
   external static void revokeObjectURL(String url);
 }
+
+final _english = lookupAppLocalizations(const Locale('en'));

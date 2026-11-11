@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
@@ -179,7 +180,8 @@ void main() {
         capture.captureRawRgba(image('stalled.png')),
         throwsA(
           isA<CaptureImagesUnavailable>().having(
-            (error) => error.userMessage,
+            (error) =>
+                error.userMessage(lookupAppLocalizations(const Locale('en'))),
             'message',
             contains('still loading'),
           ),
@@ -226,7 +228,8 @@ void main() {
         rgba,
         throwsA(
           isA<CaptureImagesUnavailable>().having(
-            (error) => error.userMessage,
+            (error) =>
+                error.userMessage(lookupAppLocalizations(const Locale('en'))),
             'message',
             contains("Couldn't load"),
           ),

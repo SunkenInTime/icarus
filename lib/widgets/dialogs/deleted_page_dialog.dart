@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -36,6 +37,7 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
   bool get _isBusy => _isRestoring || _isLeaving;
 
   Future<void> _restore() async {
+    final l10n = context.l10n;
     setState(() {
       _isRestoring = true;
       _error = null;
@@ -51,14 +53,12 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
     setState(() {
       _isRestoring = false;
       _isGone = outcome == DeletedPageRestore.gone;
-      _error = _isGone
-          ? null
-          : 'Could not confirm the page was restored. Check your '
-              'connection and try again, or discard your changes.';
+      _error = _isGone ? null : l10n.deletedPageRestoreFailed;
     });
   }
 
   Future<void> _discard() async {
+    final l10n = context.l10n;
     setState(() {
       _isLeaving = true;
       _error = null;
@@ -72,8 +72,7 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
     }
     setState(() {
       _isLeaving = false;
-      _error = 'Could not leave this page yet: changes to it are still being '
-          'sent, or another page could not load. Try again in a moment.';
+      _error = l10n.deletedPageLeaveFailed;
     });
   }
 
@@ -86,19 +85,18 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
     });
     final theme = ShadTheme.of(context);
     final name = widget.page.name;
+    final l10n = context.l10n;
 
     return ShadDialog.alert(
-      title: const Text('This page was deleted'),
+      title: Text(l10n.deletedPageTitle),
       description: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             _isGone
-                ? '“$name” can no longer be restored, so your latest changes '
-                    'to it could not be saved.'
-                : '“$name” was deleted while you were editing it. Restore it '
-                    'to keep your latest changes, or discard them.',
+                ? l10n.deletedPageGone(name)
+                : l10n.deletedPageDescription(name),
           ),
           if (_error != null) ...[
             const SizedBox(height: 8),
@@ -113,16 +111,18 @@ class _DeletedPageDialogState extends ConsumerState<DeletedPageDialog> {
         if (_isGone)
           ShadButton(
             onPressed: _isBusy ? null : _discard,
-            child: const Text('Discard changes'),
+            child: Text(l10n.deletedPageDiscardChanges),
           )
         else ...[
           ShadButton.secondary(
             onPressed: _isBusy ? null : _discard,
-            child: const Text('Discard changes'),
+            child: Text(l10n.deletedPageDiscardChanges),
           ),
           ShadButton(
             onPressed: _isBusy ? null : _restore,
-            child: Text(_isRestoring ? 'Restoring…' : 'Restore page'),
+            child: Text(_isRestoring
+                ? l10n.deletedPageRestoring
+                : l10n.deletedPageRestore),
           ),
         ],
       ],

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
@@ -83,7 +84,7 @@ class LineUpMediaCarousel extends ConsumerWidget {
                         ),
                         ShadButton(
                           leading: const Icon(LucideIcons.pencil),
-                          child: const Text("Edit"),
+                          child: Text(context.l10n.commonEdit),
                           onPressed: () {
                             Navigator.of(context).pop();
                             showDialog(
@@ -170,10 +171,10 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
 
     Widget content;
     if (widget.images.isEmpty && widget.youtubeLink.isEmpty) {
-      content = const Center(
+      content = Center(
         child: Text(
-          'No images available',
-          style: TextStyle(color: Colors.white),
+          context.l10n.lineupMediaNoImages,
+          style: const TextStyle(color: Colors.white),
         ),
       );
     } else {

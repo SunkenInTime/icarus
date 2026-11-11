@@ -1,0 +1,9 @@
+# Every word the app shows lives in lib/l10n: app_en.arb is the source, and
+# each other app_<language>.arb holds the same keys translated. Flutter turns
+# them into AppLocalizations (lib/l10n/generated, never committed).
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-dir: lib/l10n/generated
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+nullable-getter: false

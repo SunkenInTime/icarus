@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/services/clipboard_service.dart';
 import 'package:icarus/services/halved_image.dart';
@@ -73,7 +74,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
     } on ClipboardBusyException {
       if (mounted) {
         Settings.showToast(
-          message: ClipboardService.busyMessage,
+          message: ClipboardService.busyMessage(context.l10n),
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
       }
@@ -140,7 +141,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
       if (!mounted) return;
       setState(() => _isDragging = false);
       Settings.showToast(
-        message: 'Unsupported image format',
+        message: context.l10n.uploadImageUnsupportedFormat,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -153,7 +154,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
     if (detectedExtension == null) {
       setState(() => _isDragging = false);
       Settings.showToast(
-        message: 'Unsupported image format',
+        message: context.l10n.uploadImageUnsupportedFormat,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -173,6 +174,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
     final bool hasSelection = _selectedBytes != null;
     final policy = ref.watch(platformPolicyProvider);
     final canDropFiles = policy.supports(PlatformFeature.fileDrop);
+    final l10n = context.l10n;
 
     Widget content = _UploadDropSquare(
       isDragging: _isDragging,
@@ -204,16 +206,16 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
     }
 
     return ShadDialog(
-      title: const Text('Upload image'),
+      title: Text(l10n.uploadImageTitle),
       description: Text(
         canDropFiles
-            ? 'Drop an image here or click to choose a file.'
-            : 'Click to choose a file.',
+            ? l10n.uploadImageDescriptionDrop
+            : l10n.uploadImageDescriptionClick,
       ),
       actions: [
         ShadButton.secondary(
           onPressed: () => Navigator.of(context).pop<UploadImageResult?>(null),
-          child: const Text('Cancel'),
+          child: Text(l10n.commonCancel),
         ),
         ShadIconButton.secondary(
           icon: const Icon(LucideIcons.clipboard),
@@ -230,7 +232,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
                   ),
                 )
               : null,
-          child: const Text('Use image'),
+          child: Text(l10n.uploadImageUseImage),
         ),
       ],
       child: ConstrainedBox(
@@ -245,14 +247,15 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
               const SizedBox(height: 12),
               Text(
                 canDropFiles
-                    ? 'Tip: You can also drag & drop an image from your desktop.'
-                    : policy.unavailableMessage(PlatformFeature.fileDrop)!,
+                    ? l10n.uploadImageDragTip
+                    : policy.unavailableMessage(
+                        l10n, PlatformFeature.fileDrop)!,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: cs.onSurfaceVariant,
                     ),
               ),
               const SizedBox(height: 12),
-              const Text('Tag color'),
+              Text(l10n.uploadImageTagColor),
               const SizedBox(height: 6),
               ColorLibrary(
                 includeEmpty: true,
@@ -393,7 +396,9 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              isDragging ? 'Drop to upload' : 'Drop or click to upload',
+              isDragging
+                  ? context.l10n.uploadImageDropToUpload
+                  : context.l10n.uploadImageDropOrClick,
               textAlign: TextAlign.center,
               style: headline?.copyWith(
                 color: isDragging ? cs.primary : cs.onSurface,
@@ -418,7 +423,7 @@ class _EmptyState extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'Checking clipboard…',
+                context.l10n.uploadImageCheckingClipboard,
                 style: body?.copyWith(color: cs.onSurfaceVariant),
               ),
             ],
@@ -460,7 +465,7 @@ class _SelectionFooter extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                fileName ?? 'Selected image',
+                fileName ?? context.l10n.uploadImageSelectedImage,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: textStyle,
@@ -470,7 +475,7 @@ class _SelectionFooter extends StatelessWidget {
             ShadButton.outline(
               size: ShadButtonSize.sm,
               onPressed: onClear,
-              child: const Text('Clear'),
+              child: Text(context.l10n.commonClear),
             ),
           ],
         ),

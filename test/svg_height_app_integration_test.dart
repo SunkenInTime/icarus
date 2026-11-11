@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
@@ -186,6 +187,7 @@ void main() {
     final model = SvgHeightVisibility.fromJson(json);
     double? changed;
     final item = buildSvgHeightElevationMenuItem(
+      l10n: lookupAppLocalizations(const Locale('en')),
       model: model,
       origin: const Offset(5, 5),
       selectedElevationCm: 999,

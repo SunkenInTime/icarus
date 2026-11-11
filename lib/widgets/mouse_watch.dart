@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
@@ -316,7 +317,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
                         Icons.delete,
                         color: Settings.tacticalVioletTheme.destructive,
                       ),
-                      child: const Text('Delete origin'),
+                      child: Text(context.l10n.mouseWatchDeleteOrigin),
                       onPressed: () {
                         ref
                             .read(lineUpProvider.notifier)

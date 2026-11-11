@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/caption_card_provider.dart';
@@ -89,7 +90,9 @@ List<ShadContextMenuItem> buildCaptionMenuItems(
   return [
     ShadContextMenuItem(
       leading: const Icon(LucideIcons.messageSquareText, size: 16),
-      child: Text(current.isEmpty ? 'Create caption' : 'Edit caption'),
+      child: Text(current.isEmpty
+          ? context.l10n.canvasItemCreateCaption
+          : context.l10n.canvasItemEditCaption),
       onPressed: () => container
           .read(captionCardProvider.notifier)
           .startWriting(id, currentCaptionPlace(container)),

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
@@ -190,7 +191,7 @@ class _HoveredMapItemNameCardState
                       boxShadow: const [Settings.cardForegroundBackdrop],
                     ),
                     child: Text(
-                      visibleName,
+                      context.l10n.gameName(visibleName),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,

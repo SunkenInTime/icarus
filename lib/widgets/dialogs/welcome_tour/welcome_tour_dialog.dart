@@ -7,6 +7,7 @@ import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
@@ -17,31 +18,6 @@ import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/welcome_tour/welcome_tour_pictures.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-
-/// Everything the welcome tour says. `**word**` marks a word drawn in the
-/// foreground color, the name of something the user will see on screen.
-abstract final class WelcomeTourCopy {
-  static const kicker = 'New in this update';
-
-  static const libraryTitle = 'Your library is still here';
-  static const libraryBody =
-      'Everything you made before this update is saved on this computer, '
-      'exactly as it was. Nothing moves unless you move it.';
-
-  static const cloudTitle = 'Sign in to sync and share';
-  static const cloudBody =
-      'Strategies you make while signed in are saved to your account, so '
-      'they open on any computer and you can share them with your team. To '
-      'bring an older one along, right-click it and choose **Move to cloud**.';
-
-  // What the release promises about replays. Icarus reads replays through
-  // VALORANT patch 13.08 except 13.07, and each new patch needs an update,
-  // so this is the copy most likely to change before the release ships.
-  static const replaysTitle = 'Turn your matches into strategies';
-  static const replaysBody =
-      'The **Replays** tab lists matches you downloaded in VALORANT. Pause on '
-      'any moment and press **Capture** to save it as a strategy page.';
-}
 
 /// Shows the welcome tour once per install, the first time the library is
 /// on screen. Desktop only: the web beta has no local library to reassure
@@ -183,7 +159,7 @@ class _WelcomeTourDialogState extends ConsumerState<WelcomeTourDialog> {
                     hoverForegroundColor:
                         Settings.tacticalVioletTheme.foreground,
                     onPressed: () => _goTo(_index - 1),
-                    child: const Text('Back'),
+                    child: Text(context.l10n.welcomeTourBack),
                   ),
                   const SizedBox(width: 8),
                 ],
@@ -197,6 +173,7 @@ class _WelcomeTourDialogState extends ConsumerState<WelcomeTourDialog> {
   }
 
   List<Widget> _actions(_Step step, {required bool signedIn}) {
+    final l10n = context.l10n;
     Widget secondary(String label, VoidCallback onPressed) => Padding(
           padding: const EdgeInsets.only(right: 8),
           child: ShadButton.secondary(
@@ -210,15 +187,15 @@ class _WelcomeTourDialogState extends ConsumerState<WelcomeTourDialog> {
         );
 
     return switch (step) {
-      _Step.library => [primary('Next', _next)],
-      _Step.cloud when signedIn => [primary('Next', _next)],
+      _Step.library => [primary(l10n.welcomeTourNext, _next)],
+      _Step.cloud when signedIn => [primary(l10n.welcomeTourNext, _next)],
       _Step.cloud => [
-          secondary('Not now', _next),
-          primary('Sign in', _signIn),
+          secondary(l10n.welcomeTourNotNow, _next),
+          primary(l10n.welcomeTourSignIn, _signIn),
         ],
       _Step.replays => [
-          secondary('Done', () => Navigator.of(context).pop()),
-          primary('Open Replays', _openReplays),
+          secondary(l10n.commonDone, () => Navigator.of(context).pop()),
+          primary(l10n.welcomeTourOpenReplays, _openReplays),
         ],
     };
   }
@@ -231,21 +208,22 @@ class _StepPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final (picture, title, body) = switch (step) {
       _Step.library => (
           const WelcomeLibraryPicture(),
-          WelcomeTourCopy.libraryTitle,
-          WelcomeTourCopy.libraryBody,
+          l10n.welcomeTourLibraryTitle,
+          l10n.welcomeTourLibraryBody,
         ),
       _Step.cloud => (
           const WelcomeCloudPicture(),
-          WelcomeTourCopy.cloudTitle,
-          WelcomeTourCopy.cloudBody,
+          l10n.welcomeTourCloudTitle,
+          l10n.welcomeTourCloudBody,
         ),
       _Step.replays => (
           const WelcomeReplayPicture(),
-          WelcomeTourCopy.replaysTitle,
-          WelcomeTourCopy.replaysBody,
+          l10n.welcomeTourReplaysTitle,
+          l10n.welcomeTourReplaysBody,
         ),
     };
     const theme = Settings.tacticalVioletTheme;
@@ -265,7 +243,7 @@ class _StepPage extends StatelessWidget {
         picture,
         const SizedBox(height: 18),
         Text(
-          WelcomeTourCopy.kicker,
+          l10n.welcomeTourKicker,
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
@@ -319,7 +297,7 @@ class _StepDots extends StatelessWidget {
           Semantics(
             button: true,
             selected: i == current,
-            label: 'Step ${i + 1} of $count',
+            label: context.l10n.welcomeTourStepLabel(i + 1, count),
             child: MouseRegion(
               cursor: SystemMouseCursors.click,
               child: GestureDetector(

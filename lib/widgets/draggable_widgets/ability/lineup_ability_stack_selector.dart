@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -14,7 +15,7 @@ Future<LineUpAbilityStackCandidate?> showLineUpAbilityStackSelector({
   return showGeneralDialog<LineUpAbilityStackCandidate?>(
     context: context,
     barrierDismissible: true,
-    barrierLabel: 'Close lineup ability stack selector',
+    barrierLabel: context.l10n.abilityMenuCloseStackSelectorLabel,
     barrierColor: Colors.transparent,
     pageBuilder: (context, animation, secondaryAnimation) {
       return _LineUpAbilityStackSelectorDialog(
@@ -33,7 +34,7 @@ Future<void> showLineUpAbilityContextMenu({
   return showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
-    barrierLabel: 'Close lineup ability context menu',
+    barrierLabel: context.l10n.abilityMenuCloseContextMenuLabel,
     barrierColor: Colors.transparent,
     pageBuilder: (context, animation, secondaryAnimation) {
       return _LineUpAbilityContextMenuDialog(

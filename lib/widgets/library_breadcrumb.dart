@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
@@ -70,8 +71,9 @@ class LibraryBreadcrumb extends ConsumerWidget {
             children: [
               FolderTab(
                 folder: null,
-                label:
-                    tab == LibraryTab.shared ? 'Shared with Me' : 'My Library',
+                label: tab == LibraryTab.shared
+                    ? context.l10n.libraryBreadcrumbSharedWithMe
+                    : context.l10n.libraryTabMyLibrary,
                 store: store,
                 onOpen: goToRoot,
               ),
@@ -176,7 +178,9 @@ class FolderTab extends ConsumerWidget {
         builder: (context, candidateData, rejectedData) {
           return Container(
             padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text(label ?? folder?.name ?? 'My Library'),
+            child: Text(
+              label ?? folder?.name ?? context.l10n.libraryTabMyLibrary,
+            ),
           );
         },
       ),

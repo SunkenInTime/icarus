@@ -5,6 +5,7 @@ import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/widgets/context_menu_region.dart';
@@ -664,7 +665,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
             ),
           ),
           const SizedBox(width: 6),
-          Text('Moving to cloud', style: footerStyle),
+          Text(context.l10n.folderCardMovingToCloud, style: footerStyle),
         ],
       );
     }
@@ -676,8 +677,8 @@ class _FolderCardState extends ConsumerState<FolderCard>
               ? Text(
                   switch (widget.data.strategyCount) {
                     null => '',
-                    0 => 'Empty',
-                    final count => '$count strateg${count == 1 ? 'y' : 'ies'}',
+                    0 => context.l10n.folderCardEmpty,
+                    final count => context.l10n.folderCardStrategyCount(count),
                   },
                   style: footerStyle,
                 )
@@ -690,7 +691,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
             ref.watch(isCloudWorkspaceAvailableProvider)) ...[
           const SizedBox(width: 6),
           Tooltip(
-            message: 'Saved only on this computer',
+            message: context.l10n.folderCardLocalOnlyTooltip,
             child: Icon(
               LucideIcons.monitor,
               size: 13,
@@ -768,14 +769,18 @@ class _FolderCardState extends ConsumerState<FolderCard>
   /// copy: refused at once, with the reason.
   bool _refusedOffline() =>
       _isCloud &&
-      refuseCloudChangeWhileOffline(ref.read(cloudLibraryShowsCopyProvider));
+      refuseCloudChangeWhileOffline(
+        ref.read(l10nProvider),
+        ref.read(cloudLibraryShowsCopyProvider),
+      );
 
   List<ShadContextMenuItem> _buildMenuItems({required bool isPinned}) {
     final id = _folder.id;
+    final l10n = context.l10n;
     return [
       ShadContextMenuItem(
         leading: Icon(isPinned ? LucideIcons.pinOff : LucideIcons.pin),
-        child: Text(isPinned ? 'Unpin' : 'Pin'),
+        child: Text(isPinned ? l10n.folderCardUnpin : l10n.folderCardPin),
         onPressed: () {
           _closeMenus();
           if (widget.isDemo) return;
@@ -800,12 +805,12 @@ class _FolderCardState extends ConsumerState<FolderCard>
                   },
                 );
               },
-        child: const Text('Edit'),
+        child: Text(l10n.commonEdit),
       ),
       if (_isCloud && widget.cloudRole == 'owner')
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.link2),
-          child: const Text('Share'),
+          child: Text(l10n.commonShare),
           onPressed: () async {
             _closeMenus();
             if (_refusedOffline()) return;
@@ -826,7 +831,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
         ShadContextMenuItem(
           key: const ValueKey('folder-card-leave'),
           leading: const Icon(LucideIcons.logOut),
-          child: const Text('Leave'),
+          child: Text(l10n.commonLeave),
           onPressed: () {
             _closeMenus();
             if (_refusedOffline()) return;
@@ -845,7 +850,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
           ref.watch(isCloudWorkspaceAvailableProvider))
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.cloudUpload),
-          child: const Text('Move to cloud'),
+          child: Text(l10n.folderCardMoveToCloud),
           onPressed: () {
             _closeMenus();
             ref.read(moveToCloudProvider.notifier).moveFolder(id);
@@ -853,7 +858,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
         ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.upload),
-        child: const Text('Export'),
+        child: Text(l10n.commonExport),
         onPressed: () async {
           _closeMenus();
           if (!ensureFeatureAvailable(ref, PlatformFeature.exportFiles)) {
@@ -870,7 +875,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
             AppErrorReporter.reportError(
               error is LibraryExportIncomplete
                   ? error.userMessage
-                  : 'Failed to export folder.',
+                  : l10n.folderCardExportFailed,
               error: error,
               stackTrace: stackTrace,
               source: 'FolderCard.export',
@@ -895,7 +900,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
                   ),
                 );
               },
-        child: Text('Delete',
+        child: Text(l10n.commonDelete,
             style: TextStyle(color: Settings.tacticalVioletTheme.destructive)),
       ),
     ];

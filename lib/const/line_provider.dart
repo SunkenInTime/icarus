@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/agents.dart';
@@ -1029,16 +1030,19 @@ class LineUpProvider extends Notifier<LineUpState> {
     if (placement == null) return;
     if (placement.pinnedOriginId != null) {
       Settings.showToast(
-        message: "The origin is pinned. Drag an ability instead.",
+        message: ref.read(l10nProvider).lineupOriginPinned,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
     }
     final pinnedType = placement.pinnedAgentType;
     if (pinnedType != null && agent.type != pinnedType) {
+      final l10n = ref.read(l10nProvider);
       Settings.showToast(
-        message: "Drag ${AgentData.agents[pinnedType]?.name ?? 'the agent'} "
-            "for this landing spot.",
+        message: switch (AgentData.agents[pinnedType]?.name) {
+          final name? => l10n.lineupDragPinnedAgent(l10n.gameName(name)),
+          null => l10n.lineupDragPinnedAgentUnknown,
+        },
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -1059,7 +1063,7 @@ class LineUpProvider extends Notifier<LineUpState> {
     if (placement == null) return;
     if (placement.pinnedLandingId != null) {
       Settings.showToast(
-        message: "The landing spot is pinned. Drag an agent instead.",
+        message: ref.read(l10nProvider).lineupLandingPinned,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -1067,14 +1071,14 @@ class LineUpProvider extends Notifier<LineUpState> {
     final agentType = placement.lockedAgentType;
     if (agentType == null) {
       Settings.showToast(
-        message: "Please select an agent first.",
+        message: ref.read(l10nProvider).lineupSelectAgentFirst,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
     }
     if (ability.data.type != agentType) {
       Settings.showToast(
-        message: "Ability does not match the selected agent.",
+        message: ref.read(l10nProvider).lineupAbilityAgentMismatch,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -1791,8 +1795,7 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   void _toastDroppedEdit() {
     Settings.showToast(
-      message: 'The page changed, so the placement edit closed without '
-          'saving.',
+      message: ref.read(l10nProvider).lineupPlacementEditClosed,
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
   }

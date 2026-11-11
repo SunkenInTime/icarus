@@ -6,6 +6,7 @@ import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/map_tile.dart';
@@ -191,14 +192,16 @@ class _MapSelectorState extends ConsumerState<MapSelector>
                                             }
 
                                             if (index == availableMaps.length) {
-                                              return const Padding(
-                                                padding: EdgeInsets.symmetric(
+                                              return Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
                                                   horizontal: 8,
                                                   vertical: 5,
                                                 ),
                                                 child: Text(
-                                                  "Out of rotation",
-                                                  style: TextStyle(
+                                                  context.l10n
+                                                      .mapSelectorOutOfRotation,
+                                                  style: const TextStyle(
                                                     fontWeight: FontWeight.w500,
                                                     color: Color.fromARGB(
                                                       255,
@@ -303,12 +306,12 @@ class _SideToggle extends ConsumerWidget {
             (strategyId == null ? null : b.get(strategyId))?.pages ?? const [];
         final mixed =
             pages.any((page) => page.isAttack != pages.first.isAttack);
-        final nextSide = isAttack ? 'Defense' : 'Attack';
-        final tooltip = mixed
-            ? 'Pages are on mixed sides\n'
-                'Click: all pages to $nextSide\n'
-                'Shift+click: this page only'
-            : 'Switch side on all pages\nShift+click: this page only';
+        final l10n = context.l10n;
+        final tooltip = !mixed
+            ? l10n.mapSelectorSideTooltip
+            : isAttack
+                ? l10n.mapSelectorSideTooltipMixedToDefense
+                : l10n.mapSelectorSideTooltipMixedToAttack;
 
         // A Shad button, not an InkWell: ShadTooltip only follows hover
         // through Shad's own buttons.
@@ -346,7 +349,9 @@ class _SideToggle extends ConsumerWidget {
                         color: isAttack ? Colors.redAccent : Colors.blueAccent,
                       ),
                       Text(
-                        isAttack ? "Attack" : "Defense",
+                        isAttack
+                            ? l10n.mapSelectorAttack
+                            : l10n.mapSelectorDefense,
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,

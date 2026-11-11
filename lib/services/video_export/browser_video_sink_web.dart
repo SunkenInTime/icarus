@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:icarus/services/video_export/video_frame_sink.dart';
 import 'package:icarus/services/video_export/web_codecs_video_encoder.dart';
@@ -39,8 +40,11 @@ Future<bool> browserCanEncodeVideo(
 
 /// Encodes in the browser with WebCodecs; [VideoFrameSink.finish] returns
 /// the finished .mp4 for the caller to download.
-VideoFrameSink createBrowserVideoSink(VideoExportQuality quality) =>
-    _WebCodecsVideoSink(quality);
+VideoFrameSink createBrowserVideoSink(
+  VideoExportQuality quality,
+  AppLocalizations l10n,
+) =>
+    _WebCodecsVideoSink(quality, l10n);
 
 /// Sizes and bitrates follow the desktop presets: Potato and Social hold the
 /// bitrate their size target allows for the video's length (and Potato
@@ -48,10 +52,11 @@ VideoFrameSink createBrowserVideoSink(VideoExportQuality quality) =>
 /// bitrate. The browser encodes as frames arrive, so there is no separate
 /// encode pass and no second attempt at a smaller size.
 class _WebCodecsVideoSink implements VideoFrameSink {
-  _WebCodecsVideoSink(this.quality);
+  _WebCodecsVideoSink(this.quality, AppLocalizations l10n)
+      : _encoder = WebCodecsMp4Encoder(l10n);
 
   final VideoExportQuality quality;
-  final WebCodecsMp4Encoder _encoder = WebCodecsMp4Encoder();
+  final WebCodecsMp4Encoder _encoder;
 
   @override
   Future<void> start({

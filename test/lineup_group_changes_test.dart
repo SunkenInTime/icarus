@@ -1,8 +1,13 @@
+import 'dart:ui' show Locale;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/strategy/lineup_group_changes.dart';
+
+final _english = lookupAppLocalizations(const Locale('en'));
 
 LineUpOrigin _origin(String id, {Offset position = const Offset(10, 20)}) =>
     LineUpOrigin(
@@ -53,7 +58,8 @@ LineUpGraph _group({
     );
 
 Map<String, String> _described(List<LineupChange> changes) => {
-      for (final change in changes) change.label: change.description,
+      for (final change in changes)
+        change.label(_english): change.description(_english),
     };
 
 void main() {
@@ -87,13 +93,15 @@ void main() {
     );
 
     expect(_described(changes), {'New': 'added', 'B Main 2': 'deleted'});
-    expect(changes.last.label, 'B Main 2', reason: 'deletions come last');
+    expect(changes.last.label(_english), 'B Main 2',
+        reason: 'deletions come last');
   });
 
   test('a deleted group lists every lineup as deleted', () {
     final changes = lineupChanges(from: _group(), to: LineUpGraph.empty);
 
-    expect(changes.map((change) => change.description).toSet(), {'deleted'});
+    expect(changes.map((change) => change.description(_english)).toSet(),
+        {'deleted'});
     expect(changes, hasLength(3));
   });
 

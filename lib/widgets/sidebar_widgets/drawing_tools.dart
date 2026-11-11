@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/widgets/custom_segmented_tabs.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
@@ -28,13 +29,14 @@ class DrawingTools extends ConsumerWidget {
     final activeTraversalSpeedProfile = ref.watch(
       penProvider.select((state) => state.activeTraversalSpeedProfile),
     );
+    final l10n = context.l10n;
 
     return Padding(
       padding: padding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Color"),
+          Text(l10n.drawingToolsColorLabel),
           // const SizedBox(height: 10),
           ColorLibrary(
             selectedColorValue: ref.watch(
@@ -54,7 +56,7 @@ class DrawingTools extends ConsumerWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("Shape"),
+                  Text(l10n.drawingToolsShapeLabel),
                   const SizedBox(height: 4),
                   Row(
                     children: [
@@ -87,7 +89,7 @@ class DrawingTools extends ConsumerWidget {
                                       .read(penProvider.notifier)
                                       .updateValue(penMode: PenMode.freeDraw);
                                 },
-                                tooltip: "Free draw",
+                                tooltip: l10n.drawingToolsFreeDrawTooltip,
                               ),
                               SelectableIconButton(
                                 icon: const Icon(
@@ -100,7 +102,7 @@ class DrawingTools extends ConsumerWidget {
                                       .read(penProvider.notifier)
                                       .updateValue(penMode: PenMode.line);
                                 },
-                                tooltip: "Straight line",
+                                tooltip: l10n.drawingToolsStraightLineTooltip,
                               ),
                               SelectableIconButton(
                                 icon: const Icon(
@@ -113,7 +115,7 @@ class DrawingTools extends ConsumerWidget {
                                       .read(penProvider.notifier)
                                       .updateValue(penMode: PenMode.square);
                                 },
-                                tooltip: "Rectangle",
+                                tooltip: l10n.drawingToolsRectangleTooltip,
                               ),
                               SelectableIconButton(
                                 icon: const Icon(
@@ -126,7 +128,7 @@ class DrawingTools extends ConsumerWidget {
                                       .read(penProvider.notifier)
                                       .updateValue(penMode: PenMode.ellipse);
                                 },
-                                tooltip: "Ellipse",
+                                tooltip: l10n.drawingToolsEllipseTooltip,
                               ),
                             ],
                           ),
@@ -139,7 +141,7 @@ class DrawingTools extends ConsumerWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("Stroke"),
+                  Text(l10n.drawingToolsStrokeLabel),
                   const SizedBox(height: 4),
                   Row(
                     children: [
@@ -154,7 +156,7 @@ class DrawingTools extends ConsumerWidget {
                               .read(penProvider.notifier)
                               .updateValue(isDotted: !isDotted);
                         },
-                        tooltip: "Dotted line",
+                        tooltip: l10n.drawingToolsDottedLineTooltip,
                       ),
                       const SizedBox(width: 5),
                       SelectableIconButton(
@@ -166,7 +168,7 @@ class DrawingTools extends ConsumerWidget {
                         onPressed: () {
                           ref.read(penProvider.notifier).toggleArrow();
                         },
-                        tooltip: "Arrow",
+                        tooltip: l10n.drawingToolsArrowTooltip,
                       ),
                     ],
                   ),
@@ -175,7 +177,7 @@ class DrawingTools extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 4),
-          const Text("Thickness"),
+          Text(l10n.drawingToolsThicknessLabel),
           const SizedBox(height: 4),
           CustomSegmentedTabs<double>(
             compactness: 0.55,
@@ -193,7 +195,7 @@ class DrawingTools extends ConsumerWidget {
           ),
 
           const SizedBox(height: 4),
-          const Text("Traversal Time"),
+          Text(l10n.drawingToolsTraversalTimeLabel),
           const SizedBox(height: 4),
           Row(
             spacing: 4,
@@ -211,7 +213,7 @@ class DrawingTools extends ConsumerWidget {
                       .read(penProvider.notifier)
                       .setTraversalMode(TraversalSpeedProfile.running);
                 },
-                tooltip: "Running w/ knife out",
+                tooltip: l10n.drawingToolsRunningTooltip,
               ),
               SelectableIconButton(
                 icon: const Icon(
@@ -226,7 +228,7 @@ class DrawingTools extends ConsumerWidget {
                       .read(penProvider.notifier)
                       .setTraversalMode(TraversalSpeedProfile.walking);
                 },
-                tooltip: "Walking w/ knife out",
+                tooltip: l10n.drawingToolsWalkingTooltip,
               ),
               SelectableIconButton(
                 icon: Image.asset(
@@ -242,7 +244,8 @@ class DrawingTools extends ConsumerWidget {
                       .read(penProvider.notifier)
                       .setTraversalMode(TraversalSpeedProfile.brimStim);
                 },
-                tooltip: "Brimstone Stim w/ knife out",
+                tooltip:
+                    l10n.drawingToolsAbilityWithKnifeTooltip('Brimstone Stim'),
               ),
               SelectableIconButton(
                 icon: Image.asset(
@@ -258,7 +261,7 @@ class DrawingTools extends ConsumerWidget {
                       .read(penProvider.notifier)
                       .setTraversalMode(TraversalSpeedProfile.neonRun);
                 },
-                tooltip: "neon run",
+                tooltip: l10n.drawingToolsAgentRunTooltip('neon'),
               ),
             ],
           ),

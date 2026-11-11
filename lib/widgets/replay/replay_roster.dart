@@ -4,6 +4,7 @@ import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/weapons.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/replay/replay_agents.dart';
 import 'package:icarus/replay/replay_document.dart';
 import 'package:icarus/replay/replay_frame.dart';
@@ -44,13 +45,13 @@ class ReplayRoster extends StatelessWidget {
               _TeamBlock(
                 playback: playback,
                 team: perspective,
-                label: 'Allies',
+                label: context.l10n.replayRosterAllies,
               ),
               Divider(height: 1, color: theme.colorScheme.border),
               _TeamBlock(
                 playback: playback,
                 team: perspective.other,
-                label: 'Enemies',
+                label: context.l10n.replayRosterEnemies,
               ),
               Divider(height: 1, color: theme.colorScheme.border),
               Expanded(child: _Killfeed(playback: playback)),
@@ -126,7 +127,8 @@ class _TeamBlock extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                Text('$alive alive', style: theme.textTheme.muted),
+                Text(context.l10n.replayRosterAlive(alive),
+                    style: theme.textTheme.muted),
               ],
             ),
           ),
@@ -183,13 +185,21 @@ class _PlayerRowState extends State<_PlayerRow> {
 
   /// What clicking the row (or pressing its key) does.
   String _tooltip(String name) {
-    final action = !widget.watched
-        ? 'Watch'
-        : widget.following
-            ? 'Stop watching'
-            : 'Follow';
+    final l10n = context.l10n;
     final key = widget.watchKey;
-    return key == null ? '$action $name' : '$action $name ($key)';
+    if (!widget.watched) {
+      return key == null
+          ? l10n.replayRosterWatchTooltip(name)
+          : l10n.replayRosterWatchWithKeyTooltip(name, key);
+    }
+    if (widget.following) {
+      return key == null
+          ? l10n.replayRosterStopWatchingTooltip(name)
+          : l10n.replayRosterStopWatchingWithKeyTooltip(name, key);
+    }
+    return key == null
+        ? l10n.replayRosterFollowTooltip(name)
+        : l10n.replayRosterFollowWithKeyTooltip(name, key);
   }
 
   @override
@@ -200,7 +210,11 @@ class _PlayerRowState extends State<_PlayerRow> {
     final agent = replayAgentType(state.player.agentId);
     final agentData = agent == null ? null : AgentData.agents[agent];
     final weapon = replayWeaponType(economy?.weapon);
-    final name = state.player.name ?? agentData?.name ?? 'Unknown agent';
+    final name = state.player.name ??
+        switch (agentData?.name) {
+          final agent? => context.l10n.gameName(agent),
+          null => context.l10n.replayRosterUnknownAgent,
+        };
     final credits = economy?.credits;
     const radius = 8.0;
     return ShadTooltip(
@@ -415,7 +429,7 @@ class _Killfeed extends ConsumerWidget {
           child: events.isEmpty
               ? Center(
                   child: Text(
-                    _emptyText(filters),
+                    _emptyText(context.l10n, filters),
                     style: theme.textTheme.muted,
                   ),
                 )
@@ -443,16 +457,19 @@ class _Killfeed extends ConsumerWidget {
   }
 
   /// What an empty list means: with kills shown, that no one has died.
-  static String _emptyText(Set<ReplayEventFilter> filters) {
+  static String _emptyText(
+    AppLocalizations l10n,
+    Set<ReplayEventFilter> filters,
+  ) {
     final spike = filters.contains(ReplayEventFilter.spike);
     final abilities = filters.contains(ReplayEventFilter.abilities);
     if (filters.contains(ReplayEventFilter.kills)) {
-      return 'No kills yet this round';
+      return l10n.replayRosterNoKills;
     }
-    if (spike && abilities) return 'No plant or abilities yet this round';
-    if (spike) return 'No plant yet this round';
-    if (abilities) return 'No abilities used yet this round';
-    return 'Choose what to show';
+    if (spike && abilities) return l10n.replayRosterNoPlantOrAbilities;
+    if (spike) return l10n.replayRosterNoPlant;
+    if (abilities) return l10n.replayRosterNoAbilities;
+    return l10n.replayRosterNothingChosen;
   }
 }
 
@@ -505,7 +522,7 @@ class _FilterChip extends StatelessWidget {
                 const Icon(LucideIcons.sparkles, size: 14),
             },
             child: Text(
-              filter.label,
+              filter.label(context.l10n),
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
             ),
           ),

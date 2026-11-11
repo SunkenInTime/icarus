@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/config/platform_policy.dart';
-import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/canvas_clipboard_provider.dart';
 import 'package:icarus/providers/caption_card_provider.dart';
@@ -71,14 +71,14 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
       if (picture != null) {
         await _placePicture(picture, stillThere);
       } else if (ref.read(canvasClipboardProvider) == null) {
-        _refuse('No image found in clipboard');
+        _refuse(context.l10n.canvasPasteNoImage);
       } else if (!stillThere()) {
         _refuse(_pageChanged);
       } else if (ref.read(interactionStateProvider).itemsInReach) {
         await _pasteItems();
       }
     } on ClipboardBusyException {
-      if (mounted) _refuse(ClipboardService.busyMessage);
+      if (mounted) _refuse(ClipboardService.busyMessage(context.l10n));
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
         'Paste failed: $error',
@@ -87,7 +87,7 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
         source: 'canvas_paste.paste',
         promptUser: false,
       );
-      if (mounted) _refuse("Couldn't paste what you copied.");
+      if (mounted) _refuse(context.l10n.canvasPasteFailed);
     } finally {
       _pasting = false;
     }
@@ -100,12 +100,13 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
     bool Function() stillThere,
   ) async {
     if (!ensureFeatureAvailable(ref, PlatformFeature.addImages)) return;
+    final l10n = context.l10n;
     // The map shows nothing until the picture is ready, half a second for
     // a 1080p Windows screenshot and a few at 4K: see pngOfBitmap.
     ToastificationItem? notice;
     final slow = Timer(_slowPicture, () {
       notice = Settings.showToast(
-        message: 'Adding picture…',
+        message: l10n.canvasPasteAddingPicture,
         backgroundColor: Settings.tacticalVioletTheme.secondary,
         // Past pngOfBitmap's limit, so no notice outlasts what it describes.
         autoCloseDuration: const Duration(seconds: 20),
@@ -123,7 +124,7 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
           .update(InteractionState.navigation);
       final added =
           await ref.read(placedImageProvider.notifier).addImageOnScreen(bytes);
-      if (!added && mounted) _refuse('Clipboard image type not supported');
+      if (!added && mounted) _refuse(l10n.canvasPasteUnsupportedImage);
     } finally {
       slow.cancel();
       if (notice case final item?) _dismissAfterItShows(item);
@@ -142,28 +143,22 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
     final refusal = await ref.read(canvasClipboardProvider.notifier).paste();
     if (refusal == null || !mounted) return;
     final copiedOn = ref.read(canvasClipboardProvider)?.map;
+    final l10n = context.l10n;
     _refuse(
       switch (refusal) {
         PasteRefusal.otherMap => copiedOn == null
-            ? 'What you copied is from another map.'
-            : 'What you copied is from ${Maps.displayName(copiedOn)}. Paste '
-                'it into a strategy on ${Maps.displayName(copiedOn)}.',
-        PasteRefusal.picturesMissing =>
-          "A picture in what you copied couldn't be read when you copied "
-              'it, so nothing was pasted. Check your connection and copy '
-              'it again.',
+            ? l10n.canvasPasteOtherMap
+            : l10n.canvasPasteFromMap(l10n.mapName(copiedOn)),
+        PasteRefusal.picturesMissing => l10n.canvasPastePicturesMissing,
         PasteRefusal.pageChanged => _pageChanged,
-        PasteRefusal.pictureTooLarge =>
-          'A picture in what you copied is over 15 MB, more than a cloud '
-              'strategy takes, so nothing was pasted.',
+        PasteRefusal.pictureTooLarge => l10n.canvasPastePictureTooLarge,
       },
     );
   }
 
   static const _slowPicture = Duration(milliseconds: 200);
 
-  static const _pageChanged =
-      'The page changed before the paste finished, so nothing was pasted.';
+  String get _pageChanged => context.l10n.canvasPastePageChanged;
 
   void _refuse(String message) => Settings.showToast(
         message: message,

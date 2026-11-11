@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/widgets/asset_svg.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -585,7 +586,8 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                                 flipY: !isAttack,
                                 child: AssetSvg(
                                   'assets/maps/${mapName}_spawn_walls.svg',
-                                  semanticsLabel: 'Barrier',
+                                  semanticsLabel: context
+                                      .l10n.strategyViewBarrierSemanticLabel,
                                   fit: BoxFit.contain,
                                 ),
                               ),

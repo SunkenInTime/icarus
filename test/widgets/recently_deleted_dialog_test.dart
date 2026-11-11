@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/widgets/dialogs/recently_deleted_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -102,6 +103,7 @@ Future<void> _open(
 void main() {
   group('labels', () {
     final now = DateTime(2026, 9, 29, 12);
+    final l10n = lookupAppLocalizations(const Locale('en'));
     TrashedPage page({String? by, bool byYou = false, Duration? ago}) =>
         TrashedPage(
           pageId: 'p',
@@ -115,27 +117,31 @@ void main() {
         );
 
     test('say who deleted the page and when, if known', () {
-      expect(deletedLabel(page(by: 'Sam'), now), 'Deleted by Sam, 2 days ago');
+      expect(deletedLabel(l10n, page(by: 'Sam'), now),
+          'Deleted by Sam, 2 days ago');
       expect(
-        deletedLabel(
+        deletedLabel(l10n,
             page(by: 'Sam', byYou: true, ago: const Duration(minutes: 5)), now),
         'Deleted by you, 5 minutes ago',
       );
       expect(
-        deletedLabel(page(ago: const Duration(hours: 1)), now),
+        deletedLabel(l10n, page(ago: const Duration(hours: 1)), now),
         'Deleted 1 hour ago',
       );
-      expect(deletedLabel(page(ago: Duration.zero), now), 'Deleted just now');
+      expect(deletedLabel(l10n, page(ago: Duration.zero), now),
+          'Deleted just now');
     });
 
     test('count the days left', () {
-      expect(timeLeftLabel(page(), now), '28 days left');
+      expect(timeLeftLabel(l10n, page(), now), '28 days left');
       expect(
-        timeLeftLabel(page(ago: const Duration(days: 28, hours: 12)), now),
+        timeLeftLabel(
+            l10n, page(ago: const Duration(days: 28, hours: 12)), now),
         '1 day left',
       );
       expect(
-        timeLeftLabel(page(ago: const Duration(days: 29, hours: 12)), now),
+        timeLeftLabel(
+            l10n, page(ago: const Duration(days: 29, hours: 12)), now),
         'Less than a day left',
       );
     });

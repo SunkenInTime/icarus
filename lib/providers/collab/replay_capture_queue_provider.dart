@@ -9,12 +9,22 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:uuid/uuid.dart';
+
+/// What stopped a capture on this device.
+enum ReplayCaptureStuckCause {
+  /// Its progress couldn't be stored.
+  storage,
+
+  /// Something else on this device failed.
+  device,
+}
 
 /// Replay captures waiting to be saved to the cloud, and the ones the
 /// server refused.
@@ -42,8 +52,8 @@ class ReplayCaptureQueueState {
   final Set<String> lostStrategyIds;
 
   /// Captures an error on this device stopped (their progress couldn't be
-  /// stored), by id, with what to tell the user. They wait for Retry.
-  final Map<String, String> stuck;
+  /// stored), by id, with what stopped them. They wait for Retry.
+  final Map<String, ReplayCaptureStuckCause> stuck;
 
   /// Whether every capture is readable and its progress stored.
   bool get isReliable => unreadable == 0 && stuck.isEmpty;
@@ -132,7 +142,7 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
 
   final Set<String> _discardedPageIds = {};
   final Set<String> _lostStrategyIds = {};
-  final Map<String, String> _stuck = {};
+  final Map<String, ReplayCaptureStuckCause> _stuck = {};
 
   @override
   ReplayCaptureQueueState build() {
@@ -491,8 +501,7 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
       final moved = await _save(c.copyWith(clearFolder: true));
       await create(null);
       ref.read(replayCaptureMessageProvider)(
-        '"${c.strategyName}" is at the top level of My Library: the folder '
-        'it was captured into is gone or not yours.',
+        ref.read(l10nProvider).opQueueReplayCaptureFolderGone(c.strategyName),
       );
       return moved;
     }
@@ -655,8 +664,8 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
       promptUser: false,
     );
     _stuck[capture.id] = error is _StorageFailed
-        ? "Icarus couldn't store its progress on this device."
-        : 'Something on this device stopped it.';
+        ? ReplayCaptureStuckCause.storage
+        : ReplayCaptureStuckCause.device;
     try {
       _refresh();
     } catch (_) {

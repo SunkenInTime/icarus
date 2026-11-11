@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
@@ -244,14 +245,14 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
               fit: BoxFit.contain,
               gaplessPlayback: true,
             ),
-          ImageLoading() => const _ImageStatePlaceholder(
+          ImageLoading() => _ImageStatePlaceholder(
               icon: LucideIcons.loaderCircle,
-              label: 'Syncing image',
+              label: context.l10n.canvasItemImageSyncing,
               showSpinner: true,
             ),
-          ImageFailed() => const _ImageStatePlaceholder(
+          ImageFailed() => _ImageStatePlaceholder(
               icon: LucideIcons.imageOff,
-              label: 'Image unavailable',
+              label: context.l10n.canvasItemImageUnavailable,
             ),
         };
 

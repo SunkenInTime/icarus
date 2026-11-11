@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -464,7 +465,7 @@ class _PlacedCustomCircleWidgetState
       child: FractionalTranslation(
         translation: const Offset(-0.5, -1.0),
         child: CustomShapeResizeTooltip(
-          label: 'D',
+          label: context.l10n.shapeToolsDiameterShortLabel,
           valueMeters: diameterMeters,
         ),
       ),

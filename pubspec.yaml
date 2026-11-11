@@ -11,6 +11,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any
 
   cupertino_icons: ^1.0.6
   collection: ^1.19.1
@@ -103,6 +106,8 @@ msix_config:
   store: true
 
 flutter:
+  # Builds lib/l10n/generated from the .arb files on every pub get and build.
+  generate: true
   shaders:
     - shaders/dot_grid.frag
     - shaders/dot_lattice.frag

@@ -27,6 +27,15 @@ class ReplayDecodeException implements Exception {
   String toString() => 'ReplayDecodeException($code): $message';
 }
 
+/// The `io` message where replays can't be read at all (the web build).
+const replayDesktopOnlyMessage =
+    'Replays can only be opened in the desktop app.';
+
+/// How the `io` message of an install without the native decoder starts;
+/// why it didn't load follows, in brackets.
+const replayDecoderMissingPrefix =
+    'The replay decoder is missing from this install (';
+
 /// What a replay's header says, read without decoding the match.
 class ReplayProbe {
   const ReplayProbe({

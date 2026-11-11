@@ -8,6 +8,7 @@ import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/main.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/desktop_update_provider.dart';
@@ -91,13 +92,13 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
   Future<void> handleImportIca() => _importPicked(
         StrategyImportExportService(ref).importFromFilePicker,
-        failureMessage: 'Failed to import strategy file.',
+        failureMessage: context.l10n.libraryImportIcaFailed,
         source: 'FolderNavigator.handleImportIca',
       );
 
   Future<void> handleImportBackup() => _importPicked(
         StrategyImportExportService(ref).importFromFilePicker,
-        failureMessage: 'Failed to import backup archive.',
+        failureMessage: context.l10n.libraryImportBackupFailed,
         source: 'FolderNavigator.handleImportBackup',
       );
 
@@ -107,11 +108,12 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     required String source,
   }) async {
     if (!ensureFeatureAvailable(ref, PlatformFeature.importFiles)) return;
+    final l10n = context.l10n;
     try {
-      showImportResult(await import(), source: source);
+      showImportResult(l10n, await import(), source: source);
     } on NewerVersionImportException catch (error, stackTrace) {
       AppErrorReporter.reportError(
-        NewerVersionImportException.userMessage,
+        NewerVersionImportException.userMessage(l10n),
         error: error,
         stackTrace: stackTrace,
         source: source,
@@ -128,6 +130,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
   Future<void> handleExportLibrary() async {
     if (!ensureFeatureAvailable(ref, PlatformFeature.exportFiles)) return;
+    final l10n = context.l10n;
     try {
       await StrategyImportExportService(ref).exportLibrary();
     } on LibraryExportIncomplete catch (error, stackTrace) {
@@ -139,7 +142,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       );
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
-        'Failed to export library.',
+        l10n.libraryExportFailed,
         error: error,
         stackTrace: stackTrace,
         source: 'FolderNavigator.handleExportLibrary',
@@ -204,7 +207,10 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     /// Making something in a cloud folder needs the cloud.
     bool refusedOffline() =>
         ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud &&
-        refuseCloudChangeWhileOffline(ref.read(cloudLibraryShowsCopyProvider));
+        refuseCloudChangeWhileOffline(
+          ref.read(l10nProvider),
+          ref.read(cloudLibraryShowsCopyProvider),
+        );
 
     Future<void> showCreateFolderDialog() async {
       if (refusedOffline()) return;
@@ -237,8 +243,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       } catch (_) {
         Settings.showToast(
           message: isCloud
-              ? "Couldn't create cloud strategy right now. Please try logging in again."
-              : "Couldn't create strategy right now.",
+              ? ref.read(l10nProvider).libraryCreateCloudStrategyFailed
+              : ref.read(l10nProvider).libraryCreateStrategyFailed,
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
         return;
@@ -279,12 +285,12 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                           ShadContextMenuItem(
                             leading: const Icon(LucideIcons.folderPlus),
                             onPressed: showCreateFolderDialog,
-                            child: const Text('Create folder'),
+                            child: Text(context.l10n.libraryCreateFolderMenu),
                           ),
                           ShadContextMenuItem(
                             leading: const Icon(LucideIcons.filePlus),
                             onPressed: showCreateDialog,
-                            child: const Text('Create strategy'),
+                            child: Text(context.l10n.libraryCreateStrategyMenu),
                           ),
                         ],
                   // Tabs are navigation, so the destination appears on the

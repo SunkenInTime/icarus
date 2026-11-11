@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:ui' show Locale;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -72,7 +74,8 @@ void main() {
           ),
       throwsA(
         isA<MediaTooLargeException>().having(
-          (error) => error.userMessage,
+          (error) =>
+              error.userMessage(lookupAppLocalizations(const Locale('en'))),
           'userMessage',
           'This image is over 15 MB. Pick a smaller one.',
         ),

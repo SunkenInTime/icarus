@@ -61,3 +61,6 @@ windows/.ffmpeg-cache/
 
 # Local investigation/benchmark evidence (may contain user strategy renders)
 /artifacts/
+
+# Built from lib/l10n/*.arb by flutter gen-l10n (pubspec `generate: true`).
+lib/l10n/generated/

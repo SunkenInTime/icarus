@@ -15,6 +15,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/domain/folder.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -190,30 +191,18 @@ class MoveToCloudNotifier extends Notifier<void> {
             if (!importing) {
               _showMessage(
                 leavesFolder
-                    ? 'Moved "$name" to the cloud. It\'s in My Library.'
-                    : 'Moved "$name" to the cloud.',
+                    ? _l10n.moveToCloudMovedToMyLibrary(name)
+                    : _l10n.moveToCloudMoved(name),
               );
             }
           case _Outcome.notMoved:
-            _showFailure(
-              "Couldn't move \"$name\" to the cloud. "
-              "It's still on this device.",
-            );
+            _showFailure(_l10n.moveToCloudNotMoved(name));
           case _Outcome.changedMeanwhile:
-            _showFailure(
-              '"$name" changed while it was moving, so it stays on this '
-              'device. Move it again to put the latest version in the cloud.',
-            );
+            _showFailure(_l10n.moveToCloudChangedMeanwhile(name));
           case _Outcome.movedLocalKept:
-            _showFailure(
-              'Moved "$name" to the cloud, but its copy on this device '
-              "couldn't be removed.",
-            );
+            _showFailure(_l10n.moveToCloudLocalCopyKept(name));
           case _Outcome.movedChangedHere:
-            _showFailure(
-              'Moved "$name" to the cloud. It changed while moving, so this '
-              'device keeps the latest version too.',
-            );
+            _showFailure(_l10n.moveToCloudChangedHere(name));
         }
       } finally {
         _unmarkMoving({localId});
@@ -266,10 +255,7 @@ class MoveToCloudNotifier extends Notifier<void> {
             strategies: strategies.length,
             outcome: 'not_moved',
           );
-          _showFailure(
-            "Couldn't move \"${root.name}\" to the cloud. "
-            "It's still on this device.",
-          );
+          _showFailure(_l10n.moveToCloudNotMoved(root.name));
           return;
         }
 
@@ -301,17 +287,13 @@ class MoveToCloudNotifier extends Notifier<void> {
         );
 
         if (failed == 0 && foldersWent) {
-          if (!importing) _showMessage('Moved "${root.name}" to the cloud.');
+          if (!importing) _showMessage(_l10n.moveToCloudMoved(root.name));
         } else if (failed == 0) {
-          _showFailure(
-            'Moved the strategies in "${root.name}" to the cloud, but some '
-            'of its folders stayed on this device.',
-          );
+          _showFailure(_l10n.moveToCloudFoldersStayed(root.name));
         } else {
           final total = strategies.length;
           _showFailure(
-            'Moved ${total - failed} of $total strategies in '
-            '"${root.name}". The rest are still on this device.',
+            _l10n.moveToCloudSomeMoved(total - failed, total, root.name),
           );
         }
       } catch (error, stackTrace) {
@@ -321,10 +303,7 @@ class MoveToCloudNotifier extends Notifier<void> {
           strategies: strategies.length,
           outcome: 'failed',
         );
-        _showFailure(
-          "Couldn't finish moving \"${root.name}\". What didn't move is "
-          'still on this device.',
-        );
+        _showFailure(_l10n.moveToCloudFolderFailed(root.name));
       } finally {
         _unmarkMoving(localIds);
       }
@@ -343,18 +322,16 @@ class MoveToCloudNotifier extends Notifier<void> {
     if (items.isEmpty) return;
     final accountId = ref.read(cloudMediaAccountIdProvider);
     if (accountId == null) {
-      _showFailure('You signed out, so "$name" stays on this device.');
+      _showFailure(_l10n.moveToCloudSignedOut(name));
       return;
     }
     if (!_canMoveFor(accountId, name)) return;
-    _showMessage('Importing "$name" to the cloud…');
+    _showMessage(_l10n.moveToCloudImporting(name));
     for (final item in items) {
       // Each move alone would stay quiet about a sign-out; the import says
       // once what didn't go.
       if (ref.read(cloudMediaAccountIdProvider) != accountId) {
-        _showFailure(
-          'You signed out, so the rest of "$name" stays on this device.',
-        );
+        _showFailure(_l10n.moveToCloudSignedOutRest(name));
         return;
       }
       await (item.isFolder
@@ -431,19 +408,14 @@ class MoveToCloudNotifier extends Notifier<void> {
   /// Whether a move asked for by [accountId] can start now. Says why not.
   bool _canMoveFor(String accountId, String name) {
     if (ref.read(cloudMediaAccountIdProvider) != accountId) {
-      _showFailure(
-        'You signed in to another account, so "$name" stays on this device.',
-      );
+      _showFailure(_l10n.moveToCloudOtherAccount(name));
       return false;
     }
     if (ref.read(authProvider).isConvexUserReady &&
         ref.read(convexConnectionSnapshotProvider)) {
       return true;
     }
-    _showFailure(
-      "Can't reach the cloud right now, so \"$name\" stays on this device. "
-      'Try again when you are online.',
-    );
+    _showFailure(_l10n.moveToCloudOffline(name));
     return false;
   }
 
@@ -1011,6 +983,8 @@ class MoveToCloudNotifier extends Notifier<void> {
       promptUser: false,
     );
   }
+
+  AppLocalizations get _l10n => ref.read(l10nProvider);
 
   void _showMessage(String message) =>
       ref.read(moveToCloudMessageProvider)(message);

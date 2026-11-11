@@ -5,6 +5,7 @@ import 'package:icarus/widgets/asset_svg.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -34,9 +35,12 @@ class MapThemeSettingsSection extends ConsumerWidget {
         .length;
 
     return SettingsScopeCard(
-      title: "Map theme",
+      title: context.l10n.mapThemeTitle,
       trailing: Text(
-        "$customCount/${MapThemeProfilesProvider.customProfilesSoftCap} custom",
+        context.l10n.mapThemeCustomCount(
+          customCount,
+          MapThemeProfilesProvider.customProfilesSoftCap,
+        ),
         style: ShadTheme.of(context).textTheme.small.copyWith(
               color: Settings.tacticalVioletTheme.mutedForeground,
             ),
@@ -65,6 +69,7 @@ class _ThemeProfilesList extends ConsumerWidget {
         profilesState.profiles.where((p) => !p.isBuiltIn).length;
     final canCreate =
         customCount < MapThemeProfilesProvider.customProfilesSoftCap;
+    final l10n = context.l10n;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -72,8 +77,8 @@ class _ThemeProfilesList extends ConsumerWidget {
         const SizedBox(height: 8),
         if (overridePalette != null) ...[
           _ProfileListRow(
-            title: "Custom",
-            tags: const ["This strategy only"],
+            title: l10n.mapThemeCustomRowTitle,
+            tags: [l10n.mapThemeThisStrategyOnlyTag],
             palette: overridePalette,
             isSelected: true,
             onTap: null,
@@ -90,7 +95,7 @@ class _ThemeProfilesList extends ConsumerWidget {
                             initialPalette: overridePalette,
                           )
                       : null,
-                  child: const Text("Save as profile"),
+                  child: Text(l10n.mapThemeSaveAsProfile),
                 ),
                 const SizedBox(width: 4),
                 ShadButton.ghost(
@@ -100,7 +105,7 @@ class _ThemeProfilesList extends ConsumerWidget {
                     mode: MapThemeEditorMode.customizeStrategy,
                     initialPalette: overridePalette,
                   ),
-                  child: const Text("Edit"),
+                  child: Text(l10n.commonEdit),
                 ),
               ],
             ),
@@ -112,8 +117,8 @@ class _ThemeProfilesList extends ConsumerWidget {
             title: profile.name,
             tags: [
               if (profile.id == profilesState.defaultProfileIdForNewStrategies)
-                "Default",
-              if (profile.isBuiltIn) "Built-in",
+                l10n.mapThemeDefaultTag,
+              if (profile.isBuiltIn) l10n.mapThemeBuiltInTag,
             ],
             palette: profile.palette,
             isSelected: activeProfileId == profile.id,
@@ -138,7 +143,7 @@ class _ThemeProfilesList extends ConsumerWidget {
         ],
         _AddProfileRow(
           icon: LucideIcons.plus,
-          label: "New profile",
+          label: l10n.mapThemeNewProfile,
           enabled: canCreate,
           onTap: () => showMapThemeEditorDialog(
             context,
@@ -148,7 +153,7 @@ class _ThemeProfilesList extends ConsumerWidget {
         ),
         _AddProfileRow(
           icon: LucideIcons.clipboardPaste,
-          label: "Import profile code",
+          label: l10n.mapThemeImportProfileCodeAction,
           enabled: canCreate,
           onTap: () => _importProfileCode(context, ref),
         ),
@@ -165,9 +170,9 @@ class _ThemeProfilesList extends ConsumerWidget {
     // changes, so its action reads the app's container, not this ref.
     final container = ProviderScope.containerOf(context, listen: false);
     Settings.showToast(
-      message: "${added.name} added",
+      message: context.l10n.mapThemeProfileAdded(added.name),
       backgroundColor: Settings.tacticalVioletTheme.primary,
-      actionLabel: hasActiveStrategy ? "Use it" : null,
+      actionLabel: hasActiveStrategy ? context.l10n.mapThemeUseIt : null,
       onActionPressed: hasActiveStrategy
           ? () => _useImportedProfile(container, added)
           : null,
@@ -205,7 +210,7 @@ class _ThemeProfilesList extends ConsumerWidget {
             mode: MapThemeEditorMode.customizeStrategy,
             initialPalette: ref.read(effectiveMapThemePaletteProvider),
           ),
-          child: const Text("Customize"),
+          child: Text(context.l10n.mapThemeCustomize),
         ),
       if (!(profile.isBuiltIn && isDefault))
         _ProfileContextMenuButton(profile: profile, isDefault: isDefault),
@@ -324,30 +329,31 @@ class _ProfileContextMenuButtonState
   }
 
   List<ShadContextMenuItem> _buildMenuItems() {
+    final l10n = context.l10n;
     return [
       if (!widget.isDefault)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.star, size: 16),
           onPressed: _setAsDefault,
-          child: const Text("Set as default"),
+          child: Text(l10n.mapThemeSetAsDefault),
         ),
       if (!widget.profile.isBuiltIn)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.pencil, size: 16),
           onPressed: _renameProfile,
-          child: const Text("Rename"),
+          child: Text(l10n.commonRename),
         ),
       if (!widget.profile.isBuiltIn)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.palette, size: 16),
           onPressed: _editProfilePalette,
-          child: const Text("Edit colors"),
+          child: Text(l10n.mapThemeEditColors),
         ),
       if (!widget.profile.isBuiltIn)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.copy, size: 16),
           onPressed: _copyProfileCode,
-          child: const Text("Copy profile code"),
+          child: Text(l10n.mapThemeCopyProfileCode),
         ),
       if (!widget.profile.isBuiltIn)
         ShadContextMenuItem(
@@ -358,7 +364,7 @@ class _ProfileContextMenuButtonState
           ),
           onPressed: _deleteProfile,
           child: Text(
-            "Delete",
+            l10n.commonDelete,
             style: TextStyle(color: Settings.tacticalVioletTheme.destructive),
           ),
         ),
@@ -366,6 +372,7 @@ class _ProfileContextMenuButtonState
   }
 
   Future<void> _renameProfile() async {
+    final l10n = context.l10n;
     final newName = await _showRenameDialog(
       context: context,
       currentName: widget.profile.name,
@@ -377,13 +384,14 @@ class _ProfileContextMenuButtonState
         .renameProfile(profileId: widget.profile.id, newName: newName);
     if (!renamed) {
       Settings.showToast(
-        message: "Couldn't rename this profile.",
+        message: l10n.mapThemeRenameFailed,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     }
   }
 
   Future<void> _copyProfileCode() async {
+    final l10n = context.l10n;
     try {
       await Clipboard.setData(
         ClipboardData(
@@ -395,7 +403,7 @@ class _ProfileContextMenuButtonState
       );
     } catch (_) {
       Settings.showToast(
-        message: "Couldn't copy the profile code.",
+        message: l10n.mapThemeCopyFailed,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -403,7 +411,7 @@ class _ProfileContextMenuButtonState
     if (!mounted) return;
 
     Settings.showToast(
-      message: "Profile code copied",
+      message: l10n.mapThemeCodeCopied,
       backgroundColor: Settings.tacticalVioletTheme.primary,
     );
   }
@@ -424,7 +432,7 @@ class _ProfileContextMenuButtonState
     if (!mounted) return;
 
     Settings.showToast(
-      message: "Default profile updated.",
+      message: context.l10n.mapThemeDefaultUpdated,
       backgroundColor: Settings.tacticalVioletTheme.primary,
     );
   }
@@ -436,7 +444,7 @@ class _ProfileContextMenuButtonState
     if (!mounted) return;
 
     Settings.showToast(
-      message: "Profile deleted.",
+      message: context.l10n.mapThemeProfileDeleted,
       backgroundColor: Settings.tacticalVioletTheme.primary,
     );
   }
@@ -585,18 +593,18 @@ Future<String?> _showRenameDialog({
     context: context,
     builder: (dialogContext) {
       return ShadDialog(
-        title: const Text("Rename Profile"),
+        title: Text(dialogContext.l10n.mapThemeRenameDialogTitle),
         actions: [
           ShadButton.secondary(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text("Cancel"),
+            child: Text(dialogContext.l10n.commonCancel),
           ),
           ShadButton(
             onPressed: () {
               final trimmed = controller.text.trim();
               Navigator.of(dialogContext).pop(trimmed.isEmpty ? null : trimmed);
             },
-            child: const Text("Rename"),
+            child: Text(dialogContext.l10n.commonRename),
           ),
         ],
         child: Material(
@@ -607,7 +615,7 @@ Future<String?> _showRenameDialog({
               builder: (context, ref, _) {
                 return CustomTextField(
                   controller: controller,
-                  hintText: "Profile name",
+                  hintText: context.l10n.mapThemeProfileNameHint,
                 );
               },
             ),
@@ -680,27 +688,28 @@ class _ImportProfileCodeDialogState
             .where((profile) => profile.palette == code.toPalette())
             .firstOrNull;
 
+    final l10n = context.l10n;
     final (String? message, bool isError) = switch (result) {
       MapThemeProfileCodeEmpty() => (null, false),
       MapThemeProfileCodeInvalid() => (
-          "That isn't an Icarus profile code.",
+          l10n.mapThemeCodeInvalid,
           true,
         ),
       MapThemeProfileCodeIncomplete() => (
-          "This code is incomplete. Copy the whole code and paste it again.",
+          l10n.mapThemeCodeIncomplete,
           true,
         ),
       MapThemeProfileCodeNewerVersion() => (
-          "This code is from a newer version of Icarus. Update Icarus to import it.",
+          l10n.mapThemeCodeNewerVersion,
           true,
         ),
       MapThemeProfileCodeValid() when duplicate != null => (
-          "You already have these colors as “${duplicate.name}”.",
+          l10n.mapThemeCodeDuplicate(duplicate.name),
           false,
         ),
       MapThemeProfileCodeValid() => (
           _controller.text == widget.clipboardCode
-              ? "Pasted from your clipboard."
+              ? l10n.mapThemeCodePastedFromClipboard
               : null,
           false,
         ),
@@ -708,19 +717,17 @@ class _ImportProfileCodeDialogState
     final canAdd = code != null && duplicate == null && !_adding;
 
     return ShadDialog(
-      title: const Text("Import profile code"),
-      description: const Text(
-        "Paste a code someone shared to add their map colors to your profiles.",
-      ),
+      title: Text(l10n.mapThemeImportDialogTitle),
+      description: Text(l10n.mapThemeImportDialogDescription),
       actions: [
         ShadButton.secondary(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text("Cancel"),
+          child: Text(l10n.commonCancel),
         ),
         ShadButton(
           enabled: canAdd,
           onPressed: canAdd ? () => _add(code) : null,
-          child: const Text("Add profile"),
+          child: Text(l10n.mapThemeAddProfile),
         ),
       ],
       child: Material(
@@ -734,7 +741,7 @@ class _ImportProfileCodeDialogState
               const SizedBox(height: 8),
               CustomTextField(
                 controller: _controller,
-                hintText: "Paste a profile code",
+                hintText: l10n.mapThemeCodeHint,
                 hasError: isError,
                 autofocus: widget.clipboardCode == null,
                 onSubmitted: (_) {
@@ -780,7 +787,7 @@ class _ImportProfileCodeDialogState
     if (created == null) {
       setState(() => _adding = false);
       Settings.showToast(
-        message: "Couldn't add this profile.",
+        message: context.l10n.mapThemeAddFailed,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;
@@ -829,7 +836,7 @@ class _ProfileCodePreview extends ConsumerWidget {
                 if (code == null)
                   Center(
                     child: Text(
-                      "The colors show here once you paste a code.",
+                      context.l10n.mapThemePreviewEmpty,
                       style: ShadTheme.of(context).textTheme.small.copyWith(
                             color: theme.mutedForeground,
                           ),
@@ -847,7 +854,7 @@ class _ProfileCodePreview extends ConsumerWidget {
                           colorMapper:
                               MapSvgColorMapper.forPalette(code.toPalette()),
                           fit: BoxFit.contain,
-                          semanticsLabel: 'Profile code preview',
+                          semanticsLabel: context.l10n.mapThemePreviewSemantics,
                         ),
                       ),
                     ),
@@ -884,10 +891,9 @@ Future<bool> _confirmDiscardCustomColors(
 ) {
   return ConfirmAlertDialog.show(
     context: context,
-    title: "Discard custom colors?",
-    content:
-        "This strategy's custom colors will be replaced with \"${profile.name}\" and can't be brought back.",
-    confirmText: "Discard",
+    title: context.l10n.mapThemeDiscardCustomTitle,
+    content: context.l10n.mapThemeDiscardCustomBody(profile.name),
+    confirmText: context.l10n.commonDiscard,
     isDestructive: true,
   );
 }
@@ -913,7 +919,9 @@ Future<void> _useImportedProfile(
       .any((existing) => existing.id == profile.id);
   if (!stillThere) {
     Settings.showToast(
-      message: "${profile.name} was deleted.",
+      message: container.read(l10nProvider).mapThemeProfileWasDeleted(
+        profile.name,
+      ),
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
     return;

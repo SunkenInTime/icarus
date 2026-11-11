@@ -7,6 +7,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
@@ -92,13 +93,15 @@ List<ShadContextMenuItem> _buildWallItems(WidgetRef ref, PlacedAbility ability) 
   final data = ability.data.abilityData;
   if (data is! GuidedWallAbility) return const [];
   final hasWall = ability.wallPath?.isNotEmpty ?? false;
+  final l10n = ref.read(l10nProvider);
   return [
     ShadContextMenuItem(
       leading: Icon(
         hasWall ? LucideIcons.eraser : LucideIcons.waves,
         size: 16,
       ),
-      child: Text(hasWall ? 'Remove wall' : 'Draw wall'),
+      child: Text(
+          hasWall ? l10n.abilityMenuRemoveWall : l10n.abilityMenuDrawWall),
       onPressed: () {
         final map = ref.read(mapProvider);
         ref.read(abilityProvider.notifier).setWallPath(
@@ -126,11 +129,12 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
   final state = ref.read(lineUpProvider);
   final links = state.linksToLanding(landingId);
   final landing = state.landingById(landingId);
+  final l10n = ref.read(l10nProvider);
 
   return [
     ShadContextMenuItem(
       leading: const Icon(LucideIcons.plus, size: 16),
-      child: const Text('Add lineup here'),
+      child: Text(l10n.abilityMenuAddLineupHere),
       onPressed: () {
         if (landing == null) return;
         if (!ensureFeatureAvailable(ref, PlatformFeature.addLineups)) return;
@@ -145,7 +149,9 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
     ),
     ShadContextMenuItem(
       leading: const Icon(LucideIcons.pencil, size: 16),
-      child: Text(links.length > 1 ? 'Show lineups' : 'Edit media'),
+      child: Text(links.length > 1
+          ? l10n.abilityMenuShowLineups
+          : l10n.abilityMenuEditMedia),
       onPressed: () {
         if (context == null) return;
         if (links.length == 1) {
@@ -160,7 +166,7 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
     ),
     ShadContextMenuItem(
       leading: const Icon(LucideIcons.move, size: 16),
-      child: const Text('Edit placement'),
+      child: Text(l10n.abilityMenuEditPlacement),
       onPressed: () {
         if (links.isEmpty) return;
         ref
@@ -174,7 +180,9 @@ List<ShadContextMenuItem> buildLandingLineUpMenuItems(
         size: 16,
         color: Settings.tacticalVioletTheme.destructive,
       ),
-      child: Text(links.length > 1 ? 'Delete spot' : 'Delete lineup'),
+      child: Text(links.length > 1
+          ? l10n.abilityMenuDeleteSpot
+          : l10n.abilityMenuDeleteLineup),
       onPressed: () {
         ref.read(lineUpProvider.notifier).deleteLanding(landingId);
       },
@@ -188,12 +196,13 @@ List<ShadContextMenuItem> _buildVisibilityItems(
   Ability? abilityData, {
   String? landingId,
 }) {
+  final l10n = ref.read(l10nProvider);
   final controls = [
-    ..._buildVisibilityControls(abilityData, ability.visualState),
+    ..._buildVisibilityControls(l10n, abilityData, ability.visualState),
     if (landingId == null &&
         AbilityVisionConeSpec.forAbility(ability.data) != null)
       _AbilityVisibilityControl(
-        label: 'Vision cone',
+        label: l10n.abilityMenuVisionCone,
         isEnabled: ability.visualState.showVisionCone,
         toggle: (state) => state.copyWith(
           showVisionCone: !state.showVisionCone,
@@ -217,13 +226,14 @@ List<ShadContextMenuItem> _buildVisibilityItems(
 }
 
 List<_AbilityVisibilityControl> _buildVisibilityControls(
+  AppLocalizations l10n,
   Ability? abilityData,
   AbilityVisualState visualState,
 ) {
   if (supportsAbilityInactiveState(abilityData)) {
     return [
       _AbilityVisibilityControl(
-        label: 'Active',
+        label: l10n.abilityMenuActive,
         isEnabled: visualState.showRangeFill,
         toggle: (state) => state.copyWith(
           showRangeFill: !state.showRangeFill,
@@ -236,21 +246,21 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
     if (_hasInnerRange(abilityData)) {
       return [
         _AbilityVisibilityControl(
-          label: 'Range outline',
+          label: l10n.abilityMenuRangeOutline,
           isEnabled: visualState.showRangeOutline,
           toggle: (state) => state.copyWith(
             showRangeOutline: !state.showRangeOutline,
           ),
         ),
         _AbilityVisibilityControl(
-          label: 'Inner outline',
+          label: l10n.abilityMenuInnerOutline,
           isEnabled: visualState.showInnerOutline,
           toggle: (state) => state.copyWith(
             showInnerOutline: !state.showInnerOutline,
           ),
         ),
         _AbilityVisibilityControl(
-          label: 'Inner fill',
+          label: l10n.abilityMenuInnerFill,
           isEnabled: visualState.showInnerFill,
           toggle: (state) => state.copyWith(
             showInnerFill: !state.showInnerFill,
@@ -261,7 +271,7 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
 
     return [
       _AbilityVisibilityControl(
-        label: 'Range outline',
+        label: l10n.abilityMenuRangeOutline,
         isEnabled: visualState.showRangeOutline,
         toggle: (state) => state.copyWith(
           showRangeOutline: !state.showRangeOutline,
@@ -269,7 +279,7 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
       ),
       if (_hasVisibleRangeFill(abilityData))
         _AbilityVisibilityControl(
-          label: 'Range fill',
+          label: l10n.abilityMenuRangeFill,
           isEnabled: visualState.showRangeFill,
           toggle: (state) => state.copyWith(
             showRangeFill: !state.showRangeFill,
@@ -281,7 +291,7 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
   if (abilityData is DeadlockBarrierMeshAbility) {
     return [
       _AbilityVisibilityControl(
-        label: 'Mesh',
+        label: l10n.abilityMenuMesh,
         isEnabled: visualState.showRangeFill,
         toggle: (state) => state.copyWith(
           showRangeFill: !state.showRangeFill,
@@ -293,7 +303,7 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
   if (abilityData is SquareAbility || abilityData is CenterSquareAbility) {
     return [
       _AbilityVisibilityControl(
-        label: 'Range',
+        label: l10n.abilityMenuRange,
         isEnabled: visualState.showRangeFill,
         toggle: (state) => state.copyWith(
           showRangeFill: !state.showRangeFill,

@@ -4,6 +4,7 @@ import 'dart:js_interop_unsafe';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/video_export/mp4_muxer.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 
@@ -15,6 +16,10 @@ import 'package:icarus/services/video_export/video_export_errors.dart';
 /// for its duration. A repeat reuses the frame's pixels, so a held page costs
 /// one RGBA upload however long it is shown.
 class WebCodecsMp4Encoder {
+  WebCodecsMp4Encoder(this._l10n);
+
+  final AppLocalizations _l10n;
+
   /// Keyframe spacing ceiling, so players can seek within long holds.
   static const _maxKeyFrameIntervalSeconds = 2;
 
@@ -93,8 +98,7 @@ class WebCodecsMp4Encoder {
     if (_cancelled) throw VideoExportCancelled();
     if (config == null) {
       throw VideoExportException(
-        'This browser cannot encode H.264 video at '
-        '${outputWidth}x$outputHeight, $fps fps.',
+        _l10n.videoExportBrowserCannotEncode(outputWidth, outputHeight, fps),
       );
     }
 
@@ -102,7 +106,7 @@ class WebCodecsMp4Encoder {
       final canvas = _OffscreenCanvas(outputWidth, outputHeight);
       final context = canvas.getContext('2d');
       if (context == null) {
-        throw VideoExportException('This browser cannot scale video frames.');
+        throw VideoExportException(_l10n.videoExportBrowserCannotScale);
       }
       context.imageSmoothingQuality = 'high';
       _scaleCanvas = canvas;
@@ -121,7 +125,9 @@ class WebCodecsMp4Encoder {
       encoder.configure(config);
     } on Object catch (error) {
       _closeEncoder();
-      throw VideoExportException('Could not start the video encoder: $error');
+      throw VideoExportException(
+        _l10n.videoExportEncoderStartFailed('$error'),
+      );
     }
   }
 
@@ -201,7 +207,7 @@ class WebCodecsMp4Encoder {
 
     final config = _avcDecoderConfig;
     if (_samples.isEmpty || config == null) {
-      throw VideoExportException('The video encoder produced no video.');
+      throw VideoExportException(_l10n.videoExportEncoderNoVideo);
     }
     final ticksPerFrame = _timescale ~/ _fps;
     final muxer = Mp4H264Muxer(
@@ -217,9 +223,7 @@ class WebCodecsMp4Encoder {
       // presentation order. Encoders that reorder (B-frames) fail loudly
       // rather than produce a video that plays frames out of order.
       if (nextFrame <= sample.frame) {
-        throw VideoExportException(
-          'The video encoder returned frames out of order.',
-        );
+        throw VideoExportException(_l10n.videoExportEncoderOutOfOrder);
       }
       muxer.addSample(
         sample.bytes,
@@ -271,7 +275,7 @@ class WebCodecsMp4Encoder {
     final failure = _failure;
     if (failure != null) {
       _closeEncoder();
-      throw VideoExportException('The video encoder failed: $failure');
+      throw VideoExportException(_l10n.videoExportEncoderFailed(failure));
     }
     final encoder = _encoder;
     if (encoder == null || _finished) {

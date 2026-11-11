@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/cloud_library_action.dart';
@@ -30,6 +31,7 @@ class _DeleteStrategyAlertDialogState
 
   Future<void> _delete() async {
     if (_isDeleting) return;
+    final l10n = context.l10n;
     setState(() {
       _isDeleting = true;
       _failureMessage = null;
@@ -51,7 +53,7 @@ class _DeleteStrategyAlertDialogState
       );
       if (mounted) {
         setState(() {
-          _failureMessage = "Couldn't delete this strategy. Try again.";
+          _failureMessage = l10n.deleteStrategyFailed;
         });
       }
     } finally {
@@ -63,23 +65,18 @@ class _DeleteStrategyAlertDialogState
       return;
     }
     if (result != null) {
-      setState(() => _failureMessage =
-          result!.userMessage ?? "Couldn't delete this strategy. Try again.");
+      setState(() =>
+          _failureMessage = result!.userMessage ?? l10n.deleteStrategyFailed);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return ShadDialog.alert(
       title: Text.rich(
         TextSpan(
-          children: [
-            const TextSpan(text: "Delete "),
-            TextSpan(
-              text: widget.name,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ],
+          children: _withBoldName(l10n.deleteStrategyTitle(_nameMarker)),
         ),
       ),
       description: Column(
@@ -88,14 +85,7 @@ class _DeleteStrategyAlertDialogState
         children: [
           Text.rich(
             TextSpan(
-              children: [
-                const TextSpan(text: "Are you sure you want to delete "),
-                TextSpan(
-                  text: widget.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const TextSpan(text: "? This action cannot be undone."),
-              ],
+              children: _withBoldName(l10n.deleteStrategyConfirm(_nameMarker)),
             ),
           ),
           if (_failureMessage != null) ...[
@@ -113,8 +103,8 @@ class _DeleteStrategyAlertDialogState
       actions: [
         ShadButton.secondary(
           onPressed: _isDeleting ? null : () => Navigator.of(context).pop(),
-          child: const Text(
-            "Cancel",
+          child: Text(
+            l10n.commonCancel,
           ),
         ),
         ShadButton.destructive(
@@ -129,7 +119,7 @@ class _DeleteStrategyAlertDialogState
               ),
               const SizedBox(width: 5),
               Text(
-                _isDeleting ? 'Deleting...' : 'Delete',
+                _isDeleting ? l10n.deleteStrategyDeleting : l10n.commonDelete,
                 style: TextStyle(
                   color: Settings.tacticalVioletTheme.destructiveForeground,
                 ),
@@ -139,5 +129,22 @@ class _DeleteStrategyAlertDialogState
         ),
       ],
     );
+  }
+
+  static const _nameMarker = '\u{E000}';
+
+  /// [message] with the strategy's name, in bold, where [_nameMarker] is.
+  List<InlineSpan> _withBoldName(String message) {
+    final parts = message.split(_nameMarker);
+    return [
+      for (var i = 0; i < parts.length; i++) ...[
+        if (i > 0)
+          TextSpan(
+            text: widget.name,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        if (parts[i].isNotEmpty) TextSpan(text: parts[i]),
+      ],
+    ];
   }
 }

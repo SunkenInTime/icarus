@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auto_save_notifier.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
@@ -45,7 +45,7 @@ Future<void> saveStrategyNow(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;
 
   final (:message, :failed) = threw
-      ? (message: saveFailedMessage, failed: true)
+      ? (message: context.l10n.saveButtonFailed, failed: true)
       : ref.read(strategyProvider).source == StrategySource.cloud
           ? _cloudSaveOutcome(ref)
           : _localSaveOutcome(ref, pressedAt);
@@ -92,9 +92,10 @@ Future<void> saveStrategyNow(BuildContext context, WidgetRef ref) async {
   final lastPersistedAt = ref.read(strategySaveStateProvider).lastPersistedAt;
   final persisted =
       lastPersistedAt != null && !lastPersistedAt.isBefore(pressedAt);
+  final l10n = ref.read(l10nProvider);
   return persisted
-      ? (message: 'Saved', failed: false)
-      : (message: saveFailedMessage, failed: true);
+      ? (message: l10n.saveButtonSaved, failed: false)
+      : (message: l10n.saveButtonFailed, failed: true);
 }
 
 /// A cloud save is in the outbox unless a write to it failed; whether it has
@@ -102,21 +103,25 @@ Future<void> saveStrategyNow(BuildContext context, WidgetRef ref) async {
 ({String message, bool failed}) _cloudSaveOutcome(WidgetRef ref) {
   final opQueue = ref.read(strategyOpQueueProvider);
   final mediaQueue = ref.read(cloudMediaUploadQueueProvider);
+  final l10n = ref.read(l10nProvider);
   if (opQueue.hasDurabilityFailure || mediaQueue.durabilityError != null) {
-    return (message: unverifiedCloudWorkMessage, failed: true);
+    return (message: l10n.syncErrorUnverifiedCloudWork, failed: true);
   }
   final saveState = ref.read(strategySaveStateProvider);
   final message = switch (ref.read(cloudSyncStatusProvider)) {
-    CloudSyncStatus.synced => 'Saved',
-    CloudSyncStatus.editing => 'Edit not synced yet',
+    CloudSyncStatus.synced => l10n.saveButtonSaved,
+    CloudSyncStatus.editing => l10n.saveButtonEditNotSynced,
     CloudSyncStatus.syncing => saveState.hasPendingMediaSync
-        ? 'Saved on this device. Media still syncing.'
-        : 'Saved on this device. Syncing…',
+        ? l10n.saveButtonSyncingMedia
+        : l10n.saveButtonSyncing,
     CloudSyncStatus.offline =>
-      offlineSyncLabel(ref.read(openStrategyUnsentChangesProvider)),
+      offlineSyncLabel(
+        ref.read(l10nProvider),
+        ref.read(openStrategyUnsentChangesProvider),
+      ),
     CloudSyncStatus.attention => saveState.mediaSyncErrorCount > 0
-        ? 'Saved on this device. Media sync needs retry.'
-        : 'Saved on this device. Sync needs attention.',
+        ? l10n.saveButtonMediaNeedsRetry
+        : l10n.saveButtonNeedsAttention,
   };
   return (message: message, failed: false);
 }
@@ -217,7 +222,9 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton> {
     return EditorToolbarButton(
       key: const ValueKey('local-save-button'),
       style: widget.style,
-      tooltip: canEditPages ? 'Save' : 'View only',
+      tooltip: canEditPages
+          ? context.l10n.commonSave
+          : context.l10n.saveButtonViewOnlyTooltip,
       enabled: canEditPages,
       onPressed: () => saveStrategyNow(context, ref),
       icon: AnimatedSwitcher(

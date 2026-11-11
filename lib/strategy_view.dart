@@ -12,6 +12,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/interactive_map.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
@@ -210,8 +211,8 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       if (mounted) {
         Settings.showToast(
           message: notKept
-              ? strategyNeedsConnectionMessage
-              : 'Could not load strategy.',
+              ? context.l10n.syncStatusStrategyNeedsConnection
+              : context.l10n.strategyViewLoadFailed,
           backgroundColor: notKept
               ? Settings.tacticalVioletTheme.secondary
               : Settings.tacticalVioletTheme.destructive,
@@ -275,7 +276,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       }
       ref.read(shareLinkControllerProvider.notifier).forgetViewedLink();
       Settings.showToast(
-        message: 'This share link was disabled by its owner.',
+        message: context.l10n.strategyViewShareLinkDisabled,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       unawaited(_leaveToLibrary());
@@ -334,7 +335,8 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                     const SizedBox(width: 6),
                     ShadTooltip(
                       builder: (context) =>
-                          Text(widget.backTooltip ?? 'Library'),
+                          Text(widget.backTooltip ??
+                              context.l10n.strategyViewBackToLibraryTooltip),
                       child: ShadIconButton.ghost(
                         width: 28,
                         height: 28,
@@ -487,22 +489,22 @@ class _DiscordLink extends StatelessWidget {
       },
       leading: showLabel ? null : const Icon(CustomIcons.discord, size: 16),
       child: showLabel
-          ? const Row(
+          ? Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Have any bugs? Join the Discord',
-                  style: TextStyle(fontSize: 13),
+                  context.l10n.strategyViewDiscordPrompt,
+                  style: const TextStyle(fontSize: 13),
                 ),
-                SizedBox(width: 8),
-                Icon(CustomIcons.discord, size: 16),
+                const SizedBox(width: 8),
+                const Icon(CustomIcons.discord, size: 16),
               ],
             )
           : const SizedBox.shrink(),
     );
     if (showLabel) return button;
     return ShadTooltip(
-      builder: (context) => const Text('Have any bugs? Join the Discord'),
+      builder: (context) => Text(context.l10n.strategyViewDiscordPrompt),
       child: button,
     );
   }

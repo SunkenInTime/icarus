@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:icarus/screenshot/capture_images.dart';
@@ -271,7 +272,8 @@ void main() {
         isA<CaptureImagesUnavailable>()
             .having((error) => error.cause, 'cause', isNull)
             .having(
-              (error) => error.userMessage,
+              (error) =>
+                  error.userMessage(lookupAppLocalizations(const Locale('en'))),
               'userMessage',
               contains('still loading'),
             ),
@@ -290,7 +292,8 @@ void main() {
         isA<CaptureImagesUnavailable>()
             .having((error) => error.cause, 'cause', same(failure))
             .having(
-              (error) => error.userMessage,
+              (error) =>
+                  error.userMessage(lookupAppLocalizations(const Locale('en'))),
               'userMessage',
               contains('connection'),
             ),

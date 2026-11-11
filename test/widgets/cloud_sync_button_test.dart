@@ -9,6 +9,8 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/const/update_checker.dart';
+import 'package:icarus/l10n/cloud_sync_error_text.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -400,6 +402,8 @@ String _syncTooltip(WidgetTester tester) {
   );
   return button.tooltip;
 }
+
+final _english = lookupAppLocalizations(const Locale('en'));
 
 void main() {
   test('restored active-strategy media renders as syncing', () {
@@ -1175,19 +1179,22 @@ void main() {
   });
 
   group('lineup conflicts', () {
-    LineupChange change(String label, String description) =>
-        LineupChange(label: label, description: description);
+    LineupChange change(String name, LineupChangeKind kind) =>
+        LineupChange(name: name, kinds: [kind]);
 
     final conflicts = [
       LineupGroupConflict(
         key: const EntitySyncKey.lineup('page-1', 'link-a'),
-        yours: [change('Heaven', 'notes edited')],
+        yours: [change('Heaven', LineupChangeKind.notesEdited)],
         cloud: [
-          change('Mid', 'renamed'),
-          change('Short', 'added'),
-          change('Long', 'landing moved'),
-          change('Deep', 'deleted'),
-          change('Sova lineup', 'images changed'),
+          change('Mid', LineupChangeKind.renamed),
+          change('Short', LineupChangeKind.added),
+          change('Long', LineupChangeKind.landingMoved),
+          change('Deep', LineupChangeKind.deleted),
+          const LineupChange(
+            agent: 'Sova',
+            kinds: [LineupChangeKind.imagesChanged],
+          ),
         ],
       ),
     ];
@@ -1227,8 +1234,8 @@ void main() {
           LineupGroupConflict(
             key: const EntitySyncKey.lineup('page-1', 'link-a'),
             yours: [
-              change('Heaven', 'notes edited'),
-              change('Mid', 'notes edited'),
+              change('Heaven', LineupChangeKind.notesEdited),
+              change('Mid', LineupChangeKind.notesEdited),
             ],
             cloud: null,
           ),
@@ -1236,8 +1243,8 @@ void main() {
           // the sides' changes apart.
           LineupGroupConflict(
             key: const EntitySyncKey.lineup('page-1', 'link-z'),
-            yours: [change('Long', 'landing moved')],
-            cloud: [change('Short', 'added')],
+            yours: [change('Long', LineupChangeKind.landingMoved)],
+            cloud: [change('Short', LineupChangeKind.added)],
           ),
         ],
       );
@@ -1307,10 +1314,10 @@ void main() {
         lineupConflicts: [
           LineupGroupConflict(
             key: const EntitySyncKey.lineup('page-1', 'link-a'),
-            yours: [change('Heaven', 'notes edited')],
+            yours: [change('Heaven', LineupChangeKind.notesEdited)],
             cloud: [
-              change('Mid', 'notes edited'),
-              change('Heaven', 'deleted'),
+              change('Mid', LineupChangeKind.notesEdited),
+              change('Heaven', LineupChangeKind.deleted),
             ],
           ),
         ],
@@ -1823,7 +1830,12 @@ void main() {
       lineupConflicts: const [
         LineupGroupConflict(
           key: EntitySyncKey.lineup('page-1', 'link-a'),
-          yours: [LineupChange(label: 'Heaven', description: 'added')],
+          yours: [
+            const LineupChange(
+              name: 'Heaven',
+              kinds: [LineupChangeKind.added],
+            )
+          ],
           cloud: [],
         ),
       ],
@@ -2028,7 +2040,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(
-        toast(friendlyCloudSyncError(lineupPageMismatchMessage)),
+        toast(friendlyCloudSyncError(_english, lineupPageMismatchMessage)),
         findsOneWidget,
       );
       expect(
