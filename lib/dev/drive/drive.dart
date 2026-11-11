@@ -1411,16 +1411,18 @@ Future<void> _run(Map<String, dynamic> step) async {
           'build ${times(_frameTimings.map((t) => t.buildDuration))} '
           'raster ${times(_frameTimings.map((t) => t.rasterDuration))}');
     case 'burst':
+      // Its failure is held until the shots are in, then fails this step.
       final during = step['during'] == null
           ? null
-          : _run((step['during'] as Map).cast<String, dynamic>());
+          : _run((step['during'] as Map).cast<String, dynamic>())
+              .then<Object?>((_) => null, onError: (Object error) => error);
       for (var i = 0; i < ((step['count'] ?? 10) as int); i++) {
         await _run({'shot': '$value-${i.toString().padLeft(3, '0')}.png'});
         await Future<void>.delayed(
           Duration(milliseconds: (step['every'] ?? 100) as int),
         );
       }
-      await during;
+      if (await during case final Object failure) throw failure;
     case 'logLineups':
       final lineUps = c.read(lineUpProvider);
       String at(Offset? p) => p == null
