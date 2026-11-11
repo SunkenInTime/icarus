@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -52,6 +53,7 @@ class _PlacedCustomRectangleWidgetState
 
   @override
   void dispose() {
+    _forgetReach?.cancel();
     _captionCard.itemExited(_captionRegion);
     super.dispose();
   }
@@ -85,6 +87,16 @@ class _PlacedCustomRectangleWidgetState
   double _resizeGlobalScale = 1;
   bool _isDragging = false;
   bool _isShapeHovered = false;
+
+  /// The pointer has been to the center marker since it came over the
+  /// shape. Until then only the marker shows, so a shape someone is just
+  /// passing over stays quiet.
+  bool _reachedFor = false;
+
+  /// Forgets [_reachedFor] a moment after the pointer leaves, so slipping
+  /// past the edge on the way to a handle does not hide the handles.
+  Timer? _forgetReach;
+  static const _reachGrace = Duration(milliseconds: 400);
   _RectangleResizeHandle _activeHandle = _RectangleResizeHandle.none;
   _RectangleResizeHandle _hoveredResizeHandle = _RectangleResizeHandle.none;
   bool _isRotating = false;
@@ -171,6 +183,14 @@ class _PlacedCustomRectangleWidgetState
             _isRotating ||
             _activeHandle != _RectangleResizeHandle.none);
 
+    // The edge, the resize pills and the rotate badge: only for someone
+    // changing the shape.
+    final showHandles = !_isDragging &&
+        !isScreenshot &&
+        ((_isShapeHovered && _reachedFor) ||
+            _isRotating ||
+            _activeHandle != _RectangleResizeHandle.none);
+
     return Transform.translate(
       offset: Offset(-insetX, -insetY) + _resizePositionDeltaScreen,
       child: SizedBox(
@@ -245,6 +265,12 @@ class _PlacedCustomRectangleWidgetState
                               mapScale: mapScale,
                               showCenterMarker: !isScreenshot,
                               centerMarkerVisible: showIndicators,
+                              outlineVisible: showHandles,
+                              onMarkerHover: () {
+                                if (!_reachedFor) {
+                                  setState(() => _reachedFor = true);
+                                }
+                              },
                             ),
                           ),
                         ),
@@ -261,7 +287,7 @@ class _PlacedCustomRectangleWidgetState
                           insetY: insetY,
                           mapScale: mapScale,
                           rotation: rotation,
-                          showIndicators: showIndicators,
+                          showIndicators: showHandles,
                         ),
                       _buildRotationHandle(
                         coordinateSystem: coordinateSystem,
@@ -269,7 +295,7 @@ class _PlacedCustomRectangleWidgetState
                         insetX: insetX,
                         insetY: insetY,
                         rotation: rotation,
-                        showIndicators: showIndicators,
+                        showIndicators: showHandles,
                       ),
                     ],
                     // Topmost and translucent: reveals the handles when the
@@ -283,6 +309,7 @@ class _PlacedCustomRectangleWidgetState
                       child: MouseRegion(
                         opaque: false,
                         onEnter: (_) {
+                          _forgetReach?.cancel();
                           _captionCard.itemEntered(widget.id, _captionRegion);
                           setState(() {
                             _isShapeHovered = true;
@@ -292,6 +319,10 @@ class _PlacedCustomRectangleWidgetState
                           _captionCard.itemExited(_captionRegion);
                           setState(() {
                             _isShapeHovered = false;
+                          });
+                          _forgetReach?.cancel();
+                          _forgetReach = Timer(_reachGrace, () {
+                            if (mounted) setState(() => _reachedFor = false);
                           });
                         },
                         child: const SizedBox.expand(),

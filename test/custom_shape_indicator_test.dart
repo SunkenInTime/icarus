@@ -312,6 +312,68 @@ void main() {
     );
   });
 
+  testWidgets(
+      'a rectangle shows only its center marker until the pointer reaches it',
+      (tester) async {
+    final utility = _rectangle();
+    final container = _containerWith(utility);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        container: container,
+        child: PlacedCustomRectangleWidget(
+          utility: utility,
+          id: utility.id,
+          isAttack: true,
+          onDragEnd: (_) {},
+        ),
+      ),
+    );
+    bool handlesShow() => tester
+        .widgetList<ShapeIndicatorFade>(find.byType(ShapeIndicatorFade))
+        .every((indicator) => indicator.visible);
+    CustomRectangleUtilityWidget shape() =>
+        tester.widget<CustomRectangleUtilityWidget>(
+          find.byType(CustomRectangleUtilityWidget),
+        );
+    final box = tester.getRect(find.byType(CustomRectangleUtilityWidget));
+    final offMarker = box.center + Offset(box.width / 2 - 2, 0);
+
+    // Passing over the shape: the marker, and nothing else.
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: offMarker);
+    await tester.pump();
+    expect(shape().centerMarkerVisible, isTrue);
+    expect(shape().outlineVisible, isFalse);
+    expect(handlesShow(), isFalse);
+
+    // Going for the marker brings the edge and the handles.
+    await mouse.moveTo(box.center);
+    await tester.pump();
+    expect(shape().outlineVisible, isTrue);
+    expect(handlesShow(), isTrue);
+
+    // They stay while the pointer is on the shape, and through a slip past
+    // its edge.
+    await mouse.moveTo(offMarker);
+    await tester.pump();
+    expect(handlesShow(), isTrue);
+    await mouse.moveTo(box.center + const Offset(0, 4000));
+    await tester.pump(const Duration(milliseconds: 100));
+    await mouse.moveTo(offMarker);
+    await tester.pump();
+    expect(handlesShow(), isTrue);
+
+    // Leaving for good puts the shape back to rest.
+    await mouse.moveTo(box.center + const Offset(0, 4000));
+    await tester.pump(const Duration(seconds: 1));
+    await mouse.moveTo(offMarker);
+    await tester.pump();
+    expect(handlesShow(), isFalse);
+    expect(shape().outlineVisible, isFalse);
+  });
+
   testWidgets('rectangle rotation handle communicates hover and active states',
       (tester) async {
     final utility = _rectangle();
