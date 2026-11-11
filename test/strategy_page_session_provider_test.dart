@@ -1112,6 +1112,9 @@ class _FakeServer {
   /// Every page added through this server, in order.
   final List<RemotePage> addedPages = [];
 
+  /// Pages a teammate deleted: the server no longer lists them.
+  final Set<String> deletedPageIds = {};
+
   /// The revision the batch being applied was made from, once one of its
   /// ops landed from it: later ops made from it too land after it, as the
   /// real server chains them (see applyBatch in convex/ops.ts).
@@ -7824,7 +7827,10 @@ void main() {
         server.strategyThemeProfileId = themeProfileId;
       var shown = page.publicId;
       RemoteEditorSnapshot read() => _editorSnapshot(
-            pages: [page, ...otherPages, ...server.addedPages],
+            pages: [
+              for (final listed in [page, ...otherPages, ...server.addedPages])
+                if (!server.deletedPageIds.contains(listed.publicId)) listed,
+            ],
             mapData: server.strategyMap,
             shellRevision: server.strategyRevision,
             themeProfileId: server.strategyThemeProfileId,
@@ -8027,6 +8033,216 @@ void main() {
       final saveState = container.read(strategySaveStateProvider);
       expect(saveState.isDirty, isTrue);
       expect(saveState.canLeaveSafely, isFalse);
+
+      // The read comes back: the text is handed over and lands.
+      showServer();
+      await _until(() =>
+          batches.isNotEmpty &&
+          container.read(strategyOpQueueProvider).pending.isEmpty &&
+          !container.read(strategyOpQueueProvider).isFlushing);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(server.elements.map((element) => element.publicId), ['local']);
+      expect(container.read(strategySaveStateProvider).canLeaveSafely, isTrue);
+      expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.synced);
+    });
+
+    /// Opens page 1 with text on it and page 2 after it, copies the text to
+    /// page 2 with the copy's answer held back (the returned completer lets
+    /// it go), then a teammate deletes page 1 and the user moves the text
+    /// there: the move is held only on screen and the deleted-page notice is
+    /// open. With [landing], the copy is answered before the move, and the
+    /// outbox write that removes it waits until the move is being handed
+    /// over: the copy lands while the handover waits behind that write.
+    Future<(ProviderContainer, List<List<StrategyOp>>, Completer<void>)>
+        moveOnPageDeletedWhileCopyIsSent({_GatedRemoveOutbox? landing}) async {
+      final source = _page('page-1', 0);
+      final target = _page('page-2', 1);
+      server = _FakeServer(target.publicId);
+      final (container, batches) = await openOnRealQueue(
+        target,
+        store: landing,
+        otherPages: [source],
+        otherElements: {
+          source.publicId: [
+            _textElement(source.publicId, 'text-1', 'one', worldSized: true),
+          ],
+        },
+      );
+      readPage(source.publicId);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          source.publicId);
+
+      // The user copies the text to the next page; the copy is sent and its
+      // answer is slow.
+      final hold = repository.hold = Completer<void>();
+      expect(
+        await container
+            .read(strategyProvider.notifier)
+            .copyPlacedWidgetToAdjacentPage(
+              widgetId: 'text-1',
+              direction: PageTransitionDirection.forward,
+            ),
+        PageCopyResult.copied,
+      );
+      await _until(() => batches.isNotEmpty);
+
+      // Meanwhile a teammate deletes the page on screen, and the read moves
+      // to the next page. The canvas stays while the copy is on its way.
+      server
+        ..deletedPageIds.add(source.publicId)
+        ..strategyRevision += 1;
+      readPage(target.publicId);
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          source.publicId);
+
+      // The user moves the text. Nothing on the server can take it, so it
+      // is held only on screen, and the deleted-page notice opens.
+      final gate = landing?.gate = Completer<void>();
+      if (landing != null) {
+        hold.complete();
+        await landing.removing.future;
+      }
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(40, 40), 'text-1');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      gate?.complete();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
+          source.publicId);
+      return (container, batches, hold);
+    }
+
+    /// Lets the held copy's answer go, and waits for the queue to empty.
+    Future<void> copyLands(
+        ProviderContainer container, Completer<void> hold) async {
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+      if (!hold.isCompleted) hold.complete();
+      await _until(
+          () => queueState().pending.isEmpty && !queueState().isFlushing);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+    }
+
+    test(
+        'an edit on a page a teammate deleted stays unsaved when an earlier '
+        'change lands', () async {
+      final (container, batches, hold) =
+          await moveOnPageDeletedWhileCopyIsSent();
+
+      // The copy's answer arrives and empties the queue. The move was never
+      // handed to it, so it is still unsaved: closing the window must still
+      // ask, and the sync button must not say synced.
+      await copyLands(container, hold);
+      expect(batches, hasLength(1));
+      final saveState = container.read(strategySaveStateProvider);
+      expect(saveState.isDirty, isTrue);
+      expect(saveState.canLeaveSafely, isFalse);
+      expect(
+        container.read(cloudSyncStatusProvider),
+        isNot(CloudSyncStatus.synced),
+      );
+    });
+
+    test(
+        'an edit on a page a teammate deleted stays unsaved when an earlier '
+        'change lands while the edit is handed over', () async {
+      final (container, batches, hold) =
+          await moveOnPageDeletedWhileCopyIsSent(landing: _GatedRemoveOutbox());
+
+      await copyLands(container, hold);
+      expect(batches, hasLength(1));
+      final saveState = container.read(strategySaveStateProvider);
+      expect(saveState.isDirty, isTrue);
+      expect(saveState.canLeaveSafely, isFalse);
+      expect(
+        container.read(cloudSyncStatusProvider),
+        isNot(CloudSyncStatus.synced),
+      );
+    });
+
+    test(
+        'discarding the edit on a deleted page while an earlier change is '
+        'on its way leaves the strategy synced once that change lands',
+        () async {
+      final (container, batches, hold) =
+          await moveOnPageDeletedWhileCopyIsSent();
+
+      // The user discards the move before the copy lands. The canvas holds
+      // nothing unsent now; only the copy keeps the strategy syncing.
+      expect(
+        await container
+            .read(strategyPageSessionProvider.notifier)
+            .leaveDeletedPage(),
+        isTrue,
+      );
+      expect(container.read(strategySaveStateProvider).isDirty, isTrue);
+
+      await copyLands(container, hold);
+      expect(batches, hasLength(1));
+      expect(container.read(strategySaveStateProvider).canLeaveSafely, isTrue);
+      expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.synced);
+    });
+
+    test(
+        'a save that could not hand over the canvas settles once the read '
+        'is back, though the canvas has nothing new to send', () async {
+      final page = _page('page-1', 0);
+      server = _FakeServer(page.publicId);
+      final hold = Completer<void>();
+      final (container, batches) = await openOnRealQueue(page, hold: hold);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      StrategyOpQueueState queueState() =>
+          container.read(strategyOpQueueProvider);
+
+      // The user places text; it is sent and its answer is slow.
+      container.read(textProvider.notifier).fromHive([
+        PlacedText(id: 'local', position: const Offset(5, 5))..text = 'edit',
+      ]);
+      container.read(strategyProvider.notifier).setUnsaved();
+      await _until(() => batches.isNotEmpty);
+
+      // The user presses save, and the page's read goes away while it runs:
+      // the canvas can't be checked against the server, so it is held.
+      final save = container
+          .read(strategyProvider.notifier)
+          .forceSaveNow('cloud-strategy');
+      liveRead.failRead();
+      await save;
+      expect(container.read(strategySaveStateProvider.notifier).canvasHeld,
+          isTrue);
+
+      // The text lands, and the read comes back with it. The canvas matches
+      // the server, so handing it over queues nothing and no queue change
+      // follows; the strategy is synced all the same.
+      hold.complete();
+      await _until(
+          () => queueState().pending.isEmpty && !queueState().isFlushing);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(batches, hasLength(1));
+      expect(container.read(strategySaveStateProvider.notifier).canvasHeld,
+          isFalse);
+      expect(container.read(strategySaveStateProvider).canLeaveSafely, isTrue);
+      expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.synced);
     });
 
     test(
@@ -14620,5 +14836,22 @@ class _PageReader extends Fake implements ConvexStrategyRepository {
     await gate?.future;
     if (fails) throw const SocketException('offline');
     return pages[pagePublicId]!;
+  }
+}
+
+/// Holds the first record removal once [gate] is set (an accepted op leaving
+/// the outbox) until [gate] completes; [removing] completes when it starts.
+class _GatedRemoveOutbox extends MemoryDurableStrategyOutboxStore {
+  Completer<void>? gate;
+  final removing = Completer<void>();
+
+  @override
+  Future<void> remove(String storageKey) async {
+    final held = gate;
+    if (held != null && !removing.isCompleted) {
+      removing.complete();
+      await held.future;
+    }
+    await super.remove(storageKey);
   }
 }
