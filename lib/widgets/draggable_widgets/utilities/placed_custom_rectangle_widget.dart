@@ -266,6 +266,7 @@ class _PlacedCustomRectangleWidgetState
                               showCenterMarker: !isScreenshot,
                               centerMarkerVisible: showIndicators,
                               outlineVisible: showHandles,
+                              order: index,
                               onMarkerHover: () {
                                 if (!_reachedFor) {
                                   setState(() => _reachedFor = true);

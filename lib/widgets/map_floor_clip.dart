@@ -54,17 +54,29 @@ class _MapFloorBox extends SingleChildRenderObjectWidget {
   RenderObject createRenderObject(BuildContext context) => _RenderMapFloorBox();
 }
 
-class _RenderMapFloorBox extends RenderProxyBox {}
+class _RenderMapFloorBox extends RenderProxyBox {
+  /// The clips under this box, which leave out what the ones above cover.
+  final clips = <_RenderMapFloorClip>{};
+}
 
 /// Paints [child] only where it lies on the map's floor, so a shape colours
 /// the map instead of covering walls and the space outside it. Outside a
 /// [MapFloor], or before the floor is known, [child] paints whole.
+///
+/// With an [order], it also leaves out whatever a clip of a higher order
+/// covers: where two zones cross, the map takes the top one's colour once
+/// instead of both stacked.
 class MapFloorClip extends SingleChildRenderObjectWidget {
-  const MapFloorClip({super.key, required super.child});
+  const MapFloorClip({super.key, this.order, required super.child});
+
+  /// Where this shape sits among the page's shapes, lowest first. Null for a
+  /// shape that is not one of them (a preview, an item in transition).
+  final int? order;
 
   @override
   RenderObject createRenderObject(BuildContext context) => _RenderMapFloorClip(
         context.dependOnInheritedWidgetOfExactType<_MapFloorScope>()?.floor,
+        order,
       );
 
   @override
@@ -75,6 +87,7 @@ class MapFloorClip extends SingleChildRenderObjectWidget {
     (renderObject as _RenderMapFloorClip)
       ..floor =
           context.dependOnInheritedWidgetOfExactType<_MapFloorScope>()?.floor
+      ..order = order
       // The clip depends on where this box sits on the canvas, and a parent
       // can move it without repainting it (a page transition slides items
       // inside layers it keeps). A rebuild is the sign it may have moved.
@@ -83,7 +96,7 @@ class MapFloorClip extends SingleChildRenderObjectWidget {
 }
 
 class _RenderMapFloorClip extends RenderProxyBox {
-  _RenderMapFloorClip(this._floor);
+  _RenderMapFloorClip(this._floor, this._order);
 
   Path? _floor;
   set floor(Path? value) {
@@ -92,11 +105,66 @@ class _RenderMapFloorClip extends RenderProxyBox {
     markNeedsPaint();
   }
 
-  _RenderMapFloorBox? _floorBox() {
+  int? _order;
+  set order(int? value) {
+    if (value == _order) return;
+    _order = value;
+    _repaintOrdered();
+  }
+
+  _RenderMapFloorBox? _box;
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
     for (RenderObject? node = parent; node != null; node = node.parent) {
-      if (node is _RenderMapFloorBox) return node;
+      if (node is _RenderMapFloorBox) {
+        _box = node..clips.add(this);
+        break;
+      }
     }
-    return null;
+    _repaintOrdered();
+  }
+
+  @override
+  void detach() {
+    _repaintOrdered();
+    _box?.clips.remove(this);
+    _box = null;
+    super.detach();
+  }
+
+  /// The shapes under this one leave out what it covers, so they repaint
+  /// when it comes, goes, moves or changes size.
+  void _repaintOrdered() {
+    final clips = _box?.clips;
+    if (clips == null) return;
+    for (final clip in clips) {
+      if (!identical(clip, this) && clip.attached) clip.markNeedsPaint();
+    }
+  }
+
+  @override
+  void performLayout() {
+    final before = hasSize ? size : null;
+    super.performLayout();
+    if (before != size) _repaintOrdered();
+  }
+
+  /// This box's outline in [box]'s coordinates.
+  Path _outlineIn(_RenderMapFloorBox box) {
+    final toBox = getTransformTo(box);
+    final rect = Offset.zero & size;
+    return Path()
+      ..addPolygon([
+        for (final corner in [
+          rect.topLeft,
+          rect.topRight,
+          rect.bottomRight,
+          rect.bottomLeft,
+        ])
+          MatrixUtils.transformPoint(toBox, corner),
+      ], true);
   }
 
   @override
@@ -104,8 +172,19 @@ class _RenderMapFloorClip extends RenderProxyBox {
     final child = this.child;
     if (child == null) return;
     final floor = _floor;
-    final box = floor == null ? null : _floorBox();
-    if (floor == null || box == null) {
+    final box = _box;
+    final order = _order;
+    final above = box == null || order == null
+        ? const <_RenderMapFloorClip>[]
+        : [
+            for (final clip in box.clips)
+              if (!identical(clip, this) &&
+                  clip.attached &&
+                  clip.hasSize &&
+                  (clip._order ?? -1) > order)
+                clip,
+          ];
+    if (box == null || (floor == null && above.isEmpty)) {
       context.paintChild(child, offset);
       return;
     }
@@ -115,15 +194,25 @@ class _RenderMapFloorClip extends RenderProxyBox {
       context.paintChild(child, offset);
       return;
     }
-    // The floor is clipped in the canvas's coordinates, where its path is
-    // kept, so the path is never rebuilt for a shape that moves or turns.
+    // Clipped in the canvas's coordinates, where the floor's path is kept,
+    // so the path is never rebuilt for a shape that moves or turns.
     // Drawn straight on the canvas: the child must not be composited.
     final canvas = context.canvas;
     canvas
       ..save()
       ..translate(offset.dx, offset.dy)
-      ..transform(fromBox.storage)
-      ..clipPath(floor)
+      ..transform(fromBox.storage);
+    if (floor != null) canvas.clipPath(floor);
+    for (final clip in above) {
+      canvas.clipPath(
+        Path.combine(
+          PathOperation.difference,
+          Path()..addRect(Offset.zero & box.size),
+          clip._outlineIn(box),
+        ),
+      );
+    }
+    canvas
       ..transform(toBox.storage)
       ..translate(-offset.dx, -offset.dy);
     context.paintChild(child, offset);
