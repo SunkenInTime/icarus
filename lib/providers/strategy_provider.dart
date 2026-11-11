@@ -745,6 +745,15 @@ class StrategyProvider extends Notifier<StrategyState> {
           await saveToHive(id);
         }
       }
+      // The save marked the strategy unsaved before it knew whether anything
+      // had changed. When nothing had, no op stands behind the mark, and no
+      // queue change will come to clear it: the button would say "Syncing…"
+      // with nothing on its way. An edit whose sync hasn't run yet keeps it.
+      if (_currentStrategyIsCloud() &&
+          !_cloudMutationSyncScheduled &&
+          !_cloudStrategyMutationSyncScheduled) {
+        ref.read(strategySaveStateProvider.notifier).clearStaleCloudMark();
+      }
     } finally {
       ref.read(strategySaveStateProvider.notifier).markSaving(false);
       _activeSave = null;

@@ -7970,6 +7970,29 @@ void main() {
     }
 
     test(
+        'pressing save with everything synced and nothing to send leaves '
+        'the strategy synced', () async {
+      final page = _page('page-1', 0);
+      server = _FakeServer(page.publicId);
+      final (container, batches) = await openOnRealQueue(page);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.synced);
+
+      await container
+          .read(strategyProvider.notifier)
+          .forceSaveNow('cloud-strategy');
+
+      // Nothing was sent and nothing waits, so the chip says so at once
+      // instead of "Syncing…" until some later queue change.
+      expect(batches, isEmpty);
+      expect(container.read(strategyOpQueueProvider).pending, isEmpty);
+      expect(container.read(strategySaveStateProvider).canLeaveSafely, isTrue);
+      expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.synced);
+    });
+
+    test(
         'an item copied to the next page shows there when the user gets '
         'there before it lands', () async {
       final source = _page('page-1', 0);
