@@ -1496,6 +1496,13 @@ class AuthProvider extends Notifier<AppAuthState> {
               return refreshedToken;
             }
           } catch (error, stackTrace) {
+            // The expiring token goes to Convex anyway, and Convex will
+            // refuse it once it has expired.
+            if (!kIsWeb &&
+                (error is AuthRetryableFetchException ||
+                    error is TimeoutException)) {
+              _supabaseUnreachable = true;
+            }
             log(
               'Supabase refresh failed while fetching Convex token: $error',
               name: 'auth',
@@ -1779,6 +1786,14 @@ class AuthProvider extends Notifier<AppAuthState> {
           if (_supabaseApi.currentSession == null) {
             return;
           }
+          // Supabase couldn't refresh the token, so the server is refusing
+          // an expired one: an outage, which setup treats as offline and
+          // retries, not a session to sign out of. Signing out now could
+          // not sign back in until Supabase is back.
+          if (_supabaseUnreachable &&
+              state.convexAuthStatus != ConvexAuthStatus.ready) {
+            return;
+          }
 
           // No error to pass: reportConvexUnauthenticated checks an error
           // for the server's UNAUTHENTICATED code, and this is the Convex
@@ -1894,10 +1909,13 @@ class AuthProvider extends Notifier<AppAuthState> {
       }
 
       // The server refused this session while it was setting up, and the
-      // prompt already says so. This failure is that refusal (the setup's
-      // wait timed out, with the socket down between refusals), not an
-      // outage, so the incident stands.
-      if (state.activeAuthIncidentId != incidentBeforeSetup) {
+      // prompt already says so. A failure with no answer from the server
+      // (the setup's wait timed out, with the socket down between
+      // refusals) is that refusal, not an outage, so the incident stands.
+      // An answer the server gave, such as this build being too old, is
+      // still heard below.
+      if (state.activeAuthIncidentId != incidentBeforeSetup &&
+          !isConvexFunctionError(error)) {
         return;
       }
 
