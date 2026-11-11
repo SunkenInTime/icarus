@@ -13,18 +13,16 @@
   {"key": "keyC"},
   {"wait": 3},
   {"waitSettled": 60},
-  {"tapText": "Page 1"},
-  {"wait": 3},
-  {"waitSettled": 60},
   {"probe": "settled"},
 
   {"signal": "go-slow"},
   {"waitSignal": "slow", "seconds": 30},
-  {"tapAt": [700, 500], "button": "secondary"},
+  {"addAgent": "b{run}", "at": [900, 500]},
   {"wait": 1},
-  {"tapText": "Copy to next page"},
-  {"wait": 1},
-  {"probe": "copy-sent"},
+  {"probe": "page-2-edit-sent"},
+  {"key": "keyA"},
+  {"wait": 2},
+  {"expectItem": "a{run}"},
 
   {"signal": "go-delete"},
   {"waitSignal": "deleted", "seconds": 40},
@@ -37,15 +35,23 @@
   {"probe": "moved"},
   {"shot": "{out}/2-moved.png"},
 
-  {"wait": 14},
-  {"probe": "copy-landed"},
-  {"shot": "{out}/3-copy-landed.png"},
+  {"wait": 12},
+  {"probe": "edit-landed"},
+  {"shot": "{out}/3-edit-landed.png"},
   {"wait": 5},
-  {"probe": "copy-landed-later"},
+  {"probe": "edit-landed-later"},
+
+  {"signal": "go-close"},
+  {"waitSignal": "closed", "seconds": 30},
+  {"wait": 10},
+  {"probe": "window-closed"},
+  {"shot": "{out}/4-window-closed.png"},
+  {"tapText": "Stay here"},
+  {"wait": 2},
 
   {"tapText": "Discard changes"},
   {"wait": 3},
   {"waitSettled": 60},
   {"probe": "discarded"},
-  {"shot": "{out}/4-discarded.png"}
+  {"shot": "{out}/5-discarded.png"}
 ]
