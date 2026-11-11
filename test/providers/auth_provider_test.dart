@@ -689,6 +689,44 @@ void main() {
     expect(find.text('Cloud connection lost'), findsOneWidget);
   });
 
+  testWidgets(
+      'a prompt for a refusal the server takes back closes once the session '
+      'is accepted', (tester) async {
+    supabaseApi.currentSession = fakeSession();
+    final ensureCurrentUser = Completer<void>();
+    convexApi.mutationCompleter = ensureCurrentUser;
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          navigatorKey: appNavigatorKey,
+          home: const Scaffold(body: SizedBox.shrink()),
+        ),
+      ),
+    );
+    container.read(authProvider);
+    await tester.pump();
+    await tester.pump();
+    convexApi.emitAuthState(false);
+    convexApi.lastOnAuthChange!(false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text('Cloud connection lost'), findsOneWidget);
+
+    // The server accepts the token after all, and setup finishes.
+    convexApi.emitAuthState(true);
+    convexApi.lastOnAuthChange!(true);
+    ensureCurrentUser.complete();
+    await tester.pumpAndSettle();
+
+    final state = container.read(authProvider);
+    expect(state.convexAuthStatus, ConvexAuthStatus.ready);
+    expect(state.activeAuthIncidentId, isNull);
+    expect(find.text('Cloud connection lost'), findsNothing);
+  });
+
   test('a handle a later setup replaced reports nothing about the session',
       () async {
     supabaseApi.currentSession = fakeSession();

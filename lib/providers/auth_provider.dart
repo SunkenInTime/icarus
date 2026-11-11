@@ -602,6 +602,9 @@ class AuthProvider extends Notifier<AppAuthState> {
   bool _disposed = false;
   String? _queuedConvexTrigger;
   bool _showingIncidentPrompt = false;
+
+  /// The open "Cloud connection lost" prompt, while it is open.
+  BuildContext? _incidentPromptContext;
   int _incidentCounter = 0;
   int _authGeneration = 0;
 
@@ -1952,6 +1955,14 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   void _clearAuthIncident() {
+    // The session is accepted again, or ended: a prompt still asking about
+    // it would say the connection is lost while it isn't.
+    final prompt = _incidentPromptContext;
+    if (prompt != null &&
+        prompt.mounted &&
+        (ModalRoute.of(prompt)?.isCurrent ?? false)) {
+      Navigator.of(prompt).pop();
+    }
     state = state.copyWith(
       clearAuthIncident: true,
       clearLastAuthIncidentSource: true,
@@ -1986,6 +1997,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         context: navCtx,
         barrierDismissible: false,
         builder: (context) {
+          _incidentPromptContext = context;
           return ShadDialog.alert(
             title: const Text('Cloud connection lost'),
             description: Padding(
@@ -2039,6 +2051,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       }
     } finally {
       _showingIncidentPrompt = false;
+      _incidentPromptContext = null;
       if (state.activeAuthIncidentId == incidentId) {
         state = state.copyWith(isAuthIncidentPromptOpen: false);
       }
