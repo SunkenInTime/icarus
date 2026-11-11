@@ -22,6 +22,7 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
     this.showCenterMarker = true,
     this.centerMarkerVisible = true,
     this.outlineVisible = false,
+    this.order,
     this.onMarkerHover,
   });
 
@@ -40,6 +41,10 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
   /// The rectangle's whole edge, walls and all. Off at rest, where only the
   /// map's floor takes the colour; on while the shape is being changed.
   final bool outlineVisible;
+
+  /// Where this rectangle sits among the page's shapes, lowest first: a
+  /// rectangle above this one colours the floor where the two cross.
+  final int? order;
 
   /// The pointer reached the center marker: the user is going for the shape.
   final VoidCallback? onMarkerHover;
@@ -87,6 +92,7 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
           Positioned.fill(
             child: IgnorePointer(
               child: MapFloorClip(
+                order: order,
                 child: ColoredBox(
                   color: color.withValues(alpha: fillOpacity),
                 ),
