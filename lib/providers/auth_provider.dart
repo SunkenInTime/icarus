@@ -589,6 +589,10 @@ class AuthProvider extends Notifier<AppAuthState> {
   StreamSubscription<AuthState>? _supabaseAuthSub;
   AuthProviderAuthHandle? _convexAuthHandle;
 
+  /// Counts Convex auth setups, so a handle's reports are heard only while
+  /// its setup is the latest.
+  int _convexAuthSetups = 0;
+
   /// Whether this run ever gave Convex a token. Until it has, there is no
   /// auth to clear, and clearing it would open the Convex socket for a
   /// signed-out user who never asked for the cloud.
@@ -598,6 +602,9 @@ class AuthProvider extends Notifier<AppAuthState> {
   bool _disposed = false;
   String? _queuedConvexTrigger;
   bool _showingIncidentPrompt = false;
+
+  /// The open "Cloud connection lost" prompt, while it is open.
+  BuildContext? _incidentPromptContext;
   int _incidentCounter = 0;
   int _authGeneration = 0;
 
@@ -1489,6 +1496,13 @@ class AuthProvider extends Notifier<AppAuthState> {
               return refreshedToken;
             }
           } catch (error, stackTrace) {
+            // The expiring token goes to Convex anyway, and Convex will
+            // refuse it once it has expired.
+            if (!kIsWeb &&
+                (error is AuthRetryableFetchException ||
+                    error is TimeoutException)) {
+              _supabaseUnreachable = true;
+            }
             log(
               'Supabase refresh failed while fetching Convex token: $error',
               name: 'auth',
@@ -1747,6 +1761,8 @@ class AuthProvider extends Notifier<AppAuthState> {
       clearError: true,
     );
 
+    final setup = ++_convexAuthSetups;
+    final incidentBeforeSetup = state.activeAuthIncidentId;
     try {
       _convexAuthHandle?.dispose();
       final wasAuthenticatedBeforeSetup = _convexApi.isAuthenticated;
@@ -1755,10 +1771,13 @@ class AuthProvider extends Notifier<AppAuthState> {
       final authHandle = await _convexApi.setAuthWithRefresh(
         fetchToken: _fetchSupabaseAccessToken,
         onAuthChange: (isAuthenticated) {
-          if (!_isAuthContextCurrent(
-            generation: generation,
-            sessionFingerprint: sessionFingerprint,
-          )) {
+          // A replaced handle reports false as it is disposed, which says
+          // nothing about the session.
+          if (setup != _convexAuthSetups ||
+              !_isAuthContextCurrent(
+                generation: generation,
+                sessionFingerprint: sessionFingerprint,
+              )) {
             return;
           }
           if (isAuthenticated) {
@@ -1767,18 +1786,23 @@ class AuthProvider extends Notifier<AppAuthState> {
           if (_supabaseApi.currentSession == null) {
             return;
           }
-          // Still setting up, or out of reach: the server hasn't judged
-          // the session, so this is no incident.
-          if (state.convexAuthStatus == ConvexAuthStatus.configuring ||
-              state.convexAuthStatus == ConvexAuthStatus.offline) {
+          // Supabase couldn't refresh the token, so the server is refusing
+          // an expired one: an outage, which setup treats as offline and
+          // retries, not a session to sign out of. Signing out now could
+          // not sign back in until Supabase is back.
+          if (_supabaseUnreachable &&
+              state.convexAuthStatus != ConvexAuthStatus.ready) {
             return;
           }
 
           // No error to pass: reportConvexUnauthenticated checks an error
           // for the server's UNAUTHENTICATED code, and this is the Convex
-          // client's own report that it holds no accepted session. (The web
-          // client sends it when the server rejects the token; the native
-          // one only when no token can be fetched.)
+          // client's own report that it holds no accepted session. Both
+          // clients send it when the server keeps refusing the token (the
+          // native one after a few refusals in a row) or no token can be
+          // fetched, never because the server is out of reach. So it holds
+          // while setting up or offline too: a token refused at sign-in is
+          // a session to sign in to again, not an outage.
           unawaited(
             reportConvexUnauthenticated(source: 'convex:onAuthChange'),
           );
@@ -1884,6 +1908,17 @@ class AuthProvider extends Notifier<AppAuthState> {
         return;
       }
 
+      // The server refused this session while it was setting up, and the
+      // prompt already says so. A failure with no answer from the server
+      // (the setup's wait timed out, with the socket down between
+      // refusals) is that refusal, not an outage, so the incident stands.
+      // An answer the server gave, such as this build being too old, is
+      // still heard below.
+      if (state.activeAuthIncidentId != incidentBeforeSetup &&
+          !isConvexFunctionError(error)) {
+        return;
+      }
+
       // Desktop only: the web app needs the network to load at all, so a
       // failed setup there stays the incident it always was.
       // Judged by where the session is now, not where it was when this
@@ -1938,6 +1973,14 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   void _clearAuthIncident() {
+    // The session is accepted again, or ended: a prompt still asking about
+    // it would say the connection is lost while it isn't.
+    final prompt = _incidentPromptContext;
+    if (prompt != null &&
+        prompt.mounted &&
+        (ModalRoute.of(prompt)?.isCurrent ?? false)) {
+      Navigator.of(prompt).pop();
+    }
     state = state.copyWith(
       clearAuthIncident: true,
       clearLastAuthIncidentSource: true,
@@ -1972,6 +2015,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         context: navCtx,
         barrierDismissible: false,
         builder: (context) {
+          _incidentPromptContext = context;
           return ShadDialog.alert(
             title: const Text('Cloud connection lost'),
             description: Padding(
@@ -2025,6 +2069,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       }
     } finally {
       _showingIncidentPrompt = false;
+      _incidentPromptContext = null;
       if (state.activeAuthIncidentId == incidentId) {
         state = state.copyWith(isAuthIncidentPromptOpen: false);
       }

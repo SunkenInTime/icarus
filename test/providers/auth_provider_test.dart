@@ -637,6 +637,186 @@ void main() {
     expect(find.text('Cloud connection lost'), findsOneWidget);
   });
 
+  testWidgets(
+      'a session the server refuses while it sets up prompts to sign in '
+      'again, and the setup failing after does not call it an outage',
+      (tester) async {
+    supabaseApi.currentSession = fakeSession();
+    // Signed in, but the server refuses the token, so ensureCurrentUser
+    // gets no answer while the client retries.
+    final ensureCurrentUser = Completer<void>();
+    convexApi.mutationCompleter = ensureCurrentUser;
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          navigatorKey: appNavigatorKey,
+          home: const Scaffold(body: SizedBox.shrink()),
+        ),
+      ),
+    );
+    container.read(authProvider);
+    await tester.pump();
+    await tester.pump();
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.configuring,
+    );
+
+    // The client gives up on the token after a few refusals.
+    convexApi.emitAuthState(false);
+    convexApi.lastOnAuthChange!(false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.incident,
+    );
+    expect(find.text('Cloud connection lost'), findsOneWidget);
+
+    // ensureCurrentUser times out, with the socket down between refusals.
+    convexApi.connected = false;
+    ensureCurrentUser.completeError(TimeoutException('mutation timed out'));
+    await tester.pump();
+    await tester.pump();
+
+    final state = container.read(authProvider);
+    expect(state.convexAuthStatus, ConvexAuthStatus.incident);
+    expect(state.activeAuthIncidentId, isNotNull);
+    expect(container.read(cloudOfflineProvider), isFalse);
+    expect(find.text('Cloud connection lost'), findsOneWidget);
+  });
+
+  testWidgets(
+      'a prompt for a refusal the server takes back closes once the session '
+      'is accepted', (tester) async {
+    supabaseApi.currentSession = fakeSession();
+    final ensureCurrentUser = Completer<void>();
+    convexApi.mutationCompleter = ensureCurrentUser;
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          navigatorKey: appNavigatorKey,
+          home: const Scaffold(body: SizedBox.shrink()),
+        ),
+      ),
+    );
+    container.read(authProvider);
+    await tester.pump();
+    await tester.pump();
+    convexApi.emitAuthState(false);
+    convexApi.lastOnAuthChange!(false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text('Cloud connection lost'), findsOneWidget);
+
+    // The server accepts the token after all, and setup finishes.
+    convexApi.emitAuthState(true);
+    convexApi.lastOnAuthChange!(true);
+    ensureCurrentUser.complete();
+    await tester.pumpAndSettle();
+
+    final state = container.read(authProvider);
+    expect(state.convexAuthStatus, ConvexAuthStatus.ready);
+    expect(state.activeAuthIncidentId, isNull);
+    expect(find.text('Cloud connection lost'), findsNothing);
+  });
+
+  test(
+      'a server that refuses the session while it sets up and then refuses '
+      'this build still says the build is too old', () async {
+    supabaseApi.currentSession = fakeSession();
+    final ensureCurrentUser = Completer<void>();
+    convexApi.mutationCompleter = ensureCurrentUser;
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider
+          .overrideWithValue(_AcceptingRepository()),
+    ]);
+    addTearDown(container.dispose);
+    container.read(authProvider);
+    await pumpMicrotasks();
+    convexApi.lastOnAuthChange!(false);
+    await pumpMicrotasks();
+    expect(container.read(authProvider).activeAuthIncidentId, isNotNull);
+
+    ensureCurrentUser.completeError(_upgradeRequired);
+    await pumpMicrotasks();
+
+    expect(container.read(clientUpgradeRequiredProvider), isTrue);
+  });
+
+  test(
+      'a token Supabase cannot refresh, refused by the server, is an outage '
+      'and not a prompt', () async {
+    final session = fakeSession();
+    session.expiresAt = DateTime.now()
+            .toUtc()
+            .subtract(const Duration(minutes: 5))
+            .millisecondsSinceEpoch ~/
+        1000;
+    supabaseApi
+      ..currentSession = session
+      ..refreshError = AuthRetryableFetchException(message: 'offline');
+    final ensureCurrentUser = Completer<void>();
+    convexApi.mutationCompleter = ensureCurrentUser;
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(authProvider);
+    await pumpMicrotasks();
+
+    // Convex asks for a token; Supabase can't refresh it, so the expired
+    // one goes, and the server keeps refusing it.
+    expect(await convexApi.lastFetchToken!(), session.accessToken);
+    convexApi.lastOnAuthChange!(false);
+    await pumpMicrotasks();
+    expect(container.read(authProvider).activeAuthIncidentId, isNull);
+
+    convexApi.connected = false;
+    ensureCurrentUser.completeError(TimeoutException('mutation timed out'));
+    await pumpMicrotasks();
+    final state = container.read(authProvider);
+    expect(state.convexAuthStatus, ConvexAuthStatus.offline);
+    expect(state.activeAuthIncidentId, isNull);
+  });
+
+  test('a handle a later setup replaced reports nothing about the session',
+      () async {
+    supabaseApi.currentSession = fakeSession();
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(authProvider);
+    await pumpMicrotasks();
+    final firstSetupHears = convexApi.lastOnAuthChange!;
+
+    // A second setup is under way (a retry, say) and replaces the first
+    // handle, which reports false as it goes.
+    final setAuth = Completer<AuthProviderAuthHandle>();
+    convexApi.setAuthCompleter = setAuth;
+    unawaited(
+      container.read(authProvider.notifier).reinitializeConvexAuth(),
+    );
+    await pumpMicrotasks();
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.configuring,
+    );
+    firstSetupHears(false);
+    await pumpMicrotasks();
+
+    expect(container.read(authProvider).activeAuthIncidentId, isNull);
+    setAuth.complete(FakeAuthHandle());
+    await pumpMicrotasks();
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.ready,
+    );
+  });
+
   testWidgets('auth incident Sign Out uses the guarded flow', (tester) async {
     supabaseApi.currentSession = fakeSession();
     var guardedRequests = 0;
@@ -1896,6 +2076,10 @@ class FakeConvexApi implements AuthProviderConvexApi {
   bool autoAuthenticateOnSetAuth = true;
   bool _isAuthenticated = false;
   Object? mutationError;
+
+  /// Holds ensureCurrentUser until completed, as a server that never
+  /// answers does.
+  Completer<void>? mutationCompleter;
   Object? reconnectError;
   Object? clearAuthError;
   bool reconnectResult = true;
@@ -1954,6 +2138,7 @@ class FakeConvexApi implements AuthProviderConvexApi {
   Future<void> ensureCurrentUser() async {
     mutationCalls += 1;
     lastMutationName = 'users:ensureCurrentUser';
+    await mutationCompleter?.future;
     if (mutationError case final Object error?) {
       throw error;
     }
@@ -1966,6 +2151,7 @@ class FakeConvexApi implements AuthProviderConvexApi {
   }) async {
     setAuthCalls += 1;
     lastOnAuthChange = onAuthChange;
+    lastFetchToken = fetchToken;
     final completer = setAuthCompleter;
     if (completer != null) {
       return completer.future;
@@ -1978,6 +2164,9 @@ class FakeConvexApi implements AuthProviderConvexApi {
     handles.add(handle);
     return handle;
   }
+
+  /// How the last setup gets a token for Convex.
+  Future<String?> Function()? lastFetchToken;
 
   /// What the last setup asked to hear when Convex's auth changes.
   void Function(bool isAuthenticated)? lastOnAuthChange;
@@ -2007,6 +2196,7 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   Object? resetError;
   String? updatedPassword;
   Object? updatePasswordError;
+  Object? refreshError;
   int getSessionFromUrlCalls = 0;
   final List<MultiStreamController<AuthState>> _controllers =
       <MultiStreamController<AuthState>>[];
@@ -2067,6 +2257,7 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
 
   @override
   Future<AuthResponse> refreshSession() async {
+    if (refreshError case final Object error?) throw error;
     return AuthResponse(session: currentSession);
   }
 
