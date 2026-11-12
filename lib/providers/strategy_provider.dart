@@ -2127,7 +2127,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       // A cloud strategy still being read, or the one this replaces in
       // place, has no say in a local one: its late answer, or a link its
       // owner disables, must not reach this editor.
-      ref.read(remoteEditorSnapshotProvider.notifier).clear();
+      final remote = ref.read(remoteEditorSnapshotProvider.notifier);
+      if (remote.activeStrategyPublicId != null) remote.clear();
       state = StrategyState(
         strategyId: migratedStrategy.id,
         strategyName: migratedStrategy.name,
