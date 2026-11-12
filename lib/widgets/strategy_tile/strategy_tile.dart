@@ -599,7 +599,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       return;
     }
 
-    await ref.read(strategyProvider.notifier).loadFromHive(_strategyId);
+    // The export saves the open canvas first, so it must be this
+    // strategy's: not one the reader opened while this one loaded.
+    final opened =
+        await ref.read(strategyProvider.notifier).loadFromHive(_strategyId);
+    if (!opened) return;
     await StrategyImportExportService(ref).exportFile(_strategyId);
   }
 

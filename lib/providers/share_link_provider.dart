@@ -18,9 +18,12 @@ final pendingShareCodeStoreProvider = Provider<PendingShareCodeStore>(
   (ref) => createPendingShareCodeStore(),
 );
 
-/// The page's own URL on web (where a share link arrives), null on native.
-/// Overridden in tests.
-final sharePageUrlProvider = Provider<Uri?>((ref) => kIsWeb ? Uri.base : null);
+/// Reads the page's own URL on web (where a share link arrives), null on
+/// native. Read each time it is needed: the router and this controller both
+/// change it while the page stays open. Overridden in tests.
+final sharePageUrlProvider = Provider<Uri? Function()>(
+  (ref) => () => kIsWeb ? Uri.base : null,
+);
 
 /// Replaces the address bar URL without navigating. Overridden in tests.
 final replaceBrowserUrlProvider =
@@ -281,6 +284,29 @@ class ShareLinkController extends Notifier<String?> {
     return redeemPendingIfPossible(source: 'add_to_library', explicit: true);
   }
 
+  /// Whether a page reload reopens the held link. The editor says so as the
+  /// open strategy changes (see openCloudStrategyRecorderProvider): no while
+  /// the reader has a strategy of their own open, because a reload reopens
+  /// that one, and yes again once the strategy they read through the link is
+  /// back. Without this a reload restored both, and the two editors fought.
+  /// The link stays held in memory either way, so going back to its strategy
+  /// in this tab still reads through it.
+  void reopenOnReload(bool reopen) {
+    final token = state;
+    // Only a link that has opened. One still waiting to open (it arrived
+    // offline, say) keeps its code and its address: a reload is its retry.
+    if (token == null || ref.read(shareLinkViewProvider)?.token != token) {
+      return;
+    }
+    final store = ref.read(pendingShareCodeStoreProvider);
+    if (reopen) {
+      store.write(token);
+    } else {
+      store.clear();
+    }
+    _pointPageUrlAt(reopen ? token : null);
+  }
+
   /// Whether [token]'s attempt is stale: a newer code arrived, or sign-in
   /// redeemed this one while the attempt was waiting on the server.
   bool _superseded(String token, int generation) =>
@@ -310,10 +336,14 @@ class ShareLinkController extends Notifier<String?> {
   /// finishing late cannot clear a newer code that arrived meanwhile.
   int _generation = 0;
 
+  /// The held code, the stored code and the address say the same link from
+  /// here on: a reload opens the link in the address, so an address left on
+  /// an older link would retry that one and drop this one.
   void _hold(String token) {
     _generation += 1;
     state = token;
     ref.read(pendingShareCodeStoreProvider).write(token);
+    _pointPageUrlAt(token);
   }
 
   void _release(int generation) {
@@ -322,24 +352,31 @@ class ShareLinkController extends Notifier<String?> {
     }
     state = null;
     ref.read(pendingShareCodeStoreProvider).clear();
-    _dropSharePathFromPageUrl();
+    _pointPageUrlAt(null);
   }
 
-  /// Once a code is done with, the page must not keep its /share/<code> URL,
+  /// Makes the page's URL the link for [code], or drops the link from it
+  /// when [code] is null. A reload opens whatever link the URL names, so
+  /// once a code is done with the page must not keep its /share/<code> URL,
   /// or every reload would redeem it again (and, after the link is disabled,
   /// report a failure to someone who still has access). The fragment stays:
   /// Flutter's router keeps the open route there.
-  void _dropSharePathFromPageUrl() {
-    final page = ref.read(sharePageUrlProvider);
-    if (page == null ||
-        !isIcarusShareUri(page, currentOrigin: currentShareOrigin())) {
-      return;
-    }
+  void _pointPageUrlAt(String? code) {
+    final page = ref.read(sharePageUrlProvider)();
+    if (page == null) return;
+    final origin = currentShareOrigin();
+    final isLink = isIcarusShareUri(page, currentOrigin: origin);
+    final alreadyThere = code == null
+        ? !isLink
+        : isLink &&
+            extractIcarusShareCode(page.toString(), currentOrigin: origin) ==
+                code;
+    if (alreadyThere) return;
     ref.read(replaceBrowserUrlProvider)(Uri(
       scheme: page.scheme,
       host: page.host,
       port: page.hasPort ? page.port : null,
-      path: '/',
+      path: code == null ? '/' : '/share/$code',
       fragment: page.fragment.isEmpty ? null : page.fragment,
     ));
   }

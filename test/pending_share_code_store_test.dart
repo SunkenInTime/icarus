@@ -145,7 +145,7 @@ void main() {
         pendingShareCodeStoreProvider
             .overrideWithValue(store ?? MemoryPendingShareCodeStore()),
         authProvider.overrideWith(() => _SettableAuthProvider(auth)),
-        sharePageUrlProvider.overrideWithValue(pageUrl),
+        sharePageUrlProvider.overrideWithValue(() => pageUrl),
         replaceBrowserUrlProvider.overrideWithValue(replacedUrls.add),
         if (repository != null)
           convexStrategyRepositoryProvider.overrideWithValue(repository),

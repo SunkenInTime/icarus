@@ -5,6 +5,7 @@ import 'dart:math' show max;
 import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/open_attempt.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -330,13 +331,17 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required StrategySource source,
     required bool selectFirstPageIfNeeded,
     String? preferredPageId,
+    OpenAttempt? attempt,
   }) async {
+    // The open this is a step of, if any. It stops here too when the open
+    // gave way (see [OpenAttempt]).
+    final opening = attempt ?? OpenAttempt.unchallenged;
     _pageSessionGeneration++;
     // As in reset: a switch this supersedes leaves its transition here.
     ref.read(transitionProvider.notifier).complete();
     state = state.copyWith(transitionState: PageTransitionState.idle);
     final pageSource = _resolvePageSource(strategyId, source);
-    final pageIds = await pageSource.listPageIds();
+    final pageIds = await opening.wait(pageSource.listPageIds());
     // Drawn from this computer's copy, the page the copy could show is the
     // only one there is to open (see RemoteEditorSnapshotNotifier).
     final copiedPage = source == StrategySource.cloud
@@ -368,7 +373,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         );
 
     if (selected != null) {
-      await _rehydrateActivePageFromSource(selected);
+      await opening.wait(
+        _rehydrateActivePageFromSource(selected, attempt: opening),
+      );
     }
     // Snapshots that arrived while the strategy was opening went unheard:
     // catch up on pages that came back while it was closed.
@@ -1185,11 +1192,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
   }
 
+  /// Reads the page an open starts on and puts it on the canvas. A step of
+  /// the open [attempt] belongs to, so it stops like one (see [OpenAttempt]).
   Future<void> _rehydrateActivePageFromSource(
     String pageId, {
+    required OpenAttempt attempt,
     _RemotePageHydrationKey? hydrationKey,
     bool preserveTextDrafts = false,
   }) async {
+    final opening = attempt;
     final strategyState = ref.read(strategyProvider);
     final strategyId = strategyState.strategyId;
     final source = strategyState.source;
@@ -1208,14 +1219,17 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           );
     }
     final pageSource = _resolvePageSource(strategyId, source);
-    final pageData = await pageSource.loadPage(pageId);
-    await _applyLoadedPageData(
-      pageData,
-      strategyId: strategyId,
-      source: source,
-      hydrationKey: hydrationKey,
-      preserveTextDrafts: preserveTextDrafts,
-      loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
+    final pageData = await opening.wait(pageSource.loadPage(pageId));
+    await opening.wait(
+      _applyLoadedPageData(
+        pageData,
+        strategyId: strategyId,
+        source: source,
+        hydrationKey: hydrationKey,
+        preserveTextDrafts: preserveTextDrafts,
+        loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
+        attempt: opening,
+      ),
     );
   }
 
@@ -1228,9 +1242,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     RemoteEditorSnapshot? loadedRemoteSnapshot,
     ({MapValue map, StrategyThemeState theme})? preservedMetadata,
     bool Function()? canApply,
+    OpenAttempt? attempt,
   }) async {
-    final availablePageIds =
-        await _resolvePageSource(strategyId, source).listPageIds();
+    // The open this page is read for, if it is one: a page read for an open
+    // that gave way must not replace the canvas of what took its place.
+    final opening = attempt ?? OpenAttempt.unchallenged;
+    final availablePageIds = await opening.wait(
+      _resolvePageSource(strategyId, source).listPageIds(),
+    );
     if (canApply != null && !canApply()) return;
     final preserveHistory = source == StrategySource.cloud &&
         _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
@@ -1252,13 +1271,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         ? Map<String, String>.from(ref.read(textDraftProvider))
         : const <String, String>{};
     try {
-      await applyStrategyEditorPageData(
-        ref,
-        pageData,
-        themeProfileId: themeProfileId,
-        themeOverridePalette: themeOverridePalette,
-        preserveHistory: preserveHistory,
-        mapOverride: preservedMetadata?.map,
+      await opening.wait(
+        applyStrategyEditorPageData(
+          ref,
+          pageData,
+          themeProfileId: themeProfileId,
+          themeOverridePalette: themeOverridePalette,
+          preserveHistory: preserveHistory,
+          mapOverride: preservedMetadata?.map,
+        ),
       );
       for (final entry in retainedTextDrafts.entries) {
         ref.read(textDraftProvider.notifier).setDraft(entry.key, entry.value);
@@ -1286,11 +1307,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             : hydrationKey,
       );
     } finally {
-      state = state.copyWith(
-        activePageId: pageData.pageId,
-        isApplyingPage: false,
-      );
-      _resumePendingRemoteReapplyIfPossible();
+      // After an open gave way the session belongs to what replaced it.
+      if (opening.isCurrent) {
+        state = state.copyWith(
+          activePageId: pageData.pageId,
+          isApplyingPage: false,
+        );
+        _resumePendingRemoteReapplyIfPossible();
+      }
     }
   }
 

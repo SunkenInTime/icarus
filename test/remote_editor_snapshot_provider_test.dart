@@ -77,6 +77,35 @@ void main() {
     );
   });
 
+  test('a strategy closed while it was still opening stays closed', () async {
+    // The editor's loading screen has a working home button, so a reader can
+    // leave before the first read answers. The late answer used to open the
+    // strategy anyway, with no editor showing it, and start its live reads.
+    final repository = _Repository();
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+    ]);
+    addTearDown(container.dispose);
+    final remote = container.read(remoteEditorSnapshotProvider.notifier);
+    await container.read(remoteEditorSnapshotProvider.future);
+
+    final gate = Completer<void>();
+    repository.pageReadGate = gate;
+    final opening = remote.openStrategy('strategy', activePagePublicId: 'a');
+    await _settle();
+    remote.clear();
+    gate.complete();
+    await opening;
+
+    expect(container.read(remoteEditorSnapshotProvider).valueOrNull, isNull);
+    expect(repository.shells.hasListener, isFalse);
+    expect(repository.watchedPages, isEmpty);
+  });
+
   test(
       'a page answer counts as live only on the connection it came on, and '
       'never from the copy', () async {

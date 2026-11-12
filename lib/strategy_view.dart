@@ -35,6 +35,7 @@ import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/touch_strategy_viewer.dart';
 import 'package:icarus/widgets/turn_phone_notice.dart';
 import 'package:icarus/widgets/map_selector.dart';
+import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
@@ -132,6 +133,19 @@ class _StrategyViewState extends ConsumerState<StrategyView>
   bool _isInitialLoadPending = false;
   bool _hasInitialLoadCompleted = false;
 
+  /// Set when the reader leaves for the library. The editor stays mounted
+  /// while it animates out, so being mounted does not mean still wanted.
+  bool _hasLeft = false;
+
+  /// How the initial load waits. A reader who left meanwhile gets nothing
+  /// more from it: the load ends at that wait. test/open_attempt_test.dart
+  /// fails on an `await` in the load that does not go through here.
+  Future<T> _unlessLeft<T>(Future<T> step) async {
+    final result = await step;
+    if (_hasLeft || !mounted) throw const _LeftWhileLoading();
+    return result;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -170,32 +184,45 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       return;
     }
 
+    // What was open before this load: only a strategy opened since then
+    // means this load gave way to another.
+    final openBefore = ref.read(strategyProvider).strategyId;
     try {
       switch (source) {
         case StrategySource.local:
-          await ref
-              .read(strategyProvider.notifier)
-              .loadFromHive(strategyId, pageId: widget.initialPageId);
+          await _unlessLeft(
+            ref
+                .read(strategyProvider.notifier)
+                .loadFromHive(strategyId, pageId: widget.initialPageId),
+          );
         case StrategySource.cloud:
           final viewingThroughLink =
               ref.read(shareLinkViewProvider)?.strategyPublicId == strategyId;
-          if (!viewingThroughLink && !await _waitForCloudWorkspace()) {
+          if (!viewingThroughLink &&
+              !await _unlessLeft(_waitForCloudWorkspace())) {
             // Signed out, or the cloud is unreachable: nothing failed to
             // load, and the library says which, so go back without an error.
-            if (mounted) Navigator.maybePop(context);
+            _leaveAfterFailedLoad();
             return;
           }
-          await ref.read(strategyProvider.notifier).openCloudStrategy(
-                strategyId,
-                pageId: widget.initialPageId,
-              );
+          await _unlessLeft(
+            ref.read(strategyProvider.notifier).openCloudStrategy(
+                  strategyId,
+                  pageId: widget.initialPageId,
+                ),
+          );
       }
       final loadedStrategy = ref.read(strategyProvider);
       if (loadedStrategy.strategyId != strategyId ||
           loadedStrategy.strategyName == null) {
+        // Giving way to another strategy is not a failed load.
+        if (_gaveWayTo(loadedStrategy.strategyId, openBefore)) return;
         throw StateError('Strategy "$strategyId" was not found.');
       }
       _hasInitialLoadCompleted = true;
+    } on _LeftWhileLoading {
+      // The home button works from the first frame; the load went with the
+      // editor.
     } catch (error, stackTrace) {
       developer.log(
         'Error loading strategy: $error',
@@ -203,26 +230,71 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         error: error,
         stackTrace: stackTrace,
       );
+      if (_hasLeft || !mounted) return;
       // Refused: the access-lost dialog says so over the skeleton, and
       // leads out (see StrategyAccessWatcher).
       if (ref.read(strategyAccessLostProvider)) return;
+      // Another strategy was opened while this one loaded: nothing failed
+      // that the reader should hear about.
+      if (_gaveWayTo(ref.read(strategyProvider).strategyId, openBefore)) {
+        return;
+      }
       final notKept = ref.read(remoteEditorSnapshotProvider).error
           is StrategyNotKeptOffline;
-      if (mounted) {
-        Settings.showToast(
-          message: notKept
-              ? context.l10n.syncStatusStrategyNeedsConnection
-              : context.l10n.strategyViewLoadFailed,
-          backgroundColor: notKept
-              ? Settings.tacticalVioletTheme.secondary
-              : Settings.tacticalVioletTheme.destructive,
-        );
-        Navigator.maybePop(context);
-      }
+      Settings.showToast(
+        message: notKept
+            ? context.l10n.syncStatusStrategyNeedsConnection
+            : context.l10n.strategyViewLoadFailed,
+        backgroundColor: notKept
+            ? Settings.tacticalVioletTheme.secondary
+            : Settings.tacticalVioletTheme.destructive,
+      );
+      _leaveAfterFailedLoad();
     } finally {
       if (mounted) {
         setState(() => _isInitialLoadPending = false);
       }
+    }
+  }
+
+  /// Whether [open], the strategy open now, took this editor's place while
+  /// its own was loading: it is another strategy, opened since the load
+  /// began ([openBefore] is what was open then). If so, this settles where
+  /// it shows.
+  ///
+  /// It shows in an editor of its own above this one when it was opened from
+  /// outside (a share link arriving as this editor starts), and then this
+  /// editor goes. Or it shows in this very editor, when a share link or
+  /// back and forward swapped strategies in place: then this editor stays
+  /// and shows it. Popping here would leave it open with nothing showing it.
+  bool _gaveWayTo(String? open, String? openBefore) {
+    if (open == null ||
+        open == widget.initialStrategyId ||
+        open == openBefore) {
+      return false;
+    }
+    final route = ModalRoute.of(context);
+    final top = mouseNavigationRouteObserver.topRoute;
+    final anotherEditorShowsIt =
+        top != route && top?.settings.name == Routes.strategyView;
+    if (!anotherEditorShowsIt) {
+      _hasInitialLoadCompleted = true;
+    } else if (route != null && route.isActive) {
+      Navigator.of(context).removeRoute(route);
+    }
+    return true;
+  }
+
+  /// Takes this editor off the screen after its strategy failed to open.
+  /// Another screen may have been pushed over it meanwhile (a share link
+  /// opening its own editor), and a plain pop would close that one and
+  /// leave this one behind it, showing its loading screen for good.
+  void _leaveAfterFailedLoad() {
+    final route = ModalRoute.of(context);
+    if (route == null || route.isCurrent) {
+      Navigator.maybePop(context);
+    } else if (route.isActive) {
+      Navigator.of(context).removeRoute(route);
     }
   }
 
@@ -254,6 +326,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             .read(agentFilterProvider.notifier)
             .updateFilterState(FilterState.all);
         ref.read(deleteMenuProvider.notifier).requestClose();
+        _hasLeft = true;
         if (mounted) {
           Navigator.pop(context);
         }
@@ -299,12 +372,31 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         onLeave: _leaveToLibrary,
         child: Scaffold(
           // The skeleton is the desktop editor's shape, panels and all.
+          // The way back to the library works from the first frame: a load
+          // that never finishes must not hold the reader here.
           body: touch
-              ? const Center(child: WingDotLoader())
+              ? Stack(
+                  children: [
+                    const Center(child: WingDotLoader()),
+                    SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: _LeaveButton(
+                          onPressed: _leaveToLibrary,
+                          backTooltip: widget.backTooltip,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
               : StrategyViewSkeleton(
                   strategyName: widget.initialStrategyName,
                   mapValue: widget.initialMapValue,
                   isAttack: widget.initialIsAttack,
+                  leading: _LeaveButton(
+                    onPressed: _leaveToLibrary,
+                    backTooltip: widget.backTooltip,
+                  ),
                 ),
         ),
       );
@@ -333,25 +425,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                 Row(
                   children: [
                     const SizedBox(width: 6),
-                    ShadTooltip(
-                      builder: (context) =>
-                          Text(widget.backTooltip ??
-                              context.l10n.strategyViewBackToLibraryTooltip),
-                      child: ShadIconButton.ghost(
-                        width: 28,
-                        height: 28,
-                        foregroundColor:
-                            Settings.tacticalVioletTheme.mutedForeground,
-                        hoverForegroundColor:
-                            Settings.tacticalVioletTheme.foreground,
-                        onPressed: _leaveToLibrary,
-                        icon: Icon(
-                          widget.backTooltip == null
-                              ? LucideIcons.house300
-                              : LucideIcons.chevronLeft300,
-                          size: 18,
-                        ),
-                      ),
+                    _LeaveButton(
+                      onPressed: _leaveToLibrary,
+                      backTooltip: widget.backTooltip,
                     ),
                     const IcarusWordmark(),
                     const Expanded(
@@ -466,6 +542,42 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         await windowManager.setPreventClose(false);
         await windowManager.close();
       },
+    );
+  }
+}
+
+/// Ends the editor's initial load once the reader has left it.
+class _LeftWhileLoading implements Exception {
+  const _LeftWhileLoading();
+}
+
+/// The editor's way out, at the left of the window strip: the house back to
+/// the library, or a back arrow when [backTooltip] names somewhere else.
+class _LeaveButton extends StatelessWidget {
+  const _LeaveButton({required this.onPressed, this.backTooltip});
+
+  final VoidCallback onPressed;
+  final String? backTooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return ShadTooltip(
+      builder: (context) => Text(
+        backTooltip ?? context.l10n.strategyViewBackToLibraryTooltip,
+      ),
+      child: ShadIconButton.ghost(
+        width: 28,
+        height: 28,
+        foregroundColor: Settings.tacticalVioletTheme.mutedForeground,
+        hoverForegroundColor: Settings.tacticalVioletTheme.foreground,
+        onPressed: onPressed,
+        icon: Icon(
+          backTooltip == null
+              ? LucideIcons.house300
+              : LucideIcons.chevronLeft300,
+          size: 18,
+        ),
+      ),
     );
   }
 }

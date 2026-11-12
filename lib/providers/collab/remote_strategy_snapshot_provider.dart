@@ -164,6 +164,9 @@ class RemoteEditorSnapshotNotifier
     } else {
       await _refreshFromServer();
     }
+    // Closed, or another strategy opened, while this one was being read:
+    // there is nothing left to watch for it.
+    if (_activeStrategyPublicId != strategyPublicId) return;
     await _startShellSubscription(strategyPublicId);
     final pageId = _activePagePublicId;
     if (pageId != null) {
@@ -383,6 +386,8 @@ class RemoteEditorSnapshotNotifier
       _pagesToOpen(shell).firstOrNull ?? shell.pages.firstOrNull?.publicId;
 
   void clear() {
+    // A read still on its way must not bring the strategy back.
+    _readEpoch += 1;
     _activeStrategyPublicId = null;
     _activePagePublicId = null;
     _shareToken = null;
