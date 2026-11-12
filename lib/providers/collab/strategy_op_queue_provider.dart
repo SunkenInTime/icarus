@@ -1275,6 +1275,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       state.successorByEntityKey,
     );
     var changed = false;
+    _storingMany = true;
     try {
       for (final key in keys) {
         if (_awaitingRemoteAdoption.contains(key)) continue;
@@ -1589,9 +1590,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         changed = true;
       }
     } catch (error, stackTrace) {
+      _storedMany();
       _recordPersistenceFailure(error, stackTrace);
       return;
     }
+    _storedMany();
     if (!changed) return;
     _pruneCanvasOpIds();
     final attentionMessage = _loadedAttentionMessage(
@@ -3675,41 +3678,31 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     return Uri.decodeComponent(parts[1]);
   }
 
+  /// Publishes the outbox as its records now stand: the account's summary
+  /// together with the open strategy's waiting work. Never one without the
+  /// other: a state that counted a newly stored change in the summary while
+  /// its waiting work still left it out read as nothing left to send, and
+  /// the canvas was redrawn from the server over the edit just stored.
+  ///
+  /// While a page's work is being stored record by record ([_storingMany]),
+  /// it waits until all of it is, so a page of many items publishes once.
   void _publishAccountSummary() {
-    if (_isDisposed) return;
-    final summary = _accountSummary(state.accountId);
-    final hasDurabilityFailure = _hasDurabilityFailureForCurrentAccount;
-    if (_sameAccountSummary(state.accountOutbox, summary) &&
-        state.hasDurabilityFailure == hasDurabilityFailure) {
+    if (_storingMany) {
+      _publishWaits = true;
       return;
     }
-    state = state.copyWith(
-      accountOutbox: summary,
-      hasDurabilityFailure: hasDurabilityFailure,
-    );
+    _refreshActiveQueueView();
   }
 
-  bool _sameAccountSummary(
-    AccountStrategyOutboxSummary left,
-    AccountStrategyOutboxSummary right,
-  ) {
-    if (left.accountId != right.accountId ||
-        left.strategies.length != right.strategies.length) {
-      return false;
-    }
-    for (final entry in left.strategies.entries) {
-      final other = right.strategies[entry.key];
-      if (other == null ||
-          other.queuedCount != entry.value.queuedCount ||
-          other.inFlightCount != entry.value.inFlightCount ||
-          other.pausedCount != entry.value.pausedCount ||
-          other.attentionCount != entry.value.attentionCount ||
-          other.successorCount != entry.value.successorCount ||
-          other.reason != entry.value.reason) {
-        return false;
-      }
-    }
-    return true;
+  bool _storingMany = false;
+  bool _publishWaits = false;
+
+  /// Ends [_storingMany], publishing if a publish waited for it.
+  void _storedMany() {
+    _storingMany = false;
+    if (!_publishWaits) return;
+    _publishWaits = false;
+    _refreshActiveQueueView();
   }
 
   Future<T> _serializeWrite<T>(Future<T> Function() action) {

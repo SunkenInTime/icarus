@@ -9997,6 +9997,54 @@ void main() {
       });
     });
 
+    test(
+        "an edit made offline lands when a teammate's edit to another item "
+        'arrived first', () async {
+      final page = _page('page-1', 0);
+      server = _FakeServer(page.publicId, elements: [
+        _textElement(page.publicId, 'a', 'alpha', worldSized: true),
+        _textElement(page.publicId, 'c', 'charlie',
+            sortIndex: 1, worldSized: true),
+      ])
+        ..mergesByField = true;
+      final (container, _) = await openOnRealQueue(page);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      container.read(_online.notifier).state = false;
+      container.read(textProvider.notifier).commitText('a', 'mine');
+      // The teammate's edit waits to be drawn until the user's is saved.
+      server.teammateEditElement('c', (data) => data['text'] = 'theirs');
+      showServer();
+      for (var i = 0; i < 4; i++) {
+        await _settle();
+      }
+
+      container.read(_online.notifier).state = true;
+      for (var round = 0; round < 3; round++) {
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        await container.read(strategyOpQueueProvider.notifier).flushNow();
+        for (var i = 0; i < 6; i++) {
+          await _settle();
+        }
+        showServer();
+        for (var i = 0; i < 6; i++) {
+          await _settle();
+        }
+      }
+
+      String? drawn(String id) => container
+          .read(textProvider)
+          .firstWhere((text) => text.id == id)
+          .text;
+      expect(cloudPayloadData(server.element('a').payload)['text'], 'mine');
+      expect(drawn('a'), 'mine');
+      expect(drawn('c'), 'theirs');
+    });
+
     test('offline edits to a group nobody changed land on reconnect', () async {
       final page = _page('page-1', 0);
       server = _FakeServer(page.publicId, lineups: [fanIn(page.publicId)]);
