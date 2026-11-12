@@ -738,6 +738,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     // The outbox holds the change now. Left remembered, it would let a later
     // save write it over a teammate's change that landed after this one did.
     if (changes == _partChanges &&
+        state.strategyId == strategyId &&
         queueNotifier.persistenceFailureCount == failuresBefore) {
       _partsChanged.clear();
     }

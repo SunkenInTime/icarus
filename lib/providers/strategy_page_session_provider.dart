@@ -998,7 +998,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required String strategyId,
     required bool Function() canApply,
     required RemoteEditorSnapshot loadedRemoteSnapshot,
-    ({MapValue map, StrategyThemeState theme})? preservedMetadata,
+    ({MapValue? map, StrategyThemeState? theme})? preservedMetadata,
   }) async {
     final pageId = pageData.pageId;
     final liveSync = ref.read(activePageLiveSyncProvider.notifier);
@@ -1053,28 +1053,28 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     );
   }
 
-  /// The strategy's map and theme on screen, while a change to them is still
-  /// on its way: loading a page must keep them rather than take the older
-  /// server copy (and so drop the change).
-  ({MapValue map, StrategyThemeState theme})? _unsentLocalMetadata() {
-    final hasPendingMetadata = ref.read(strategyOpQueueProvider).pending.any(
-      (pending) {
-        final op = pending.op;
-        return op is StrategyPatchOp &&
-            op.payload.keys.any((key) =>
-                key == 'mapData' ||
-                key == 'themeProfileId' ||
-                key == 'clearThemeProfileId' ||
-                key == 'themeOverridePalette' ||
-                key == 'clearThemeOverridePalette');
-      },
+  /// The strategy's map and theme on screen, each while a change to it is
+  /// still on its way: loading a page must keep it rather than take the
+  /// older server copy (and so drop the change). A change names only what
+  /// the user changed, so each is kept on its own: with only a theme change
+  /// waiting, the map is the server's, which may be a teammate's newer one.
+  ({MapValue? map, StrategyThemeState? theme})? _unsentLocalMetadata() {
+    final waiting = {
+      for (final pending in ref.read(strategyOpQueueProvider).pending)
+        if (pending.op case StrategyPatchOp(:final payload)) ...payload.keys,
+    };
+    final mapWaits = waiting.contains('mapData');
+    final themeWaits = waiting.any(const {
+      'themeProfileId',
+      'clearThemeProfileId',
+      'themeOverridePalette',
+      'clearThemeOverridePalette',
+    }.contains);
+    if (!mapWaits && !themeWaits) return null;
+    return (
+      map: mapWaits ? ref.read(mapProvider).currentMap : null,
+      theme: themeWaits ? ref.read(strategyThemeProvider) : null,
     );
-    return hasPendingMetadata
-        ? (
-            map: ref.read(mapProvider).currentMap,
-            theme: ref.read(strategyThemeProvider),
-          )
-        : null;
   }
 
   bool get isApplyingPage => state.isApplyingPage;
@@ -1240,7 +1240,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     _RemotePageHydrationKey? hydrationKey,
     bool preserveTextDrafts = false,
     RemoteEditorSnapshot? loadedRemoteSnapshot,
-    ({MapValue map, StrategyThemeState theme})? preservedMetadata,
+    ({MapValue? map, StrategyThemeState? theme})? preservedMetadata,
     bool Function()? canApply,
     OpenAttempt? attempt,
   }) async {
@@ -1254,11 +1254,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final preserveHistory = source == StrategySource.cloud &&
         _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
         _lastHydratedRemotePageKey?.pageId == pageData.pageId;
-    final themeProfileId = preservedMetadata != null
-        ? preservedMetadata.theme.profileId
+    final preservedTheme = preservedMetadata?.theme;
+    final themeProfileId = preservedTheme != null
+        ? preservedTheme.profileId
         : _resolveThemeProfileId(source, strategyId);
-    final themeOverridePalette = preservedMetadata != null
-        ? preservedMetadata.theme.overridePalette
+    final themeOverridePalette = preservedTheme != null
+        ? preservedTheme.overridePalette
         : _resolveThemeOverridePalette(source, strategyId);
 
     state = state.copyWith(
@@ -1767,7 +1768,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required String strategyId,
     required RemoteEditorSnapshot snapshot,
     Set<String>? holding,
-    ({MapValue map, StrategyThemeState theme})? preservedMetadata,
+    ({MapValue? map, StrategyThemeState? theme})? preservedMetadata,
   }) {
     final pageId = pageData.pageId;
     final liveSync = ref.read(activePageLiveSyncProvider.notifier);
@@ -1780,11 +1781,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         pageData,
         changed: liveSync.remoteChangesSinceHydration(snapshot, pageId),
         holding: holding ?? ref.read(editorHeldEntitiesProvider)!,
-        themeProfileId: preservedMetadata != null
-            ? preservedMetadata.theme.profileId
+        themeProfileId: preservedMetadata?.theme != null
+            ? preservedMetadata!.theme!.profileId
             : _resolveThemeProfileId(StrategySource.cloud, strategyId),
-        themeOverridePalette: preservedMetadata != null
-            ? preservedMetadata.theme.overridePalette
+        themeOverridePalette: preservedMetadata?.theme != null
+            ? preservedMetadata!.theme!.overridePalette
             : _resolveThemeOverridePalette(StrategySource.cloud, strategyId),
         mapOverride: preservedMetadata?.map,
       );

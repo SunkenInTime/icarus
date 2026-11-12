@@ -10110,6 +10110,53 @@ void main() {
       });
 
       test(
+          "taking the cloud's version of an item draws a teammate's map, "
+          'with only a theme change waiting', () async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId, elements: [
+          _textElement(page.publicId, 'a', 'alpha', worldSized: true),
+        ]);
+        final (container, _) =
+            await openOnRealQueue(page, themeProfileId: defaultTheme);
+        await settle();
+        final key = EntitySyncKey.element(page.publicId, 'a');
+        StrategyOpQueueState queue() => container.read(strategyOpQueueProvider);
+
+        // The server refuses the user's edit to the text: they are asked.
+        repository.refuse = (op) => op is ElementPatchOp
+            ? RejectedOpAck(
+                opId: op.opId,
+                rejectionReason: OpRejectionReason.revisionMismatch,
+              )
+            : null;
+        container.read(textProvider.notifier).commitText('a', 'mine');
+        await _until(() => queue().attentionByEntityKey.containsKey(key));
+        await settle();
+
+        // A theme change waits, held on its way, when a teammate's map
+        // arrives. The canvas is not saved, so the map is not drawn yet.
+        repository.hold = Completer<void>();
+        container
+            .read(strategyThemeProvider.notifier)
+            .setProfile(MapThemeProfilesProvider.immutableValorantProfileId);
+        await settle();
+        server.teammateSetsMap('haven');
+        showServer();
+        await settle();
+        expect(container.read(mapProvider).currentMap, MapValue.ascent);
+
+        await container
+            .read(strategyPageSessionProvider.notifier)
+            .useCloudVersionsForRejected();
+        await settle();
+
+        expect(container.read(mapProvider).currentMap, MapValue.haven);
+        expect(container.read(strategyThemeProvider).profileId,
+            MapThemeProfilesProvider.immutableValorantProfileId);
+        repository.hold!.complete();
+      });
+
+      test(
           'a map change sent with no answer, then set back, is written back '
           'on the server too', () async {
         final (container, batches) = await open();
