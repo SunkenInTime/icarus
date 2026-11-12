@@ -694,14 +694,15 @@ jobs:
       - uses: ./.github/actions/setup-flutter
 
       - name: Run Tests
-        shell: bash
         env:
           SHARD: ${{ matrix.shard }}
           SHARDS: ${{ strategy.job-total }}
         run: |
-          mapfile -t files < <(find test -name '*_test.dart' | LC_ALL=C sort | awk -v n="$SHARDS" -v i="$SHARD" 'NR % n == i')
-          echo "Shard $SHARD of $SHARDS: ${#files[@]} test files"
-          fvm flutter test "${files[@]}"
+          $all = @(git ls-files 'test/*_test.dart' | Sort-Object)
+          $files = @(for ($n = 0; $n -lt $all.Count; $n++) { if ($n % [int]$env:SHARDS -eq [int]$env:SHARD) { $all[$n] } })
+          Write-Host "Shard $env:SHARD of $($env:SHARDS): $($files.Count) of $($all.Count) test files"
+          fvm flutter test @files
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test Native Convex Bridge
         if: needs.changes.outputs.bridge == 'true' && matrix.shard == 0
