@@ -1687,6 +1687,8 @@ void main() {
       queue: _FakeStrategyOpQueueNotifier(),
     );
 
+    // The user changes the map: the canvas no longer shows the server's.
+    container.read(mapProvider.notifier).updateMap(MapValue.bind);
     await container
         .read(strategyProvider.notifier)
         .notifyCloudStrategyMutation();
@@ -1697,7 +1699,7 @@ void main() {
     expect(op.toConvexJson()['expectedStrategyRevision'], 17);
     expect(
       op.payload,
-      containsPair('mapData', Maps.mapNames[MapValue.ascent]),
+      containsPair('mapData', Maps.mapNames[MapValue.bind]),
     );
     expect(op.payload, containsPair('clearThemeProfileId', true));
   });
@@ -9994,6 +9996,80 @@ void main() {
           ],
           [('bind', 1), ('ascent', 2)],
         );
+      });
+    });
+
+    group('a map or theme changed by a teammate, or sent with no answer', () {
+      const defaultTheme = 'immutable-default-map-theme';
+
+      Future<void> settle() async {
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      }
+
+      Future<(ProviderContainer, List<List<StrategyOp>>)> open() async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId);
+        final opened =
+            await openOnRealQueue(page, themeProfileId: defaultTheme);
+        await settle();
+        return opened;
+      }
+
+      Future<void> drained(ProviderContainer container) async {
+        await _until(
+            () => container.read(strategyOpQueueProvider).pending.isEmpty);
+        await settle();
+      }
+
+      test("a teammate's map stays when the user then edits the page",
+          () async {
+        final (container, _) = await open();
+        server.teammateSetsMap('haven');
+        showServer();
+        await settle();
+
+        container.read(agentProvider.notifier).addAgent(PlacedAgent(
+              id: 'agent-1',
+              type: AgentType.jett,
+              position: const Offset(40, 40),
+            ));
+        await settle();
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        await drained(container);
+
+        expect(server.strategyPatches, isEmpty);
+        expect(server.strategyMap, 'haven');
+        expect(container.read(mapProvider).currentMap, MapValue.haven);
+      });
+
+      test(
+          'a map change sent with no answer, then set back, is written back '
+          'on the server too', () async {
+        final (container, batches) = await open();
+        repository.loseNextAnswer = () {};
+        container.read(mapProvider.notifier).updateMap(MapValue.bind);
+        await _until(() =>
+            batches.any((batch) => batch.any((op) => op is StrategyPatchOp)));
+        await settle();
+        // The send failed; the server took it all the same.
+        expect(server.strategyMap, 'bind');
+
+        container.read(mapProvider.notifier).updateMap(MapValue.ascent);
+        await settle();
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        await container.read(strategyOpQueueProvider.notifier).flushNow();
+        await drained(container);
+        showServer();
+        await settle();
+
+        expect(container.read(mapProvider).currentMap, MapValue.ascent);
+        expect(server.strategyMap, 'ascent');
       });
     });
 

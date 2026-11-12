@@ -1875,7 +1875,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final assets = snapshot.assetsById.values.toList()
       ..sort((a, b) => a.publicId.compareTo(b.publicId));
 
+    // The map and theme are drawn with the page, as the canvas draws them
+    // (see drawnStrategyHeader): a teammate's change to either redraws it.
+    final header = drawnStrategyHeader(ref, snapshot.header);
     final fingerprint = jsonEncode({
+      'strategy': {
+        'mapData': header.mapData,
+        'themeProfileId': header.themeProfileId,
+        'themeOverridePalette': header.themeOverridePalette,
+      },
       'page': {
         'publicId': page.publicId,
         'name': page.name,

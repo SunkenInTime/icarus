@@ -229,17 +229,23 @@ StrategyPatchOp? waitingStrategyPatch(
 }
 
 /// Whether a strategy-level change to [strategyPublicId] that [queue] can
-/// no longer take back may still land: one being sent, or one waiting
-/// behind another. A canvas set back to the server's map and theme then
-/// needs that written too, or the change landing undoes it.
+/// no longer take back may still land: one being sent, one waiting behind
+/// another, or one sent before with no answer (waiting to go again, or
+/// paused). A canvas set back to the server's map and theme then needs that
+/// written too, or the change landing undoes it.
 bool strategyPatchMayLand(
   StrategyOpQueueState queue,
   String strategyPublicId,
 ) {
   if (queue.strategyPublicId != strategyPublicId) return false;
   const key = EntitySyncKey.strategy();
+  bool sentBefore(QueuedEntityIntent? intent) =>
+      intent != null &&
+      (intent.pending.attempts > 0 || intent.pending.lastAttemptAt != null);
   return queue.inFlightByEntityKey.containsKey(key) ||
-      queue.successorByEntityKey.containsKey(key);
+      queue.successorByEntityKey.containsKey(key) ||
+      sentBefore(queue.queuedByEntityKey[key]) ||
+      sentBefore(queue.pausedByEntityKey[key]);
 }
 
 /// [header], the server's as read, as this device knows the server holds

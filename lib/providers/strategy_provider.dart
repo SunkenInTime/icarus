@@ -39,7 +39,6 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/services/strategy_folders.dart';
 import 'package:uuid/uuid.dart';
-import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/page_made_here.dart';
@@ -158,6 +157,12 @@ class StrategyProvider extends Notifier<StrategyState> {
   bool _cloudStrategyMutationSyncScheduled = false;
   int _persistenceTrackingSuspensionCount = 0;
 
+  /// The strategy whose map or theme the user changed on the canvas, until
+  /// the server or the outbox holds what the canvas shows. A canvas that
+  /// differs from the server without it was not changed here: a teammate
+  /// changed the server's (see [syncStrategyMetadata]).
+  String? _mapOrThemeChangedIn;
+
   void _registerPersistenceTrackingListeners() {
     _listenForPageBackedState(agentProvider);
     _listenForPageBackedState(abilityProvider);
@@ -195,6 +200,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       if (!_shouldTrackPersistedEditorMutation()) {
         return;
       }
+      _mapOrThemeChangedIn = state.strategyId;
       _markStrategyBackedStateUnsaved();
     });
   }
@@ -557,13 +563,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       ..setPendingCloudSync(true)
       ..setCloudSyncError(null);
 
-    if (_showsWaitingStrategyPatch()) return;
-    final desiredOp = _buildDesiredStrategySyncOp();
-    ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
-          entityKey: const EntitySyncKey.strategy(),
-          desiredOp: desiredOp,
-          flushImmediately: flushImmediately,
-        );
+    unawaited(syncStrategyMetadata(flushImmediately: flushImmediately));
     if (flushImmediately) {
       await ref.read(strategyOpQueueProvider.notifier).flushNow();
     }
@@ -627,74 +627,81 @@ class StrategyProvider extends Notifier<StrategyState> {
     refreshAutosaveScheduling();
   }
 
-  /// Whether the canvas's map and theme are the strategy-level change still
-  /// waiting in the outbox, as it was drawn (see drawnStrategyHeader): that
-  /// change waits as it is.
-  bool _showsWaitingStrategyPatch() {
+  /// Queues the canvas's map and theme for the server, when the user changed
+  /// them. Every save asks, so this is where a difference between the canvas
+  /// and the server is told apart:
+  ///
+  /// - The outbox already holds what the canvas shows: that change waits as
+  ///   it is.
+  /// - The server holds what the canvas shows: nothing is sent, and a change
+  ///   still waiting is dropped, unless one may still land and undo that
+  ///   (see strategyPatchMayLand); then the canvas's values are written
+  ///   behind it.
+  /// - They differ and the user changed neither: a teammate changed the
+  ///   server's. Nothing is sent, and the canvas takes the server's when the
+  ///   page is next brought up to date.
+  /// - Otherwise the user's change is queued, against the revision this
+  ///   device knows the server holds.
+  Future<void> syncStrategyMetadata({bool flushImmediately = false}) async {
     final strategyId = state.strategyId;
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    final mapData = Maps.mapNames[ref.read(mapProvider).currentMap];
     if (strategyId == null ||
         snapshot == null ||
-        snapshot.header.publicId != strategyId) {
-      return false;
+        snapshot.header.publicId != strategyId ||
+        mapData == null) {
+      return;
     }
-    final waiting =
-        waitingStrategyPatch(ref.read(strategyOpQueueProvider), strategyId);
-    final drawn = drawnStrategyHeader(ref, snapshot.header);
     final strategyTheme = ref.read(strategyThemeProvider);
-    final mapData = Maps.mapNames[ref.read(mapProvider).currentMap];
-    return waiting != null &&
-        mapData != null &&
-        drawn.shows(
+    final themeOverridePalette = strategyTheme.overridePalette?.toJson();
+    bool shows(RemoteStrategyHeader header) => header.shows(
           mapData: mapData,
           themeProfileId: strategyTheme.profileId,
-          themeOverridePalette: strategyTheme.overridePalette?.toJson(),
+          themeOverridePalette: themeOverridePalette,
         );
-  }
-
-  StrategyOp? _buildDesiredStrategySyncOp() {
-    final strategyId = state.strategyId;
-    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-    if (strategyId == null ||
-        snapshot == null ||
-        snapshot.header.publicId != strategyId) {
-      return null;
-    }
 
     // The server's, as this device knows it holds them.
     final header = knownStrategyHeader(ref, snapshot.header);
-    final strategyTheme = ref.read(strategyThemeProvider);
-    final localMapData =
-        Maps.mapNames[ref.read(mapProvider).currentMap] ?? header.mapData;
-    final localThemeProfileId = strategyTheme.profileId;
-    final localThemeOverridePalette = strategyTheme.overridePalette?.toJson();
-
-    final matchesRemote = header.mapData == localMapData &&
-        header.themeProfileId == localThemeProfileId &&
-        cloudJsonEquivalent(
-          header.themeOverridePalette,
-          localThemeOverridePalette,
-        );
-    // A change that may still land would undo the canvas matching the
-    // server, so the canvas's values are written behind it.
-    if (matchesRemote &&
-        !strategyPatchMayLand(ref.read(strategyOpQueueProvider), strategyId)) {
-      return null;
+    final queue = ref.read(strategyOpQueueProvider);
+    final waiting = waitingStrategyPatch(queue, strategyId);
+    if (waiting != null && shows(header.withPatch(waiting.payload))) {
+      _mapOrThemeChangedIn = null;
+      return;
     }
 
-    return StrategyPatchOp(
-      opId: const Uuid().v4(),
-      expectedStrategyRevision: header.revision,
-      payload: {
-        'mapData': localMapData,
-        if (localThemeProfileId != null) 'themeProfileId': localThemeProfileId,
-        if (localThemeProfileId == null) 'clearThemeProfileId': true,
-        if (localThemeOverridePalette != null)
-          'themeOverridePalette': localThemeOverridePalette,
-        if (localThemeOverridePalette == null)
-          'clearThemeOverridePalette': true,
-      },
-    );
+    if (shows(header)) {
+      _mapOrThemeChangedIn = null;
+      if (!strategyPatchMayLand(queue, strategyId)) {
+        await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
+              entityKey: const EntitySyncKey.strategy(),
+              desiredOp: null,
+              flushImmediately: flushImmediately,
+            );
+        return;
+      }
+    } else if (waiting == null && _mapOrThemeChangedIn != strategyId) {
+      return;
+    }
+
+    await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
+          entityKey: const EntitySyncKey.strategy(),
+          desiredOp: StrategyPatchOp(
+            opId: const Uuid().v4(),
+            expectedStrategyRevision: header.revision,
+            payload: {
+              'mapData': mapData,
+              if (strategyTheme.profileId != null)
+                'themeProfileId': strategyTheme.profileId
+              else
+                'clearThemeProfileId': true,
+              if (themeOverridePalette != null)
+                'themeOverridePalette': themeOverridePalette
+              else
+                'clearThemeOverridePalette': true,
+            },
+          ),
+          flushImmediately: flushImmediately,
+        );
   }
 
   void setUnsaved() {

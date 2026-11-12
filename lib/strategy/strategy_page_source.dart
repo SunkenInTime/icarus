@@ -28,7 +28,6 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/strategy/cloud_element_decoding.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
-import 'package:uuid/uuid.dart';
 
 abstract class StrategyPageSource {
   RemoteEditorSnapshot? get loadedRemoteSnapshot;
@@ -358,7 +357,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       return false;
     }
 
-    await _syncStrategyMetadata();
+    await ref.read(strategyProvider.notifier).syncStrategyMetadata();
 
     final desiredOpsByEntityKey =
         ref.read(activePageLiveSyncProvider.notifier).syncLocalPage(
@@ -375,67 +374,6 @@ class CloudStrategyPageSource implements StrategyPageSource {
           madeLive: madeLive,
         );
     return true;
-  }
-
-  Future<void> _syncStrategyMetadata() async {
-    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-    if (snapshot == null) {
-      return;
-    }
-
-    final currentMapData = Maps.mapNames[ref.read(mapProvider).currentMap];
-    if (currentMapData == null) {
-      return;
-    }
-
-    final strategyTheme = ref.read(strategyThemeProvider);
-    final desiredThemeOverride = strategyTheme.overridePalette?.toJson();
-    // The server's, as this device knows it holds them.
-    final header = knownStrategyHeader(ref, snapshot.header);
-    bool shows(RemoteStrategyHeader header) => header.shows(
-          mapData: currentMapData,
-          themeProfileId: strategyTheme.profileId,
-          themeOverridePalette: desiredThemeOverride,
-        );
-
-    // The canvas shows the strategy-level change still waiting in the
-    // outbox, as it was drawn: that change waits as it is.
-    final queue = ref.read(strategyOpQueueProvider);
-    final waiting = waitingStrategyPatch(queue, header.publicId);
-    if (waiting != null && shows(header.withPatch(waiting.payload))) return;
-
-    // Shown as the server has it: whatever waits can be dropped, unless it
-    // may still land and undo that.
-    if (shows(header) && !strategyPatchMayLand(queue, header.publicId)) {
-      await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
-            entityKey: const EntitySyncKey.strategy(),
-            desiredOp: null,
-            flushImmediately: false,
-          );
-      return;
-    }
-
-    final payload = <String, dynamic>{
-      'mapData': currentMapData,
-      if (strategyTheme.profileId != null)
-        'themeProfileId': strategyTheme.profileId
-      else
-        'clearThemeProfileId': true,
-      if (desiredThemeOverride != null)
-        'themeOverridePalette': desiredThemeOverride
-      else
-        'clearThemeOverridePalette': true,
-    };
-
-    await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
-          entityKey: const EntitySyncKey.strategy(),
-          desiredOp: StrategyPatchOp(
-            opId: const Uuid().v4(),
-            payload: payload,
-            expectedStrategyRevision: header.revision,
-          ),
-          flushImmediately: false,
-        );
   }
 
   StrategyEditorPageData _hydrateProjectedPage(
