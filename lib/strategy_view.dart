@@ -132,6 +132,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
   bool _isInitialLoadPending = false;
   bool _hasInitialLoadCompleted = false;
 
+  /// Set when the reader leaves for the library. The editor stays mounted
+  /// while it animates out, and a load still waiting to start must not.
+  bool _hasLeft = false;
+
   @override
   void initState() {
     super.initState();
@@ -188,6 +192,8 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             if (mounted) _leaveAfterFailedLoad();
             return;
           }
+          // Left while waiting for sign-in to come back.
+          if (_hasLeft || !mounted) return;
           await ref.read(strategyProvider.notifier).openCloudStrategy(
                 strategyId,
                 pageId: widget.initialPageId,
@@ -279,6 +285,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             .read(agentFilterProvider.notifier)
             .updateFilterState(FilterState.all);
         ref.read(deleteMenuProvider.notifier).requestClose();
+        _hasLeft = true;
         if (mounted) {
           Navigator.pop(context);
         }

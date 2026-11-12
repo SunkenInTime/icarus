@@ -393,6 +393,9 @@ class StrategyProvider extends Notifier<StrategyState> {
           selectFirstPageIfNeeded: true,
           preferredPageId: pageId,
         );
+    // Gave way while its pages were read: the uploads belong to what is
+    // open now, or to nothing.
+    if (attempt != _openAttempt) return;
     // Each page the editor reads is checked for images to upload as it
     // arrives (see RemoteEditorSnapshotNotifier).
     unawaited(
@@ -2114,6 +2117,9 @@ class StrategyProvider extends Notifier<StrategyState> {
           selectFirstPageIfNeeded: true,
           preferredPageId: pageId,
         );
+    // Gave way while its pages were read: the save state now belongs to
+    // another strategy, and marking it saved could hide that one's edits.
+    if (attempt != _openAttempt) return;
     ref.read(strategySaveStateProvider.notifier).markPersisted();
   }
 
