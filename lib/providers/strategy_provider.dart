@@ -163,6 +163,10 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// changed the server's (see [syncStrategyMetadata]).
   String? _mapOrThemeChangedIn;
 
+  /// Counts the user's map and theme changes, so a change made while an
+  /// earlier one is being stored in the outbox is not taken as stored too.
+  int _mapOrThemeChanges = 0;
+
   void _registerPersistenceTrackingListeners() {
     _listenForPageBackedState(agentProvider);
     _listenForPageBackedState(abilityProvider);
@@ -201,6 +205,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         return;
       }
       _mapOrThemeChangedIn = state.strategyId;
+      _mapOrThemeChanges += 1;
       _markStrategyBackedStateUnsaved();
     });
   }
@@ -683,25 +688,34 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
-          entityKey: const EntitySyncKey.strategy(),
-          desiredOp: StrategyPatchOp(
-            opId: const Uuid().v4(),
-            expectedStrategyRevision: header.revision,
-            payload: {
-              'mapData': mapData,
-              if (strategyTheme.profileId != null)
-                'themeProfileId': strategyTheme.profileId
-              else
-                'clearThemeProfileId': true,
-              if (themeOverridePalette != null)
-                'themeOverridePalette': themeOverridePalette
-              else
-                'clearThemeOverridePalette': true,
-            },
-          ),
-          flushImmediately: flushImmediately,
-        );
+    final changes = _mapOrThemeChanges;
+    final queueNotifier = ref.read(strategyOpQueueProvider.notifier);
+    final failuresBefore = queueNotifier.persistenceFailureCount;
+    await queueNotifier.syncDesiredGenericOp(
+      entityKey: const EntitySyncKey.strategy(),
+      desiredOp: StrategyPatchOp(
+        opId: const Uuid().v4(),
+        expectedStrategyRevision: header.revision,
+        payload: {
+          'mapData': mapData,
+          if (strategyTheme.profileId != null)
+            'themeProfileId': strategyTheme.profileId
+          else
+            'clearThemeProfileId': true,
+          if (themeOverridePalette != null)
+            'themeOverridePalette': themeOverridePalette
+          else
+            'clearThemeOverridePalette': true,
+        },
+      ),
+      flushImmediately: flushImmediately,
+    );
+    // The outbox holds the change now. Left set, it would let a later save
+    // write this map over a teammate's that landed after this one did.
+    if (changes == _mapOrThemeChanges &&
+        queueNotifier.persistenceFailureCount == failuresBefore) {
+      _mapOrThemeChangedIn = null;
+    }
   }
 
   void setUnsaved() {

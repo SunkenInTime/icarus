@@ -10047,6 +10047,37 @@ void main() {
       });
 
       test(
+          "a teammate's map stays when it lands after the user's own change "
+          'did, and the user then edits the page', () async {
+        final (container, _) = await open();
+        container.read(mapProvider.notifier).updateMap(MapValue.bind);
+        await _until(() => server.strategyMap == 'bind');
+        await drained(container);
+
+        // Mid-drag, so the teammate's map waits to be drawn.
+        container.read(editorPointersProvider.notifier).down(1);
+        server.teammateSetsMap('haven');
+        showServer();
+        await settle();
+        expect(container.read(mapProvider).currentMap, MapValue.bind);
+
+        container.read(agentProvider.notifier).addAgent(PlacedAgent(
+              id: 'agent-1',
+              type: AgentType.jett,
+              position: const Offset(40, 40),
+            ));
+        container.read(editorPointersProvider.notifier).release(1);
+        await settle();
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        await drained(container);
+
+        expect(server.strategyMap, 'haven');
+        expect(container.read(mapProvider).currentMap, MapValue.haven);
+      });
+
+      test(
           'a map change sent with no answer, then set back, is written back '
           'on the server too', () async {
         final (container, batches) = await open();
