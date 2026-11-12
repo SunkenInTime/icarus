@@ -1687,6 +1687,8 @@ void main() {
       queue: _FakeStrategyOpQueueNotifier(),
     );
 
+    // The user changes the map: the canvas no longer shows the server's.
+    container.read(mapProvider.notifier).updateMap(MapValue.bind);
     await container
         .read(strategyProvider.notifier)
         .notifyCloudStrategyMutation();
@@ -1697,9 +1699,10 @@ void main() {
     expect(op.toConvexJson()['expectedStrategyRevision'], 17);
     expect(
       op.payload,
-      containsPair('mapData', Maps.mapNames[MapValue.ascent]),
+      containsPair('mapData', Maps.mapNames[MapValue.bind]),
     );
-    expect(op.payload, containsPair('clearThemeProfileId', true));
+    // Only what the user changed goes: the theme is the server's to keep.
+    expect((op.payload! as Map).keys, ['mapData']);
   });
 
   test('cloud page reorder is persisted as a page descriptor op', () async {
@@ -9997,6 +10000,189 @@ void main() {
       });
     });
 
+    group('a map or theme changed by a teammate, or sent with no answer', () {
+      const defaultTheme = 'immutable-default-map-theme';
+
+      Future<void> settle() async {
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+      }
+
+      Future<(ProviderContainer, List<List<StrategyOp>>)> open() async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId);
+        final opened =
+            await openOnRealQueue(page, themeProfileId: defaultTheme);
+        await settle();
+        return opened;
+      }
+
+      Future<void> drained(ProviderContainer container) async {
+        await _until(
+            () => container.read(strategyOpQueueProvider).pending.isEmpty);
+        await settle();
+      }
+
+      test("a teammate's map stays when the user then edits the page",
+          () async {
+        final (container, _) = await open();
+        server.teammateSetsMap('haven');
+        showServer();
+        await settle();
+
+        container.read(agentProvider.notifier).addAgent(PlacedAgent(
+              id: 'agent-1',
+              type: AgentType.jett,
+              position: const Offset(40, 40),
+            ));
+        await settle();
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        await drained(container);
+
+        expect(server.strategyPatches, isEmpty);
+        expect(server.strategyMap, 'haven');
+        expect(container.read(mapProvider).currentMap, MapValue.haven);
+      });
+
+      test(
+          "a teammate's map stays when it lands after the user's own change "
+          'did, and the user then edits the page', () async {
+        final (container, _) = await open();
+        container.read(mapProvider.notifier).updateMap(MapValue.bind);
+        await _until(() => server.strategyMap == 'bind');
+        await drained(container);
+
+        // Mid-drag, so the teammate's map waits to be drawn.
+        container.read(editorPointersProvider.notifier).down(1);
+        server.teammateSetsMap('haven');
+        showServer();
+        await settle();
+        expect(container.read(mapProvider).currentMap, MapValue.bind);
+
+        container.read(agentProvider.notifier).addAgent(PlacedAgent(
+              id: 'agent-1',
+              type: AgentType.jett,
+              position: const Offset(40, 40),
+            ));
+        container.read(editorPointersProvider.notifier).release(1);
+        await settle();
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        await drained(container);
+
+        expect(server.strategyMap, 'haven');
+        expect(container.read(mapProvider).currentMap, MapValue.haven);
+      });
+
+      test(
+          "a theme change leaves a teammate's map the canvas has not drawn "
+          'yet', () async {
+        final (container, _) = await open();
+        // Mid-drag, so the teammate's map waits to be drawn.
+        container.read(editorPointersProvider.notifier).down(1);
+        server.teammateSetsMap('haven');
+        showServer();
+        await settle();
+        expect(container.read(mapProvider).currentMap, MapValue.ascent);
+
+        container
+            .read(strategyThemeProvider.notifier)
+            .setProfile(MapThemeProfilesProvider.immutableValorantProfileId);
+        container.read(editorPointersProvider.notifier).release(1);
+        await settle();
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        await drained(container);
+        showServer();
+        await settle();
+
+        expect(server.strategyMap, 'haven');
+        expect(server.strategyThemeProfileId,
+            MapThemeProfilesProvider.immutableValorantProfileId);
+        expect(container.read(mapProvider).currentMap, MapValue.haven);
+        expect(container.read(strategyThemeProvider).profileId,
+            MapThemeProfilesProvider.immutableValorantProfileId);
+      });
+
+      test(
+          "taking the cloud's version of an item draws a teammate's map, "
+          'with only a theme change waiting', () async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId, elements: [
+          _textElement(page.publicId, 'a', 'alpha', worldSized: true),
+        ]);
+        final (container, _) =
+            await openOnRealQueue(page, themeProfileId: defaultTheme);
+        await settle();
+        final key = EntitySyncKey.element(page.publicId, 'a');
+        StrategyOpQueueState queue() => container.read(strategyOpQueueProvider);
+
+        // The server refuses the user's edit to the text: they are asked.
+        repository.refuse = (op) => op is ElementPatchOp
+            ? RejectedOpAck(
+                opId: op.opId,
+                rejectionReason: OpRejectionReason.revisionMismatch,
+              )
+            : null;
+        container.read(textProvider.notifier).commitText('a', 'mine');
+        await _until(() => queue().attentionByEntityKey.containsKey(key));
+        await settle();
+
+        // A theme change waits, held on its way, when a teammate's map
+        // arrives. The canvas is not saved, so the map is not drawn yet.
+        repository.hold = Completer<void>();
+        container
+            .read(strategyThemeProvider.notifier)
+            .setProfile(MapThemeProfilesProvider.immutableValorantProfileId);
+        await settle();
+        server.teammateSetsMap('haven');
+        showServer();
+        await settle();
+        expect(container.read(mapProvider).currentMap, MapValue.ascent);
+
+        await container
+            .read(strategyPageSessionProvider.notifier)
+            .useCloudVersionsForRejected();
+        await settle();
+
+        expect(container.read(mapProvider).currentMap, MapValue.haven);
+        expect(container.read(strategyThemeProvider).profileId,
+            MapThemeProfilesProvider.immutableValorantProfileId);
+        repository.hold!.complete();
+      });
+
+      test(
+          'a map change sent with no answer, then set back, is written back '
+          'on the server too', () async {
+        final (container, batches) = await open();
+        repository.loseNextAnswer = () {};
+        container.read(mapProvider.notifier).updateMap(MapValue.bind);
+        await _until(() =>
+            batches.any((batch) => batch.any((op) => op is StrategyPatchOp)));
+        await settle();
+        // The send failed; the server took it all the same.
+        expect(server.strategyMap, 'bind');
+
+        container.read(mapProvider.notifier).updateMap(MapValue.ascent);
+        await settle();
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        await container.read(strategyOpQueueProvider.notifier).flushNow();
+        await drained(container);
+        showServer();
+        await settle();
+
+        expect(container.read(mapProvider).currentMap, MapValue.ascent);
+        expect(server.strategyMap, 'ascent');
+      });
+    });
+
     test(
         "an edit made offline lands when a teammate's edit to another item "
         'arrived first', () async {
@@ -10036,10 +10222,8 @@ void main() {
         }
       }
 
-      String? drawn(String id) => container
-          .read(textProvider)
-          .firstWhere((text) => text.id == id)
-          .text;
+      String? drawn(String id) =>
+          container.read(textProvider).firstWhere((text) => text.id == id).text;
       expect(cloudPayloadData(server.element('a').payload)['text'], 'mine');
       expect(drawn('a'), 'mine');
       expect(drawn('c'), 'theirs');

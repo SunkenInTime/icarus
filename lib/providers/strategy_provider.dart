@@ -39,7 +39,6 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/services/strategy_folders.dart';
 import 'package:uuid/uuid.dart';
-import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/page_made_here.dart';
@@ -158,6 +157,18 @@ class StrategyProvider extends Notifier<StrategyState> {
   bool _cloudStrategyMutationSyncScheduled = false;
   int _persistenceTrackingSuspensionCount = 0;
 
+  /// The map and theme, whichever the user changed on the canvas of
+  /// [_partsChangedIn], until the server or the outbox holds what the canvas
+  /// shows. Only these are sent: a part the canvas shows differently from
+  /// the server without the user changing it was changed by a teammate (see
+  /// [syncStrategyMetadata]).
+  final Set<_StrategyPart> _partsChanged = {};
+  String? _partsChangedIn;
+
+  /// Counts the user's map and theme changes, so a change made while an
+  /// earlier one is being stored in the outbox is not taken as stored too.
+  int _partChanges = 0;
+
   void _registerPersistenceTrackingListeners() {
     _listenForPageBackedState(agentProvider);
     _listenForPageBackedState(abilityProvider);
@@ -177,8 +188,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     _listenForPageBackedState(strategySettingsProvider);
     _listenForPageBackedState(mapProvider.select((map) => map.isAttack));
 
-    _listenForStrategyBackedState(mapProvider.select((map) => map.currentMap));
-    _listenForStrategyBackedState(strategyThemeProvider);
+    _listenForStrategyBackedState(
+      mapProvider.select((map) => map.currentMap),
+      _StrategyPart.map,
+    );
+    _listenForStrategyBackedState(strategyThemeProvider, _StrategyPart.theme);
   }
 
   void _listenForPageBackedState<T>(ProviderListenable<T> provider) {
@@ -190,11 +204,18 @@ class StrategyProvider extends Notifier<StrategyState> {
     });
   }
 
-  void _listenForStrategyBackedState<T>(ProviderListenable<T> provider) {
+  void _listenForStrategyBackedState<T>(
+    ProviderListenable<T> provider,
+    _StrategyPart part,
+  ) {
     ref.listen<T>(provider, (_, __) {
       if (!_shouldTrackPersistedEditorMutation()) {
         return;
       }
+      if (_partsChangedIn != state.strategyId) _partsChanged.clear();
+      _partsChangedIn = state.strategyId;
+      _partsChanged.add(part);
+      _partChanges += 1;
       _markStrategyBackedStateUnsaved();
     });
   }
@@ -557,13 +578,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       ..setPendingCloudSync(true)
       ..setCloudSyncError(null);
 
-    if (_showsWaitingStrategyPatch()) return;
-    final desiredOp = _buildDesiredStrategySyncOp();
-    ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
-          entityKey: const EntitySyncKey.strategy(),
-          desiredOp: desiredOp,
-          flushImmediately: flushImmediately,
-        );
+    unawaited(syncStrategyMetadata(flushImmediately: flushImmediately));
     if (flushImmediately) {
       await ref.read(strategyOpQueueProvider.notifier).flushNow();
     }
@@ -627,74 +642,106 @@ class StrategyProvider extends Notifier<StrategyState> {
     refreshAutosaveScheduling();
   }
 
-  /// Whether the canvas's map and theme are the strategy-level change still
-  /// waiting in the outbox, as it was drawn (see drawnStrategyHeader): that
-  /// change waits as it is.
-  bool _showsWaitingStrategyPatch() {
+  /// Queues the user's change to the map or theme for the server. Every
+  /// save asks, so this is where a difference between the canvas and the
+  /// server is told apart:
+  ///
+  /// - The outbox already holds what the canvas shows: that change waits as
+  ///   it is.
+  /// - The server holds what the canvas shows: nothing is sent, and a change
+  ///   still waiting is dropped, unless one may still land and undo that
+  ///   (see strategyPatchMayLand); then the canvas's map and theme are
+  ///   written behind it.
+  /// - Otherwise only what the user changed is queued, against the revision
+  ///   this device knows the server holds. A part they left alone that
+  ///   differs from the server's was changed by a teammate: it is not sent,
+  ///   and the canvas takes the server's when the page is next brought up
+  ///   to date.
+  Future<void> syncStrategyMetadata({bool flushImmediately = false}) async {
     final strategyId = state.strategyId;
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    final mapData = Maps.mapNames[ref.read(mapProvider).currentMap];
     if (strategyId == null ||
         snapshot == null ||
-        snapshot.header.publicId != strategyId) {
-      return false;
+        snapshot.header.publicId != strategyId ||
+        mapData == null) {
+      return;
     }
-    final waiting =
-        waitingStrategyPatch(ref.read(strategyOpQueueProvider), strategyId);
-    final drawn = drawnStrategyHeader(ref, snapshot.header);
     final strategyTheme = ref.read(strategyThemeProvider);
-    final mapData = Maps.mapNames[ref.read(mapProvider).currentMap];
-    return waiting != null &&
-        mapData != null &&
-        drawn.shows(
+    final themeOverridePalette = strategyTheme.overridePalette?.toJson();
+    bool shows(RemoteStrategyHeader header) => header.shows(
           mapData: mapData,
           themeProfileId: strategyTheme.profileId,
-          themeOverridePalette: strategyTheme.overridePalette?.toJson(),
+          themeOverridePalette: themeOverridePalette,
         );
-  }
-
-  StrategyOp? _buildDesiredStrategySyncOp() {
-    final strategyId = state.strategyId;
-    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-    if (strategyId == null ||
-        snapshot == null ||
-        snapshot.header.publicId != strategyId) {
-      return null;
-    }
+    final changed =
+        _partsChangedIn == strategyId ? {..._partsChanged} : <_StrategyPart>{};
 
     // The server's, as this device knows it holds them.
     final header = knownStrategyHeader(ref, snapshot.header);
-    final strategyTheme = ref.read(strategyThemeProvider);
-    final localMapData =
-        Maps.mapNames[ref.read(mapProvider).currentMap] ?? header.mapData;
-    final localThemeProfileId = strategyTheme.profileId;
-    final localThemeOverridePalette = strategyTheme.overridePalette?.toJson();
-
-    final matchesRemote = header.mapData == localMapData &&
-        header.themeProfileId == localThemeProfileId &&
-        cloudJsonEquivalent(
-          header.themeOverridePalette,
-          localThemeOverridePalette,
-        );
-    // A change that may still land would undo the canvas matching the
-    // server, so the canvas's values are written behind it.
-    if (matchesRemote &&
-        !strategyPatchMayLand(ref.read(strategyOpQueueProvider), strategyId)) {
-      return null;
+    final queue = ref.read(strategyOpQueueProvider);
+    final queueNotifier = ref.read(strategyOpQueueProvider.notifier);
+    final waiting = waitingStrategyPatch(queue, strategyId);
+    if (waiting != null && shows(header.withPatch(waiting.payload))) {
+      _partsChanged.clear();
+      return;
     }
 
-    return StrategyPatchOp(
-      opId: const Uuid().v4(),
-      expectedStrategyRevision: header.revision,
-      payload: {
-        'mapData': localMapData,
-        if (localThemeProfileId != null) 'themeProfileId': localThemeProfileId,
-        if (localThemeProfileId == null) 'clearThemeProfileId': true,
-        if (localThemeOverridePalette != null)
-          'themeOverridePalette': localThemeOverridePalette,
-        if (localThemeOverridePalette == null)
-          'clearThemeOverridePalette': true,
-      },
+    if (shows(header)) {
+      _partsChanged.clear();
+      if (!strategyPatchMayLand(queue, strategyId)) {
+        await queueNotifier.syncDesiredGenericOp(
+          entityKey: const EntitySyncKey.strategy(),
+          desiredOp: null,
+          flushImmediately: flushImmediately,
+        );
+        return;
+      }
+      // Whatever lands is undone whole.
+      changed.addAll(_StrategyPart.values);
+    }
+    if (changed.isEmpty) return;
+
+    // The outbox keeps one change to the strategy, so this one carries what
+    // the change still waiting does, with the user's newer values over it.
+    final payload = <String, dynamic>{...?waiting?.payload};
+    if (changed.contains(_StrategyPart.map)) payload['mapData'] = mapData;
+    if (changed.contains(_StrategyPart.theme)) {
+      payload
+        ..remove('themeProfileId')
+        ..remove('clearThemeProfileId')
+        ..remove('themeOverridePalette')
+        ..remove('clearThemeOverridePalette');
+      if (strategyTheme.profileId != null) {
+        payload['themeProfileId'] = strategyTheme.profileId;
+      } else {
+        payload['clearThemeProfileId'] = true;
+      }
+      if (themeOverridePalette != null) {
+        payload['themeOverridePalette'] = themeOverridePalette;
+      } else {
+        payload['clearThemeOverridePalette'] = true;
+      }
+    }
+
+    final changes = _partChanges;
+    final failuresBefore = queueNotifier.persistenceFailureCount;
+    await queueNotifier.syncDesiredGenericOp(
+      entityKey: const EntitySyncKey.strategy(),
+      desiredOp: StrategyPatchOp(
+        opId: const Uuid().v4(),
+        expectedStrategyRevision: header.revision,
+        payload: payload,
+      ),
+      flushImmediately: flushImmediately,
     );
+    // The outbox holds the change now. Left remembered, it would let a later
+    // save write it over a teammate's change that landed after this one did.
+    if (changes == _partChanges &&
+        state.strategyId == strategyId &&
+        queueNotifier.persistenceFailureCount == failuresBefore) {
+      _partsChanged.clear();
+    }
   }
 
   void setUnsaved() {
@@ -2980,3 +3027,7 @@ class _PageCopyRoots {
   final Set<String> placedRoots;
   final Set<String> lineUpRoots;
 }
+
+/// A part of a cloud strategy's header the canvas shows and the user can
+/// change.
+enum _StrategyPart { map, theme }
