@@ -19,7 +19,6 @@ concurrency:
 env:
   RELEASE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
   FVM_HOME: ${{ github.workspace }}/.fvm_cache
-  PUB_CACHE: ${{ github.workspace }}/.pub-cache
 
 jobs:
   native-replay:
@@ -244,6 +243,11 @@ jobs:
       - name: Check Bundled Wall Heights
         run: fvm dart run tool/check_bundled_wall_heights.dart
 
+  # Flutter compiles test files one after another, and that takes longer than
+  # running them, so the suite's time falls with the number of files a runner
+  # is given and not with its cores. `flutter test --total-shards` splits by
+  # test and still compiles every file in every shard, so each shard is handed
+  # its own files instead.
   test:
     name: test (shard ${{ matrix.shard }})
     needs: changes
@@ -252,7 +256,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1]
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - name: Checkout Release Source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -262,7 +266,14 @@ jobs:
       - uses: ./.github/actions/setup-flutter
 
       - name: Run Tests
-        run: fvm flutter test --total-shards 2 --shard-index ${{ matrix.shard }}
+        shell: bash
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }}
+        run: |
+          mapfile -t files < <(find test -name '*_test.dart' | LC_ALL=C sort | awk -v n="$SHARDS" -v i="$SHARD" 'NR % n == i')
+          echo "Shard $SHARD of $SHARDS: ${#files[@]} test files"
+          fvm flutter test "${files[@]}"
 
   # Same flags as "Build Web Client" in deploy-web.yml, which ships the beta
   # against the production Convex deployment instead of development.
@@ -663,9 +674,14 @@ jobs:
 
   # The suite on the platform we ship, for the same changes as windows-build.
   windows-test:
+    name: windows-test (shard ${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.desktop == 'true'
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     defaults:
       run:
         shell: pwsh
@@ -678,10 +694,18 @@ jobs:
       - uses: ./.github/actions/setup-flutter
 
       - name: Run Tests
-        run: fvm flutter test
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }}
+        run: |
+          $all = @(git ls-files 'test/*_test.dart' | Sort-Object)
+          $files = @(for ($n = 0; $n -lt $all.Count; $n++) { if ($n % [int]$env:SHARDS -eq [int]$env:SHARD) { $all[$n] } })
+          Write-Host "Shard $env:SHARD of $($env:SHARDS): $($files.Count) of $($all.Count) test files"
+          fvm flutter test @files
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test Native Convex Bridge
-        if: needs.changes.outputs.bridge == 'true'
+        if: needs.changes.outputs.bridge == 'true' && matrix.shard == 0
         run: |
           cargo test --manifest-path third_party/convex_flutter/rust/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
