@@ -182,15 +182,20 @@ void main() {
     expect(page.path, '/share/$code');
 
     // A second link arrived and has not opened yet (the cloud was not
-    // ready). It is not left behind: opening a strategy keeps its code, so
-    // a reload still retries it.
+    // ready). The address names it from then on, with the stored code, so
+    // a reload retries that link and not the older one.
     const waiting = 'ICR-XXXX-XXXX-XXXX-XXXX';
     await container
         .read(shareLinkControllerProvider.notifier)
         .redeemToken(waiting);
+    expect(heldCode.read(), waiting);
+    expect(page.path, '/share/$waiting');
+
+    // It is not left behind when a strategy opens: the reload is its retry.
     strategy.open('mine', StrategySource.cloud);
     expect(heldCode.read(), waiting);
-    expect(page.path, '/share/$code');
+    expect(page.path, '/share/$waiting');
+    expect(open.read(), 'mine');
   });
 
   testWidgets('the web beta toolbar never offers a local Save', (tester) async {

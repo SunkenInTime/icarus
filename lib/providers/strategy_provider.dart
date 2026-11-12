@@ -107,14 +107,17 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// Runs one attempt to open a strategy. Every wait in [steps] goes through
   /// the attempt it is given (see [OpenAttempt]), so an open the reader left,
   /// or replaced by opening another strategy, stops at that wait and changes
-  /// nothing after it. Giving way is not a failure: this returns normally,
-  /// and what is open afterwards is whatever took its place.
-  Future<void> _open(Future<void> Function(OpenAttempt opening) steps) async {
+  /// nothing after it. Giving way is not a failure, so nothing is thrown:
+  /// the answer is whether the strategy opened. False means something else
+  /// is open now (or nothing), and a caller that goes on to act on "its"
+  /// strategy must look first.
+  Future<bool> _open(Future<bool> Function(OpenAttempt opening) steps) async {
     final attempt = ++_openAttempt;
     try {
-      await steps(OpenAttempt(() => attempt == _openAttempt));
+      return await steps(OpenAttempt(() => attempt == _openAttempt));
     } on OpenGaveWay {
       // The newer open, or the close, owns the outcome.
+      return false;
     }
   }
 
@@ -358,8 +361,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   /// Opens the cloud strategy [strategyID] in the editor, on [pageId] when
-  /// it has that page.
-  Future<void> openCloudStrategy(String strategyID, {String? pageId}) async {
+  /// it has that page. False when it gave way to a newer open or a close
+  /// before it finished (see [_open]); throws when it could not be read.
+  Future<bool> openCloudStrategy(String strategyID, {String? pageId}) async {
     // A cloud copy still being built by a move from this device is the
     // mover's: an edit made in it would be lost if the move fails.
     if (ref.read(movingToCloudProvider).contains(strategyID)) {
@@ -414,6 +418,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               snapshot.header.publicId,
             ),
       );
+      return true;
     });
   }
 
@@ -2063,7 +2068,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   /// Opens strategy [id] on its first page, or on [pageId] when given.
-  Future<void> loadFromHive(String id, {String? pageId}) async {
+  Future<bool> loadFromHive(String id, {String? pageId}) async {
     _requireLocalLibrary('open');
     // Edits made while a strategy moves to the cloud would go with the
     // local original the move deletes.
@@ -2080,7 +2085,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       }).firstOrNull;
 
       if (newStrat == null) {
-        return;
+        return false;
       }
       _withoutPersistenceTracking(() {
         ref.read(actionProvider.notifier).resetActionState();
@@ -2137,6 +2142,7 @@ class StrategyProvider extends Notifier<StrategyState> {
             ),
       );
       ref.read(strategySaveStateProvider.notifier).markPersisted();
+      return true;
     });
   }
 

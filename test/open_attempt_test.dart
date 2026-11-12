@@ -59,15 +59,24 @@ void main() {
   // that ends that is mechanical, so it is checked mechanically: inside the
   // functions that make up an open, nothing waits except through the helper
   // that stops a superseded open.
+  //
+  // What this promises: no plain `await` in the functions listed here. What
+  // it does not: it reads only those functions. A function they call that
+  // waits and then writes on its own is not seen (the first version missed
+  // the page read for exactly that reason), so a new step of an open has to
+  // take the attempt and be added to the list. The two tests after the
+  // loop check that the steps known today are handed it.
   group('every wait inside an open can end it', () {
     const provider = 'lib/providers/strategy_provider.dart';
     const session = 'lib/providers/strategy_page_session_provider.dart';
     const editor = 'lib/strategy_view.dart';
 
     for (final (path, signature, through) in [
-      (provider, 'Future<void> openCloudStrategy(', 'opening.wait('),
-      (provider, 'Future<void> loadFromHive(', 'opening.wait('),
+      (provider, 'Future<bool> openCloudStrategy(', 'opening.wait('),
+      (provider, 'Future<bool> loadFromHive(', 'opening.wait('),
       (session, 'Future<void> initializeForStrategy(', 'opening.wait('),
+      (session, 'Future<void> _rehydrateActivePageFromSource(', 'opening.wait('),
+      (session, 'Future<void> _applyLoadedPageData(', 'opening.wait('),
       (editor, 'Future<void> _loadInitialStrategy(', '_unlessLeft('),
     ]) {
       test('$signature in $path', () {
@@ -80,10 +89,21 @@ void main() {
       });
     }
 
+    test('the page read under the page step is given the attempt', () {
+      final initialize =
+          _bodyOf(session, 'Future<void> initializeForStrategy(');
+      expect(initialize, contains('_rehydrateActivePageFromSource('));
+      expect(initialize, contains('attempt: opening'));
+      final rehydrate =
+          _bodyOf(session, 'Future<void> _rehydrateActivePageFromSource(');
+      expect(rehydrate, contains('_applyLoadedPageData('));
+      expect(rehydrate, contains('attempt: opening'));
+    });
+
     test('the page step of both opens is given the attempt', () {
       for (final signature in [
-        'Future<void> openCloudStrategy(',
-        'Future<void> loadFromHive(',
+        'Future<bool> openCloudStrategy(',
+        'Future<bool> loadFromHive(',
       ]) {
         final body = _bodyOf(provider, signature);
         expect(body, contains('initializeForStrategy('));

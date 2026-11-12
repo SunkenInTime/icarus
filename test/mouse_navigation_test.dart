@@ -207,12 +207,60 @@ void main() {
         expect(strategies.opened, ['${recorded.name}:shared-id']);
       });
     }
+
+    testWidgets('a back whose open gave way does not count as having moved',
+        (tester) async {
+      // An open that gives way to a newer one returns without opening. Back
+      // used to record the move anyway, and history gained a place the
+      // reader never reached.
+      final strategies = _RecordingStrategies()..givesWay.add('shared-id');
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            platformPolicyProvider.overrideWithValue(PlatformPolicy.desktop),
+            isCloudWorkspaceAvailableProvider.overrideWithValue(true),
+            strategyProvider.overrideWith(() => strategies),
+          ],
+          child: ShadApp(
+            navigatorKey: appNavigatorKey,
+            navigatorObservers: [mouseNavigationRouteObserver],
+            builder: (_, child) => MouseNavigation(child: child!),
+            home: const Scaffold(body: Text('library')),
+          ),
+        ),
+      );
+      strategies.show('shared-id', StrategySource.local);
+      await tester.pump();
+      strategies.show('other-id', StrategySource.local);
+      await tester.pump();
+
+      Future<void> back(int pointer) async {
+        await tester.sendEventToBinding(
+          PointerDownEvent(
+            pointer: pointer,
+            kind: PointerDeviceKind.mouse,
+            buttons: kBackMouseButton,
+            position: const Offset(400, 300),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await back(1);
+      expect(strategies.state.strategyId, 'other-id');
+      // Still one step back from where the reader is: back tries it again.
+      await back(2);
+      expect(strategies.opened, ['local:shared-id', 'local:shared-id']);
+    });
   });
 }
 
 /// Records which store each open goes through, without touching either.
 class _RecordingStrategies extends StrategyProvider {
   final opened = <String>[];
+
+  /// Strategies whose open gives way before it finishes.
+  final givesWay = <String>{};
 
   @override
   StrategyState build() => const StrategyState();
@@ -227,14 +275,18 @@ class _RecordingStrategies extends StrategyProvider {
   }
 
   @override
-  Future<void> loadFromHive(String id, {String? pageId}) async {
+  Future<bool> loadFromHive(String id, {String? pageId}) async {
     opened.add('local:$id');
+    if (givesWay.contains(id)) return false;
     show(id, StrategySource.local);
+    return true;
   }
 
   @override
-  Future<void> openCloudStrategy(String id, {String? pageId}) async {
+  Future<bool> openCloudStrategy(String id, {String? pageId}) async {
     opened.add('cloud:$id');
+    if (givesWay.contains(id)) return false;
     show(id, StrategySource.cloud);
+    return true;
   }
 }

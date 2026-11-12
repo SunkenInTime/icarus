@@ -336,10 +336,14 @@ class ShareLinkController extends Notifier<String?> {
   /// finishing late cannot clear a newer code that arrived meanwhile.
   int _generation = 0;
 
+  /// The held code, the stored code and the address say the same link from
+  /// here on: a reload opens the link in the address, so an address left on
+  /// an older link would retry that one and drop this one.
   void _hold(String token) {
     _generation += 1;
     state = token;
     ref.read(pendingShareCodeStoreProvider).write(token);
+    _pointPageUrlAt(token);
   }
 
   void _release(int generation) {

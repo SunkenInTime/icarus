@@ -319,6 +319,9 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
         if (strategyOpen) {
           // Already in the strategy view; swap strategies in place, exactly
           // like the quick switcher does.
+          // An open that gave way to a newer one (or to a close) did not
+          // move here, and history must not record that it did.
+          var opened = false;
           final bool switched = await guardUnsavedStrategyExit(
             context: navigator.context,
             ref: ref,
@@ -326,15 +329,15 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             onContinue: () async {
               _resetStrategyUiState();
               final strategies = ref.read(strategyProvider.notifier);
-              switch (source) {
-                case StrategySource.local:
-                  await strategies.loadFromHive(strategyId);
-                case StrategySource.cloud:
-                  await strategies.openCloudStrategy(strategyId);
-              }
+              opened = switch (source) {
+                StrategySource.local =>
+                  await strategies.loadFromHive(strategyId),
+                StrategySource.cloud =>
+                  await strategies.openCloudStrategy(strategyId),
+              };
             },
           );
-          return switched && mounted;
+          return switched && opened && mounted;
         }
 
         if (source == StrategySource.cloud) {
