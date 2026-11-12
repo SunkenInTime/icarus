@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:convert';
 import 'dart:io';
 
@@ -697,6 +698,9 @@ class _RecordingMediaQueue extends CloudMediaUploadQueueNotifier {
 
 /// Whether this device can reach the server, for tests that go offline.
 final _online = StateProvider<bool>((ref) => true);
+
+/// A ref, for functions that read providers through one.
+final _refProvider = Provider<Ref>((ref) => ref);
 
 Future<void> _settle() async {
   await Future<void>.delayed(Duration.zero);
@@ -10181,6 +10185,287 @@ void main() {
         expect(container.read(mapProvider).currentMap, MapValue.ascent);
         expect(server.strategyMap, 'ascent');
       });
+    });
+
+    // One user edits a page and its strategy's map and theme while the
+    // network fails under them and a teammate edits too, in an order drawn
+    // from a seed. Whatever the order, once everything is sent and read back
+    // the canvas shows what the server holds, the user's last edit to each
+    // thing is there unless they were asked about it, and a teammate's edit
+    // to something the user left alone is still there.
+    group('random schedules', () {
+      const defaultTheme = 'immutable-default-map-theme';
+      const valorant = MapThemeProfilesProvider.immutableValorantProfileId;
+      const maps = {
+        'ascent': MapValue.ascent,
+        'bind': MapValue.bind,
+        'haven': MapValue.haven,
+        'split': MapValue.split,
+      };
+      const strategyKey = EntitySyncKey.strategy();
+
+      Future<void> settle([int turns = 6]) async {
+        for (var i = 0; i < turns; i++) {
+          await _settle();
+        }
+      }
+
+      Future<void> run(int seed, {int steps = 30}) async {
+        final random = Random(seed);
+        final log = <String>[];
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId, elements: [
+          _textElement(page.publicId, 'a', 'alpha', worldSized: true),
+          _textElement(page.publicId, 'b', 'bravo',
+              sortIndex: 1, worldSized: true),
+          _textElement(page.publicId, 'c', 'charlie',
+              sortIndex: 2, worldSized: true),
+        ])
+          ..mergesByField = true;
+        final (container, sentBatches) =
+            await openOnRealQueue(page, themeProfileId: defaultTheme);
+        await settle(10);
+
+        StrategyOpQueueState queue() => container.read(strategyOpQueueProvider);
+        final texts = container.read(textProvider.notifier);
+        PlacedText? onCanvas(String id) => container
+            .read(textProvider)
+            .where((text) => text.id == id)
+            .firstOrNull;
+        Map<String, dynamic> onServer(String id) =>
+            cloudPayloadData(server.element(id).payload);
+
+        // What the user last set, by thing.
+        final userWords = <String, String>{};
+        final userPlaces = <String, Offset>{};
+        var teammateWords = 'charlie';
+        var pointerDown = false;
+        var edit = 0;
+
+        for (var step = 0; step < steps; step++) {
+          switch (random.nextInt(12)) {
+            case 0:
+              final name = maps.keys.elementAt(random.nextInt(maps.length));
+              if (container.read(mapProvider).currentMap == maps[name]) break;
+              // Set to what this device last read from the server, there is
+              // nothing to send: a teammate's change it has not read stands.
+              final read = container
+                  .read(remoteEditorSnapshotProvider)
+                  .requireValue!
+                  .header;
+              final known = knownStrategyHeader(
+                container.read(_refProvider),
+                read,
+              ).mapData;
+              log.add(name == known
+                  ? 'user sets the map back to $name'
+                  : 'user map $name');
+              container.read(mapProvider.notifier).updateMap(maps[name]!);
+            case 1:
+              final theme = random.nextBool() ? valorant : defaultTheme;
+              log.add('user theme $theme');
+              container.read(strategyThemeProvider.notifier).setProfile(theme);
+            case 2:
+              final id = random.nextBool() ? 'a' : 'b';
+              if (onCanvas(id) == null) break;
+              final to = Offset(100.0 + random.nextInt(8) * 25,
+                  100.0 + random.nextInt(8) * 25);
+              log.add('user moves $id to $to');
+              texts.updatePosition(to, id);
+              userPlaces[id] = to;
+            case 3:
+              final id = random.nextBool() ? 'a' : 'b';
+              if (onCanvas(id) == null) break;
+              final words = '$id-${edit++}';
+              log.add('user retypes $id as $words');
+              texts.commitText(id, words);
+              userWords[id] = words;
+            case 4:
+              final name = maps.keys.elementAt(random.nextInt(maps.length));
+              if (name == server.strategyMap) break;
+              log.add('teammate map $name');
+              server.teammateSetsMap(name);
+            case 5:
+              teammateWords = 'theirs-${edit++}';
+              log.add('teammate retypes c as $teammateWords');
+              final words = teammateWords;
+              server.teammateEditElement('c', (data) => data['text'] = words);
+            case 6:
+              log.add('next answer is lost');
+              repository.loseNextAnswer = () {};
+            case 7:
+              final online = !container.read(_online);
+              log.add(online ? 'online' : 'offline');
+              container.read(_online.notifier).state = online;
+            case 8:
+              log.add('the live read arrives');
+              showServer();
+            case 9:
+              log.add(pointerDown ? 'pointer up' : 'pointer down');
+              final pointers = container.read(editorPointersProvider.notifier);
+              pointerDown ? pointers.release(1) : pointers.down(1);
+              pointerDown = !pointerDown;
+            case 10:
+              log.add('save');
+              unawaited(container
+                  .read(strategyProvider.notifier)
+                  .forceSaveNow('cloud-strategy'));
+            case 11:
+              log.add('send');
+              unawaited(
+                  container.read(strategyOpQueueProvider.notifier).flushNow());
+          }
+          await settle(1 + random.nextInt(4));
+        }
+
+        // Everything settles: online, nothing held, sent and read back.
+        log.add('settle');
+        container.read(_online.notifier).state = true;
+        repository.loseNextAnswer = null;
+        if (pointerDown) {
+          container.read(editorPointersProvider.notifier).release(1);
+        }
+        // Work the user is asked about waits for their answer, and so does
+        // an edit made behind it; the canvas stays unsaved meanwhile.
+        bool asking() => queue().attentionByEntityKey.isNotEmpty;
+        bool waiting() =>
+            queue().queuedByEntityKey.isNotEmpty ||
+            queue().inFlightByEntityKey.isNotEmpty ||
+            queue()
+                .successorByEntityKey
+                .keys
+                .any((key) => !queue().attentionByEntityKey.containsKey(key)) ||
+            queue().isFlushing ||
+            container.read(strategySaveStateProvider).isSaving ||
+            (container.read(strategySaveStateProvider).isDirty && !asking());
+        for (var round = 0; round < 40; round++) {
+          await container
+              .read(strategyProvider.notifier)
+              .forceSaveNow('cloud-strategy');
+          await container.read(strategyOpQueueProvider.notifier).flushNow();
+          await settle();
+          log.add('  round $round before read: a=${onCanvas('a')?.text} '
+              'b=${onCanvas('b')?.text} pending '
+              '${queue().pending.map((p) => '${p.op.runtimeType}:${p.op.entityPublicId}:${p.op.expectedRevision}').toList()} '
+              'attention ${queue().attentionByEntityKey.keys.length} '
+              'server a=${onServer('a')['text']} b=${onServer('b')['text']} '
+              'conflicts ${container.read(strategyConflictProvider).length} '
+              'dirty ${container.read(strategySaveStateProvider).isDirty}');
+          showServer();
+          await settle();
+          log.add('  round $round after read: a=${onCanvas('a')?.text} '
+              'b=${onCanvas('b')?.text}');
+          if (!waiting() && round > 1) break;
+        }
+        // Asked about work the server refused, the user takes the cloud's
+        // version, and the canvas catches up with everything since.
+        final asked = queue().attentionByEntityKey.keys.toSet();
+        if (asked.isNotEmpty) {
+          log.add('use cloud for $asked');
+          await container
+              .read(strategyPageSessionProvider.notifier)
+              .useCloudVersionsForRejected();
+          for (var round = 0; round < 10; round++) {
+            await container
+                .read(strategyProvider.notifier)
+                .forceSaveNow('cloud-strategy');
+            await container.read(strategyOpQueueProvider.notifier).flushNow();
+            await settle();
+            showServer();
+            await settle();
+          }
+        }
+        String told(StrategyOp op) {
+          final payload = op.payload;
+          final data = payload is Map ? payload['data'] : null;
+          final words = data is Map ? data['text'] : null;
+          return '${op.runtimeType}:${op.entityPublicId}:'
+              '${op.expectedRevision}:$words';
+        }
+
+        log.add('sent: ${[
+          for (final batch in sentBatches) batch.map(told).toList()
+        ]}');
+        final why = 'seed $seed:\n  ${log.join('\n  ')}';
+        final save = container.read(strategySaveStateProvider);
+        expect(waiting(), isFalse,
+            reason:
+                'Work still waits: queued ${queue().queuedByEntityKey.keys} '
+                'inFlight ${queue().inFlightByEntityKey.keys} '
+                'successor ${queue().successorByEntityKey.keys} '
+                'paused ${queue().pausedByEntityKey.keys} '
+                'attention ${queue().attentionByEntityKey.keys} '
+                'flushing ${queue().isFlushing} dirty ${save.isDirty} '
+                'saving ${save.isSaving} error ${queue().lastError}. $why');
+
+        expect(asking(), isFalse, reason: 'The user is still asked. $why');
+
+        // The canvas shows what the server holds.
+        expect(
+          Maps.mapNames[container.read(mapProvider).currentMap],
+          server.strategyMap,
+          reason: 'The canvas and the server show different maps. $why',
+        );
+        expect(
+          container.read(strategyThemeProvider).profileId,
+          server.strategyThemeProfileId,
+          reason: 'The canvas and the server show different themes. $why',
+        );
+        // The last change to the map is the one kept, unless the user was
+        // asked and took the cloud's.
+        final lastMap =
+            log.lastWhere((line) => line.contains(' map '), orElse: () => '');
+        // A map set back to what this device last read sends nothing, so a
+        // teammate's change it had not read stands; with no teammate
+        // changing the map, the user's last choice is the one kept.
+        final teammateChangedMap =
+            log.any((line) => line.startsWith('teammate map'));
+        if (!asked.contains(strategyKey) &&
+            lastMap.isNotEmpty &&
+            (!lastMap.contains('back') || !teammateChangedMap)) {
+          expect(server.strategyMap, lastMap.split(' ').last,
+              reason: 'The last map change is not the one kept. $why');
+        }
+        for (final id in ['a', 'b']) {
+          final canvas = onCanvas(id)!;
+          final data = onServer(id);
+          expect(data['text'], canvas.text,
+              reason: 'The server has other words for $id. $why');
+          expect(
+            Offset((data['position'] as Map)['dx'] as double,
+                (data['position'] as Map)['dy'] as double),
+            canvas.position,
+            reason: 'The server has $id somewhere else. $why',
+          );
+          // Nobody else touches these: the user's last edit is there, unless
+          // they were asked and took the cloud's.
+          if (asked.contains(EntitySyncKey.element(page.publicId, id))) {
+            continue;
+          }
+          if (userWords[id] case final words?) {
+            expect(canvas.text, words,
+                reason: "The user's last words for $id are gone. $why");
+          }
+          if (userPlaces[id] case final place?) {
+            expect(canvas.position, place,
+                reason: "The user's last place for $id is gone. $why");
+          }
+        }
+        expect(onServer('c')['text'], teammateWords,
+            reason: "The teammate's words for c were written over. $why");
+        expect(onCanvas('c')?.text, teammateWords,
+            reason: "The canvas never drew the teammate's words. $why");
+      }
+
+      // 200 schedules by default. SYNC_SEEDS runs others: a count
+      // ("5000"), or the seeds themselves ("1907,2673") to replay failures.
+      final wanted = Platform.environment['SYNC_SEEDS'] ?? '200';
+      final seeds = wanted.contains(',')
+          ? wanted.split(',').map(int.parse)
+          : Iterable<int>.generate(int.parse(wanted));
+      for (final seed in seeds) {
+        test('seed $seed', () => run(seed));
+      }
     });
 
     test(
