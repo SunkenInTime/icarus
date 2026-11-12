@@ -19,7 +19,6 @@ concurrency:
 env:
   RELEASE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
   FVM_HOME: ${{ github.workspace }}/.fvm_cache
-  PUB_CACHE: ${{ github.workspace }}/.pub-cache
 
 jobs:
   native-replay:
@@ -244,6 +243,9 @@ jobs:
       - name: Check Bundled Wall Heights
         run: fvm dart run tool/check_bundled_wall_heights.dart
 
+  # Flutter compiles test files one after another, and that takes longer than
+  # running them, so the suite's time falls with the number of shards and not
+  # with the runner's cores. Six shards finish with the web lane.
   test:
     name: test (shard ${{ matrix.shard }})
     needs: changes
@@ -252,7 +254,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1]
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - name: Checkout Release Source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -262,7 +264,7 @@ jobs:
       - uses: ./.github/actions/setup-flutter
 
       - name: Run Tests
-        run: fvm flutter test --total-shards 2 --shard-index ${{ matrix.shard }}
+        run: fvm flutter test --total-shards ${{ strategy.job-total }} --shard-index ${{ matrix.shard }}
 
   # Same flags as "Build Web Client" in deploy-web.yml, which ships the beta
   # against the production Convex deployment instead of development.
@@ -663,9 +665,14 @@ jobs:
 
   # The suite on the platform we ship, for the same changes as windows-build.
   windows-test:
+    name: windows-test (shard ${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.desktop == 'true'
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     defaults:
       run:
         shell: pwsh
@@ -678,10 +685,10 @@ jobs:
       - uses: ./.github/actions/setup-flutter
 
       - name: Run Tests
-        run: fvm flutter test
+        run: fvm flutter test --total-shards ${{ strategy.job-total }} --shard-index ${{ matrix.shard }}
 
       - name: Test Native Convex Bridge
-        if: needs.changes.outputs.bridge == 'true'
+        if: needs.changes.outputs.bridge == 'true' && matrix.shard == 0
         run: |
           cargo test --manifest-path third_party/convex_flutter/rust/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

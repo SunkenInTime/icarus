@@ -1,8 +1,8 @@
 name: Set up Flutter
 description: >-
   Install the Flutter SDK pinned in .fvmrc through FVM, reusing cached pub
-  packages and SDKs, then fetch the app's dependencies. Expects FVM_HOME and
-  PUB_CACHE in the job environment.
+  packages and SDKs, then fetch the app's dependencies. Expects FVM_HOME in
+  the job environment.
 
 runs:
   using: composite
@@ -13,10 +13,12 @@ runs:
       with:
         problem-matcher: false
 
+    # setup-dart sets PUB_CACHE to a folder in the runner's home, whatever the
+    # job set before it, so that folder is the one to cache.
     - name: Cache Pub Packages
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
-        path: .pub-cache
+        path: ${{ env.PUB_CACHE }}
         key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
         restore-keys: |
           ${{ runner.os }}-pub-
