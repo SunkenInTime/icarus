@@ -292,6 +292,7 @@ PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>
       customColorValue: (json['customColorValue'] as num?)?.toInt(),
       customOpacityPercent: (json['customOpacityPercent'] as num?)?.toInt(),
       mapDoor: json['mapDoor'] as String?,
+      isZone: json['isZone'] as bool? ?? false,
     )
       ..isDeleted = json['isDeleted'] as bool? ?? false
       ..caption = json['caption'] as String?
@@ -316,4 +317,6 @@ Map<String, dynamic> _$PlacedUtilityToJson(PlacedUtility instance) =>
       'customOpacityPercent': instance.customOpacityPercent,
       'isAlly': instance.isAlly,
       if (instance.mapDoor case final value?) 'mapDoor': value,
+      if (PlacedUtility._trueOrNull(instance.isZone) case final value?)
+        'isZone': value,
     };

@@ -21,7 +21,7 @@ import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
-enum _CustomShapeKind { circle, rectangle }
+enum _CustomShapeKind { circle, rectangle, zone }
 
 class CustomShapeTools extends ConsumerStatefulWidget {
   const CustomShapeTools({super.key});
@@ -64,9 +64,9 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Text(
-              // A zone is the rectangle: it colours the map itself, where a
-              // circle is drawn over everything.
-              _shape == _CustomShapeKind.rectangle
+              // A zone colours the map itself, where a circle or a rectangle
+              // is drawn over everything.
+              _shape == _CustomShapeKind.zone
                   ? context.l10n.shapeToolsZoneHint
                   : context.l10n.sidebarDragOrClickToPlace,
               style: TextStyle(
@@ -105,6 +105,11 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
             ),
             _kindButton(
               _CustomShapeKind.rectangle,
+              LucideIcons.square,
+              context.l10n.shapeToolsRectangle,
+            ),
+            _kindButton(
+              _CustomShapeKind.zone,
               LucideIcons.squareDashed,
               context.l10n.shapeToolsZone,
             ),
@@ -114,8 +119,8 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
     );
   }
 
-  /// One of the two kinds, named: an icon alone does not say that one is a
-  /// range drawn over the map and the other colours the map.
+  /// One of the kinds, named: an icon alone does not say that a zone colours
+  /// the map where the others are drawn over it.
   Widget _kindButton(_CustomShapeKind kind, IconData icon, String label) {
     final selected = _shape == kind;
     // The raised fill sits outside the Shad button, so the press goes around
@@ -249,11 +254,12 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
             child: ShadButton(
               backgroundColor: Settings.tacticalVioletTheme.primary,
               onPressed: () => _placeAtCenter(mapScale),
-              child: Text(
-                _shape == _CustomShapeKind.rectangle
-                    ? l10n.shapeToolsPlaceZoneButton
-                    : l10n.shapeToolsPlaceCircleButton,
-              ),
+              child: Text(switch (_shape) {
+                _CustomShapeKind.circle => l10n.shapeToolsPlaceCircleButton,
+                _CustomShapeKind.rectangle =>
+                  l10n.shapeToolsPlaceRectangleButton,
+                _CustomShapeKind.zone => l10n.shapeToolsPlaceZoneButton,
+              }),
             ),
           ),
         ),
@@ -286,6 +292,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
       mapScale: mapScale,
       colorValue: _selectedColor.toARGB32(),
       opacityPercent: _opacityPercent,
+      isZone: _shape == _CustomShapeKind.zone,
     );
   }
 
@@ -315,6 +322,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
             customLength: toolData.rectLengthMeters,
             customColorValue: toolData.colorValue,
             customOpacityPercent: toolData.opacityPercent,
+            isZone: toolData.isZone,
           );
     ref.read(utilityProvider.notifier).addUtility(placedUtility);
   }
@@ -336,6 +344,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
       colorValue: _selectedColor.toARGB32(),
       opacityPercent: _opacityPercent,
       mapScale: mapScale,
+      isZone: _shape == _CustomShapeKind.zone,
     );
   }
 }

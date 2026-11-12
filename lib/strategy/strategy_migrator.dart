@@ -500,6 +500,7 @@ class StrategyMigrator {
             customColorValue: utility.customColorValue,
             customOpacityPercent: utility.customOpacityPercent,
             mapDoor: utility.mapDoor,
+            isZone: utility.isZone,
           )
             ..rotation = utility.rotation
             ..length = utility.length

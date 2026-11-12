@@ -56,6 +56,14 @@ into lineup groups.
 **Wall path**:
 The points of a High Tide's wall, saved on the ability and measured from its icon. Moving the icon moves the wall. A High Tide without one is just the icon.
 
+**Shape**:
+A circle, rectangle, or zone a user places from the Shapes tool, in a colour
+and opacity they pick. A circle and a rectangle are filled and edged over
+everything under them. A **zone** is a rectangle that colours only the map's
+floor inside it, saved with `isZone`; a rectangle saved without it is a plain
+rectangle.
+_Avoid_: custom shape (in user-facing copy)
+
 **Map door**:
 A part of the map a player can change: Summit's three walls, Lotus's two rotating doors and its A Link wall, and Ascent's two doors. A door at rest has nothing saved. A changed door is one rectangle on the page, with `mapDoor` naming the door.
 _Avoid_: interactable

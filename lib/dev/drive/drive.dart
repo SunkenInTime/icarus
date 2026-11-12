@@ -48,7 +48,8 @@
 //   {"addHighTide": id, "at": [x, y], "wall": [[dx, dy], ...]?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
 //   {"setCaption": id, "text": t}      what the caption dialog's Done does
-//   {"addUtility": id, "type": name, "at": [x, y], "door": id?}  spike, customRectangle, customCircle
+//   {"addUtility": id, "type": name, "at": [x, y], "door": id?, "zone": b?}
+//                                      spike, customRectangle, customCircle
 //   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?}  two lineups, ids
 //                                      lo1{n}, lo2{n}; legacy ones share one id per lineup
 //   {"addAbility": id, "agent": name, "slot": n, "at": [x, y]}
@@ -1144,6 +1145,7 @@ Future<void> _run(Map<String, dynamic> step) async {
           customColorValue: type == UtilityType.spike ? null : 0xFF22C55E,
           customOpacityPercent: type == UtilityType.spike ? null : 30,
           mapDoor: step['door'] as String?,
+          isZone: step['zone'] == true,
         ),
       );
       await _place(
@@ -1503,7 +1505,8 @@ Future<void> _run(Map<String, dynamic> step) async {
             '${u.type.name}/${u.angle}@'
                 '${u.position.dx.toStringAsFixed(1)},'
                 '${u.position.dy.toStringAsFixed(1)}'
-                '${u.customLength == null ? '' : ' ${u.customLength!.toStringAsFixed(1)}x${u.customWidth!.toStringAsFixed(1)}'}',
+                '${u.customLength == null ? '' : ' ${u.customLength!.toStringAsFixed(1)}x${u.customWidth!.toStringAsFixed(1)}'}'
+                '${u.isZone ? ' zone' : ''}',
         ]} '
         'lineups=${c.read(lineUpProvider).graph.links.length} '
         'selected=${c.read(canvasSelectionProvider).length} '

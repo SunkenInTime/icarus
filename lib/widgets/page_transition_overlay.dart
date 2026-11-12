@@ -26,6 +26,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/view_cone/cone_coverage.dart';
 
 Offset _overlayScreenPosition({
@@ -884,6 +885,19 @@ class PlacedWidgetPreview {
                 ViewConeWidget.anchorPointVirtual,
               ),
           visionElevation: w.visionElevation,
+        );
+      }
+      if (w.type == UtilityType.customRectangle) {
+        return CustomRectangleUtilityWidget(
+          id: w.id,
+          mapScale: mapScale,
+          widthMeters: customWidth ?? w.customWidth,
+          rectLengthMeters: customLength ?? w.customLength,
+          colorValue: w.customColorValue,
+          opacityPercent: w.customOpacityPercent,
+          // Matches the unhovered state, as below.
+          showCenterMarker: false,
+          isZone: w.isZone,
         );
       }
       return UtilityData.utilityWidgets[w.type]!.createWidget(

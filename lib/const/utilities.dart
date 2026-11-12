@@ -193,6 +193,9 @@ class CustomShapeToolData implements DraggableData {
   final int colorValue;
   final int opacityPercent;
 
+  /// A rectangle that colours only the map's floor ([PlacedUtility.isZone]).
+  final bool isZone;
+
   const CustomShapeToolData({
     required this.type,
     required this.centerPoint,
@@ -201,6 +204,7 @@ class CustomShapeToolData implements DraggableData {
     required this.rectLengthMeters,
     required this.colorValue,
     required this.opacityPercent,
+    this.isZone = false,
   });
 
   factory CustomShapeToolData.circle({
@@ -227,6 +231,7 @@ class CustomShapeToolData implements DraggableData {
     required double mapScale,
     required int colorValue,
     required int opacityPercent,
+    required bool isZone,
   }) {
     final width = widthMeters * AgentData.inGameMetersDiameter * mapScale;
     final rectLength =
@@ -239,6 +244,7 @@ class CustomShapeToolData implements DraggableData {
       rectLengthMeters: rectLengthMeters,
       colorValue: colorValue,
       opacityPercent: opacityPercent,
+      isZone: isZone,
     );
   }
 

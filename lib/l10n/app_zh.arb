@@ -1272,8 +1272,10 @@
   "sightlineReportCropLabelAttack": "{map} 进攻 · 视线高度 {height} m",
   "sightlineReportCropLabelDefense": "{map} 防守 · 视线高度 {height} m",
   "shapeToolsCircle": "圆形",
+  "shapeToolsRectangle": "矩形",
   "shapeToolsZone": "区域",
   "shapeToolsZoneHint": "拖动或点击以放置，会为范围内的地图地面上色。",
   "shapeToolsPlaceZoneButton": "+ 放置区域",
+  "shapeToolsPlaceRectangleButton": "+ 放置矩形",
   "shapeToolsPlaceCircleButton": "+ 放置圆形"
 }
