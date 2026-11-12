@@ -22,6 +22,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_util
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_circle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_rectangle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
+import 'package:icarus/widgets/map_floor_clip.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
 class _FixedMapProvider extends MapProvider {
@@ -313,9 +314,9 @@ void main() {
   });
 
   testWidgets(
-      'a rectangle shows only its center marker until the pointer reaches it',
+      'a zone shows only its center marker until the pointer reaches it',
       (tester) async {
-    final utility = _rectangle();
+    final utility = _rectangle(isZone: true);
     final container = _containerWith(utility);
     addTearDown(container.dispose);
 
@@ -377,6 +378,85 @@ void main() {
     await tester.pump();
     expect(shape().centerMarkerVisible, isTrue);
     expect(handlesShow(), isFalse);
+  });
+
+  testWidgets(
+      'a rectangle is drawn whole with its edge, and hover brings its handles',
+      (tester) async {
+    final utility = _rectangle();
+    final container = _containerWith(utility);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        container: container,
+        child: PlacedCustomRectangleWidget(
+          utility: utility,
+          id: utility.id,
+          isAttack: true,
+          onDragEnd: (_) {},
+        ),
+      ),
+    );
+    bool handlesShow() => tester
+        .widgetList<ShapeIndicatorFade>(find.byType(ShapeIndicatorFade))
+        .every((indicator) => indicator.visible);
+    final shape = find.byType(CustomRectangleUtilityWidget);
+
+    // Not cut to the map's floor, and its edge shows at rest.
+    expect(
+      find.descendant(of: shape, matching: find.byType(MapFloorClip)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: shape,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is DecoratedBox &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration as BoxDecoration).shape ==
+                  BoxShape.rectangle &&
+              (widget.decoration as BoxDecoration).border != null &&
+              (widget.decoration as BoxDecoration).color != null,
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(handlesShow(), isFalse);
+
+    // Anywhere over it brings the handles, without going for the marker.
+    final box = tester.getRect(shape);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: box.center + Offset(box.width / 2 - 2, 0));
+    await tester.pump();
+    expect(handlesShow(), isTrue);
+  });
+
+  testWidgets('a zone is cut to the map floor', (tester) async {
+    final utility = _rectangle(isZone: true);
+    final container = _containerWith(utility);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        container: container,
+        child: PlacedCustomRectangleWidget(
+          utility: utility,
+          id: utility.id,
+          isAttack: true,
+          onDragEnd: (_) {},
+        ),
+      ),
+    );
+
+    expect(
+      find.descendant(
+        of: find.byType(CustomRectangleUtilityWidget),
+        matching: find.byType(MapFloorClip),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('rectangle rotation handle communicates hover and active states',
@@ -811,7 +891,7 @@ PlacedUtility _circle() => PlacedUtility(
       customOpacityPercent: 40,
     );
 
-PlacedUtility _rectangle() => PlacedUtility(
+PlacedUtility _rectangle({bool isZone = false}) => PlacedUtility(
       id: 'rectangle',
       type: UtilityType.customRectangle,
       position: const Offset(400, 300),
@@ -819,4 +899,5 @@ PlacedUtility _rectangle() => PlacedUtility(
       customLength: 16,
       customColorValue: 0xff8b5cf6,
       customOpacityPercent: 40,
+      isZone: isZone,
     );

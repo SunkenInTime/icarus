@@ -184,13 +184,15 @@ class _PlacedCustomRectangleWidgetState
             _isRotating ||
             _activeHandle != _RectangleResizeHandle.none);
 
-    // The edge, the resize pills and the rotate badge: only for someone
-    // changing the shape.
-    final showHandles = !_isDragging &&
-        !isScreenshot &&
-        (_reachedFor ||
-            _isRotating ||
-            _activeHandle != _RectangleResizeHandle.none);
+    // A zone's edge, resize pills and rotate badge: only for someone
+    // changing the shape. A plain rectangle shows its handles on hover.
+    final showHandles = utilityRef.isZone
+        ? !_isDragging &&
+            !isScreenshot &&
+            (_reachedFor ||
+                _isRotating ||
+                _activeHandle != _RectangleResizeHandle.none)
+        : showIndicators;
 
     return Transform.translate(
       offset: Offset(-insetX, -insetY) + _resizePositionDeltaScreen,
@@ -238,6 +240,7 @@ class _PlacedCustomRectangleWidgetState
                                 colorValue: utilityRef.customColorValue,
                                 opacityPercent: utilityRef.customOpacityPercent,
                                 mapScale: mapScale,
+                                isZone: utilityRef.isZone,
                               ),
                             ),
                           ),
@@ -266,6 +269,7 @@ class _PlacedCustomRectangleWidgetState
                               mapScale: mapScale,
                               showCenterMarker: !isScreenshot,
                               centerMarkerVisible: showIndicators,
+                              isZone: utilityRef.isZone,
                               outlineVisible: showHandles,
                               order: index,
                               onMarkerHover: () {

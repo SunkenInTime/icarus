@@ -1272,8 +1272,10 @@
   "sightlineReportCropLabelAttack": "{map} 攻め · 目線 {height} m",
   "sightlineReportCropLabelDefense": "{map} 守り · 目線 {height} m",
   "shapeToolsCircle": "サークル",
+  "shapeToolsRectangle": "長方形",
   "shapeToolsZone": "ゾーン",
   "shapeToolsZoneHint": "ドラッグかクリックで配置。範囲内のマップの床に色を付けます。",
   "shapeToolsPlaceZoneButton": "+ ゾーンを配置",
+  "shapeToolsPlaceRectangleButton": "+ 長方形を配置",
   "shapeToolsPlaceCircleButton": "+ サークルを配置"
 }

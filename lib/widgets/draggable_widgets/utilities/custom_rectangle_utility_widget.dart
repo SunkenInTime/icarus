@@ -21,6 +21,7 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
     this.mapScale,
     this.showCenterMarker = true,
     this.centerMarkerVisible = true,
+    this.isZone = false,
     this.outlineVisible = false,
     this.order,
     this.onMarkerHover,
@@ -38,12 +39,17 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
   /// shape can still be grabbed the moment hover reveals it.
   final bool centerMarkerVisible;
 
-  /// The rectangle's whole edge, walls and all. Off at rest, where only the
-  /// map's floor takes the colour; on while the shape is being changed.
+  /// A zone colours only the map's floor inside it ([PlacedUtility.isZone]).
+  /// A plain rectangle is filled and edged over everything.
+  final bool isZone;
+
+  /// A zone's whole edge, walls and all. Off at rest, where only the map's
+  /// floor takes the colour; on while the shape is being changed. A plain
+  /// rectangle always shows its edge.
   final bool outlineVisible;
 
-  /// Where this rectangle sits among the page's shapes, lowest first: a
-  /// rectangle above this one colours the floor where the two cross.
+  /// Where this zone sits among the page's shapes, lowest first: a zone
+  /// above this one colours the floor where the two cross.
   final int? order;
 
   /// The pointer reached the center marker: the user is going for the shape.
@@ -89,31 +95,44 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
       height: scaledWidth,
       child: Stack(
         children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: MapFloorClip(
-                order: order,
-                child: ColoredBox(
-                  color: color.withValues(alpha: fillOpacity),
+          if (isZone) ...[
+            Positioned.fill(
+              child: IgnorePointer(
+                child: MapFloorClip(
+                  order: order,
+                  child: ColoredBox(
+                    color: color.withValues(alpha: fillOpacity),
+                  ),
                 ),
               ),
             ),
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: AnimatedOpacity(
-                opacity: outlineVisible ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 150),
-                curve: Settings.easeOut,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: outlineVisible ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 150),
+                  curve: Settings.easeOut,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: color, width: coord.scale(2)),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ] else
+            Positioned.fill(
+              child: IgnorePointer(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
+                    color: color.withValues(alpha: fillOpacity),
                     border: Border.all(color: color, width: coord.scale(2)),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
               ),
             ),
-          ),
           if (showCenterMarker)
             Center(
               child: MouseWatch(

@@ -383,6 +383,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                             customLength: customData.rectLengthMeters,
                             customColorValue: customData.colorValue,
                             customOpacityPercent: customData.opacityPercent,
+                            isZone: customData.isZone,
                           );
                 placedUtility.position =
                     storedUtilityPositionForRenderedScreenPosition(

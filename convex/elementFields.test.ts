@@ -694,6 +694,85 @@ describe("a map door and the builds that don't know it", () => {
   });
 });
 
+describe("a zone and the builds that don't know it", () => {
+  const zoneBuild = { acceptsPictureIds: true, elementFieldLevel: 4 };
+  const doorBuild = { acceptsPictureIds: true, elementFieldLevel: 3 };
+
+  function zoneData(fields: Record<string, unknown> = {}) {
+    return {
+      id: "area",
+      type: "customRectangle",
+      position: { dx: 10, dy: 20 },
+      customWidth: 6,
+      customLength: 18,
+      ...fields,
+    };
+  }
+
+  function patchArea(
+    opId: string,
+    data: Record<string, unknown>,
+    merge?: { fields: string[] },
+  ) {
+    return {
+      ...patch(opId, "area", 1, data, merge),
+      payload: { kind: "utility", payloadVersion: 1, data },
+    };
+  }
+
+  /// [seed]'s strategy, plus "area", a zone.
+  async function seedZone() {
+    const seeded = await seed();
+    const data = zoneData({ isZone: true });
+    await send(seeded.owner, zoneBuild, "seed-zone", [
+      {
+        ...add("add-area", data),
+        payload: { kind: "utility", payloadVersion: 1, data },
+      },
+    ]);
+    return seeded;
+  }
+
+  test("a build below the field's level reads a zone as a rectangle", async () => {
+    const { owner } = await seedZone();
+
+    for (const [client, data] of [
+      [doorBuild, zoneData()],
+      [zoneBuild, zoneData({ isZone: true })],
+    ] as const) {
+      for (const [name, elements] of await reads(owner, client)) {
+        expect(find(elements, "area").payload.data, name).toEqual(data);
+      }
+    }
+  });
+
+  test("a move by a build below the field's level keeps the zone", async () => {
+    const { t, owner } = await seedZone();
+    const moved = { position: { dx: 50, dy: 60 } };
+
+    await send(owner, doorBuild, "old", [
+      patchArea("move", zoneData(moved), { fields: ["position"] }),
+    ]);
+
+    expect((await row(t, "area"))!.payload.data).toEqual(
+      zoneData({ ...moved, isZone: true }),
+    );
+  });
+
+  test("a whole write by a build below the field's level keeps the zone", async () => {
+    const { t, owner } = await seedZone();
+
+    const results = await send(owner, doorBuild, "old", [
+      patchArea("whole", zoneData({ customLength: 4 })),
+    ]);
+
+    expect(results[0]!.status).toBe("applied");
+    const stored = (await row(t, "area"))!.payload.data;
+    expect(stored.customLength).toBe(4);
+    expect(stored.isZone).toBe(true);
+  });
+});
+
 describe("before any caption exists", () => {
   test("a row without the field reads the same at every level", async () => {
     const { t, owner } = await seed();

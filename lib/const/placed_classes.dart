@@ -1289,6 +1289,14 @@ class PlacedUtility extends PlacedWidget {
   @JsonKey(includeIfNull: false)
   final String? mapDoor;
 
+  /// A custom rectangle that colours only the map's floor inside it. False:
+  /// a plain rectangle, drawn over everything, as every rectangle saved
+  /// before zones is. Set when the shape is placed and never changed. A
+  /// later element field (see LATER_ELEMENT_FIELDS in
+  /// convex/lib/elementFields.ts), written only when true.
+  @JsonKey(defaultValue: false, includeIfNull: false, toJson: _trueOrNull)
+  final bool isZone;
+
   PlacedUtility({
     required this.type,
     required super.position,
@@ -1302,7 +1310,10 @@ class PlacedUtility extends PlacedWidget {
     this.customColorValue,
     this.customOpacityPercent,
     this.mapDoor,
+    this.isZone = false,
   });
+
+  static bool? _trueOrNull(bool value) => value ? true : null;
 
   factory PlacedUtility.fromJson(Map<String, dynamic> json) =>
       _$PlacedUtilityFromJson(json);
@@ -1352,6 +1363,7 @@ class PlacedUtility extends PlacedWidget {
           ? this.customOpacityPercent
           : customOpacityPercent as int?,
       mapDoor: mapDoor,
+      isZone: isZone,
     );
     copied.rotation = rotation ?? this.rotation;
     copied.length = length ?? this.length;

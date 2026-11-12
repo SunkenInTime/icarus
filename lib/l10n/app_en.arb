@@ -5967,6 +5967,10 @@
   "@shapeToolsCircle": {
     "description": "The shape kind button for a circle, a range drawn over the map."
   },
+  "shapeToolsRectangle": "Rectangle",
+  "@shapeToolsRectangle": {
+    "description": "The shape kind button for a rectangle, filled and edged over the map like a circle."
+  },
   "shapeToolsZone": "Zone",
   "@shapeToolsZone": {
     "description": "The shape kind button for a zone: a rectangle that colours the map floor inside it."
@@ -5978,6 +5982,10 @@
   "shapeToolsPlaceZoneButton": "+ Place zone",
   "@shapeToolsPlaceZoneButton": {
     "description": "Button that places a zone at the middle of the map."
+  },
+  "shapeToolsPlaceRectangleButton": "+ Place rectangle",
+  "@shapeToolsPlaceRectangleButton": {
+    "description": "Button that places a rectangle at the middle of the map."
   },
   "shapeToolsPlaceCircleButton": "+ Place circle",
   "@shapeToolsPlaceCircleButton": {

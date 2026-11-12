@@ -14,9 +14,8 @@ import 'package:icarus/services/app_assets.dart';
 bool pageNeedsCaptureGeometry(StrategyPage page) =>
     page.agentData.any((agent) => agent is PlacedViewConeAgent) ||
     page.utilityData.any((utility) => UtilityData.isViewCone(utility.type)) ||
-    // A rectangle is cut to the map's floor, which comes from the same model.
-    page.utilityData
-        .any((utility) => utility.type == UtilityType.customRectangle) ||
+    // A zone is cut to the map's floor, which comes from the same model.
+    page.utilityData.any((utility) => utility.isZone) ||
     page.abilityData.any((ability) =>
         ability.visualState.showVisionCone &&
         AbilityVisionConeSpec.forAbility(ability.data) != null);

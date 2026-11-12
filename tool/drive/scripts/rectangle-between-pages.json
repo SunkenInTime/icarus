@@ -7,7 +7,7 @@
   {"tapText": "Between {run}", "optional": true},
   {"wait": 6},
   {"tapIcon": "x", "optional": true},
-  {"addUtility": "zone-{run}", "type": "customRectangle", "size": 22, "at": [786, 319]},
+  {"addUtility": "zone-{run}", "type": "customRectangle", "zone": true, "size": 22, "at": [786, 319]},
   {"addAgent": "a1-{run}", "agent": "jett", "at": [655, 352]},
   {"hoverAt": [300, 150]},
   {"wait": 1},
