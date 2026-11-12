@@ -35,6 +35,7 @@ import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/touch_strategy_viewer.dart';
 import 'package:icarus/widgets/turn_phone_notice.dart';
 import 'package:icarus/widgets/map_selector.dart';
+import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
@@ -214,6 +215,8 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       final loadedStrategy = ref.read(strategyProvider);
       if (loadedStrategy.strategyId != strategyId ||
           loadedStrategy.strategyName == null) {
+        // Giving way to another strategy is not a failed load.
+        if (_gaveWayTo(loadedStrategy.strategyId, openBefore)) return;
         throw StateError('Strategy "$strategyId" was not found.');
       }
       _hasInitialLoadCompleted = true;
@@ -231,11 +234,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       // Refused: the access-lost dialog says so over the skeleton, and
       // leads out (see StrategyAccessWatcher).
       if (ref.read(strategyAccessLostProvider)) return;
-      // Another strategy was opened while this one loaded, in an editor of
-      // its own: nothing failed that the reader should hear about.
-      final open = ref.read(strategyProvider).strategyId;
-      if (open != null && open != strategyId && open != openBefore) {
-        _leaveAfterFailedLoad();
+      // Another strategy was opened while this one loaded: nothing failed
+      // that the reader should hear about.
+      if (_gaveWayTo(ref.read(strategyProvider).strategyId, openBefore)) {
         return;
       }
       final notKept = ref.read(remoteEditorSnapshotProvider).error
@@ -254,6 +255,34 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         setState(() => _isInitialLoadPending = false);
       }
     }
+  }
+
+  /// Whether [open], the strategy open now, took this editor's place while
+  /// its own was loading: it is another strategy, opened since the load
+  /// began ([openBefore] is what was open then). If so, this settles where
+  /// it shows.
+  ///
+  /// It shows in an editor of its own above this one when it was opened from
+  /// outside (a share link arriving as this editor starts), and then this
+  /// editor goes. Or it shows in this very editor, when a share link or
+  /// back and forward swapped strategies in place: then this editor stays
+  /// and shows it. Popping here would leave it open with nothing showing it.
+  bool _gaveWayTo(String? open, String? openBefore) {
+    if (open == null ||
+        open == widget.initialStrategyId ||
+        open == openBefore) {
+      return false;
+    }
+    final route = ModalRoute.of(context);
+    final top = mouseNavigationRouteObserver.topRoute;
+    final anotherEditorShowsIt =
+        top != route && top?.settings.name == Routes.strategyView;
+    if (!anotherEditorShowsIt) {
+      _hasInitialLoadCompleted = true;
+    } else if (route != null && route.isActive) {
+      Navigator.of(context).removeRoute(route);
+    }
+    return true;
   }
 
   /// Takes this editor off the screen after its strategy failed to open.

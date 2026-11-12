@@ -2124,6 +2124,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       final newDir = kIsWeb
           ? null
           : await opening.wait(setStorageDirectory(migratedStrategy.id));
+      // A cloud strategy still being read, or the one this replaces in
+      // place, has no say in a local one: its late answer, or a link its
+      // owner disables, must not reach this editor.
+      ref.read(remoteEditorSnapshotProvider.notifier).clear();
       state = StrategyState(
         strategyId: migratedStrategy.id,
         strategyName: migratedStrategy.name,
