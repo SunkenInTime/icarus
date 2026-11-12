@@ -1,0 +1,24 @@
+{
+  "version": "5.2.1+112",
+  "shortVersion": 112,
+  "title": "5.2.1 Update",
+  "description": "The rectangle is back beside the zone, and shared strategies keep everyone's changes.",
+  "date": "2026-11-12",
+  "mandatory": false,
+  "channels": ["desktop", "stable"],
+  "platforms": ["windows"],
+  "changes": [
+    {
+      "message": "The rectangle is back in Shapes, beside Circle and Zone. Rectangles you placed before 5.2.0 look the way they did again: filled and outlined over the map. Zones placed in 5.2.0 now show as rectangles, so place them again with Zone.",
+      "type": "fix"
+    },
+    {
+      "message": "In a shared cloud strategy, a teammate's map or theme change is no longer undone by your next edit, and it shows on your screen without reopening the strategy.",
+      "type": "fix"
+    },
+    {
+      "message": "An edit made at the moment a teammate's change arrives is no longer lost.",
+      "type": "fix"
+    }
+  ]
+}
