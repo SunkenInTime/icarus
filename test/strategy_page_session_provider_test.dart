@@ -1701,7 +1701,8 @@ void main() {
       op.payload,
       containsPair('mapData', Maps.mapNames[MapValue.bind]),
     );
-    expect(op.payload, containsPair('clearThemeProfileId', true));
+    // Only what the user changed goes: the theme is the server's to keep.
+    expect((op.payload! as Map).keys, ['mapData']);
   });
 
   test('cloud page reorder is persisted as a page descriptor op', () async {
@@ -10075,6 +10076,37 @@ void main() {
 
         expect(server.strategyMap, 'haven');
         expect(container.read(mapProvider).currentMap, MapValue.haven);
+      });
+
+      test(
+          "a theme change leaves a teammate's map the canvas has not drawn "
+          'yet', () async {
+        final (container, _) = await open();
+        // Mid-drag, so the teammate's map waits to be drawn.
+        container.read(editorPointersProvider.notifier).down(1);
+        server.teammateSetsMap('haven');
+        showServer();
+        await settle();
+        expect(container.read(mapProvider).currentMap, MapValue.ascent);
+
+        container
+            .read(strategyThemeProvider.notifier)
+            .setProfile(MapThemeProfilesProvider.immutableValorantProfileId);
+        container.read(editorPointersProvider.notifier).release(1);
+        await settle();
+        await container
+            .read(strategyProvider.notifier)
+            .forceSaveNow('cloud-strategy');
+        await drained(container);
+        showServer();
+        await settle();
+
+        expect(server.strategyMap, 'haven');
+        expect(server.strategyThemeProfileId,
+            MapThemeProfilesProvider.immutableValorantProfileId);
+        expect(container.read(mapProvider).currentMap, MapValue.haven);
+        expect(container.read(strategyThemeProvider).profileId,
+            MapThemeProfilesProvider.immutableValorantProfileId);
       });
 
       test(
