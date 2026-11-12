@@ -702,6 +702,28 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     if (changed.isEmpty) return;
 
+    // The outbox keeps one change to the strategy, so this one carries what
+    // the change still waiting does, with the user's newer values over it.
+    final payload = <String, dynamic>{...?waiting?.payload};
+    if (changed.contains(_StrategyPart.map)) payload['mapData'] = mapData;
+    if (changed.contains(_StrategyPart.theme)) {
+      payload
+        ..remove('themeProfileId')
+        ..remove('clearThemeProfileId')
+        ..remove('themeOverridePalette')
+        ..remove('clearThemeOverridePalette');
+      if (strategyTheme.profileId != null) {
+        payload['themeProfileId'] = strategyTheme.profileId;
+      } else {
+        payload['clearThemeProfileId'] = true;
+      }
+      if (themeOverridePalette != null) {
+        payload['themeOverridePalette'] = themeOverridePalette;
+      } else {
+        payload['clearThemeOverridePalette'] = true;
+      }
+    }
+
     final changes = _partChanges;
     final failuresBefore = queueNotifier.persistenceFailureCount;
     await queueNotifier.syncDesiredGenericOp(
@@ -709,19 +731,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       desiredOp: StrategyPatchOp(
         opId: const Uuid().v4(),
         expectedStrategyRevision: header.revision,
-        payload: {
-          if (changed.contains(_StrategyPart.map)) 'mapData': mapData,
-          if (changed.contains(_StrategyPart.theme)) ...{
-            if (strategyTheme.profileId != null)
-              'themeProfileId': strategyTheme.profileId
-            else
-              'clearThemeProfileId': true,
-            if (themeOverridePalette != null)
-              'themeOverridePalette': themeOverridePalette
-            else
-              'clearThemeOverridePalette': true,
-          },
-        },
+        payload: payload,
       ),
       flushImmediately: flushImmediately,
     );
