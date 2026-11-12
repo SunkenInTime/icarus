@@ -3675,42 +3675,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     return Uri.decodeComponent(parts[1]);
   }
 
-  void _publishAccountSummary() {
-    if (_isDisposed) return;
-    final summary = _accountSummary(state.accountId);
-    final hasDurabilityFailure = _hasDurabilityFailureForCurrentAccount;
-    if (_sameAccountSummary(state.accountOutbox, summary) &&
-        state.hasDurabilityFailure == hasDurabilityFailure) {
-      return;
-    }
-    state = state.copyWith(
-      accountOutbox: summary,
-      hasDurabilityFailure: hasDurabilityFailure,
-    );
-  }
-
-  bool _sameAccountSummary(
-    AccountStrategyOutboxSummary left,
-    AccountStrategyOutboxSummary right,
-  ) {
-    if (left.accountId != right.accountId ||
-        left.strategies.length != right.strategies.length) {
-      return false;
-    }
-    for (final entry in left.strategies.entries) {
-      final other = right.strategies[entry.key];
-      if (other == null ||
-          other.queuedCount != entry.value.queuedCount ||
-          other.inFlightCount != entry.value.inFlightCount ||
-          other.pausedCount != entry.value.pausedCount ||
-          other.attentionCount != entry.value.attentionCount ||
-          other.successorCount != entry.value.successorCount ||
-          other.reason != entry.value.reason) {
-        return false;
-      }
-    }
-    return true;
-  }
+  /// Publishes the outbox as its records now stand: the account's summary
+  /// together with the open strategy's waiting work. Never one without the
+  /// other: a state that counted a newly stored change in the summary while
+  /// its waiting work still left it out read as nothing left to send, and
+  /// the canvas was redrawn from the server over the edit just stored.
+  void _publishAccountSummary() => _refreshActiveQueueView();
 
   Future<T> _serializeWrite<T>(Future<T> Function() action) {
     final next = _writeTail.then((_) => action());
