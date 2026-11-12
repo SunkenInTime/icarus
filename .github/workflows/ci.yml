@@ -244,8 +244,10 @@ jobs:
         run: fvm dart run tool/check_bundled_wall_heights.dart
 
   # Flutter compiles test files one after another, and that takes longer than
-  # running them, so the suite's time falls with the number of shards and not
-  # with the runner's cores. Six shards finish with the web lane.
+  # running them, so the suite's time falls with the number of files a runner
+  # is given and not with its cores. `flutter test --total-shards` splits by
+  # test and still compiles every file in every shard, so each shard is handed
+  # its own files instead.
   test:
     name: test (shard ${{ matrix.shard }})
     needs: changes
@@ -264,7 +266,14 @@ jobs:
       - uses: ./.github/actions/setup-flutter
 
       - name: Run Tests
-        run: fvm flutter test --total-shards ${{ strategy.job-total }} --shard-index ${{ matrix.shard }}
+        shell: bash
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }}
+        run: |
+          mapfile -t files < <(find test -name '*_test.dart' | LC_ALL=C sort | awk -v n="$SHARDS" -v i="$SHARD" 'NR % n == i')
+          echo "Shard $SHARD of $SHARDS: ${#files[@]} test files"
+          fvm flutter test "${files[@]}"
 
   # Same flags as "Build Web Client" in deploy-web.yml, which ships the beta
   # against the production Convex deployment instead of development.
@@ -685,7 +694,14 @@ jobs:
       - uses: ./.github/actions/setup-flutter
 
       - name: Run Tests
-        run: fvm flutter test --total-shards ${{ strategy.job-total }} --shard-index ${{ matrix.shard }}
+        shell: bash
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }}
+        run: |
+          mapfile -t files < <(find test -name '*_test.dart' | LC_ALL=C sort | awk -v n="$SHARDS" -v i="$SHARD" 'NR % n == i')
+          echo "Shard $SHARD of $SHARDS: ${#files[@]} test files"
+          fvm flutter test "${files[@]}"
 
       - name: Test Native Convex Bridge
         if: needs.changes.outputs.bridge == 'true' && matrix.shard == 0
