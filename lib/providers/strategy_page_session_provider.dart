@@ -5,6 +5,7 @@ import 'dart:math' show max;
 import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/open_attempt.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -330,13 +331,17 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required StrategySource source,
     required bool selectFirstPageIfNeeded,
     String? preferredPageId,
+    OpenAttempt? attempt,
   }) async {
+    // The open this is a step of, if any. It stops here too when the open
+    // gave way (see [OpenAttempt]).
+    final opening = attempt ?? OpenAttempt.unchallenged;
     _pageSessionGeneration++;
     // As in reset: a switch this supersedes leaves its transition here.
     ref.read(transitionProvider.notifier).complete();
     state = state.copyWith(transitionState: PageTransitionState.idle);
     final pageSource = _resolvePageSource(strategyId, source);
-    final pageIds = await pageSource.listPageIds();
+    final pageIds = await opening.wait(pageSource.listPageIds());
     // Drawn from this computer's copy, the page the copy could show is the
     // only one there is to open (see RemoteEditorSnapshotNotifier).
     final copiedPage = source == StrategySource.cloud
@@ -368,7 +373,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         );
 
     if (selected != null) {
-      await _rehydrateActivePageFromSource(selected);
+      await opening.wait(_rehydrateActivePageFromSource(selected));
     }
     // Snapshots that arrived while the strategy was opening went unheard:
     // catch up on pages that came back while it was closed.

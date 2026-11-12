@@ -14,6 +14,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
@@ -101,9 +102,21 @@ typedef NewPageGaps = ({
 
 class StrategyProvider extends Notifier<StrategyState> {
   /// Bumped when a strategy starts to open and when the open one is closed.
-  /// A local load that finds it moved on gave way to something newer (the
-  /// reader left, or opened another strategy) and opens nothing.
   int _openAttempt = 0;
+
+  /// Runs one attempt to open a strategy. Every wait in [steps] goes through
+  /// the attempt it is given (see [OpenAttempt]), so an open the reader left,
+  /// or replaced by opening another strategy, stops at that wait and changes
+  /// nothing after it. Giving way is not a failure: this returns normally,
+  /// and what is open afterwards is whatever took its place.
+  Future<void> _open(Future<void> Function(OpenAttempt opening) steps) async {
+    final attempt = ++_openAttempt;
+    try {
+      await steps(OpenAttempt(() => attempt == _openAttempt));
+    } on OpenGaveWay {
+      // The newer open, or the close, owns the outcome.
+    }
+  }
 
   @override
   StrategyState build() {
@@ -354,55 +367,54 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     cancelPendingSave();
     ref.read(strategySaveStateProvider.notifier).reset();
-    final attempt = ++_openAttempt;
 
-    await ref
-        .read(remoteEditorSnapshotProvider.notifier)
-        .openStrategy(strategyID, activePagePublicId: pageId);
-    final snapshotState = ref.read(remoteEditorSnapshotProvider);
-    final snapshot = snapshotState.valueOrNull;
-    if (snapshot == null || snapshot.header.publicId != strategyID) {
-      // Returning silently here used to leave the editor on an eternal
-      // skeleton with no feedback. Throw so callers can surface the failure
-      // and back out. The same goes for a strategy that was closed, or gave
-      // way to another, while it loaded: it must not open after the fact.
-      throw StateError(
-        'Cloud strategy snapshot unavailable for $strategyID'
-        '${snapshotState.hasError ? ': ${snapshotState.error}' : ''}',
+    return _open((opening) async {
+      await opening.wait(
+        ref
+            .read(remoteEditorSnapshotProvider.notifier)
+            .openStrategy(strategyID, activePagePublicId: pageId),
       );
-    }
-
-    final storageDirectory = kIsWeb
-        ? null
-        : (await setStorageDirectory(snapshot.header.publicId)).path;
-    // Closed, or another strategy opened, while its folder was being made.
-    if (attempt != _openAttempt) {
-      throw StateError('Opening $strategyID gave way to something newer.');
-    }
-    state = state.copyWith(
-      strategyId: snapshot.header.publicId,
-      strategyName: snapshot.header.name,
-      source: StrategySource.cloud,
-      storageDirectory: storageDirectory,
-      isOpen: true,
-    );
-
-    await ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
-          strategyId: snapshot.header.publicId,
-          source: StrategySource.cloud,
-          selectFirstPageIfNeeded: true,
-          preferredPageId: pageId,
+      final snapshotState = ref.read(remoteEditorSnapshotProvider);
+      final snapshot = snapshotState.valueOrNull;
+      if (snapshot == null) {
+        // Returning silently here used to leave the editor on an eternal
+        // skeleton with no feedback. Throw so callers can surface the
+        // failure and back out.
+        throw StateError(
+          'Cloud strategy snapshot unavailable for $strategyID'
+          '${snapshotState.hasError ? ': ${snapshotState.error}' : ''}',
         );
-    // Gave way while its pages were read: the uploads belong to what is
-    // open now, or to nothing.
-    if (attempt != _openAttempt) return;
-    // Each page the editor reads is checked for images to upload as it
-    // arrives (see RemoteEditorSnapshotNotifier).
-    unawaited(
-      ref.read(cloudMediaUploadQueueProvider.notifier).setActiveStrategy(
-            snapshot.header.publicId,
-          ),
-    );
+      }
+
+      final storageDirectory = kIsWeb
+          ? null
+          : (await opening.wait(setStorageDirectory(snapshot.header.publicId)))
+              .path;
+      state = state.copyWith(
+        strategyId: snapshot.header.publicId,
+        strategyName: snapshot.header.name,
+        source: StrategySource.cloud,
+        storageDirectory: storageDirectory,
+        isOpen: true,
+      );
+
+      await opening.wait(
+        ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
+              strategyId: snapshot.header.publicId,
+              source: StrategySource.cloud,
+              selectFirstPageIfNeeded: true,
+              preferredPageId: pageId,
+              attempt: opening,
+            ),
+      );
+      // Each page the editor reads is checked for images to upload as it
+      // arrives (see RemoteEditorSnapshotNotifier).
+      unawaited(
+        ref.read(cloudMediaUploadQueueProvider.notifier).setActiveStrategy(
+              snapshot.header.publicId,
+            ),
+      );
+    });
   }
 
   Future<void> switchPage(String pageID) async {
@@ -2059,68 +2071,73 @@ class StrategyProvider extends Notifier<StrategyState> {
       throw StateError('This strategy is moving to the cloud.');
     }
     cancelPendingSave();
-    final attempt = ++_openAttempt;
-    final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .values
-        .where((StrategyData strategy) {
-      return strategy.id == id;
-    }).firstOrNull;
 
-    if (newStrat == null) {
-      return;
-    }
-    _withoutPersistenceTracking(() {
-      ref.read(actionProvider.notifier).resetActionState();
-    });
+    return _open((opening) async {
+      final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+          .values
+          .where((StrategyData strategy) {
+        return strategy.id == id;
+      }).firstOrNull;
 
-    List<PlacedImage> pageImageData = [];
-    for (final page in newStrat.pages) {
-      pageImageData.addAll(page.imageData);
-    }
-    if (!kIsWeb) {
-      List<String> allImageIds = [];
-      for (final page in newStrat.pages) {
-        allImageIds.addAll(page.imageData.map((image) => image.pictureId));
-        for (final link in page.lineUpLinks) {
-          allImageIds.addAll(link.images.map((image) => image.id));
-        }
+      if (newStrat == null) {
+        return;
       }
-      await ref
-          .read(placedImageProvider.notifier)
-          .deleteUnusedImages(newStrat.id, allImageIds);
-    }
+      _withoutPersistenceTracking(() {
+        ref.read(actionProvider.notifier).resetActionState();
+      });
 
-    // We clear previous data to avoid artifacts when loading a new strategy
-    final migratedStrategy = StrategyMigrator.migrateToCurrentVersion(newStrat);
-
-    if (migratedStrategy != newStrat) {
-      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-          .put(migratedStrategy.id, migratedStrategy);
-    }
-
-    final newDir =
-        kIsWeb ? null : await setStorageDirectory(migratedStrategy.id);
-    // Left, or another strategy opened, while this one was being read from
-    // disk: opening it now would replace what the reader moved on to.
-    if (attempt != _openAttempt) return;
-    state = StrategyState(
-      strategyId: migratedStrategy.id,
-      strategyName: migratedStrategy.name,
-      source: StrategySource.local,
-      storageDirectory: newDir?.path,
-      isOpen: true,
-    );
-    ref.read(strategySaveStateProvider.notifier).reset();
-    await ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
-          strategyId: migratedStrategy.id,
-          source: StrategySource.local,
-          selectFirstPageIfNeeded: true,
-          preferredPageId: pageId,
+      List<PlacedImage> pageImageData = [];
+      for (final page in newStrat.pages) {
+        pageImageData.addAll(page.imageData);
+      }
+      if (!kIsWeb) {
+        List<String> allImageIds = [];
+        for (final page in newStrat.pages) {
+          allImageIds.addAll(page.imageData.map((image) => image.pictureId));
+          for (final link in page.lineUpLinks) {
+            allImageIds.addAll(link.images.map((image) => image.id));
+          }
+        }
+        await opening.wait(
+          ref
+              .read(placedImageProvider.notifier)
+              .deleteUnusedImages(newStrat.id, allImageIds),
         );
-    // Gave way while its pages were read: the save state now belongs to
-    // another strategy, and marking it saved could hide that one's edits.
-    if (attempt != _openAttempt) return;
-    ref.read(strategySaveStateProvider.notifier).markPersisted();
+      }
+
+      // We clear previous data to avoid artifacts when loading a new strategy
+      final migratedStrategy =
+          StrategyMigrator.migrateToCurrentVersion(newStrat);
+
+      if (migratedStrategy != newStrat) {
+        await opening.wait(
+          Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+              .put(migratedStrategy.id, migratedStrategy),
+        );
+      }
+
+      final newDir = kIsWeb
+          ? null
+          : await opening.wait(setStorageDirectory(migratedStrategy.id));
+      state = StrategyState(
+        strategyId: migratedStrategy.id,
+        strategyName: migratedStrategy.name,
+        source: StrategySource.local,
+        storageDirectory: newDir?.path,
+        isOpen: true,
+      );
+      ref.read(strategySaveStateProvider.notifier).reset();
+      await opening.wait(
+        ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
+              strategyId: migratedStrategy.id,
+              source: StrategySource.local,
+              selectFirstPageIfNeeded: true,
+              preferredPageId: pageId,
+              attempt: opening,
+            ),
+      );
+      ref.read(strategySaveStateProvider.notifier).markPersisted();
+    });
   }
 
   /// The page settings a new strategy starts with: the user's defaults.

@@ -133,8 +133,17 @@ class _StrategyViewState extends ConsumerState<StrategyView>
   bool _hasInitialLoadCompleted = false;
 
   /// Set when the reader leaves for the library. The editor stays mounted
-  /// while it animates out, and a load still waiting to start must not.
+  /// while it animates out, so being mounted does not mean still wanted.
   bool _hasLeft = false;
+
+  /// How the initial load waits. A reader who left meanwhile gets nothing
+  /// more from it: the load ends at that wait. test/open_attempt_test.dart
+  /// fails on an `await` in the load that does not go through here.
+  Future<T> _unlessLeft<T>(Future<T> step) async {
+    final result = await step;
+    if (_hasLeft || !mounted) throw const _LeftWhileLoading();
+    return result;
+  }
 
   @override
   void initState() {
@@ -180,34 +189,37 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     try {
       switch (source) {
         case StrategySource.local:
-          await ref
-              .read(strategyProvider.notifier)
-              .loadFromHive(strategyId, pageId: widget.initialPageId);
+          await _unlessLeft(
+            ref
+                .read(strategyProvider.notifier)
+                .loadFromHive(strategyId, pageId: widget.initialPageId),
+          );
         case StrategySource.cloud:
           final viewingThroughLink =
               ref.read(shareLinkViewProvider)?.strategyPublicId == strategyId;
-          if (!viewingThroughLink && !await _waitForCloudWorkspace()) {
+          if (!viewingThroughLink &&
+              !await _unlessLeft(_waitForCloudWorkspace())) {
             // Signed out, or the cloud is unreachable: nothing failed to
             // load, and the library says which, so go back without an error.
-            if (mounted) _leaveAfterFailedLoad();
+            _leaveAfterFailedLoad();
             return;
           }
-          // Left while waiting for sign-in to come back.
-          if (_hasLeft || !mounted) return;
-          await ref.read(strategyProvider.notifier).openCloudStrategy(
-                strategyId,
-                pageId: widget.initialPageId,
-              );
+          await _unlessLeft(
+            ref.read(strategyProvider.notifier).openCloudStrategy(
+                  strategyId,
+                  pageId: widget.initialPageId,
+                ),
+          );
       }
-      // The reader left while it loaded (the home button works from the
-      // first frame); the load was dropped with the editor.
-      if (!mounted) return;
       final loadedStrategy = ref.read(strategyProvider);
       if (loadedStrategy.strategyId != strategyId ||
           loadedStrategy.strategyName == null) {
         throw StateError('Strategy "$strategyId" was not found.');
       }
       _hasInitialLoadCompleted = true;
+    } on _LeftWhileLoading {
+      // The home button works from the first frame; the load went with the
+      // editor.
     } catch (error, stackTrace) {
       developer.log(
         'Error loading strategy: $error',
@@ -215,7 +227,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         error: error,
         stackTrace: stackTrace,
       );
-      if (!mounted) return;
+      if (_hasLeft || !mounted) return;
       // Refused: the access-lost dialog says so over the skeleton, and
       // leads out (see StrategyAccessWatcher).
       if (ref.read(strategyAccessLostProvider)) return;
@@ -503,6 +515,11 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       },
     );
   }
+}
+
+/// Ends the editor's initial load once the reader has left it.
+class _LeftWhileLoading implements Exception {
+  const _LeftWhileLoading();
 }
 
 /// The editor's way out, at the left of the window strip: the house back to
