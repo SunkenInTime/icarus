@@ -1,7 +1,8 @@
 # Notices
 
 `native/replay` depends on the vrfkit library crates
-(<https://github.com/yakisoba0728/vrfkit>, tag v0.4.0, commit b9ba3f7) and
+(<https://github.com/yakisoba0728/vrfkit>, commit 6194bde: tag v0.5.0 plus
+the VALORANT 13.10 support in vrfkit pull request #45) and
 vendors code from its CLI crate into `src/vendor/` (each file names its
 source). vrfkit's NOTICE.md follows verbatim; the full Apache License 2.0 text
 is the repository's `LICENSE`, the same as vrfkit's.

@@ -1,4 +1,4 @@
-// Vendored from vrfkit v0.4.0 (b9ba3f7), crates/vrfkit/src/sink/measured_routes.rs. Apache-2.0;
+// Vendored from vrfkit 6194bde (v0.5.0 + PR #45), crates/vrfkit/src/sink/measured_routes.rs. Apache-2.0;
 // see native/replay/NOTICE.md. Local edits: listed in src/vendor/mod.rs.
 
 //! Which checksum-gated structured-array routes a replay branch admits.
@@ -81,10 +81,12 @@ impl MeasuredArrayRoutes {
     /// - `SelectedV2` 11.06-11.08: a zero-width `DynamicMappings` at 13 moves the nested array.
     /// - `ActiveBlinds`, every legacy build: `SourceID`/`EffectID` swapped through 12.04,
     ///   9-bit hardcoded-name `SourceID`s from 12.05; refusals move `array_leaf_decode_errors`.
-    /// - Any route with no child observed on a build (the path on 11.06, 12.06, 12.07).
+    /// - Any route with no child observed on a build (the path on 11.06, 12.06, 12.07, 13.08).
+    ///
+    /// 13.08 rests on one replay and 13.09 on two, main stream and checkpoints.
     pub(super) fn for_branch(branch: &str) -> Self {
         use MeasuredArrayRoute::{
-            AllPlayersObfuscatedPlayerInformation as PlayerInfo, KillData,
+            ActiveBlinds, AllPlayersObfuscatedPlayerInformation as PlayerInfo, KillData,
             NetworkedProjectilePath as ProjectilePath, RequestedIgnoreActors, SelectedV2,
             ServerActiveEffects, TrackedRewards,
         };
@@ -141,7 +143,18 @@ impl MeasuredArrayRoutes {
             | "++Ares-Core+release-13.02"
             | "++Ares-Core+release-13.04"
             | "++Ares-Core+release-13.05"
-            | "++Ares-Core+release-13.06" => Self::ALL,
+            | "++Ares-Core+release-13.06"
+            | "++Ares-Core+release-13.09" => Self::ALL,
+            // The one sample declares no MulticastSetPath group: the path is unobserved.
+            "++Ares-Core+release-13.08" => Self::of(&[
+                PlayerInfo,
+                TrackedRewards,
+                SelectedV2,
+                KillData,
+                ServerActiveEffects,
+                RequestedIgnoreActors,
+                ActiveBlinds,
+            ]),
             _ => Self::NONE,
         }
     }
@@ -210,6 +223,16 @@ mod tests {
     ];
     /// 12.10, 12.11 and 13.00: the only four routes their one fixture holds.
     const FIXTURE: &[Route] = &[PlayerInfo, TrackedRewards, SelectedV2, ServerActiveEffects];
+    /// 13.08: every route but the path, which its one sample never declares.
+    const B1308: &[Route] = &[
+        PlayerInfo,
+        TrackedRewards,
+        SelectedV2,
+        KillData,
+        ServerActiveEffects,
+        RequestedIgnoreActors,
+        ActiveBlinds,
+    ];
 
     /// Every supported branch and the routes it admits, in the order of
     /// `vrf_transform::ALL_VERSIONS`. A change to the gate is a change to this
@@ -239,8 +262,10 @@ mod tests {
         ("++Ares-Core+release-13.04", ALL),
         ("++Ares-Core+release-13.05", ALL),
         ("++Ares-Core+release-13.06", ALL),
-        ("++Ares-Core+release-13.08", &[]),
-        ("++Ares-Core+release-13.09", &[]),
+        ("++Ares-Core+release-13.08", B1308),
+        ("++Ares-Core+release-13.09", ALL),
+        // No array route has been independently measured on 13.10 yet.
+        ("++Ares-Core+release-13.10", &[]),
     ];
 
     #[test]
