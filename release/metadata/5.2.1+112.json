@@ -2,7 +2,7 @@
   "version": "5.2.1+112",
   "shortVersion": 112,
   "title": "5.2.1 Update",
-  "description": "The rectangle is back beside the zone, and shared strategies keep everyone's changes.",
+  "description": "The rectangle is back beside the zone, shared strategies keep everyone's changes, and VALORANT 13.10 replays open.",
   "date": "2026-11-12",
   "mandatory": false,
   "channels": ["desktop", "stable"],
@@ -18,6 +18,10 @@
     },
     {
       "message": "An edit made at the moment a teammate's change arrives is no longer lost.",
+      "type": "fix"
+    },
+    {
+      "message": "Replays from VALORANT patch 13.10 open. Before, they showed as a dimmed card that wouldn't open.",
       "type": "fix"
     }
   ]
