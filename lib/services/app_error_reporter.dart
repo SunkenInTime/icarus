@@ -146,6 +146,15 @@ class AppErrorReporter {
     }
   }
 
+  static final _email = RegExp(r'[\w.%+-]+@[\w-]+(\.[\w-]+)+');
+
+  /// [text] with every email address replaced. Sign-in errors can quote
+  /// the address the user typed, and a log entry is kept on disk and
+  /// pasted into chats.
+  @visibleForTesting
+  static String withoutEmails(String text) =>
+      text.replaceAll(_email, '<email>');
+
   static DebugLogEntry addDebugLog(
     String message, {
     DebugLogLevel level = DebugLogLevel.info,
@@ -153,14 +162,15 @@ class AppErrorReporter {
     Object? error,
     StackTrace? stackTrace,
   }) {
-    final errorText = error?.toString();
+    final errorText = error == null ? null : withoutEmails('$error');
+    message = withoutEmails(message);
     final entry = DebugLogEntry(
       timestamp: DateTime.now(),
       level: level,
       message: message,
       source: source,
       errorText: errorText,
-      stackTrace: stackTrace?.toString(),
+      stackTrace: stackTrace == null ? null : withoutEmails('$stackTrace'),
     );
 
     developer.log(
