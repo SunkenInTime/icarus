@@ -23,6 +23,18 @@
     {
       "message": "Replays from VALORANT patch 13.10 open. Before, they showed as a dimmed card that wouldn't open.",
       "type": "fix"
+    },
+    {
+      "message": "Spawn barriers sit where VALORANT has them on Haven and nine other maps, and Icebox, Lotus, Sunset and Abyss gain barriers that were missing. Lotus's barrier colours now match the other maps.",
+      "type": "fix"
+    },
+    {
+      "message": "Opening a strategy while another is still loading no longer mixes the two up. Before, the first one's page could land in the second, and saving kept it there.",
+      "type": "fix"
+    },
+    {
+      "message": "On the web, reloading after visiting a share link reopens the strategy you had open. Before, it could stay on a loading screen.",
+      "type": "fix"
     }
   ]
 }
