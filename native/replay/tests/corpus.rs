@@ -100,8 +100,9 @@ fn every_replay_decodes_to_the_contract() {
         let rounds = doc["rounds"].as_array().unwrap();
         let kills = doc["kills"].as_array().unwrap();
         check_event_counts(&id, &event_counts(&path), rounds, kills);
-        check_score(&id, rounds);
-        check_sides(&id, rounds, kills, &team);
+        let format = Format::of(doc["match"]["gameMode"].as_str().unwrap_or(""));
+        check_score(&id, format, rounds);
+        check_sides(&id, format, rounds, kills, &team);
         check_vitals(&id, &doc, rounds, kills, &team);
         check_movement(&id, &doc, parts.blob, &team);
         check_utility(&id, doc["utility"].as_array().unwrap());
@@ -235,14 +236,44 @@ fn check_event_counts(
     );
 }
 
-/// Winners follow the score: no round is played once a team has 13 with a
-/// two-round lead, and the last round decides the match unless it was
-/// surrendered or the replay stops inside it.
-fn check_score(id: &str, rounds: &[Value]) {
+/// How a mode's match is won and when its sides switch.
+#[derive(Clone, Copy)]
+struct Format {
+    /// Rounds a team needs to win.
+    wins: u32,
+    /// Rounds before the first side switch.
+    half: usize,
+    /// Tied at `wins - 1` each, rounds alternate sides until a two-round
+    /// lead; without overtime the next round decides.
+    overtime: bool,
+}
+
+impl Format {
+    fn of(game_mode: &str) -> Self {
+        if game_mode.contains("Swiftplay") {
+            Self {
+                wins: 5,
+                half: 4,
+                overtime: false,
+            }
+        } else {
+            Self {
+                wins: 13,
+                half: 12,
+                overtime: true,
+            }
+        }
+    }
+}
+
+/// Winners follow the score: no round is played once a team has won the
+/// match, and the last round decides the match unless it was surrendered or
+/// the replay stops inside it.
+fn check_score(id: &str, format: Format, rounds: &[Value]) {
     let mut score: HashMap<&str, u32> = HashMap::from([("Red", 0), ("Blue", 0)]);
     let decided = |s: &HashMap<&str, u32>| {
         let (r, b) = (s["Red"], s["Blue"]);
-        r.max(b) >= 13 && r.abs_diff(b) >= 2
+        r.max(b) >= format.wins && (!format.overtime || r.abs_diff(b) >= 2)
     };
     for (i, r) in rounds.iter().enumerate() {
         assert_eq!(r["index"], i);
@@ -266,15 +297,24 @@ fn check_score(id: &str, rounds: &[Value]) {
     );
 }
 
-/// Sides switch after 12 rounds and every overtime round; the teams' own
-/// acts agree: attackers plant, defenders defuse, no one kills a teammate.
-fn check_sides(id: &str, rounds: &[Value], kills: &[Value], team: &HashMap<&str, &str>) {
+/// Sides switch after the first half and every overtime round; the teams'
+/// own acts agree: attackers plant, defenders defuse, no one kills a teammate.
+fn check_sides(
+    id: &str,
+    format: Format,
+    rounds: &[Value],
+    kills: &[Value],
+    team: &HashMap<&str, &str>,
+) {
     let first = rounds[0]["attackingTeam"].as_str().unwrap();
+    let half = format.half;
     for (i, r) in rounds.iter().enumerate() {
-        let swapped = match i {
-            0..12 => false,
-            12..24 => true,
-            _ => (i - 24) % 2 == 1,
+        let swapped = if i < half {
+            false
+        } else if i < 2 * half || !format.overtime {
+            true
+        } else {
+            (i - 2 * half) % 2 == 1
         };
         let attackers = r["attackingTeam"].as_str().unwrap();
         assert_eq!(attackers != first, swapped, "{id}: round {i} attackers");

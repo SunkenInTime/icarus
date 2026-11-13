@@ -1,4 +1,4 @@
-// Vendored from vrfkit v0.4.0 (b9ba3f7), crates/vrfkit/src/sink/blobs.rs. Apache-2.0;
+// Vendored from vrfkit 6194bde (v0.5.0 + PR #45), crates/vrfkit/src/sink/blobs.rs. Apache-2.0;
 // see native/replay/NOTICE.md. Local edits: listed in src/vendor/mod.rs.
 
 //! Additive decoders for two payload shapes the field stream hands over whole:
@@ -14,8 +14,8 @@
 use smallvec::SmallVec;
 use vrf_bitio::BitReader;
 use vrf_decode::{
-    ABILITY_CASTS_SCHEMA, ArrayDecodeStats, COMBAT_ROUNDS_SCHEMA, EffectArrayKind, FieldType,
-    FlattenedField, structs,
+    ABILITY_CASTS_SCHEMA, ArrayDecodeStats, COMBAT_ROUNDS_SCHEMA, COMBAT_ROUNDS_SCHEMA_1310,
+    EffectArrayKind, FieldType, FlattenedField, structs,
 };
 use vrf_schema::NetGuidCache;
 
@@ -484,10 +484,11 @@ impl ExportSink<'_> {
         };
         let flattened = match route {
             None => {
-                let schema = if kind == ArrayKind::Rounds {
-                    &COMBAT_ROUNDS_SCHEMA
-                } else {
-                    &ABILITY_CASTS_SCHEMA
+                let schema = match kind {
+                    ArrayKind::Rounds if self.release_1310_layouts => &COMBAT_ROUNDS_SCHEMA_1310,
+                    ArrayKind::Rounds => &COMBAT_ROUNDS_SCHEMA,
+                    ArrayKind::AbilityCasts => &ABILITY_CASTS_SCHEMA,
+                    ArrayKind::Measured(_) => unreachable!("measured route handled separately"),
                 };
                 vrf_decode::decode_struct_array(
                     raw,

@@ -1,4 +1,4 @@
-//! Code vendored from vrfkit v0.4.0 (b9ba3f7, Apache-2.0; NOTICE.md), kept
+//! Code vendored from vrfkit 6194bde (v0.5.0 + PR #45, Apache-2.0; NOTICE.md), kept
 //! apart from ours so a vrfkit bump is a readable diff: re-copy the source
 //! files over these and re-apply the edits listed here.
 //!

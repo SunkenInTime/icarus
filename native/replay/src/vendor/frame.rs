@@ -1,4 +1,4 @@
-// Vendored from vrfkit v0.4.0 (b9ba3f7), crates/vrf-frame/src/lib.rs and
+// Vendored from vrfkit 6194bde (v0.5.0 + PR #45), crates/vrf-frame/src/lib.rs and
 // sections.rs. Apache-2.0; see native/replay/NOTICE.md. Local edits:
 // `walk_demo_frames` takes a `before_exports` hook that sees each frame's
 // ExportData before the cache applies it, both callbacks return `false` to

@@ -1,4 +1,4 @@
-// Vendored from vrfkit v0.4.0 (b9ba3f7), crates/vrfkit/src/sink/mod.rs. Apache-2.0;
+// Vendored from vrfkit 6194bde (v0.5.0 + PR #45), crates/vrfkit/src/sink/mod.rs. Apache-2.0;
 // see native/replay/NOTICE.md. Local edits: listed in src/vendor/mod.rs.
 
 //! Sink implementation connecting `vrf-net` events to `vrf-export` records.
@@ -563,6 +563,8 @@ pub struct ExportSink<'a> {
     /// The checksum-gated structured-array routes this replay's branch admits.
     /// See [`measured_routes`]; empty until `enable_measured_array_routes`.
     measured_array_routes: MeasuredArrayRoutes,
+    /// Exact release gate for the changed nested-array layouts measured on 13.10.
+    release_1310_layouts: bool,
     checkpoint_block_scope: Option<(CheckpointIdentity, u64, u32)>,
 
     // -- per-content-block context (set by on_content_block) ----------------
@@ -606,6 +608,7 @@ impl<'a> ExportSink<'a> {
             records,
             stats: ExportStats::default(),
             measured_array_routes: MeasuredArrayRoutes::NONE,
+            release_1310_layouts: false,
             checkpoint_block_scope: None,
             current_channel: 0,
             current_actor_guid: 0,
@@ -622,6 +625,7 @@ impl<'a> ExportSink<'a> {
     /// Admit the structured-array routes measured for `branch` ([`measured_routes`]).
     pub(super) fn enable_measured_array_routes(&mut self, branch: &str) {
         self.measured_array_routes = MeasuredArrayRoutes::for_branch(branch);
+        self.release_1310_layouts = branch == "++Ares-Core+release-13.10";
     }
 
     /// Whether `route` may expand its parent in this replay.
