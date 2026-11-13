@@ -11,7 +11,7 @@ void main() {
       // Supabase quotes the address it refused.
       error: 'AuthApiException(message: Unable to send email to '
           'sam.o-neil+icarus@mail.example.co.uk, statusCode: 500)',
-      stackTrace: StackTrace.fromString('#0 resetFor(sam@example.com)'),
+      stackTrace: StackTrace.fromString("#0 resetFor(sam.o'neil@example.com)"),
     );
 
     final text = entry.toClipboardText();

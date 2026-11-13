@@ -454,7 +454,7 @@ class RemoteEditorSnapshotNotifier
       if (_keepsCopy &&
           isConvexReadUnanswered(error) &&
           _activeStrategyPublicId == strategyPublicId) {
-        AppErrorReporter.reportWarning(
+        _reportWarning(
           'Reading the open cloud strategy failed; showing the copy kept '
           'on this computer.',
           source: 'remote_editor',
@@ -728,8 +728,7 @@ class RemoteEditorSnapshotNotifier
   /// The copy is a cache: a write that fails is logged and the editor goes
   /// on.
   void _keep(Future<void> Function() write) {
-    void report(Object error, StackTrace stackTrace) =>
-        AppErrorReporter.reportWarning(
+    void report(Object error, StackTrace stackTrace) => _reportWarning(
           'Keeping a copy of the cloud strategy on this computer failed.',
           source: 'remote_editor',
           error: error,
@@ -829,7 +828,7 @@ class RemoteEditorSnapshotNotifier
       return;
     }
     ref.read(clientUpgradeRequiredProvider.notifier).noteError(error);
-    AppErrorReporter.reportWarning(
+    _reportWarning(
       'Reading the open cloud strategy failed.',
       source: 'remote_editor:$source',
       error: error,
@@ -839,6 +838,28 @@ class RemoteEditorSnapshotNotifier
     // about access already confirmed gone.
     if (state.error is StrategyAccessLost) return;
     state = AsyncError(error, stackTrace);
+  }
+
+  /// Writes a failed read to the debug report with the share link's code
+  /// taken out: a viewer reads with it, and a server error can quote the
+  /// arguments it was sent.
+  void _reportWarning(
+    String message, {
+    required String source,
+    required Object error,
+    StackTrace? stackTrace,
+  }) {
+    final token = _shareToken;
+    String redact(Object? text) => token == null || token.isEmpty
+        ? '$text'
+        : '$text'.replaceAll(token, '<link code>');
+    AppErrorReporter.reportWarning(
+      message,
+      source: source,
+      error: redact(error),
+      stackTrace:
+          stackTrace == null ? null : StackTrace.fromString(redact(stackTrace)),
+    );
   }
 
   void _handleSubscriptionError({
@@ -854,7 +875,7 @@ class RemoteEditorSnapshotNotifier
           ));
       return;
     }
-    AppErrorReporter.reportWarning(
+    _reportWarning(
       'Watching the open cloud strategy for changes failed.',
       source: 'remote_editor:$source',
       error: error,

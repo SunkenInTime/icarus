@@ -117,7 +117,17 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
   ) async {
     try {
       return (probe: await ref.read(replayProbeProvider)(path), error: null);
-    } on ReplayDecodeException catch (error) {
+    } on ReplayDecodeException catch (error, stackTrace) {
+      // A file we can't read is the file's problem; a decoder that can't
+      // run ('io') is ours.
+      if (error.code == 'io') {
+        AppErrorReporter.reportWarning(
+          'The replay decoder could not run.',
+          source: 'replay_library',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
       return (probe: null, error: error);
     } catch (error, stackTrace) {
       AppErrorReporter.reportWarning(

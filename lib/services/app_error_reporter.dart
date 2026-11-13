@@ -148,7 +148,7 @@ class AppErrorReporter {
   }
 
   static final _emailDomain = RegExp(r'[\w-]{1,63}(\.[\w-]{1,63}){1,8}');
-  static final _emailLocalChar = RegExp(r'[\w.%+-]');
+  static final _emailLocalChar = RegExp(r"[\w.%+'-]");
 
   /// [text] with every email address replaced. Sign-in errors can quote
   /// the address the user typed, and a log entry is kept on disk and
