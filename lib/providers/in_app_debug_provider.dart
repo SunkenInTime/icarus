@@ -14,6 +14,7 @@ class DebugLogEntry {
     this.source,
     this.errorText,
     this.stackTrace,
+    this.recentActivity,
     String? dedupeKey,
     this.repeatCount = 1,
     DateTime? lastOccurredAt,
@@ -33,6 +34,11 @@ class DebugLogEntry {
   final String? source;
   final String? errorText;
   final String? stackTrace;
+
+  /// What the user and the app did just before, from `DebugBreadcrumbs`,
+  /// kept with an error so the persisted log has it too. Not part of the
+  /// [dedupeKey]: the same error after different steps is still the same.
+  final String? recentActivity;
   final String dedupeKey;
   final int repeatCount;
   final DateTime lastOccurredAt;
@@ -68,6 +74,7 @@ class DebugLogEntry {
       stackTrace: currentStackTrace != null && currentStackTrace.isNotEmpty
           ? stackTrace
           : other.stackTrace,
+      recentActivity: recentActivity ?? other.recentActivity,
       dedupeKey: dedupeKey,
       repeatCount: repeatCount + other.repeatCount,
       lastOccurredAt: other.lastOccurredAt,
@@ -96,6 +103,13 @@ class DebugLogEntry {
         ..writeln()
         ..writeln('Stack trace:')
         ..writeln(stackTrace);
+    }
+
+    if (recentActivity != null && recentActivity!.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Just before (oldest first):')
+        ..writeln(recentActivity);
     }
 
     return buffer.toString().trimRight();

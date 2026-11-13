@@ -2,14 +2,22 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/foundation.dart'
-    show debugPrint, kIsWeb, visibleForTesting;
+    show
+        DiagnosticLevel,
+        FlutterErrorDetails,
+        debugPrint,
+        defaultTargetPlatform,
+        kIsWeb,
+        visibleForTesting;
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
+import 'package:icarus/services/debug_breadcrumbs.dart';
 import 'package:icarus/widgets/dialogs/in_app_debug_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -40,6 +48,11 @@ class AppErrorReporter {
   static Future<void> _persistedLogWriteQueue = Future.value();
   static final Map<String, _InteractiveNotificationState>
       _interactiveNotificationStates = {};
+
+  /// Lines for the debug report's header about the session right now:
+  /// signed in or not, the open strategy, the screen. Set by main, which
+  /// can read the providers; never the user's name, email or content.
+  static List<String> Function()? describeSession;
 
   static Future<void> initializePersistedLog(String logFilePath) async {
     final logFile = File(logFilePath);
@@ -139,6 +152,7 @@ class AppErrorReporter {
       source: source,
       error: error,
       stackTrace: stackTrace,
+      recentActivity: DebugBreadcrumbs.describe(),
     );
 
     if (promptUser) {
@@ -152,6 +166,7 @@ class AppErrorReporter {
     String? source,
     Object? error,
     StackTrace? stackTrace,
+    String? recentActivity,
   }) {
     final errorText = error?.toString();
     final entry = DebugLogEntry(
@@ -161,6 +176,7 @@ class AppErrorReporter {
       source: source,
       errorText: errorText,
       stackTrace: stackTrace?.toString(),
+      recentActivity: recentActivity,
     );
 
     developer.log(
@@ -204,11 +220,74 @@ class AppErrorReporter {
     }
   }
 
+  /// Where a Flutter error happened, in Flutter's own words ("while
+  /// setting text input editing state", "building TextField"), and what
+  /// else it said about it, such as the widget that threw. The exception
+  /// and stack go in separately.
+  static String describeFlutterError(FlutterErrorDetails details) {
+    final buffer = StringBuffer('A UI error occurred');
+    final context = details.context?.toDescription().trim();
+    if (context != null && context.isNotEmpty) buffer.write(' $context');
+    buffer.write('.');
+    if (details.library != null) buffer.write(' (${details.library})');
+    final collector = details.informationCollector;
+    if (collector != null) {
+      try {
+        final information = collector()
+            .map(
+              (node) =>
+                  node.toStringDeep(minLevel: DiagnosticLevel.info).trimRight(),
+            )
+            .where((line) => line.isNotEmpty)
+            .join('\n');
+        if (information.isNotEmpty) {
+          buffer
+            ..writeln()
+            ..write(_capped(information, 1500));
+        }
+      } catch (_) {
+        // Describing the error must not raise another one.
+      }
+    }
+    return buffer.toString();
+  }
+
+  static String _capped(String text, int maxLength) =>
+      text.length <= maxLength ? text : '${text.substring(0, maxLength)}...';
+
+  /// What a report needs before anything else: which build, on what.
+  static List<String> _environmentLines() {
+    const flutterVersion = String.fromEnvironment('FLUTTER_VERSION');
+    final platform = kIsWeb
+        ? 'web on ${defaultTargetPlatform.name}'
+        : '${Platform.operatingSystem} ${Platform.operatingSystemVersion}';
+    final locales = PlatformDispatcher.instance.locales
+        .map((locale) => locale.toLanguageTag())
+        .join(', ');
+    return [
+      'App version: ${Settings.versionName} (build ${Settings.versionNumber})',
+      'Platform: $platform',
+      if (flutterVersion.isNotEmpty) 'Flutter: $flutterVersion',
+      if (locales.isNotEmpty) 'System languages: $locales',
+    ];
+  }
+
+  static List<String> _sessionLines() {
+    try {
+      return describeSession?.call() ?? const [];
+    } catch (error) {
+      return ['Session: unavailable ($error)'];
+    }
+  }
+
   static String buildClipboardReport(Iterable<DebugLogEntry> entries) {
     final entryList = entries.toList(growable: false);
     final buffer = StringBuffer()
       ..writeln('Icarus Debug Report')
-      ..writeln('Generated: ${formatDebugLogTimestamp(DateTime.now())}')
+      ..writeln('Generated: ${formatDebugLogTimestamp(DateTime.now())}');
+    _environmentLines().forEach(buffer.writeln);
+    _sessionLines().forEach(buffer.writeln);
+    buffer
       ..writeln(
         'Update channel: '
         '${updateChannelLabel(kResolvedUpdateChannel)} ($kResolvedUpdateChannel)',
@@ -238,14 +317,34 @@ class AppErrorReporter {
       }
     }
 
-    final text = buffer.toString().trimRight();
-    if (kIsWeb) return text;
-    return withHomeAsTilde(
-      text,
-      home: Platform.environment[Platform.isWindows ? 'USERPROFILE' : 'HOME'],
-      windows: Platform.isWindows,
-    );
+    final activity = DebugBreadcrumbs.describe();
+    if (activity != null) {
+      buffer
+        ..writeln()
+        ..writeln('-----')
+        ..writeln()
+        ..writeln('Recent activity (oldest first):')
+        ..writeln(activity);
+    }
+
+    var text = buffer.toString().trimRight();
+    if (!kIsWeb) {
+      text = withHomeAsTilde(
+        text,
+        home: Platform.environment[Platform.isWindows ? 'USERPROFILE' : 'HOME'],
+        windows: Platform.isWindows,
+      );
+    }
+    return asCodeBlock(text);
   }
+
+  /// [text] fenced as a code block, so the chat or issue it is pasted into
+  /// shows it as written. Unfenced, Discord turns `:34:` in a timestamp
+  /// into an emoji and Markdown turns `_name_` into italics. A fence inside
+  /// the text would end the block early, so those become plain quotes.
+  @visibleForTesting
+  static String asCodeBlock(String text) =>
+      '```text\n${text.replaceAll('```', "'''")}\n```';
 
   /// [text] with the user's home folder written as `~`, so the account
   /// name in it doesn't travel with a pasted report. Covers the folder as
