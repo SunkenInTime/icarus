@@ -55,6 +55,10 @@ import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/services/browser_url.dart';
 import 'package:icarus/services/app_assets.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/debug_breadcrumb_sources.dart';
+import 'package:icarus/services/debug_breadcrumbs.dart';
+import 'package:icarus/services/text_input_trace.dart';
+import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/cloud_usage_meter.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
@@ -164,7 +168,8 @@ final _cloudOutOfReachProvider = Provider<bool>((ref) {
 Future<void> main(List<String> args) async {
   await runZonedGuarded(
     () async {
-      WidgetsFlutterBinding.ensureInitialized();
+      IcarusBinding();
+      watchForDebugBreadcrumbs();
       // Shad's dialogs, menus, popovers and tooltips animate through
       // flutter_animate, whose default is 300ms linear. Give them the app's
       // curve at 200ms (DESIGN.md).
@@ -178,6 +183,7 @@ Future<void> main(List<String> args) async {
       ]);
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
+      AppErrorReporter.describeSession = _describeSession;
       final cloudBuildConfig = CloudBuildConfig.fromEnvironment(
         isReleaseMode: kReleaseMode,
       );
@@ -309,6 +315,11 @@ Future<void> main(List<String> args) async {
           ),
         ),
       );
+      // After the first frame, so the strategy is made in the order the app
+      // makes it: it reads the session as soon as it exists.
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _watchStrategyForDebugBreadcrumbs(),
+      );
       if (driveBuild) startDrive();
     },
     (error, stackTrace) {
@@ -366,7 +377,7 @@ void _installGlobalErrorHandlers() {
     }
 
     AppErrorReporter.reportError(
-      'A UI error occurred.',
+      AppErrorReporter.describeFlutterError(details),
       error: details.exception,
       stackTrace: details.stack,
       source: 'FlutterError.onError',
@@ -384,6 +395,92 @@ void _installGlobalErrorHandlers() {
     );
     return true;
   };
+}
+
+/// The debug report's lines about this session: the shape of it, never the
+/// user's name, email or strategy names.
+List<String> _describeSession() {
+  final container = appProviderContainer;
+  // Each line stands alone: one that can't be read (the cloud never came
+  // up, say) must not take the others with it.
+  String line(String label, String Function() read) {
+    try {
+      return '$label: ${read()}';
+    } catch (error) {
+      return '$label: unavailable (${error.runtimeType})';
+    }
+  }
+
+  final signedIn = (() {
+    try {
+      return container.read(authProvider).isAuthenticated;
+    } catch (_) {
+      return false;
+    }
+  })();
+  return [
+    line('App language',
+        () => container.read(appLocaleProvider).toLanguageTag()),
+    line('Cloud', () {
+      final environment = CloudBuildConfig.fromEnvironment(
+        isReleaseMode: kReleaseMode,
+      ).environment;
+      return container.read(cloudStartupProvider).isAvailable
+          ? '$environment, started'
+          : '$environment, unavailable this run';
+    }),
+    line('Account', () {
+      final auth = container.read(authProvider);
+      return auth.isAuthenticated
+          ? 'signed in, cloud ${auth.convexAuthStatus.name}'
+          : 'signed out';
+    }),
+    if (signedIn) ...[
+      line(
+          'Cloud connection',
+          () => switch (container.read(convexConnectionProvider).valueOrNull) {
+                true => 'connected',
+                false => 'disconnected',
+                null => 'unknown',
+              }),
+      line('Sync status', () => container.read(cloudSyncStatusProvider).name),
+    ],
+    line('Open strategy', () {
+      final strategy = container.read(strategyProvider);
+      if (!strategy.isOpen) return 'none';
+      return '${strategy.source?.name ?? 'unknown'}, '
+          '${strategy.isSaved ? 'saved' : 'unsaved changes'}';
+    }),
+    for (final view in PlatformDispatcher.instance.views)
+      'Window: ${(view.physicalSize.width / view.devicePixelRatio).round()}x'
+          '${(view.physicalSize.height / view.devicePixelRatio).round()} '
+          'at ${view.devicePixelRatio}x',
+  ];
+}
+
+/// Writes opening and closing a strategy, and moving between its pages, to
+/// the debug report's recent activity.
+void _watchStrategyForDebugBreadcrumbs() {
+  try {
+    appProviderContainer.listen<StrategyState>(strategyProvider, (prev, next) {
+      if (prev?.strategyId != next.strategyId || prev?.isOpen != next.isOpen) {
+        DebugBreadcrumbs.add(
+          'strategy',
+          next.isOpen ? 'opened ${next.source?.name ?? ''} strategy' : 'closed',
+        );
+      } else if (prev?.activePageId != next.activePageId) {
+        DebugBreadcrumbs.add('strategy', 'switched page');
+      }
+    });
+  } catch (error, stackTrace) {
+    // The report goes without strategy steps; the app goes on.
+    AppErrorReporter.reportWarning(
+      "Couldn't watch the strategy for the debug report.",
+      source: 'main.debugBreadcrumbs',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
 }
 
 /// The words for a crash toast. These handlers can run before the provider

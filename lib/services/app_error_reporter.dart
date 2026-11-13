@@ -3,14 +3,23 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/foundation.dart'
-    show debugPrint, kIsWeb, visibleForTesting;
+    show
+        FlutterErrorDetails,
+        debugPrint,
+        defaultTargetPlatform,
+        kIsWeb,
+        kProfileMode,
+        kReleaseMode,
+        visibleForTesting;
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
+import 'package:icarus/services/debug_breadcrumbs.dart';
 import 'package:icarus/widgets/dialogs/in_app_debug_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -41,6 +50,11 @@ class AppErrorReporter {
   static Future<void> _persistedLogWriteQueue = Future.value();
   static final Map<String, _InteractiveNotificationState>
       _interactiveNotificationStates = {};
+
+  /// Lines for the debug report's header about the session right now:
+  /// signed in or not, the open strategy, the screen. Set by main, which
+  /// can read the providers; never the user's name, email or content.
+  static List<String> Function()? describeSession;
 
   static Future<void> initializePersistedLog(String logFilePath) async {
     final logFile = File(logFilePath);
@@ -140,6 +154,7 @@ class AppErrorReporter {
       source: source,
       error: error,
       stackTrace: stackTrace,
+      recentActivity: DebugBreadcrumbs.describe(),
     );
 
     if (promptUser) {
@@ -187,6 +202,7 @@ class AppErrorReporter {
     String? source,
     Object? error,
     StackTrace? stackTrace,
+    String? recentActivity,
   }) {
     final errorText = error == null ? null : withoutEmails('$error');
     message = withoutEmails(message);
@@ -197,6 +213,7 @@ class AppErrorReporter {
       source: source,
       errorText: errorText,
       stackTrace: stackTrace == null ? null : withoutEmails('$stackTrace'),
+      recentActivity: recentActivity,
     );
 
     developer.log(
@@ -240,11 +257,84 @@ class AppErrorReporter {
     }
   }
 
+  /// Where a Flutter error happened, in Flutter's own words ("while
+  /// setting text input editing state", "building TextField"). The
+  /// exception and stack go in separately.
+  ///
+  /// Only the widget's type is kept: Flutter writes a widget's key after
+  /// its name (`-[<'...'>]`), and a key can be what the user typed, as a
+  /// placed text's is. Flutter's longer description of the error is left
+  /// out for the same reason: it can quote text on screen.
+  static String describeFlutterError(FlutterErrorDetails details) {
+    final buffer = StringBuffer('A UI error occurred');
+    final context = details.context?.toDescription().split('-[').first.trim();
+    if (context != null && context.isNotEmpty) buffer.write(' $context');
+    buffer.write('.');
+    if (details.library != null) buffer.write(' (${details.library})');
+    return buffer.toString();
+  }
+
+  /// What a report needs before anything else: which build, on what.
+  static List<String> _environmentLines() {
+    const flutterVersion = String.fromEnvironment('FLUTTER_VERSION');
+    final platform = kIsWeb
+        ? 'web on ${defaultTargetPlatform.name}'
+        : '${Platform.operatingSystem} '
+            '${windowsNamedRight(Platform.operatingSystemVersion)}';
+    const buildMode = kReleaseMode
+        ? 'release'
+        : kProfileMode
+            ? 'profile'
+            : 'debug';
+    final locales = PlatformDispatcher.instance.locales
+        .map((locale) => locale.toLanguageTag())
+        .join(', ');
+    return [
+      'App version: ${Settings.versionName} '
+          '(build ${Settings.versionNumber}, $buildMode)',
+      'Platform: $platform',
+      if (flutterVersion.isNotEmpty) 'Flutter: $flutterVersion',
+      if (locales.isNotEmpty) 'System languages: $locales',
+    ];
+  }
+
+  /// [version] with Windows 11 called that. Windows still names itself
+  /// Windows 10 to programs that ask; only the build number (22000 and up)
+  /// tells them apart.
+  @visibleForTesting
+  static String windowsNamedRight(String version) {
+    final build = RegExp(r'Build (\d+)').firstMatch(version)?.group(1);
+    if (build == null || int.parse(build) < 22000) return version;
+    return version.replaceFirst('Windows 10', 'Windows 11');
+  }
+
+  static String _utcOffset(DateTime time) {
+    final offset = time.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final minutes = offset.inMinutes.abs();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return 'UTC$sign${two(minutes ~/ 60)}:${two(minutes % 60)}';
+  }
+
+  static List<String> _sessionLines() {
+    try {
+      return describeSession?.call() ?? const [];
+    } catch (error) {
+      return ['Session: unavailable ($error)'];
+    }
+  }
+
   static String buildClipboardReport(Iterable<DebugLogEntry> entries) {
     final entryList = entries.toList(growable: false);
     final buffer = StringBuffer()
       ..writeln('Icarus Debug Report')
-      ..writeln('Generated: ${formatDebugLogTimestamp(DateTime.now())}')
+      ..writeln(
+        'Generated: ${formatDebugLogTimestamp(DateTime.now())} '
+        '(${_utcOffset(DateTime.now())}; times below are the same clock)',
+      );
+    _environmentLines().forEach(buffer.writeln);
+    _sessionLines().forEach(buffer.writeln);
+    buffer
       ..writeln(
         'Update channel: '
         '${updateChannelLabel(kResolvedUpdateChannel)} ($kResolvedUpdateChannel)',
@@ -274,14 +364,34 @@ class AppErrorReporter {
       }
     }
 
-    final text = buffer.toString().trimRight();
-    if (kIsWeb) return text;
-    return withHomeAsTilde(
-      text,
-      home: Platform.environment[Platform.isWindows ? 'USERPROFILE' : 'HOME'],
-      windows: Platform.isWindows,
-    );
+    final activity = DebugBreadcrumbs.describe();
+    if (activity != null) {
+      buffer
+        ..writeln()
+        ..writeln('-----')
+        ..writeln()
+        ..writeln('Recent activity (oldest first):')
+        ..writeln(activity);
+    }
+
+    var text = buffer.toString().trimRight();
+    if (!kIsWeb) {
+      text = withHomeAsTilde(
+        text,
+        home: Platform.environment[Platform.isWindows ? 'USERPROFILE' : 'HOME'],
+        windows: Platform.isWindows,
+      );
+    }
+    return asCodeBlock(text);
   }
+
+  /// [text] fenced as a code block, so the chat or issue it is pasted into
+  /// shows it as written. Unfenced, Discord turns `:34:` in a timestamp
+  /// into an emoji and Markdown turns `_name_` into italics. A fence inside
+  /// the text would end the block early, so those become plain quotes.
+  @visibleForTesting
+  static String asCodeBlock(String text) =>
+      '```text\n${text.replaceAll('```', "'''")}\n```';
 
   /// [text] with the user's home folder written as `~`, so the account
   /// name in it doesn't travel with a pasted report. Covers the folder as

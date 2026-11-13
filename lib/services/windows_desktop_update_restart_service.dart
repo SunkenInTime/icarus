@@ -330,7 +330,8 @@ try {
   static String resolveLauncherLogPath() {
     final supportDirectory = AppErrorReporter.applicationSupportDirectoryPath;
     if (supportDirectory != null && supportDirectory.trim().isNotEmpty) {
-      return path.join(supportDirectory, 'windows_desktop_updater_launcher.log');
+      return path.join(
+          supportDirectory, 'windows_desktop_updater_launcher.log');
     }
 
     return path.join(

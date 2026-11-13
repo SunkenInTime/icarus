@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/services/debug_breadcrumbs.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -155,6 +156,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
       transactionChanges.add(action.copy());
       return;
     }
+    DebugBreadcrumbs.add('canvas', '${action.type.name} ${action.group.name}');
     ref.read(strategyProvider.notifier).setUnsaved();
     if (action.group != ActionGroup.ability) {
       ref
@@ -178,6 +180,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
       final action = poppedItems.removeLast();
       final undo = _redo(action);
       if (undo == null) continue;
+      DebugBreadcrumbs.add('canvas', 'redo ${action.group.name}');
       state = [...state, undo];
       if (action.group == ActionGroup.bulk) {
         ref.read(abilityBarProvider.notifier).updateData(null);
@@ -195,6 +198,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
       state = state.sublist(0, state.length - 1);
       final redo = _undo(action);
       if (redo == null) continue;
+      DebugBreadcrumbs.add('canvas', 'undo ${action.group.name}');
       poppedItems.add(redo);
       return;
     }
