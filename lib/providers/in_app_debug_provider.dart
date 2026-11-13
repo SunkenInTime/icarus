@@ -98,18 +98,19 @@ class DebugLogEntry {
         ..writeln('Error: $errorText');
     }
 
-    if (stackTrace != null && stackTrace!.trim().isNotEmpty) {
-      buffer
-        ..writeln()
-        ..writeln('Stack trace:')
-        ..writeln(stackTrace);
-    }
-
+    // Before the stack, which can run to hundreds of lines.
     if (recentActivity != null && recentActivity!.trim().isNotEmpty) {
       buffer
         ..writeln()
         ..writeln('Just before (oldest first):')
         ..writeln(recentActivity);
+    }
+
+    if (stackTrace != null && stackTrace!.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Stack trace:')
+        ..writeln(stackTrace);
     }
 
     return buffer.toString().trimRight();

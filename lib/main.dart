@@ -421,11 +421,14 @@ List<String> _describeSession() {
   return [
     line('App language',
         () => container.read(appLocaleProvider).toLanguageTag()),
-    line(
-        'Cloud',
-        () => container.read(cloudStartupProvider).isAvailable
-            ? 'available'
-            : 'unavailable this run'),
+    line('Cloud', () {
+      final environment = CloudBuildConfig.fromEnvironment(
+        isReleaseMode: kReleaseMode,
+      ).environment;
+      return container.read(cloudStartupProvider).isAvailable
+          ? '$environment, started'
+          : '$environment, unavailable this run';
+    }),
     line('Account', () {
       final auth = container.read(authProvider);
       return auth.isAuthenticated

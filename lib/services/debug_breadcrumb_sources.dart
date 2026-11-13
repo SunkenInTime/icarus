@@ -1,4 +1,5 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' show ShadInput;
 import 'package:icarus/services/debug_breadcrumbs.dart';
 
 /// Starts writing the app-wide steps to [DebugBreadcrumbs]: which widget
@@ -38,9 +39,17 @@ String describeFocus(FocusNode? node) {
   String? kind;
   var nearestNamed = _nameOf(context.widget);
   context.visitAncestorElements((element) {
-    final name = _nameOf(element.widget);
+    final widget = element.widget;
+    final name = _nameOf(widget);
     if (_fields.contains(name) || name.startsWith('ShadInput')) {
-      kind = name;
+      // A field's hint is the app's own words, never what was typed in it.
+      final hint = switch (widget) {
+        TextField(:final decoration) =>
+          decoration?.hintText ?? decoration?.labelText,
+        ShadInput(placeholder: Text(:final data)) => data,
+        _ => null,
+      };
+      kind = hint == null || hint.isEmpty ? name : '$name "$hint"';
       return false;
     }
     if (name == 'EditableText') kind ??= name;

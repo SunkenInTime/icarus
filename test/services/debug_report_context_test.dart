@@ -177,6 +177,8 @@ void main() {
         textInput,
         _call('TextInput.setEditableSizeAndTransform', {'width': 10}),
       );
+      await messenger.send(textInput, _call('TextInput.show'));
+      await messenger.send(textInput, _call('TextInput.requestAutofill'));
       messenger.setMessageHandler('flutter/keyevent', otherHandler);
 
       expect(DebugBreadcrumbs.describe(), isNull);
@@ -204,13 +206,27 @@ void main() {
       expect(
         report,
         contains('App version: ${Settings.versionName} '
-            '(build ${Settings.versionNumber})'),
+            '(build ${Settings.versionNumber}, debug)'),
       );
       expect(report, contains('Platform: '));
+      expect(report, matches(RegExp(r'Generated: .* \(UTC[+-]\d\d:\d\d;')));
       expect(report, contains('Account: signed out'));
       expect(report, contains('[2026-11-13 02:34:19] INFO'));
       expect(report, contains('Recent activity (oldest first):\n'));
       expect(report, contains('canvas: addition text'));
+    });
+
+    test('Windows 11 is called Windows 11', () {
+      expect(
+        AppErrorReporter.windowsNamedRight(
+            '"Windows 10 Home" 10.0 (Build 26200)'),
+        '"Windows 11 Home" 10.0 (Build 26200)',
+      );
+      expect(
+        AppErrorReporter.windowsNamedRight(
+            '"Windows 10 Pro" 10.0 (Build 19045)'),
+        '"Windows 10 Pro" 10.0 (Build 19045)',
+      );
     });
 
     test('a fence inside the report cannot end the block early', () {
@@ -225,12 +241,19 @@ void main() {
       final entry = AppErrorReporter.addDebugLog(
         'A UI error occurred.',
         level: DebugLogLevel.error,
+        stackTrace: StackTrace.fromString('#0 main'),
         recentActivity: DebugBreadcrumbs.describe(),
       );
       DebugBreadcrumbs.add('canvas', 'later step');
 
       final text = entry.toClipboardText();
       expect(text, contains('Just before (oldest first):'));
+      expect(
+        text.indexOf('Just before'),
+        lessThan(text.indexOf('Stack trace:')),
+        reason: 'the steps come before a stack that can run to hundreds '
+            'of lines',
+      );
       expect(text, contains('focus: TextField < _EditableTextWidget'));
       expect(text, isNot(contains('later step')));
     });
@@ -280,18 +303,31 @@ void main() {
     testWidgets('names the field and where it is, not what it holds',
         (tester) async {
       final controller = TextEditingController(text: 'Smoke B main');
+      final search = TextEditingController(text: 'Ascent retakes');
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,
-            child: SizedBox(
-              width: 200,
-              child: TextField(controller: controller),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 200,
+                  child: TextField(controller: controller),
+                ),
+                SizedBox(
+                  width: 200,
+                  child: TextField(
+                    controller: search,
+                    decoration: const InputDecoration(hintText: 'Search'),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       ));
-      await tester.tap(find.byType(TextField));
+      await tester.tap(find.byType(TextField).first);
       await tester.pump();
 
       final described = describeFocus(FocusManager.instance.primaryFocus);
@@ -299,6 +335,12 @@ void main() {
       expect(described, contains(' 200x'));
       expect(described, endsWith(' on MaterialPageRoute'));
       expect(described, isNot(contains('Smoke')));
+
+      await tester.tap(find.byType(TextField).last);
+      await tester.pump();
+      final searchFocus = describeFocus(FocusManager.instance.primaryFocus);
+      expect(searchFocus, startsWith('TextField "Search" at 0,'));
+      expect(searchFocus, isNot(contains('Ascent')));
     });
   });
 }

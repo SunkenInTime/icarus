@@ -35,6 +35,9 @@ class TextInputTraceMessenger implements BinaryMessenger {
   /// Calls sent often enough to bury the rest, whose content never decides
   /// whether a field is attached.
   static const _quiet = {
+    'TextInput.show',
+    'TextInput.hide',
+    'TextInput.requestAutofill',
     'TextInput.setEditableSizeAndTransform',
     'TextInput.setMarkedTextRect',
     'TextInput.setCaretRect',

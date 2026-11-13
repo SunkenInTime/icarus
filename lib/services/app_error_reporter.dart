@@ -10,6 +10,8 @@ import 'package:flutter/foundation.dart'
         debugPrint,
         defaultTargetPlatform,
         kIsWeb,
+        kProfileMode,
+        kReleaseMode,
         visibleForTesting;
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
@@ -241,16 +243,41 @@ class AppErrorReporter {
     const flutterVersion = String.fromEnvironment('FLUTTER_VERSION');
     final platform = kIsWeb
         ? 'web on ${defaultTargetPlatform.name}'
-        : '${Platform.operatingSystem} ${Platform.operatingSystemVersion}';
+        : '${Platform.operatingSystem} '
+            '${windowsNamedRight(Platform.operatingSystemVersion)}';
+    const buildMode = kReleaseMode
+        ? 'release'
+        : kProfileMode
+            ? 'profile'
+            : 'debug';
     final locales = PlatformDispatcher.instance.locales
         .map((locale) => locale.toLanguageTag())
         .join(', ');
     return [
-      'App version: ${Settings.versionName} (build ${Settings.versionNumber})',
+      'App version: ${Settings.versionName} '
+          '(build ${Settings.versionNumber}, $buildMode)',
       'Platform: $platform',
       if (flutterVersion.isNotEmpty) 'Flutter: $flutterVersion',
       if (locales.isNotEmpty) 'System languages: $locales',
     ];
+  }
+
+  /// [version] with Windows 11 called that. Windows still names itself
+  /// Windows 10 to programs that ask; only the build number (22000 and up)
+  /// tells them apart.
+  @visibleForTesting
+  static String windowsNamedRight(String version) {
+    final build = RegExp(r'Build (\d+)').firstMatch(version)?.group(1);
+    if (build == null || int.parse(build) < 22000) return version;
+    return version.replaceFirst('Windows 10', 'Windows 11');
+  }
+
+  static String _utcOffset(DateTime time) {
+    final offset = time.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final minutes = offset.inMinutes.abs();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return 'UTC$sign${two(minutes ~/ 60)}:${two(minutes % 60)}';
   }
 
   static List<String> _sessionLines() {
@@ -265,7 +292,10 @@ class AppErrorReporter {
     final entryList = entries.toList(growable: false);
     final buffer = StringBuffer()
       ..writeln('Icarus Debug Report')
-      ..writeln('Generated: ${formatDebugLogTimestamp(DateTime.now())}');
+      ..writeln(
+        'Generated: ${formatDebugLogTimestamp(DateTime.now())} '
+        '(${_utcOffset(DateTime.now())}; times below are the same clock)',
+      );
     _environmentLines().forEach(buffer.writeln);
     _sessionLines().forEach(buffer.writeln);
     buffer

@@ -12,7 +12,7 @@ import 'package:icarus/providers/in_app_debug_provider.dart'
 /// The same step repeated back to back is one line with a count, so typing
 /// a sentence doesn't push everything else out.
 class DebugBreadcrumbs {
-  static const int capacity = 40;
+  static const int capacity = 60;
 
   static final _crumbs = ListQueue<_Crumb>();
 
