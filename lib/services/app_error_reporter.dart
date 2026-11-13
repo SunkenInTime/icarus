@@ -6,7 +6,6 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/foundation.dart'
     show
-        DiagnosticLevel,
         FlutterErrorDetails,
         debugPrint,
         defaultTargetPlatform,
@@ -221,39 +220,21 @@ class AppErrorReporter {
   }
 
   /// Where a Flutter error happened, in Flutter's own words ("while
-  /// setting text input editing state", "building TextField"), and what
-  /// else it said about it, such as the widget that threw. The exception
-  /// and stack go in separately.
+  /// setting text input editing state", "building TextField"). The
+  /// exception and stack go in separately.
+  ///
+  /// Only the widget's type is kept: Flutter writes a widget's key after
+  /// its name (`-[<'...'>]`), and a key can be what the user typed, as a
+  /// placed text's is. Flutter's longer description of the error is left
+  /// out for the same reason: it can quote text on screen.
   static String describeFlutterError(FlutterErrorDetails details) {
     final buffer = StringBuffer('A UI error occurred');
-    final context = details.context?.toDescription().trim();
+    final context = details.context?.toDescription().split('-[').first.trim();
     if (context != null && context.isNotEmpty) buffer.write(' $context');
     buffer.write('.');
     if (details.library != null) buffer.write(' (${details.library})');
-    final collector = details.informationCollector;
-    if (collector != null) {
-      try {
-        final information = collector()
-            .map(
-              (node) =>
-                  node.toStringDeep(minLevel: DiagnosticLevel.info).trimRight(),
-            )
-            .where((line) => line.isNotEmpty)
-            .join('\n');
-        if (information.isNotEmpty) {
-          buffer
-            ..writeln()
-            ..write(_capped(information, 1500));
-        }
-      } catch (_) {
-        // Describing the error must not raise another one.
-      }
-    }
     return buffer.toString();
   }
-
-  static String _capped(String text, int maxLength) =>
-      text.length <= maxLength ? text : '${text.substring(0, maxLength)}...';
 
   /// What a report needs before anything else: which build, on what.
   static List<String> _environmentLines() {

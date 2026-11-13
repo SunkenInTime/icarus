@@ -241,17 +241,33 @@ void main() {
           exception: PlatformException(code: 'Internal Consistency Error'),
           library: 'services library',
           context: ErrorDescription('while setting text input editing state'),
-          informationCollector: () => [
-            ErrorDescription('The relevant error-causing widget was: Foo'),
-          ],
         ),
       );
 
       expect(
         described,
         'A UI error occurred while setting text input editing state. '
-        '(services library)\n'
-        'The relevant error-causing widget was: Foo',
+        '(services library)',
+      );
+    });
+
+    test('a widget key, which can be what the user typed, is left out', () {
+      final described = AppErrorReporter.describeFlutterError(
+        FlutterErrorDetails(
+          exception: StateError('boom'),
+          library: 'widgets library',
+          context: ErrorDescription(
+            "building _FeedbackTextWidget-[<'Smoke ]B main'>](dirty)",
+          ),
+          informationCollector: () => [
+            ErrorDescription('RenderParagraph text: "Smoke B main"'),
+          ],
+        ),
+      );
+
+      expect(
+        described,
+        'A UI error occurred building _FeedbackTextWidget. (widgets library)',
       );
     });
   });
