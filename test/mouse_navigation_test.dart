@@ -15,6 +15,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
 
 void main() {
   testWidgets('mouse back does not navigate under an open Shad popover',
@@ -252,6 +253,88 @@ void main() {
       await back(2);
       expect(strategies.opened, ['local:shared-id', 'local:shared-id']);
     });
+
+    Future<_RecordingStrategies> openOtherAfterShared(
+      WidgetTester tester,
+      StrategySource shared,
+    ) async {
+      final strategies = _RecordingStrategies();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            platformPolicyProvider.overrideWithValue(PlatformPolicy.desktop),
+            isCloudWorkspaceAvailableProvider.overrideWithValue(true),
+            strategyProvider.overrideWith(() => strategies),
+          ],
+          child: ToastificationWrapper(
+            child: ShadApp(
+              navigatorKey: appNavigatorKey,
+              navigatorObservers: [mouseNavigationRouteObserver],
+              builder: (_, child) => MouseNavigation(child: child!),
+              home: const Scaffold(body: Text('library')),
+            ),
+          ),
+        ),
+      );
+      strategies.show('shared-id', shared);
+      await tester.pump();
+      strategies.show('other-id', StrategySource.local);
+      await tester.pump();
+      return strategies;
+    }
+
+    Future<void> pressBack(WidgetTester tester, int pointer) async {
+      await tester.sendEventToBinding(
+        PointerDownEvent(
+          pointer: pointer,
+          kind: PointerDeviceKind.mouse,
+          buttons: kBackMouseButton,
+          position: const Offset(400, 300),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('going home while a back is loading is where history is',
+        (tester) async {
+      // The reader presses back, then leaves for the library before the
+      // strategy has loaded. Nothing is recorded during a back, so history
+      // went on believing the strategy they left was still open, and the
+      // next back from a strategy opened in the library reopened it.
+      final strategies =
+          await openOtherAfterShared(tester, StrategySource.local);
+      strategies.givesWay.add('shared-id');
+      strategies.whileOpening = strategies.clearCurrentStrategy;
+
+      await pressBack(tester, 1);
+      expect(strategies.state.strategyId, isNull);
+
+      strategies.show('third-id', StrategySource.local);
+      await tester.pump();
+      await pressBack(tester, 2);
+
+      // Back to the library it was opened from, not into another strategy.
+      expect(strategies.state.strategyId, isNull);
+      expect(strategies.opened, ['local:shared-id']);
+    });
+
+    testWidgets(
+        'a cloud strategy that fails to open over another leaves the editor',
+        (tester) async {
+      // The open has let go of the strategy on screen by the time its read
+      // fails. Staying would show that strategy with its edits going to the
+      // one that failed.
+      final strategies =
+          await openOtherAfterShared(tester, StrategySource.cloud);
+      strategies.fails.add('shared-id');
+
+      await pressBack(tester, 1);
+
+      expect(strategies.state.strategyId, isNull);
+      expect(find.text('Could not load strategy.'), findsOneWidget);
+      // The toast's timer.
+      await tester.pump(const Duration(seconds: 10));
+    });
   });
 }
 
@@ -261,6 +344,15 @@ class _RecordingStrategies extends StrategyProvider {
 
   /// Strategies whose open gives way before it finishes.
   final givesWay = <String>{};
+
+  /// Cloud strategies whose open throws.
+  final fails = <String>{};
+
+  /// What the reader does while a strategy that gives way is loading.
+  Future<void> Function()? whileOpening;
+
+  @override
+  Future<void> clearCurrentStrategy() async => state = const StrategyState();
 
   @override
   StrategyState build() => const StrategyState();
@@ -277,7 +369,10 @@ class _RecordingStrategies extends StrategyProvider {
   @override
   Future<bool> loadFromHive(String id, {String? pageId}) async {
     opened.add('local:$id');
-    if (givesWay.contains(id)) return false;
+    if (givesWay.contains(id)) {
+      await whileOpening?.call();
+      return false;
+    }
     show(id, StrategySource.local);
     return true;
   }
@@ -285,6 +380,7 @@ class _RecordingStrategies extends StrategyProvider {
   @override
   Future<bool> openCloudStrategy(String id, {String? pageId}) async {
     opened.add('cloud:$id');
+    if (fails.contains(id)) throw StateError('could not read $id');
     if (givesWay.contains(id)) return false;
     show(id, StrategySource.cloud);
     return true;

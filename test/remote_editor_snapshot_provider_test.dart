@@ -514,6 +514,25 @@ void main() {
           ['image-b']);
       expect(mediaQueue.enqueued, isEmpty);
     });
+
+    test('a strategy that cannot be read does not open as the one before it',
+        () async {
+      final repository = _Repository();
+      final (container, _) = await desktop(repository);
+      await container.read(remoteEditorSnapshotProvider.future);
+      final strategies = container.read(strategyProvider.notifier);
+      expect(await strategies.openCloudStrategy('strategy'), isTrue);
+
+      // Its owner deleted it, say. The failed read leaves what was read
+      // before beside the error, and the open used to go on with that: the
+      // first strategy on screen, its edits addressed to this one.
+      repository.shellError = StateError('not found');
+
+      await expectLater(
+        strategies.openCloudStrategy('deleted'),
+        throwsStateError,
+      );
+    });
   });
 
   group('a refused read of the open strategy', () {
