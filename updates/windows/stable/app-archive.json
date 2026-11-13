@@ -1,7 +1,45 @@
 {
     "appName":  "Icarus",
-    "description":  "Zones, captions, doors, Japanese and Chinese, and pictures pasted straight onto the map.",
+    "description":  "The rectangle is back beside the zone, shared strategies keep everyone\u0027s changes, and VALORANT 13.10 replays open.",
     "items":  [
+                  {
+                      "version":  "5.2.1+112",
+                      "shortVersion":  112,
+                      "changes":  [
+                                      {
+                                          "message":  "The rectangle is back in Shapes, beside Circle and Zone. Rectangles you placed before 5.2.0 look the way they did again: filled and outlined over the map. Zones placed in 5.2.0 now show as rectangles, so place them again with Zone.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "In a shared cloud strategy, a teammate\u0027s map or theme change is no longer undone by your next edit, and it shows on your screen without reopening the strategy.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "An edit made at the moment a teammate\u0027s change arrives is no longer lost.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Replays from VALORANT patch 13.10 open. Before, they showed as a dimmed card that wouldn\u0027t open.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Spawn barriers sit where VALORANT has them on Haven and nine other maps, and Icebox, Lotus, Sunset and Abyss gain barriers that were missing. Lotus\u0027s barrier colours now match the other maps.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Opening a strategy while another is still loading no longer mixes the two up. Before, the first one\u0027s page could land in the second, and saving kept it there.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "On the web, reloading after visiting a share link reopens the strategy you had open. Before, it could stay on a loading screen.",
+                                          "type":  "fix"
+                                      }
+                                  ],
+                      "date":  "2026-11-12",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/5.2.1%2B112-windows",
+                      "platform":  "windows"
+                  },
                   {
                       "version":  "5.2.0+111",
                       "shortVersion":  111,
