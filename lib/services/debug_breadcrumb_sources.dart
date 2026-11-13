@@ -10,7 +10,14 @@ void watchForDebugBreadcrumbs() {
     final focus = FocusManager.instance.primaryFocus;
     if (identical(focus, lastFocus)) return;
     lastFocus = focus;
-    DebugBreadcrumbs.add('focus', describeFocus(focus));
+    String described;
+    try {
+      described = describeFocus(focus);
+    } catch (error) {
+      // A breadcrumb must never be the error in the report.
+      described = 'unknown (${error.runtimeType})';
+    }
+    DebugBreadcrumbs.add('focus', described);
   });
 
   AppLifecycleListener(
@@ -43,12 +50,18 @@ String describeFocus(FocusNode? node) {
     return true;
   });
 
-  final rect = node.rect;
+  // Focus can move before the field is laid out, when it has no place yet.
+  final box = context.findRenderObject();
+  final laidOut = box is RenderBox && box.attached && box.hasSize;
+  final rect = laidOut ? node.rect : null;
   final route = ModalRoute.of(context);
   return [
     kind ?? nearestNamed,
-    'at ${rect.left.round()},${rect.top.round()} '
-        '${rect.width.round()}x${rect.height.round()}',
+    if (rect != null)
+      'at ${rect.left.round()},${rect.top.round()} '
+          '${rect.width.round()}x${rect.height.round()}'
+    else
+      'not laid out yet',
     if (route != null) 'on ${_nameOf(route)}',
   ].join(' ');
 }
