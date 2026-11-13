@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'dart:io';
 import 'dart:math' show max;
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/config/platform_policy.dart';
@@ -1321,8 +1322,13 @@ class StrategyProvider extends Notifier<StrategyState> {
                 strategyPublicId: strategyId,
                 pagePublicId: targetPageId,
               );
-    } catch (error) {
-      log('Could not read page $targetPageId to copy onto it: $error');
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'Could not read the page to copy onto it.',
+        source: 'strategy.copyToPage',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return PageCopyResult.unreachable;
     }
     // Access can drop while the page is read; a reader can still read it.
@@ -1538,8 +1544,13 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     try {
       await _syncCurrentPageToHive();
-    } catch (error) {
-      log('Could not save the page before copying lineups: $error');
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'Could not save the page before copying lineups.',
+        source: 'strategy.copyLineUps',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return PageCopyResult.notSaved;
     }
     if (state.strategyId != strategyId) return PageCopyResult.unavailable;
@@ -1580,8 +1591,13 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
     try {
       await box.put(updated.id, updated);
-    } catch (error) {
-      log('Writing lineups to page ${target.id} failed: $error');
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'Writing lineups to another page failed.',
+        source: 'strategy.copyLineUps',
+        error: error,
+        stackTrace: stackTrace,
+      );
       // Hive can store a write and then fail tidying its file, so what the
       // box holds decides whether the lineups are there.
       final stored = box.get(strategyId)?.pages.where((p) => p.id == target.id);
@@ -1632,8 +1648,13 @@ class StrategyProvider extends Notifier<StrategyState> {
                 strategyPublicId: strategyId,
                 pagePublicId: pageId,
               );
-    } catch (error) {
-      log('Could not read page $pageId to copy lineups onto it: $error');
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'Could not read the page to copy lineups onto it.',
+        source: 'strategy.copyLineUps',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return PageCopyResult.unreachable;
     }
     // Access can drop while the page is read; a reader can still read it.
@@ -2499,9 +2520,9 @@ class StrategyProvider extends Notifier<StrategyState> {
         ],
       );
     } on FileSystemException catch (error, stackTrace) {
-      log(
-        'Failed to copy the images of $strategyID: $error',
-        name: 'strategy',
+      AppErrorReporter.reportWarning(
+        'Failed to copy the images of a strategy being duplicated.',
+        source: 'strategy.duplicate',
         error: error,
         stackTrace: stackTrace,
       );

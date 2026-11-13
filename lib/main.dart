@@ -120,9 +120,9 @@ Future<void> _initializeDeepLinkHandling() async {
       _publishDeepLink(initialLink, source: 'initial');
     }
   } catch (error, stackTrace) {
-    developer.log(
-      'Failed to read initial deep link: $error',
-      name: 'deep_link',
+    AppErrorReporter.reportWarning(
+      'Failed to read the link the app was opened with.',
+      source: 'deep_link',
       error: error,
       stackTrace: stackTrace,
     );
@@ -131,9 +131,9 @@ Future<void> _initializeDeepLinkHandling() async {
   _deepLinkStreamSub ??= _appLinks.uriLinkStream.listen(
     (uri) => _publishDeepLink(uri, source: 'stream'),
     onError: (Object error, StackTrace stackTrace) {
-      developer.log(
-        'Deep link stream error: $error',
-        name: 'deep_link',
+      AppErrorReporter.reportWarning(
+        'A link sent to the running app failed to arrive.',
+        source: 'deep_link',
         error: error,
         stackTrace: stackTrace,
       );

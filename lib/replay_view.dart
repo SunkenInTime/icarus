@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
@@ -133,11 +134,14 @@ class _ReplayViewState extends ConsumerState<ReplayView>
       unawaited(_startConeCuts());
       claimEditorState();
       _ticker.start();
-    } on ReplayDecodeException catch (error) {
+    } on ReplayDecodeException catch (error, stackTrace) {
+      if (!error.isCancelled) _reportFailure(error, stackTrace);
       if (mounted && !error.isCancelled) setState(() => _error = error);
-    } on FormatException catch (error) {
+    } on FormatException catch (error, stackTrace) {
+      _reportFailure(error, stackTrace);
       _fail(ReplayDecodeException('corrupt', error.message));
-    } catch (error) {
+    } catch (error, stackTrace) {
+      _reportFailure(error, stackTrace);
       // Whatever else went wrong, the screen must not sit on "Reading".
       _fail(ReplayDecodeException('io', '$error'));
     } finally {
@@ -195,6 +199,16 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     } finally {
       _startingConeCuts = false;
     }
+  }
+
+  /// Puts a replay that couldn't open in the debug report.
+  void _reportFailure(Object error, StackTrace stackTrace) {
+    AppErrorReporter.reportWarning(
+      "A replay couldn't be opened.",
+      source: 'replay_view',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 
   void _fail(ReplayDecodeException error) {
@@ -528,9 +542,7 @@ class _ReplayLoading extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              failure == null
-                  ? l10n.replayReading
-                  : l10n.replayOpenThisFailed,
+              failure == null ? l10n.replayReading : l10n.replayOpenThisFailed,
               style: theme.textTheme.p,
             ),
             const SizedBox(height: 12),

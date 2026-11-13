@@ -119,6 +119,12 @@ final cloudFolderTreeProvider =
       yield const <CloudFolderEntry>[];
       return;
     }
+    AppErrorReporter.reportWarning(
+      'Reading the cloud library folders failed.',
+      source: 'remote_library:folder_tree',
+      error: error,
+      stackTrace: stackTrace,
+    );
     rethrow;
   }
 });
@@ -229,6 +235,12 @@ final cloudStrategiesProvider =
       yield const <CloudStrategyEntry>[];
       return;
     }
+    AppErrorReporter.reportWarning(
+      'Reading the cloud library strategies failed.',
+      source: 'remote_library:strategies',
+      error: error,
+      stackTrace: stackTrace,
+    );
     rethrow;
   }
 });

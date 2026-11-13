@@ -890,9 +890,9 @@ class CloudMediaUploadQueueNotifier
       _logMedia(
         'upload.pending_attach ${_describeJob(_getJob(job.jobId))}',
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (await _dropIfStrategyDeleted(job, error)) return;
-      _reportMediaFailure('upload', error, job);
+      _reportMediaFailure('upload', error, stackTrace, job);
       await _markJobFailed(
         job,
         '$error',
@@ -1067,9 +1067,9 @@ class CloudMediaUploadQueueNotifier
       _refreshState();
       _logMedia('attach.success image=${job.assetPublicId} '
           'strategy=${job.strategyPublicId}');
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (await _dropIfStrategyDeleted(job, error)) return;
-      _reportMediaFailure('attach', error, job);
+      _reportMediaFailure('attach', error, stackTrace, job);
       final missingIntent = isMissingImageUploadIntentError(error);
       await _markJobFailed(
         missingIntent
@@ -1834,12 +1834,14 @@ class CloudMediaUploadQueueNotifier
   void _reportMediaFailure(
     String stage,
     Object error,
+    StackTrace stackTrace,
     CloudMediaUploadJob job,
   ) {
     AppErrorReporter.reportWarning(
       redactSyncDiagnosticText('$stage.failed ${_describeJob(job)}'),
       source: 'cloud_media.upload_queue',
       error: redactSyncDiagnosticText(error),
+      stackTrace: StackTrace.fromString(redactSyncDiagnosticText(stackTrace)),
     );
   }
 
