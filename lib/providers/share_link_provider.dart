@@ -7,6 +7,7 @@ import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/browser_url.dart';
 import 'package:icarus/share/current_share_origin.dart';
 import 'package:icarus/share/pending_share_code_store.dart';
@@ -154,6 +155,7 @@ class ShareLinkController extends Notifier<String?> {
             );
         return false;
       }
+      _reportFailure('Adding a shared link failed', token, error, stackTrace);
       // The user is told (here, or inline by the dialog), so the code is done
       // with. Keeping it would replay the failure on every web page reload.
       _release(generation);
@@ -165,6 +167,24 @@ class ShareLinkController extends Notifier<String?> {
       }
       return false;
     }
+  }
+
+  /// Writes a failed link to the debug report, with the link's code taken
+  /// out: the code is what lets anyone open the strategy.
+  void _reportFailure(
+    String what,
+    String token,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    String redact(Object text) =>
+        token.isEmpty ? '$text' : '$text'.replaceAll(token, '<link code>');
+    AppErrorReporter.reportWarning(
+      '$what.',
+      source: 'share_link',
+      error: redact(error),
+      stackTrace: StackTrace.fromString(redact(stackTrace)),
+    );
   }
 
   /// Opens a strategy link for a reader with no account, read-only. The code
@@ -193,8 +213,14 @@ class ShareLinkController extends Notifier<String?> {
           (strategyPublicId: strategyPublicId, token: token);
       ref.read(sharedStrategyToOpenProvider.notifier).state = strategyPublicId;
       return true;
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (_superseded(token, generation)) return false;
+      _reportFailure(
+        'Opening a shared link signed out failed',
+        token,
+        error,
+        stackTrace,
+      );
       final revoked = isShareLinkRevokedError(error);
       if (revoked || isTypedConvexNotFoundError(error)) {
         _release(generation);
@@ -240,6 +266,8 @@ class ShareLinkController extends Notifier<String?> {
             );
         return false;
       }
+      _reportFailure(
+          'Previewing a shared link failed', token, error, stackTrace);
       final revoked = isShareLinkRevokedError(error);
       if (revoked || isTypedConvexNotFoundError(error)) {
         _release(generation);

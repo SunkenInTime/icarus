@@ -15,6 +15,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:uuid/uuid.dart';
 
 class DrawingState {
@@ -226,18 +227,26 @@ class DrawingProvider extends Notifier<DrawingState> {
 
   static List<DrawingElement> fromJson(String jsonString) {
     final List<dynamic> jsonList = jsonDecode(jsonString);
-    final result = jsonList
-        .map((json) {
-          try {
-            return _deserializeDrawingElement(json as Map<String, dynamic>);
-          } catch (e) {
-            dev.log(e.toString());
-            return null;
-          }
-        })
-        .whereType<DrawingElement>()
-        .toList();
-
+    final result = <DrawingElement>[];
+    for (var i = 0; i < jsonList.length; i++) {
+      final json = jsonList[i];
+      try {
+        result.add(_deserializeDrawingElement(json as Map<String, dynamic>));
+      } catch (error, stackTrace) {
+        // The page still opens with the drawings that could be read; this
+        // says which one it lost, by its kind and place, not its content.
+        final type = json is Map ? '${json['type'] ?? 'untyped'}' : 'not a map';
+        AppErrorReporter.reportError(
+          "A drawing couldn't be read and was left off the page "
+          '(drawing ${i + 1} of ${jsonList.length}, type '
+          '${type.length > 40 ? '${type.substring(0, 40)}...' : type}).',
+          source: 'DrawingProvider.fromJson',
+          error: error,
+          stackTrace: stackTrace,
+          promptUser: false,
+        );
+      }
+    }
     return result;
   }
 

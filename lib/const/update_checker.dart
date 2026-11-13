@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -65,11 +66,20 @@ class UpdateChecker {
       if (response.statusCode == 200) {
         return json.decode(response.body) as Map<String, dynamic>;
       } else {
-        debugPrint('Failed to load version info: ${response.statusCode}');
+        AppErrorReporter.reportWarning(
+          'Checking for updates failed: the server answered '
+          '${response.statusCode}.',
+          source: 'update_checker',
+        );
         return null;
       }
-    } catch (e) {
-      debugPrint('Error fetching version info: $e');
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'Checking for updates failed.',
+        source: 'update_checker',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -155,7 +165,13 @@ class UpdateChecker {
         source: 'windows_store',
         message: 'Windows Store checker plugin not available.',
       );
-    } on PlatformException catch (e) {
+    } on PlatformException catch (e, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'Checking the Windows Store for updates failed.',
+        source: 'update_checker',
+        error: e,
+        stackTrace: stackTrace,
+      );
       return UpdateCheckResult(
         isSupported: false,
         isUpdateAvailable: false,
@@ -163,7 +179,13 @@ class UpdateChecker {
         errorCode: e.code.isEmpty ? null : int.tryParse(e.code),
         message: e.message,
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'Checking the Windows Store for updates failed.',
+        source: 'update_checker',
+        error: e,
+        stackTrace: stackTrace,
+      );
       return UpdateCheckResult(
         isSupported: false,
         isUpdateAvailable: false,

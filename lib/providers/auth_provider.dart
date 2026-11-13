@@ -855,11 +855,13 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   void _handleSupabaseAuthStreamError(Object error, StackTrace stackTrace) {
-    log(
-      'Supabase auth state stream error: $error',
-      name: 'auth',
-      error: error,
-      stackTrace: stackTrace,
+    AppErrorReporter.reportWarning(
+      'Supabase auth state stream error.',
+      source: 'auth',
+      error: redactAuthDiagnosticText(error),
+      stackTrace: StackTrace.fromString(
+        redactAuthDiagnosticText(stackTrace),
+      ),
     );
 
     // The token refresh couldn't reach Supabase (offline, or Supabase is
@@ -907,9 +909,9 @@ class AuthProvider extends Notifier<AppAuthState> {
         throw StateError('Discord OAuth browser launch failed');
       }
     } catch (error, stackTrace) {
-      log(
-        'Discord sign-in failed: $error',
-        name: 'auth',
+      AppErrorReporter.reportWarning(
+        'Discord sign-in failed.',
+        source: 'auth',
         error: error,
         stackTrace: stackTrace,
       );
@@ -960,9 +962,9 @@ class AuthProvider extends Notifier<AppAuthState> {
       state = state.copyWith(isLoading: false);
       return null;
     } catch (error, stackTrace) {
-      log(
-        'Email/password sign-in failed: $error',
-        name: 'auth',
+      AppErrorReporter.reportWarning(
+        'Email/password sign-in failed.',
+        source: 'auth',
         error: error,
         stackTrace: stackTrace,
       );
@@ -1081,9 +1083,9 @@ class AuthProvider extends Notifier<AppAuthState> {
       ProductMetrics.instance.signUp('signed_in');
       return null;
     } catch (error, stackTrace) {
-      log(
-        'Email/password sign-up failed: $error',
-        name: 'auth',
+      AppErrorReporter.reportWarning(
+        'Email/password sign-up failed.',
+        source: 'auth',
         error: error,
         stackTrace: stackTrace,
       );
@@ -1156,9 +1158,9 @@ class AuthProvider extends Notifier<AppAuthState> {
         sent: true,
       );
     } catch (error, stackTrace) {
-      log(
-        'Password reset request failed: $error',
-        name: 'auth',
+      AppErrorReporter.reportWarning(
+        'Password reset request failed.',
+        source: 'auth',
         error: error,
         stackTrace: stackTrace,
       );
@@ -1198,9 +1200,9 @@ class AuthProvider extends Notifier<AppAuthState> {
       ref.read(passwordRecoveryProvider.notifier).finish();
       return null;
     } catch (error, stackTrace) {
-      log(
-        'Setting a new password failed: $error',
-        name: 'auth',
+      AppErrorReporter.reportWarning(
+        'Setting a new password failed.',
+        source: 'auth',
         error: error,
         stackTrace: stackTrace,
       );
@@ -1273,9 +1275,9 @@ class AuthProvider extends Notifier<AppAuthState> {
         convexAuthStatus: ConvexAuthStatus.signedOut,
       );
     } catch (error, stackTrace) {
-      log(
-        'Sign out failed: $error',
-        name: 'auth',
+      AppErrorReporter.reportWarning(
+        'Sign out failed.',
+        source: 'auth',
         error: error,
         stackTrace: stackTrace,
       );
@@ -1512,11 +1514,13 @@ class AuthProvider extends Notifier<AppAuthState> {
                     error is TimeoutException)) {
               _supabaseUnreachable = true;
             }
-            log(
-              'Supabase refresh failed while fetching Convex token: $error',
-              name: 'auth',
-              error: error,
-              stackTrace: stackTrace,
+            AppErrorReporter.reportWarning(
+              'Supabase refresh failed while fetching Convex token.',
+              source: 'auth',
+              error: redactAuthDiagnosticText(error),
+              stackTrace: StackTrace.fromString(
+                redactAuthDiagnosticText(stackTrace),
+              ),
             );
           }
         }
@@ -1529,11 +1533,13 @@ class AuthProvider extends Notifier<AppAuthState> {
       );
       return session.accessToken;
     } catch (error, stackTrace) {
-      log(
-        'Failed fetching Supabase access token for Convex: $error',
-        name: 'auth',
-        error: error,
-        stackTrace: stackTrace,
+      AppErrorReporter.reportWarning(
+        'Failed fetching Supabase access token for Convex.',
+        source: 'auth',
+        error: redactAuthDiagnosticText(error),
+        stackTrace: StackTrace.fromString(
+          redactAuthDiagnosticText(stackTrace),
+        ),
       );
       return null;
     }

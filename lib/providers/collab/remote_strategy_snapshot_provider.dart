@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
@@ -453,8 +454,13 @@ class RemoteEditorSnapshotNotifier
       if (_keepsCopy &&
           isConvexReadUnanswered(error) &&
           _activeStrategyPublicId == strategyPublicId) {
-        log('Remote editor read failed, reading the copy: $error',
-            name: 'remote_editor', error: error, stackTrace: stackTrace);
+        AppErrorReporter.reportWarning(
+          'Reading the open cloud strategy failed; showing the copy kept '
+          'on this computer.',
+          source: 'remote_editor',
+          error: error,
+          stackTrace: stackTrace,
+        );
         if (_showCopy(strategyPublicId)) return;
         if (state.valueOrNull == null && state.error is! StrategyAccessLost) {
           state = AsyncError(
@@ -723,8 +729,12 @@ class RemoteEditorSnapshotNotifier
   /// on.
   void _keep(Future<void> Function() write) {
     void report(Object error, StackTrace stackTrace) =>
-        log('Keeping a cloud answer on this computer failed: $error',
-            name: 'remote_editor', error: error, stackTrace: stackTrace);
+        AppErrorReporter.reportWarning(
+          'Keeping a copy of the cloud strategy on this computer failed.',
+          source: 'remote_editor',
+          error: error,
+          stackTrace: stackTrace,
+        );
     try {
       unawaited(write().catchError(report));
     } catch (error, stackTrace) {
@@ -819,8 +829,12 @@ class RemoteEditorSnapshotNotifier
       return;
     }
     ref.read(clientUpgradeRequiredProvider.notifier).noteError(error);
-    log('Remote editor read failed: $error',
-        name: 'remote_editor', error: error, stackTrace: stackTrace);
+    AppErrorReporter.reportWarning(
+      'Reading the open cloud strategy failed.',
+      source: 'remote_editor:$source',
+      error: error,
+      stackTrace: stackTrace,
+    );
     // A read that failed for another reason (offline, say) says nothing
     // about access already confirmed gone.
     if (state.error is StrategyAccessLost) return;
@@ -840,8 +854,12 @@ class RemoteEditorSnapshotNotifier
           ));
       return;
     }
-    log('Remote editor subscription failed: $error',
-        name: 'remote_editor', error: error, stackTrace: stackTrace);
+    AppErrorReporter.reportWarning(
+      'Watching the open cloud strategy for changes failed.',
+      source: 'remote_editor:$source',
+      error: error,
+      stackTrace: stackTrace,
+    );
     // A read again would be refused again; the sync button says why.
     if (ref.read(clientUpgradeRequiredProvider.notifier).noteError(error)) {
       return;

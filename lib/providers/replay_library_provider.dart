@@ -119,7 +119,13 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
       return (probe: await ref.read(replayProbeProvider)(path), error: null);
     } on ReplayDecodeException catch (error) {
       return (probe: null, error: error);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'Reading a replay file failed unexpectedly.',
+        source: 'replay_library',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return (
         probe: null,
         error: const ReplayDecodeException(
