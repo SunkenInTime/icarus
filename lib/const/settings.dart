@@ -149,8 +149,8 @@ class Settings {
   static const Duration pressDuration = Duration(milliseconds: 100);
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
-  static const int versionNumber = 111;
-  static const String versionName = "5.2.0";
+  static const int versionNumber = 112;
+  static const String versionName = "5.2.1";
   static final Uri desktopUpdaterArchiveUrl =
       buildDesktopUpdaterArchiveUrl(kResolvedUpdateChannel);
 
