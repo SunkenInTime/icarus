@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart'
     show debugPrint, kIsWeb, visibleForTesting;
@@ -146,14 +147,39 @@ class AppErrorReporter {
     }
   }
 
-  static final _email = RegExp(r'[\w.%+-]+@[\w-]+(\.[\w-]+)+');
+  static final _emailDomain = RegExp(r'[\w-]{1,63}(\.[\w-]{1,63}){1,8}');
+  static final _emailLocalChar = RegExp(r'[\w.%+-]');
 
   /// [text] with every email address replaced. Sign-in errors can quote
   /// the address the user typed, and a log entry is kept on disk and
   /// pasted into chats.
+  ///
+  /// It looks outward from each @ rather than matching from every
+  /// character, so a long entry costs one pass however few @s it has.
   @visibleForTesting
-  static String withoutEmails(String text) =>
-      text.replaceAll(_email, '<email>');
+  static String withoutEmails(String text) {
+    var at = text.indexOf('@');
+    if (at < 0) return text;
+    final result = StringBuffer();
+    var copiedTo = 0;
+    while (at >= 0) {
+      var start = at;
+      while (start > copiedTo &&
+          at - start < 64 &&
+          _emailLocalChar.hasMatch(text[start - 1])) {
+        start--;
+      }
+      final domain = _emailDomain.matchAsPrefix(text, at + 1);
+      if (start < at && domain != null) {
+        result
+          ..write(text.substring(copiedTo, start))
+          ..write('<email>');
+        copiedTo = domain.end;
+      }
+      at = text.indexOf('@', math.max(at + 1, copiedTo));
+    }
+    return (result..write(text.substring(copiedTo))).toString();
+  }
 
   static DebugLogEntry addDebugLog(
     String message, {

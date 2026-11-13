@@ -22,4 +22,12 @@ void main() {
     );
     expect(text, contains('#0 resetFor(<email>)'));
   });
+
+  test('a long entry is checked quickly, with or without an @', () {
+    final long = '${'x' * 1000000}@${'y' * 1000000}';
+    final watch = Stopwatch()..start();
+    AppErrorReporter.withoutEmails(long);
+    AppErrorReporter.withoutEmails('x' * 2000000);
+    expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+  });
 }
