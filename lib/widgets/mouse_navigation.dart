@@ -3,19 +3,25 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/routes.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
@@ -247,6 +253,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
   }) async {
     if (_isNavigating) return;
     _isNavigating = true;
+    var arrived = false;
     try {
       while (from.isNotEmpty) {
         final target = from.removeLast();
@@ -256,16 +263,22 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
         }
         final bool moved = await _navigateTo(target);
         if (!moved) {
-          // The user cancelled the unsaved-changes dialog; keep history as-is.
+          // The reader cancelled the unsaved-changes dialog, or the open
+          // gave way or failed: the entry stays.
           from.add(target);
           return;
         }
         to.add(_currentLocation);
         _currentLocation = target;
+        arrived = true;
         return;
       }
     } finally {
       _isNavigating = false;
+      // Nothing was recorded while the walk was under way. One that did not
+      // arrive can still end somewhere new: the reader went home, or opened
+      // another strategy, while its strategy was loading.
+      if (!arrived) _recordLocationChange();
     }
   }
 
@@ -333,7 +346,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
                 StrategySource.local =>
                   await strategies.loadFromHive(strategyId),
                 StrategySource.cloud =>
-                  await strategies.openCloudStrategy(strategyId),
+                  await _openCloudInPlace(strategyId, navigator),
               };
             },
           );
@@ -367,6 +380,51 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
           ),
         );
         return true;
+    }
+  }
+
+  /// Opens a cloud strategy in the editor that is showing another one. The
+  /// open lets go of the one on screen before it reads the new one, so when
+  /// that read fails there is nothing to stay on: the reader is told and
+  /// goes back to the library, as when a strategy fails to open from there.
+  Future<bool> _openCloudInPlace(
+    String strategyId,
+    NavigatorState navigator,
+  ) async {
+    final strategies = ref.read(strategyProvider.notifier);
+    try {
+      return await strategies.openCloudStrategy(strategyId);
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'Opening a cloud strategy over the open one failed.',
+        source: 'MouseNavigation.openCloudInPlace',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return false;
+      // Access taken away, or a share link disabled: the editor says which
+      // and leads out itself (see StrategyAccessWatcher and StrategyView).
+      final failure = ref.read(remoteEditorSnapshotProvider).error;
+      if (ref.read(strategyAccessLostProvider) ||
+          (failure != null && isShareLinkRevokedError(failure))) {
+        return false;
+      }
+      final notKept = failure is StrategyNotKeptOffline;
+      Settings.showToast(
+        message: notKept
+            ? context.l10n.syncStatusStrategyNeedsConnection
+            : context.l10n.strategyViewLoadFailed,
+        backgroundColor: notKept
+            ? Settings.tacticalVioletTheme.secondary
+            : Settings.tacticalVioletTheme.destructive,
+      );
+      await strategies.clearCurrentStrategy();
+      if (navigator.mounted &&
+          mouseNavigationRouteObserver.topRoute?.settings.name ==
+              Routes.strategyView) {
+        navigator.pop();
+      }
+      return false;
     }
   }
 

@@ -402,7 +402,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       );
       final snapshotState = ref.read(remoteEditorSnapshotProvider);
       final snapshot = snapshotState.valueOrNull;
-      if (snapshot == null) {
+      // A read that failed keeps what it held before beside the error: the
+      // strategy that was open until now. Going on with that would show it
+      // again while its edits are sent to the one that could not be read.
+      if (snapshot == null || snapshot.header.publicId != strategyID) {
         // Returning silently here used to leave the editor on an eternal
         // skeleton with no feedback. Throw so callers can surface the
         // failure and back out.
