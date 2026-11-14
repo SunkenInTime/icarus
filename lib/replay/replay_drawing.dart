@@ -80,7 +80,7 @@ class ReplayDrawing extends ChangeNotifier {
   /// Starts a stroke at [screenPoint], a point on the canvas in the
   /// attack-side world [coordinates] describe, as the editor's painter does,
   /// in the shape and style of [pen]. [zoom] is how far the map is zoomed
-  /// in, which the editor's stroke smoothing measures against.
+  /// in, which sets how fine a detail the pen keeps.
   void begin(
     Offset screenPoint,
     CoordinateSystem coordinates,
@@ -91,8 +91,7 @@ class ReplayDrawing extends ChangeNotifier {
     final point = coordinates.screenToCoordinate(screenPoint);
     _pen = FreehandPen(
       point,
-      lag: coordinates.screenHeightToWorld(Settings.freeDrawPenLag / zoom),
-      spacing: coordinates.normalize(Settings.freeDrawMinDistance),
+      unit: coordinates.screenHeightToWorld(1 / zoom),
     );
     final id = const Uuid().v4();
     final box = BoundingBox(min: point, max: point);
@@ -151,9 +150,11 @@ class ReplayDrawing extends ChangeNotifier {
     switch (_current) {
       case final FreeDrawing stroke:
         // The editor's pen, so a stroke is as smooth here as there.
+        final points = _pen!.moveTo(point);
         stroke
-          ..replacePoints(_pen!.moveTo(point))
-          ..boundingBox = _grown(stroke.boundingBox!, point)
+          ..replacePoints(points)
+          // The pen's curve can run a little outside the pointer's path.
+          ..boundingBox = BoundingBox.around(points)
           ..rebuildPath(coordinates);
       case final Line line:
         line

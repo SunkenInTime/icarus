@@ -593,11 +593,9 @@ class DrawingProvider extends Notifier<DrawingState> {
     freeDrawing.appendPoint(normalizedStart);
     _freehandPen = FreehandPen(
       normalizedStart,
-      // The lag is a length on screen, however far the map is zoomed in.
-      lag: coordinateSystem.screenHeightToWorld(
-        Settings.freeDrawPenLag / ref.read(screenZoomProvider),
-      ),
-      spacing: coordinateSystem.normalize(Settings.freeDrawMinDistance),
+      // A screen pixel, however far the map is zoomed in.
+      unit: coordinateSystem
+          .screenHeightToWorld(1 / ref.read(screenZoomProvider)),
     );
 
     state = state.copyWith(currentElement: freeDrawing);
@@ -610,16 +608,21 @@ class DrawingProvider extends Notifier<DrawingState> {
     final currentDrawing = (state.currentElement as FreeDrawing);
     final normalizedOffset = coordinateSystem.screenToCoordinate(offset);
 
-    // The pointer's own path bounds the pen's, which runs inside it.
-    final boundingBox =
-        updateBoundingBox(currentDrawing.boundingBox!, normalizedOffset);
-
-    currentDrawing.replacePoints(_freehandPen!.moveTo(normalizedOffset));
+    _drawWithPen(currentDrawing, normalizedOffset);
     currentDrawing.rebuildPath(coordinateSystem);
 
-    currentDrawing.boundingBox = boundingBox;
     state = state.copyWith(currentElement: currentDrawing);
     _triggerRepaint();
+  }
+
+  /// Moves the pen to [pointer] and gives [drawing] the stroke it has drawn.
+  /// The pen's curve can run a little outside the pointer's own path, so
+  /// the box is the curve's.
+  void _drawWithPen(FreeDrawing drawing, Offset pointer) {
+    final points = _freehandPen!.moveTo(pointer);
+    drawing
+      ..replacePoints(points)
+      ..boundingBox = BoundingBox.around(points);
   }
 
   void finishFreeDrawing(Offset? offset, CoordinateSystem coordinateSystem) {
@@ -631,10 +634,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       listOfPoints: [...currentDrawing.listOfPoints],
     );
     if (offset != null) {
-      final end = coordinateSystem.screenToCoordinate(offset);
-      finalDrawing
-        ..replacePoints(_freehandPen!.moveTo(end))
-        ..boundingBox = updateBoundingBox(finalDrawing.boundingBox!, end);
+      _drawWithPen(finalDrawing, coordinateSystem.screenToCoordinate(offset));
     }
     _freehandPen = null;
 
@@ -828,14 +828,6 @@ class DrawingProvider extends Notifier<DrawingState> {
     ref.read(actionProvider.notifier).addAction(action);
 
     _triggerRepaint();
-  }
-
-  BoundingBox updateBoundingBox(BoundingBox currentBox, Offset newPoint) {
-    final minX = min(currentBox.min.dx, newPoint.dx);
-    final minY = min(currentBox.min.dy, newPoint.dy);
-    final maxX = max(currentBox.max.dx, newPoint.dx);
-    final maxY = max(currentBox.max.dy, newPoint.dy);
-    return BoundingBox(min: Offset(minX, minY), max: Offset(maxX, maxY));
   }
 
   void startLine(
