@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/freehand_pen.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -30,6 +31,9 @@ class ReplayDrawing extends ChangeNotifier {
   bool _erasing = false;
   final List<DrawingElement> _strokes = [];
   DrawingElement? _current;
+
+  /// The pen of [_current], when it is a freehand stroke.
+  FreehandPen? _pen;
   int _revision = 0;
   int _timeMs;
 
@@ -75,10 +79,20 @@ class ReplayDrawing extends ChangeNotifier {
 
   /// Starts a stroke at [screenPoint], a point on the canvas in the
   /// attack-side world [coordinates] describe, as the editor's painter does,
-  /// in the shape and style of [pen].
-  void begin(Offset screenPoint, CoordinateSystem coordinates, PenState pen) {
+  /// in the shape and style of [pen]. [zoom] is how far the map is zoomed
+  /// in, which sets how fine a detail the pen keeps.
+  void begin(
+    Offset screenPoint,
+    CoordinateSystem coordinates,
+    PenState pen, {
+    double zoom = 1,
+  }) {
     if (!_active || _erasing) return;
     final point = coordinates.screenToCoordinate(screenPoint);
+    _pen = FreehandPen(
+      point,
+      unit: coordinates.screenHeightToWorld(1 / zoom),
+    );
     final id = const Uuid().v4();
     final box = BoundingBox(min: point, max: point);
     final colorValue = pen.color.toARGB32();
@@ -135,12 +149,12 @@ class ReplayDrawing extends ChangeNotifier {
     final point = coordinates.screenToCoordinate(screenPoint);
     switch (_current) {
       case final FreeDrawing stroke:
-        // The editor's spacing, so a stroke is as smooth here as there.
-        final minDistance = coordinates.normalize(Settings.freeDrawMinDistance);
-        if ((stroke.listOfPoints.last - point).distance < minDistance) return;
+        // The editor's pen, so a stroke is as smooth here as there.
+        final points = _pen!.moveTo(point);
         stroke
-          ..appendPoint(point)
-          ..boundingBox = _grown(stroke.boundingBox!, point)
+          ..replacePoints(points)
+          // The pen's curve can run a little outside the pointer's path.
+          ..boundingBox = BoundingBox.around(points)
           ..rebuildPath(coordinates);
       case final Line line:
         line

@@ -15,6 +15,19 @@ class BoundingBox extends HiveObject {
 
   BoundingBox({required this.min, required this.max});
 
+  /// The smallest box around [points], which has at least one.
+  factory BoundingBox.around(Iterable<Offset> points) {
+    var left = points.first.dx, right = left;
+    var top = points.first.dy, bottom = top;
+    for (final point in points) {
+      if (point.dx < left) left = point.dx;
+      if (point.dx > right) right = point.dx;
+      if (point.dy < top) top = point.dy;
+      if (point.dy > bottom) bottom = point.dy;
+    }
+    return BoundingBox(min: Offset(left, top), max: Offset(right, bottom));
+  }
+
   bool isWithinOrNear(Offset position, double threshold) {
     return position.dx >= min.dx - threshold &&
         position.dx <= max.dx + threshold &&

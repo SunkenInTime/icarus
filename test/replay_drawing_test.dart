@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
@@ -45,6 +46,17 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'replay_test_support.dart';
 
 const _mapPath = '/Game/Maps/Juliett/Juliett';
+
+/// How far [point] is from the nearest place between [a] and [b].
+double _distanceToSegment(Offset point, Offset a, Offset b) {
+  final along = b - a;
+  final t = along.distanceSquared == 0
+      ? 0.0
+      : (((point - a).dx * along.dx + (point - a).dy * along.dy) /
+              along.distanceSquared)
+          .clamp(0.0, 1.0);
+  return (point - (a + along * t)).distance;
+}
 
 /// The editor's pen, white and 5 thick, drawing [mode].
 PenState _pen({
@@ -585,9 +597,15 @@ void main() {
           (defense ? 1 - fraction.dx : fraction.dx) * world.width,
           (defense ? 1 - fraction.dy : fraction.dy) * world.height,
         ));
+        // The stroke runs through the place, between two of its points:
+        // the pen smooths the pointer's path, so no point need sit on it.
+        final points = saved.listOfPoints;
         expect(
-          saved.listOfPoints.any((point) => (point - expected).distance < 0.01),
-          isTrue,
+          [
+            for (var i = 1; i < points.length; i++)
+              _distanceToSegment(expected, points[i - 1], points[i]),
+          ].reduce(math.min),
+          lessThan(0.01),
         );
 
         // The editor, at another size, draws the page's drawings at the

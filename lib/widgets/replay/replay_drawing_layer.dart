@@ -92,7 +92,16 @@ class _ReplayDrawingLayerState extends ConsumerState<ReplayDrawingLayer> {
                           drawing.erase(details.localPosition, coordinates);
                         } else {
                           drawing.begin(
-                              details.localPosition, coordinates, pen);
+                            details.localPosition,
+                            coordinates,
+                            pen,
+                            // How much larger the map's camera shows this
+                            // layer than it is laid out.
+                            zoom: context
+                                .findRenderObject()!
+                                .getTransformTo(null)
+                                .getMaxScaleOnAxis(),
+                          );
                         }
                       },
                       onPanUpdate: (details) {

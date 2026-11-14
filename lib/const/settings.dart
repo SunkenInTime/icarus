@@ -83,7 +83,6 @@ class Settings {
     strokeThicknessLarge,
   ];
   static const double brushSize = defaultStrokeThickness;
-  static const double freeDrawMinDistance = 3;
   static const bool enableStrokeSimplification = false;
   static const double strokeSimplificationEpsilon = 1.4;
   static const PhysicalKeyboardKey deleteKey = PhysicalKeyboardKey.keyX;
