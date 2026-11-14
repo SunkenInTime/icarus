@@ -2027,14 +2027,6 @@
     "description": "Title of My Library on the web when signed out."
   },
   "folderSignInSubtitle": "Strategies you make here are saved to your Icarus account.",
-  "folderCommunityTitle": "Community strats are coming soon",
-  "@folderCommunityTitle": {
-    "description": "Title of the Community tab placeholder. 'strats' is gamer slang for strategies."
-  },
-  "folderCommunitySubtitle": "This space is reserved for public lineups, team executes, and discoverable strategy packs.",
-  "@folderCommunitySubtitle": {
-    "description": "Text of the Community tab placeholder. An 'execute' is a planned team attack on a site."
-  },
   "folderCloudLoadingBanner": "Loading your cloud library. Showing what's on this computer for now.",
   "@folderCloudLoadingBanner": {
     "description": "Banner above My Library while the cloud library loads."
@@ -5990,5 +5982,484 @@
   "shapeToolsPlaceCircleButton": "+ Place circle",
   "@shapeToolsPlaceCircleButton": {
     "description": "Button that places a circle at the middle of the map."
+  },
+  "communityEmptyTitle": "No posts yet",
+  "@communityEmptyTitle": {
+    "description": "Community tab with no posts at all."
+  },
+  "communityEmptySubtitle": "Strategies people post show up here. Post one of yours with the Post button.",
+  "@communityEmptySubtitle": {
+    "description": "Under communityEmptyTitle."
+  },
+  "communityLoadFailedTitle": "Couldn't load Community",
+  "@communityLoadFailedTitle": {
+    "description": "The Community feed failed to load."
+  },
+  "communityLoadFailedSubtitle": "Check your connection and try again.",
+  "@communityLoadFailedSubtitle": {
+    "description": "Under communityLoadFailedTitle, above a Retry button."
+  },
+  "communityNoMatchTitle": "Nothing matches",
+  "@communityNoMatchTitle": {
+    "description": "The search and filters found no posts."
+  },
+  "communityNoMatchSubtitle": "Try fewer filters or other words.",
+  "@communityNoMatchSubtitle": {
+    "description": "Under communityNoMatchTitle."
+  },
+  "communitySearchHint": "Search, or type @ for a map, agent or side",
+  "@communitySearchHint": {
+    "description": "Placeholder of the Community search bar. '@' starts a filter."
+  },
+  "communitySearchPickHint": "Pick above, or type @ascent",
+  "@communitySearchPickHint": {
+    "description": "Placeholder while the filter panel is open above the search bar. '@ascent' is an example filter; keep it as is."
+  },
+  "communitySearchNoFilterMatch": "No map, agent or side by that name",
+  "@communitySearchNoFilterMatch": {
+    "description": "Typed @ followed by a word that matches nothing."
+  },
+  "communitySuggestionAgent": "Agent",
+  "@communitySuggestionAgent": {
+    "description": "Kind of a suggestion in the @ list."
+  },
+  "communitySuggestionMap": "Map",
+  "@communitySuggestionMap": {
+    "description": "Kind of a suggestion in the @ list."
+  },
+  "communitySuggestionSide": "Side",
+  "@communitySuggestionSide": {
+    "description": "Kind of a suggestion in the @ list."
+  },
+  "communityEnterKey": "Enter",
+  "@communityEnterKey": {
+    "description": "The Enter key's name on a keycap beside the highlighted suggestion."
+  },
+  "communityFilterMap": "Map",
+  "@communityFilterMap": {
+    "description": "Heading over the maps in the filter panel."
+  },
+  "communityFilterSide": "Side",
+  "@communityFilterSide": {
+    "description": "Heading over Attack and Defend in the filter panel."
+  },
+  "communityRoleDuelists": "Duelists",
+  "@communityRoleDuelists": {
+    "description": "Agent role heading in the filter panel."
+  },
+  "communityRoleControllers": "Controllers",
+  "@communityRoleControllers": {
+    "description": "Agent role heading in the filter panel."
+  },
+  "communityRoleInitiators": "Initiators",
+  "@communityRoleInitiators": {
+    "description": "Agent role heading in the filter panel."
+  },
+  "communityRoleSentinels": "Sentinels",
+  "@communityRoleSentinels": {
+    "description": "Agent role heading in the filter panel."
+  },
+  "communityRemoveFilter": "Remove {label}",
+  "@communityRemoveFilter": {
+    "description": "Screen reader label of a filter tag's x. label is the map, agent or side.",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "communitySortTrending": "Trending",
+  "@communitySortTrending": {
+    "description": "Sort: most stars and saves in the last week."
+  },
+  "communitySortNewest": "Newest",
+  "@communitySortNewest": {
+    "description": "Sort: most recently posted first."
+  },
+  "communitySortTop": "Top",
+  "@communitySortTop": {
+    "description": "Sort: most stars of all time."
+  },
+  "communityStar": "Star",
+  "@communityStar": {
+    "description": "Button that stars a post."
+  },
+  "communityUnstar": "Remove star",
+  "@communityUnstar": {
+    "description": "Button that takes a star back."
+  },
+  "communityStarFailed": "Couldn't star it. Try again.",
+  "@communityStarFailed": {
+    "description": "Starring a post failed."
+  },
+  "communityOpenFullScreen": "Open full screen",
+  "@communityOpenFullScreen": {
+    "description": "Tooltip of the button that opens a post's quick look full screen."
+  },
+  "communityClose": "Close",
+  "@communityClose": {
+    "description": "Tooltip of the button that closes a post."
+  },
+  "communityHiddenTag": "Hidden",
+  "@communityHiddenTag": {
+    "description": "Tag beside a post's title when reports hid it, seen by reviewers."
+  },
+  "communityPageOf": "{page} of {total}",
+  "@communityPageOf": {
+    "description": "Which page of a post is shown, after the page's name: 'Execute  3 of 6'.",
+    "placeholders": {
+      "page": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "communitySave": "Save to My Library",
+  "@communitySave": {
+    "description": "Button that copies a post into the reader's own library."
+  },
+  "communitySaved": "Saved",
+  "@communitySaved": {
+    "description": "The Save button after saving."
+  },
+  "communitySavedToast": "\"{title}\" is in My Library",
+  "@communitySavedToast": {
+    "description": "After saving a post.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "communitySaveFailed": "Couldn't save it. Try again.",
+  "@communitySaveFailed": {
+    "description": "Saving a post failed."
+  },
+  "communitySaveTooLarge": "This strategy is too large to copy.",
+  "@communitySaveTooLarge": {
+    "description": "Saving a post failed because the strategy is too large."
+  },
+  "communityCopyLink": "Copy link",
+  "@communityCopyLink": {
+    "description": "Copies a post's link."
+  },
+  "communityLinkCopied": "Link copied",
+  "@communityLinkCopied": {
+    "description": "After copying a post's link."
+  },
+  "communityPostTakenDown": "This post isn't up any more.",
+  "@communityPostTakenDown": {
+    "description": "A post someone opened was taken down."
+  },
+  "communityReport": "Report",
+  "@communityReport": {
+    "description": "Menu item that reports a post."
+  },
+  "communityReportTitle": "Report \"{title}\"",
+  "@communityReportTitle": {
+    "description": "Title of the report dialog.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "communityReportNotTold": "{author} is not told who reported it.",
+  "@communityReportNotTold": {
+    "description": "Under the report dialog's title.",
+    "placeholders": {
+      "author": {
+        "type": "String"
+      }
+    }
+  },
+  "communityReportNotToldAnonymous": "Its author is not told who reported it.",
+  "@communityReportNotToldAnonymous": {
+    "description": "Under the report dialog's title, when the author has no name."
+  },
+  "communityReportOffensive": "Offensive name, text or caption",
+  "@communityReportOffensive": {
+    "description": "Report reason."
+  },
+  "communityReportPicture": "A picture that should not be here",
+  "@communityReportPicture": {
+    "description": "Report reason."
+  },
+  "communityReportLink": "A link that should not be here",
+  "@communityReportLink": {
+    "description": "Report reason."
+  },
+  "communityReportSpam": "Spam or advertising",
+  "@communityReportSpam": {
+    "description": "Report reason."
+  },
+  "communityReportStolen": "Someone else's work, posted as their own",
+  "@communityReportStolen": {
+    "description": "Report reason."
+  },
+  "communityReportWhere": "Where is it?",
+  "@communityReportWhere": {
+    "description": "Label of the report's optional note."
+  },
+  "communityReportWhereHint": "Page 4, the picture in the corner",
+  "@communityReportWhereHint": {
+    "description": "Example in the empty note field."
+  },
+  "communityReportSend": "Send report",
+  "@communityReportSend": {
+    "description": "Sends the report."
+  },
+  "communityReportSent": "Report sent. Thanks.",
+  "@communityReportSent": {
+    "description": "After sending a report."
+  },
+  "communityReportFailed": "Couldn't send the report. Try again.",
+  "@communityReportFailed": {
+    "description": "Sending a report failed."
+  },
+  "communityPostButton": "Post",
+  "@communityPostButton": {
+    "description": "Button in the Community tab that posts one of your strategies."
+  },
+  "communityPostToCommunity": "Post to Community",
+  "@communityPostToCommunity": {
+    "description": "Item in a strategy's menu."
+  },
+  "communityPickerPlaceholder": "Which strategy do you want to post?",
+  "@communityPickerPlaceholder": {
+    "description": "Search field of the Post button's picker."
+  },
+  "communityPickerEmpty": "Your library has no strategies to post yet.",
+  "@communityPickerEmpty": {
+    "description": "The picker when the user has no cloud strategies."
+  },
+  "communityPickerNoMatch": "No strategy by that name",
+  "@communityPickerNoMatch": {
+    "description": "The picker's search matched nothing."
+  },
+  "communityPickerFailed": "Couldn't load your strategies. Try again.",
+  "@communityPickerFailed": {
+    "description": "The picker's list failed to load."
+  },
+  "communityPostedBadge": "Posted",
+  "@communityPostedBadge": {
+    "description": "Marks a strategy that is posted to Community."
+  },
+  "communityPostedBadgeTooltip": "Posted to Community",
+  "@communityPostedBadgeTooltip": {
+    "description": "Tooltip of the Posted badge on a library card."
+  },
+  "communityPostDialogTitle": "Post \"{name}\" to Community",
+  "@communityPostDialogTitle": {
+    "description": "Title of the posting dialog.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "communityPostDialogTitleLoading": "Post to Community",
+  "@communityPostDialogTitleLoading": {
+    "description": "Title of the posting dialog while it loads."
+  },
+  "communityPostDialogSubtitle": "Anyone can open it and save a copy of their own.",
+  "@communityPostDialogSubtitle": {
+    "description": "Under the posting dialog's title."
+  },
+  "communityPostTitleLabel": "Title",
+  "@communityPostTitleLabel": {
+    "description": "Label of the post's title field."
+  },
+  "communityPostAsItIsNow": "It posts the strategy as it is now. What you change later stays yours until you update the post.",
+  "@communityPostAsItIsNow": {
+    "description": "What posting does, in the posting dialog."
+  },
+  "communityPostMediaPublic": "Its pictures, captions and video links become public too.",
+  "@communityPostMediaPublic": {
+    "description": "What posting does, in the posting dialog."
+  },
+  "communityPostYourName": "Your name on the post is {name}.",
+  "@communityPostYourName": {
+    "description": "What posting does, in the posting dialog.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "communityPostNoName": "The post shows no name.",
+  "@communityPostNoName": {
+    "description": "In the posting dialog, when the account has no name."
+  },
+  "communityPostConfirm": "Post",
+  "@communityPostConfirm": {
+    "description": "Posts the strategy."
+  },
+  "communityPostFailed": "Couldn't post it. Try again.",
+  "@communityPostFailed": {
+    "description": "Posting failed."
+  },
+  "communityPostNotAllowed": "This account can't post to Community.",
+  "@communityPostNotAllowed": {
+    "description": "In the posting dialog, for an account a reviewer stopped from posting."
+  },
+  "communityPostPreviewFailed": "Couldn't load this strategy. Try again.",
+  "@communityPostPreviewFailed": {
+    "description": "The posting dialog failed to load the strategy."
+  },
+  "communityPostedTitle": "\"{title}\" in Community",
+  "@communityPostedTitle": {
+    "description": "Title of a posted strategy's dialog.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "communityPostedSubtitle": "Posted {when} as {author}.",
+  "@communityPostedSubtitle": {
+    "description": "Under the posted dialog's title. when is like '3 days ago'.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      },
+      "author": {
+        "type": "String"
+      }
+    }
+  },
+  "communityPostedSubtitleAnonymous": "Posted {when}.",
+  "@communityPostedSubtitleAnonymous": {
+    "description": "Under the posted dialog's title, when the author has no name.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "communityStarsLabel": "Stars",
+  "@communityStarsLabel": {
+    "description": "Heading under a post's star count, in the posted dialog."
+  },
+  "communityCopiesSavedLabel": "Copies saved",
+  "@communityCopiesSavedLabel": {
+    "description": "Heading under how many people saved a copy of a post."
+  },
+  "communityPostedChanged": "You have changed this strategy since you posted it. The post still shows it as it was {when}.",
+  "@communityPostedChanged": {
+    "description": "In the posted dialog. when is like '3 days ago'.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "communityPostedSame": "The post shows this strategy as it was {when}.",
+  "@communityPostedSame": {
+    "description": "In the posted dialog when nothing changed since. when is like '3 days ago'.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "communityPostedSourceDeleted": "You deleted this strategy. The post stays up until you take it down.",
+  "@communityPostedSourceDeleted": {
+    "description": "In the posted dialog when the strategy it came from is gone."
+  },
+  "communityPostedHidden": "Reports have hidden this post while a reviewer looks at it.",
+  "@communityPostedHidden": {
+    "description": "In the posted dialog when reports hid the post."
+  },
+  "communityUpdatePost": "Update the post",
+  "@communityUpdatePost": {
+    "description": "Posts the strategy as it is now in place of the old version."
+  },
+  "communityPostUpdated": "Post updated",
+  "@communityPostUpdated": {
+    "description": "After updating a post."
+  },
+  "communityPostUpdateFailed": "Couldn't update the post. Try again.",
+  "@communityPostUpdateFailed": {
+    "description": "Updating a post failed."
+  },
+  "communityTakeDown": "Take it down",
+  "@communityTakeDown": {
+    "description": "Takes a post down."
+  },
+  "communityTakeDownConfirmTitle": "Take the post down?",
+  "@communityTakeDownConfirmTitle": {
+    "description": "Asks before taking a post down."
+  },
+  "communityTakeDownConfirmBody": "Its link stops working and it leaves Community. Copies people saved stay theirs.",
+  "@communityTakeDownConfirmBody": {
+    "description": "Body of communityTakeDownConfirmTitle."
+  },
+  "communityTakenDown": "Post taken down",
+  "@communityTakenDown": {
+    "description": "After taking a post down."
+  },
+  "communityTakeDownFailed": "Couldn't take it down. Try again.",
+  "@communityTakeDownFailed": {
+    "description": "Taking a post down failed."
+  },
+  "communityReviewReports": "Reports",
+  "@communityReviewReports": {
+    "description": "Heading of the reports card while it loads."
+  },
+  "communityReviewHiddenAfter": "{count, plural, =1{Hidden after 1 report} other{Hidden after {count} reports}}",
+  "@communityReviewHiddenAfter": {
+    "description": "Heading of the reports card a reviewer sees.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "communityReviewReportsFailed": "Couldn't load the reports.",
+  "@communityReviewReportsFailed": {
+    "description": "The reports card failed to load."
+  },
+  "communityReviewRestore": "Put it back",
+  "@communityReviewRestore": {
+    "description": "Reviewer: puts a hidden post back in Community."
+  },
+  "communityReviewRemove": "Remove the post",
+  "@communityReviewRemove": {
+    "description": "Reviewer: removes a hidden post for good."
+  },
+  "communityReviewBan": "Remove and stop them posting",
+  "@communityReviewBan": {
+    "description": "Reviewer: removes the post and bans its author from posting."
+  },
+  "communityReviewBanConfirmTitle": "Stop this author posting?",
+  "@communityReviewBanConfirmTitle": {
+    "description": "Asks a reviewer before banning."
+  },
+  "communityReviewBanConfirmBody": "The post is removed and its author can't post to Community again.",
+  "@communityReviewBanConfirmBody": {
+    "description": "Body of communityReviewBanConfirmTitle."
+  },
+  "communityReviewRestored": "Post is back in Community",
+  "@communityReviewRestored": {
+    "description": "After a reviewer puts a post back."
+  },
+  "communityReviewRemoved": "Post removed",
+  "@communityReviewRemoved": {
+    "description": "After a reviewer removes a post."
+  },
+  "communityReviewBanned": "Post removed and its author stopped from posting",
+  "@communityReviewBanned": {
+    "description": "After a reviewer bans."
+  },
+  "communityReviewFailed": "Couldn't save the decision. Try again.",
+  "@communityReviewFailed": {
+    "description": "A reviewer's decision failed."
+  },
+  "communityJustNow": "just now",
+  "@communityJustNow": {
+    "description": "'when' inside a sentence such as 'Posted just now as kairo.', for under a minute ago."
   }
 }

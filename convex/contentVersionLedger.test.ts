@@ -1118,7 +1118,12 @@ const ledger: Record<string, LedgerEntry> = {
           await seed(w);
           const posted = await w.owner.mutation(
             makeFunctionReference<"mutation">("community:publish"),
-            { ...protocol, strategyPublicId: S, title: "Posted" },
+            {
+              ...protocol,
+              strategyPublicId: S,
+              postPublicId: "ledger-post",
+              title: "Posted",
+            },
           );
           w.state.postPublicId = posted.postPublicId;
         },

@@ -161,3 +161,18 @@ class CloudRoleBadge extends StatelessWidget {
     }
   }
 }
+
+/// On a strategy of the user's that is posted to Community.
+class CommunityPostedBadge extends StatelessWidget {
+  const CommunityPostedBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return StrategyBadge(
+      icon: LucideIcons.globe,
+      label: l10n.communityPostedBadge,
+      tooltip: l10n.communityPostedBadgeTooltip,
+    );
+  }
+}

@@ -50,6 +50,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/welcome_tour_provider.dart';
 import 'package:icarus/share/current_share_origin.dart';
 import 'package:icarus/share/share_link_format.dart';
+import 'package:icarus/widgets/community/community_link.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/services/browser_url.dart';
@@ -108,7 +109,9 @@ Future<void> _initializeDeepLinkHandling() async {
       redirectUri: currentAuthRedirectUri(),
     );
     if (authCallback != AuthCallback.none ||
-        isIcarusShareUri(pageUri, currentOrigin: currentShareOrigin())) {
+        isIcarusShareUri(pageUri, currentOrigin: currentShareOrigin()) ||
+        communityPostIdFromUri(pageUri, currentOrigin: currentShareOrigin()) !=
+            null) {
       _publishDeepLink(pageUri, source: 'web_location');
     }
     return;
@@ -593,7 +596,9 @@ class _MyAppState extends ConsumerState<MyApp> {
     final uri = Uri.tryParse(argument);
     if (uri != null &&
         (uri.scheme.toLowerCase() == 'icarus' ||
-            isIcarusShareUri(uri, currentOrigin: currentShareOrigin()))) {
+            isIcarusShareUri(uri, currentOrigin: currentShareOrigin()) ||
+            communityPostIdFromUri(uri, currentOrigin: currentShareOrigin()) !=
+                null)) {
       _handleIncomingUri(uri, source: source);
       return;
     }
@@ -641,6 +646,14 @@ class _MyAppState extends ConsumerState<MyApp> {
         if (kIsWeb) {
           replaceBrowserUrl(withoutAuthCallbackParameters(Uri.base));
         }
+        return;
+      }
+      final postPublicId =
+          communityPostIdFromUri(uri, currentOrigin: currentShareOrigin());
+      if (postPublicId != null) {
+        // MouseNavigation opens it, behind the unsaved-changes guard.
+        ref.read(communityPostToOpenProvider.notifier).state = postPublicId;
+        if (kIsWeb) replaceBrowserUrl(Uri.base.replace(path: '/', query: ''));
         return;
       }
       await ref

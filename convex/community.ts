@@ -23,6 +23,7 @@ import {
   normalizedTitle,
   postCard,
   postCardValidator,
+  postSideValidator,
   postStatusValidator,
   REPORTS_TO_HIDE,
   reportReasonValidator,
@@ -32,7 +33,11 @@ import {
 } from "./lib/community";
 import { createPublicId } from "./lib/contentCopy";
 import { readContentVersion } from "./lib/contentVersions";
-import { assertMoveFinished, getStrategyByPublicId } from "./lib/entities";
+import {
+  assertMoveFinished,
+  getStrategyByPublicId,
+  livePagesQuery,
+} from "./lib/entities";
 import {
   conflictError,
   errorWithCode,
@@ -43,6 +48,7 @@ import {
 import { assertSafeFileNameId } from "./lib/fileNameIds";
 import { assertKnownMapChange } from "./lib/maps";
 import { createResultValidator, okResultValidator } from "./lib/publicValidators";
+import { readStrategyAgentTypes } from "./lib/strategyAgentSummary";
 import { copyStrategy, deleteStrategyRecord } from "./lib/strategyCopy";
 
 export const foldCountChangesRef = makeFunctionReference<"mutation">(
@@ -176,6 +182,17 @@ export const getPost = query({
       .withIndex("by_publicId", (q) => q.eq("publicId", args.postPublicId))
       .unique();
     if (post === null) return null;
+    if (post.status === "hidden") {
+      // Out of sight until a reviewer decides, link included: reviewers
+      // read it through the link only they are given.
+      if (post.reviewToken === undefined || !(await isReviewer(ctx))) {
+        return null;
+      }
+      return {
+        post: { ...postCard(post), shareToken: post.reviewToken },
+        status: post.status,
+      };
+    }
     return { post: postCard(post), status: post.status };
   },
 });
@@ -246,16 +263,97 @@ export const getSourceChanged = query({
   },
 });
 
-/// What the caller may do in Community.
-export const getViewer = query({
+/// The caller's own strategies, most recently changed first, to pick one
+/// to post. Read once when the picker opens.
+export const listPostable = query({
   args: {},
-  returns: v.object({ isReviewer: v.boolean(), canPost: v.boolean() }),
+  returns: v.array(
+    v.object({
+      strategyPublicId: v.string(),
+      name: v.string(),
+      mapData: v.string(),
+      updatedAt: v.number(),
+      postPublicId: v.union(v.string(), v.null()),
+    }),
+  ),
   handler: async (ctx) => {
     const user = await currentUserOrNull(ctx);
-    if (user === null) return { isReviewer: false, canPost: false };
+    if (user === null) return [];
+    const strategies = (
+      await ctx.db
+        .query("strategies")
+        .withIndex("by_ownerId_and_folderId_and_unfinishedMove", (q) =>
+          q.eq("ownerId", user._id),
+        )
+        .take(2000)
+    ).filter((strategy) => strategy.unfinishedMove === undefined);
+    const posts = await ctx.db
+      .query("communityPosts")
+      .withIndex("by_authorId", (q) => q.eq("authorId", user._id))
+      .take(MAX_LIVE_POSTS_PER_AUTHOR * 4);
+    const postBySource = new Map<string, string>();
+    for (const post of posts) {
+      if (post.status !== "removed") {
+        postBySource.set(post.sourceStrategyId, post.publicId);
+      }
+    }
+    return strategies
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 200)
+      .map((strategy) => ({
+        strategyPublicId: strategy.publicId,
+        name: strategy.name,
+        mapData: strategy.mapData,
+        updatedAt: strategy.updatedAt,
+        postPublicId: postBySource.get(strategy._id) ?? null,
+      }));
+  },
+});
+
+/// What the caller may do in Community.
+/// What a post of the caller's strategy [strategyPublicId] would show on
+/// its card, for the posting dialog's preview. Read once as it opens.
+export const getPostPreview = query({
+  args: { strategyPublicId: v.string() },
+  returns: v.object({
+    name: v.string(),
+    mapData: v.string(),
+    side: postSideValidator,
+    agentTypes: v.array(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
+    await assertStrategyRole(ctx, strategy, "owner");
+    const [pages, agentTypes] = await Promise.all([
+      livePagesQuery(ctx, strategy._id).take(100),
+      readStrategyAgentTypes(ctx, strategy._id),
+    ]);
+    return {
+      name: strategy.name,
+      mapData: strategy.mapData,
+      side: sideOf(pages.map((page) => page.isAttack)),
+      agentTypes,
+    };
+  },
+});
+
+export const getViewer = query({
+  args: {},
+  returns: v.object({
+    isReviewer: v.boolean(),
+    canPost: v.boolean(),
+    // The name a post of theirs would show, so they see it before posting.
+    authorName: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx) => {
+    const user = await currentUserOrNull(ctx);
+    if (user === null) {
+      return { isReviewer: false, canPost: false, authorName: null };
+    }
     return {
       isReviewer: await isReviewer(ctx),
       canPost: !(await isBanned(ctx, user._id)),
+      authorName: authorOf(user).authorName,
     };
   },
 });
@@ -264,20 +362,33 @@ export const getViewer = query({
 // Posting
 // ---------------------------------------------------------------------------
 
-/// Posts the caller's strategy [strategyPublicId] as it is now. The post
-/// shows a copy, so what they change afterwards stays theirs until they
-/// update the post.
+/// Posts the caller's strategy [strategyPublicId] as it is now, as
+/// [postPublicId]. The post shows a copy, so what they change afterwards
+/// stays theirs until they update the post. A retry with the same
+/// [postPublicId] finds the post already made.
 export const publish = mutation({
   args: {
     ...cloudProtocolArgs,
     strategyPublicId: v.string(),
+    postPublicId: v.string(),
     title: v.string(),
   },
   returns: v.object({ ok: v.literal(true), postPublicId: v.string() }),
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
+    assertSafeFileNameId("Post id", args.postPublicId);
     const source = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { user } = await assertStrategyRole(ctx, source, "owner");
+    const retried = await ctx.db
+      .query("communityPosts")
+      .withIndex("by_publicId", (q) => q.eq("publicId", args.postPublicId))
+      .unique();
+    if (retried !== null) {
+      if (retried.authorId !== user._id) {
+        throw conflictError(`Post id already exists: ${args.postPublicId}`);
+      }
+      return { ok: true, postPublicId: retried.publicId } as const;
+    }
     assertMoveFinished(source);
     assertKnownMapChange(source.mapData, undefined);
     if (await isBanned(ctx, user._id)) throw forbiddenError();
@@ -308,7 +419,7 @@ export const publish = mutation({
     const now = Date.now();
     const snapshot = await takeSnapshot(ctx, source, title, user._id);
     const author = authorOf(user);
-    const postPublicId = createPublicId();
+    const postPublicId = args.postPublicId;
     await ctx.db.insert("communityPosts", {
       publicId: postPublicId,
       authorId: user._id,
@@ -377,13 +488,15 @@ export const updatePost = mutation({
       assertKnownMapChange(source.mapData, undefined);
       const old = await ctx.db.get(post.snapshotStrategyId);
       const snapshot = await takeSnapshot(ctx, source, title, user._id, {
-        keepToken: post.shareToken,
+        replacing: old,
+        shareToken: post.shareToken,
       });
       if (old !== null) await deleteStrategyRecord(ctx, old);
       Object.assign(patch, {
         sourceContentVersion: await readContentVersion(ctx, source._id),
         snapshotStrategyId: snapshot.strategyId,
         snapshotStrategyPublicId: snapshot.publicId,
+        shareToken: snapshot.shareToken,
         mapData: source.mapData,
         side: sideOf(snapshot.pageIsAttack),
         agentTypes: snapshot.agentTypes,
@@ -588,11 +701,9 @@ export const report = mutation({
     });
     const reportCount = post.reportCount + 1;
     const hide = post.status === "listed" && reportCount >= REPORTS_TO_HIDE;
-    await ctx.db.patch(post._id, {
-      reportCount,
-      ...(hide ? { status: "hidden" as const } : {}),
-    });
+    await ctx.db.patch(post._id, { reportCount });
     if (hide) {
+      await hidePost(ctx, post);
       await ctx.scheduler.runAfter(0, notifyReviewersRef, {
         postPublicId: post.publicId,
         title: post.title,
@@ -685,7 +796,8 @@ export const review = mutation({
         .withIndex("by_postId_and_reporterId", (q) => q.eq("postId", post._id))
         .take(1000);
       for (const report of reports) await ctx.db.delete(report._id);
-      await ctx.db.patch(post._id, { status: "listed", reportCount: 0 });
+      await relistPost(ctx, post);
+      await ctx.db.patch(post._id, { reportCount: 0 });
       return { ok: true } as const;
     }
     await removePost(ctx, post);
@@ -812,15 +924,16 @@ export const refreshTrending = internalMutation({
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Copies [source] into a new snapshot owned by the community account, with
-/// a share token anyone can read it through: a new one, or [keepToken]
-/// moved over from the snapshot it replaces.
+/// Copies [source] into a new snapshot owned by the community account.
+/// A first snapshot gets a new link anyone can read it through. One
+/// [replacing] an older snapshot takes over that one's links instead
+/// (public and review alike), so a link already handed out keeps working.
 async function takeSnapshot(
   ctx: MutationCtx,
   source: Doc<"strategies">,
   title: string,
   authorId: Id<"users">,
-  options: { keepToken?: string } = {},
+  options: { replacing?: Doc<"strategies"> | null; shareToken?: string } = {},
 ) {
   const ownerId = await communityOwnerId(ctx);
   const publicId = createPublicId();
@@ -831,30 +944,82 @@ async function takeSnapshot(
     tooLargeToPost,
   );
   const now = Date.now();
-  let shareToken: string;
-  const kept =
-    options.keepToken === undefined
-      ? null
-      : await ctx.db
-          .query("shareLinks")
-          .withIndex("by_token", (q) => q.eq("token", options.keepToken!))
-          .first();
-  if (kept !== null) {
-    shareToken = kept.token;
-    await ctx.db.patch(kept._id, { strategyId: copy.strategyId, updatedAt: now });
-  } else {
-    shareToken = `${COMMUNITY_TOKEN_PREFIX}${createPublicId()}`;
-    await ctx.db.insert("shareLinks", {
-      token: shareToken,
-      targetType: "strategy",
-      strategyId: copy.strategyId,
-      role: "viewer",
-      createdByUserId: ownerId,
-      createdAt: now,
-      updatedAt: now,
-    });
+  if (options.replacing != null && options.shareToken !== undefined) {
+    const links = await ctx.db
+      .query("shareLinks")
+      .withIndex("by_strategyId", (q) =>
+        q.eq("strategyId", options.replacing!._id),
+      )
+      .take(10);
+    for (const link of links) {
+      await ctx.db.patch(link._id, { strategyId: copy.strategyId, updatedAt: now });
+    }
+    return { ...copy, publicId, shareToken: options.shareToken };
   }
+  const shareToken = `${COMMUNITY_TOKEN_PREFIX}${createPublicId()}`;
+  await insertSnapshotLink(ctx, copy.strategyId, shareToken, ownerId);
   return { ...copy, publicId, shareToken };
+}
+
+async function insertSnapshotLink(
+  ctx: MutationCtx,
+  strategyId: Id<"strategies">,
+  token: string,
+  ownerId: Id<"users">,
+) {
+  const now = Date.now();
+  await ctx.db.insert("shareLinks", {
+    token,
+    targetType: "strategy",
+    strategyId,
+    role: "viewer",
+    createdByUserId: ownerId,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+async function shareLinkOf(ctx: MutationCtx, token: string) {
+  return await ctx.db
+    .query("shareLinks")
+    .withIndex("by_token", (q) => q.eq("token", token))
+    .first();
+}
+
+/// Takes [post] out of the feed for review: its public link stops working,
+/// and a review link only reviewers are given opens it instead.
+async function hidePost(ctx: MutationCtx, post: Doc<"communityPosts">) {
+  const now = Date.now();
+  const link = await shareLinkOf(ctx, post.shareToken);
+  if (link !== null && link.revokedAt === undefined) {
+    await ctx.db.patch(link._id, { revokedAt: now, updatedAt: now });
+  }
+  let reviewToken: string | undefined;
+  if (post.snapshotStrategyId !== undefined) {
+    reviewToken = `${COMMUNITY_TOKEN_PREFIX}review-${createPublicId()}`;
+    await insertSnapshotLink(
+      ctx,
+      post.snapshotStrategyId,
+      reviewToken,
+      await communityOwnerId(ctx),
+    );
+  }
+  await ctx.db.patch(post._id, { status: "hidden", reviewToken });
+}
+
+/// Puts a hidden [post] back: its public link works again and the review
+/// link goes.
+async function relistPost(ctx: MutationCtx, post: Doc<"communityPosts">) {
+  const now = Date.now();
+  const link = await shareLinkOf(ctx, post.shareToken);
+  if (link !== null && link.revokedAt !== undefined) {
+    await ctx.db.patch(link._id, { revokedAt: undefined, updatedAt: now });
+  }
+  if (post.reviewToken !== undefined) {
+    const review = await shareLinkOf(ctx, post.reviewToken);
+    if (review !== null) await ctx.db.delete(review._id);
+  }
+  await ctx.db.patch(post._id, { status: "listed", reviewToken: undefined });
 }
 
 /// Takes [post] down for good: out of the feed, its snapshot deleted with
@@ -867,6 +1032,7 @@ async function removePost(ctx: MutationCtx, post: Doc<"communityPosts">) {
   await ctx.db.patch(post._id, {
     status: "removed",
     snapshotStrategyId: undefined,
+    reviewToken: undefined,
     updatedAt: Date.now(),
   });
 }

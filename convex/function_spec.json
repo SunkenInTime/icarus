@@ -3,6 +3,1449 @@
     {
       "args": {
         "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "community.js:foldCountChanges",
+      "returns": {
+        "type": "null"
+      },
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "postPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "community.js:getPost",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "value": {
+              "post": {
+                "fieldType": {
+                  "type": "object",
+                  "value": {
+                    "agentTypes": {
+                      "fieldType": {
+                        "type": "array",
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "optional": false
+                    },
+                    "authorAvatarUrl": {
+                      "fieldType": {
+                        "type": "union",
+                        "value": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "optional": false
+                    },
+                    "authorName": {
+                      "fieldType": {
+                        "type": "union",
+                        "value": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "optional": false
+                    },
+                    "lineupCount": {
+                      "fieldType": {
+                        "type": "number"
+                      },
+                      "optional": false
+                    },
+                    "mapData": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    },
+                    "pageCount": {
+                      "fieldType": {
+                        "type": "number"
+                      },
+                      "optional": false
+                    },
+                    "publicId": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    },
+                    "publishedAt": {
+                      "fieldType": {
+                        "type": "number"
+                      },
+                      "optional": false
+                    },
+                    "shareToken": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    },
+                    "side": {
+                      "fieldType": {
+                        "type": "union",
+                        "value": [
+                          {
+                            "type": "literal",
+                            "value": "attack"
+                          },
+                          {
+                            "type": "literal",
+                            "value": "defense"
+                          },
+                          {
+                            "type": "literal",
+                            "value": "mixed"
+                          }
+                        ]
+                      },
+                      "optional": false
+                    },
+                    "starCount": {
+                      "fieldType": {
+                        "type": "number"
+                      },
+                      "optional": false
+                    },
+                    "strategyPublicId": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    },
+                    "title": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    }
+                  }
+                },
+                "optional": false
+              },
+              "status": {
+                "fieldType": {
+                  "type": "union",
+                  "value": [
+                    {
+                      "type": "literal",
+                      "value": "listed"
+                    },
+                    {
+                      "type": "literal",
+                      "value": "hidden"
+                    },
+                    {
+                      "type": "literal",
+                      "value": "removed"
+                    }
+                  ]
+                },
+                "optional": false
+              }
+            }
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "strategyPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "community.js:getPostPreview",
+      "returns": {
+        "type": "object",
+        "value": {
+          "agentTypes": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "string"
+              }
+            },
+            "optional": false
+          },
+          "mapData": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "name": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "side": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "attack"
+                },
+                {
+                  "type": "literal",
+                  "value": "defense"
+                },
+                {
+                  "type": "literal",
+                  "value": "mixed"
+                }
+              ]
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "postPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "community.js:getReports",
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "count": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            },
+            "notes": {
+              "fieldType": {
+                "type": "array",
+                "value": {
+                  "type": "string"
+                }
+              },
+              "optional": false
+            },
+            "reason": {
+              "fieldType": {
+                "type": "union",
+                "value": [
+                  {
+                    "type": "literal",
+                    "value": "offensive"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "picture"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "link"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "spam"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "stolen"
+                  }
+                ]
+              },
+              "optional": false
+            }
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "postPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "community.js:getSourceChanged",
+      "returns": {
+        "type": "object",
+        "value": {
+          "changed": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          },
+          "sourceExists": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "community.js:getViewer",
+      "returns": {
+        "type": "object",
+        "value": {
+          "authorName": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": false
+          },
+          "canPost": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          },
+          "isReviewer": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "community.js:listForReview",
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "post": {
+              "fieldType": {
+                "type": "object",
+                "value": {
+                  "agentTypes": {
+                    "fieldType": {
+                      "type": "array",
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "optional": false
+                  },
+                  "authorAvatarUrl": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "authorName": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "lineupCount": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "mapData": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "pageCount": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "publicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "publishedAt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "shareToken": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "side": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "literal",
+                          "value": "attack"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "defense"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "mixed"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "starCount": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "strategyPublicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "title": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  }
+                }
+              },
+              "optional": false
+            },
+            "reportCount": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            }
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "community.js:listMine",
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "post": {
+              "fieldType": {
+                "type": "object",
+                "value": {
+                  "agentTypes": {
+                    "fieldType": {
+                      "type": "array",
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "optional": false
+                  },
+                  "authorAvatarUrl": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "authorName": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "lineupCount": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "mapData": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "pageCount": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "publicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "publishedAt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "shareToken": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "side": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "literal",
+                          "value": "attack"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "defense"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "mixed"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "starCount": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "strategyPublicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "title": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  }
+                }
+              },
+              "optional": false
+            },
+            "saveCount": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            },
+            "sourceStrategyPublicId": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "status": {
+              "fieldType": {
+                "type": "union",
+                "value": [
+                  {
+                    "type": "literal",
+                    "value": "listed"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "hidden"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "removed"
+                  }
+                ]
+              },
+              "optional": false
+            },
+            "updatedAt": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            }
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "community.js:listMyStars",
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "string"
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
+      "identifier": "community.js:listPostable",
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "mapData": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "name": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "postPublicId": {
+              "fieldType": {
+                "type": "union",
+                "value": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "optional": false
+            },
+            "strategyPublicId": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "updatedAt": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            }
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "agentTypes": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "string"
+              }
+            },
+            "optional": true
+          },
+          "cursor": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "mapData": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "side": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "attack"
+                },
+                {
+                  "type": "literal",
+                  "value": "defense"
+                }
+              ]
+            },
+            "optional": true
+          },
+          "sort": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "trending"
+                },
+                {
+                  "type": "literal",
+                  "value": "new"
+                },
+                {
+                  "type": "literal",
+                  "value": "top"
+                }
+              ]
+            },
+            "optional": false
+          },
+          "text": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "community.js:listPosts",
+      "returns": {
+        "type": "object",
+        "value": {
+          "nextCursor": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": false
+          },
+          "posts": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "agentTypes": {
+                    "fieldType": {
+                      "type": "array",
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "optional": false
+                  },
+                  "authorAvatarUrl": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "authorName": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "lineupCount": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "mapData": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "pageCount": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "publicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "publishedAt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "shareToken": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "side": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "literal",
+                          "value": "attack"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "defense"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "mixed"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "starCount": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "strategyPublicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "title": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "authorName": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": false
+          },
+          "postPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "reportCount": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "title": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Action",
+      "identifier": "community.js:notifyReviewers",
+      "returns": {
+        "type": "null"
+      },
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "postPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "strategyPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "title": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "community.js:publish",
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "literal",
+              "value": true
+            },
+            "optional": false
+          },
+          "postPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "community.js:refreshTrending",
+      "returns": {
+        "type": "null"
+      },
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "note": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "postPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "reason": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "offensive"
+                },
+                {
+                  "type": "literal",
+                  "value": "picture"
+                },
+                {
+                  "type": "literal",
+                  "value": "link"
+                },
+                {
+                  "type": "literal",
+                  "value": "spam"
+                },
+                {
+                  "type": "literal",
+                  "value": "stolen"
+                }
+              ]
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "community.js:report",
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "literal",
+              "value": true
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "decision": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "restore"
+                },
+                {
+                  "type": "literal",
+                  "value": "remove"
+                },
+                {
+                  "type": "literal",
+                  "value": "ban"
+                }
+              ]
+            },
+            "optional": false
+          },
+          "postPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "community.js:review",
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "literal",
+              "value": true
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "folderPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "postPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "publicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "community.js:saveCopy",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "object",
+            "value": {
+              "ok": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": true
+                },
+                "optional": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "value": {
+              "ok": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": true
+                },
+                "optional": false
+              },
+              "reused": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": true
+                },
+                "optional": false
+              }
+            }
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "postPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "starred": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "community.js:setStar",
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "literal",
+              "value": true
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "postPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "community.js:takeDown",
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "literal",
+              "value": true
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "postPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "refresh": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
+          "title": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "community.js:updatePost",
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "literal",
+              "value": true
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
         "value": {
           "clientProtocolVersion": {
             "fieldType": {

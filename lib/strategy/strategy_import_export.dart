@@ -47,6 +47,7 @@ import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:icarus/services/export_save_path.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/services/image_file_name.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:icarus/services/strategy_folders.dart';
@@ -2958,9 +2959,17 @@ class StrategyImportExportService {
   /// that work has not landed (see [sendCloudWork]).
   Future<bool> exportCloudStrategy(String strategyId) async {
     final sameAccount = await sendCloudWork(ref.read, strategyId: strategyId);
+    // A reader here through a link (a Community post, or a view link) reads
+    // with its token: they have no access of their own.
+    final linkView = ref.read(shareLinkViewProvider);
     final snapshot = await ref
         .read(convexStrategyRepositoryProvider)
-        .fetchFullSnapshot(strategyId);
+        .fetchFullSnapshot(
+          strategyId,
+          shareToken: linkView?.strategyPublicId == strategyId
+              ? linkView!.token
+              : null,
+        );
     // Read as the account whose work was waited on, or not written.
     sameAccount();
     await _ensureRemoteAssetsCached(snapshot);
@@ -2972,6 +2981,34 @@ class StrategyImportExportService {
     if (outputFile == null) return false;
     await zipStrategyData(strategy: strategy, outputFilePath: outputFile);
     return true;
+  }
+
+  /// Copies a Community post into this computer's library, for a reader
+  /// with no account: the post's copy read through its token, written as an
+  /// .ica and imported, the same way every export comes home. The reader
+  /// must be viewing the post (shareLinkViewProvider), which is what lets
+  /// its pictures be fetched.
+  Future<void> importCommunityPost({
+    required String strategyPublicId,
+    required String shareToken,
+    required String title,
+  }) async {
+    final snapshot = await ref
+        .read(convexStrategyRepositoryProvider)
+        .fetchFullSnapshot(strategyPublicId, shareToken: shareToken);
+    await _ensureRemoteAssetsCached(snapshot);
+    final strategy = strategyDataFromRemoteSnapshot(snapshot);
+    final directory = await Directory.systemTemp.createTemp('icarus-post-');
+    try {
+      final file = path.join(
+        directory.path,
+        '${sanitizeStrategyFileName(title)}.ica',
+      );
+      await zipStrategyData(strategy: strategy, outputFilePath: file);
+      await _importFile(file: XFile(file), targetFolderId: null);
+    } finally {
+      await directory.delete(recursive: true);
+    }
   }
 
   Future<void> exportFile(String id) async {

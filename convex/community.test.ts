@@ -40,6 +40,10 @@ const getSourceChanged = makeFunctionReference<"query">(
   "community:getSourceChanged",
 );
 const getViewer = makeFunctionReference<"query">("community:getViewer");
+const listPostable = makeFunctionReference<"query">("community:listPostable");
+const getPostPreview = makeFunctionReference<"query">(
+  "community:getPostPreview",
+);
 const listForReview = makeFunctionReference<"query">(
   "community:listForReview",
 );
@@ -141,6 +145,8 @@ async function seedStrategy(
   }
 }
 
+let postCount = 0;
+
 async function post(
   harness: Harness,
   person: Person,
@@ -150,6 +156,7 @@ async function post(
   const result = await harness.as(person).mutation(publish, {
     ...protocol,
     strategyPublicId,
+    postPublicId: `post-${strategyPublicId}-${++postCount}`,
     title,
   });
   return result.postPublicId;
@@ -234,9 +241,63 @@ describe("posting", () => {
       harness.as("author").mutation(publish, {
         ...protocol,
         strategyPublicId: "source",
+        postPublicId: "blank-title",
         title: "   ",
       }),
     ).rejects.toThrow("title");
+  });
+
+  test("a retried publish finds its post, and the picker lists what's posted", async () => {
+    const harness = await createHarness();
+    const { as } = harness;
+    await seedStrategy(harness, "author", "source");
+    await seedStrategy(harness, "author", "other");
+    const args = {
+      ...protocol,
+      strategyPublicId: "source",
+      postPublicId: "retried-post",
+      title: "Retried",
+    };
+    await as("author").mutation(publish, args);
+    await expect(as("author").mutation(publish, args)).resolves.toEqual({
+      ok: true,
+      postPublicId: "retried-post",
+    });
+    await expect(feed(harness)).resolves.toEqual(["Retried"]);
+    const postable = await as("author").query(listPostable, {});
+    expect(
+      postable.map(
+        (entry: { strategyPublicId: string; postPublicId: string | null }) => [
+          entry.strategyPublicId,
+          entry.postPublicId,
+        ],
+      ).sort(),
+    ).toEqual([
+      ["other", null],
+      ["source", "retried-post"],
+    ]);
+    await expect(harness.t.query(listPostable, {})).resolves.toEqual([]);
+  });
+
+  test("the posting preview shows the owner's strategy as a card would", async () => {
+    const harness = await createHarness();
+    const { as } = harness;
+    await seedStrategy(harness, "author", "source", {
+      mapData: "bind",
+      isAttack: false,
+      agents: ["sova"],
+    });
+    await expect(
+      as("author").query(getPostPreview, { strategyPublicId: "source" }),
+    ).resolves.toEqual({
+      name: "Strategy source",
+      mapData: "bind",
+      side: "defense",
+      agentTypes: ["sova"],
+    });
+    await expect(
+      as("reader").query(getPostPreview, { strategyPublicId: "source" }),
+    ).rejects.toThrow();
   });
 
   test("edits stay private until the author updates the post", async () => {
@@ -504,6 +565,13 @@ describe("reports", () => {
     process.env.COMMUNITY_REVIEWERS = "someone-else, reviewer";
     await seedStrategy(harness, "author", "source");
     const postId = await post(harness, "author", "source", "Reported");
+    const card = (await t.query(getPost, { postPublicId: postId })).post;
+    const readThrough = (shareToken: string) =>
+      t.query(getFullSnapshot, {
+        ...protocol,
+        strategyPublicId: card.strategyPublicId,
+        shareToken,
+      });
 
     for (const person of ["reader", "reader", "second"] as const) {
       await as(person).mutation(report, {
@@ -521,14 +589,26 @@ describe("reports", () => {
       reason: "offensive",
     });
     await expect(feed(harness)).resolves.toEqual([]);
-    await expect(t.query(getPost, { postPublicId: postId })).resolves.toMatchObject(
-      { status: "hidden" },
+    // Hidden from everyone but reviewers, its link included.
+    await expect(t.query(getPost, { postPublicId: postId })).resolves.toBeNull();
+    await expect(readThrough(card.shareToken)).rejects.toThrow(
+      "Share link revoked",
     );
+    const reviewed = await as("reviewer").query(getPost, { postPublicId: postId });
+    expect(reviewed).toMatchObject({ status: "hidden" });
+    expect(reviewed.post.shareToken).not.toBe(card.shareToken);
+    await expect(readThrough(reviewed.post.shareToken)).resolves.toBeTruthy();
+    await expect(
+      as("reader").mutation(redeemShare, {
+        ...protocol,
+        token: reviewed.post.shareToken,
+      }),
+    ).rejects.toThrow("Forbidden");
 
     await expect(as("reader").query(listForReview, {})).rejects.toThrow(
       "Forbidden",
     );
-    await expect(as("reviewer").query(getViewer, {})).resolves.toEqual({
+    await expect(as("reviewer").query(getViewer, {})).resolves.toMatchObject({
       isReviewer: true,
       canPost: true,
     });
@@ -562,6 +642,8 @@ describe("reports", () => {
       decision: "restore",
     });
     await expect(feed(harness)).resolves.toEqual(["Reported"]);
+    await expect(readThrough(card.shareToken)).resolves.toBeTruthy();
+    await expect(readThrough(reviewed.post.shareToken)).rejects.toThrow();
     await expect(
       as("reviewer").query(getReports, { postPublicId: postId }),
     ).resolves.toEqual([]);
@@ -581,9 +663,10 @@ describe("reports", () => {
       decision: "ban",
     });
     await expect(feed(harness)).resolves.toEqual([]);
-    await expect(as("author").query(getViewer, {})).resolves.toEqual({
+    await expect(as("author").query(getViewer, {})).resolves.toMatchObject({
       isReviewer: false,
       canPost: false,
+      authorName: "author",
     });
     await expect(post(harness, "author", "another")).rejects.toThrow(
       "Forbidden",

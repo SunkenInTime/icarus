@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as community from "../community.js";
 import type * as crons from "../crons.js";
 import type * as elements from "../elements.js";
 import type * as folders from "../folders.js";
@@ -18,6 +19,7 @@ import type * as lib_assetReferences from "../lib/assetReferences.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_canonicalValues from "../lib/canonicalValues.js";
 import type * as lib_cloudProtocol from "../lib/cloudProtocol.js";
+import type * as lib_community from "../lib/community.js";
 import type * as lib_contentCopy from "../lib/contentCopy.js";
 import type * as lib_contentVersions from "../lib/contentVersions.js";
 import type * as lib_elementFields from "../lib/elementFields.js";
@@ -37,6 +39,7 @@ import type * as lib_publicValidators from "../lib/publicValidators.js";
 import type * as lib_r2 from "../lib/r2.js";
 import type * as lib_snapshotSerialization from "../lib/snapshotSerialization.js";
 import type * as lib_strategyAgentSummary from "../lib/strategyAgentSummary.js";
+import type * as lib_strategyCopy from "../lib/strategyCopy.js";
 import type * as lineups from "../lineups.js";
 import type * as maintenance from "../maintenance.js";
 import type * as ops from "../ops.js";
@@ -55,6 +58,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  community: typeof community;
   crons: typeof crons;
   elements: typeof elements;
   folders: typeof folders;
@@ -65,6 +69,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   "lib/canonicalValues": typeof lib_canonicalValues;
   "lib/cloudProtocol": typeof lib_cloudProtocol;
+  "lib/community": typeof lib_community;
   "lib/contentCopy": typeof lib_contentCopy;
   "lib/contentVersions": typeof lib_contentVersions;
   "lib/elementFields": typeof lib_elementFields;
@@ -84,6 +89,7 @@ declare const fullApi: ApiFromModules<{
   "lib/r2": typeof lib_r2;
   "lib/snapshotSerialization": typeof lib_snapshotSerialization;
   "lib/strategyAgentSummary": typeof lib_strategyAgentSummary;
+  "lib/strategyCopy": typeof lib_strategyCopy;
   lineups: typeof lineups;
   maintenance: typeof maintenance;
   ops: typeof ops;

@@ -120,6 +120,7 @@ Future<T> _invoke<T>(
 
 abstract interface class IcarusConvexApi {
   factory IcarusConvexApi(ConvexTransport transport) = _IcarusConvexApi;
+  CommunityModule get community;
   ElementsModule get elements;
   FoldersModule get folders;
   HealthModule get health;
@@ -138,7 +139,8 @@ abstract interface class IcarusConvexApi {
 
 final class _IcarusConvexApi implements IcarusConvexApi {
   _IcarusConvexApi(ConvexTransport transport)
-    : elements = _ElementsModule(transport),
+    : community = _CommunityModule(transport),
+      elements = _ElementsModule(transport),
       folders = _FoldersModule(transport),
       health = _HealthModule(transport),
       images = _ImagesModule(transport),
@@ -152,6 +154,8 @@ final class _IcarusConvexApi implements IcarusConvexApi {
       strategies = _StrategiesModule(transport),
       strategy = _StrategyModule(transport),
       users = _UsersModule(transport);
+  @override
+  final CommunityModule community;
   @override
   final ElementsModule elements;
   @override
@@ -180,6 +184,335 @@ final class _IcarusConvexApi implements IcarusConvexApi {
   final StrategyModule strategy;
   @override
   final UsersModule users;
+}
+
+abstract interface class CommunityModule {
+  ConvexQuery<CommunityGetPostResult?> getPost({required String postPublicId});
+  ConvexQuery<CommunityGetPostPreviewResult> getPostPreview({
+    required String strategyPublicId,
+  });
+  ConvexQuery<List<CommunityGetReportsResultItem>> getReports({
+    required String postPublicId,
+  });
+  ConvexQuery<CommunityGetSourceChangedResult> getSourceChanged({
+    required String postPublicId,
+  });
+  ConvexQuery<CommunityGetViewerResult> getViewer();
+  ConvexQuery<List<CommunityListForReviewResultItem>> listForReview();
+  ConvexQuery<List<CommunityListMineResultItem>> listMine();
+  ConvexQuery<List<String>> listMyStars();
+  ConvexQuery<List<CommunityListPostableResultItem>> listPostable();
+  ConvexQuery<CommunityListPostsResult> listPosts({
+    ConvexOptional<List<String>> agentTypes = const ConvexOptional.absent(),
+    ConvexOptional<String> cursor = const ConvexOptional.absent(),
+    ConvexOptional<String> mapData = const ConvexOptional.absent(),
+    ConvexOptional<CommunityListPostsArgsSide> side =
+        const ConvexOptional.absent(),
+    required CommunityListPostsArgsSort sort,
+    ConvexOptional<String> text = const ConvexOptional.absent(),
+  });
+  Future<CommunityPublishResult> publish({
+    required double clientProtocolVersion,
+    required String postPublicId,
+    required String strategyPublicId,
+    required String title,
+  });
+  Future<CommunityReportResult> report({
+    required double clientProtocolVersion,
+    ConvexOptional<String> note = const ConvexOptional.absent(),
+    required String postPublicId,
+    required CommunityGetReportsResultItemReason reason,
+  });
+  Future<CommunityReportResult> review({
+    required double clientProtocolVersion,
+    required CommunityReviewArgsDecision decision,
+    required String postPublicId,
+  });
+  Future<ConvexValue> saveCopy({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String postPublicId,
+    required String publicId,
+  });
+  Future<CommunityReportResult> setStar({
+    required double clientProtocolVersion,
+    required String postPublicId,
+    required bool starred,
+  });
+  Future<CommunityReportResult> takeDown({
+    required double clientProtocolVersion,
+    required String postPublicId,
+  });
+  Future<CommunityReportResult> updatePost({
+    required double clientProtocolVersion,
+    required String postPublicId,
+    ConvexOptional<bool> refresh = const ConvexOptional.absent(),
+    ConvexOptional<String> title = const ConvexOptional.absent(),
+  });
+}
+
+final class _CommunityModule implements CommunityModule {
+  const _CommunityModule(this._transport);
+  final ConvexTransport _transport;
+  @override
+  ConvexQuery<CommunityGetPostResult?> getPost({required String postPublicId}) {
+    final args = encodeCommunityGetPostArgs(postPublicId: postPublicId);
+    return ConvexQuery(
+      transport: _transport,
+      name: 'community:getPost',
+      args: args,
+      decode: decodeCommunityGetPostResult,
+    );
+  }
+
+  @override
+  ConvexQuery<CommunityGetPostPreviewResult> getPostPreview({
+    required String strategyPublicId,
+  }) {
+    final args = encodeCommunityGetPostPreviewArgs(
+      strategyPublicId: strategyPublicId,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'community:getPostPreview',
+      args: args,
+      decode: decodeCommunityGetPostPreviewResult,
+    );
+  }
+
+  @override
+  ConvexQuery<List<CommunityGetReportsResultItem>> getReports({
+    required String postPublicId,
+  }) {
+    final args = encodeCommunityGetReportsArgs(postPublicId: postPublicId);
+    return ConvexQuery(
+      transport: _transport,
+      name: 'community:getReports',
+      args: args,
+      decode: decodeCommunityGetReportsResult,
+    );
+  }
+
+  @override
+  ConvexQuery<CommunityGetSourceChangedResult> getSourceChanged({
+    required String postPublicId,
+  }) {
+    final args = encodeCommunityGetSourceChangedArgs(
+      postPublicId: postPublicId,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'community:getSourceChanged',
+      args: args,
+      decode: decodeCommunityGetSourceChangedResult,
+    );
+  }
+
+  @override
+  ConvexQuery<CommunityGetViewerResult> getViewer() {
+    final args = encodeCommunityGetViewerArgs();
+    return ConvexQuery(
+      transport: _transport,
+      name: 'community:getViewer',
+      args: args,
+      decode: decodeCommunityGetViewerResult,
+    );
+  }
+
+  @override
+  ConvexQuery<List<CommunityListForReviewResultItem>> listForReview() {
+    final args = encodeCommunityListForReviewArgs();
+    return ConvexQuery(
+      transport: _transport,
+      name: 'community:listForReview',
+      args: args,
+      decode: decodeCommunityListForReviewResult,
+    );
+  }
+
+  @override
+  ConvexQuery<List<CommunityListMineResultItem>> listMine() {
+    final args = encodeCommunityListMineArgs();
+    return ConvexQuery(
+      transport: _transport,
+      name: 'community:listMine',
+      args: args,
+      decode: decodeCommunityListMineResult,
+    );
+  }
+
+  @override
+  ConvexQuery<List<String>> listMyStars() {
+    final args = encodeCommunityListMyStarsArgs();
+    return ConvexQuery(
+      transport: _transport,
+      name: 'community:listMyStars',
+      args: args,
+      decode: decodeCommunityListMyStarsResult,
+    );
+  }
+
+  @override
+  ConvexQuery<List<CommunityListPostableResultItem>> listPostable() {
+    final args = encodeCommunityListPostableArgs();
+    return ConvexQuery(
+      transport: _transport,
+      name: 'community:listPostable',
+      args: args,
+      decode: decodeCommunityListPostableResult,
+    );
+  }
+
+  @override
+  ConvexQuery<CommunityListPostsResult> listPosts({
+    ConvexOptional<List<String>> agentTypes = const ConvexOptional.absent(),
+    ConvexOptional<String> cursor = const ConvexOptional.absent(),
+    ConvexOptional<String> mapData = const ConvexOptional.absent(),
+    ConvexOptional<CommunityListPostsArgsSide> side =
+        const ConvexOptional.absent(),
+    required CommunityListPostsArgsSort sort,
+    ConvexOptional<String> text = const ConvexOptional.absent(),
+  }) {
+    final args = encodeCommunityListPostsArgs(
+      agentTypes: agentTypes,
+      cursor: cursor,
+      mapData: mapData,
+      side: side,
+      sort: sort,
+      text: text,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'community:listPosts',
+      args: args,
+      decode: decodeCommunityListPostsResult,
+    );
+  }
+
+  @override
+  Future<CommunityPublishResult> publish({
+    required double clientProtocolVersion,
+    required String postPublicId,
+    required String strategyPublicId,
+    required String title,
+  }) {
+    final args = encodeCommunityPublishArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      postPublicId: postPublicId,
+      strategyPublicId: strategyPublicId,
+      title: title,
+    );
+    return _invoke(
+      () => _transport.mutation('community:publish', args),
+      decodeCommunityPublishResult,
+    );
+  }
+
+  @override
+  Future<CommunityReportResult> report({
+    required double clientProtocolVersion,
+    ConvexOptional<String> note = const ConvexOptional.absent(),
+    required String postPublicId,
+    required CommunityGetReportsResultItemReason reason,
+  }) {
+    final args = encodeCommunityReportArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      note: note,
+      postPublicId: postPublicId,
+      reason: reason,
+    );
+    return _invoke(
+      () => _transport.mutation('community:report', args),
+      decodeCommunityReportResult,
+    );
+  }
+
+  @override
+  Future<CommunityReportResult> review({
+    required double clientProtocolVersion,
+    required CommunityReviewArgsDecision decision,
+    required String postPublicId,
+  }) {
+    final args = encodeCommunityReviewArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      decision: decision,
+      postPublicId: postPublicId,
+    );
+    return _invoke(
+      () => _transport.mutation('community:review', args),
+      decodeCommunityReviewResult,
+    );
+  }
+
+  @override
+  Future<ConvexValue> saveCopy({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String postPublicId,
+    required String publicId,
+  }) {
+    final args = encodeCommunitySaveCopyArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      folderPublicId: folderPublicId,
+      postPublicId: postPublicId,
+      publicId: publicId,
+    );
+    return _invoke(
+      () => _transport.mutation('community:saveCopy', args),
+      decodeCommunitySaveCopyResult,
+    );
+  }
+
+  @override
+  Future<CommunityReportResult> setStar({
+    required double clientProtocolVersion,
+    required String postPublicId,
+    required bool starred,
+  }) {
+    final args = encodeCommunitySetStarArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      postPublicId: postPublicId,
+      starred: starred,
+    );
+    return _invoke(
+      () => _transport.mutation('community:setStar', args),
+      decodeCommunitySetStarResult,
+    );
+  }
+
+  @override
+  Future<CommunityReportResult> takeDown({
+    required double clientProtocolVersion,
+    required String postPublicId,
+  }) {
+    final args = encodeCommunityTakeDownArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      postPublicId: postPublicId,
+    );
+    return _invoke(
+      () => _transport.mutation('community:takeDown', args),
+      decodeCommunityTakeDownResult,
+    );
+  }
+
+  @override
+  Future<CommunityReportResult> updatePost({
+    required double clientProtocolVersion,
+    required String postPublicId,
+    ConvexOptional<bool> refresh = const ConvexOptional.absent(),
+    ConvexOptional<String> title = const ConvexOptional.absent(),
+  }) {
+    final args = encodeCommunityUpdatePostArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      postPublicId: postPublicId,
+      refresh: refresh,
+      title: title,
+    );
+    return _invoke(
+      () => _transport.mutation('community:updatePost', args),
+      decodeCommunityUpdatePostResult,
+    );
+  }
 }
 
 abstract interface class ElementsModule {
@@ -253,7 +586,7 @@ abstract interface class FoldersModule {
     ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
     required String publicId,
   });
-  Future<FoldersDeleteResult> delete({
+  Future<CommunityReportResult> delete({
     required double clientProtocolVersion,
     required String folderPublicId,
     ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
@@ -262,12 +595,12 @@ abstract interface class FoldersModule {
     ConvexOptional<FoldersListTreeArgsScope> scope =
         const ConvexOptional.absent(),
   });
-  Future<FoldersDeleteResult> move({
+  Future<CommunityReportResult> move({
     required double clientProtocolVersion,
     required String folderPublicId,
     ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
   });
-  Future<FoldersDeleteResult> update({
+  Future<CommunityReportResult> update({
     ConvexOptional<bool> clearCustomColorValue = const ConvexOptional.absent(),
     ConvexOptional<bool> clearIconFontFamily = const ConvexOptional.absent(),
     ConvexOptional<bool> clearIconFontPackage = const ConvexOptional.absent(),
@@ -318,7 +651,7 @@ final class _FoldersModule implements FoldersModule {
   }
 
   @override
-  Future<FoldersDeleteResult> delete({
+  Future<CommunityReportResult> delete({
     required double clientProtocolVersion,
     required String folderPublicId,
     ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
@@ -349,7 +682,7 @@ final class _FoldersModule implements FoldersModule {
   }
 
   @override
-  Future<FoldersDeleteResult> move({
+  Future<CommunityReportResult> move({
     required double clientProtocolVersion,
     required String folderPublicId,
     ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
@@ -366,7 +699,7 @@ final class _FoldersModule implements FoldersModule {
   }
 
   @override
-  Future<FoldersDeleteResult> update({
+  Future<CommunityReportResult> update({
     ConvexOptional<bool> clearCustomColorValue = const ConvexOptional.absent(),
     ConvexOptional<bool> clearIconFontFamily = const ConvexOptional.absent(),
     ConvexOptional<bool> clearIconFontPackage = const ConvexOptional.absent(),
@@ -445,7 +778,7 @@ abstract interface class ImagesModule {
     ConvexOptional<String> uploadId = const ConvexOptional.absent(),
     ConvexOptional<double> width = const ConvexOptional.absent(),
   });
-  Future<FoldersDeleteResult> deleteAssetRef({
+  Future<CommunityReportResult> deleteAssetRef({
     required String assetPublicId,
     required double clientProtocolVersion,
     required String strategyPublicId,
@@ -516,7 +849,7 @@ final class _ImagesModule implements ImagesModule {
   }
 
   @override
-  Future<FoldersDeleteResult> deleteAssetRef({
+  Future<CommunityReportResult> deleteAssetRef({
     required String assetPublicId,
     required double clientProtocolVersion,
     required String strategyPublicId,
@@ -612,7 +945,7 @@ final class _ImagesModule implements ImagesModule {
 }
 
 abstract interface class InvitesModule {
-  Future<FoldersDeleteResult> create({
+  Future<CommunityReportResult> create({
     required double clientProtocolVersion,
     ConvexOptional<double> expiresAt = const ConvexOptional.absent(),
     required InvitesCreateArgsRole role,
@@ -627,7 +960,7 @@ abstract interface class InvitesModule {
     required double clientProtocolVersion,
     required String token,
   });
-  Future<FoldersDeleteResult> revoke({
+  Future<CommunityReportResult> revoke({
     required double clientProtocolVersion,
     required String strategyPublicId,
     required String token,
@@ -638,7 +971,7 @@ final class _InvitesModule implements InvitesModule {
   const _InvitesModule(this._transport);
   final ConvexTransport _transport;
   @override
-  Future<FoldersDeleteResult> create({
+  Future<CommunityReportResult> create({
     required double clientProtocolVersion,
     ConvexOptional<double> expiresAt = const ConvexOptional.absent(),
     required InvitesCreateArgsRole role,
@@ -691,7 +1024,7 @@ final class _InvitesModule implements InvitesModule {
   }
 
   @override
-  Future<FoldersDeleteResult> revoke({
+  Future<CommunityReportResult> revoke({
     required double clientProtocolVersion,
     required String strategyPublicId,
     required String token,
@@ -1131,14 +1464,14 @@ final class _PresenceModule implements PresenceModule {
 }
 
 abstract interface class SharesModule {
-  Future<FoldersDeleteResult> create({
+  Future<CommunityReportResult> create({
     required double clientProtocolVersion,
     required InvitesCreateArgsRole role,
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
     required String token,
   });
-  Future<FoldersDeleteResult> leave({
+  Future<CommunityReportResult> leave({
     required double clientProtocolVersion,
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
@@ -1165,21 +1498,21 @@ abstract interface class SharesModule {
     required double clientProtocolVersion,
     required String token,
   });
-  Future<FoldersDeleteResult> removeMember({
+  Future<CommunityReportResult> removeMember({
     required double clientProtocolVersion,
     required String memberId,
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
   });
   ConvexQuery<SharesResolveResult> resolve({required String token});
-  Future<FoldersDeleteResult> revoke({
+  Future<CommunityReportResult> revoke({
     required double clientProtocolVersion,
     ConvexOptional<bool> removeMembers = const ConvexOptional.absent(),
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
     required String token,
   });
-  Future<FoldersDeleteResult> setMemberRole({
+  Future<CommunityReportResult> setMemberRole({
     required double clientProtocolVersion,
     required String memberId,
     required InvitesCreateArgsRole role,
@@ -1192,7 +1525,7 @@ final class _SharesModule implements SharesModule {
   const _SharesModule(this._transport);
   final ConvexTransport _transport;
   @override
-  Future<FoldersDeleteResult> create({
+  Future<CommunityReportResult> create({
     required double clientProtocolVersion,
     required InvitesCreateArgsRole role,
     required String targetPublicId,
@@ -1213,7 +1546,7 @@ final class _SharesModule implements SharesModule {
   }
 
   @override
-  Future<FoldersDeleteResult> leave({
+  Future<CommunityReportResult> leave({
     required double clientProtocolVersion,
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
@@ -1326,7 +1659,7 @@ final class _SharesModule implements SharesModule {
   }
 
   @override
-  Future<FoldersDeleteResult> removeMember({
+  Future<CommunityReportResult> removeMember({
     required double clientProtocolVersion,
     required String memberId,
     required String targetPublicId,
@@ -1356,7 +1689,7 @@ final class _SharesModule implements SharesModule {
   }
 
   @override
-  Future<FoldersDeleteResult> revoke({
+  Future<CommunityReportResult> revoke({
     required double clientProtocolVersion,
     ConvexOptional<bool> removeMembers = const ConvexOptional.absent(),
     required String targetPublicId,
@@ -1377,7 +1710,7 @@ final class _SharesModule implements SharesModule {
   }
 
   @override
-  Future<FoldersDeleteResult> setMemberRole({
+  Future<CommunityReportResult> setMemberRole({
     required double clientProtocolVersion,
     required String memberId,
     required InvitesCreateArgsRole role,
@@ -1437,7 +1770,7 @@ abstract interface class StrategiesModule {
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
     ConvexOptional<bool> unfinishedMove = const ConvexOptional.absent(),
   });
-  Future<FoldersDeleteResult> delete({
+  Future<CommunityReportResult> delete({
     required double clientProtocolVersion,
     required double expectedRevision,
     required String strategyPublicId,
@@ -1450,7 +1783,7 @@ abstract interface class StrategiesModule {
     required String publicId,
     required String sourceStrategyPublicId,
   });
-  Future<FoldersDeleteResult> finishMove({
+  Future<CommunityReportResult> finishMove({
     required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String strategyPublicId,
@@ -1583,7 +1916,7 @@ final class _StrategiesModule implements StrategiesModule {
   }
 
   @override
-  Future<FoldersDeleteResult> delete({
+  Future<CommunityReportResult> delete({
     required double clientProtocolVersion,
     required double expectedRevision,
     required String strategyPublicId,
@@ -1623,7 +1956,7 @@ final class _StrategiesModule implements StrategiesModule {
   }
 
   @override
-  Future<FoldersDeleteResult> finishMove({
+  Future<CommunityReportResult> finishMove({
     required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String strategyPublicId,
@@ -1845,7 +2178,7 @@ final class _StrategyModule implements StrategyModule {
 }
 
 abstract interface class UsersModule {
-  Future<FoldersDeleteResult> ensureCurrentUser({
+  Future<CommunityReportResult> ensureCurrentUser({
     required double clientProtocolVersion,
   });
   ConvexQuery<UsersMeResult?> me();
@@ -1855,7 +2188,7 @@ final class _UsersModule implements UsersModule {
   const _UsersModule(this._transport);
   final ConvexTransport _transport;
   @override
-  Future<FoldersDeleteResult> ensureCurrentUser({
+  Future<CommunityReportResult> ensureCurrentUser({
     required double clientProtocolVersion,
   }) {
     final args = encodeUsersEnsureCurrentUserArgs(

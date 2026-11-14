@@ -362,7 +362,12 @@ export default defineSchema({
     // Unset once the post is removed: the snapshot is deleted with it.
     snapshotStrategyId: v.optional(v.id("strategies")),
     snapshotStrategyPublicId: v.string(),
+    // The link anyone reads the snapshot through. Switched off while the
+    // post is hidden.
     shareToken: v.string(),
+    // While hidden: a second link to the snapshot that only reviewers are
+    // given, so they can look at what was reported.
+    reviewToken: v.optional(v.string()),
     title: v.string(),
     // Lower-cased title and author, for the search index.
     searchText: v.string(),

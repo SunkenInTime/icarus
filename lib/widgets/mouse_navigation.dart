@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/community_models.dart';
+import 'package:icarus/collab/community_repository.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
@@ -13,11 +15,13 @@ import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -25,6 +29,8 @@ import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:icarus/widgets/community/community_link.dart';
+import 'package:icarus/widgets/community/open_community_post.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Tracks the live route stack so [MouseNavigation] can tell what is on top:
@@ -129,6 +135,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
   ProviderSubscription<String?>? _folderSub;
   ProviderSubscription<StrategyState>? _strategySub;
   ProviderSubscription<String?>? _sharedStrategySub;
+  ProviderSubscription<String?>? _communityPostSub;
 
   @override
   void initState() {
@@ -153,6 +160,86 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
         ));
       },
     );
+    // A Community post's link opens it over the Community tab.
+    _communityPostSub = ref.listenManual(
+      communityPostToOpenProvider,
+      (_, postPublicId) {
+        if (postPublicId == null) return;
+        ref.read(communityPostToOpenProvider.notifier).state = null;
+        unawaited(_openCommunityPostLink(postPublicId));
+      },
+      fireImmediately: true,
+    );
+  }
+
+  Future<void> _authSettled() async {
+    bool settled(AppAuthState auth) =>
+        !auth.isLoading && (!auth.isAuthenticated || auth.isConvexUserReady);
+    if (settled(ref.read(authProvider))) return;
+    final done = Completer<void>();
+    final sub = ref.listenManual(authProvider, (_, auth) {
+      if (settled(auth) && !done.isCompleted) done.complete();
+    });
+    await done.future.timeout(const Duration(seconds: 10), onTimeout: () {});
+    sub.close();
+  }
+
+  Future<void> _openCommunityPostLink(String postPublicId) async {
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null || !mounted) return;
+    final bool inStrategyRoute =
+        mouseNavigationRouteObserver.topRoute?.settings.name ==
+            Routes.strategyView;
+    final bool strategyOpen = ref.read(strategyProvider).stratName != null;
+    if (strategyOpen || inStrategyRoute) {
+      final bool left = await guardUnsavedStrategyExit(
+        context: navigator.context,
+        ref: ref,
+        source: 'MouseNavigation.openCommunityPost',
+        onContinue: () async {
+          _resetStrategyUiState();
+          await ref.read(strategyProvider.notifier).clearCurrentStrategy();
+          if (inStrategyRoute && navigator.mounted) navigator.pop();
+        },
+      );
+      if (!left || !mounted) return;
+    }
+    ref.read(libraryNavigationProvider).showCommunity();
+    // A reviewer sees a hidden post only once the server knows who they
+    // are, so a link the app opened with waits for sign-in to settle.
+    await _authSettled();
+    if (!mounted) return;
+    final l10n = ref.read(l10nProvider);
+    final ({CommunityPost post, CommunityPostStatus status})? found;
+    try {
+      found =
+          await ref.read(communityRepositoryProvider).fetchPost(postPublicId);
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'Reading a linked Community post failed.',
+        source: 'MouseNavigation.openCommunityPost',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      Settings.showToast(
+        message: l10n.communityLoadFailedTitle,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+    if (!mounted) return;
+    if (found == null || found.status == CommunityPostStatus.removed) {
+      Settings.showToast(
+        message: l10n.communityPostTakenDown,
+        backgroundColor: Settings.tacticalVioletTheme.secondary,
+      );
+      return;
+    }
+    await openCommunityPost(
+      ref,
+      found.post,
+      underReview: found.status == CommunityPostStatus.hidden,
+    );
   }
 
   @override
@@ -160,6 +247,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     _folderSub?.close();
     _strategySub?.close();
     _sharedStrategySub?.close();
+    _communityPostSub?.close();
     super.dispose();
   }
 

@@ -5,6 +5,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/form_factor.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/community_provider.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
@@ -16,6 +17,7 @@ import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/context_menu_region.dart';
+import 'package:icarus/widgets/dialogs/community/post_to_community_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/delete_strategy_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/rename_strategy_dialog.dart';
@@ -199,6 +201,10 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     final isMoving = !_isCloud &&
         ref.watch(movingToCloudProvider.select((ids) => ids.contains(id)));
     final needsConnection = _needsConnection;
+    final isPosted = _canShare &&
+        ref.watch(
+          myPostsByStrategyProvider.select((posts) => posts.containsKey(id)),
+        );
 
     final tile = DragTarget<GridItem>(
       onWillAcceptWithDetails: (details) {
@@ -337,8 +343,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                               : needsConnection
                                                   ? const NeedsConnectionBadge()
                                                   : widget.showDeviceBadge
-                                                  ? const DeviceOnlyBadge()
-                                                  : viewData.sharedBadge,
+                                                      ? const DeviceOnlyBadge()
+                                                      : viewData.sharedBadge ??
+                                                          (isPosted
+                                                              ? const CommunityPostedBadge()
+                                                              : null),
                                         ),
                                       ),
                                       const SizedBox(height: 10),
@@ -505,6 +514,17 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
             _closeMenus();
             if (_refusedOffline()) return;
             _showShareDialog();
+          },
+        ),
+      if (_canShare)
+        ShadContextMenuItem(
+          key: const ValueKey('strategy-tile-post-to-community'),
+          leading: const Icon(LucideIcons.globe),
+          child: Text(l10n.communityPostToCommunity),
+          onPressed: () {
+            _closeMenus();
+            if (_refusedOffline()) return;
+            showPostToCommunityDialog(context, _strategyId);
           },
         ),
       if (_isCloud && !_canShare && isAtSharedRoot(ref))
