@@ -39,8 +39,9 @@ class FreehandPen {
   /// Moves the pointer to [pointer] and gives the stroke's points now.
   ///
   /// The pull depends on how far the pointer travelled, not on how often it
-  /// reported, so a stroke comes out the same from a 1000 Hz mouse as from
-  /// a browser's one report a frame.
+  /// reported, so a 1000 Hz mouse and a browser's one report a frame draw
+  /// much the same stroke: alike along a straight run, and about a pixel
+  /// apart where the hand turns sharply.
   List<Offset> moveTo(Offset pointer) {
     final travelled = (pointer - _pointer).distance;
     final pull = 1 - math.exp(-travelled / (lag / 2));

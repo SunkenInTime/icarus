@@ -108,7 +108,7 @@ void main() {
     }
   });
 
-  test('a mouse that reports more often draws the same stroke', () {
+  test('a mouse that reports more often draws the same straight stroke', () {
     final sparse = _drawn(_mouse(from, to, step: 6));
     final dense = _drawn(_mouse(from, to, step: 0.5));
     // Each runs within half a pixel of the other all along.
