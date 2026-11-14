@@ -76,13 +76,11 @@
   {"key": "escape", "optional": true},
   {"wait": 1},
 
-  {"fakeSaveDir": "{out}"},
+  {"fakeSaveDir": "{out}", "as": "saved.png"},
   {"tapAt": [124, 142]},
   {"wait": 3},
   {"shot": "{out}/7-screenshot-dialog.png"},
-  {"tapAt": [836, 619]},
-  {"wait": 8},
-  {"shot": "{out}/8-after-save.png"},
-  {"tapIcon": "x", "optional": true},
+  {"tapText": "Save screenshot", "nth": 2},
+  {"waitFile": "{out}/saved.png", "seconds": 30},
   {"exit": 1}
 ]
