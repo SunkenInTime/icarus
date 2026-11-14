@@ -14,6 +14,7 @@ import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/canonical_positioned.dart';
+import 'package:icarus/widgets/draggable_widgets/text/text_links.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_scale_controller.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -237,7 +238,10 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
           },
           child: EditorItemOutline(
             child: ContextMenuRegion(
-              items: _buildTagColorItems(),
+              items: [
+                ..._buildLinkItems(draftText ?? widget.placedText.text),
+                ..._buildTagColorItems(),
+              ],
               child: MouseWatch(
                 cursor: SystemMouseCursors.click,
                 deleteTarget: HoveredDeleteTarget.text(
@@ -258,6 +262,38 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         ),
       ),
     );
+  }
+
+  /// Open, for each link in [text]: the way to a link for someone editing on
+  /// a touch screen, and where the click that opens one is written down.
+  List<ShadContextMenuItem> _buildLinkItems(String text) {
+    final muted = ShadTheme.of(context).colorScheme.mutedForeground;
+    return [
+      for (final link in textLinks(text))
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.externalLink, size: 16),
+          trailing: Text(
+            openLinkShortcut,
+            style: TextStyle(color: muted, fontSize: 12),
+          ),
+          onPressed: () => openTextLink(link),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: Text(
+              context.l10n.canvasItemOpenLink(_shortAddress(link)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+    ];
+  }
+
+  /// [link] without the parts every address has, so the part that tells
+  /// links apart fits in a menu.
+  static String _shortAddress(Uri link) {
+    final address = link.toString().replaceFirst(RegExp(r'^https?://'), '');
+    return address.startsWith('www.') ? address.substring(4) : address;
   }
 
   List<ShadContextMenuItem> _buildTagColorItems() {

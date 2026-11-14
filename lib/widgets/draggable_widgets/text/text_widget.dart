@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/l10n/l10n.dart';
+import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
@@ -10,6 +13,7 @@ import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/text/formatted_text_view.dart';
 import 'package:icarus/widgets/draggable_widgets/text/markup_text_editing_controller.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_format_bar.dart';
+import 'package:icarus/widgets/draggable_widgets/text/text_links.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_markup.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:icarus/const/settings.dart';
@@ -34,13 +38,15 @@ class TextWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (isFeedback || ref.watch(screenshotProvider)) {
+    final inPicture = ref.watch(screenshotProvider);
+    if (isFeedback || inPicture) {
       return _FeedbackTextWidget(
         key: ValueKey(text),
         text: text,
         size: size,
         fontSize: fontSize,
         tagColorValue: tagColorValue,
+        links: !inPicture,
       );
     }
 
@@ -182,6 +188,22 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
     _controller.value = value;
   }
 
+  /// A click edits the text. On a link, with Ctrl or Cmd held, it opens the
+  /// link instead.
+  ///
+  /// The key is read from the app's own record of it, which forgets the key
+  /// when the window loses the keyboard. An opened link hands the keyboard to
+  /// the browser, and the key's release with it: a key still counted as held
+  /// on the way back would turn the next plain click into another open.
+  void _onTapUp(TapUpDetails details) {
+    final box = context.findRenderObject();
+    final link = ref.read(duplicateDragModifierProvider) && box is RenderBox
+        ? textLinkAt(box, details.globalPosition)
+        : null;
+    if (link == null) return _enterEditing();
+    unawaited(openTextLink(link));
+  }
+
   void _enterEditing() {
     if (_editing) return;
     setState(() => _editing = true);
@@ -239,7 +261,7 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
           )
         : GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: _enterEditing,
+            onTapUp: _onTapUp,
             child: ListenableBuilder(
               listenable: _controller,
               builder: (context, _) => FormattedTextView(
@@ -347,6 +369,7 @@ class _FeedbackTextWidget extends StatelessWidget {
     required this.text,
     required this.size,
     required this.fontSize,
+    required this.links,
     this.tagColorValue,
   });
 
@@ -354,6 +377,7 @@ class _FeedbackTextWidget extends StatelessWidget {
   final double size;
   final double fontSize;
   final int? tagColorValue;
+  final bool links;
 
   @override
   Widget build(BuildContext context) {
@@ -367,6 +391,7 @@ class _FeedbackTextWidget extends StatelessWidget {
         text: text,
         style: style,
         hintText: context.l10n.canvasItemTextPlaceholder,
+        links: links,
       ),
     );
   }
