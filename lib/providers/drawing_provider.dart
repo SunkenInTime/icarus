@@ -10,11 +10,13 @@ import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/freehand_pen.dart';
 import 'package:icarus/const/json_converters.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
+import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -70,6 +72,9 @@ final drawingProvider =
 
 class DrawingProvider extends Notifier<DrawingState> {
   List<DrawingElement> poppedElements = [];
+
+  /// The pen of the freehand stroke in progress.
+  FreehandPen? _freehandPen;
 
   @override
   DrawingState build() {
@@ -586,6 +591,14 @@ class DrawingProvider extends Notifier<DrawingState> {
     );
 
     freeDrawing.appendPoint(normalizedStart);
+    _freehandPen = FreehandPen(
+      normalizedStart,
+      // The lag is a length on screen, however far the map is zoomed in.
+      lag: coordinateSystem.screenHeightToWorld(
+        Settings.freeDrawPenLag / ref.read(screenZoomProvider),
+      ),
+      spacing: coordinateSystem.normalize(Settings.freeDrawMinDistance),
+    );
 
     state = state.copyWith(currentElement: freeDrawing);
 
@@ -597,17 +610,11 @@ class DrawingProvider extends Notifier<DrawingState> {
     final currentDrawing = (state.currentElement as FreeDrawing);
     final normalizedOffset = coordinateSystem.screenToCoordinate(offset);
 
-    List<Offset> currentPoints = currentDrawing.listOfPoints;
-    Offset lastPoint = currentPoints[currentPoints.length - 1];
-
-    final minDistance =
-        coordinateSystem.normalize(Settings.freeDrawMinDistance);
-    if ((lastPoint - normalizedOffset).distance < minDistance) return;
-
+    // The pointer's own path bounds the pen's, which runs inside it.
     final boundingBox =
         updateBoundingBox(currentDrawing.boundingBox!, normalizedOffset);
 
-    currentDrawing.appendPoint(normalizedOffset);
+    currentDrawing.replacePoints(_freehandPen!.moveTo(normalizedOffset));
     currentDrawing.rebuildPath(coordinateSystem);
 
     currentDrawing.boundingBox = boundingBox;
@@ -622,12 +629,14 @@ class DrawingProvider extends Notifier<DrawingState> {
     final currentDrawing = state.currentElement as FreeDrawing;
     FreeDrawing finalDrawing = currentDrawing.copyWith(
       listOfPoints: [...currentDrawing.listOfPoints],
-      cachedPolylineLengthUnits: currentDrawing.cachedPolylineLengthUnits,
     );
-
     if (offset != null) {
-      finalDrawing.appendPoint(coordinateSystem.screenToCoordinate(offset));
+      final end = coordinateSystem.screenToCoordinate(offset);
+      finalDrawing
+        ..replacePoints(_freehandPen!.moveTo(end))
+        ..boundingBox = updateBoundingBox(finalDrawing.boundingBox!, end);
     }
+    _freehandPen = null;
 
     if (Settings.enableStrokeSimplification) {
       finalDrawing = douglasPeucker(

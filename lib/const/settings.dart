@@ -84,6 +84,11 @@ class Settings {
   ];
   static const double brushSize = defaultStrokeThickness;
   static const double freeDrawMinDistance = 3;
+
+  /// How far a freehand stroke's pen trails the pointer, in screen pixels
+  /// (see FreehandPen). Longer is smoother and rounds small handwriting
+  /// more; at 8 an 18 px tall letter still reads.
+  static const double freeDrawPenLag = 8;
   static const bool enableStrokeSimplification = false;
   static const double strokeSimplificationEpsilon = 1.4;
   static const PhysicalKeyboardKey deleteKey = PhysicalKeyboardKey.keyX;
