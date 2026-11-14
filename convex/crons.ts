@@ -5,6 +5,7 @@ import {
   purgeOldTombstonesRef,
   purgeTrashedPagesRef,
 } from "./maintenance";
+import { foldCountChangesRef, refreshTrendingRef } from "./community";
 import {
   markStaleImageUploadsDeletedRef,
   processAssetReclaimCandidatesRef,
@@ -49,6 +50,20 @@ crons.interval(
   "process-asset-reclaim-candidates",
   { hours: 1 },
   processAssetReclaimCandidatesRef,
+  {},
+);
+// Community stars and saves reach their posts' counts in batches, so the
+// feed's cached pages stay valid between runs.
+crons.interval(
+  "fold-community-counts",
+  { minutes: 5 },
+  foldCountChangesRef,
+  {},
+);
+crons.interval(
+  "refresh-community-trending",
+  { hours: 1 },
+  refreshTrendingRef,
   {},
 );
 crons.interval(

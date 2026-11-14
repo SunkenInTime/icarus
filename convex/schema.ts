@@ -341,6 +341,131 @@ export default defineSchema({
     strategyId: v.id("strategies"),
     version: v.number(),
   }).index("by_strategyId", ["strategyId"]),
+  // Community: strategies their authors posted for anyone to open and copy.
+  // A post shows a frozen copy of the author's strategy (the snapshot), a
+  // strategy owned by the community account so it sits in nobody's library;
+  // anyone reads it through the post's share token, signed in or not.
+  // Everything a feed card shows is on this row, so a page of the feed is
+  // one index read. The counts are folded in by a cron (see
+  // lib/community.ts), so starring never re-runs the feed for everyone.
+  communityPosts: defineTable({
+    publicId: v.string(),
+    authorId: v.id("users"),
+    // The author's name and picture when they last posted or updated it.
+    authorName: v.union(v.string(), v.null()),
+    authorAvatarUrl: v.union(v.string(), v.null()),
+    // The strategy in the author's library that the post was copied from,
+    // and its content version then, to tell the author it has changed.
+    sourceStrategyId: v.id("strategies"),
+    sourceStrategyPublicId: v.string(),
+    sourceContentVersion: v.number(),
+    // Unset once the post is removed: the snapshot is deleted with it.
+    snapshotStrategyId: v.optional(v.id("strategies")),
+    snapshotStrategyPublicId: v.string(),
+    shareToken: v.string(),
+    title: v.string(),
+    // Lower-cased title and author, for the search index.
+    searchText: v.string(),
+    mapData: v.string(),
+    side: v.union(v.literal("attack"), v.literal("defense"), v.literal("mixed")),
+    agentTypes: v.array(v.string()),
+    pageCount: v.number(),
+    lineupCount: v.number(),
+    // listed: in the feed. hidden: taken out of it by reports until a
+    // reviewer looks. removed: taken down by its author or a reviewer.
+    status: v.union(
+      v.literal("listed"),
+      v.literal("hidden"),
+      v.literal("removed"),
+    ),
+    starCount: v.number(),
+    saveCount: v.number(),
+    // Stars and saves from the last week (see refreshTrending).
+    trendScore: v.number(),
+    reportCount: v.number(),
+    publishedAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_publicId", ["publicId"])
+    .index("by_sourceStrategyId", ["sourceStrategyId"])
+    .index("by_authorId", ["authorId"])
+    .index("by_trendScore", ["trendScore"])
+    .index("by_status_and_publishedAt", ["status", "publishedAt"])
+    .index("by_status_and_trendScore_and_publishedAt", [
+      "status",
+      "trendScore",
+      "publishedAt",
+    ])
+    .index("by_status_and_starCount_and_publishedAt", [
+      "status",
+      "starCount",
+      "publishedAt",
+    ])
+    .index("by_status_and_mapData_and_publishedAt", [
+      "status",
+      "mapData",
+      "publishedAt",
+    ])
+    .index("by_status_and_mapData_and_trendScore_and_publishedAt", [
+      "status",
+      "mapData",
+      "trendScore",
+      "publishedAt",
+    ])
+    .index("by_status_and_mapData_and_starCount_and_publishedAt", [
+      "status",
+      "mapData",
+      "starCount",
+      "publishedAt",
+    ])
+    .searchIndex("search_text", {
+      searchField: "searchText",
+      filterFields: ["status", "mapData"],
+    }),
+  // One row per (post, account) that starred it, or saved a copy of it.
+  communityStars: defineTable({
+    postId: v.id("communityPosts"),
+    // So an account's stars are listed without reading their posts.
+    postPublicId: v.string(),
+    userId: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_postId_and_userId", ["postId", "userId"])
+    .index("by_userId", ["userId"])
+    .index("by_createdAt", ["createdAt"]),
+  communitySaves: defineTable({
+    postId: v.id("communityPosts"),
+    userId: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_postId_and_userId", ["postId", "userId"])
+    .index("by_createdAt", ["createdAt"]),
+  // A star, unstar or save not yet folded into its post's counts. Writers
+  // only insert, so two people starring one post never collide.
+  communityCountChanges: defineTable({
+    postId: v.id("communityPosts"),
+    stars: v.number(),
+    saves: v.number(),
+  }),
+  communityReports: defineTable({
+    postId: v.id("communityPosts"),
+    reporterId: v.id("users"),
+    reason: v.union(
+      v.literal("offensive"),
+      v.literal("picture"),
+      v.literal("link"),
+      v.literal("spam"),
+      v.literal("stolen"),
+    ),
+    note: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_postId_and_reporterId", ["postId", "reporterId"]),
+  // Accounts a reviewer stopped from posting.
+  communityBans: defineTable({
+    userId: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_userId", ["userId"]),
   operationEvents: defineTable({
     strategyId: v.id("strategies"),
     pageId: v.optional(v.id("pages")),
