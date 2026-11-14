@@ -432,92 +432,84 @@ class _CommunityPostActionsState extends ConsumerState<CommunityPostActions> {
 
   @override
   Widget build(BuildContext context) {
-    const theme = Settings.tacticalVioletTheme;
     final l10n = context.l10n;
     final post = widget.post;
     final stars = ref.watch(communityStarsProvider);
     final saved = ref.watch(
       communitySavedPostsProvider.select((ids) => ids.contains(post.publicId)),
     );
-    return Container(
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: theme.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.border, width: 2),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ShadPopover(
-            controller: _menu,
-            padding: const EdgeInsets.all(6),
-            anchor: const ShadAnchor(
-              offset: Offset(0, -8),
-              childAlignment: Alignment.bottomLeft,
-              overlayAlignment: Alignment.topLeft,
-            ),
-            popover: (context) => ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 168),
-              child: IntrinsicWidth(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _MenuButton(
-                      icon: LucideIcons.link,
-                      label: l10n.communityCopyLink,
-                      onPressed: () {
-                        _menu.hide();
-                        copyCommunityPostLink(context, post);
-                      },
-                    ),
-                    _MenuButton(
-                      icon: LucideIcons.flag,
-                      label: l10n.communityReport,
-                      onPressed: () {
-                        _menu.hide();
-                        unawaited(_report());
-                      },
-                    ),
-                  ],
-                ),
+    // The buttons stand on the map by themselves, with no card behind them.
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ShadPopover(
+          controller: _menu,
+          padding: const EdgeInsets.all(6),
+          anchor: const ShadAnchor(
+            offset: Offset(0, -8),
+            childAlignment: Alignment.bottomLeft,
+            overlayAlignment: Alignment.topLeft,
+          ),
+          popover: (context) => ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 168),
+            child: IntrinsicWidth(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _MenuButton(
+                    icon: LucideIcons.link,
+                    label: l10n.communityCopyLink,
+                    onPressed: () {
+                      _menu.hide();
+                      copyCommunityPostLink(context, post);
+                    },
+                  ),
+                  _MenuButton(
+                    icon: LucideIcons.flag,
+                    label: l10n.communityReport,
+                    onPressed: () {
+                      _menu.hide();
+                      unawaited(_report());
+                    },
+                  ),
+                ],
               ),
             ),
-            child: ShadIconButton.ghost(
-              key: const ValueKey('community-post-more'),
-              width: 36,
-              height: 36,
-              onPressed: _menu.toggle,
-              icon: const Icon(LucideIcons.ellipsis, size: 18),
-            ),
           ),
-          const SizedBox(width: 6),
-          CommunityStarButton(
+          child: ShadIconButton.secondary(
+            key: const ValueKey('community-post-more'),
+            width: 36,
             height: 36,
-            starred: stars.isStarred(post.publicId),
-            count: stars.countFor(post),
-            onPressed: () => toggleCommunityStar(context, ref, post),
+            onPressed: _menu.toggle,
+            icon: const Icon(LucideIcons.ellipsis, size: 18),
           ),
-          const SizedBox(width: 6),
-          ShadButton(
-            key: const ValueKey('community-save'),
-            height: 36,
-            enabled: !_saving && !saved,
-            onPressed: _save,
-            leading: _saving
-                ? const SizedBox.square(
-                    dimension: 16,
-                    child: LoadingSpinner(strokeWidth: 2),
-                  )
-                : Icon(
-                    saved ? LucideIcons.check : LucideIcons.bookmarkPlus,
-                    size: 16,
-                  ),
-            child: Text(saved ? l10n.communitySaved : l10n.communitySave),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 6),
+        CommunityStarButton(
+          height: 36,
+          starred: stars.isStarred(post.publicId),
+          count: stars.countFor(post),
+          onPressed: () => toggleCommunityStar(context, ref, post),
+        ),
+        const SizedBox(width: 6),
+        ShadButton(
+          key: const ValueKey('community-save'),
+          height: 36,
+          enabled: !_saving && !saved,
+          onPressed: _save,
+          leading: _saving
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: LoadingSpinner(strokeWidth: 2),
+                )
+              : Icon(
+                  saved ? LucideIcons.check : LucideIcons.bookmarkPlus,
+                  size: 16,
+                ),
+          child: Text(saved ? l10n.communitySaved : l10n.communitySave),
+        ),
+      ],
     );
   }
 }

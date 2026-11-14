@@ -644,7 +644,7 @@ class _PickerPanel extends StatelessWidget {
                                 selected: filter.agents,
                                 onAgent: onAgent,
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 10),
                             ],
                           ],
                         ),
@@ -706,7 +706,7 @@ class _RoleLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
           Image.asset(
@@ -731,6 +731,10 @@ class _RoleLabel extends StatelessWidget {
   }
 }
 
+/// Small enough that all nine duelists fit on one line of a half column.
+const double _agentSize = 26;
+const double _agentGap = 3;
+
 class _AgentGroup extends StatelessWidget {
   const _AgentGroup({
     required this.role,
@@ -749,8 +753,8 @@ class _AgentGroup extends StatelessWidget {
         if (agent.role == role) agent,
     ];
     return Wrap(
-      spacing: 4,
-      runSpacing: 4,
+      spacing: _agentGap,
+      runSpacing: _agentGap,
       children: [
         for (final agent in agents)
           _AgentToggle(
@@ -803,8 +807,8 @@ class _AgentToggleState extends State<_AgentToggle> {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               curve: Settings.easeOut,
-              width: 30,
-              height: 30,
+              width: _agentSize,
+              height: _agentSize,
               padding: const EdgeInsets.all(1),
               decoration: BoxDecoration(
                 color: theme.card,
@@ -1169,8 +1173,9 @@ class _SortButton extends ConsumerWidget {
         height: 36,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         gap: 8,
-        decoration: const ShadDecoration(
-          border: ShadBorder.none,
+        // No outline inside the bar, but the button's own rounded corners.
+        decoration: ShadDecoration(
+          border: ShadBorder(radius: BorderRadius.circular(8)),
         ),
         onPressed: menu.toggle,
         leading: const Icon(LucideIcons.arrowDownWideNarrow, size: 16),

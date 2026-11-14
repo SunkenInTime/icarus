@@ -604,7 +604,8 @@ class _StrategyViewState extends ConsumerState<StrategyView>
               children: [
                 const Align(
                   alignment: Alignment.centerLeft,
-                  child: RepaintBoundary(child: InteractiveMap()),
+                  child: RepaintBoundary(
+                      child: InteractiveMap(dotsBeyondMap: true)),
                 ),
                 Align(
                   alignment: Alignment.topLeft,

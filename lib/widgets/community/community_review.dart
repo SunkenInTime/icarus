@@ -198,73 +198,65 @@ class _CommunityReviewActionsState
     const theme = Settings.tacticalVioletTheme;
     final l10n = context.l10n;
     final busy = _sending != null;
-    return Container(
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: theme.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.border, width: 2),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ShadPopover(
-            controller: _menu,
-            padding: const EdgeInsets.all(6),
-            anchor: const ShadAnchor(
-              offset: Offset(0, -8),
-              childAlignment: Alignment.bottomLeft,
-              overlayAlignment: Alignment.topLeft,
-            ),
-            popover: (context) => ShadButton.ghost(
-              height: 32,
-              mainAxisAlignment: MainAxisAlignment.start,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              gap: 8,
-              onPressed: () {
-                _menu.hide();
-                _decide(CommunityReviewDecision.ban);
-              },
-              leading:
-                  Icon(LucideIcons.ban, size: 16, color: theme.destructive),
-              child: Text(
-                l10n.communityReviewBan,
-                style: TextStyle(color: theme.destructive),
-              ),
-            ),
-            child: ShadIconButton.ghost(
-              key: const ValueKey('community-review-more'),
-              width: 36,
-              height: 36,
-              enabled: !busy,
-              onPressed: _menu.toggle,
-              icon: const Icon(LucideIcons.ellipsis, size: 18),
+    // The buttons stand on the map by themselves, with no card behind them.
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ShadPopover(
+          controller: _menu,
+          padding: const EdgeInsets.all(6),
+          anchor: const ShadAnchor(
+            offset: Offset(0, -8),
+            childAlignment: Alignment.bottomLeft,
+            overlayAlignment: Alignment.topLeft,
+          ),
+          popover: (context) => ShadButton.ghost(
+            height: 32,
+            mainAxisAlignment: MainAxisAlignment.start,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            gap: 8,
+            onPressed: () {
+              _menu.hide();
+              _decide(CommunityReviewDecision.ban);
+            },
+            leading: Icon(LucideIcons.ban, size: 16, color: theme.destructive),
+            child: Text(
+              l10n.communityReviewBan,
+              style: TextStyle(color: theme.destructive),
             ),
           ),
-          const SizedBox(width: 6),
-          ShadButton.secondary(
-            key: const ValueKey('community-review-restore'),
+          child: ShadIconButton.secondary(
+            key: const ValueKey('community-review-more'),
+            width: 36,
             height: 36,
             enabled: !busy,
-            onPressed: () => _decide(CommunityReviewDecision.restore),
-            leading: _sending == CommunityReviewDecision.restore
-                ? _spinner(theme.foreground)
-                : null,
-            child: Text(l10n.communityReviewRestore),
+            onPressed: _menu.toggle,
+            icon: const Icon(LucideIcons.ellipsis, size: 18),
           ),
-          const SizedBox(width: 6),
-          ShadButton.destructive(
-            key: const ValueKey('community-review-remove'),
-            height: 36,
-            enabled: !busy,
-            onPressed: () => _decide(CommunityReviewDecision.remove),
-            leading: _sending == CommunityReviewDecision.remove
-                ? _spinner(theme.destructiveForeground)
-                : null,
-            child: Text(l10n.communityReviewRemove),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 6),
+        ShadButton.secondary(
+          key: const ValueKey('community-review-restore'),
+          height: 36,
+          enabled: !busy,
+          onPressed: () => _decide(CommunityReviewDecision.restore),
+          leading: _sending == CommunityReviewDecision.restore
+              ? _spinner(theme.foreground)
+              : null,
+          child: Text(l10n.communityReviewRestore),
+        ),
+        const SizedBox(width: 6),
+        ShadButton.destructive(
+          key: const ValueKey('community-review-remove'),
+          height: 36,
+          enabled: !busy,
+          onPressed: () => _decide(CommunityReviewDecision.remove),
+          leading: _sending == CommunityReviewDecision.remove
+              ? _spinner(theme.destructiveForeground)
+              : null,
+          child: Text(l10n.communityReviewRemove),
+        ),
+      ],
     );
   }
 }

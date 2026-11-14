@@ -46,7 +46,14 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 class InteractiveMap extends ConsumerStatefulWidget {
   const InteractiveMap({
     super.key,
+    this.dotsBeyondMap = false,
   });
+
+  /// Draws the dot grid past the map's own box, across the whole view at any
+  /// zoom. For a preview, where nothing is placed and the box's edge only
+  /// looks like a gap; the editor keeps the edge, which says where content
+  /// can go.
+  final bool dotsBeyondMap;
 
   @override
   ConsumerState<ConsumerStatefulWidget> createState() => _InteractiveMapState();
@@ -303,6 +310,23 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                   child: Stack(
                                     clipBehavior: Clip.none,
                                     children: [
+                                      // A map box narrower than the view
+                                      // leaves strips either side; this
+                                      // grid runs a box's width past each.
+                                      if (widget.dotsBeyondMap)
+                                        Positioned(
+                                          left: -worldWidth,
+                                          top: 0,
+                                          width: worldWidth * 3,
+                                          height: height,
+                                          child: const IgnorePointer(
+                                            child: RepaintBoundary(
+                                              child: DotGrid(
+                                                followsEditorZoom: true,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                       // Dot Grid
                                       Positioned.fill(
                                         child: GestureDetector(
@@ -313,12 +337,15 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                                     abilityBarProvider.notifier)
                                                 .updateData(null);
                                           },
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(4.0),
-                                            child: RepaintBoundary(
-                                                child: DotGrid(
-                                                    followsEditorZoom: true)),
-                                          ),
+                                          child: widget.dotsBeyondMap
+                                              ? const SizedBox.expand()
+                                              : const Padding(
+                                                  padding: EdgeInsets.all(4.0),
+                                                  child: RepaintBoundary(
+                                                      child: DotGrid(
+                                                          followsEditorZoom:
+                                                              true)),
+                                                ),
                                         ),
                                       ),
                                       // Map SVG
