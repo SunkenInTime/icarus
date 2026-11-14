@@ -31,6 +31,13 @@ ShadContextMenuItem buildTagColorMenuItem(
         label: choice.label,
       ),
   ];
+  // A tag keeps a saved color after the color leaves the library, so it
+  // still finds its own color in the list, ticked.
+  if (current != null && entries.every((entry) => entry.value != current)) {
+    final hex =
+        (current & 0x00FFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase();
+    entries.add((value: current, color: Color(current), label: '#$hex'));
+  }
 
   return ShadContextMenuItem(
     leading: MenuColorSwatch(

@@ -1690,22 +1690,27 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'expectTag':
       final id = _itemId(value as String);
       final wanted = step['color'] as String?;
-      String? tag() {
-        final color = [
-          for (final text in c.read(textProvider))
-            if (text.id == id) text.tagColorValue,
-          for (final image in c.read(placedImageProvider).images)
-            if (image.id == id) image.tagColorValue,
-        ].firstOrNull;
-        return color == null
-            ? null
-            : (color & 0xFFFFFF).toRadixString(16).padLeft(6, '0');
-      }
+      // One entry while the item is on the page; an item that's gone has no
+      // tag, which isn't a gray one.
+      List<int?> tags() => [
+            for (final text in c.read(textProvider))
+              if (text.id == id) text.tagColorValue,
+            for (final image in c.read(placedImageProvider).images)
+              if (image.id == id) image.tagColorValue,
+          ];
+      String name(int? color) => color == null
+          ? 'gray'
+          : (color & 0xFFFFFF).toRadixString(16).padLeft(6, '0');
       try {
-        await _waitFor(() => tag() == wanted, (step['seconds'] ?? 0) as num);
+        await _waitFor(
+          () => tags().isNotEmpty && name(tags().first) == (wanted ?? 'gray'),
+          (step['seconds'] ?? 0) as num,
+        );
       } on TimeoutException {
         throw StateError(
-          "$value's tag is ${tag() ?? 'gray'}, not ${wanted ?? 'gray'}",
+          tags().isEmpty
+              ? '$value is not on the page'
+              : "$value's tag is ${name(tags().first)}, not ${wanted ?? 'gray'}",
         );
       }
     case 'expectOpacity':
