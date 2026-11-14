@@ -76,36 +76,44 @@ void main() {
   });
 
   group('a star count on screen', () {
-    final starredAt = DateTime(2026, 11, 14, 12);
-    final before = starredAt.subtract(const Duration(minutes: 1));
-    final after = starredAt.add(const Duration(minutes: 1));
-
-    test('adds this session\'s star to a count read before it', () {
-      final stars = CommunityStars(
-        starred: const {'post-1'},
-        changedAt: {'post-1': (starred: true, at: starredAt)},
-      );
-      expect(stars.countFor(_post(), before), 11);
-      // The server's count includes it once read after.
-      expect(stars.countFor(_post(starCount: 11), after), 11);
+    test("counts this session's star until the server's count moves", () {
+      final stars = const CommunityStars().withStar(_post(), true);
+      expect(stars.isStarred('post-1'), isTrue);
+      expect(stars.countFor(_post()), 11);
+      // A feed read again before the server counted it still shows it.
+      expect(stars.countFor(_post(starCount: 10)), 11);
+      // Once the server's count moves, it includes the star.
+      expect(stars.countFor(_post(starCount: 11)), 11);
     });
 
     test('takes back an unstar, never below none', () {
-      final stars = CommunityStars(
-        changedAt: {'post-1': (starred: false, at: starredAt)},
+      final stars =
+          const CommunityStars(starred: {'post-1'}).withStar(_post(), false);
+      expect(stars.isStarred('post-1'), isFalse);
+      expect(stars.countFor(_post()), 9);
+      expect(
+        const CommunityStars(starred: {'post-1'})
+            .withStar(_post(starCount: 0), false)
+            .countFor(_post(starCount: 0)),
+        0,
       );
-      expect(stars.countFor(_post(), before), 9);
-      expect(stars.countFor(_post(starCount: 0), before), 0);
+    });
+
+    test('unstarring after the server counted the star takes it off', () {
+      final starred = const CommunityStars().withStar(_post(), true);
+      final unstarred = starred.withStar(_post(starCount: 11), false);
+      expect(unstarred.countFor(_post(starCount: 11)), 10);
+    });
+
+    test('starring and unstarring before the server counts either', () {
+      final stars = const CommunityStars()
+          .withStar(_post(), true)
+          .withStar(_post(), false);
+      expect(stars.countFor(_post()), 10);
     });
 
     test('is the count as read when this session changed nothing', () {
-      expect(const CommunityStars().countFor(_post(), before), 10);
-      expect(
-        CommunityStars(
-          changedAt: {'post-1': (starred: true, at: starredAt)},
-        ).countFor(_post(), null),
-        10,
-      );
+      expect(const CommunityStars().countFor(_post()), 10);
     });
   });
 }

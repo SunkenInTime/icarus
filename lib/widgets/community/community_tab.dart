@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/community_models.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/community_provider.dart';
@@ -29,6 +30,20 @@ class CommunityTab extends ConsumerStatefulWidget {
 class _CommunityTabState extends ConsumerState<CommunityTab> {
   final _scroll = ScrollController();
   bool _panelOpen = false;
+
+  /// Set while a card's post is read before it opens, so a second click
+  /// doesn't open it twice.
+  bool _opening = false;
+
+  Future<void> _open(CommunityPost post) async {
+    if (_opening) return;
+    _opening = true;
+    try {
+      await openCommunityPostFromCard(ref, post);
+    } finally {
+      _opening = false;
+    }
+  }
 
   @override
   void initState() {
@@ -170,8 +185,8 @@ class _CommunityTabState extends ConsumerState<CommunityTab> {
                       key: ValueKey(post.publicId),
                       post: post,
                       starred: stars.isStarred(post.publicId),
-                      starCount: stars.countFor(post, feed.fetchedAt),
-                      onOpen: () => openCommunityPost(ref, post),
+                      starCount: stars.countFor(post),
+                      onOpen: () => _open(post),
                       onStar: () => toggleCommunityStar(context, ref, post),
                     );
                   },

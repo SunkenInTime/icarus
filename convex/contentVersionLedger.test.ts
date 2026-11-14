@@ -1091,6 +1091,9 @@ const ledger: Record<string, LedgerEntry> = {
   // no user is, and no user is ever made a member of it; people read it only
   // through its token, which keeps no offline copy. So making, replacing or
   // deleting a snapshot changes no one's full read or content version.
+  "community.js:clearReportsBatch": {
+    exempt: "deletes a restored post's reports, which no full read carries",
+  },
   "community.js:foldCountChanges": {
     exempt: "writes only posts' star and save counts, which no full read carries",
   },

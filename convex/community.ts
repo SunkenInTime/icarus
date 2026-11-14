@@ -468,6 +468,8 @@ export const updatePost = mutation({
     if (post.status === "removed" || post.snapshotStrategyId === undefined) {
       throw notFoundError("Post", args.postPublicId);
     }
+    // A ban stops the author changing what their other posts show, too.
+    if (await isBanned(ctx, user._id)) throw forbiddenError();
     const title =
       args.title === undefined ? post.title : normalizedTitle(args.title);
     const author = authorOf(user);
@@ -791,11 +793,7 @@ export const review = mutation({
       if (post.status === "removed") {
         throw notFoundError("Post", args.postPublicId);
       }
-      const reports = await ctx.db
-        .query("communityReports")
-        .withIndex("by_postId_and_reporterId", (q) => q.eq("postId", post._id))
-        .take(1000);
-      for (const report of reports) await ctx.db.delete(report._id);
+      await clearReports(ctx, post._id);
       await relistPost(ctx, post);
       await ctx.db.patch(post._id, { reportCount: 0 });
       return { ok: true } as const;
@@ -888,9 +886,12 @@ export const refreshTrending = internalMutation({
   handler: async (ctx) => {
     const since = Date.now() - TRENDING_WINDOW_MS;
     const scores = new Map<Id<"communityPosts">, number>();
+    // Newest first: past the limit, the oldest of the week drop out, not
+    // what happened since.
     const stars = await ctx.db
       .query("communityStars")
       .withIndex("by_createdAt", (q) => q.gte("createdAt", since))
+      .order("desc")
       .take(TRENDING_READ_LIMIT);
     for (const star of stars) {
       scores.set(star.postId, (scores.get(star.postId) ?? 0) + 1);
@@ -898,7 +899,16 @@ export const refreshTrending = internalMutation({
     const saves = await ctx.db
       .query("communitySaves")
       .withIndex("by_createdAt", (q) => q.gte("createdAt", since))
+      .order("desc")
       .take(TRENDING_READ_LIMIT);
+    if (
+      stars.length === TRENDING_READ_LIMIT ||
+      saves.length === TRENDING_READ_LIMIT
+    ) {
+      console.warn(
+        `Trending counted only the newest ${TRENDING_READ_LIMIT} stars or saves of the week.`,
+      );
+    }
     for (const save of saves) {
       scores.set(save.postId, (scores.get(save.postId) ?? 0) + 2);
     }
@@ -920,9 +930,38 @@ export const refreshTrending = internalMutation({
   },
 });
 
+/// Deletes the rest of a restored post's reports, a batch at a time.
+export const clearReportsBatch = internalMutation({
+  args: { postId: v.id("communityPosts") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await clearReports(ctx, args.postId);
+    return null;
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const REPORTS_CLEARED_PER_BATCH = 1000;
+const clearReportsBatchRef = makeFunctionReference<"mutation">(
+  "community:clearReportsBatch",
+);
+
+/// Deletes [postId]'s reports, so a restored post starts its count again and
+/// its reporters can report it again. Past one batch the rest are deleted by
+/// scheduled batches.
+async function clearReports(ctx: MutationCtx, postId: Id<"communityPosts">) {
+  const reports = await ctx.db
+    .query("communityReports")
+    .withIndex("by_postId_and_reporterId", (q) => q.eq("postId", postId))
+    .take(REPORTS_CLEARED_PER_BATCH);
+  for (const report of reports) await ctx.db.delete(report._id);
+  if (reports.length === REPORTS_CLEARED_PER_BATCH) {
+    await ctx.scheduler.runAfter(0, clearReportsBatchRef, { postId });
+  }
+}
 
 /// Copies [source] into a new snapshot owned by the community account.
 /// A first snapshot gets a new link anyone can read it through. One

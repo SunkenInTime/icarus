@@ -656,13 +656,24 @@ describe("reports", () => {
     process.env.COMMUNITY_REVIEWERS = "reviewer";
     await seedStrategy(harness, "author", "source");
     await seedStrategy(harness, "author", "another");
+    await seedStrategy(harness, "author", "third-strategy");
     const postId = await post(harness, "author", "source");
+    const otherPostId = await post(harness, "author", "third-strategy", "Other");
     await as("reviewer").mutation(review, {
       ...protocol,
       postPublicId: postId,
       decision: "ban",
     });
-    await expect(feed(harness)).resolves.toEqual([]);
+    await expect(feed(harness)).resolves.toEqual(["Other"]);
+    // Their other posts stay up, but they can't change what those show.
+    await expect(
+      as("author").mutation(updatePost, {
+        ...protocol,
+        postPublicId: otherPostId,
+        title: "Renamed",
+        refresh: true,
+      }),
+    ).rejects.toThrow("Forbidden");
     await expect(as("author").query(getViewer, {})).resolves.toMatchObject({
       isReviewer: false,
       canPost: false,

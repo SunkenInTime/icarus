@@ -174,26 +174,44 @@ final communityStarsProvider =
 class CommunityStars {
   const CommunityStars({
     this.starred = const {},
-    this.changedAt = const {},
+    this.shownCounts = const {},
   });
 
   final Set<String> starred;
 
-  /// When this session starred or unstarred a post. A count read before
-  /// then doesn't include the change, so it is added on screen.
-  final Map<String, ({bool starred, DateTime at})> changedAt;
+  /// The count shown for each post this session starred or unstarred, and
+  /// the server's count it was worked out from. The server counts stars in
+  /// batches a few minutes apart, so until its count moves from that one it
+  /// doesn't include the change, and the shown count stands.
+  final Map<String, ({int serverCount, int shown})> shownCounts;
 
   bool isStarred(String postPublicId) => starred.contains(postPublicId);
 
-  /// [post]'s star count as of a read at [readAt], with this session's own
-  /// star counted when the read came before it.
-  int countFor(CommunityPost post, DateTime? readAt) {
-    final change = changedAt[post.publicId];
-    if (change == null || readAt == null || readAt.isAfter(change.at)) {
+  /// [post]'s star count as it should read on screen.
+  int countFor(CommunityPost post) {
+    final shown = shownCounts[post.publicId];
+    if (shown == null || shown.serverCount != post.starCount) {
       return post.starCount;
     }
-    final count = post.starCount + (change.starred ? 1 : -1);
-    return count < 0 ? 0 : count;
+    return shown.shown;
+  }
+
+  /// After starring ([starred]) or unstarring [post]: one more or one fewer
+  /// than it showed before.
+  CommunityStars withStar(CommunityPost post, bool starred) {
+    final shown = countFor(post) + (starred ? 1 : -1);
+    return CommunityStars(
+      starred: starred
+          ? {...this.starred, post.publicId}
+          : ({...this.starred}..remove(post.publicId)),
+      shownCounts: {
+        ...shownCounts,
+        post.publicId: (
+          serverCount: post.starCount,
+          shown: shown < 0 ? 0 : shown,
+        ),
+      },
+    );
   }
 }
 
@@ -215,7 +233,7 @@ class CommunityStarsNotifier extends Notifier<CommunityStars> {
           await ref.read(communityRepositoryProvider).fetchMyStars();
       state = CommunityStars(
         starred: {...starred, ...state.starred},
-        changedAt: state.changedAt,
+        shownCounts: state.shownCounts,
       );
     } catch (error, stackTrace) {
       AppErrorReporter.reportWarning(
@@ -227,26 +245,16 @@ class CommunityStarsNotifier extends Notifier<CommunityStars> {
     }
   }
 
-  /// Stars or unstars [postPublicId]. The screen changes now; if the server
+  /// Stars or unstars [post]. The screen changes now; if the server
   /// refuses, it changes back and this throws.
-  Future<void> setStarred(String postPublicId, bool starred) async {
+  Future<void> setStarred(CommunityPost post, bool starred) async {
     final before = state;
-    if (before.isStarred(postPublicId) == starred) return;
-    final changes = {...before.changedAt};
-    // A second click undoes this session's first: the count is as read.
-    if (changes.remove(postPublicId) == null) {
-      changes[postPublicId] = (starred: starred, at: DateTime.now());
-    }
-    state = CommunityStars(
-      starred: starred
-          ? {...before.starred, postPublicId}
-          : ({...before.starred}..remove(postPublicId)),
-      changedAt: changes,
-    );
+    if (before.isStarred(post.publicId) == starred) return;
+    state = before.withStar(post, starred);
     try {
       await ref
           .read(communityRepositoryProvider)
-          .setStar(postPublicId, starred: starred);
+          .setStar(post.publicId, starred: starred);
     } catch (_) {
       state = before;
       rethrow;

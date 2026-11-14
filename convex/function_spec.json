@@ -3,6 +3,28 @@
     {
       "args": {
         "type": "object",
+        "value": {
+          "postId": {
+            "fieldType": {
+              "tableName": "communityPosts",
+              "type": "id"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "community.js:clearReportsBatch",
+      "returns": {
+        "type": "null"
+      },
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
         "value": {}
       },
       "functionType": "Mutation",

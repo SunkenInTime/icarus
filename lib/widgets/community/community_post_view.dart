@@ -29,8 +29,19 @@ import 'package:uuid/uuid.dart';
 /// The editor shows it with the post's own controls instead of an editor's.
 final communityPostViewProvider = StateProvider<CommunityPost?>((ref) => null);
 
-/// Posts saved to My Library this session, so the button says so.
-final communitySavedPostsProvider = StateProvider<Set<String>>((ref) => {});
+/// Posts saved to the library they would go to now (the account's, or this
+/// computer's when signed out) this session, so the button says so. Starts
+/// empty again when the account changes, since the copies were saved to the
+/// other library.
+final communitySavedPostsProvider = StateProvider<Set<String>>((ref) {
+  ref.watch(
+    authProvider.select(
+      (auth) =>
+          auth.isAuthenticated && auth.isConvexUserReady ? auth.user?.id : null,
+    ),
+  );
+  return {};
+});
 
 /// Whether the post open in the editor is hidden by reports and opened by a
 /// reviewer to decide on it.
@@ -89,7 +100,7 @@ Future<void> toggleCommunityStar(
   final stars = ref.read(communityStarsProvider.notifier);
   final starred = ref.read(communityStarsProvider).isStarred(post.publicId);
   try {
-    await stars.setStarred(post.publicId, !starred);
+    await stars.setStarred(post, !starred);
   } catch (error, stackTrace) {
     AppErrorReporter.reportWarning(
       'Starring a Community post failed.',
@@ -485,7 +496,7 @@ class _CommunityPostActionsState extends ConsumerState<CommunityPostActions> {
           CommunityStarButton(
             height: 36,
             starred: stars.isStarred(post.publicId),
-            count: stars.countFor(post, ref.watch(_postReadAtProvider(post))),
+            count: stars.countFor(post),
             onPressed: () => toggleCommunityStar(context, ref, post),
           ),
           const SizedBox(width: 6),
@@ -510,13 +521,6 @@ class _CommunityPostActionsState extends ConsumerState<CommunityPostActions> {
     );
   }
 }
-
-/// When the feed read [post]'s star count, so this session's own star is
-/// added to it until the server's count includes it.
-final _postReadAtProvider =
-    Provider.family<DateTime?, CommunityPost>((ref, post) {
-  return ref.watch(communityFeedProvider.select((feed) => feed.fetchedAt));
-});
 
 class _MenuButton extends StatelessWidget {
   const _MenuButton({
