@@ -615,6 +615,23 @@ class DrawingProvider extends Notifier<DrawingState> {
     _triggerRepaint();
   }
 
+  /// Finishes the drawing under the pointer, whichever tool it is being
+  /// drawn with, where it has got to.
+  void finishCurrentDrawing(CoordinateSystem coordinateSystem) {
+    switch (state.currentElement) {
+      case FreeDrawing():
+        finishFreeDrawing(null, coordinateSystem);
+      case Line():
+        finishCurrentLine(null, coordinateSystem);
+      case RectangleDrawing():
+        finishRectangle(null, coordinateSystem);
+      case EllipseDrawing():
+        finishEllipse(null, coordinateSystem);
+      default:
+        break;
+    }
+  }
+
   void finishFreeDrawing(Offset? offset, CoordinateSystem coordinateSystem) {
     if (state.currentElement == null) return;
     if (!ref.canEditPages) return _dropCurrentElement();
