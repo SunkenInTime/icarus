@@ -368,6 +368,10 @@ class _CommunitySearchBarState extends ConsumerState<CommunitySearchBar> {
                             key: const ValueKey('community-search-field'),
                             controller: _controller,
                             focusNode: _focus,
+                            // A field drops focus on any click outside it, which closed the
+                            // panel before a click in it landed. The bar's TapRegion closes
+                            // it on clicks outside the bar instead.
+                            onTapOutside: (_) {},
                             cursorColor: theme.primary,
                             style: const TextStyle(
                               fontSize: 16,
@@ -638,9 +642,6 @@ class _PickerPanel extends StatelessWidget {
   final ValueChanged<AgentType> onAgent;
   final ValueChanged<CommunitySide> onSide;
 
-  static const _rolesLeft = [AgentRole.duelist, AgentRole.controller];
-  static const _rolesRight = [AgentRole.initiator, AgentRole.sentinel];
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -677,34 +678,32 @@ class _PickerPanel extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (final (index, roles)
-                      in [_rolesLeft, _rolesRight].indexed)
-                    Padding(
-                      padding: EdgeInsets.only(left: index == 0 ? 0 : 24),
-                      child: SizedBox(
-                        width: halfWidth,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            for (final role in roles) ...[
-                              _RoleLabel(role: role),
-                              _AgentGroup(
-                                role: role,
-                                selected: filter.agents,
-                                onAgent: onAgent,
-                              ),
-                              const SizedBox(height: 10),
-                            ],
-                          ],
-                        ),
+              // A line per role, its name beside its agents: big enough to
+              // hit, and no taller than two wrapped columns.
+              for (final role in const [
+                AgentRole.duelist,
+                AgentRole.controller,
+                AgentRole.initiator,
+                AgentRole.sentinel,
+              ]) ...[
+                Row(
+                  children: [
+                    SizedBox(
+                      width: _roleLabelWidth,
+                      child: _RoleLabel(role: role),
+                    ),
+                    Expanded(
+                      child: _AgentGroup(
+                        role: role,
+                        selected: filter.agents,
+                        onAgent: onAgent,
                       ),
                     ),
-                ],
-              ),
-              const SizedBox(height: 4),
+                  ],
+                ),
+                const SizedBox(height: 6),
+              ],
+              const SizedBox(height: 10),
               _SectionLabel(l10n.communityFilterSide),
               Row(
                 children: [
@@ -758,7 +757,7 @@ class _RoleLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: EdgeInsets.zero,
       child: Row(
         children: [
           Image.asset(
@@ -783,9 +782,10 @@ class _RoleLabel extends StatelessWidget {
   }
 }
 
-/// Small enough that all nine duelists fit on one line of a half column.
-const double _agentSize = 26;
-const double _agentGap = 3;
+/// All nine duelists fit on one line beside the role's name.
+const double _agentSize = 40;
+const double _agentGap = 6;
+const double _roleLabelWidth = 116;
 
 class _AgentGroup extends StatelessWidget {
   const _AgentGroup({
@@ -876,7 +876,7 @@ class _AgentToggleState extends State<_AgentToggle> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(3),
-                child: Image.asset(widget.agent.iconPath, cacheWidth: 64),
+                child: Image.asset(widget.agent.iconPath, cacheWidth: 96),
               ),
             ),
           ),
@@ -1077,7 +1077,7 @@ class _TagState extends State<_Tag> {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 110),
               child: Text(
-                widget.label,
+                '@${widget.label}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
