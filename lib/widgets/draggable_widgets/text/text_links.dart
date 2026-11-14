@@ -11,10 +11,11 @@ typedef TextPiece = ({String text, bool bold, bool italic, Uri? uri});
 /// [line] as the stretches it is drawn in, with the links a caption would
 /// find in what the line shows.
 ///
-/// An address can hold the characters that mark bold and italic, like the two
-/// underscores in `youtu.be/a_b_c`. Read as markup they would vanish, and the
-/// address shown would not be the one typed. So a link that has them is drawn
-/// as it was typed, and what a link shows is always where it goes.
+/// An address can hold underscores, which also mark italic, like the two in
+/// `youtu.be/a_b_c`. Read as markup they would vanish, and the address shown
+/// would not be the one typed. So a link that has them is drawn as it was
+/// typed, and what a link shows is always where it goes. Asterisks aren't
+/// part of an address: bold put on half of one stays bold.
 List<TextPiece> textPieces(MarkupLine line) {
   final typedText = StringBuffer();
   // For each character the line shows: where it is in the line as typed, and
@@ -54,9 +55,10 @@ List<TextPiece> textPieces(MarkupLine line) {
     final asTyped = run.uri == null
         ? run.text
         : typed.substring(typedAt[at], typedAt[end - 1] + 1);
-    if (asTyped == run.text) {
+    if (asTyped.replaceAll('*', '') == run.text) {
       add(at, end, run.uri);
-    } else if (captionRuns(asTyped) case [(text: _, :final uri?)]) {
+    } else if (captionRuns(asTyped) case [(text: _, :final uri?)]
+        when !asTyped.contains('*')) {
       pieces.add((
         text: asTyped,
         bold: styleAt[at].bold,

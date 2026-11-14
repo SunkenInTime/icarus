@@ -103,6 +103,24 @@ void main() {
       expect(link.uri, Uri.parse(typed));
     });
 
+    test('bold on half an address stays bold, and the link is the address', () {
+      final pieces = _pieces('**https://you**tu.be/x');
+      expect(
+        [for (final p in pieces) (p.text, p.bold)],
+        [('https://you', true), ('tu.be/x', false)],
+      );
+      expect(
+        pieces.map((piece) => piece.uri),
+        everyElement(Uri.parse('https://youtu.be/x')),
+      );
+      // Markup that can't be told from the address: no link, nothing guessed.
+      expect(
+        _pieces('**https://you**tu.be/a_b_c')
+            .every((piece) => piece.uri == null),
+        isTrue,
+      );
+    });
+
     test('only web addresses become links', () {
       const text = 'javascript:alert(1) file:///C:/x.exe icarus://open '
           'mailto:a@b.co ftp://files.example/x data:text/html,hi '
