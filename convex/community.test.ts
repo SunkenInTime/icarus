@@ -36,6 +36,9 @@ const listPosts = makeFunctionReference<"query">("community:listPosts");
 const getPost = makeFunctionReference<"query">("community:getPost");
 const listMine = makeFunctionReference<"query">("community:listMine");
 const listMyStars = makeFunctionReference<"query">("community:listMyStars");
+const listMyCopies = makeFunctionReference<"query">("community:listMyCopies");
+const listStarred = makeFunctionReference<"query">("community:listStarred");
+const deleteStrategy = makeFunctionReference<"mutation">("strategies:delete");
 const getSourceChanged = makeFunctionReference<"query">(
   "community:getSourceChanged",
 );
@@ -555,6 +558,73 @@ describe("the feed", () => {
       name: "Posted name",
       role: "owner",
     });
+  });
+
+  test("each copy remembers its post until it leaves the library", async () => {
+    const harness = await createHarness();
+    const { t, as } = harness;
+    await seedStrategy(harness, "author", "source");
+    const postId = await post(harness, "author", "source");
+    for (const publicId of ["first-copy", "second-copy"]) {
+      await as("reader").mutation(saveCopy, {
+        ...protocol,
+        postPublicId: postId,
+        publicId,
+      });
+    }
+    await expect(as("reader").query(listMyCopies, {})).resolves.toEqual([
+      { strategyPublicId: "second-copy", postPublicId: postId },
+      { strategyPublicId: "first-copy", postPublicId: postId },
+    ]);
+    const [copy] = (await as("reader").query(listForFolder, {})).filter(
+      (entry: { publicId: string }) => entry.publicId === "second-copy",
+    );
+    await as("reader").mutation(deleteStrategy, {
+      ...protocol,
+      strategyPublicId: "second-copy",
+      expectedRevision: copy.revision,
+    });
+    await expect(as("reader").query(listMyCopies, {})).resolves.toEqual([
+      { strategyPublicId: "first-copy", postPublicId: postId },
+    ]);
+    await expect(t.query(listMyCopies, {})).resolves.toEqual([]);
+    // Two copies still count once.
+    await t.mutation(foldCountChanges, {});
+    const [mine] = await as("author").query(listMine, {});
+    expect(mine.saveCount).toBe(1);
+    await settle(harness);
+  });
+
+  test("starred posts list newest star first, narrowed like the feed", async () => {
+    const harness = await createHarness();
+    const { t, as } = harness;
+    await seedStrategy(harness, "author", "ascent-one");
+    await seedStrategy(harness, "author", "bind-one", { mapData: "bind" });
+    await seedStrategy(harness, "author", "unstarred");
+    const ascent = await post(harness, "author", "ascent-one", "Ascent one");
+    const bind = await post(harness, "author", "bind-one", "Bind one");
+    await post(harness, "author", "unstarred", "Not starred");
+    for (const postPublicId of [ascent, bind]) {
+      await as("reader").mutation(setStar, {
+        ...protocol,
+        postPublicId,
+        starred: true,
+      });
+    }
+    const titles = async (args: Record<string, unknown>) =>
+      (await as("reader").query(listStarred, args)).posts.map(
+        (card: { title: string }) => card.title,
+      );
+    await expect(titles({})).resolves.toEqual(["Bind one", "Ascent one"]);
+    await expect(titles({ mapData: "ascent" })).resolves.toEqual(["Ascent one"]);
+    await expect(titles({ text: "bind" })).resolves.toEqual(["Bind one"]);
+    await as("author").mutation(takeDown, { ...protocol, postPublicId: bind });
+    await expect(titles({})).resolves.toEqual(["Ascent one"]);
+    await expect(t.query(listStarred, {})).resolves.toEqual({
+      posts: [],
+      nextCursor: null,
+    });
+    await settle(harness);
   });
 });
 

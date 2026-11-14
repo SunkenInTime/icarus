@@ -213,6 +213,94 @@ export const listMyStars = query({
   },
 });
 
+/// The caller's copies of posts that are still in their library, newest
+/// first: which post each came from. Read once per sign-in; the app adds
+/// the copies it makes after.
+export const listMyCopies = query({
+  args: {},
+  returns: v.array(
+    v.object({ strategyPublicId: v.string(), postPublicId: v.string() }),
+  ),
+  handler: async (ctx) => {
+    const user = await currentUserOrNull(ctx);
+    if (user === null) return [];
+    const copies = await ctx.db
+      .query("communityCopies")
+      .withIndex("by_userId_and_createdAt", (q) => q.eq("userId", user._id))
+      .order("desc")
+      .take(500);
+    const kept: { strategyPublicId: string; postPublicId: string }[] = [];
+    for (const copy of copies) {
+      const strategy = await ctx.db
+        .query("strategies")
+        .withIndex("by_publicId", (q) =>
+          q.eq("publicId", copy.strategyPublicId),
+        )
+        .first();
+      if (strategy !== null && strategy.ownerId === user._id) {
+        kept.push({
+          strategyPublicId: copy.strategyPublicId,
+          postPublicId: copy.postPublicId,
+        });
+      }
+    }
+    return kept;
+  },
+});
+
+/// The posts the caller starred that are still up, most recently starred
+/// first, narrowed like the feed. A page at a time.
+export const listStarred = query({
+  args: {
+    mapData: v.optional(v.string()),
+    side: v.optional(v.union(v.literal("attack"), v.literal("defense"))),
+    agentTypes: v.optional(v.array(v.string())),
+    text: v.optional(v.string()),
+    cursor: v.optional(v.string()),
+  },
+  returns: v.object({
+    posts: v.array(postCardValidator),
+    nextCursor: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, args) => {
+    const user = await currentUserOrNull(ctx);
+    if (user === null) return { posts: [], nextCursor: null };
+    const agents = args.agentTypes ?? [];
+    if (agents.length > 6) {
+      throw invalidPayloadError("Filter by at most six agents.");
+    }
+    const text = args.text?.trim().toLowerCase() ?? "";
+    if (text.length > 80) {
+      throw invalidPayloadError("Search for at most 80 characters.");
+    }
+    const page = await ctx.db
+      .query("communityStars")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .order("desc")
+      .paginate({ numItems: FEED_PAGE_ROWS, cursor: args.cursor ?? null });
+    const posts: Doc<"communityPosts">[] = [];
+    for (const star of page.page) {
+      const post = await ctx.db.get(star.postId);
+      if (
+        post !== null &&
+        post.status === "listed" &&
+        (args.mapData === undefined || post.mapData === args.mapData) &&
+        (args.side === undefined ||
+          post.side === args.side ||
+          post.side === "mixed") &&
+        agents.every((agent) => post.agentTypes.includes(agent)) &&
+        (text.length === 0 || post.searchText.includes(text))
+      ) {
+        posts.push(post);
+      }
+    }
+    return {
+      posts: posts.map(postCard),
+      nextCursor: page.isDone ? null : page.continueCursor,
+    };
+  },
+});
+
 /// The caller's own posts that are not taken down, newest first, for the
 /// Posted badge in their library and the post's dialog.
 export const listMine = query({
@@ -638,6 +726,13 @@ export const saveCopy = mutation({
           "This strategy is too large to copy.",
         ),
     );
+    await ctx.db.insert("communityCopies", {
+      userId: user._id,
+      postId: post._id,
+      postPublicId: post.publicId,
+      strategyPublicId: args.publicId,
+      createdAt: Date.now(),
+    });
     // A copy counts once per account, however many it saves.
     const saved = await ctx.db
       .query("communitySaves")

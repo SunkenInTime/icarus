@@ -32,32 +32,48 @@ class CommunityRepository {
     String? cursor,
   }) async {
     final text = filter.text.trim();
-    final result = await _api.community
-        .listPosts(
-          sort: switch (filter.sort) {
-            CommunitySort.trending => CommunityListPostsArgsSort.trending,
-            CommunitySort.newest => CommunityListPostsArgsSort.newValue,
-            CommunitySort.top => CommunityListPostsArgsSort.top,
-          },
-          mapData: _optional(
-            filter.map == null ? null : Maps.mapNames[filter.map],
-          ),
-          side: _optional(switch (filter.side) {
-            CommunitySide.attack => CommunityListPostsArgsSide.attack,
-            CommunitySide.defense => CommunityListPostsArgsSide.defense,
-            CommunitySide.mixed || null => null,
-          }),
-          agentTypes: filter.agents.isEmpty
-              ? const ConvexOptional.absent()
-              : ConvexOptional.present([
-                  for (final agent in filter.agents) agent.name,
-                ]),
-          text: text.isEmpty
-              ? const ConvexOptional.absent()
-              : ConvexOptional.present(text),
-          cursor: _optional(cursor),
-        )
-        .fetch();
+    final mapData = _optional(
+      filter.map == null ? null : Maps.mapNames[filter.map],
+    );
+    final side = _optional(switch (filter.side) {
+      CommunitySide.attack => CommunityListPostsArgsSide.attack,
+      CommunitySide.defense => CommunityListPostsArgsSide.defense,
+      CommunitySide.mixed || null => null,
+    });
+    final ConvexOptional<List<String>> agentTypes = filter.agents.isEmpty
+        ? const ConvexOptional.absent()
+        : ConvexOptional.present([
+            for (final agent in filter.agents) agent.name,
+          ]);
+    final ConvexOptional<String> textArg = text.isEmpty
+        ? const ConvexOptional.absent()
+        : ConvexOptional.present(text);
+    final result = filter.starred
+        // The reader's own stars, most recently starred first: the sort
+        // doesn't apply.
+        ? await _api.community
+            .listStarred(
+              mapData: mapData,
+              side: side,
+              agentTypes: agentTypes,
+              text: textArg,
+              cursor: _optional(cursor),
+            )
+            .fetch()
+        : await _api.community
+            .listPosts(
+              sort: switch (filter.sort) {
+                CommunitySort.trending => CommunityListPostsArgsSort.trending,
+                CommunitySort.newest => CommunityListPostsArgsSort.newValue,
+                CommunitySort.top => CommunityListPostsArgsSort.top,
+              },
+              mapData: mapData,
+              side: side,
+              agentTypes: agentTypes,
+              text: textArg,
+              cursor: _optional(cursor),
+            )
+            .fetch();
     return (
       posts: [
         for (final card in result.posts)
@@ -65,6 +81,19 @@ class CommunityRepository {
       ],
       nextCursor: result.nextCursor,
     );
+  }
+
+  /// The signed-in user's copies of posts still in their library, newest
+  /// first.
+  Future<List<CommunityCopy>> fetchMyCopies() async {
+    final items = await _api.community.listMyCopies().fetch();
+    return [
+      for (final item in items)
+        (
+          strategyPublicId: item.strategyPublicId,
+          postPublicId: item.postPublicId,
+        ),
+    ];
   }
 
   /// The post [postPublicId] and whether it is still up, or null when there

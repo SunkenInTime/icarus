@@ -361,6 +361,14 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     return settled.future.whenComplete(subscription.close);
   }
 
+  /// Leaves the post for the reader's copy of it, [strategyPublicId].
+  Future<void> _openCommunityCopy(String strategyPublicId) async {
+    // Read before leaving: this view is gone once it has.
+    final open = ref.read(sharedStrategyToOpenProvider.notifier);
+    await _leaveToLibrary();
+    if (_hasLeft) open.state = strategyPublicId;
+  }
+
   Future<void> _leaveToLibrary() async {
     await guardUnsavedStrategyExit(
       context: context,
@@ -693,7 +701,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                             post: post,
                             onDecided: _leaveToLibrary,
                           )
-                        : CommunityPostActions(post: post),
+                        : CommunityPostActions(
+                            post: post,
+                            onOpenCopy: _openCommunityCopy,
+                          ),
                   ),
                 ),
               ],

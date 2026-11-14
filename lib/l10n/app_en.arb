@@ -6116,31 +6116,6 @@
       }
     }
   },
-  "communitySave": "Save to My Library",
-  "@communitySave": {
-    "description": "Button that copies a post into the reader's own library."
-  },
-  "communitySaved": "Saved",
-  "@communitySaved": {
-    "description": "The Save button after saving."
-  },
-  "communitySavedToast": "\"{title}\" is in My Library",
-  "@communitySavedToast": {
-    "description": "After saving a post.",
-    "placeholders": {
-      "title": {
-        "type": "String"
-      }
-    }
-  },
-  "communitySaveFailed": "Couldn't save it. Try again.",
-  "@communitySaveFailed": {
-    "description": "Saving a post failed."
-  },
-  "communitySaveTooLarge": "This strategy is too large to copy.",
-  "@communitySaveTooLarge": {
-    "description": "Saving a post failed because the strategy is too large."
-  },
   "communityCopyLink": "Copy link",
   "@communityCopyLink": {
     "description": "Copies a post's link."
@@ -6461,5 +6436,70 @@
   "communityJustNow": "just now",
   "@communityJustNow": {
     "description": "'when' inside a sentence such as 'Posted just now as kairo.', for under a minute ago."
+  },
+  "communityMakeCopy": "Make a copy",
+  "@communityMakeCopy": {
+    "description": "Button on a Community post: copies it into the reader's library to change as they like."
+  },
+  "communityOpenYourCopy": "Open your copy",
+  "@communityOpenYourCopy": {
+    "description": "Button on a Community post the reader already copied: opens their copy."
+  },
+  "communityMakeAnotherCopy": "Make another copy",
+  "@communityMakeAnotherCopy": {
+    "description": "Menu item on a post the reader already copied: a fresh copy, as the post is now."
+  },
+  "communityCopiedToast": "Your copy of \"{title}\" is in My Library",
+  "@communityCopiedToast": {
+    "description": "After copying a post.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "communityCopyFailed": "Couldn't make a copy. Try again.",
+  "@communityCopyFailed": {
+    "description": "Copying a post failed."
+  },
+  "communityCopyTooLarge": "This strategy is too large to copy.",
+  "@communityCopyTooLarge": {
+    "description": "Copying a post failed because the strategy is too large."
+  },
+  "communityStarred": "Starred",
+  "@communityStarred": {
+    "description": "Filter showing only the posts the reader starred."
+  },
+  "communitySuggestionStarred": "Filter",
+  "@communitySuggestionStarred": {
+    "description": "Kind of the Starred suggestion in the @ list."
+  },
+  "communityShowStarred": "Show only posts you starred",
+  "@communityShowStarred": {
+    "description": "Tooltip of the Starred toggle while it is off."
+  },
+  "communityShowAll": "Show all posts",
+  "@communityShowAll": {
+    "description": "Tooltip of the Starred toggle while it is on."
+  },
+  "communityNoStarsTitle": "No starred posts yet",
+  "@communityNoStarsTitle": {
+    "description": "Starred filter with nothing starred."
+  },
+  "communityNoStarsSubtitle": "Star a post to keep it here.",
+  "@communityNoStarsSubtitle": {
+    "description": "Under communityNoStarsTitle."
+  },
+  "communityOpenThePost": "Open the post",
+  "@communityOpenThePost": {
+    "description": "Menu item on the reader's copy of a Community post: opens the post it came from."
+  },
+  "communityCopyBadge": "From Community",
+  "@communityCopyBadge": {
+    "description": "Badge on a library card that is the user's copy of a Community post."
+  },
+  "communityCopyBadgeTooltip": "Your copy of a Community post",
+  "@communityCopyBadgeTooltip": {
+    "description": "Tooltip of communityCopyBadge."
   }
 }

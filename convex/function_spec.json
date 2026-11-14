@@ -742,6 +742,37 @@
         "value": {}
       },
       "functionType": "Query",
+      "identifier": "community.js:listMyCopies",
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "postPublicId": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "strategyPublicId": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            }
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Query",
       "identifier": "community.js:listMyStars",
       "returns": {
         "type": "array",
@@ -881,6 +912,202 @@
       },
       "functionType": "Query",
       "identifier": "community.js:listPosts",
+      "returns": {
+        "type": "object",
+        "value": {
+          "nextCursor": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": false
+          },
+          "posts": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "agentTypes": {
+                    "fieldType": {
+                      "type": "array",
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "optional": false
+                  },
+                  "authorAvatarUrl": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "authorName": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "lineupCount": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "mapData": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "pageCount": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "publicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "publishedAt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "shareToken": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "side": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "literal",
+                          "value": "attack"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "defense"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "mixed"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "starCount": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "strategyPublicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "title": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "agentTypes": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "string"
+              }
+            },
+            "optional": true
+          },
+          "cursor": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "mapData": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "side": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "attack"
+                },
+                {
+                  "type": "literal",
+                  "value": "defense"
+                }
+              ]
+            },
+            "optional": true
+          },
+          "text": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "community.js:listStarred",
       "returns": {
         "type": "object",
         "value": {

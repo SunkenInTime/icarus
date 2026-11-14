@@ -200,6 +200,7 @@ abstract interface class CommunityModule {
   ConvexQuery<CommunityGetViewerResult> getViewer();
   ConvexQuery<List<CommunityListForReviewResultItem>> listForReview();
   ConvexQuery<List<CommunityListMineResultItem>> listMine();
+  ConvexQuery<List<CommunityListMyCopiesResultItem>> listMyCopies();
   ConvexQuery<List<String>> listMyStars();
   ConvexQuery<List<CommunityListPostableResultItem>> listPostable();
   ConvexQuery<CommunityListPostsResult> listPosts({
@@ -209,6 +210,14 @@ abstract interface class CommunityModule {
     ConvexOptional<CommunityListPostsArgsSide> side =
         const ConvexOptional.absent(),
     required CommunityListPostsArgsSort sort,
+    ConvexOptional<String> text = const ConvexOptional.absent(),
+  });
+  ConvexQuery<CommunityListPostsResult> listStarred({
+    ConvexOptional<List<String>> agentTypes = const ConvexOptional.absent(),
+    ConvexOptional<String> cursor = const ConvexOptional.absent(),
+    ConvexOptional<String> mapData = const ConvexOptional.absent(),
+    ConvexOptional<CommunityListPostsArgsSide> side =
+        const ConvexOptional.absent(),
     ConvexOptional<String> text = const ConvexOptional.absent(),
   });
   Future<CommunityPublishResult> publish({
@@ -342,6 +351,17 @@ final class _CommunityModule implements CommunityModule {
   }
 
   @override
+  ConvexQuery<List<CommunityListMyCopiesResultItem>> listMyCopies() {
+    final args = encodeCommunityListMyCopiesArgs();
+    return ConvexQuery(
+      transport: _transport,
+      name: 'community:listMyCopies',
+      args: args,
+      decode: decodeCommunityListMyCopiesResult,
+    );
+  }
+
+  @override
   ConvexQuery<List<String>> listMyStars() {
     final args = encodeCommunityListMyStarsArgs();
     return ConvexQuery(
@@ -386,6 +406,30 @@ final class _CommunityModule implements CommunityModule {
       name: 'community:listPosts',
       args: args,
       decode: decodeCommunityListPostsResult,
+    );
+  }
+
+  @override
+  ConvexQuery<CommunityListPostsResult> listStarred({
+    ConvexOptional<List<String>> agentTypes = const ConvexOptional.absent(),
+    ConvexOptional<String> cursor = const ConvexOptional.absent(),
+    ConvexOptional<String> mapData = const ConvexOptional.absent(),
+    ConvexOptional<CommunityListPostsArgsSide> side =
+        const ConvexOptional.absent(),
+    ConvexOptional<String> text = const ConvexOptional.absent(),
+  }) {
+    final args = encodeCommunityListStarredArgs(
+      agentTypes: agentTypes,
+      cursor: cursor,
+      mapData: mapData,
+      side: side,
+      text: text,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'community:listStarred',
+      args: args,
+      decode: decodeCommunityListStarredResult,
     );
   }
 

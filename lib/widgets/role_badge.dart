@@ -176,3 +176,18 @@ class CommunityPostedBadge extends StatelessWidget {
     );
   }
 }
+
+/// On a strategy that is the user's copy of a Community post.
+class CommunityCopyBadge extends StatelessWidget {
+  const CommunityCopyBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return StrategyBadge(
+      icon: LucideIcons.copy,
+      label: l10n.communityCopyBadge,
+      tooltip: l10n.communityCopyBadgeTooltip,
+    );
+  }
+}

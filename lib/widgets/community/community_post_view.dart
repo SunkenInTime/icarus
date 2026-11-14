@@ -29,20 +29,6 @@ import 'package:uuid/uuid.dart';
 /// The editor shows it with the post's own controls instead of an editor's.
 final communityPostViewProvider = StateProvider<CommunityPost?>((ref) => null);
 
-/// Posts saved to the library they would go to now (the account's, or this
-/// computer's when signed out) this session, so the button says so. Starts
-/// empty again when the account changes, since the copies were saved to the
-/// other library.
-final communitySavedPostsProvider = StateProvider<Set<String>>((ref) {
-  ref.watch(
-    authProvider.select(
-      (auth) =>
-          auth.isAuthenticated && auth.isConvexUserReady ? auth.user?.id : null,
-    ),
-  );
-  return {};
-});
-
 /// Whether the post open in the editor is hidden by reports and opened by a
 /// reviewer to decide on it.
 final communityPostUnderReviewProvider = StateProvider<bool>((ref) => false);
@@ -116,10 +102,11 @@ Future<void> toggleCommunityStar(
   }
 }
 
-/// Copies [post] into the reader's library: their cloud library when signed
-/// in, this computer's when not. On the web with no account there is no
-/// library to copy into, so it asks them to sign in.
-Future<void> saveCommunityPost(
+/// Makes the reader their own copy of [post] to change as they like: in
+/// their cloud library when signed in, this computer's when not. On the web
+/// with no account there is no library to copy into, so it asks them to
+/// sign in. The post itself stays as it is; another copy can always be made.
+Future<void> copyCommunityPost(
   BuildContext context,
   WidgetRef ref,
   CommunityPost post,
@@ -132,10 +119,14 @@ Future<void> saveCommunityPost(
   }
   try {
     if (signedIn) {
+      final publicId = const Uuid().v4();
       await ref.read(communityRepositoryProvider).saveCopy(
             postPublicId: post.publicId,
-            publicId: const Uuid().v4(),
+            publicId: publicId,
           );
+      ref
+          .read(communityCopiesProvider.notifier)
+          .add((strategyPublicId: publicId, postPublicId: post.publicId));
     } else {
       await StrategyImportExportService(ref).importCommunityPost(
         strategyPublicId: post.strategyPublicId,
@@ -143,25 +134,21 @@ Future<void> saveCommunityPost(
         title: post.title,
       );
     }
-    ref.read(communitySavedPostsProvider.notifier).state = {
-      ...ref.read(communitySavedPostsProvider),
-      post.publicId,
-    };
     Settings.showToast(
-      message: l10n.communitySavedToast(post.title),
+      message: l10n.communityCopiedToast(post.title),
       backgroundColor: Settings.tacticalVioletTheme.secondary,
     );
   } catch (error, stackTrace) {
     AppErrorReporter.reportWarning(
-      'Saving a Community post failed.',
-      source: 'saveCommunityPost',
+      'Copying a Community post failed.',
+      source: 'copyCommunityPost',
       error: error,
       stackTrace: stackTrace,
     );
     Settings.showToast(
       message: isStrategyTooLargeToDuplicateError(error)
-          ? l10n.communitySaveTooLarge
-          : l10n.communitySaveFailed,
+          ? l10n.communityCopyTooLarge
+          : l10n.communityCopyFailed,
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
   }
@@ -390,9 +377,16 @@ class CommunityPageStepper extends ConsumerWidget {
 /// The post's own controls, at the foot of the map opposite the pages:
 /// more (copy link, report), its star, and Save to My Library.
 class CommunityPostActions extends ConsumerStatefulWidget {
-  const CommunityPostActions({super.key, required this.post});
+  const CommunityPostActions({
+    super.key,
+    required this.post,
+    required this.onOpenCopy,
+  });
 
   final CommunityPost post;
+
+  /// Leaves the post and opens the reader's copy [strategyPublicId].
+  final ValueChanged<String> onOpenCopy;
 
   @override
   ConsumerState<CommunityPostActions> createState() =>
@@ -401,7 +395,7 @@ class CommunityPostActions extends ConsumerStatefulWidget {
 
 class _CommunityPostActionsState extends ConsumerState<CommunityPostActions> {
   final _menu = ShadPopoverController();
-  bool _saving = false;
+  bool _copying = false;
 
   @override
   void dispose() {
@@ -409,12 +403,12 @@ class _CommunityPostActionsState extends ConsumerState<CommunityPostActions> {
     super.dispose();
   }
 
-  Future<void> _save() async {
-    setState(() => _saving = true);
+  Future<void> _copy() async {
+    setState(() => _copying = true);
     try {
-      await saveCommunityPost(context, ref, widget.post);
+      await copyCommunityPost(context, ref, widget.post);
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) setState(() => _copying = false);
     }
   }
 
@@ -435,8 +429,8 @@ class _CommunityPostActionsState extends ConsumerState<CommunityPostActions> {
     final l10n = context.l10n;
     final post = widget.post;
     final stars = ref.watch(communityStarsProvider);
-    final saved = ref.watch(
-      communitySavedPostsProvider.select((ids) => ids.contains(post.publicId)),
+    final copy = ref.watch(
+      communityCopyByPostProvider.select((byPost) => byPost[post.publicId]),
     );
     // The buttons stand on the map by themselves, with no card behind them.
     return Row(
@@ -465,6 +459,15 @@ class _CommunityPostActionsState extends ConsumerState<CommunityPostActions> {
                       copyCommunityPostLink(context, post);
                     },
                   ),
+                  if (copy != null)
+                    _MenuButton(
+                      icon: LucideIcons.copy,
+                      label: l10n.communityMakeAnotherCopy,
+                      onPressed: () {
+                        _menu.hide();
+                        unawaited(_copy());
+                      },
+                    ),
                   _MenuButton(
                     icon: LucideIcons.flag,
                     label: l10n.communityReport,
@@ -493,21 +496,25 @@ class _CommunityPostActionsState extends ConsumerState<CommunityPostActions> {
           onPressed: () => toggleCommunityStar(context, ref, post),
         ),
         const SizedBox(width: 6),
+        // Starring keeps a post; this makes the reader's own copy to
+        // change, and once they have one, takes them to it.
         ShadButton(
-          key: const ValueKey('community-save'),
+          key: const ValueKey('community-copy'),
           height: 36,
-          enabled: !_saving && !saved,
-          onPressed: _save,
-          leading: _saving
+          enabled: !_copying,
+          onPressed: copy == null ? _copy : () => widget.onOpenCopy(copy),
+          leading: _copying
               ? const SizedBox.square(
                   dimension: 16,
                   child: LoadingSpinner(strokeWidth: 2),
                 )
               : Icon(
-                  saved ? LucideIcons.check : LucideIcons.bookmarkPlus,
+                  copy == null ? LucideIcons.copy : LucideIcons.arrowUpRight,
                   size: 16,
                 ),
-          child: Text(saved ? l10n.communitySaved : l10n.communitySave),
+          child: Text(
+            copy == null ? l10n.communityMakeCopy : l10n.communityOpenYourCopy,
+          ),
         ),
       ],
     );

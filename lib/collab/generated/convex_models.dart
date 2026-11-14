@@ -1173,6 +1173,39 @@ final class CommunityListMineResultItem {
   }
 }
 
+final class CommunityListMyCopiesResultItem {
+  const CommunityListMyCopiesResultItem({
+    required this.postPublicId,
+    required this.strategyPublicId,
+  });
+  final String postPublicId;
+  final String strategyPublicId;
+
+  factory CommunityListMyCopiesResultItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    return CommunityListMyCopiesResultItem(
+      postPublicId: _decodeString(
+        object.value['postPublicId'] ?? _missing(path, 'postPublicId'),
+        '$path.postPublicId',
+      ),
+      strategyPublicId: _decodeString(
+        object.value['strategyPublicId'] ?? _missing(path, 'strategyPublicId'),
+        '$path.strategyPublicId',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'postPublicId': ConvexString(postPublicId),
+      'strategyPublicId': ConvexString(strategyPublicId),
+    });
+  }
+}
+
 final class CommunityListPostableResultItem {
   const CommunityListPostableResultItem({
     required this.mapData,
@@ -6382,6 +6415,19 @@ List<CommunityListMineResultItem> decodeCommunityListMineResult(
     )
     .toList(growable: false);
 
+ConvexObject encodeCommunityListMyCopiesArgs() => ConvexObject({});
+
+List<CommunityListMyCopiesResultItem> decodeCommunityListMyCopiesResult(
+  ConvexValue value,
+) => _decodeArray(value, 'community.js:listMyCopies.returns').value.indexed
+    .map(
+      (entry) => CommunityListMyCopiesResultItem.decode(
+        entry.$2,
+        _indexPath('community.js:listMyCopies.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
+
 ConvexObject encodeCommunityListMyStarsArgs() => ConvexObject({});
 
 List<String> decodeCommunityListMyStarsResult(ConvexValue value) =>
@@ -6431,6 +6477,29 @@ ConvexObject encodeCommunityListPostsArgs({
 
 CommunityListPostsResult decodeCommunityListPostsResult(ConvexValue value) =>
     CommunityListPostsResult.decode(value, 'community.js:listPosts.returns');
+
+ConvexObject encodeCommunityListStarredArgs({
+  ConvexOptional<List<String>> agentTypes = const ConvexOptional.absent(),
+  ConvexOptional<String> cursor = const ConvexOptional.absent(),
+  ConvexOptional<String> mapData = const ConvexOptional.absent(),
+  ConvexOptional<CommunityListPostsArgsSide> side =
+      const ConvexOptional.absent(),
+  ConvexOptional<String> text = const ConvexOptional.absent(),
+}) => ConvexObject({
+  if (agentTypes.isPresent)
+    'agentTypes': ConvexArray(
+      agentTypes.value.indexed
+          .map((entry) => ConvexString(entry.$2))
+          .toList(growable: false),
+    ),
+  if (cursor.isPresent) 'cursor': ConvexString(cursor.value),
+  if (mapData.isPresent) 'mapData': ConvexString(mapData.value),
+  if (side.isPresent) 'side': ConvexString(side.value.wireName),
+  if (text.isPresent) 'text': ConvexString(text.value),
+});
+
+CommunityListPostsResult decodeCommunityListStarredResult(ConvexValue value) =>
+    CommunityListPostsResult.decode(value, 'community.js:listStarred.returns');
 
 ConvexObject encodeCommunityPublishArgs({
   required double clientProtocolVersion,

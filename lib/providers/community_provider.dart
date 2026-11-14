@@ -81,10 +81,24 @@ class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
 
   final _kept = <CommunityFilter, CommunityFeedState>{};
   int _generation = 0;
+  String? _account;
 
   @override
   CommunityFeedState build() {
     final filter = ref.watch(communityFilterProvider);
+    // Starred feeds are the account's own, so a sign-in or sign-out reads
+    // them again.
+    final account = ref.watch(
+      authProvider.select(
+        (auth) => auth.isAuthenticated && auth.isConvexUserReady
+            ? auth.user?.id
+            : null,
+      ),
+    );
+    if (account != _account) {
+      _account = account;
+      _kept.removeWhere((kept, _) => kept.starred);
+    }
     _generation++;
     final kept = _kept.remove(filter);
     if (kept != null && kept.error == null && !kept.loading) {
@@ -288,4 +302,67 @@ final communityViewerProvider = FutureProvider<CommunityViewer>((ref) async {
   );
   if (!signedIn) return (isReviewer: false, canPost: false, authorName: null);
   return ref.read(communityRepositoryProvider).fetchViewer();
+});
+
+/// The signed-in user's copies of posts, read once per sign-in and added to
+/// as they make more. Empty when signed out: a copy made then went to this
+/// computer's library, which keeps no record of where it came from.
+final communityCopiesProvider =
+    NotifierProvider<CommunityCopiesNotifier, List<CommunityCopy>>(
+  CommunityCopiesNotifier.new,
+);
+
+class CommunityCopiesNotifier extends Notifier<List<CommunityCopy>> {
+  @override
+  List<CommunityCopy> build() {
+    final signedIn = ref.watch(
+      authProvider.select(
+        (auth) => auth.isAuthenticated && auth.isConvexUserReady,
+      ),
+    );
+    if (!signedIn) return const [];
+    unawaited(_load());
+    return const [];
+  }
+
+  Future<void> _load() async {
+    try {
+      final copies =
+          await ref.read(communityRepositoryProvider).fetchMyCopies();
+      final made = {for (final copy in state) copy.strategyPublicId};
+      state = [
+        ...state,
+        for (final copy in copies)
+          if (!made.contains(copy.strategyPublicId)) copy,
+      ];
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'Reading Community copies failed.',
+        source: 'CommunityCopiesNotifier.load',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  /// Records a copy just made, newest first.
+  void add(CommunityCopy copy) => state = [copy, ...state];
+}
+
+/// The user's newest copy of each post, by the post's id.
+final communityCopyByPostProvider = Provider<Map<String, String>>((ref) {
+  final copies = ref.watch(communityCopiesProvider);
+  final byPost = <String, String>{};
+  for (final copy in copies) {
+    byPost.putIfAbsent(copy.postPublicId, () => copy.strategyPublicId);
+  }
+  return byPost;
+});
+
+/// The post each of the user's copies came from, by the copy's id.
+final communityPostByCopyProvider = Provider<Map<String, String>>((ref) {
+  return {
+    for (final copy in ref.watch(communityCopiesProvider))
+      copy.strategyPublicId: copy.postPublicId,
+  };
 });

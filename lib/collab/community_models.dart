@@ -97,6 +97,7 @@ class CommunityFilter {
     this.agents = const [],
     this.text = '',
     this.sort = CommunitySort.trending,
+    this.starred = false,
   });
 
   final MapValue? map;
@@ -112,8 +113,15 @@ class CommunityFilter {
   final String text;
   final CommunitySort sort;
 
+  /// Only posts the reader starred.
+  final bool starred;
+
   bool get isEmpty =>
-      map == null && side == null && agents.isEmpty && text.trim().isEmpty;
+      map == null &&
+      side == null &&
+      agents.isEmpty &&
+      text.trim().isEmpty &&
+      !starred;
 
   CommunityFilter copyWith({
     MapValue? map,
@@ -123,6 +131,7 @@ class CommunityFilter {
     List<AgentType>? agents,
     String? text,
     CommunitySort? sort,
+    bool? starred,
   }) {
     return CommunityFilter(
       map: clearMap ? null : map ?? this.map,
@@ -130,6 +139,7 @@ class CommunityFilter {
       agents: agents ?? this.agents,
       text: text ?? this.text,
       sort: sort ?? this.sort,
+      starred: starred ?? this.starred,
     );
   }
 
@@ -140,11 +150,12 @@ class CommunityFilter {
       other.side == side &&
       listEquals(other.agents, agents) &&
       other.text == text &&
-      other.sort == sort;
+      other.sort == sort &&
+      other.starred == starred;
 
   @override
   int get hashCode =>
-      Object.hash(map, side, Object.hashAll(agents), text, sort);
+      Object.hash(map, side, Object.hashAll(agents), text, sort, starred);
 }
 
 typedef CommunityFeedPage = ({
@@ -195,3 +206,6 @@ typedef PostableStrategy = ({
   /// The post already made from it, if any.
   String? postPublicId,
 });
+
+/// A copy of a post the signed-in user made in their library.
+typedef CommunityCopy = ({String strategyPublicId, String postPublicId});

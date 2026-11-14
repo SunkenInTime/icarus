@@ -139,6 +139,15 @@ class _CommunityTabState extends ConsumerState<CommunityTab> {
           child: Text(l10n.commonRetry),
         ),
       );
+    } else if (feed.posts.isEmpty &&
+        feed.filter.starred &&
+        feed.filter.copyWith(starred: false).isEmpty) {
+      child = _FeedMessage(
+        key: const ValueKey('community-no-stars'),
+        icon: LucideIcons.star,
+        title: l10n.communityNoStarsTitle,
+        subtitle: l10n.communityNoStarsSubtitle,
+      );
     } else if (feed.posts.isEmpty) {
       final filtered = !feed.filter.isEmpty;
       child = _FeedMessage(

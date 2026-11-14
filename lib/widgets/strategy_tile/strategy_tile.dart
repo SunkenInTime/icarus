@@ -17,6 +17,7 @@ import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/context_menu_region.dart';
+import 'package:icarus/widgets/community/community_link.dart';
 import 'package:icarus/widgets/dialogs/community/post_to_community_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/delete_strategy_alert_dialog.dart';
@@ -148,6 +149,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
 
   bool get _isCloud => widget.cloudStrategy != null;
   bool get _canShare => _isCloud && widget.cloudStrategy?.role == 'owner';
+
+  /// The Community post this strategy is the user's copy of, if it is one.
+  String? get _copiedFromPost => _isCloud
+      ? ref.watch(communityPostByCopyProvider.select((m) => m[_strategyId]))
+      : null;
   String get _strategyId =>
       widget.strategyData?.id ?? widget.cloudStrategy!.strategy.id;
   String get _strategyName =>
@@ -205,6 +211,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         ref.watch(
           myPostsByStrategyProvider.select((posts) => posts.containsKey(id)),
         );
+    final isCommunityCopy = _copiedFromPost != null;
 
     final tile = DragTarget<GridItem>(
       onWillAcceptWithDetails: (details) {
@@ -347,7 +354,9 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                                       : viewData.sharedBadge ??
                                                           (isPosted
                                                               ? const CommunityPostedBadge()
-                                                              : null),
+                                                              : isCommunityCopy
+                                                                  ? const CommunityCopyBadge()
+                                                                  : null),
                                         ),
                                       ),
                                       const SizedBox(height: 10),
@@ -514,6 +523,16 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
             _closeMenus();
             if (_refusedOffline()) return;
             _showShareDialog();
+          },
+        ),
+      if (_copiedFromPost case final postPublicId?)
+        ShadContextMenuItem(
+          key: const ValueKey('strategy-tile-open-community-post'),
+          leading: const Icon(LucideIcons.arrowUpRight),
+          child: Text(l10n.communityOpenThePost),
+          onPressed: () {
+            _closeMenus();
+            ref.read(communityPostToOpenProvider.notifier).state = postPublicId;
           },
         ),
       if (_canShare)

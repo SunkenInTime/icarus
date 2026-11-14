@@ -445,6 +445,17 @@ export default defineSchema({
   })
     .index("by_postId_and_userId", ["postId", "userId"])
     .index("by_createdAt", ["createdAt"]),
+  // Each copy of a post someone made in their library: which post it came
+  // from, so the post can open their copy and the library can say where the
+  // copy came from. Counting (communitySaves) is separate: a copy counts
+  // once per account, but every copy is recorded here.
+  communityCopies: defineTable({
+    userId: v.id("users"),
+    postId: v.id("communityPosts"),
+    postPublicId: v.string(),
+    strategyPublicId: v.string(),
+    createdAt: v.number(),
+  }).index("by_userId_and_createdAt", ["userId", "createdAt"]),
   // A star, unstar or save not yet folded into its post's counts. Writers
   // only insert, so two people starring one post never collide.
   communityCountChanges: defineTable({

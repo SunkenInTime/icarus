@@ -9,6 +9,8 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/community_provider.dart';
+import 'package:icarus/widgets/community/community_post_card.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -65,6 +67,12 @@ class _CommunitySearchBarState extends ConsumerState<CommunitySearchBar> {
   }
 
   String? get _typedFilter => _atWord.firstMatch(_controller.text)?.group(1);
+
+  /// Starred is the reader's own: offered only with an account.
+  bool get _signedIn {
+    final auth = ref.read(authProvider);
+    return auth.isAuthenticated && auth.isConvexUserReady;
+  }
 
   String get _freeText => _controller.text.replaceFirst(_atWord, '').trim();
 
@@ -131,6 +139,8 @@ class _CommunitySearchBarState extends ConsumerState<CommunitySearchBar> {
         if (!current.agents.contains(agent)) _toggleAgent(agent);
       case _SideSuggestion(:final side):
         _update((f) => f.copyWith(side: side));
+      case _StarredSuggestion():
+        _update((f) => f.copyWith(starred: true));
     }
     final rest = _controller.text.replaceFirst(_atWord, '').trimRight();
     _controller.value = TextEditingValue(
@@ -230,12 +240,31 @@ class _CommunitySearchBarState extends ConsumerState<CommunitySearchBar> {
         _sideLabel(l10n, side),
       ]);
     }
+    if (!filter.starred && _signedIn) {
+      consider(const _StarredSuggestion(), ['starred', l10n.communityStarred]);
+    }
     return [...starts, ...contains].take(6).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
+    final signedIn = ref.watch(
+      authProvider.select(
+        (auth) => auth.isAuthenticated && auth.isConvexUserReady,
+      ),
+    );
+    // Signed out, there are no stars to narrow to.
+    ref.listen(
+      authProvider.select(
+        (auth) => auth.isAuthenticated && auth.isConvexUserReady,
+      ),
+      (_, signedIn) {
+        if (!signedIn && ref.read(communityFilterProvider).starred) {
+          _update((f) => f.copyWith(starred: false));
+        }
+      },
+    );
     final filter = ref.watch(communityFilterProvider);
     final l10n = context.l10n;
     final suggestions = _suggestions(context);
@@ -347,7 +376,7 @@ class _CommunitySearchBarState extends ConsumerState<CommunitySearchBar> {
                             decoration: InputDecoration.collapsed(
                               hintText: _panelOpen && !typing
                                   ? l10n.communitySearchPickHint
-                                  : filter.isEmpty
+                                  : filter.copyWith(starred: false).isEmpty
                                       ? l10n.communitySearchHint
                                       : null,
                               hintStyle: TextStyle(
@@ -361,7 +390,17 @@ class _CommunitySearchBarState extends ConsumerState<CommunitySearchBar> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    _SortButton(menu: _sortMenu),
+                    if (signedIn) ...[
+                      _StarredToggle(
+                        on: filter.starred,
+                        onTap: () => _update(
+                          (f) => f.copyWith(starred: !f.starred),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    // Starred posts list newest star first; no sort applies.
+                    if (!filter.starred) _SortButton(menu: _sortMenu),
                   ],
                 ),
               ),
@@ -429,6 +468,10 @@ final List<MapValue> _mapsByName = [...MapValue.values]
 
 sealed class _Suggestion {
   const _Suggestion();
+}
+
+class _StarredSuggestion extends _Suggestion {
+  const _StarredSuggestion();
 }
 
 class _MapSuggestion extends _Suggestion {
@@ -508,6 +551,12 @@ class _SuggestionList extends StatelessWidget {
                                   ? Settings.attackColor
                                   : Settings.defenderColor,
                             ),
+                          _StarredSuggestion() => const Center(
+                              child: CommunityStarGlyph(
+                                filled: true,
+                                color: Settings.accentInk,
+                              ),
+                            ),
                         },
                       ),
                       const SizedBox(width: 12),
@@ -518,6 +567,7 @@ class _SuggestionList extends StatelessWidget {
                           _MapSuggestion(:final map) => l10n.mapName(map),
                           _SideSuggestion(:final side) =>
                             _sideLabel(l10n, side),
+                          _StarredSuggestion() => l10n.communityStarred,
                         },
                         style: const TextStyle(
                           fontSize: 15,
@@ -530,6 +580,8 @@ class _SuggestionList extends StatelessWidget {
                           _AgentSuggestion() => l10n.communitySuggestionAgent,
                           _MapSuggestion() => l10n.communitySuggestionMap,
                           _SideSuggestion() => l10n.communitySuggestionSide,
+                          _StarredSuggestion() =>
+                            l10n.communitySuggestionStarred,
                         },
                         style: TextStyle(
                           fontSize: 12,
@@ -1182,6 +1234,55 @@ class _SortButton extends ConsumerWidget {
         child: Text(
           label(sort),
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+}
+
+/// Narrows the feed to the posts the reader starred.
+class _StarredToggle extends StatelessWidget {
+  const _StarredToggle({required this.on, required this.onTap});
+
+  final bool on;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+    final l10n = context.l10n;
+    return Semantics(
+      button: true,
+      toggled: on,
+      label: l10n.communityStarred,
+      child: ShadTooltip(
+        builder: (context) => Text(
+          on ? l10n.communityShowAll : l10n.communityShowStarred,
+        ),
+        child: ShadButton.secondary(
+          key: const ValueKey('community-starred'),
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          gap: 8,
+          decoration: ShadDecoration(
+            border: ShadBorder(radius: BorderRadius.circular(8)),
+          ),
+          backgroundColor:
+              on ? Settings.accentInk.withValues(alpha: 0.18) : null,
+          onPressed: onTap,
+          leading: CommunityStarGlyph(
+            filled: on,
+            color: on ? Settings.accentInk : theme.foreground,
+          ),
+          child: on
+              ? Text(
+                  l10n.communityStarred,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                )
+              : null,
         ),
       ),
     );
