@@ -42,10 +42,10 @@
 
   {"tapWords": "https://www.youtube", "button": "secondary"},
   {"wait": 1},
-  {"waitText": "Open youtube.com/shorts/H36dywKYmI4", "seconds": 3},
+  {"waitText": "Open link", "seconds": 3},
   {"waitText": "Ctrl+click", "seconds": 3},
   {"shot": "{out}/3-menu.png"},
-  {"tapText": "Open youtube.com/shorts/H36dywKYmI4"},
+  {"tapText": "Open link"},
   {"expectOpened": ["https://www.youtube.com/shorts/H36dywKYmI4", "https://www.youtube.com/shorts/H36dywKYmI4"]},
 
   {"tapAt": [150, 500]},

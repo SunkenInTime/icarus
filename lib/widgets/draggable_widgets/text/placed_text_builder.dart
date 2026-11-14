@@ -107,8 +107,9 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
 
-    final stillLoaded =
-        ref.read(textProvider).any((text) => identical(text, resizedText));
+    final stillLoaded = ref
+        .read(textProvider)
+        .any((text) => identical(text, resizedText));
     if (pinned != null && stillLoaded) _storeResize(resizedText, pinned);
     setState(() {
       isPanning = false;
@@ -158,9 +159,11 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
       localSize = texts[index].size;
     }
     final coordinateSystem = CoordinateSystem.instance;
-    final attackScreenPosition =
-        coordinateSystem.coordinateToScreen(widget.placedText.position);
-    final drawnSize = ref.watch(
+    final attackScreenPosition = coordinateSystem.coordinateToScreen(
+      widget.placedText.position,
+    );
+    final drawnSize =
+        ref.watch(
           textWidgetHeightProvider.select(
             (sizes) => sizes[widget.placedText.id],
           ),
@@ -184,8 +187,9 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
               details.globalPosition.dx - leftEdgeGlobal.dx;
           final widthInContentSpace =
               widthInScreenPixels / scale + pointerShift;
-          final widthInWorldSpace =
-              coordinateSystem.screenWidthToWorld(widthInContentSpace);
+          final widthInWorldSpace = coordinateSystem.screenWidthToWorld(
+            widthInContentSpace,
+          );
 
           setState(() {
             isPanning = true;
@@ -199,7 +203,8 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         },
         onPanEnd: (_) => _finishResize(),
         child: CanvasDraggable<PlacedText>(
-          dot: widget.placedText.position +
+          dot:
+              widget.placedText.position +
               coordinateSystem
                   .screenSizeToWorld(Size(drawnSize.dx, drawnSize.dy))
                   .center(Offset.zero),
@@ -219,8 +224,9 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
             ),
           ),
           childWhenDragging: const SizedBox.shrink(),
-          dragAnchorStrategy:
-              ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
+          dragAnchorStrategy: ref
+              .read(screenZoomProvider.notifier)
+              .zoomDragAnchorStrategy,
           onDragStarted: () {
             ref
                 .read(textDraftProvider.notifier)
@@ -264,11 +270,13 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
   }
 
   /// Open, for each link in [text]: the way to a link for someone editing on
-  /// a touch screen, and where the click that opens one is written down.
+  /// a touch screen, and where the click that opens one is written down. One
+  /// link reads "Open link"; several are told apart by their addresses.
   List<ShadContextMenuItem> _buildLinkItems(String text) {
     final muted = ShadTheme.of(context).colorScheme.mutedForeground;
+    final links = textLinks(text).toList();
     return [
-      for (final link in textLinks(text))
+      for (final link in links)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.externalLink, size: 16),
           trailing: Text(
@@ -279,7 +287,9 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 220),
             child: Text(
-              context.l10n.canvasItemOpenLink(_shortAddress(link)),
+              links.length == 1
+                  ? context.l10n.canvasItemOpenTheLink
+                  : context.l10n.canvasItemOpenLink(_shortAddress(link)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

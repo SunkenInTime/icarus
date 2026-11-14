@@ -857,6 +857,7 @@
   "abilityMenuRange": "范围",
   "canvasItemCreateCaption": "添加说明",
   "canvasItemEditCaption": "编辑说明",
+  "canvasItemOpenTheLink": "打开链接",
   "canvasItemOpenLink": "打开 {address}",
   "canvasItemTagColorMenu": "标签颜色",
   "canvasItemTagColorGray": "灰色",
