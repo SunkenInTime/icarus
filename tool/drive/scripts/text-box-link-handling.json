@@ -39,7 +39,7 @@
   {"tapWords": "https://", "button": "secondary"},
   {"wait": 1},
   {"waitText": "Create caption", "seconds": 3},
-  {"waitText": "Purple tag", "seconds": 3},
+  {"waitText": "Tag color", "seconds": 3},
   {"shot": "{out}/5-right-click.png"},
   {"key": "escape"},
   {"waitText": "Create caption", "gone": true, "seconds": 3},
