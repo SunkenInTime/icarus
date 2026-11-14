@@ -26,9 +26,55 @@ List<ShadContextMenuItem> buildCustomShapeContextMenuItems(
       items: [_CustomShapeColorItems(utility: utility)],
       child: Text(context.l10n.shapeToolsColorMenu),
     ),
+    ShadContextMenuItem(
+      leading: const Icon(LucideIcons.droplet, size: 16),
+      items: [_CustomShapeOpacityItems(utility: utility)],
+      child: Text(context.l10n.shapeToolsOpacityMenu),
+    ),
     ...buildCaptionMenuItems(context, ref, utility.id),
     ...buildAdjacentPageCopyMenuItems(ref, utility.id),
   ];
+}
+
+/// The strengths a placed shape can be set to, in percent: the Shapes panel's
+/// range in steps of ten.
+const customShapeOpacitySteps = [10, 20, 30, 40, 50, 60, 70, 80];
+
+class _CustomShapeOpacityItems extends ConsumerWidget {
+  const _CustomShapeOpacityItems({required this.utility});
+
+  final PlacedUtility utility;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = utility.customOpacityPercent;
+    // A shape placed between two steps (35% from the panel) still finds its
+    // own value in the list, ticked.
+    final steps = {
+      ...customShapeOpacitySteps,
+      if (current != null) current,
+    }.toList()
+      ..sort();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final percent in steps)
+          ShadContextMenuItem(
+            trailing: percent == current
+                ? const Icon(LucideIcons.check, size: 14)
+                : null,
+            onPressed: () {
+              ref.read(utilityProvider.notifier).updateCustomShapeOpacity(
+                    id: utility.id,
+                    opacityPercent: percent,
+                  );
+            },
+            child: Text(context.l10n.shapeToolsOpacityPercent(percent)),
+          ),
+      ],
+    );
+  }
 }
 
 class _CustomShapeColorItems extends ConsumerWidget {

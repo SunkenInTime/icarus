@@ -3626,6 +3626,20 @@
   "@shapeToolsCustomColorMenu": {
     "description": "Right-click menu entry on a custom shape that opens a color picker."
   },
+  "shapeToolsOpacityMenu": "Opacity",
+  "@shapeToolsOpacityMenu": {
+    "description": "Right-click menu entry on a custom shape that opens its opacity choices."
+  },
+  "shapeToolsOpacityPercent": "{percent}%",
+  "@shapeToolsOpacityPercent": {
+    "description": "One opacity choice in a custom shape's right-click menu, e.g. 30%.",
+    "placeholders": {
+      "percent": {
+        "type": "int",
+        "description": "Opacity in percent, 5 to 80."
+      }
+    }
+  },
   "shapeToolsColorWhite": "White",
   "shapeToolsColorRed": "Red",
   "shapeToolsColorBlue": "Blue",
