@@ -3778,35 +3778,16 @@
       }
     }
   },
-  "canvasItemResetTagToGray": "Reset tag to gray",
-  "@canvasItemResetTagToGray": {
-    "description": "Right-click menu entry on a text box or image: remove its color tag."
+  "canvasItemTagColorMenu": "Tag color",
+  "@canvasItemTagColorMenu": {
+    "description": "Right-click menu entry on a text box or image that opens the colors its tag can take."
   },
-  "canvasItemGreenTag": "Green tag",
-  "canvasItemBlueTag": "Blue tag",
-  "canvasItemAmberTag": "Amber tag",
-  "canvasItemRedTag": "Red tag",
-  "canvasItemPurpleTag": "Purple tag",
-  "canvasItemCustomColorTag": "#{hex} custom tag",
-  "@canvasItemCustomColorTag": {
-    "description": "Right-click menu entry on an image: tag it with a color the user saved.",
-    "placeholders": {
-      "hex": {
-        "type": "String",
-        "description": "Six-digit hex color code, e.g. FF8800."
-      }
-    }
+  "canvasItemTagColorGray": "Gray",
+  "@canvasItemTagColorGray": {
+    "description": "A tag color in the Tag color menu: the gray of a text box or image that was never tagged."
   },
-  "canvasItemDefaultColorTag": "#{hex} default tag",
-  "@canvasItemDefaultColorTag": {
-    "description": "Right-click menu entry on an image: tag it with one of the built-in colors.",
-    "placeholders": {
-      "hex": {
-        "type": "String",
-        "description": "Six-digit hex color code, e.g. FF8800."
-      }
-    }
-  },
+  "canvasItemTagColorAmber": "Amber",
+  "canvasItemTagColorPurple": "Purple",
   "canvasItemCopyToPreviousPage": "Copy to previous page",
   "@canvasItemCopyToPreviousPage": {
     "description": "Right-click menu entry on a placed item: copy it onto the page before this one."

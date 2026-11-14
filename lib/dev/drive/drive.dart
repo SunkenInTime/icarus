@@ -125,7 +125,11 @@
 //   {"expectOpacity": id, "percent": n, "seconds": s?}
 //                                      fails unless the shape is drawn at n
 //                                      percent, waiting up to s seconds for it
-//   {"expectDead": n}                  fails unless n agents on the page are dead
+//   {"expectTag": id, "color": hex?, "seconds": s?}
+//                                      fails unless the text box or picture's tag
+//                                      is this color, six lowercase hex digits,
+//                                      or gray without one; lastImage as above
+//   {"expectDead": n}                 fails unless n agents on the page are dead
 //   {"expectItem": id, "gone": b?}     fails unless the item is on the page, or
 //                                      with gone, unless it is not
 //   {"expectImages": n, "lineups": m?} fails unless n pictures are on the page,
@@ -1682,6 +1686,32 @@ Future<void> _run(Map<String, dynamic> step) async {
       _log('ITEM $value $at');
       if (items.isEmpty != (step['gone'] == true)) {
         throw StateError('$value is $at');
+      }
+    case 'expectTag':
+      final id = _itemId(value as String);
+      final wanted = step['color'] as String?;
+      // One entry while the item is on the page; an item that's gone has no
+      // tag, which isn't a gray one.
+      List<int?> tags() => [
+            for (final text in c.read(textProvider))
+              if (text.id == id) text.tagColorValue,
+            for (final image in c.read(placedImageProvider).images)
+              if (image.id == id) image.tagColorValue,
+          ];
+      String name(int? color) => color == null
+          ? 'gray'
+          : (color & 0xFFFFFF).toRadixString(16).padLeft(6, '0');
+      try {
+        await _waitFor(
+          () => tags().isNotEmpty && name(tags().first) == (wanted ?? 'gray'),
+          (step['seconds'] ?? 0) as num,
+        );
+      } on TimeoutException {
+        throw StateError(
+          tags().isEmpty
+              ? '$value is not on the page'
+              : "$value's tag is ${name(tags().first)}, not ${wanted ?? 'gray'}",
+        );
       }
     case 'expectOpacity':
       int? opacity() => c

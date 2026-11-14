@@ -14,6 +14,7 @@ import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/canonical_positioned.dart';
+import 'package:icarus/widgets/draggable_widgets/tag_color_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_links.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_scale_controller.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
@@ -41,13 +42,11 @@ class PlacedTextBuilder extends ConsumerStatefulWidget {
 
 class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
   static const double minSize = 60;
-  static const List<Color> _tagPalette = [
-    Color(0xFF22C55E),
-    Color(0xFF3B82F6),
-    Color(0xFFF59E0B),
-    Color(0xFFEF4444),
-    Color(0xFFA855F7),
-  ];
+  static const _tagGreen = Color(0xFF22C55E);
+  static const _tagBlue = Color(0xFF3B82F6);
+  static const _tagAmber = Color(0xFFF59E0B);
+  static const _tagRed = Color(0xFFEF4444);
+  static const _tagPurple = Color(0xFFA855F7);
   final _boxKey = GlobalKey();
   double? localSize; // Make localScale nullable to check if it's initialized
   bool isPanning = false;
@@ -297,53 +296,27 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
   }
 
   List<ShadContextMenuItem> _buildTagColorItems() {
+    final l10n = context.l10n;
     return [
-      ShadContextMenuItem(
-        child: Text(context.l10n.canvasItemResetTagToGray),
-        onPressed: () {
+      buildTagColorMenuItem(
+        context,
+        current: widget.placedText.tagColorValue,
+        choices: [
+          (color: _tagGreen, label: l10n.shapeToolsColorGreen),
+          (color: _tagBlue, label: l10n.shapeToolsColorBlue),
+          (color: _tagAmber, label: l10n.canvasItemTagColorAmber),
+          (color: _tagRed, label: l10n.shapeToolsColorRed),
+          (color: _tagPurple, label: l10n.canvasItemTagColorPurple),
+        ],
+        onPicked: (colorValue) {
           ref
               .read(textProvider.notifier)
-              .updateTagColor(widget.placedText.id, null);
+              .updateTagColor(widget.placedText.id, colorValue);
           ref.read(strategyProvider.notifier).setUnsaved();
         },
-      ),
-      ..._tagPalette.map(
-        (color) => ShadContextMenuItem(
-          leading: Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
-          ),
-          child: Text(_labelForColor(color)),
-          onPressed: () {
-            ref
-                .read(textProvider.notifier)
-                .updateTagColor(widget.placedText.id, color.toARGB32());
-            ref.read(strategyProvider.notifier).setUnsaved();
-          },
-        ),
       ),
       ...buildCaptionMenuItems(context, ref, widget.placedText.id),
       ...buildAdjacentPageCopyMenuItems(ref, widget.placedText.id),
     ];
-  }
-
-  String _labelForColor(Color color) {
-    if (color.toARGB32() == const Color(0xFF22C55E).toARGB32()) {
-      return context.l10n.canvasItemGreenTag;
-    }
-    if (color.toARGB32() == const Color(0xFF3B82F6).toARGB32()) {
-      return context.l10n.canvasItemBlueTag;
-    }
-    if (color.toARGB32() == const Color(0xFFF59E0B).toARGB32()) {
-      return context.l10n.canvasItemAmberTag;
-    }
-    if (color.toARGB32() == const Color(0xFFEF4444).toARGB32()) {
-      return context.l10n.canvasItemRedTag;
-    }
-    return context.l10n.canvasItemPurpleTag;
   }
 }

@@ -18,7 +18,7 @@ List<ShadContextMenuItem> buildCustomShapeContextMenuItems(
 
   return [
     ShadContextMenuItem(
-      leading: _ColorSwatch(
+      leading: MenuColorSwatch(
         color: currentColorValue == null
             ? Colors.transparent
             : Color(currentColorValue),
@@ -92,7 +92,7 @@ class _CustomShapeColorItems extends ConsumerWidget {
       children: [
         for (final entry in colors)
           ShadContextMenuItem(
-            leading: _ColorSwatch(color: entry.color),
+            leading: MenuColorSwatch(color: entry.color),
             trailing: currentColorValue == entry.color.toARGB32()
                 ? const Icon(LucideIcons.check, size: 14)
                 : null,
@@ -102,7 +102,7 @@ class _CustomShapeColorItems extends ConsumerWidget {
                     colorValue: entry.color.toARGB32(),
                   );
             },
-            child: Text(_colorLabel(context.l10n, entry)),
+            child: Text(colorLibraryEntryLabel(context.l10n, entry)),
           ),
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.palette, size: 14),
@@ -128,7 +128,8 @@ class _CustomShapeColorItems extends ConsumerWidget {
   }
 }
 
-String _colorLabel(AppLocalizations l10n, ColorLibraryEntry entry) {
+/// What a menu calls a color from the color library.
+String colorLibraryEntryLabel(AppLocalizations l10n, ColorLibraryEntry entry) {
   if (!entry.isCustom) {
     final color = entry.color.toARGB32();
     if (color == Colors.white.toARGB32()) return l10n.shapeToolsColorWhite;
@@ -145,8 +146,9 @@ String _colorLabel(AppLocalizations l10n, ColorLibraryEntry entry) {
   return entry.isCustom ? l10n.shapeToolsSavedColor(hex) : '#$hex';
 }
 
-class _ColorSwatch extends StatelessWidget {
-  const _ColorSwatch({required this.color});
+/// The dot of color beside a color in a right-click menu.
+class MenuColorSwatch extends StatelessWidget {
+  const MenuColorSwatch({super.key, required this.color});
 
   final Color color;
 
