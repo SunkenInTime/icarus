@@ -60,7 +60,7 @@ class CurvePiece {
   }
 }
 
-/// The fewest smooth pieces that pass within [tolerance] of every one of
+/// A few smooth pieces that pass within [tolerance] of every one of
 /// [points], which are a path's points in order, close together.
 ///
 /// A wobble smaller than [tolerance] is left out, and anything larger is
@@ -118,7 +118,17 @@ void _fit(
   double directionReach,
   List<CurvePiece> pieces,
 ) {
-  if (last - first == 1) {
+  // Where along the piece each point falls, first by distance along the
+  // path, then moved towards the nearest place on each attempt.
+  var along = <double>[0];
+  for (var i = first + 1; i <= last; i++) {
+    along.add(along.last + (points[i] - points[i - 1]).distance);
+  }
+  final length = along.last;
+
+  // Two points, or points all in one place (a pointer shaking where it
+  // stands), have no shape to fit: a straight piece between them.
+  if (last - first == 1 || length == 0) {
     final third = (points[last] - points[first]).distance / 3;
     pieces.add(CurvePiece(
       points[first],
@@ -128,14 +138,6 @@ void _fit(
     ));
     return;
   }
-
-  // Where along the piece each point falls, first by distance along the
-  // path, then moved towards the nearest place on each attempt.
-  var along = <double>[0];
-  for (var i = first + 1; i <= last; i++) {
-    along.add(along.last + (points[i] - points[i - 1]).distance);
-  }
-  final length = along.last;
   along = [for (final distance in along) distance / length];
 
   var piece =

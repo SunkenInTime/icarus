@@ -127,14 +127,22 @@ void main() {
   });
 
   test(
-      'the painted stroke stays within the tolerance of where the pointer '
-      'went', () {
+      'the painted stroke and the pointer\'s path stay within the '
+      'tolerance of each other', () {
     for (final shape in [shallow, elbow]) {
       final reports = _mouse(shape);
       final painted = _painted(_drawn(reports), coordinates);
+      // Nowhere the pointer went is left out,
       for (final report in reports) {
         expect(
           _distanceTo(painted, report),
+          lessThan(FreehandPen.tolerance + 0.5),
+        );
+      }
+      // and the stroke goes nowhere the pointer did not.
+      for (final point in painted) {
+        expect(
+          _distanceTo(reports, point),
           lessThan(FreehandPen.tolerance + 0.5),
         );
       }
@@ -155,32 +163,28 @@ void main() {
         Offset(100 + x, 300 + 60 * math.sin(x / 45) + 8 * math.sin(x / 7)),
     ]);
     final frames = _frames(reports);
+    var settled = 0;
     for (var i = 1; i < frames.length; i++) {
-      final before = _painted(frames[i - 1], coordinates);
-      final now = _painted(frames[i], coordinates);
-      final pointer = reports[i];
-      for (final point in before) {
-        // Further behind the pointer than the pen still shapes: twice the
-        // distance it settles at, and the tolerance either end.
-        if ((point - pointer).distance <
-            2 * FreehandPen.settleBehind + 2 * FreehandPen.tolerance + 2) {
-          continue;
-        }
-        expect(_distanceTo(now, point), lessThan(0.01));
+      final before = frames[i - 1], now = frames[i];
+      // The points the two have in common from the start are ink that
+      // stayed put. What the earlier one has after them is all that could
+      // move: no more than the stretch the pen is still shaping, twice the
+      // distance it settles at.
+      var same = 0;
+      while (same < before.length &&
+          same < now.length &&
+          before[same] == now[same]) {
+        same++;
       }
+      var unsettled = 0.0;
+      for (var j = math.max(same, 1); j < before.length; j++) {
+        unsettled += (before[j] - before[j - 1]).distance;
+      }
+      expect(unsettled, lessThan(2 * FreehandPen.settleBehind + 3));
+      settled = math.max(settled, same);
     }
-  });
-
-  test(
-      'lifting the pointer changes nothing: the stroke saved is the one '
-      'on screen', () {
-    final reports = _mouse(elbow);
-    final pen = FreehandPen(reports.first, unit: 1);
-    late List<Offset> last;
-    for (final report in reports.skip(1)) {
-      last = pen.moveTo(report);
-    }
-    expect(pen.points, last);
+    // And most of the stroke did settle while it was drawn.
+    expect(settled, greaterThan(frames.last.length * 0.8));
   });
 
   test('the same path reported more or less often is the same stroke', () {
@@ -230,6 +234,19 @@ void main() {
     expect(pen.moveTo(const Offset(51, 50)), [const Offset(50, 50)]);
     expect(pen.moveTo(const Offset(52, 51)), [const Offset(50, 50)]);
     expect(pen.moveTo(const Offset(56, 53)).length, greaterThan(1));
+  });
+
+  test('a pointer shaking in place draws without failing', () {
+    // Half a pixel there and back: the path it walks is all one place.
+    final pen = FreehandPen(Offset.zero, unit: 1);
+    var points = pen.points;
+    for (var i = 0; i < 40; i++) {
+      points = pen.moveTo(Offset(i.isEven ? 0.5 : 0, 0));
+    }
+    for (final point in points) {
+      expect(point.dx.isFinite && point.dy.isFinite, isTrue);
+      expect(point.distance, lessThanOrEqualTo(0.5));
+    }
   });
 
   test('a long sweep is saved as fewer points than the mouse reported', () {

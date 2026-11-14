@@ -108,6 +108,17 @@ void main() {
     }
   });
 
+  test('points all in one place are a piece that stays there', () {
+    final pieces = fitCurve(
+      List.filled(5, const Offset(7, 9)),
+      1,
+      directionReach: 6,
+    );
+    expect(pieces, hasLength(1));
+    expect(pieces.single.at(0.5), const Offset(7, 9));
+    expect(pieces.single.stepsWithin(0.25), 1);
+  });
+
   test('the curve carries on in the direction it is given', () {
     final pieces = fitCurve(
       [for (var x = 0.0; x <= 60; x++) Offset(x, 0)],

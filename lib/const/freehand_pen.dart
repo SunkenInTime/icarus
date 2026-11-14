@@ -15,8 +15,9 @@ import 'package:icarus/const/curve_fit.dart';
 ///
 /// It does this while the stroke is drawn. The curve always reaches the
 /// pointer, and the stretch just behind the pointer is still being shaped.
-/// Further back than twice [settleBehind] the ink has settled and never
-/// moves again, so lifting the pointer changes nothing on screen.
+/// Further back along the stroke than twice [settleBehind] the ink has
+/// settled and never moves again, and nothing is left to do when the
+/// pointer lifts: the stroke saved is the one on screen.
 class FreehandPen {
   /// A pen put down at [start]. [unit] is the length of one screen pixel in
   /// the coordinates of the points, at the zoom the stroke is drawn at:
@@ -75,7 +76,9 @@ class FreehandPen {
 
     // The pointer went straight from the last report to this one, as far
     // as anyone knows. Walking it a pixel at a time, settling as it goes,
-    // makes a stroke the same however often the mouse reports.
+    // makes a stroke depend on the path reported and not on how many
+    // reports it came in. (A mouse that reports seldom on a fast curve
+    // reports a coarser path, and that the pen cannot know.)
     var next = unit - _pastLastPoint;
     while (next <= length) {
       _unsettled.add(_pointer + step * (next / length));
