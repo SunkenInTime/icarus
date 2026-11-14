@@ -3769,6 +3769,15 @@
   "@canvasItemEditCaption": {
     "description": "Right-click menu entry on a placed item that has a caption: change it."
   },
+  "canvasItemOpenLink": "Open {address}",
+  "@canvasItemOpenLink": {
+    "description": "Right-click menu entry on a text box whose text holds a web address: opens it in the browser. {address} is that address without https://, such as youtube.com/shorts/H36dywKYmI4; a long one is cut short.",
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
   "canvasItemResetTagToGray": "Reset tag to gray",
   "@canvasItemResetTagToGray": {
     "description": "Right-click menu entry on a text box or image: remove its color tag."

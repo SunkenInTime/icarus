@@ -857,6 +857,7 @@
   "abilityMenuRange": "範囲",
   "canvasItemCreateCaption": "キャプションを作成",
   "canvasItemEditCaption": "キャプションを編集",
+  "canvasItemOpenLink": "{address} を開く",
   "canvasItemResetTagToGray": "タグをグレーに戻す",
   "canvasItemGreenTag": "緑のタグ",
   "canvasItemBlueTag": "青のタグ",

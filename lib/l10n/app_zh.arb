@@ -857,6 +857,7 @@
   "abilityMenuRange": "范围",
   "canvasItemCreateCaption": "添加说明",
   "canvasItemEditCaption": "编辑说明",
+  "canvasItemOpenLink": "打开 {address}",
   "canvasItemResetTagToGray": "重置为灰色标签",
   "canvasItemGreenTag": "绿色标签",
   "canvasItemBlueTag": "蓝色标签",

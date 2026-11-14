@@ -1,0 +1,42 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1280, 760]},
+  {"signIn": true},
+  {"wait": 4},
+  {"waitSignal": "shared", "seconds": 300},
+  {"openShareLink": "{out}/view-code.txt"},
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"expectItem": "note-{run}"},
+  {"logTexts": "reader-start"},
+  {"hoverWords": "https://www.youtube"},
+  {"wait": 1},
+  {"shot": "{out}/reader-0-hover.png"},
+
+  {"tapWords": "https://www.youtube"},
+  {"expectOpened": ["https://www.youtube.com/shorts/H36dywKYmI4"]},
+  {"expectEditing": false},
+  {"expectSelected": 0},
+  {"shot": "{out}/reader-1-click.png"},
+
+  {"tapWords": "Plant default"},
+  {"expectOpened": ["https://www.youtube.com/shorts/H36dywKYmI4"]},
+
+  {"dragWords": "https://www.youtube", "by": [80, 40]},
+  {"expectOpened": ["https://www.youtube.com/shorts/H36dywKYmI4"]},
+  {"logTexts": "reader-after-drag"},
+
+  {"tapWords": "https://www.youtube", "button": "secondary"},
+  {"wait": 1},
+  {"waitText": "Create caption", "gone": true, "seconds": 2},
+  {"expectOpened": ["https://www.youtube.com/shorts/H36dywKYmI4"]},
+  {"shot": "{out}/reader-2-right-click.png"},
+
+  {"tapWords": "https://www.youtube", "touch": true},
+  {"expectOpened": ["https://www.youtube.com/shorts/H36dywKYmI4", "https://www.youtube.com/shorts/H36dywKYmI4"]},
+  {"expectEditing": false},
+  {"shot": "{out}/reader-3-end.png"},
+  {"signal": "reader-done"},
+  {"exit": 1}
+]
