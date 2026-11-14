@@ -126,11 +126,11 @@ void main() {
           'mailto:a@b.co ftp://files.example/x data:text/html,hi '
           'https://user:pw@evil.example';
       expect(textLinks(text), isEmpty);
-      expect(
-        textLinks('WWW.Example.com HTTP://example.org youtu.be/x')
-            .map((uri) => uri.scheme),
-        everyElement(anyOf('http', 'https')),
-      );
+      expect(textLinks('WWW.Example.com HTTP://example.org youtu.be/x'), [
+        Uri.parse('https://WWW.Example.com'),
+        Uri.parse('HTTP://example.org'),
+        Uri.parse('https://youtu.be/x'),
+      ]);
     });
 
     test('the links of a text are listed once each, in order', () {
@@ -219,7 +219,7 @@ void main() {
     expect(launcher.opened, isEmpty);
   });
 
-  testWidgets('a key the window lost while held opens nothing on the way back',
+  testWidgets('a key the app has forgotten opens nothing, though still down',
       (tester) async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -292,6 +292,28 @@ void main() {
     await tester.tapAt(link, buttons: kSecondaryButton);
     await tester.pump();
     expect(launcher.opened, isEmpty);
+
+    // Out and back to where it started is still a drag.
+    final wander = await tester.startGesture(link);
+    await wander.moveBy(const Offset(80, 40));
+    await wander.moveBy(const Offset(-80, -40));
+    await wander.up();
+    // Let go just off the link's last line.
+    final slip = await tester.startGesture(link);
+    await slip.moveBy(const Offset(0, 14));
+    await slip.up();
+    expect(launcher.opened, isEmpty);
+
+    // Two fingers down, one lifted and put back on the link: still a pinch.
+    final held = await tester.startGesture(
+      _wordsPoint(tester, 'Plant default'),
+    );
+    final second = await tester.startGesture(link);
+    await second.up();
+    final again = await tester.startGesture(link);
+    await again.up();
+    expect(launcher.opened, isEmpty);
+    await held.up();
 
     await tester.tapAt(link);
     await tester.pump();

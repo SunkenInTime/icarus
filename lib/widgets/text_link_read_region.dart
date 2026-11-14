@@ -22,8 +22,19 @@ class TextLinkReadRegion extends StatefulWidget {
 class _TextLinkReadRegionState extends State<TextLinkReadRegion> {
   bool _onLink = false;
 
-  /// The press that could still be a click, and where it went down.
-  ({int pointer, Offset at})? _press;
+  /// The press that could still be a click on [link], and where it went
+  /// down.
+  ({int pointer, Offset at, Uri link})? _press;
+
+  /// The pointers held down. Once a second one joins, it's a pinch, and
+  /// nothing is a click again until every one of them is up.
+  final _down = <int>{};
+  bool _pinch = false;
+
+  void _release(int pointer) {
+    _down.remove(pointer);
+    if (_down.isEmpty) _pinch = false;
+  }
 
   Uri? _linkAt(Offset position) {
     final items = widget.items.currentContext?.findRenderObject();
@@ -44,23 +55,40 @@ class _TextLinkReadRegionState extends State<TextLinkReadRegion> {
       onExit: (_) => _setOnLink(false),
       child: Listener(
         behavior: HitTestBehavior.translucent,
-        // A second finger makes it a pinch, and another mouse button isn't a
-        // click on a link.
-        onPointerDown: (event) => _press =
-            _press == null && event.buttons == kPrimaryButton
-                ? (pointer: event.pointer, at: event.position)
-                : null,
-        onPointerCancel: (_) => _press = null,
+        onPointerDown: (event) {
+          _down.add(event.pointer);
+          _press = null;
+          if (_down.length > 1) _pinch = true;
+          // Another mouse button isn't a click on a link.
+          if (_pinch || event.buttons != kPrimaryButton) return;
+          final link = _linkAt(event.position);
+          if (link != null) {
+            _press = (pointer: event.pointer, at: event.position, link: link);
+          }
+        },
+        // A press that wanders is a drag, even if it comes back.
+        onPointerMove: (event) {
+          final press = _press;
+          if (press != null &&
+              press.pointer == event.pointer &&
+              (event.position - press.at).distance > kTouchSlop) {
+            _press = null;
+          }
+        },
+        onPointerCancel: (event) {
+          _press = null;
+          _release(event.pointer);
+        },
         onPointerUp: (event) {
           final press = _press;
           _press = null;
+          _release(event.pointer);
           if (press == null ||
               press.pointer != event.pointer ||
-              (event.position - press.at).distance > kTouchSlop) {
+              _linkAt(event.position) != press.link) {
             return;
           }
-          final link = _linkAt(press.at);
-          if (link != null) unawaited(openTextLink(link));
+          unawaited(openTextLink(press.link));
         },
         child: const SizedBox.expand(),
       ),
