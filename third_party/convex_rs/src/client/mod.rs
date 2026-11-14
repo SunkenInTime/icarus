@@ -452,8 +452,9 @@ impl ConvexClient {
     /// Whether the server keeps refusing this client's auth. It turns true
     /// once the server has refused the token from the auth callback (or set
     /// with [`ConvexClient::set_auth`]) several times in a row, and false
-    /// again once it accepts one. The client keeps retrying either way, with
-    /// longer waits while refused.
+    /// again once it accepts one or new auth is set. New auth the server
+    /// refuses too turns it true again on that first refusal. The client keeps
+    /// retrying either way, with longer waits while refused.
     pub fn watch_auth_refused(&self) -> watch::Receiver<bool> {
         self.auth_refused.clone()
     }

@@ -596,6 +596,10 @@ class AuthProvider extends Notifier<AppAuthState> {
   /// its setup is the latest.
   int _convexAuthSetups = 0;
 
+  /// The user asked to try again; the next setup to start clears the
+  /// incident so the server judges the session afresh.
+  bool _retryRequested = false;
+
   /// Whether this run ever gave Convex a token. Until it has, there is no
   /// auth to clear, and clearing it would open the Convex socket for a
   /// signed-out user who never asked for the cloud.
@@ -1546,6 +1550,7 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   Future<void> reinitializeConvexAuth({String source = 'manual'}) async {
+    _retryRequested = true;
     await _configureConvexAuth(trigger: 'reinitialize:$source');
   }
 
@@ -1774,6 +1779,14 @@ class AuthProvider extends Notifier<AppAuthState> {
       clearError: true,
     );
 
+    // A retry asks the server to judge the session again, so a refusal of
+    // an earlier try doesn't stand for it: if the server refuses again, that
+    // is a new incident, and the prompt says so again. Cleared as the retry
+    // starts, not when asked for, since it may wait for a setup still running.
+    if (_retryRequested) {
+      _retryRequested = false;
+      _clearAuthIncident();
+    }
     final setup = ++_convexAuthSetups;
     final incidentBeforeSetup = state.activeAuthIncidentId;
     try {
@@ -1986,8 +1999,8 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   void _clearAuthIncident() {
-    // The session is accepted again, or ended: a prompt still asking about
-    // it would say the connection is lost while it isn't.
+    // The session is accepted again, ended, or about to be judged again on
+    // a retry: a prompt still asking about it would say more than is known.
     final prompt = _incidentPromptContext;
     if (prompt != null &&
         prompt.mounted &&
@@ -2068,7 +2081,9 @@ class AuthProvider extends Notifier<AppAuthState> {
 
       switch (action) {
         case _AuthIncidentAction.retry:
-          await reinitializeConvexAuth(source: 'incident_prompt_retry');
+          // Not awaited: this prompt is closed, and the retry's setup can run
+          // for half a minute. A refusal meanwhile prompts again.
+          unawaited(reinitializeConvexAuth(source: 'incident_prompt_retry'));
           break;
         case _AuthIncidentAction.signOut:
           if (navCtx.mounted) {
