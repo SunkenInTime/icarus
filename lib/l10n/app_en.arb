@@ -3769,9 +3769,13 @@
   "@canvasItemEditCaption": {
     "description": "Right-click menu entry on a placed item that has a caption: change it."
   },
+  "canvasItemOpenTheLink": "Open link",
+  "@canvasItemOpenTheLink": {
+    "description": "Right-click menu entry on a text box whose text holds one web address: opens it in the browser."
+  },
   "canvasItemOpenLink": "Open {address}",
   "@canvasItemOpenLink": {
-    "description": "Right-click menu entry on a text box whose text holds a web address: opens it in the browser. {address} is that address without https://, such as youtube.com/shorts/H36dywKYmI4; a long one is cut short.",
+    "description": "Right-click menu entry on a text box whose text holds more than one web address, one entry for each: opens it in the browser. {address} is that address without https://, such as youtube.com/shorts/H36dywKYmI4; a long one is cut short.",
     "placeholders": {
       "address": {
         "type": "String"
