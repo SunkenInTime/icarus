@@ -819,6 +819,8 @@
   "shapeToolsColorMenu": "色",
   "shapeToolsCustomColorTitle": "カスタムカラー",
   "shapeToolsCustomColorMenu": "カスタムカラー…",
+  "shapeToolsOpacityMenu": "不透明度",
+  "shapeToolsOpacityPercent": "{percent}%",
   "shapeToolsColorWhite": "白",
   "shapeToolsColorRed": "赤",
   "shapeToolsColorBlue": "青",

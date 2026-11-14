@@ -819,6 +819,8 @@
   "shapeToolsColorMenu": "颜色",
   "shapeToolsCustomColorTitle": "自定义颜色",
   "shapeToolsCustomColorMenu": "自定义颜色…",
+  "shapeToolsOpacityMenu": "不透明度",
+  "shapeToolsOpacityPercent": "{percent}%",
   "shapeToolsColorWhite": "白色",
   "shapeToolsColorRed": "红色",
   "shapeToolsColorBlue": "蓝色",

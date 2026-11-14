@@ -270,6 +270,38 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     state = newState;
   }
 
+  /// How strong a placed circle, rectangle or zone is drawn, in percent.
+  void updateCustomShapeOpacity({
+    required String id,
+    required int opacityPercent,
+  }) {
+    if (!ref.canEditPages) return;
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+
+    final utility = newState[index];
+    if (!UtilityData.isCustomShape(utility.type) ||
+        utility.customOpacityPercent == opacityPercent) {
+      return;
+    }
+
+    final before = ActionObjectState.utility(utility);
+    utility.customOpacityPercent = opacityPercent;
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.utility,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.utility(utility),
+            ),
+          ),
+        );
+    state = newState;
+  }
+
   void updateRotationHistory(int index) {
     if (index < 0 || index >= state.length) return;
     _pendingEditBefore[state[index].id] =

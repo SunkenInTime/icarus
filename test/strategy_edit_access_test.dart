@@ -523,6 +523,9 @@ final _guardedEdits = <String, FutureOr<void> Function(ProviderContainer)>{
   'recolor a custom shape': (c) => c
       .read(utilityProvider.notifier)
       .updateCustomShapeColor(id: 'circle', colorValue: 0xFF00FF00),
+  'fade a custom shape': (c) => c
+      .read(utilityProvider.notifier)
+      .updateCustomShapeOpacity(id: 'circle', opacityPercent: 60),
   'resize agents': (c) =>
       c.read(strategySettingsProvider.notifier).updateAgentSize(40),
   'resize abilities': (c) =>

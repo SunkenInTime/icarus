@@ -112,6 +112,9 @@
 //                                      item's middle has to be in view
 //   {"expectOnMapLine": id}            fails unless the agent or ability's dot is
 //                                      on a line the map draws; logs how far off
+//   {"expectOpacity": id, "percent": n, "seconds": s?}
+//                                      fails unless the shape is drawn at n
+//                                      percent, waiting up to s seconds for it
 //   {"expectDead": n}                  fails unless n agents on the page are dead
 //   {"expectItem": id, "gone": b?}     fails unless the item is on the page, or
 //                                      with gone, unless it is not
@@ -1595,6 +1598,21 @@ Future<void> _run(Map<String, dynamic> step) async {
       if (items.isEmpty != (step['gone'] == true)) {
         throw StateError('$value is $at');
       }
+    case 'expectOpacity':
+      int? opacity() => c
+          .read(utilityProvider)
+          .where((utility) => utility.id == value)
+          .firstOrNull
+          ?.customOpacityPercent;
+      try {
+        await _waitFor(
+          () => opacity() == step['percent'],
+          (step['seconds'] ?? 0) as num,
+        );
+      } on TimeoutException {
+        throw StateError('$value is at ${opacity()}%, not ${step['percent']}%');
+      }
+      _log('OPACITY $value ${opacity()}%');
     case 'expectDead':
       final dead = c
           .read(agentProvider)

@@ -80,4 +80,41 @@ void main() {
         );
     expect(container.read(actionProvider), hasLength(1));
   });
+
+  test('undoing an opacity change keeps a colour picked after it', () {
+    final container = ProviderContainer(
+      overrides: [
+        strategyProvider.overrideWith(_NoopStrategyProvider.new),
+      ],
+    );
+    addTearDown(container.dispose);
+    final utilities = container.read(utilityProvider.notifier);
+    utilities.fromHive([
+      PlacedUtility(
+        type: UtilityType.customRectangle,
+        position: const Offset(100, 120),
+        id: 'zone',
+        customWidth: 8,
+        customLength: 12,
+        customColorValue: 0xff8b5cf6,
+        customOpacityPercent: 30,
+        isZone: true,
+      ),
+    ]);
+    PlacedUtility zone() => container.read(utilityProvider).single;
+
+    utilities.updateCustomShapeOpacity(id: 'zone', opacityPercent: 60);
+    expect(zone().customOpacityPercent, 60);
+    expect(container.read(strategyProvider).isSaved, isFalse);
+
+    container.read(actionProvider.notifier).undoAction();
+    expect(zone().customOpacityPercent, 30);
+    container.read(actionProvider.notifier).redoAction();
+    expect(zone().customOpacityPercent, 60);
+    expect(zone().isZone, isTrue);
+
+    // The same value again is no edit, so it leaves nothing to undo.
+    utilities.updateCustomShapeOpacity(id: 'zone', opacityPercent: 60);
+    expect(container.read(actionProvider), hasLength(1));
+  });
 }
