@@ -54,6 +54,12 @@ class Settings {
   static const Color abilityBGColor = Color(0xFF1B1B1B);
   static const double feedbackOpacity = 0.7;
 
+  // The dot at a smoke's center, for lining it up against a wall (virtual
+  // units). Light with a dark rim so it shows on every agent's smoke art.
+  static const double smokeCenterDotSize = 2.5;
+  static const Color smokeCenterDotFill = Color(0x8CFFFFFF);
+  static const Color smokeCenterDotRim = Color(0x66000000);
+
   // Custom shape edit handles (virtual units). Tune here, not in the widgets:
   // - thickness/length size the visible resize pills and the circle's arc,
   // - hitPadding is the extra invisible grab area added around every handle,
