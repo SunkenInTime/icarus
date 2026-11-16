@@ -125,7 +125,7 @@ class CommunityRepository {
                   post: post,
                   status: _status(item.status),
                   sourceStrategyPublicId: item.sourceStrategyPublicId,
-                  saveCount: item.saveCount.toInt(),
+                  copyCount: item.copyCount.toInt(),
                   updatedAt: _dateTime(item.updatedAt),
                 ),
           ],
@@ -234,12 +234,12 @@ class CommunityRepository {
 
   /// Copies the post into the signed-in user's library as [publicId].
   /// Retrying with the same [publicId] reuses the copy already made.
-  Future<void> saveCopy({
+  Future<void> copyPost({
     required String postPublicId,
     required String publicId,
     String? folderPublicId,
   }) async {
-    await _api.community.saveCopy(
+    await _api.community.copyPost(
       clientProtocolVersion: _protocol,
       postPublicId: postPublicId,
       publicId: publicId,
@@ -261,6 +261,18 @@ class CommunityRepository {
           ? const ConvexOptional.absent()
           : ConvexOptional.present(trimmed),
     );
+  }
+
+  /// The posts hidden by reports and waiting for a reviewer, kept current.
+  /// Reviewers only; only they watch it, so it costs next to nothing.
+  Stream<List<CommunityReviewItem>> watchForReview() {
+    return _api.community.listForReview().watch().map(
+          (items) => [
+            for (final item in items)
+              if (_post(item.post) case final post?)
+                (post: post, reportCount: item.reportCount.toInt()),
+          ],
+        );
   }
 
   Future<List<CommunityReportGroup>> fetchReports(String postPublicId) async {

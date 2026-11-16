@@ -170,7 +170,7 @@ typedef MyCommunityPost = ({
   CommunityPost post,
   CommunityPostStatus status,
   String sourceStrategyPublicId,
-  int saveCount,
+  int copyCount,
   DateTime updatedAt,
 });
 
@@ -206,6 +206,10 @@ typedef PostableStrategy = ({
   /// The post already made from it, if any.
   String? postPublicId,
 });
+
+/// A hidden post waiting for a reviewer. [post] opens through the link
+/// only reviewers are given.
+typedef CommunityReviewItem = ({CommunityPost post, int reportCount});
 
 /// A copy of a post the signed-in user made in their library.
 typedef CommunityCopy = ({String strategyPublicId, String postPublicId});

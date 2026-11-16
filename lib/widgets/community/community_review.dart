@@ -8,6 +8,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/community_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/widgets/community/open_community_post.dart';
 import 'package:icarus/widgets/dialogs/community/report_post_dialog.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/loading_spinner.dart';
@@ -155,7 +156,8 @@ class _CommunityReviewActionsState
       await ref
           .read(communityRepositoryProvider)
           .review(widget.post.publicId, decision);
-      // The feed was read while the post was out of it.
+      // The list of posts waiting follows the server; the feed was read
+      // while the post was out of it.
       final feed = ref.read(communityFeedProvider.notifier);
       if (decision == CommunityReviewDecision.restore) {
         unawaited(feed.refresh());
@@ -257,6 +259,184 @@ class _CommunityReviewActionsState
           child: Text(l10n.communityReviewRemove),
         ),
       ],
+    );
+  }
+}
+
+/// What reviewers see beside the Post button: how many posts reports have
+/// hidden, and the list of them. Each opens with its reports and the
+/// reviewer's choices. Nobody else sees it.
+class CommunityReviewButton extends ConsumerStatefulWidget {
+  const CommunityReviewButton({super.key, required this.height});
+
+  final double height;
+
+  @override
+  ConsumerState<CommunityReviewButton> createState() =>
+      _CommunityReviewButtonState();
+}
+
+class _CommunityReviewButtonState extends ConsumerState<CommunityReviewButton> {
+  final _popover = ShadPopoverController();
+
+  @override
+  void dispose() {
+    _popover.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+    final l10n = context.l10n;
+    final isReviewer =
+        ref.watch(communityViewerProvider).valueOrNull?.isReviewer ?? false;
+    if (!isReviewer) return const SizedBox.shrink();
+    final queue = ref.watch(communityReviewQueueProvider);
+    final waiting = queue.valueOrNull ?? const [];
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ShadPopover(
+        controller: _popover,
+        padding: const EdgeInsets.all(6),
+        anchor: const ShadAnchor(
+          offset: Offset(0, 6),
+          childAlignment: Alignment.topRight,
+          overlayAlignment: Alignment.bottomRight,
+        ),
+        popover: (context) => SizedBox(
+          width: 320,
+          child: waiting.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Text(
+                    queue.hasError
+                        ? l10n.communityReviewQueueFailed
+                        : l10n.communityReviewQueueEmpty,
+                    style: TextStyle(color: theme.mutedForeground),
+                  ),
+                )
+              : ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 320),
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final item in waiting)
+                        _ReviewRow(
+                          key: ValueKey(
+                            'community-review-${item.post.publicId}',
+                          ),
+                          item: item,
+                          onTap: () {
+                            _popover.hide();
+                            openCommunityPost(
+                              ref,
+                              item.post,
+                              underReview: true,
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+        ),
+        child: ShadButton.secondary(
+          key: const ValueKey('community-review-button'),
+          height: widget.height,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          gap: 8,
+          onPressed: _popover.toggle,
+          leading: const Icon(LucideIcons.flag, size: 16),
+          trailing: waiting.isEmpty
+              ? null
+              : Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: theme.destructive,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${waiting.length}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: theme.destructiveForeground,
+                    ),
+                  ),
+                ),
+          child: Text(l10n.communityReviewButton),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReviewRow extends StatefulWidget {
+  const _ReviewRow({super.key, required this.item, required this.onTap});
+
+  final CommunityReviewItem item;
+  final VoidCallback onTap;
+
+  @override
+  State<_ReviewRow> createState() => _ReviewRowState();
+}
+
+class _ReviewRowState extends State<_ReviewRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+    final post = widget.item.post;
+    return Semantics(
+      button: true,
+      label: post.title,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: Container(
+            height: 50,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: _hovered ? theme.secondary : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  post.title,
+                  textAlign: TextAlign.start,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: theme.foreground,
+                  ),
+                ),
+                Text(
+                  [
+                    if (post.authorName case final name?) name,
+                    context.l10n.communityReviewHiddenAfter(
+                      widget.item.reportCount,
+                    ),
+                  ].join(' · '),
+                  textAlign: TextAlign.start,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: theme.mutedForeground),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

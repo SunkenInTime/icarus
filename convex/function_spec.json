@@ -25,6 +25,78 @@
     {
       "args": {
         "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "folderPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "postPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "publicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "community.js:copyPost",
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "object",
+            "value": {
+              "ok": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": true
+                },
+                "optional": false
+              }
+            }
+          },
+          {
+            "type": "object",
+            "value": {
+              "ok": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": true
+                },
+                "optional": false
+              },
+              "reused": {
+                "fieldType": {
+                  "type": "literal",
+                  "value": true
+                },
+                "optional": false
+              }
+            }
+          }
+        ]
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
         "value": {}
       },
       "functionType": "Mutation",
@@ -572,6 +644,12 @@
         "value": {
           "type": "object",
           "value": {
+            "copyCount": {
+              "fieldType": {
+                "type": "number"
+              },
+              "optional": false
+            },
             "post": {
               "fieldType": {
                 "type": "object",
@@ -688,12 +766,6 @@
                     "optional": false
                   }
                 }
-              },
-              "optional": false
-            },
-            "saveCount": {
-              "fieldType": {
-                "type": "number"
               },
               "optional": false
             },
@@ -1489,78 +1561,6 @@
             "optional": false
           }
         }
-      },
-      "visibility": {
-        "kind": "public"
-      }
-    },
-    {
-      "args": {
-        "type": "object",
-        "value": {
-          "clientProtocolVersion": {
-            "fieldType": {
-              "type": "number"
-            },
-            "optional": false
-          },
-          "folderPublicId": {
-            "fieldType": {
-              "type": "string"
-            },
-            "optional": true
-          },
-          "postPublicId": {
-            "fieldType": {
-              "type": "string"
-            },
-            "optional": false
-          },
-          "publicId": {
-            "fieldType": {
-              "type": "string"
-            },
-            "optional": false
-          }
-        }
-      },
-      "functionType": "Mutation",
-      "identifier": "community.js:saveCopy",
-      "returns": {
-        "type": "union",
-        "value": [
-          {
-            "type": "object",
-            "value": {
-              "ok": {
-                "fieldType": {
-                  "type": "literal",
-                  "value": true
-                },
-                "optional": false
-              }
-            }
-          },
-          {
-            "type": "object",
-            "value": {
-              "ok": {
-                "fieldType": {
-                  "type": "literal",
-                  "value": true
-                },
-                "optional": false
-              },
-              "reused": {
-                "fieldType": {
-                  "type": "literal",
-                  "value": true
-                },
-                "optional": false
-              }
-            }
-          }
-        ]
       },
       "visibility": {
         "kind": "public"

@@ -120,7 +120,7 @@ Future<void> copyCommunityPost(
   try {
     if (signedIn) {
       final publicId = const Uuid().v4();
-      await ref.read(communityRepositoryProvider).saveCopy(
+      await ref.read(communityRepositoryProvider).copyPost(
             postPublicId: post.publicId,
             publicId: publicId,
           );

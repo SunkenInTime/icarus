@@ -384,8 +384,8 @@ export default defineSchema({
       v.literal("removed"),
     ),
     starCount: v.number(),
-    saveCount: v.number(),
-    // Stars and saves from the last week (see refreshTrending).
+    copyCount: v.number(),
+    // Stars and copies from the last week (see refreshTrending).
     trendScore: v.number(),
     reportCount: v.number(),
     publishedAt: v.number(),
@@ -427,7 +427,7 @@ export default defineSchema({
       searchField: "searchText",
       filterFields: ["status", "mapData"],
     }),
-  // One row per (post, account) that starred it, or saved a copy of it.
+  // One row per (post, account) that starred it.
   communityStars: defineTable({
     postId: v.id("communityPosts"),
     // So an account's stars are listed without reading their posts.
@@ -438,30 +438,27 @@ export default defineSchema({
     .index("by_postId_and_userId", ["postId", "userId"])
     .index("by_userId", ["userId"])
     .index("by_createdAt", ["createdAt"]),
-  communitySaves: defineTable({
-    postId: v.id("communityPosts"),
-    userId: v.id("users"),
-    createdAt: v.number(),
-  })
-    .index("by_postId_and_userId", ["postId", "userId"])
-    .index("by_createdAt", ["createdAt"]),
   // Each copy of a post someone made in their library: which post it came
   // from, so the post can open their copy and the library can say where the
-  // copy came from. Counting (communitySaves) is separate: a copy counts
-  // once per account, but every copy is recorded here.
+  // copy came from. Only an account's first copy of someone else's post is
+  // counted, in the post's copy count and in trending.
   communityCopies: defineTable({
     userId: v.id("users"),
     postId: v.id("communityPosts"),
     postPublicId: v.string(),
     strategyPublicId: v.string(),
+    counted: v.boolean(),
     createdAt: v.number(),
-  }).index("by_userId_and_createdAt", ["userId", "createdAt"]),
-  // A star, unstar or save not yet folded into its post's counts. Writers
+  })
+    .index("by_userId_and_createdAt", ["userId", "createdAt"])
+    .index("by_postId_and_userId", ["postId", "userId"])
+    .index("by_counted_and_createdAt", ["counted", "createdAt"]),
+  // A star, unstar or copy not yet folded into its post's counts. Writers
   // only insert, so two people starring one post never collide.
   communityCountChanges: defineTable({
     postId: v.id("communityPosts"),
     stars: v.number(),
-    saves: v.number(),
+    copies: v.number(),
   }),
   communityReports: defineTable({
     postId: v.id("communityPosts"),

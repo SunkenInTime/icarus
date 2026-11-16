@@ -1170,6 +1170,10 @@ class _SortButton extends ConsumerWidget {
     const theme = Settings.tacticalVioletTheme;
     final l10n = context.l10n;
     final sort = ref.watch(communityFilterProvider.select((f) => f.sort));
+    // Words are searched best match first, whatever the sort.
+    final searching = ref.watch(
+      communityFilterProvider.select((f) => f.text.trim().isNotEmpty),
+    );
     String label(CommunitySort value) => switch (value) {
           CommunitySort.trending => l10n.communitySortTrending,
           CommunitySort.newest => l10n.communitySortNewest,
@@ -1229,10 +1233,11 @@ class _SortButton extends ConsumerWidget {
         decoration: ShadDecoration(
           border: ShadBorder(radius: BorderRadius.circular(8)),
         ),
+        enabled: !searching,
         onPressed: menu.toggle,
         leading: const Icon(LucideIcons.arrowDownWideNarrow, size: 16),
         child: Text(
-          label(sort),
+          searching ? l10n.communitySortBestMatch : label(sort),
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
       ),

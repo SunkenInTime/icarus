@@ -29,7 +29,7 @@ const publish = makeFunctionReference<"mutation">("community:publish");
 const updatePost = makeFunctionReference<"mutation">("community:updatePost");
 const takeDown = makeFunctionReference<"mutation">("community:takeDown");
 const setStar = makeFunctionReference<"mutation">("community:setStar");
-const saveCopy = makeFunctionReference<"mutation">("community:saveCopy");
+const copyPost = makeFunctionReference<"mutation">("community:copyPost");
 const report = makeFunctionReference<"mutation">("community:report");
 const review = makeFunctionReference<"mutation">("community:review");
 const listPosts = makeFunctionReference<"query">("community:listPosts");
@@ -365,13 +365,13 @@ describe("posting", () => {
     await settle(harness);
   });
 
-  test("taking a post down ends its link and leaves saved copies", async () => {
+  test("taking a post down ends its link and leaves people's copies", async () => {
     const harness = await createHarness();
     const { t, as } = harness;
     await seedStrategy(harness, "author", "source");
     const postId = await post(harness, "author", "source");
     const card = (await t.query(getPost, { postPublicId: postId })).post;
-    await as("reader").mutation(saveCopy, {
+    await as("reader").mutation(copyPost, {
       ...protocol,
       postPublicId: postId,
       publicId: "reader-copy",
@@ -450,7 +450,7 @@ describe("the feed", () => {
     ]);
   });
 
-  test("stars and saves reach the counts and trending in batches", async () => {
+  test("stars and copies reach the counts and trending in batches", async () => {
     const harness = await createHarness();
     const { t, as } = harness;
     await seedStrategy(harness, "author", "quiet");
@@ -484,7 +484,7 @@ describe("the feed", () => {
       postPublicId: quiet,
       starred: false,
     });
-    await as("third").mutation(saveCopy, {
+    await as("third").mutation(copyPost, {
       ...protocol,
       postPublicId: quiet,
       publicId: "third-copy",
@@ -509,7 +509,7 @@ describe("the feed", () => {
     expect(
       mine.find((entry: { post: { publicId: string } }) =>
         entry.post.publicId === quiet,
-      ).saveCount,
+      ).copyCount,
     ).toBe(1);
 
     await expect(feed(harness, { sort: "top" })).resolves.toEqual([
@@ -525,27 +525,27 @@ describe("the feed", () => {
     ]);
   });
 
-  test("a saved copy lands in the reader's library as theirs", async () => {
+  test("a copy lands in the reader's library as theirs", async () => {
     const harness = await createHarness();
     const { t, as } = harness;
     await seedStrategy(harness, "author", "source", { agents: ["jett"] });
     const postId = await post(harness, "author", "source", "Posted name");
 
     await expect(
-      t.mutation(saveCopy, {
+      t.mutation(copyPost, {
         ...protocol,
         postPublicId: postId,
         publicId: "anon-copy",
       }),
     ).rejects.toThrow("Unauthenticated");
-    await as("reader").mutation(saveCopy, {
+    await as("reader").mutation(copyPost, {
       ...protocol,
       postPublicId: postId,
       publicId: "reader-copy",
     });
     // A retry of the same save is safe.
     await expect(
-      as("reader").mutation(saveCopy, {
+      as("reader").mutation(copyPost, {
         ...protocol,
         postPublicId: postId,
         publicId: "reader-copy",
@@ -566,7 +566,7 @@ describe("the feed", () => {
     await seedStrategy(harness, "author", "source");
     const postId = await post(harness, "author", "source");
     for (const publicId of ["first-copy", "second-copy"]) {
-      await as("reader").mutation(saveCopy, {
+      await as("reader").mutation(copyPost, {
         ...protocol,
         postPublicId: postId,
         publicId,
@@ -591,7 +591,7 @@ describe("the feed", () => {
     // Two copies still count once.
     await t.mutation(foldCountChanges, {});
     const [mine] = await as("author").query(listMine, {});
-    expect(mine.saveCount).toBe(1);
+    expect(mine.copyCount).toBe(1);
     await settle(harness);
   });
 
@@ -685,6 +685,17 @@ describe("reports", () => {
     const queue = await as("reviewer").query(listForReview, {});
     expect(queue).toHaveLength(1);
     expect(queue[0]).toMatchObject({ reportCount: 3, post: { title: "Reported" } });
+    expect(queue[0].post.shareToken).toBe(reviewed.post.shareToken);
+    // What was reported stays as it was until a reviewer decides.
+    for (const change of [{ refresh: true }, { title: "Cleaned up" }]) {
+      await expect(
+        as("author").mutation(updatePost, {
+          ...protocol,
+          postPublicId: postId,
+          ...change,
+        }),
+      ).rejects.toThrow("being reviewed");
+    }
     await expect(
       as("reviewer").query(getReports, { postPublicId: postId }),
     ).resolves.toEqual([

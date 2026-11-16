@@ -1351,7 +1351,7 @@
   "communityPostedChanged": "发布后你修改过这个战术。帖子仍显示{when}的样子。",
   "communityPostedSame": "帖子显示的是这个战术{when}的样子。",
   "communityPostedSourceDeleted": "你已删除这个战术。帖子会一直公开，直到你撤下它。",
-  "communityPostedHidden": "此帖子因被举报而隐藏，正在等待审核。",
+  "communityPostedHidden": "此帖子因被举报而隐藏，正在等待审核。审核结束前无法修改。",
   "communityUpdatePost": "更新帖子",
   "communityPostUpdated": "帖子已更新",
   "communityPostUpdateFailed": "无法更新帖子，请重试。",
@@ -1387,5 +1387,12 @@
   "communityNoStarsSubtitle": "给帖子加星标，就会保留在这里。",
   "communityOpenThePost": "打开帖子",
   "communityCopyBadge": "来自社区",
-  "communityCopyBadgeTooltip": "你的社区帖子副本"
+  "communityCopyBadgeTooltip": "你的社区帖子副本",
+  "communitySortBestMatch": "最相关",
+  "communityReviewButton": "审核",
+  "communityReviewQueueEmpty": "没有待审核的帖子",
+  "communityReviewQueueFailed": "无法加载待审核的帖子。",
+  "communityPausedTitle": "目前没有匹配的帖子",
+  "communityPausedSubtitle": "只检查了社区的一部分。",
+  "communityKeepLooking": "继续查找"
 }

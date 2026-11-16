@@ -14,10 +14,6 @@ import 'package:icarus/widgets/community/open_community_post.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// How long a feed read this session is shown as it was before the tab
-/// reads it again on the next visit.
-const _feedFreshFor = Duration(minutes: 5);
-
 /// The Community tab: posts as cards, and one search bar floating at the
 /// foot. Nothing else sits above the cards.
 class CommunityTab extends ConsumerStatefulWidget {
@@ -45,21 +41,43 @@ class _CommunityTabState extends ConsumerState<CommunityTab> {
     }
   }
 
+  /// Coming back to the app reads an old feed again, unless the reader is
+  /// part-way down it: the cards under them stay where they are.
+  late final _lifecycle = AppLifecycleListener(
+    onResume: () {
+      if (_scroll.hasClients && _scroll.offset > 200) return;
+      unawaited(ref.read(communityFeedProvider.notifier).refreshIfStale());
+    },
+  );
+
   @override
   void initState() {
     super.initState();
+    _lifecycle;
     _scroll.addListener(_maybeLoadMore);
-    final feed = ref.read(communityFeedProvider);
-    final readAt = feed.fetchedAt;
-    if (readAt != null && DateTime.now().difference(readAt) > _feedFreshFor) {
-      Future.microtask(ref.read(communityFeedProvider.notifier).refresh);
-    }
+    Future.microtask(ref.read(communityFeedProvider.notifier).refreshIfStale);
   }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  /// Reads another page when the cards on screen leave room below them: a
+  /// tall window, or a page that matched few posts.
+  void _fillIfShort() {
+    if (!mounted || !_scroll.hasClients) return;
+    final feed = ref.read(communityFeedProvider);
+    if (feed.loading || feed.paused || feed.error != null || !feed.hasMore) {
+      return;
+    }
+    if (_scroll.position.extentAfter < 600) {
+      unawaited(
+        ref.read(communityFeedProvider.notifier).loadMore(byUser: false),
+      );
+    }
   }
 
   void _maybeLoadMore() {
@@ -148,6 +166,14 @@ class _CommunityTabState extends ConsumerState<CommunityTab> {
         title: l10n.communityNoStarsTitle,
         subtitle: l10n.communityNoStarsSubtitle,
       );
+    } else if (feed.posts.isEmpty && feed.paused) {
+      child = _FeedMessage(
+        key: const ValueKey('community-paused'),
+        icon: LucideIcons.search,
+        title: l10n.communityPausedTitle,
+        subtitle: l10n.communityPausedSubtitle,
+        action: _keepLooking(),
+      );
     } else if (feed.posts.isEmpty) {
       final filtered = !feed.filter.isEmpty;
       child = _FeedMessage(
@@ -169,8 +195,17 @@ class _CommunityTabState extends ConsumerState<CommunityTab> {
     );
   }
 
+  Widget _keepLooking() {
+    return ShadButton.secondary(
+      key: const ValueKey('community-keep-looking'),
+      onPressed: ref.read(communityFeedProvider.notifier).loadMore,
+      child: Text(context.l10n.communityKeepLooking),
+    );
+  }
+
   Widget _grid(CommunityFeedState feed) {
     final stars = ref.watch(communityStarsProvider);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fillIfShort());
     return LayoutBuilder(
       key: const ValueKey('community-grid'),
       builder: (context, constraints) {
@@ -181,7 +216,7 @@ class _CommunityTabState extends ConsumerState<CommunityTab> {
             SliverPadding(
               // The cards' own gutter makes up the rest, as in My Library;
               // the foot leaves room to scroll the last row clear of the bar.
-              padding: const EdgeInsets.fromLTRB(6, 6, 6, 110),
+              padding: EdgeInsets.fromLTRB(6, 6, 6, feed.paused ? 16 : 110),
               sliver: SliverGrid(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
@@ -203,6 +238,25 @@ class _CommunityTabState extends ConsumerState<CommunityTab> {
                 ),
               ),
             ),
+            if (feed.paused)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 110),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        context.l10n.communityPausedSubtitle,
+                        style: TextStyle(
+                          color: Settings.tacticalVioletTheme.mutedForeground,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _keepLooking(),
+                    ],
+                  ),
+                ),
+              ),
             if (feed.loading && feed.posts.isNotEmpty)
               const SliverToBoxAdapter(child: SizedBox(height: 1)),
           ],

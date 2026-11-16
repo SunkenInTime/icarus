@@ -25,6 +25,7 @@ class CommunityFeedState {
     this.loading = false,
     this.error,
     this.fetchedAt,
+    this.paused = false,
   });
 
   final CommunityFilter filter;
@@ -41,6 +42,11 @@ class CommunityFeedState {
   /// When the first page of [posts] was read: star counts are as of then.
   final DateTime? fetchedAt;
 
+  /// Several pages in a row were read without filling the screen, so the
+  /// rest waits to be asked for. Filters the server applies after reading a
+  /// page can match a few posts in thousands.
+  final bool paused;
+
   bool get hasMore => !started || nextCursor != null;
 
   /// The first page has not arrived yet.
@@ -56,6 +62,7 @@ class CommunityFeedState {
     Object? error,
     bool clearError = false,
     DateTime? fetchedAt,
+    bool? paused,
   }) {
     return CommunityFeedState(
       filter: filter,
@@ -65,19 +72,27 @@ class CommunityFeedState {
       loading: loading ?? this.loading,
       error: clearError ? null : error ?? this.error,
       fetchedAt: fetchedAt ?? this.fetchedAt,
+      paused: paused ?? this.paused,
     );
   }
 }
 
 /// Reads the feed once per page and never watches it, so readers cost the
 /// server nothing between pages. Feeds already read this session are kept,
-/// so going back to a filter shows it at once and reads nothing; pulling to
-/// [refresh] reads it again.
+/// so going back to a filter shows it at once and reads nothing until it
+/// is [freshFor] old, when it is read again.
 class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
   /// Fewer cards than this after a page and the next page is read straight
   /// away, so a narrow filter still fills the screen.
   static const fillTarget = 15;
   static const _keptFeeds = 12;
+
+  /// How long a feed is shown as it was read.
+  static const freshFor = Duration(minutes: 5);
+
+  /// Pages read in a row without being asked before the feed pauses.
+  static const maxUnaskedPages = 5;
+  int _unaskedPages = 0;
 
   final _kept = <CommunityFilter, CommunityFeedState>{};
   int _generation = 0;
@@ -101,7 +116,7 @@ class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
     }
     _generation++;
     final kept = _kept.remove(filter);
-    if (kept != null && kept.error == null && !kept.loading) {
+    if (kept != null && kept.error == null && !kept.loading && !_stale(kept)) {
       _kept[filter] = kept;
       return kept;
     }
@@ -110,12 +125,37 @@ class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
     return fresh;
   }
 
+  bool _stale(CommunityFeedState feed) {
+    final readAt = feed.fetchedAt;
+    return readAt != null && DateTime.now().difference(readAt) > freshFor;
+  }
+
+  /// Reads the feed again if it was read more than [freshFor] ago.
+  Future<void> refreshIfStale() async {
+    if (_stale(state) && !state.loading) await refresh();
+  }
+
   /// Reads the next page, unless one is already being read or there is none.
-  Future<void> loadMore() async {
+  /// A page the user didn't ask for (not [byUser]: filling the screen) is
+  /// only read [maxUnaskedPages] times in a row, then the feed is [paused].
+  Future<void> loadMore({bool byUser = true}) async {
     final current = state;
     if (current.loading || !current.hasMore) return;
+    if (byUser) {
+      _unaskedPages = 0;
+    } else if (_unaskedPages >= maxUnaskedPages) {
+      if (!current.paused) state = current.copyWith(paused: true);
+      return;
+    } else {
+      _unaskedPages++;
+    }
     final generation = _generation;
-    state = current.copyWith(loading: true, started: true, clearError: true);
+    state = current.copyWith(
+      loading: true,
+      started: true,
+      clearError: true,
+      paused: false,
+    );
     try {
       final page = await ref
           .read(communityRepositoryProvider)
@@ -136,7 +176,7 @@ class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
       state = next;
       _keep(next);
       if (next.posts.length < fillTarget && next.nextCursor != null) {
-        unawaited(loadMore());
+        unawaited(loadMore(byUser: false));
       }
     } catch (error, stackTrace) {
       if (generation != _generation) return;
@@ -292,6 +332,16 @@ final myCommunityPostsProvider = StreamProvider<List<MyCommunityPost>>((ref) {
 final myPostsByStrategyProvider = Provider<Map<String, MyCommunityPost>>((ref) {
   final mine = ref.watch(myCommunityPostsProvider).valueOrNull ?? const [];
   return {for (final post in mine) post.sourceStrategyPublicId: post};
+});
+
+/// The posts waiting for a reviewer, kept current. Empty for everyone who
+/// isn't one.
+final communityReviewQueueProvider =
+    StreamProvider<List<CommunityReviewItem>>((ref) {
+  final isReviewer =
+      ref.watch(communityViewerProvider).valueOrNull?.isReviewer ?? false;
+  if (!isReviewer) return Stream.value(const []);
+  return ref.watch(communityRepositoryProvider).watchForReview();
 });
 
 /// What the signed-in user may do in Community.

@@ -187,6 +187,12 @@ final class _IcarusConvexApi implements IcarusConvexApi {
 }
 
 abstract interface class CommunityModule {
+  Future<ConvexValue> copyPost({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String postPublicId,
+    required String publicId,
+  });
   ConvexQuery<CommunityGetPostResult?> getPost({required String postPublicId});
   ConvexQuery<CommunityGetPostPreviewResult> getPostPreview({
     required String strategyPublicId,
@@ -237,12 +243,6 @@ abstract interface class CommunityModule {
     required CommunityReviewArgsDecision decision,
     required String postPublicId,
   });
-  Future<ConvexValue> saveCopy({
-    required double clientProtocolVersion,
-    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
-    required String postPublicId,
-    required String publicId,
-  });
   Future<CommunityReportResult> setStar({
     required double clientProtocolVersion,
     required String postPublicId,
@@ -263,6 +263,25 @@ abstract interface class CommunityModule {
 final class _CommunityModule implements CommunityModule {
   const _CommunityModule(this._transport);
   final ConvexTransport _transport;
+  @override
+  Future<ConvexValue> copyPost({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String postPublicId,
+    required String publicId,
+  }) {
+    final args = encodeCommunityCopyPostArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      folderPublicId: folderPublicId,
+      postPublicId: postPublicId,
+      publicId: publicId,
+    );
+    return _invoke(
+      () => _transport.mutation('community:copyPost', args),
+      decodeCommunityCopyPostResult,
+    );
+  }
+
   @override
   ConvexQuery<CommunityGetPostResult?> getPost({required String postPublicId}) {
     final args = encodeCommunityGetPostArgs(postPublicId: postPublicId);
@@ -485,25 +504,6 @@ final class _CommunityModule implements CommunityModule {
     return _invoke(
       () => _transport.mutation('community:review', args),
       decodeCommunityReviewResult,
-    );
-  }
-
-  @override
-  Future<ConvexValue> saveCopy({
-    required double clientProtocolVersion,
-    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
-    required String postPublicId,
-    required String publicId,
-  }) {
-    final args = encodeCommunitySaveCopyArgs(
-      clientProtocolVersion: clientProtocolVersion,
-      folderPublicId: folderPublicId,
-      postPublicId: postPublicId,
-      publicId: publicId,
-    );
-    return _invoke(
-      () => _transport.mutation('community:saveCopy', args),
-      decodeCommunitySaveCopyResult,
     );
   }
 

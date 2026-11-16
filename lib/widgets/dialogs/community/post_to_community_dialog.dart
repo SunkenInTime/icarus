@@ -448,7 +448,7 @@ class _PostedViewState extends ConsumerState<_PostedView> {
                         ),
                         const SizedBox(width: 24),
                         _Stat(
-                          value: widget.mine.saveCount,
+                          value: widget.mine.copyCount,
                           label: l10n.communityCopiesSavedLabel,
                         ),
                       ],
@@ -460,7 +460,9 @@ class _PostedViewState extends ConsumerState<_PostedView> {
                       _Note(l10n.communityPostedHidden),
                       const SizedBox(height: 14),
                     ],
-                    switch (source.valueOrNull) {
+                    switch (widget.mine.status == CommunityPostStatus.hidden
+                        ? null
+                        : source.valueOrNull) {
                       _SourceState.changed => Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
@@ -488,6 +490,11 @@ class _PostedViewState extends ConsumerState<_PostedView> {
                           padding: const EdgeInsets.only(bottom: 14),
                           child: _Note(l10n.communityPostedSourceDeleted),
                         ),
+                      // A hidden post can't be changed, so it offers no update.
+                      null
+                          when widget.mine.status ==
+                              CommunityPostStatus.hidden =>
+                        const SizedBox.shrink(),
                       _SourceState.same || null => Padding(
                           padding: const EdgeInsets.only(bottom: 14),
                           child: _Note(l10n.communityPostedSame(updatedWhen)),

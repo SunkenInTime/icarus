@@ -6344,9 +6344,9 @@
   "@communityPostedSourceDeleted": {
     "description": "In the posted dialog when the strategy it came from is gone."
   },
-  "communityPostedHidden": "Reports have hidden this post while a reviewer looks at it.",
+  "communityPostedHidden": "Reports have hidden this post while a reviewer looks at it. It can't be changed until they decide.",
   "@communityPostedHidden": {
-    "description": "In the posted dialog when reports hid the post."
+    "description": "Shown to the author of a post hidden by reports."
   },
   "communityUpdatePost": "Update the post",
   "@communityUpdatePost": {
@@ -6501,5 +6501,33 @@
   "communityCopyBadgeTooltip": "Your copy of a Community post",
   "@communityCopyBadgeTooltip": {
     "description": "Tooltip of communityCopyBadge."
+  },
+  "communitySortBestMatch": "Best match",
+  "@communitySortBestMatch": {
+    "description": "Shown in place of the sort while words are being searched: results come best match first."
+  },
+  "communityReviewButton": "Review",
+  "@communityReviewButton": {
+    "description": "Button reviewers see in the Community tab: lists the posts hidden by reports."
+  },
+  "communityReviewQueueEmpty": "No posts are waiting for review",
+  "@communityReviewQueueEmpty": {
+    "description": "The reviewers' list with nothing in it."
+  },
+  "communityReviewQueueFailed": "Couldn't load the posts waiting for review.",
+  "@communityReviewQueueFailed": {
+    "description": "The reviewers' list failed to load."
+  },
+  "communityPausedTitle": "Nothing matches so far",
+  "@communityPausedTitle": {
+    "description": "The filters found no posts in the part of Community checked so far."
+  },
+  "communityPausedSubtitle": "Only part of Community has been checked.",
+  "@communityPausedSubtitle": {
+    "description": "Under communityPausedTitle, and above Keep looking at the foot of a short list."
+  },
+  "communityKeepLooking": "Keep looking",
+  "@communityKeepLooking": {
+    "description": "Button: check more of Community for posts matching the filters."
   }
 }

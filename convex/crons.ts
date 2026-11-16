@@ -52,7 +52,7 @@ crons.interval(
   processAssetReclaimCandidatesRef,
   {},
 );
-// Community stars and saves reach their posts' counts in batches, so the
+// Community stars and copies reach their posts' counts in batches, so the
 // feed's cached pages stay valid between runs.
 crons.interval(
   "fold-community-counts",

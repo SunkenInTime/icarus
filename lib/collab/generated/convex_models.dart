@@ -1120,14 +1120,14 @@ final class CommunityListForReviewResultItem {
 
 final class CommunityListMineResultItem {
   const CommunityListMineResultItem({
+    required this.copyCount,
     required this.post,
-    required this.saveCount,
     required this.sourceStrategyPublicId,
     required this.status,
     required this.updatedAt,
   });
+  final double copyCount;
   final CommunityGetPostResultPost post;
-  final double saveCount;
   final String sourceStrategyPublicId;
   final CommunityGetPostResultStatus status;
   final double updatedAt;
@@ -1135,13 +1135,13 @@ final class CommunityListMineResultItem {
   factory CommunityListMineResultItem.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return CommunityListMineResultItem(
+      copyCount: _decodeNumber(
+        object.value['copyCount'] ?? _missing(path, 'copyCount'),
+        '$path.copyCount',
+      ),
       post: CommunityGetPostResultPost.decode(
         object.value['post'] ?? _missing(path, 'post'),
         '$path.post',
-      ),
-      saveCount: _decodeNumber(
-        object.value['saveCount'] ?? _missing(path, 'saveCount'),
-        '$path.saveCount',
       ),
       sourceStrategyPublicId: _decodeString(
         object.value['sourceStrategyPublicId'] ??
@@ -1164,8 +1164,8 @@ final class CommunityListMineResultItem {
 
   ConvexObject encode(String path) {
     return ConvexObject({
+      'copyCount': _encodeNumber(copyCount, '$path.copyCount'),
       'post': post.encode('$path.post'),
-      'saveCount': _encodeNumber(saveCount, '$path.saveCount'),
       'sourceStrategyPublicId': ConvexString(sourceStrategyPublicId),
       'status': ConvexString(status.wireName),
       'updatedAt': _encodeNumber(updatedAt, '$path.updatedAt'),
@@ -6171,7 +6171,7 @@ ConvexValue _encodeOpsApplyBatchResultResultsItemRejectedCurrentElementValue(
   };
 }
 
-bool _validateCommunitySaveCopyResult(ConvexValue value) =>
+bool _validateCommunityCopyPostResult(ConvexValue value) =>
     (_matchesRaw0(value) || _matchesRaw2(value));
 
 bool _matchesRaw0(ConvexValue value) =>
@@ -6339,6 +6339,28 @@ bool _matchesRaw33(ConvexValue value) =>
     (value.value['ok'] != null && _matchesRaw1(value.value['ok']!)) &&
     (value.value['reused'] != null && _matchesRaw1(value.value['reused']!)) &&
     (value.value['revision'] != null && _matchesRaw4(value.value['revision']!));
+
+ConvexObject encodeCommunityCopyPostArgs({
+  required double clientProtocolVersion,
+  ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+  required String postPublicId,
+  required String publicId,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:copyPost.args.clientProtocolVersion',
+  ),
+  if (folderPublicId.isPresent)
+    'folderPublicId': ConvexString(folderPublicId.value),
+  'postPublicId': ConvexString(postPublicId),
+  'publicId': ConvexString(publicId),
+});
+
+ConvexValue decodeCommunityCopyPostResult(ConvexValue value) => _decodeRaw(
+  value,
+  'community.js:copyPost.returns',
+  _validateCommunityCopyPostResult,
+);
 
 ConvexObject encodeCommunityGetPostArgs({required String postPublicId}) =>
     ConvexObject({'postPublicId': ConvexString(postPublicId)});
@@ -6553,28 +6575,6 @@ ConvexObject encodeCommunityReviewArgs({
 CommunityReportResult decodeCommunityReviewResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'community.js:review.returns');
 
-ConvexObject encodeCommunitySaveCopyArgs({
-  required double clientProtocolVersion,
-  ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
-  required String postPublicId,
-  required String publicId,
-}) => ConvexObject({
-  'clientProtocolVersion': _encodeNumber(
-    clientProtocolVersion,
-    'community.js:saveCopy.args.clientProtocolVersion',
-  ),
-  if (folderPublicId.isPresent)
-    'folderPublicId': ConvexString(folderPublicId.value),
-  'postPublicId': ConvexString(postPublicId),
-  'publicId': ConvexString(publicId),
-});
-
-ConvexValue decodeCommunitySaveCopyResult(ConvexValue value) => _decodeRaw(
-  value,
-  'community.js:saveCopy.returns',
-  _validateCommunitySaveCopyResult,
-);
-
 ConvexObject encodeCommunitySetStarArgs({
   required double clientProtocolVersion,
   required String postPublicId,
@@ -6723,7 +6723,7 @@ ConvexObject encodeFoldersCreateArgs({
 ConvexValue decodeFoldersCreateResult(ConvexValue value) => _decodeRaw(
   value,
   'folders.js:create.returns',
-  _validateCommunitySaveCopyResult,
+  _validateCommunityCopyPostResult,
 );
 
 ConvexObject encodeFoldersDeleteArgs({
@@ -7650,7 +7650,7 @@ ConvexObject encodeStrategiesCreateArgs({
 ConvexValue decodeStrategiesCreateResult(ConvexValue value) => _decodeRaw(
   value,
   'strategies.js:create.returns',
-  _validateCommunitySaveCopyResult,
+  _validateCommunityCopyPostResult,
 );
 
 ConvexObject encodeStrategiesCreateWithInitialPageArgs({
@@ -7706,7 +7706,7 @@ ConvexValue decodeStrategiesCreateWithInitialPageResult(ConvexValue value) =>
     _decodeRaw(
       value,
       'strategies.js:createWithInitialPage.returns',
-      _validateCommunitySaveCopyResult,
+      _validateCommunityCopyPostResult,
     );
 
 ConvexObject encodeStrategiesDeleteArgs({
@@ -7752,7 +7752,7 @@ ConvexObject encodeStrategiesDuplicateArgs({
 ConvexValue decodeStrategiesDuplicateResult(ConvexValue value) => _decodeRaw(
   value,
   'strategies.js:duplicate.returns',
-  _validateCommunitySaveCopyResult,
+  _validateCommunityCopyPostResult,
 );
 
 ConvexObject encodeStrategiesFinishMoveArgs({

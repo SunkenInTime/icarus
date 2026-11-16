@@ -1111,10 +1111,10 @@ const ledger: Record<string, LedgerEntry> = {
     exempt:
       "puts a post back, or deletes its snapshot, which nobody's full read or content versions include",
   },
-  "community.js:saveCopy": {
+  "community.js:copyPost": {
     scenarios: [
       {
-        name: "saving a copy of a post into your library",
+        name: "copying a post into your library",
         changesRead: true,
         creates: ["s-copy"],
         setup: async (w) => {

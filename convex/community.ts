@@ -310,7 +310,7 @@ export const listMine = query({
       post: postCardValidator,
       status: postStatusValidator,
       sourceStrategyPublicId: v.string(),
-      saveCount: v.number(),
+      copyCount: v.number(),
       updatedAt: v.number(),
     }),
   ),
@@ -328,7 +328,7 @@ export const listMine = query({
         post: postCard(post),
         status: post.status,
         sourceStrategyPublicId: post.sourceStrategyPublicId,
-        saveCount: post.saveCount,
+        copyCount: post.copyCount,
         updatedAt: post.updatedAt,
       }));
   },
@@ -398,7 +398,6 @@ export const listPostable = query({
   },
 });
 
-/// What the caller may do in Community.
 /// What a post of the caller's strategy [strategyPublicId] would show on
 /// its card, for the posting dialog's preview. Read once as it opens.
 export const getPostPreview = query({
@@ -425,6 +424,7 @@ export const getPostPreview = query({
   },
 });
 
+/// What the caller may do in Community.
 export const getViewer = query({
   args: {},
   returns: v.object({
@@ -527,7 +527,7 @@ export const publish = mutation({
       lineupCount: snapshot.lineupCount,
       status: "listed",
       starCount: 0,
-      saveCount: 0,
+      copyCount: 0,
       trendScore: 0,
       reportCount: 0,
       publishedAt: now,
@@ -538,7 +538,7 @@ export const publish = mutation({
 });
 
 /// Changes the caller's post: its title, and with [refresh] what it shows,
-/// copied again from their strategy as it is now. Stars, saves and reports
+/// copied again from their strategy as it is now. Stars, copies and reports
 /// stay with the post.
 export const updatePost = mutation({
   args: {
@@ -555,6 +555,10 @@ export const updatePost = mutation({
     if (post.authorId !== user._id) throw forbiddenError();
     if (post.status === "removed" || post.snapshotStrategyId === undefined) {
       throw notFoundError("Post", args.postPublicId);
+    }
+    // What reviewers are deciding on stays as it was reported.
+    if (post.status === "hidden") {
+      throw conflictError("This post is being reviewed and can't be changed.");
     }
     // A ban stops the author changing what their other posts show, too.
     if (await isBanned(ctx, user._id)) throw forbiddenError();
@@ -602,7 +606,7 @@ export const updatePost = mutation({
 });
 
 /// Takes a post down: its link stops working and it leaves the feed.
-/// Copies people saved stay theirs. Its author or a reviewer.
+/// Copies people made stay theirs. Its author or a reviewer.
 export const takeDown = mutation({
   args: { ...cloudProtocolArgs, postPublicId: v.string() },
   returns: okResultValidator,
@@ -654,14 +658,14 @@ export const setStar = mutation({
       await ctx.db.insert("communityCountChanges", {
         postId: post._id,
         stars: 1,
-        saves: 0,
+        copies: 0,
       });
     } else if (!args.starred && existing !== null) {
       await ctx.db.delete(existing._id);
       await ctx.db.insert("communityCountChanges", {
         postId: post._id,
         stars: -1,
-        saves: 0,
+        copies: 0,
       });
     }
     return { ok: true } as const;
@@ -671,7 +675,7 @@ export const setStar = mutation({
 /// Copies a post into the caller's library as a strategy of their own,
 /// named after the post, in [folderPublicId] when that folder is theirs.
 /// [publicId] names the new strategy; a retry with the same one is safe.
-export const saveCopy = mutation({
+export const copyPost = mutation({
   args: {
     ...cloudProtocolArgs,
     postPublicId: v.string(),
@@ -726,30 +730,28 @@ export const saveCopy = mutation({
           "This strategy is too large to copy.",
         ),
     );
+    // A copy counts once per account, however many it makes, and never
+    // the author's own.
+    const earlier = await ctx.db
+      .query("communityCopies")
+      .withIndex("by_postId_and_userId", (q) =>
+        q.eq("postId", post._id).eq("userId", user._id),
+      )
+      .first();
+    const counted = earlier === null && post.authorId !== user._id;
     await ctx.db.insert("communityCopies", {
       userId: user._id,
       postId: post._id,
       postPublicId: post.publicId,
       strategyPublicId: args.publicId,
+      counted,
       createdAt: Date.now(),
     });
-    // A copy counts once per account, however many it saves.
-    const saved = await ctx.db
-      .query("communitySaves")
-      .withIndex("by_postId_and_userId", (q) =>
-        q.eq("postId", post._id).eq("userId", user._id),
-      )
-      .first();
-    if (saved === null && post.authorId !== user._id) {
-      await ctx.db.insert("communitySaves", {
-        postId: post._id,
-        userId: user._id,
-        createdAt: Date.now(),
-      });
+    if (counted) {
       await ctx.db.insert("communityCountChanges", {
         postId: post._id,
         stars: 0,
-        saves: 1,
+        copies: 1,
       });
     }
     return { ok: true } as const;
@@ -812,7 +814,8 @@ export const report = mutation({
   },
 });
 
-/// Posts waiting for a reviewer, oldest report first. Reviewers only.
+/// Posts waiting for a reviewer, oldest post first, each with the link
+/// only reviewers are given. Reviewers only.
 export const listForReview = query({
   args: {},
   returns: v.array(
@@ -825,7 +828,7 @@ export const listForReview = query({
       .withIndex("by_status_and_publishedAt", (q) => q.eq("status", "hidden"))
       .take(100);
     return hidden.map((post) => ({
-      post: postCard(post),
+      post: { ...postCard(post), shareToken: post.reviewToken ?? post.shareToken },
       reportCount: post.reportCount,
     }));
   },
@@ -905,8 +908,8 @@ export const review = mutation({
 });
 
 /// Tells the reviewers a post was hidden, in the Discord channel at
-/// COMMUNITY_REVIEW_WEBHOOK_URL. Without one set, nothing is sent and the
-/// post waits in listForReview.
+/// COMMUNITY_REVIEW_WEBHOOK_URL. Without one set, nothing is sent. Either
+/// way the post waits in listForReview, which the app shows reviewers.
 export const notifyReviewers = internalAction({
   args: {
     postPublicId: v.string(),
@@ -922,12 +925,19 @@ export const notifyReviewers = internalAction({
       `A Community post was hidden after ${args.reportCount} reports: ` +
       `"${args.title}"${args.authorName === null ? "" : ` by ${args.authorName}`}. ` +
       `${POST_LINK_ORIGIN}/community/${args.postPublicId}`;
-    await fetch(webhook, {
+    const response = await fetch(webhook, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // No mentions: a title is the author's text.
       body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
     });
+    if (!response.ok) {
+      // Shows as a failed run in the logs. The post still waits in the
+      // app's review list.
+      throw new Error(
+        `The reviewers' message was refused (${response.status}) for post ${args.postPublicId}.`,
+      );
+    }
     return null;
   },
 });
@@ -938,7 +948,7 @@ export const notifyReviewers = internalAction({
 
 const FOLD_BATCH = 1000;
 
-/// Folds stars, unstars and saves into their posts' counts. Runs every few
+/// Folds stars, unstars and copies into their posts' counts. Runs every few
 /// minutes, so a busy post is written once per run instead of once per
 /// star, and the feed's cached pages stay valid between runs.
 export const foldCountChanges = internalMutation({
@@ -946,21 +956,21 @@ export const foldCountChanges = internalMutation({
   returns: v.null(),
   handler: async (ctx) => {
     const changes = await ctx.db.query("communityCountChanges").take(FOLD_BATCH);
-    const byPost = new Map<Id<"communityPosts">, { stars: number; saves: number }>();
+    const byPost = new Map<Id<"communityPosts">, { stars: number; copies: number }>();
     for (const change of changes) {
-      const total = byPost.get(change.postId) ?? { stars: 0, saves: 0 };
+      const total = byPost.get(change.postId) ?? { stars: 0, copies: 0 };
       total.stars += change.stars;
-      total.saves += change.saves;
+      total.copies += change.copies;
       byPost.set(change.postId, total);
       await ctx.db.delete(change._id);
     }
     for (const [postId, total] of byPost) {
-      if (total.stars === 0 && total.saves === 0) continue;
+      if (total.stars === 0 && total.copies === 0) continue;
       const post = await ctx.db.get(postId);
       if (post === null) continue;
       await ctx.db.patch(postId, {
         starCount: Math.max(0, post.starCount + total.stars),
-        saveCount: Math.max(0, post.saveCount + total.saves),
+        copyCount: Math.max(0, post.copyCount + total.copies),
       });
     }
     if (changes.length === FOLD_BATCH) {
@@ -972,8 +982,8 @@ export const foldCountChanges = internalMutation({
 
 const TRENDING_READ_LIMIT = 8000;
 
-/// Sets each post's trend score: its stars plus twice its saves from the
-/// last week. A save is harder to fake than a star and says more. Posts
+/// Sets each post's trend score: its stars plus twice its copies from the
+/// last week. A copy is harder to fake than a star and says more. Posts
 /// whose score is unchanged are not written.
 export const refreshTrending = internalMutation({
   args: {},
@@ -991,21 +1001,23 @@ export const refreshTrending = internalMutation({
     for (const star of stars) {
       scores.set(star.postId, (scores.get(star.postId) ?? 0) + 1);
     }
-    const saves = await ctx.db
-      .query("communitySaves")
-      .withIndex("by_createdAt", (q) => q.gte("createdAt", since))
+    const copies = await ctx.db
+      .query("communityCopies")
+      .withIndex("by_counted_and_createdAt", (q) =>
+        q.eq("counted", true).gte("createdAt", since),
+      )
       .order("desc")
       .take(TRENDING_READ_LIMIT);
     if (
       stars.length === TRENDING_READ_LIMIT ||
-      saves.length === TRENDING_READ_LIMIT
+      copies.length === TRENDING_READ_LIMIT
     ) {
       console.warn(
-        `Trending counted only the newest ${TRENDING_READ_LIMIT} stars or saves of the week.`,
+        `Trending counted only the newest ${TRENDING_READ_LIMIT} stars or copies of the week.`,
       );
     }
-    for (const save of saves) {
-      scores.set(save.postId, (scores.get(save.postId) ?? 0) + 2);
+    for (const copy of copies) {
+      scores.set(copy.postId, (scores.get(copy.postId) ?? 0) + 2);
     }
     // Posts that were trending and no longer are drop back to zero.
     const trending = await ctx.db

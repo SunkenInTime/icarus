@@ -15,6 +15,7 @@ import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/community/community_post_button.dart';
+import 'package:icarus/widgets/community/community_review.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/replay/replay_library_content.dart';
@@ -180,6 +181,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             _buildAddReplayButton(),
             const SizedBox(width: 8),
           ] else if (tab == LibraryTab.community) ...[
+            const CommunityReviewButton(height: _controlHeight),
             const CommunityPostButton(height: _controlHeight),
             const SizedBox(width: 8),
           ] else if (!signInRequired) ...[
