@@ -28,6 +28,9 @@ const createStrategy = makeFunctionReference<"mutation">(
 const listSharedWithMe = makeFunctionReference<"query">(
   "strategies:listSharedWithMe",
 );
+const listForFolder = makeFunctionReference<"query">(
+  "strategies:listForFolder",
+);
 const getShell = makeFunctionReference<"query">("strategy:getShell");
 const updateStrategy = makeFunctionReference<"mutation">("strategies:update");
 const createShare = makeFunctionReference<"mutation">("shares:create");
@@ -509,6 +512,9 @@ describe("share members", () => {
     await expect(b.query(listSharedWithMe, {})).resolves.toMatchObject([
       { publicId: "inside" },
     ]);
+    await expect(
+      b.query(listForFolder, { scope: "shared" }),
+    ).resolves.toMatchObject([{ publicId: "inside" }]);
 
     // C can open the folder too, so the strategy lists in it, not twice.
     await redeem(c, "folder-link");
@@ -516,6 +522,9 @@ describe("share members", () => {
       folderPublicId: "team",
     });
     await expect(c.query(listSharedWithMe, {})).resolves.toEqual([]);
+    await expect(
+      c.query(listForFolder, { folderPublicId: "team", scope: "shared" }),
+    ).resolves.toMatchObject([{ publicId: "inside" }]);
   });
 
   test("nested folders pass access down, and direct access outlives a folder's", async () => {
