@@ -6239,7 +6239,7 @@
   "@communityPostDialogTitleLoading": {
     "description": "Title of the posting dialog while it loads."
   },
-  "communityPostDialogSubtitle": "Anyone can open it and save a copy of their own.",
+  "communityPostDialogSubtitle": "Anyone can open it and make a copy of their own.",
   "@communityPostDialogSubtitle": {
     "description": "Under the posting dialog's title."
   },
@@ -6318,7 +6318,7 @@
   "@communityStarsLabel": {
     "description": "Heading under a post's star count, in the posted dialog."
   },
-  "communityCopiesSavedLabel": "Copies saved",
+  "communityCopiesSavedLabel": "Copies made",
   "@communityCopiesSavedLabel": {
     "description": "Heading under how many people saved a copy of a post."
   },
@@ -6368,7 +6368,7 @@
   "@communityTakeDownConfirmTitle": {
     "description": "Asks before taking a post down."
   },
-  "communityTakeDownConfirmBody": "Its link stops working and it leaves Community. Copies people saved stay theirs.",
+  "communityTakeDownConfirmBody": "Its link stops working and it leaves Community. Copies people made stay theirs.",
   "@communityTakeDownConfirmBody": {
     "description": "Body of communityTakeDownConfirmTitle."
   },

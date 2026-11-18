@@ -500,20 +500,20 @@ class _PostedViewState extends ConsumerState<_PostedView> {
                           child: _Note(l10n.communityPostedSame(updatedWhen)),
                         ),
                     },
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ShadButton.secondary(
-                            key: const ValueKey('community-post-copy-link'),
-                            onPressed: () =>
-                                copyCommunityPostLink(context, post),
-                            leading: const Icon(LucideIcons.link, size: 16),
-                            child: Text(l10n.communityCopyLink),
+                    // A hidden post's link is off and it can't be taken down
+                    // until a reviewer decides, so it offers neither.
+                    if (widget.mine.status != CommunityPostStatus.hidden)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ShadButton.secondary(
+                              key: const ValueKey('community-post-copy-link'),
+                              onPressed: () =>
+                                  copyCommunityPostLink(context, post),
+                              leading: const Icon(LucideIcons.link, size: 16),
+                              child: Text(l10n.communityCopyLink),
+                            ),
                           ),
-                        ),
-                        // Nor taken down, until a reviewer decides.
-                        if (widget.mine.status !=
-                            CommunityPostStatus.hidden) ...[
                           const SizedBox(width: 8),
                           Expanded(
                             child: ShadButton.secondary(
@@ -527,8 +527,7 @@ class _PostedViewState extends ConsumerState<_PostedView> {
                             ),
                           ),
                         ],
-                      ],
-                    ),
+                      ),
                     if (_error case final error?) _ErrorText(error),
                   ],
                 ),
