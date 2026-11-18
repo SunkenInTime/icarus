@@ -181,6 +181,24 @@ export async function getEffectiveFolderRoleForUser(
   return bestRole;
 }
 
+/**
+ * The folder [strategy] sits in, when [userId] can open that folder; null
+ * when it sits at the top level or in a folder they can't open. A strategy
+ * shared on its own out of the owner's private folder lists at the top of
+ * the person's Shared; one in a folder they can open lists in that folder.
+ */
+export async function strategyFolderOpenTo(
+  ctx: AnyCtx,
+  strategy: Doc<"strategies">,
+  userId: Id<"users">,
+): Promise<Doc<"folders"> | null> {
+  if (strategy.folderId === undefined) return null;
+  const folder = await ctx.db.get(strategy.folderId);
+  if (folder === null) return null;
+  const role = await getEffectiveFolderRoleForUser(ctx, folder, userId);
+  return role === null ? null : folder;
+}
+
 export async function getEffectiveStrategyRoleForUser(
   ctx: AnyCtx,
   strategy: Doc<"strategies">,

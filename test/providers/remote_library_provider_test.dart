@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -11,6 +12,8 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
+
+import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 import '../collab/subscribe_together_from_each.dart';
 
@@ -252,6 +255,61 @@ void main() {
     expect(auth.unauthenticatedReports, 1);
     expect(container.read(cloudStrategiesProvider).valueOrNull, isEmpty);
   });
+
+  // Adding a shared strategy moves the library to it, and each move rebuilds
+  // these lists; one rebuilt and dropped again before its stream started
+  // threw "Cannot call onDispose after a provider was disposed".
+  for (final (name, provider) in [
+    ('folder tree', cloudFolderTreeProvider),
+    ('strategy list', cloudStrategiesProvider),
+  ]) {
+    test('the $name rebuilt and dropped before it starts raises nothing',
+        () async {
+      final errors = <Object>[];
+      await runZonedGuarded(() async {
+        final container = ProviderContainer(
+          overrides: [
+            authProvider.overrideWith(_SignedInAuthProvider.new),
+            convexStrategyRepositoryProvider
+                .overrideWithValue(_StrategyStreamRepository()),
+            cloudLibraryCopyStoreProvider
+                .overrideWithValue(MemoryCloudLibraryCopyStore()),
+            cloudCopyDeploymentUrlProvider
+                .overrideWithValue('https://dev.convex.cloud'),
+          ],
+        );
+        final subscription = container.listen(provider, (_, __) {});
+        await Future<void>.delayed(Duration.zero);
+
+        container.invalidate(provider);
+        container.read(provider);
+        container.invalidate(provider);
+        await Future<void>.delayed(Duration.zero);
+
+        subscription.close();
+        container.dispose();
+      }, (error, _) => errors.add(error));
+
+      expect(errors, isEmpty);
+    });
+  }
+}
+
+class _SignedInAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: User(
+          id: 'user-a',
+          appMetadata: <String, dynamic>{},
+          userMetadata: <String, dynamic>{},
+          aud: 'authenticated',
+          createdAt: '2026-10-01T00:00:00.000Z',
+        ),
+      );
 }
 
 class _ReadyAuthProvider extends AuthProvider {

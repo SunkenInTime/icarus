@@ -74,18 +74,18 @@ void _reportCopyWriteFailure(Object error, StackTrace stackTrace) {
 }
 
 final cloudFolderTreeProvider =
-    StreamProvider.autoDispose<List<CloudFolderEntry>>((ref) async* {
+    StreamProvider.autoDispose<List<CloudFolderEntry>>((ref) {
   final isCloud = ref.watch(isCloudCollabEnabledProvider);
   final auth = ref.watch(authProvider);
   final store = ref.watch(cloudLibraryCopyStoreProvider);
   final scope = ref.watch(cloudCopyScopeProvider);
   if (!isCloud || auth.hasActiveAuthIncident) {
     if (ref.watch(cloudLibraryShowsCopyProvider) && scope != null) {
-      yield store.readFolders(scope)?.entries ?? const <CloudFolderEntry>[];
-      return;
+      return Stream.value(
+        store.readFolders(scope)?.entries ?? const <CloudFolderEntry>[],
+      );
     }
-    yield const <CloudFolderEntry>[];
-    return;
+    return Stream.value(const <CloudFolderEntry>[]);
   }
 
   final authNotifier = ref.read(authProvider.notifier);
@@ -102,31 +102,36 @@ final cloudFolderTreeProvider =
             matchedAt: matchedAt,
           ),
         );
-  try {
-    await for (final folders in repo.watchAllFolders()) {
-      copy?.answer(folders);
-      yield folders;
-    }
-  } catch (error, stackTrace) {
-    if (isConvexUnauthenticatedError(error)) {
-      unawaited(
-        authNotifier.reportConvexUnauthenticated(
-          source: 'remote_library:folder_tree',
-          error: error,
-          stackTrace: stackTrace,
-        ),
+  // Everything that reads ref runs above, while the provider builds. The
+  // body below starts a microtask later, when the provider may already
+  // have been rebuilt or disposed, so it must not touch ref.
+  return () async* {
+    try {
+      await for (final folders in repo.watchAllFolders()) {
+        copy?.answer(folders);
+        yield folders;
+      }
+    } catch (error, stackTrace) {
+      if (isConvexUnauthenticatedError(error)) {
+        unawaited(
+          authNotifier.reportConvexUnauthenticated(
+            source: 'remote_library:folder_tree',
+            error: error,
+            stackTrace: stackTrace,
+          ),
+        );
+        yield const <CloudFolderEntry>[];
+        return;
+      }
+      AppErrorReporter.reportWarning(
+        'Reading the cloud library folders failed.',
+        source: 'remote_library:folder_tree',
+        error: error,
+        stackTrace: stackTrace,
       );
-      yield const <CloudFolderEntry>[];
-      return;
+      rethrow;
     }
-    AppErrorReporter.reportWarning(
-      'Reading the cloud library folders failed.',
-      source: 'remote_library:folder_tree',
-      error: error,
-      stackTrace: stackTrace,
-    );
-    rethrow;
-  }
+  }();
 });
 
 // This is the same cached provider, retained for the widgets whose concern is
@@ -175,7 +180,7 @@ final cloudStrategyListingProvider = Provider<CloudStrategyListing>((ref) {
 });
 
 final cloudStrategiesProvider =
-    StreamProvider.autoDispose<List<CloudStrategyEntry>>((ref) async* {
+    StreamProvider.autoDispose<List<CloudStrategyEntry>>((ref) {
   final isCloud = ref.watch(isCloudCollabEnabledProvider);
   final auth = ref.watch(authProvider);
   final store = ref.watch(cloudLibraryCopyStoreProvider);
@@ -183,12 +188,12 @@ final cloudStrategiesProvider =
   final listing = ref.watch(cloudStrategyListingProvider);
   if (!isCloud || auth.hasActiveAuthIncident) {
     if (ref.watch(cloudLibraryShowsCopyProvider) && scope != null) {
-      yield store.readStrategies(scope, listing)?.entries ??
-          const <CloudStrategyEntry>[];
-      return;
+      return Stream.value(
+        store.readStrategies(scope, listing)?.entries ??
+            const <CloudStrategyEntry>[],
+      );
     }
-    yield const <CloudStrategyEntry>[];
-    return;
+    return Stream.value(const <CloudStrategyEntry>[]);
   }
 
   final folderId = listing.folderId;
@@ -208,41 +213,46 @@ final cloudStrategiesProvider =
             matchedAt: matchedAt,
           ),
         );
-  try {
-    final stream = listing.shared
-        ? (folderId == null
-            ? repo.watchSharedStrategies()
-            : repo.watchStrategiesForFolder(folderId, scope: 'shared'))
-        : repo.watchStrategiesForFolder(folderId, scope: 'owned');
-    await for (final strategies in stream) {
-      copy?.answer(strategies);
-      yield strategies;
-    }
-  } catch (error, stackTrace) {
-    if (!listing.shared && _isInvalidFolderError(error)) {
-      folderNotifier.updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
-      yield const <CloudStrategyEntry>[];
-      return;
-    }
-    if (isConvexUnauthenticatedError(error)) {
-      unawaited(
-        authNotifier.reportConvexUnauthenticated(
-          source: 'remote_library:strategies',
-          error: error,
-          stackTrace: stackTrace,
-        ),
+  // Everything that reads ref runs above, while the provider builds. The
+  // body below starts a microtask later, when the provider may already
+  // have been rebuilt or disposed, so it must not touch ref.
+  return () async* {
+    try {
+      final stream = listing.shared
+          ? (folderId == null
+              ? repo.watchSharedStrategies()
+              : repo.watchStrategiesForFolder(folderId, scope: 'shared'))
+          : repo.watchStrategiesForFolder(folderId, scope: 'owned');
+      await for (final strategies in stream) {
+        copy?.answer(strategies);
+        yield strategies;
+      }
+    } catch (error, stackTrace) {
+      if (!listing.shared && _isInvalidFolderError(error)) {
+        folderNotifier.updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
+        yield const <CloudStrategyEntry>[];
+        return;
+      }
+      if (isConvexUnauthenticatedError(error)) {
+        unawaited(
+          authNotifier.reportConvexUnauthenticated(
+            source: 'remote_library:strategies',
+            error: error,
+            stackTrace: stackTrace,
+          ),
+        );
+        yield const <CloudStrategyEntry>[];
+        return;
+      }
+      AppErrorReporter.reportWarning(
+        'Reading the cloud library strategies failed.',
+        source: 'remote_library:strategies',
+        error: error,
+        stackTrace: stackTrace,
       );
-      yield const <CloudStrategyEntry>[];
-      return;
+      rethrow;
     }
-    AppErrorReporter.reportWarning(
-      'Reading the cloud library strategies failed.',
-      source: 'remote_library:strategies',
-      error: error,
-      stackTrace: stackTrace,
-    );
-    rethrow;
-  }
+  }();
 });
 
 /// When the cloud half the library shows from this computer's copy last
