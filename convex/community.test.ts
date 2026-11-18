@@ -983,13 +983,14 @@ describe("limits", () => {
     for (const postPublicId of posts.slice(0, 20)) {
       await reportPost(postPublicId);
     }
+    const [first, last] = [posts[0]!, posts[20]!];
     // Reporting a post again changes nothing, limit or not.
-    await expect(reportPost(posts[0])).resolves.toEqual({ ok: true });
-    await expect(reportPost(posts[20])).rejects.toThrow(
+    await expect(reportPost(first)).resolves.toEqual({ ok: true });
+    await expect(reportPost(last)).rejects.toThrow(
       "You've sent a lot of reports today. Try again later.",
     );
     vi.advanceTimersByTime(24 * HOUR);
-    await expect(reportPost(posts[20])).resolves.toEqual({ ok: true });
+    await expect(reportPost(last)).resolves.toEqual({ ok: true });
   });
 });
 
