@@ -729,7 +729,11 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   ],
                 ),
                 Center(
-                  child: CommunityPostTitle(post: post, hidden: underReview),
+                  child: CommunityPostTitle(
+                    post: post,
+                    hidden:
+                        underReview && !ref.watch(communityPostStillUpProvider),
+                  ),
                 ),
               ],
             ),

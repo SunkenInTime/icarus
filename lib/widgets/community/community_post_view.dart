@@ -33,14 +33,20 @@ final communityPostViewProvider = StateProvider<CommunityPost?>((ref) => null);
 /// reviewer to decide on it.
 final communityPostUnderReviewProvider = StateProvider<bool>((ref) => false);
 
+/// Whether the post a reviewer has open is still in the feed: they put it
+/// back before and it was reported again, which doesn't hide it.
+final communityPostStillUpProvider = StateProvider<bool>((ref) => false);
+
 /// Points the editor's reads at [post]'s frozen copy.
 void showCommunityPost(
   WidgetRef ref,
   CommunityPost post, {
   bool underReview = false,
+  bool stillUp = false,
 }) {
   ref.read(communityPostViewProvider.notifier).state = post;
   ref.read(communityPostUnderReviewProvider.notifier).state = underReview;
+  ref.read(communityPostStillUpProvider.notifier).state = stillUp;
   ref.read(shareLinkViewProvider.notifier).state = (
     strategyPublicId: post.strategyPublicId,
     token: post.shareToken,
@@ -56,6 +62,7 @@ void forgetCommunityPost(WidgetRef ref, String? strategyPublicId) {
   }
   ref.read(communityPostViewProvider.notifier).state = null;
   ref.read(communityPostUnderReviewProvider.notifier).state = false;
+  ref.read(communityPostStillUpProvider.notifier).state = false;
   if (ref.read(shareLinkViewProvider)?.token == post.shareToken) {
     ref.read(shareLinkViewProvider.notifier).state = null;
   }
@@ -148,7 +155,9 @@ Future<void> copyCommunityPost(
     Settings.showToast(
       message: isStrategyTooLargeToDuplicateError(error)
           ? l10n.communityCopyTooLarge
-          : l10n.communityCopyFailed,
+          : isRateLimitedError(error)
+              ? l10n.communityCopyRateLimited
+              : l10n.communityCopyFailed,
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
   }

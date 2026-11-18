@@ -270,7 +270,11 @@ class CommunityRepository {
           (items) => [
             for (final item in items)
               if (_post(item.post) case final post?)
-                (post: post, reportCount: item.reportCount.toInt()),
+                (
+                  post: post,
+                  reportCount: item.reportCount.toInt(),
+                  hidden: item.hidden,
+                ),
           ],
         );
   }

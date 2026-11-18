@@ -209,7 +209,14 @@ typedef PostableStrategy = ({
 
 /// A hidden post waiting for a reviewer. [post] opens through the link
 /// only reviewers are given.
-typedef CommunityReviewItem = ({CommunityPost post, int reportCount});
+typedef CommunityReviewItem = ({
+  CommunityPost post,
+  int reportCount,
+
+  /// False for a post a reviewer put back that is reported again: it is
+  /// still in the feed.
+  bool hidden,
+});
 
 /// A copy of a post the signed-in user made in their library.
 typedef CommunityCopy = ({String strategyPublicId, String postPublicId});

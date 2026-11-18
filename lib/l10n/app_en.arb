@@ -6194,6 +6194,10 @@
   "@communityReportFailed": {
     "description": "Sending a report failed."
   },
+  "communityReportRateLimited": "You've sent a lot of reports today. Try again later.",
+  "@communityReportRateLimited": {
+    "description": "Sending a report was refused because this account sent many reports in the last day."
+  },
   "communityPostButton": "Post",
   "@communityPostButton": {
     "description": "Button in the Community tab that posts one of your strategies."
@@ -6275,6 +6279,10 @@
   "communityPostFailed": "Couldn't post it. Try again.",
   "@communityPostFailed": {
     "description": "Posting failed."
+  },
+  "communityPostRateLimited": "You've posted a lot in the last hour. Try again later.",
+  "@communityPostRateLimited": {
+    "description": "Posting was refused because this account posted many times in the last hour."
   },
   "communityPostNotAllowed": "This account can't post to Community.",
   "@communityPostNotAllowed": {
@@ -6393,6 +6401,23 @@
       }
     }
   },
+  "communityReviewStillUp": "{count, plural, =1{Still up with 1 report} other{Still up with {count} reports}}",
+  "@communityReviewStillUp": {
+    "description": "Heading of the reports card, and a review list row, for a post a reviewer put back that was reported again and is still in the feed.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "communityReviewKeep": "Keep it up",
+  "@communityReviewKeep": {
+    "description": "Reviewer's button that clears the reports of a post that is still in the feed."
+  },
+  "communityReviewKept": "Post stays in Community",
+  "@communityReviewKept": {
+    "description": "Toast after a reviewer keeps up a post that was reported again."
+  },
   "communityReviewReportsFailed": "Couldn't load the reports.",
   "@communityReviewReportsFailed": {
     "description": "The reports card failed to load."
@@ -6461,6 +6486,10 @@
   "communityCopyFailed": "Couldn't make a copy. Try again.",
   "@communityCopyFailed": {
     "description": "Copying a post failed."
+  },
+  "communityCopyRateLimited": "You've made a lot of copies in the last hour. Try again later.",
+  "@communityCopyRateLimited": {
+    "description": "Copying a post was refused because this account made many copies in the last hour."
   },
   "communityCopyTooLarge": "This strategy is too large to copy.",
   "@communityCopyTooLarge": {

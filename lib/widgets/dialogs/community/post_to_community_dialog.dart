@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/community_models.dart';
 import 'package:icarus/collab/community_repository.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/community_provider.dart';
@@ -162,7 +163,9 @@ class _PostFormState extends ConsumerState<_PostForm> {
       if (!mounted) return;
       setState(() {
         _posting = false;
-        _error = l10n.communityPostFailed;
+        _error = isRateLimitedError(error)
+            ? l10n.communityPostRateLimited
+            : l10n.communityPostFailed;
       });
     }
   }

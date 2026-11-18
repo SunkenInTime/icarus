@@ -1,12 +1,20 @@
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/community_models.dart';
+import 'package:icarus/collab/community_repository.dart';
+import 'package:icarus/collab/generated/generated.dart';
+import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/community_provider.dart';
 import 'package:icarus/widgets/community/community_link.dart';
 
-CommunityPost _post({int starCount = 10}) => CommunityPost(
-      publicId: 'post-1',
+CommunityPost _post({String id = 'post-1', int starCount = 10}) =>
+    CommunityPost(
+      publicId: id,
       title: 'B Market Execute',
       map: MapValue.ascent,
       side: CommunitySide.attack,
@@ -116,4 +124,208 @@ void main() {
       expect(const CommunityStars().countFor(_post()), 10);
     });
   });
+
+  group('a feed read again', () {
+    late _FeedServer server;
+    late DateTime now;
+    late ProviderContainer container;
+    const bind = CommunityFilter(map: MapValue.bind);
+
+    CommunityFeedState feed() => container.read(communityFeedProvider);
+    CommunityFeedNotifier notifier() =>
+        container.read(communityFeedProvider.notifier);
+    void pick(CommunityFilter filter) =>
+        container.read(communityFilterProvider.notifier).state = filter;
+    List<String> ids() => [for (final post in feed().posts) post.publicId];
+
+    /// Opens the feed and answers its first page with [posts].
+    Future<void> readFirst(List<String> posts, {String? nextCursor}) async {
+      container.listen(communityFeedProvider, (_, __) {});
+      await pumpEventQueue();
+      server.answer(posts, nextCursor: nextCursor);
+      await pumpEventQueue();
+    }
+
+    setUp(() {
+      server = _FeedServer();
+      now = DateTime(2026, 11, 18, 12);
+      container = ProviderContainer(
+        overrides: [
+          communityRepositoryProvider.overrideWithValue(server),
+          authProvider.overrideWith(_SignedOut.new),
+          communityClockProvider.overrideWithValue(() => now),
+        ],
+      );
+      addTearDown(container.dispose);
+    });
+
+    test('shows placeholders the first time a filter is read', () async {
+      container.listen(communityFeedProvider, (_, __) {});
+      await pumpEventQueue();
+      expect(feed().isFirstLoad, isTrue);
+      expect(server.reads, hasLength(1));
+    });
+
+    test('keeps its cards until the new first page arrives', () async {
+      await readFirst(['old-1', 'old-2']);
+      final firstRead = now;
+      pick(bind);
+      await pumpEventQueue();
+      server.answer(['bind-1']);
+      await pumpEventQueue();
+
+      now = now.add(const Duration(minutes: 6));
+      pick(const CommunityFilter());
+      await pumpEventQueue();
+      // Shown at once, as read, while it is read again.
+      expect(ids(), ['old-1', 'old-2']);
+      expect(feed().isFirstLoad, isFalse);
+      expect(feed().loading, isTrue);
+      expect(feed().fetchedAt, firstRead);
+      expect(server.reads, hasLength(3));
+      expect(server.reads.last.cursor, isNull);
+
+      // Coming back again doesn't start a second read.
+      await notifier().refreshIfStale();
+      expect(server.reads, hasLength(3));
+
+      server.answer(['new-1']);
+      await pumpEventQueue();
+      expect(ids(), ['new-1']);
+      expect(feed().loading, isFalse);
+      expect(feed().fetchedAt, now);
+
+      // The kept feed is the new one: going away (Bind, stale too, is read
+      // again) and back reads nothing more.
+      pick(bind);
+      await pumpEventQueue();
+      expect(server.reads, hasLength(4));
+      pick(const CommunityFilter());
+      await pumpEventQueue();
+      expect(ids(), ['new-1']);
+      expect(feed().loading, isFalse);
+      expect(server.reads, hasLength(4));
+    });
+
+    test('reads no page after the old cards while it is read again', () async {
+      final page = [for (var i = 0; i < 15; i++) 'old-$i'];
+      await readFirst(page, nextCursor: 'old-cursor');
+      now = now.add(const Duration(minutes: 6));
+      unawaited(notifier().refreshIfStale());
+      await pumpEventQueue();
+      expect(server.reads, hasLength(2));
+
+      await notifier().loadMore();
+      await notifier().loadMore(byUser: false);
+      expect(server.reads, hasLength(2));
+      expect(ids(), page);
+
+      // The new feed pages on from its own cursor.
+      server.answer(['new-1'], nextCursor: 'new-cursor');
+      await pumpEventQueue();
+      expect(server.reads, hasLength(3));
+      expect(server.reads.last.cursor, 'new-cursor');
+      server.answer(['new-2']);
+      await pumpEventQueue();
+      expect(ids(), ['new-1', 'new-2']);
+    });
+
+    test('keeps its cards when the read fails, and tries again later',
+        () async {
+      await readFirst(['old-1']);
+      final firstRead = now;
+      now = now.add(const Duration(minutes: 6));
+      unawaited(notifier().refreshIfStale());
+      await pumpEventQueue();
+      server.fail();
+      await pumpEventQueue();
+      expect(ids(), ['old-1']);
+      expect(feed().loading, isFalse);
+      expect(feed().fetchedAt, firstRead);
+
+      unawaited(notifier().refreshIfStale());
+      await pumpEventQueue();
+      expect(server.reads, hasLength(3));
+      server.answer(['new-1']);
+      await pumpEventQueue();
+      expect(ids(), ['new-1']);
+      expect(feed().error, isNull);
+    });
+
+    test('is not read again while fresh', () async {
+      await readFirst(['old-1']);
+      now = now.add(const Duration(minutes: 4));
+      await notifier().refreshIfStale();
+      pick(bind);
+      await pumpEventQueue();
+      server.answer(['bind-1']);
+      await pumpEventQueue();
+      pick(const CommunityFilter());
+      await pumpEventQueue();
+      expect(ids(), ['old-1']);
+      expect(server.reads, hasLength(2));
+    });
+
+    test('drops the late page when the filter changed meanwhile', () async {
+      await readFirst(['old-1']);
+      now = now.add(const Duration(minutes: 6));
+      unawaited(notifier().refreshIfStale());
+      await pumpEventQueue();
+      final reread = server.pending;
+
+      pick(bind);
+      await pumpEventQueue();
+      expect(feed().filter, bind);
+      expect(feed().isFirstLoad, isTrue);
+
+      reread.complete((posts: [_post(id: 'late-1')], nextCursor: null));
+      await pumpEventQueue();
+      expect(feed().filter, bind);
+      expect(ids(), isEmpty);
+
+      server.answer(['bind-1']);
+      await pumpEventQueue();
+      expect(ids(), ['bind-1']);
+    });
+  });
+}
+
+class _SignedOut extends AuthProvider {
+  @override
+  AppAuthState build() => AppAuthState.fromSession(null);
+}
+
+/// A server whose feed pages arrive when the test answers them, oldest
+/// read first.
+class _FeedServer extends CommunityRepository {
+  _FeedServer() : super(IcarusConvexApi(_NoTransport()));
+
+  final reads = <({CommunityFilter filter, String? cursor})>[];
+  final _waiting = <Completer<CommunityFeedPage>>[];
+
+  Completer<CommunityFeedPage> get pending => _waiting.removeAt(0);
+
+  void answer(List<String> ids, {String? nextCursor}) => pending.complete((
+        posts: [for (final id in ids) _post(id: id)],
+        nextCursor: nextCursor,
+      ));
+
+  void fail() => pending.completeError(StateError('offline'));
+
+  @override
+  Future<CommunityFeedPage> fetchFeed(
+    CommunityFilter filter, {
+    String? cursor,
+  }) {
+    reads.add((filter: filter, cursor: cursor));
+    final page = Completer<CommunityFeedPage>();
+    _waiting.add(page);
+    return page.future;
+  }
+}
+
+final class _NoTransport implements ConvexTransport {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
 }

@@ -23,6 +23,15 @@ export const MAX_REPORT_NOTE_LENGTH = 200;
 export const REPORTS_TO_HIDE = 3;
 /// Live posts one account can have at a time.
 export const MAX_LIVE_POSTS_PER_AUTHOR = 50;
+/// How fast one account can post, copy and report, so a script or a stuck
+/// button can't flood the feed, the database or the reviewers. Counted from
+/// the account's own recent rows. Stars have no limit: an unstar deletes its
+/// row, so there is nothing to count, and a star only moves a number.
+export const POSTS_PER_HOUR = 10;
+export const COPIES_PER_HOUR = 30;
+export const REPORTS_PER_DAY = 20;
+export const HOUR_MS = 60 * 60 * 1000;
+export const DAY_MS = 24 * HOUR_MS;
 /// Rows one feed page reads. Filters the index can't apply (side, agents)
 /// are applied to these, so a page can hold fewer matches than this; the
 /// client asks for the next page while it has too few cards to fill the

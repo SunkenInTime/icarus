@@ -10,6 +10,11 @@ import 'package:icarus/services/app_error_reporter.dart';
 final communityFilterProvider =
     StateProvider<CommunityFilter>((ref) => const CommunityFilter());
 
+/// The time a feed counts as read at; tests set it to say when "now" is.
+final communityClockProvider = Provider<DateTime Function()>(
+  (ref) => DateTime.now,
+);
+
 /// The feed for [communityFilterProvider], a page at a time.
 final communityFeedProvider =
     NotifierProvider<CommunityFeedNotifier, CommunityFeedState>(
@@ -80,7 +85,7 @@ class CommunityFeedState {
 /// Reads the feed once per page and never watches it, so readers cost the
 /// server nothing between pages. Feeds already read this session are kept,
 /// so going back to a filter shows it at once and reads nothing until it
-/// is [freshFor] old, when it is read again.
+/// is [freshFor] old, when it is read again behind the cards already shown.
 class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
   /// Fewer cards than this after a page and the next page is read straight
   /// away, so a narrow filter still fills the screen.
@@ -116,8 +121,9 @@ class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
     }
     _generation++;
     final kept = _kept.remove(filter);
-    if (kept != null && kept.error == null && !kept.loading && !_stale(kept)) {
+    if (kept != null && kept.error == null && !kept.loading) {
       _kept[filter] = kept;
+      if (_stale(kept)) Future.microtask(refreshIfStale);
       return kept;
     }
     final fresh = CommunityFeedState(filter: filter);
@@ -127,10 +133,12 @@ class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
 
   bool _stale(CommunityFeedState feed) {
     final readAt = feed.fetchedAt;
-    return readAt != null && DateTime.now().difference(readAt) > freshFor;
+    return readAt != null &&
+        ref.read(communityClockProvider)().difference(readAt) > freshFor;
   }
 
-  /// Reads the feed again if it was read more than [freshFor] ago.
+  /// Reads the feed again if it was read more than [freshFor] ago, unless a
+  /// read is already under way.
   Future<void> refreshIfStale() async {
     if (_stale(state) && !state.loading) await refresh();
   }
@@ -149,29 +157,45 @@ class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
     } else {
       _unaskedPages++;
     }
-    final generation = _generation;
     state = current.copyWith(
       loading: true,
       started: true,
       clearError: true,
       paused: false,
     );
+    await _read(after: current);
+  }
+
+  /// Reads the feed again from the top. The cards on screen stay until the
+  /// new first page replaces them, [CommunityFeedState.loading] meanwhile so
+  /// no page is read after them; if the read fails they stay.
+  Future<void> refresh() async {
+    _generation++;
+    _unaskedPages = 0;
+    state = state.copyWith(loading: true, started: true, clearError: true);
+    await _read(after: CommunityFeedState(filter: state.filter));
+  }
+
+  /// Reads the page that follows [after] and shows [after] with it.
+  Future<void> _read({required CommunityFeedState after}) async {
+    final generation = _generation;
     try {
       final page = await ref
           .read(communityRepositoryProvider)
-          .fetchFeed(current.filter, cursor: current.nextCursor);
+          .fetchFeed(after.filter, cursor: after.nextCursor);
       if (generation != _generation) return;
-      final seen = {for (final post in current.posts) post.publicId};
+      final seen = {for (final post in after.posts) post.publicId};
       final next = state.copyWith(
         posts: [
-          ...current.posts,
+          ...after.posts,
           for (final post in page.posts)
             if (seen.add(post.publicId)) post,
         ],
         nextCursor: page.nextCursor,
         clearCursor: page.nextCursor == null,
         loading: false,
-        fetchedAt: current.fetchedAt ?? DateTime.now(),
+        paused: false,
+        fetchedAt: after.fetchedAt ?? ref.read(communityClockProvider)(),
       );
       state = next;
       _keep(next);
@@ -188,14 +212,6 @@ class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
       );
       state = state.copyWith(loading: false, error: error);
     }
-  }
-
-  /// Reads the feed again from the top.
-  Future<void> refresh() async {
-    _kept.remove(state.filter);
-    _generation++;
-    state = CommunityFeedState(filter: state.filter);
-    await loadMore();
   }
 
   /// Drops [postPublicId] from every kept feed: it was taken down.

@@ -388,12 +388,20 @@ export default defineSchema({
     // Stars and copies from the last week (see refreshTrending).
     trendScore: v.number(),
     reportCount: v.number(),
+    // When a reviewer last put the post back. While set, reports still count
+    // but don't hide it again; reviewers are told instead. Unset when its
+    // author changes what the reviewer cleared.
+    clearedAt: v.optional(v.number()),
     publishedAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_publicId", ["publicId"])
     .index("by_sourceStrategyId", ["sourceStrategyId"])
     .index("by_authorId", ["authorId"])
+    .index("by_authorId_and_status", ["authorId", "status"])
+    .index("by_authorId_and_publishedAt", ["authorId", "publishedAt"])
+    // Cleared posts reported again, for the review list.
+    .index("by_status_and_reportCount", ["status", "reportCount"])
     .index("by_trendScore", ["trendScore"])
     .index("by_status_and_publishedAt", ["status", "publishedAt"])
     .index("by_status_and_trendScore_and_publishedAt", [
@@ -473,7 +481,8 @@ export default defineSchema({
     note: v.optional(v.string()),
     createdAt: v.number(),
   })
-    .index("by_postId_and_reporterId", ["postId", "reporterId"]),
+    .index("by_postId_and_reporterId", ["postId", "reporterId"])
+    .index("by_reporterId_and_createdAt", ["reporterId", "createdAt"]),
   // Accounts a reviewer stopped from posting.
   communityBans: defineTable({
     userId: v.id("users"),

@@ -1087,9 +1087,11 @@ final class CommunityGetViewerResult {
 
 final class CommunityListForReviewResultItem {
   const CommunityListForReviewResultItem({
+    required this.hidden,
     required this.post,
     required this.reportCount,
   });
+  final bool hidden;
   final CommunityGetPostResultPost post;
   final double reportCount;
 
@@ -1099,6 +1101,10 @@ final class CommunityListForReviewResultItem {
   ) {
     final object = _decodeObject(value, path);
     return CommunityListForReviewResultItem(
+      hidden: _decodeBoolean(
+        object.value['hidden'] ?? _missing(path, 'hidden'),
+        '$path.hidden',
+      ),
       post: CommunityGetPostResultPost.decode(
         object.value['post'] ?? _missing(path, 'post'),
         '$path.post',
@@ -1112,6 +1118,7 @@ final class CommunityListForReviewResultItem {
 
   ConvexObject encode(String path) {
     return ConvexObject({
+      'hidden': ConvexBoolean(hidden),
       'post': post.encode('$path.post'),
       'reportCount': _encodeNumber(reportCount, '$path.reportCount'),
     });

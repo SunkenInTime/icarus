@@ -48,16 +48,17 @@ Future<void> openCommunityPostFromCard(
 
 /// Opens [post] over the library: a quick look, or the full view-only
 /// editor when [expanded]. A post [underReview] opens full screen with a
-/// reviewer's controls.
+/// reviewer's controls; [stillUp] when reports haven't hidden it.
 Future<void> openCommunityPost(
   WidgetRef ref,
   CommunityPost post, {
   bool expanded = false,
   bool underReview = false,
+  bool stillUp = false,
 }) async {
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) return;
-  showCommunityPost(ref, post, underReview: underReview);
+  showCommunityPost(ref, post, underReview: underReview, stillUp: stillUp);
   await navigator.push(
     StrategyView.communityRoute(post, expanded: expanded || underReview),
   );

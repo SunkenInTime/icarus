@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/community_models.dart';
 import 'package:icarus/collab/community_repository.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -74,7 +75,9 @@ class _ReportPostDialogState extends ConsumerState<ReportPostDialog> {
       if (!mounted) return;
       setState(() {
         _sending = false;
-        _error = l10n.communityReportFailed;
+        _error = isRateLimitedError(error)
+            ? l10n.communityReportRateLimited
+            : l10n.communityReportFailed;
       });
     }
   }

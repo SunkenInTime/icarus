@@ -684,7 +684,7 @@ describe("reports", () => {
     });
     const queue = await as("reviewer").query(listForReview, {});
     expect(queue).toHaveLength(1);
-    expect(queue[0]).toMatchObject({ reportCount: 3, post: { title: "Reported" } });
+    expect(queue[0]).toMatchObject({ reportCount: 3, hidden: true, post: { title: "Reported" } });
     expect(queue[0].post.shareToken).toBe(reviewed.post.shareToken);
     // What was reported stays as it was until a reviewer decides.
     for (const change of [{ refresh: true }, { title: "Cleaned up" }]) {
@@ -735,6 +735,136 @@ describe("reports", () => {
     await settle(harness);
   });
 
+  test("a post a reviewer put back stays up when reported again, and the reviewers are told once", async () => {
+    const harness = await createHarness();
+    const { t, as } = harness;
+    process.env.COMMUNITY_REVIEWERS = "reviewer";
+    await seedStrategy(harness, "author", "source");
+    const postId = await post(harness, "author", "source", "Cleared");
+    const card = (await t.query(getPost, { postPublicId: postId })).post;
+    const reportAs = (person: Person) =>
+      as(person).mutation(report, {
+        ...protocol,
+        postPublicId: postId,
+        reason: "offensive",
+      });
+    const queue = () => as("reviewer").query(listForReview, {});
+    for (const person of ["reader", "second", "third"] as const) {
+      await reportAs(person);
+    }
+    await as("reviewer").mutation(review, {
+      ...protocol,
+      postPublicId: postId,
+      decision: "restore",
+    });
+    await settle(harness);
+
+    // The same three report it again: it stays in the feed, and waits for
+    // the reviewers with its ordinary link.
+    for (const person of ["reader", "second", "third"] as const) {
+      await reportAs(person);
+    }
+    await expect(feed(harness)).resolves.toEqual(["Cleared"]);
+    await expect(t.query(getPost, { postPublicId: postId })).resolves.toMatchObject(
+      { status: "listed" },
+    );
+    const waiting = await queue();
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]).toMatchObject({ reportCount: 3, hidden: false, post: { title: "Cleared" } });
+    expect(waiting[0].post.shareToken).toBe(card.shareToken);
+    await expect(
+      as("reviewer").query(getReports, { postPublicId: postId }),
+    ).resolves.toEqual([{ reason: "offensive", count: 3, notes: [] }]);
+    // A fourth report counts but tells nobody again.
+    await reportAs("reviewer");
+    const notified = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").collect())
+        .filter((job) => job.name.includes("notifyReviewers"))
+        .map((job) => job.args[0]),
+    );
+    expect(notified).toEqual([
+      expect.objectContaining({ hidden: true, reportCount: 3 }),
+      expect.objectContaining({ hidden: false, reportCount: 3 }),
+    ]);
+    expect((await queue())[0].reportCount).toBe(4);
+
+    // Restoring again starts the count over, and the post leaves the list.
+    await as("reviewer").mutation(review, {
+      ...protocol,
+      postPublicId: postId,
+      decision: "restore",
+    });
+    await expect(queue()).resolves.toEqual([]);
+    await reportAs("reader");
+    await expect(queue()).resolves.toEqual([]);
+    await settle(harness);
+  });
+
+  test("an author changing a cleared post ends the clearance", async () => {
+    const harness = await createHarness();
+    const { t, as } = harness;
+    process.env.COMMUNITY_REVIEWERS = "reviewer";
+    await seedStrategy(harness, "author", "source");
+    await seedStrategy(harness, "author", "other");
+    const postId = await post(harness, "author", "source", "Cleared");
+    const otherId = await post(harness, "author", "other", "Other");
+    const reportAs = (person: Person, postPublicId: string) =>
+      as(person).mutation(report, {
+        ...protocol,
+        postPublicId,
+        reason: "picture",
+      });
+    for (const id of [postId, otherId]) {
+      for (const person of ["reader", "second", "third"] as const) {
+        await reportAs(person, id);
+      }
+      await as("reviewer").mutation(review, {
+        ...protocol,
+        postPublicId: id,
+        decision: "restore",
+      });
+    }
+
+    // Reported enough again, then renamed: it is hidden at once.
+    for (const person of ["reader", "second", "third"] as const) {
+      await reportAs(person, postId);
+    }
+    await as("author").mutation(updatePost, {
+      ...protocol,
+      postPublicId: postId,
+      title: "Renamed",
+    });
+    await expect(t.query(getPost, { postPublicId: postId })).resolves.toBeNull();
+    const [waiting] = await as("reviewer").query(listForReview, {});
+    expect(waiting).toMatchObject({ reportCount: 3, post: { title: "Renamed" } });
+    // Opened through the link only reviewers are given.
+    expect(waiting.post.shareToken).toBe(
+      (await as("reviewer").query(getPost, { postPublicId: postId })).post
+        .shareToken,
+    );
+    await expect(
+      t.query(getFullSnapshot, {
+        ...protocol,
+        strategyPublicId: waiting.post.strategyPublicId,
+        shareToken: waiting.post.shareToken,
+      }),
+    ).resolves.toBeTruthy();
+
+    // Refreshed with one report waiting: still up, but the next reports
+    // hide it as they would any post.
+    await reportAs("reader", otherId);
+    await as("author").mutation(updatePost, {
+      ...protocol,
+      postPublicId: otherId,
+      refresh: true,
+    });
+    await expect(feed(harness)).resolves.toEqual(["Other"]);
+    await reportAs("second", otherId);
+    await reportAs("third", otherId);
+    await expect(feed(harness)).resolves.toEqual([]);
+    await settle(harness);
+  });
+
   test("a ban removes the post and stops its author posting", async () => {
     const harness = await createHarness();
     const { as } = harness;
@@ -768,5 +898,133 @@ describe("reports", () => {
       "Forbidden",
     );
     await settle(harness);
+  });
+});
+
+describe("limits", () => {
+  const HOUR = 60 * 60 * 1000;
+
+  test("an account posts at most ten times an hour, taken-down posts included", async () => {
+    const harness = await createHarness();
+    const { as } = harness;
+    for (let index = 0; index < 11; index++) {
+      await seedStrategy(harness, "author", `s${index}`);
+    }
+    const publishArgs = (index: number) => ({
+      ...protocol,
+      strategyPublicId: `s${index}`,
+      postPublicId: `limited-${index}`,
+      title: `Post ${index}`,
+    });
+    for (let index = 0; index < 10; index++) {
+      await as("author").mutation(publish, publishArgs(index));
+    }
+    await as("author").mutation(takeDown, {
+      ...protocol,
+      postPublicId: "limited-0",
+    });
+    // A retry finds its post, limit or not.
+    await expect(
+      as("author").mutation(publish, publishArgs(9)),
+    ).resolves.toEqual({ ok: true, postPublicId: "limited-9" });
+    await expect(
+      as("author").mutation(publish, publishArgs(10)),
+    ).rejects.toThrow("You've posted a lot in the last hour. Try again later.");
+    await expect(
+      as("author").mutation(publish, publishArgs(10)),
+    ).rejects.toThrow("RATE_LIMITED");
+    // Someone else posts as usual.
+    await seedStrategy(harness, "reader", "reader-source");
+    await post(harness, "reader", "reader-source");
+
+    vi.advanceTimersByTime(HOUR);
+    await as("author").mutation(publish, publishArgs(10));
+    await settle(harness);
+  });
+
+  test("an account makes at most thirty copies an hour", async () => {
+    const harness = await createHarness();
+    const { as } = harness;
+    await seedStrategy(harness, "author", "source");
+    const postId = await post(harness, "author", "source");
+    const copy = (publicId: string) =>
+      as("reader").mutation(copyPost, {
+        ...protocol,
+        postPublicId: postId,
+        publicId,
+      });
+    for (let index = 0; index < 30; index++) {
+      await copy(`copy-${index}`);
+    }
+    await expect(copy("copy-29")).resolves.toEqual({ ok: true, reused: true });
+    await expect(copy("copy-30")).rejects.toThrow(
+      "You've made a lot of copies in the last hour. Try again later.",
+    );
+    vi.advanceTimersByTime(HOUR);
+    await expect(copy("copy-30")).resolves.toEqual({ ok: true });
+  });
+
+  test("an account sends at most twenty reports a day", async () => {
+    const harness = await createHarness();
+    const { as } = harness;
+    const posts: string[] = [];
+    for (let index = 0; index < 21; index++) {
+      await seedStrategy(harness, "author", `s${index}`);
+      // Under the author's own posting limit.
+      if (index % 10 === 0) vi.advanceTimersByTime(HOUR);
+      posts.push(await post(harness, "author", `s${index}`));
+    }
+    const reportPost = (postPublicId: string) =>
+      as("reader").mutation(report, {
+        ...protocol,
+        postPublicId,
+        reason: "spam",
+      });
+    for (const postPublicId of posts.slice(0, 20)) {
+      await reportPost(postPublicId);
+    }
+    // Reporting a post again changes nothing, limit or not.
+    await expect(reportPost(posts[0])).resolves.toEqual({ ok: true });
+    await expect(reportPost(posts[20])).rejects.toThrow(
+      "You've sent a lot of reports today. Try again later.",
+    );
+    vi.advanceTimersByTime(24 * HOUR);
+    await expect(reportPost(posts[20])).resolves.toEqual({ ok: true });
+  });
+});
+
+describe("trending", () => {
+  test("an author's own star doesn't count toward trending", async () => {
+    const harness = await createHarness();
+    const { t, as } = harness;
+    await seedStrategy(harness, "author", "source");
+    const postId = await post(harness, "author", "source");
+    const trendScore = () =>
+      t.run(async (ctx) => {
+        const row = await ctx.db
+          .query("communityPosts")
+          .withIndex("by_publicId", (q) => q.eq("publicId", postId))
+          .unique();
+        return row!.trendScore;
+      });
+    await as("author").mutation(setStar, {
+      ...protocol,
+      postPublicId: postId,
+      starred: true,
+    });
+    await t.mutation(foldCountChanges, {});
+    await t.mutation(refreshTrending, {});
+    expect(
+      (await t.query(getPost, { postPublicId: postId })).post.starCount,
+    ).toBe(1);
+    expect(await trendScore()).toBe(0);
+
+    await as("reader").mutation(setStar, {
+      ...protocol,
+      postPublicId: postId,
+      starred: true,
+    });
+    await t.mutation(refreshTrending, {});
+    expect(await trendScore()).toBe(1);
   });
 });

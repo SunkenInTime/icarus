@@ -8,6 +8,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/community_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/widgets/community/community_post_view.dart';
 import 'package:icarus/widgets/community/open_community_post.dart';
 import 'package:icarus/widgets/dialogs/community/report_post_dialog.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
@@ -32,6 +33,7 @@ class CommunityReportsCard extends ConsumerWidget {
     final reports = ref.watch(_reportsProvider(post.publicId));
     final groups = reports.valueOrNull ?? const [];
     final total = groups.fold<int>(0, (sum, group) => sum + group.count);
+    final stillUp = ref.watch(communityPostStillUpProvider);
     return Container(
       width: 316,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
@@ -45,9 +47,11 @@ class CommunityReportsCard extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            reports.hasValue
-                ? l10n.communityReviewHiddenAfter(total)
-                : l10n.communityReviewReports,
+            !reports.hasValue
+                ? l10n.communityReviewReports
+                : stillUp
+                    ? l10n.communityReviewStillUp(total)
+                    : l10n.communityReviewHiddenAfter(total),
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 10),
@@ -139,6 +143,7 @@ class _CommunityReviewActionsState
 
   Future<void> _decide(CommunityReviewDecision decision) async {
     final l10n = context.l10n;
+    final stillUp = ref.read(communityPostStillUpProvider);
     if (decision == CommunityReviewDecision.ban) {
       final confirmed = await showShadDialog<bool>(
         context: context,
@@ -167,7 +172,8 @@ class _CommunityReviewActionsState
       if (!mounted) return;
       Settings.showToast(
         message: switch (decision) {
-          CommunityReviewDecision.restore => l10n.communityReviewRestored,
+          CommunityReviewDecision.restore =>
+            stillUp ? l10n.communityReviewKept : l10n.communityReviewRestored,
           CommunityReviewDecision.remove => l10n.communityReviewRemoved,
           CommunityReviewDecision.ban => l10n.communityReviewBanned,
         },
@@ -245,7 +251,11 @@ class _CommunityReviewActionsState
           leading: _sending == CommunityReviewDecision.restore
               ? _spinner(theme.foreground)
               : null,
-          child: Text(l10n.communityReviewRestore),
+          child: Text(
+            ref.watch(communityPostStillUpProvider)
+                ? l10n.communityReviewKeep
+                : l10n.communityReviewRestore,
+          ),
         ),
         const SizedBox(width: 6),
         ShadButton.destructive(
@@ -333,6 +343,7 @@ class _CommunityReviewButtonState extends ConsumerState<CommunityReviewButton> {
                               ref,
                               item.post,
                               underReview: true,
+                              stillUp: !item.hidden,
                             );
                           },
                         ),
@@ -423,9 +434,13 @@ class _ReviewRowState extends State<_ReviewRow> {
                 Text(
                   [
                     if (post.authorName case final name?) name,
-                    context.l10n.communityReviewHiddenAfter(
-                      widget.item.reportCount,
-                    ),
+                    widget.item.hidden
+                        ? context.l10n.communityReviewHiddenAfter(
+                            widget.item.reportCount,
+                          )
+                        : context.l10n.communityReviewStillUp(
+                            widget.item.reportCount,
+                          ),
                   ].join(' · '),
                   textAlign: TextAlign.start,
                   maxLines: 1,

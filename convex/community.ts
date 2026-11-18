@@ -13,18 +13,23 @@ import {
   authorOf,
   COMMUNITY_TOKEN_PREFIX,
   communityOwnerId,
+  COPIES_PER_HOUR,
   currentUserOrNull,
+  DAY_MS,
   FEED_PAGE_ROWS,
   getPostByPublicId,
+  HOUR_MS,
   isBanned,
   isReviewer,
   MAX_LIVE_POSTS_PER_AUTHOR,
   MAX_REPORT_NOTE_LENGTH,
   normalizedTitle,
+  POSTS_PER_HOUR,
   postCard,
   postCardValidator,
   postSideValidator,
   postStatusValidator,
+  REPORTS_PER_DAY,
   REPORTS_TO_HIDE,
   reportReasonValidator,
   searchTextOf,
@@ -44,6 +49,7 @@ import {
   forbiddenError,
   invalidPayloadError,
   notFoundError,
+  rateLimitedError,
 } from "./lib/errors";
 import { assertSafeFileNameId } from "./lib/fileNameIds";
 import { assertKnownMapChange } from "./lib/maps";
@@ -491,20 +497,35 @@ export const publish = mutation({
     if (posted.some((post) => post.status !== "removed")) {
       throw conflictError("This strategy is already posted.");
     }
-    const ownPosts = await ctx.db
-      .query("communityPosts")
-      .withIndex("by_authorId", (q) => q.eq("authorId", user._id))
-      .collect();
-    if (
-      ownPosts.filter((post) => post.status !== "removed").length >=
-      MAX_LIVE_POSTS_PER_AUTHOR
-    ) {
+    let livePosts = 0;
+    for (const status of ["listed", "hidden"] as const) {
+      const posts = await ctx.db
+        .query("communityPosts")
+        .withIndex("by_authorId_and_status", (q) =>
+          q.eq("authorId", user._id).eq("status", status),
+        )
+        .take(MAX_LIVE_POSTS_PER_AUTHOR);
+      livePosts += posts.length;
+    }
+    if (livePosts >= MAX_LIVE_POSTS_PER_AUTHOR) {
       throw invalidPayloadError(
         `You can have at most ${MAX_LIVE_POSTS_PER_AUTHOR} posts at a time.`,
       );
     }
-
     const now = Date.now();
+    // Taken-down posts count too, or posting and taking down would get past.
+    const recentPosts = await ctx.db
+      .query("communityPosts")
+      .withIndex("by_authorId_and_publishedAt", (q) =>
+        q.eq("authorId", user._id).gt("publishedAt", now - HOUR_MS),
+      )
+      .take(POSTS_PER_HOUR);
+    if (recentPosts.length >= POSTS_PER_HOUR) {
+      throw rateLimitedError(
+        "You've posted a lot in the last hour. Try again later.",
+      );
+    }
+
     const snapshot = await takeSnapshot(ctx, source, title, user._id);
     const author = authorOf(user);
     const postPublicId = args.postPublicId;
@@ -600,7 +621,25 @@ export const updatePost = mutation({
     } else if (title !== post.title) {
       await ctx.db.patch(post.snapshotStrategyId, { name: title });
     }
+    // What a reviewer cleared is no longer what the post shows, so reports
+    // hide it again; enough already waiting hide it now.
+    const changed = args.refresh === true || title !== post.title;
+    const lapsed = changed && post.clearedAt !== undefined;
+    if (lapsed) patch.clearedAt = undefined;
     await ctx.db.patch(post._id, patch);
+    if (lapsed && post.reportCount >= REPORTS_TO_HIDE) {
+      const updated = await ctx.db.get(post._id);
+      if (updated !== null) {
+        await hidePost(ctx, updated);
+        await ctx.scheduler.runAfter(0, notifyReviewersRef, {
+          postPublicId: updated.publicId,
+          title: updated.title,
+          authorName: updated.authorName,
+          reportCount: updated.reportCount,
+          hidden: true,
+        });
+      }
+    }
     return { ok: true } as const;
   },
 });
@@ -712,6 +751,18 @@ export const copyPost = mutation({
     if (post.status !== "listed" || snapshot === null) {
       throw notFoundError("Post", args.postPublicId);
     }
+    const now = Date.now();
+    const recentCopies = await ctx.db
+      .query("communityCopies")
+      .withIndex("by_userId_and_createdAt", (q) =>
+        q.eq("userId", user._id).gt("createdAt", now - HOUR_MS),
+      )
+      .take(COPIES_PER_HOUR);
+    if (recentCopies.length >= COPIES_PER_HOUR) {
+      throw rateLimitedError(
+        "You've made a lot of copies in the last hour. Try again later.",
+      );
+    }
     const folder =
       args.folderPublicId === undefined
         ? null
@@ -752,7 +803,7 @@ export const copyPost = mutation({
       postPublicId: post.publicId,
       strategyPublicId: args.publicId,
       counted,
-      createdAt: Date.now(),
+      createdAt: now,
     });
     if (counted) {
       await ctx.db.insert("communityCountChanges", {
@@ -798,35 +849,57 @@ export const report = mutation({
       )
       .first();
     if (existing !== null) return { ok: true } as const;
+    const now = Date.now();
+    const recentReports = await ctx.db
+      .query("communityReports")
+      .withIndex("by_reporterId_and_createdAt", (q) =>
+        q.eq("reporterId", user._id).gt("createdAt", now - DAY_MS),
+      )
+      .take(REPORTS_PER_DAY);
+    if (recentReports.length >= REPORTS_PER_DAY) {
+      throw rateLimitedError(
+        "You've sent a lot of reports today. Try again later.",
+      );
+    }
     await ctx.db.insert("communityReports", {
       postId: post._id,
       reporterId: user._id,
       reason: args.reason,
       ...(note.length === 0 ? {} : { note }),
-      createdAt: Date.now(),
+      createdAt: now,
     });
     const reportCount = post.reportCount + 1;
-    const hide = post.status === "listed" && reportCount >= REPORTS_TO_HIDE;
     await ctx.db.patch(post._id, { reportCount });
-    if (hide) {
-      await hidePost(ctx, post);
-      await ctx.scheduler.runAfter(0, notifyReviewersRef, {
-        postPublicId: post.publicId,
-        title: post.title,
-        authorName: post.authorName,
-        reportCount,
-      });
+    if (post.status !== "listed" || reportCount !== REPORTS_TO_HIDE) {
+      return { ok: true } as const;
     }
+    // A post a reviewer put back stays up; the reviewers are told it is
+    // being reported again and decide.
+    const hidden = post.clearedAt === undefined;
+    if (hidden) await hidePost(ctx, post);
+    await ctx.scheduler.runAfter(0, notifyReviewersRef, {
+      postPublicId: post.publicId,
+      title: post.title,
+      authorName: post.authorName,
+      reportCount,
+      hidden,
+    });
     return { ok: true } as const;
   },
 });
 
-/// Posts waiting for a reviewer, oldest post first, each with the link
-/// only reviewers are given. Reviewers only.
+/// Posts waiting for a reviewer: those reports hid, oldest post first, each
+/// with the link only reviewers are given; then posts a reviewer put back
+/// that are reported enough again, most reported first, with their ordinary
+/// link since they are still up. Reviewers only.
 export const listForReview = query({
   args: {},
   returns: v.array(
-    v.object({ post: postCardValidator, reportCount: v.number() }),
+    v.object({
+      post: postCardValidator,
+      reportCount: v.number(),
+      hidden: v.boolean(),
+    }),
   ),
   handler: async (ctx) => {
     if (!(await isReviewer(ctx))) throw forbiddenError();
@@ -834,10 +907,29 @@ export const listForReview = query({
       .query("communityPosts")
       .withIndex("by_status_and_publishedAt", (q) => q.eq("status", "hidden"))
       .take(100);
-    return hidden.map((post) => ({
-      post: { ...postCard(post), shareToken: post.reviewToken ?? post.shareToken },
-      reportCount: post.reportCount,
-    }));
+    // Only a cleared post stays listed with this many reports.
+    const reportedAgain = await ctx.db
+      .query("communityPosts")
+      .withIndex("by_status_and_reportCount", (q) =>
+        q.eq("status", "listed").gte("reportCount", REPORTS_TO_HIDE),
+      )
+      .order("desc")
+      .take(100);
+    return [
+      ...hidden.map((post) => ({
+        post: {
+          ...postCard(post),
+          shareToken: post.reviewToken ?? post.shareToken,
+        },
+        reportCount: post.reportCount,
+        hidden: true,
+      })),
+      ...reportedAgain.map((post) => ({
+        post: postCard(post),
+        reportCount: post.reportCount,
+        hidden: false,
+      })),
+    ];
   },
 });
 
@@ -876,8 +968,9 @@ export const getReports = query({
 });
 
 /// A reviewer's decision on a reported post. restore puts it back in the
-/// feed and clears its reports; remove takes it down; ban also stops its
-/// author posting.
+/// feed (or keeps it there), clears its reports and marks it cleared, so
+/// more reports tell the reviewers instead of hiding it again; remove takes
+/// it down; ban also stops its author posting.
 export const review = mutation({
   args: {
     ...cloudProtocolArgs,
@@ -900,7 +993,7 @@ export const review = mutation({
       }
       await clearReports(ctx, post._id);
       await relistPost(ctx, post);
-      await ctx.db.patch(post._id, { reportCount: 0 });
+      await ctx.db.patch(post._id, { reportCount: 0, clearedAt: Date.now() });
       return { ok: true } as const;
     }
     await removePost(ctx, post);
@@ -914,22 +1007,28 @@ export const review = mutation({
   },
 });
 
-/// Tells the reviewers a post was hidden, in the Discord channel at
-/// COMMUNITY_REVIEW_WEBHOOK_URL. Without one set, nothing is sent. Either
-/// way the post waits in listForReview, which the app shows reviewers.
+/// Tells the reviewers a post needs them, in the Discord channel at
+/// COMMUNITY_REVIEW_WEBHOOK_URL: reports hid it ([hidden]), or a post they
+/// put back was reported enough again and is still up. Without a webhook
+/// set, nothing is sent. Either way the post waits in listForReview, which
+/// the app shows reviewers.
 export const notifyReviewers = internalAction({
   args: {
     postPublicId: v.string(),
     title: v.string(),
     authorName: v.union(v.string(), v.null()),
     reportCount: v.number(),
+    hidden: v.boolean(),
   },
   returns: v.null(),
   handler: async (_ctx, args) => {
     const webhook = process.env.COMMUNITY_REVIEW_WEBHOOK_URL;
     if (webhook === undefined || webhook.length === 0) return null;
+    const what = args.hidden
+      ? `A Community post was hidden after ${args.reportCount} reports`
+      : `A Community post a reviewer put back has ${args.reportCount} reports again and is still up`;
     const content =
-      `A Community post was hidden after ${args.reportCount} reports: ` +
+      `${what}: ` +
       `"${args.title}"${args.authorName === null ? "" : ` by ${args.authorName}`}. ` +
       `${POST_LINK_ORIGIN}/community/${args.postPublicId}`;
     const response = await fetch(webhook, {
@@ -990,14 +1089,17 @@ export const foldCountChanges = internalMutation({
 const TRENDING_READ_LIMIT = 8000;
 
 /// Sets each post's trend score: its stars plus twice its copies from the
-/// last week. A copy is harder to fake than a star and says more. Posts
-/// whose score is unchanged are not written.
+/// last week, the author's own left out. A copy is harder to fake than a
+/// star and says more. Posts whose score is unchanged are not written.
 export const refreshTrending = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
     const since = Date.now() - TRENDING_WINDOW_MS;
     const scores = new Map<Id<"communityPosts">, number>();
+    // Who starred each post, so the author's own star is taken off once
+    // the post is read below.
+    const starrers = new Map<Id<"communityPosts">, Set<Id<"users">>>();
     // Newest first: past the limit, the oldest of the week drop out, not
     // what happened since.
     const stars = await ctx.db
@@ -1007,6 +1109,9 @@ export const refreshTrending = internalMutation({
       .take(TRENDING_READ_LIMIT);
     for (const star of stars) {
       scores.set(star.postId, (scores.get(star.postId) ?? 0) + 1);
+      const users = starrers.get(star.postId) ?? new Set();
+      users.add(star.userId);
+      starrers.set(star.postId, users);
     }
     const copies = await ctx.db
       .query("communityCopies")
@@ -1034,9 +1139,13 @@ export const refreshTrending = internalMutation({
     for (const post of trending) {
       if (!scores.has(post._id)) await ctx.db.patch(post._id, { trendScore: 0 });
     }
-    for (const [postId, score] of scores) {
+    for (const [postId, counted] of scores) {
       const post = await ctx.db.get(postId);
-      if (post !== null && post.trendScore !== score) {
+      if (post === null) continue;
+      const score = starrers.get(postId)?.has(post.authorId)
+        ? counted - 1
+        : counted;
+      if (post.trendScore !== score) {
         await ctx.db.patch(postId, { trendScore: score });
       }
     }

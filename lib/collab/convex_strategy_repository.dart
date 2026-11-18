@@ -1202,6 +1202,15 @@ bool isStrategyTooLargeToDuplicateError(Object error) {
               ConvexErrorCode.strategyTooLargeToDuplicate.wireName);
 }
 
+/// The server refused because the account did this too often lately; the
+/// same request can succeed later.
+bool isRateLimitedError(Object error) {
+  return (error is ConvexFunctionException &&
+          error.code == ConvexErrorCode.rateLimited) ||
+      (error is ConvexClientFunctionError &&
+          error.rawCode == ConvexErrorCode.rateLimited.wireName);
+}
+
 bool isMissingImageUploadIntentError(Object error) =>
     error is ConvexFunctionException &&
     error.code == ConvexErrorCode.uploadIntentNotFound;

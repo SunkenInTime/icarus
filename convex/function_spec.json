@@ -500,6 +500,12 @@
         "value": {
           "type": "object",
           "value": {
+            "hidden": {
+              "fieldType": {
+                "type": "boolean"
+              },
+              "optional": false
+            },
             "post": {
               "fieldType": {
                 "type": "object",
@@ -1340,6 +1346,12 @@
                   "type": "null"
                 }
               ]
+            },
+            "optional": false
+          },
+          "hidden": {
+            "fieldType": {
+              "type": "boolean"
             },
             "optional": false
           },
