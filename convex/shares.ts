@@ -11,6 +11,7 @@ import {
   getEffectiveStrategyRoleForUser,
   higherCollaboratorRole,
   requireCurrentUser,
+  strategyFolderOpenTo,
   type CollaboratorRole,
 } from "./lib/auth";
 import {
@@ -378,8 +379,9 @@ export const redeem = mutation({
         }
       }
 
-      const folder =
-        strategy.folderId === undefined ? null : await ctx.db.get(strategy.folderId);
+      // The library opens where the strategy lists for this person: its
+      // folder only if they can open that folder too.
+      const folder = await strategyFolderOpenTo(ctx, strategy, user._id);
 
       return {
         ok: true,

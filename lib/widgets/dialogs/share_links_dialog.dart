@@ -1486,7 +1486,14 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
     if (!mounted) return;
     setState(() => _isSubmitting = false);
     if (succeeded) {
-      Navigator.of(context).pop();
+      // An added strategy opens on top of this dialog, and a plain pop would
+      // close the strategy instead, so close this dialog's own route.
+      final route = ModalRoute.of(context);
+      if (route == null || route.isCurrent) {
+        Navigator.of(context).pop();
+      } else if (route.isActive) {
+        Navigator.of(context).removeRoute(route);
+      }
     } else {
       setState(() {
         _errorText = l10n.addSharedItemFailed;
