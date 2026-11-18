@@ -1351,7 +1351,7 @@
   "communityPostedChanged": "投稿後にこの作戦を変更しました。投稿には{when}の状態が表示されたままです。",
   "communityPostedSame": "投稿には{when}の作戦が表示されています。",
   "communityPostedSourceDeleted": "この作戦は削除されています。投稿は取り下げるまで公開されたままです。",
-  "communityPostedHidden": "報告を受けたため、確認が終わるまでこの投稿は非表示です。それまで変更できません。",
+  "communityPostedHidden": "報告を受けたため、確認が終わるまでこの投稿は非表示です。それまで変更も取り下げもできません。",
   "communityUpdatePost": "投稿を更新",
   "communityPostUpdated": "投稿を更新しました",
   "communityPostUpdateFailed": "投稿を更新できませんでした。もう一度お試しください。",

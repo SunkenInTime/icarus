@@ -6344,7 +6344,7 @@
   "@communityPostedSourceDeleted": {
     "description": "In the posted dialog when the strategy it came from is gone."
   },
-  "communityPostedHidden": "Reports have hidden this post while a reviewer looks at it. It can't be changed until they decide.",
+  "communityPostedHidden": "Reports have hidden this post while a reviewer looks at it. It can't be changed or taken down until they decide.",
   "@communityPostedHidden": {
     "description": "Shown to the author of a post hidden by reports."
   },

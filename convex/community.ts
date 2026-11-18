@@ -606,7 +606,8 @@ export const updatePost = mutation({
 });
 
 /// Takes a post down: its link stops working and it leaves the feed.
-/// Copies people made stay theirs. Its author or a reviewer.
+/// Copies people made stay theirs. Its author or a reviewer; while reports
+/// have it hidden, a reviewer only.
 export const takeDown = mutation({
   args: { ...cloudProtocolArgs, postPublicId: v.string() },
   returns: okResultValidator,
@@ -614,8 +615,14 @@ export const takeDown = mutation({
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     const user = await requireCurrentUser(ctx);
     const post = await getPostByPublicId(ctx, args.postPublicId);
-    if (post.authorId !== user._id && !(await isReviewer(ctx))) {
-      throw forbiddenError();
+    const reviewer = await isReviewer(ctx);
+    if (post.authorId !== user._id && !reviewer) throw forbiddenError();
+    // Taking a reported post down and posting it again would skip the
+    // review, so while it is hidden only a reviewer takes it down.
+    if (post.status === "hidden" && !reviewer) {
+      throw conflictError(
+        "This post is being reviewed and can't be taken down.",
+      );
     }
     await removePost(ctx, post);
     return { ok: true } as const;

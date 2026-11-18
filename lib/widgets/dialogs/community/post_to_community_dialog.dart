@@ -511,18 +511,22 @@ class _PostedViewState extends ConsumerState<_PostedView> {
                             child: Text(l10n.communityCopyLink),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: ShadButton.secondary(
-                            key: const ValueKey('community-post-take-down'),
-                            enabled: !busy,
-                            onPressed: _takeDown,
-                            child: Text(
-                              l10n.communityTakeDown,
-                              style: TextStyle(color: theme.destructive),
+                        // Nor taken down, until a reviewer decides.
+                        if (widget.mine.status !=
+                            CommunityPostStatus.hidden) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ShadButton.secondary(
+                              key: const ValueKey('community-post-take-down'),
+                              enabled: !busy,
+                              onPressed: _takeDown,
+                              child: Text(
+                                l10n.communityTakeDown,
+                                style: TextStyle(color: theme.destructive),
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                     if (_error case final error?) _ErrorText(error),

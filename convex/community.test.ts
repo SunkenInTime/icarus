@@ -696,6 +696,10 @@ describe("reports", () => {
         }),
       ).rejects.toThrow("being reviewed");
     }
+    // Nor can the author take it down and post it again to skip the review.
+    await expect(
+      as("author").mutation(takeDown, { ...protocol, postPublicId: postId }),
+    ).rejects.toThrow("being reviewed");
     await expect(
       as("reviewer").query(getReports, { postPublicId: postId }),
     ).resolves.toEqual([
