@@ -748,6 +748,13 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           const SingleActivator(LogicalKeyboardKey.escape): () {
             if (!_expanded) unawaited(_leaveToLibrary());
           },
+          // The quick look's pages; the full view has the editor's own keys.
+          if (!_expanded) ...{
+            const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+                unawaited(stepCommunityPage(ref, -1)),
+            const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+                unawaited(stepCommunityPage(ref, 1)),
+          },
         },
         child: Focus(
           autofocus: true,

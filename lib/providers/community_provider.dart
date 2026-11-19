@@ -163,7 +163,7 @@ class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
       clearError: true,
       paused: false,
     );
-    await _read(after: current);
+    await _read(fromTop: false);
   }
 
   /// Reads the feed again from the top. The cards on screen stay until the
@@ -173,21 +173,33 @@ class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
     _generation++;
     _unaskedPages = 0;
     state = state.copyWith(loading: true, started: true, clearError: true);
-    await _read(after: CommunityFeedState(filter: state.filter));
+    await _read(fromTop: true);
   }
 
-  /// Reads the page that follows [after] and shows [after] with it.
-  Future<void> _read({required CommunityFeedState after}) async {
+  /// Reads everything again from the top, the feeds kept for other filters
+  /// included: the user's own post was made or changed.
+  Future<void> readAgain() {
+    final filter = state.filter;
+    _kept.removeWhere((kept, _) => kept != filter);
+    return refresh();
+  }
+
+  /// Reads the first page ([fromTop]) or the one after the cards on screen,
+  /// and shows it: in place of them, or after them as they are by then, so
+  /// a post dropped while the page was being read stays dropped.
+  Future<void> _read({required bool fromTop}) async {
     final generation = _generation;
     try {
-      final page = await ref
-          .read(communityRepositoryProvider)
-          .fetchFeed(after.filter, cursor: after.nextCursor);
+      final page = await ref.read(communityRepositoryProvider).fetchFeed(
+            state.filter,
+            cursor: fromTop ? null : state.nextCursor,
+          );
       if (generation != _generation) return;
-      final seen = {for (final post in after.posts) post.publicId};
+      final shown = fromTop ? const <CommunityPost>[] : state.posts;
+      final seen = {for (final post in shown) post.publicId};
       final next = state.copyWith(
         posts: [
-          ...after.posts,
+          ...shown,
           for (final post in page.posts)
             if (seen.add(post.publicId)) post,
         ],
@@ -195,7 +207,8 @@ class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
         clearCursor: page.nextCursor == null,
         loading: false,
         paused: false,
-        fetchedAt: after.fetchedAt ?? ref.read(communityClockProvider)(),
+        fetchedAt: (fromTop ? null : state.fetchedAt) ??
+            ref.read(communityClockProvider)(),
       );
       state = next;
       _keep(next);
@@ -292,15 +305,22 @@ class CommunityStarsNotifier extends Notifier<CommunityStars> {
       authProvider
           .select((auth) => auth.isAuthenticated && auth.isConvexUserReady),
     );
+    _signIn++;
     if (!signedIn) return const CommunityStars();
     unawaited(_load());
     return const CommunityStars();
   }
 
+  /// Counts sign-ins and sign-outs, so stars read for one account never
+  /// reach the next.
+  int _signIn = 0;
+
   Future<void> _load() async {
+    final signIn = _signIn;
     try {
       final starred =
           await ref.read(communityRepositoryProvider).fetchMyStars();
+      if (signIn != _signIn) return;
       state = CommunityStars(
         starred: {...starred, ...state.starred},
         shownCounts: state.shownCounts,
@@ -386,15 +406,22 @@ class CommunityCopiesNotifier extends Notifier<List<CommunityCopy>> {
         (auth) => auth.isAuthenticated && auth.isConvexUserReady,
       ),
     );
+    _signIn++;
     if (!signedIn) return const [];
     unawaited(_load());
     return const [];
   }
 
+  /// Counts sign-ins and sign-outs, so copies read for one account never
+  /// reach the next.
+  int _signIn = 0;
+
   Future<void> _load() async {
+    final signIn = _signIn;
     try {
       final copies =
           await ref.read(communityRepositoryProvider).fetchMyCopies();
+      if (signIn != _signIn) return;
       final made = {for (final copy in state) copy.strategyPublicId};
       state = [
         ...state,

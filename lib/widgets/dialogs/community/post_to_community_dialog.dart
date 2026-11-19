@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/community_models.dart';
@@ -131,6 +133,12 @@ class _PostFormState extends ConsumerState<_PostForm> {
   void initState() {
     super.initState();
     _title.addListener(() => setState(() {}));
+    // A failed read of who is posting is tried again each time this opens.
+    Future.microtask(() {
+      if (mounted && ref.read(communityViewerProvider).hasError) {
+        ref.invalidate(communityViewerProvider);
+      }
+    });
   }
 
   @override
@@ -145,12 +153,16 @@ class _PostFormState extends ConsumerState<_PostForm> {
       _posting = true;
       _error = null;
     });
+    // Read before the wait: the dialog may be closed while it posts.
+    final feed = ref.read(communityFeedProvider.notifier);
     try {
       await ref.read(communityRepositoryProvider).publish(
             postPublicId: widget.postPublicId,
             strategyPublicId: widget.strategyPublicId,
             title: _title.text,
           );
+      // So the author finds their post in the feed straight away.
+      unawaited(feed.readAgain());
       if (!mounted) return;
       widget.onPosted();
     } catch (error, stackTrace) {
@@ -188,7 +200,9 @@ class _PostFormState extends ConsumerState<_PostForm> {
     final theme = ShadTheme.of(context);
 
     final Widget body;
-    if (preview.hasError || (preview.hasValue && data == null)) {
+    if (preview.hasError ||
+        viewer.hasError ||
+        (preview.hasValue && data == null)) {
       body = _Message(text: l10n.communityPostPreviewFailed);
     } else if (data == null || !viewer.hasValue) {
       body = const _Message(spinner: true);
@@ -339,12 +353,14 @@ class _PostedViewState extends ConsumerState<_PostedView> {
       _updating = true;
       _error = null;
     });
+    final feed = ref.read(communityFeedProvider.notifier);
     try {
       await ref
           .read(communityRepositoryProvider)
           .updatePost(postPublicId: _post.publicId, refresh: true);
-      ref.invalidate(_sourceStateProvider(_post.publicId));
+      unawaited(feed.readAgain());
       if (!mounted) return;
+      ref.invalidate(_sourceStateProvider(_post.publicId));
       Settings.showToast(
         message: l10n.communityPostUpdated,
         backgroundColor: Settings.tacticalVioletTheme.secondary,
@@ -379,9 +395,10 @@ class _PostedViewState extends ConsumerState<_PostedView> {
       _takingDown = true;
       _error = null;
     });
+    final feed = ref.read(communityFeedProvider.notifier);
     try {
       await ref.read(communityRepositoryProvider).takeDown(_post.publicId);
-      ref.read(communityFeedProvider.notifier).forget(_post.publicId);
+      feed.forget(_post.publicId);
       if (!mounted) return;
       Navigator.of(context).pop();
       Settings.showToast(

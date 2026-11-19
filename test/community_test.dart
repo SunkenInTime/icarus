@@ -166,6 +166,39 @@ void main() {
       expect(server.reads, hasLength(1));
     });
 
+    test('a post dropped while the next page is read stays dropped', () async {
+      await readFirst(['a', 'b'], nextCursor: 'more');
+      unawaited(notifier().loadMore());
+      await pumpEventQueue();
+      notifier().forget('a');
+      server.answer(['c']);
+      await pumpEventQueue();
+      expect(ids(), ['b', 'c']);
+    });
+
+    test('reads every feed again after the user posts', () async {
+      await readFirst(['old-1']);
+      pick(bind);
+      await pumpEventQueue();
+      server.answer(['bind-1']);
+      await pumpEventQueue();
+      expect(server.reads, hasLength(2));
+
+      unawaited(notifier().readAgain());
+      await pumpEventQueue();
+      // The cards stay while it is read.
+      expect(ids(), ['bind-1']);
+      server.answer(['bind-new', 'bind-1']);
+      await pumpEventQueue();
+      expect(ids(), ['bind-new', 'bind-1']);
+
+      // The feed kept for the other filter was dropped, so it is read too.
+      pick(const CommunityFilter());
+      await pumpEventQueue();
+      expect(feed().isFirstLoad, isTrue);
+      expect(server.reads, hasLength(4));
+    });
+
     test('keeps its cards until the new first page arrives', () async {
       await readFirst(['old-1', 'old-2']);
       final firstRead = now;

@@ -2,7 +2,7 @@ import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import { internalAction, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, mutation } from "./lib/functions";
 import { assertStrategyRole, requireCurrentUser } from "./lib/auth";
 import {
@@ -323,13 +323,9 @@ export const listMine = query({
   handler: async (ctx) => {
     const user = await currentUserOrNull(ctx);
     if (user === null) return [];
-    const posts = await ctx.db
-      .query("communityPosts")
-      .withIndex("by_authorId", (q) => q.eq("authorId", user._id))
-      .order("desc")
-      .take(MAX_LIVE_POSTS_PER_AUTHOR * 4);
+    const posts = await livePostsBy(ctx, user._id);
     return posts
-      .filter((post) => post.status !== "removed")
+      .sort((a, b) => b._creationTime - a._creationTime)
       .map((post) => ({
         post: postCard(post),
         status: post.status,
@@ -381,15 +377,10 @@ export const listPostable = query({
         )
         .take(2000)
     ).filter((strategy) => strategy.unfinishedMove === undefined);
-    const posts = await ctx.db
-      .query("communityPosts")
-      .withIndex("by_authorId", (q) => q.eq("authorId", user._id))
-      .take(MAX_LIVE_POSTS_PER_AUTHOR * 4);
+    const posts = await livePostsBy(ctx, user._id);
     const postBySource = new Map<string, string>();
     for (const post of posts) {
-      if (post.status !== "removed") {
-        postBySource.set(post.sourceStrategyId, post.publicId);
-      }
+      postBySource.set(post.sourceStrategyId, post.publicId);
     }
     return strategies
       .sort((a, b) => b.updatedAt - a.updatedAt)
@@ -497,16 +488,7 @@ export const publish = mutation({
     if (posted.some((post) => post.status !== "removed")) {
       throw conflictError("This strategy is already posted.");
     }
-    let livePosts = 0;
-    for (const status of ["listed", "hidden"] as const) {
-      const posts = await ctx.db
-        .query("communityPosts")
-        .withIndex("by_authorId_and_status", (q) =>
-          q.eq("authorId", user._id).eq("status", status),
-        )
-        .take(MAX_LIVE_POSTS_PER_AUTHOR);
-      livePosts += posts.length;
-    }
+    const livePosts = (await livePostsBy(ctx, user._id)).length;
     if (livePosts >= MAX_LIVE_POSTS_PER_AUTHOR) {
       throw invalidPayloadError(
         `You can have at most ${MAX_LIVE_POSTS_PER_AUTHOR} posts at a time.`,
@@ -1166,6 +1148,19 @@ export const clearReportsBatch = internalMutation({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// [authorId]'s posts that are not taken down. Read by status, so however
+/// many they have taken down, none of these is missed.
+async function livePostsBy(ctx: QueryCtx, authorId: Id<"users">) {
+  const byStatus = (status: "listed" | "hidden") =>
+    ctx.db
+      .query("communityPosts")
+      .withIndex("by_authorId_and_status", (q) =>
+        q.eq("authorId", authorId).eq("status", status),
+      )
+      .take(MAX_LIVE_POSTS_PER_AUTHOR);
+  return [...(await byStatus("listed")), ...(await byStatus("hidden"))];
+}
 
 const REPORTS_CLEARED_PER_BATCH = 1000;
 const clearReportsBatchRef = makeFunctionReference<"mutation">(

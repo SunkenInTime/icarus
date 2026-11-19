@@ -45,7 +45,7 @@ class _CommunityTabState extends ConsumerState<CommunityTab> {
   /// part-way down it: the cards under them stay where they are.
   late final _lifecycle = AppLifecycleListener(
     onResume: () {
-      if (_scroll.hasClients && _scroll.offset > 200) return;
+      if (_scroll.hasClients && _position.pixels > 200) return;
       unawaited(ref.read(communityFeedProvider.notifier).refreshIfStale());
     },
   );
@@ -65,6 +65,10 @@ class _CommunityTabState extends ConsumerState<CommunityTab> {
     super.dispose();
   }
 
+  /// The grid's scroll position. While one grid fades out under the next,
+  /// both hold the controller, and the newer one is the one on screen.
+  ScrollPosition get _position => _scroll.positions.last;
+
   /// Reads another page when the cards on screen leave room below them: a
   /// tall window, or a page that matched few posts.
   void _fillIfShort() {
@@ -73,7 +77,7 @@ class _CommunityTabState extends ConsumerState<CommunityTab> {
     if (feed.loading || feed.paused || feed.error != null || !feed.hasMore) {
       return;
     }
-    if (_scroll.position.extentAfter < 600) {
+    if (_position.extentAfter < 600) {
       unawaited(
         ref.read(communityFeedProvider.notifier).loadMore(byUser: false),
       );
@@ -82,7 +86,7 @@ class _CommunityTabState extends ConsumerState<CommunityTab> {
 
   void _maybeLoadMore() {
     if (!_scroll.hasClients) return;
-    final position = _scroll.position;
+    final position = _position;
     if (position.pixels > position.maxScrollExtent - 600) {
       unawaited(ref.read(communityFeedProvider.notifier).loadMore());
     }

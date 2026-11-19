@@ -157,13 +157,14 @@ class _CommunityReviewActionsState
       if (confirmed != true || !mounted) return;
     }
     setState(() => _sending = decision);
+    // Read before the wait: the reviewer may close the post meanwhile.
+    final feed = ref.read(communityFeedProvider.notifier);
     try {
       await ref
           .read(communityRepositoryProvider)
           .review(widget.post.publicId, decision);
       // The list of posts waiting follows the server; the feed was read
       // while the post was out of it.
-      final feed = ref.read(communityFeedProvider.notifier);
       if (decision == CommunityReviewDecision.restore) {
         unawaited(feed.refresh());
       } else {

@@ -18,6 +18,7 @@ Future<void> openCommunityPostFromCard(
   CommunityPost card,
 ) async {
   final l10n = ref.read(l10nProvider);
+  final feed = ref.read(communityFeedProvider.notifier);
   final ({CommunityPost post, CommunityPostStatus status})? found;
   try {
     found =
@@ -36,13 +37,15 @@ Future<void> openCommunityPostFromCard(
     return;
   }
   if (found == null || found.status != CommunityPostStatus.listed) {
-    ref.read(communityFeedProvider.notifier).forget(card.publicId);
+    feed.forget(card.publicId);
     Settings.showToast(
       message: l10n.communityPostTakenDown,
       backgroundColor: Settings.tacticalVioletTheme.secondary,
     );
     return;
   }
+  // The card left the screen while its post was read: a filter changed.
+  if (!ref.context.mounted) return;
   await openCommunityPost(ref, found.post);
 }
 

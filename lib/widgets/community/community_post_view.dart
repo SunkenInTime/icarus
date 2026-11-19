@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/community_models.dart';
 import 'package:icarus/collab/community_repository.dart';
@@ -124,6 +123,8 @@ Future<void> copyCommunityPost(
     await _askToSignIn(context);
     return;
   }
+  // Read before the wait: the reader may close the post while it copies.
+  final copies = ref.read(communityCopiesProvider.notifier);
   try {
     if (signedIn) {
       final publicId = const Uuid().v4();
@@ -131,9 +132,7 @@ Future<void> copyCommunityPost(
             postPublicId: post.publicId,
             publicId: publicId,
           );
-      ref
-          .read(communityCopiesProvider.notifier)
-          .add((strategyPublicId: publicId, postPublicId: post.publicId));
+      copies.add((strategyPublicId: publicId, postPublicId: post.publicId));
     } else {
       await StrategyImportExportService(ref).importCommunityPost(
         strategyPublicId: post.strategyPublicId,
@@ -303,8 +302,20 @@ class CommunityWindowButton extends StatelessWidget {
   }
 }
 
-/// Steps through the post's pages: the quick look's pages bar. Left and
-/// right arrows step too.
+/// Moves the open post [delta] pages on, if there is a page there.
+Future<void> stepCommunityPage(WidgetRef ref, int delta) async {
+  final pages = ref.read(drawnCloudPagesProvider)?.pages ?? const [];
+  final activeId = ref.read(strategyPageSessionProvider).activePageId;
+  final index = pages.indexWhere((page) => page.publicId == activeId);
+  final next = index + delta;
+  if (index < 0 || next < 0 || next >= pages.length) return;
+  await ref
+      .read(strategyProvider.notifier)
+      .setActivePageAnimated(pages[next].publicId);
+}
+
+/// Steps through the post's pages: the quick look's pages bar. The quick
+/// look binds the left and right arrows to the same steps.
 class CommunityPageStepper extends ConsumerWidget {
   const CommunityPageStepper({super.key});
 
@@ -317,67 +328,55 @@ class CommunityPageStepper extends ConsumerWidget {
     );
     final index = pages.indexWhere((page) => page.publicId == activeId);
     final l10n = context.l10n;
-    Future<void> step(int delta) async {
-      final next = index + delta;
-      if (index < 0 || next < 0 || next >= pages.length) return;
-      await ref
-          .read(strategyProvider.notifier)
-          .setActivePageAnimated(pages[next].publicId);
-    }
+    Future<void> step(int delta) => stepCommunityPage(ref, delta);
 
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.arrowLeft): () => step(-1),
-        const SingleActivator(LogicalKeyboardKey.arrowRight): () => step(1),
-      },
-      child: Container(
-        height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: theme.card,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: theme.border, width: 2),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ShadIconButton.ghost(
-              width: 32,
-              height: 32,
-              enabled: index > 0,
-              onPressed: () => step(-1),
-              icon: const Icon(LucideIcons.chevronLeft, size: 18),
-            ),
-            const SizedBox(width: 8),
-            if (index >= 0) ...[
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 180),
-                child: Text(
-                  pages[index].name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: theme.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.border, width: 2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ShadIconButton.ghost(
+            width: 32,
+            height: 32,
+            enabled: index > 0,
+            onPressed: () => step(-1),
+            icon: const Icon(LucideIcons.chevronLeft, size: 18),
+          ),
+          const SizedBox(width: 8),
+          if (index >= 0) ...[
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 180),
+              child: Text(
+                pages[index].name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                l10n.communityPageOf(index + 1, pages.length),
-                style: TextStyle(fontSize: 14, color: theme.mutedForeground),
-              ),
-            ],
+            ),
             const SizedBox(width: 8),
-            ShadIconButton.ghost(
-              width: 32,
-              height: 32,
-              enabled: index >= 0 && index < pages.length - 1,
-              onPressed: () => step(1),
-              icon: const Icon(LucideIcons.chevronRight, size: 18),
+            Text(
+              l10n.communityPageOf(index + 1, pages.length),
+              style: TextStyle(fontSize: 14, color: theme.mutedForeground),
             ),
           ],
-        ),
+          const SizedBox(width: 8),
+          ShadIconButton.ghost(
+            width: 32,
+            height: 32,
+            enabled: index >= 0 && index < pages.length - 1,
+            onPressed: () => step(1),
+            icon: const Icon(LucideIcons.chevronRight, size: 18),
+          ),
+        ],
       ),
     );
   }
