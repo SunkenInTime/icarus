@@ -18,6 +18,7 @@ import 'package:icarus/widgets/dialogs/screenshot_dialog.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
+import 'package:icarus/widgets/community/community_post_view.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 
@@ -55,6 +56,9 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
     // Signed out, the button signs in; signed in, it adds the strategy.
     final viewingThroughLink = isCloud &&
         ref.watch(shareLinkViewProvider)?.strategyPublicId == strategyId;
+    // A Community post is saved from its own Save button, never joined.
+    final communityPost = isCloud &&
+        ref.watch(communityPostViewProvider)?.strategyPublicId == strategyId;
     // Asked only for a link view: the editor has no other use for it.
     final signedIn = viewingThroughLink &&
         ref.watch(authProvider.select((auth) => auth.isAuthenticated));
@@ -80,7 +84,9 @@ class _EditorToolbarState extends ConsumerState<EditorToolbar> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (viewingThroughLink && !signedIn)
+                if (communityPost)
+                  const SizedBox.shrink()
+                else if (viewingThroughLink && !signedIn)
                   EditorToolbarButton(
                     style: style,
                     tooltip: l10n.editorToolbarViewOnlySignIn,

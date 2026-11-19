@@ -43,7 +43,7 @@ class StrategyTileViewData {
       attackColor: _attackColor(_attackLabel(strategy.pages)),
       thumbnailAsset:
           'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
-      lastEditedLabel: _timeAgo(l10n, strategy.lastEdited),
+      lastEditedLabel: timeAgo(l10n, strategy.lastEdited),
       agentTypes: _collectAgentTypes(strategy.pages),
     );
   }
@@ -61,7 +61,7 @@ class StrategyTileViewData {
       attackColor: _attackColor(attackLabel),
       thumbnailAsset:
           'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
-      lastEditedLabel: _timeAgo(l10n, strategy.lastEdited),
+      lastEditedLabel: timeAgo(l10n, strategy.lastEdited),
       agentTypes: _inRoleOrder(entry.agentTypes),
       cloudBadge: cloudBadgeKindForRole(entry.role),
     );
@@ -149,7 +149,8 @@ class StrategyTileViewData {
     ];
   }
 
-  static String _timeAgo(AppLocalizations l10n, DateTime date) {
+  /// How long ago [date] was, as the library cards say it ("7 hours ago").
+  static String timeAgo(AppLocalizations l10n, DateTime date) {
     final difference = DateTime.now().difference(date);
     if (difference.inMinutes < 1) return l10n.strategyTileEditedJustNow;
     if (difference.inMinutes < 60) {

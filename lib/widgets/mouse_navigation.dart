@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/community_models.dart';
+import 'package:icarus/collab/community_repository.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
@@ -13,11 +15,13 @@ import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -25,6 +29,9 @@ import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:icarus/widgets/community/community_link.dart';
+import 'package:icarus/widgets/community/community_post_view.dart';
+import 'package:icarus/widgets/community/open_community_post.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Tracks the live route stack so [MouseNavigation] can tell what is on top:
@@ -105,6 +112,21 @@ class _StrategyLocation extends _NavLocation {
   int get hashCode => Object.hash(_StrategyLocation, strategyId, source);
 }
 
+/// A Community post open over the library. Its strategy is the post's copy,
+/// which only the post can open, so history reopens the post.
+class _PostLocation extends _NavLocation {
+  const _PostLocation(this.postPublicId);
+
+  final String postPublicId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _PostLocation && other.postPublicId == postPublicId;
+
+  @override
+  int get hashCode => Object.hash(_PostLocation, postPublicId);
+}
+
 /// Makes the mouse side buttons (back/forward) walk the user's browsing
 /// history, browser-style: folders visited in the library and strategies
 /// opened. Back from an open strategy returns to the library (respecting the
@@ -129,6 +151,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
   ProviderSubscription<String?>? _folderSub;
   ProviderSubscription<StrategyState>? _strategySub;
   ProviderSubscription<String?>? _sharedStrategySub;
+  ProviderSubscription<String?>? _communityPostSub;
 
   @override
   void initState() {
@@ -153,6 +176,108 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
         ));
       },
     );
+    // A Community post's link opens it over the Community tab.
+    _communityPostSub = ref.listenManual(
+      communityPostToOpenProvider,
+      (_, postPublicId) {
+        if (postPublicId == null) return;
+        ref.read(communityPostToOpenProvider.notifier).state = null;
+        unawaited(_openCommunityPostLink(postPublicId));
+      },
+      fireImmediately: true,
+    );
+  }
+
+  Future<void> _authSettled() async {
+    bool settled(AppAuthState auth) =>
+        !auth.isLoading && (!auth.isAuthenticated || auth.isConvexUserReady);
+    if (settled(ref.read(authProvider))) return;
+    final done = Completer<void>();
+    final sub = ref.listenManual(authProvider, (_, auth) {
+      if (settled(auth) && !done.isCompleted) done.complete();
+    });
+    await done.future.timeout(const Duration(seconds: 10), onTimeout: () {});
+    sub.close();
+  }
+
+  /// Opens the post a link names over the Community tab. False when it
+  /// didn't open: the user stayed where they were, or the post is gone.
+  Future<bool> _openCommunityPostLink(String postPublicId) async {
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null || !mounted) return false;
+    if (!await _leaveOpenStrategy(navigator, 'openCommunityPost')) {
+      return false;
+    }
+    ref.read(libraryNavigationProvider).showCommunity();
+    // A reviewer sees a hidden post only once the server knows who they
+    // are, so a link the app opened with waits for sign-in to settle.
+    await _authSettled();
+    if (!mounted) return false;
+    final l10n = ref.read(l10nProvider);
+    final ({CommunityPost post, CommunityPostStatus status})? found;
+    try {
+      found =
+          await ref.read(communityRepositoryProvider).fetchPost(postPublicId);
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'Reading a linked Community post failed.',
+        source: 'MouseNavigation.openCommunityPost',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      Settings.showToast(
+        message: l10n.communityLoadFailedTitle,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return false;
+    }
+    if (!mounted) return false;
+    if (found == null || found.status == CommunityPostStatus.removed) {
+      Settings.showToast(
+        message: l10n.communityPostTakenDown,
+        backgroundColor: Settings.tacticalVioletTheme.secondary,
+      );
+      return false;
+    }
+    // A strategy opened during the waits above is left the same way, so the
+    // post never opens over work that isn't saved.
+    if (!await _leaveOpenStrategy(navigator, 'openCommunityPost')) {
+      return false;
+    }
+    // Not waited for: it ends when the post is closed.
+    unawaited(
+      openCommunityPost(
+        ref,
+        found.post,
+        underReview: found.status == CommunityPostStatus.hidden,
+      ),
+    );
+    return true;
+  }
+
+  /// Leaves the strategy or Community post that is open, if one is, asking
+  /// first when it has unsaved work. False when the user stays in it.
+  Future<bool> _leaveOpenStrategy(
+    NavigatorState navigator,
+    String source,
+  ) async {
+    final bool inStrategyRoute =
+        mouseNavigationRouteObserver.topRoute?.settings.name ==
+            Routes.strategyView;
+    final bool strategyOpen = ref.read(strategyProvider).stratName != null;
+    if (!strategyOpen && !inStrategyRoute) return mounted;
+    final bool left = await guardUnsavedStrategyExit(
+      context: navigator.context,
+      ref: ref,
+      source: 'MouseNavigation.$source',
+      onContinue: () async {
+        _resetStrategyUiState();
+        await ref.read(strategyProvider.notifier).clearCurrentStrategy();
+        if (inStrategyRoute && navigator.mounted) navigator.pop();
+        forgetCommunityPost(ref, null);
+      },
+    );
+    return left && mounted;
   }
 
   @override
@@ -160,12 +285,23 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     _folderSub?.close();
     _strategySub?.close();
     _sharedStrategySub?.close();
+    _communityPostSub?.close();
     super.dispose();
+  }
+
+  /// The Community post open over the library, if the open strategy is its.
+  CommunityPost? _openPost() {
+    final post = ref.read(communityPostViewProvider);
+    final strategy = ref.read(strategyProvider);
+    if (post == null || strategy.stratName == null) return null;
+    return strategy.id == post.strategyPublicId ? post : null;
   }
 
   _NavLocation _deriveLocation() {
     final strategy = ref.read(strategyProvider);
     if (strategy.stratName != null) {
+      final post = _openPost();
+      if (post != null) return _PostLocation(post.publicId);
       return _StrategyLocation(
         strategy.id,
         strategy.source ?? StrategySource.local,
@@ -296,6 +432,8 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
                 null;
       case _StrategyLocation(source: StrategySource.cloud):
         return ref.read(isCloudWorkspaceAvailableProvider);
+      case _PostLocation():
+        return true;
     }
   }
 
@@ -328,8 +466,18 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
         ref.read(folderProvider.notifier).updateID(folderId);
         return true;
 
+      case _PostLocation(:final postPublicId):
+        // Read again, like a link to it: it may have been taken down since.
+        return await _openCommunityPostLink(postPublicId) && mounted;
+
       case _StrategyLocation(:final strategyId, :final source):
-        if (strategyOpen) {
+        // A Community post's view is the post's own, so a strategy never
+        // swaps into it: the post closes and the strategy opens in its own.
+        if (_openPost() != null) {
+          if (!await _leaveOpenStrategy(navigator, 'navigateToStrategy')) {
+            return false;
+          }
+        } else if (strategyOpen) {
           // Already in the strategy view; swap strategies in place, exactly
           // like the quick switcher does.
           // An open that gave way to a newer one (or to a close) did not

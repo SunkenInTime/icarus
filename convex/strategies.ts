@@ -1,18 +1,11 @@
 import { query } from "./_generated/server";
 import { mutation } from "./lib/functions";
-import { getConvexSize, v } from "convex/values";
+import { v } from "convex/values";
 import {
-  agentTypesOf,
-  deleteStrategyAgentSummary,
   readStrategyAgentTypes,
   refreshStrategyAgentSummary,
-  storeStrategyAgentSummary,
 } from "./lib/strategyAgentSummary";
-import {
-  ContentCopy,
-  CopyBudget,
-  createPublicId,
-} from "./lib/contentCopy";
+import { createPublicId } from "./lib/contentCopy";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
@@ -47,8 +40,7 @@ import {
   errorWithCode,
   forbiddenError,
 } from "./lib/errors";
-import { purgeDeletedPageOrphansRef } from "./maintenance";
-import { markDeletedStrategyImageAssetsRef } from "./images";
+import { copyStrategy, deleteStrategyRecord } from "./lib/strategyCopy";
 import { assertSafeFileNameId } from "./lib/fileNameIds";
 import { assertKnownMapChange } from "./lib/maps";
 import {
@@ -652,79 +644,21 @@ export const duplicate = mutation({
             )
             .first();
     const folderId = folder?.ownerId === user._id ? folder._id : undefined;
-    const now = Date.now();
-    const strategyId = await ctx.db.insert("strategies", {
-      publicId: args.publicId,
-      ownerId: user._id,
-      folderId,
-      name: args.name,
-      mapData: source.mapData,
-      revision: 0,
-      themeProfileId: source.themeProfileId,
-      themeOverridePalette: source.themeOverridePalette,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // One transaction copies everything. Past the budget the whole
-    // duplicate is refused with a clear error: the transaction rolls back,
-    // so no part of a copy is ever left behind.
-    const budget = new CopyBudget(() =>
-      errorWithCode(
-        "STRATEGY_TOO_LARGE_TO_DUPLICATE",
-        "This strategy is too large to duplicate.",
-      ),
-    );
-    const copy = new ContentCopy(ctx, {
-      sourceStrategyId: source._id,
-      targetStrategyId: strategyId,
-      userId: user._id,
-      now,
-      budget,
-    });
-    // Pages in the trash are not copied, nor read, so content on them
-    // cannot push the copy over its budget.
-    const sourcePages = await budget.read(livePagesQuery(ctx, source._id));
-    for (const page of sourcePages) {
-      const content = await ctx.db
-        .query("pageContents")
-        .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-        .first();
-      // The settings read, and the two rows this page's copy writes.
-      budget.spend({
-        bytes: content === null ? 0 : getConvexSize(content),
-        documents: 2,
-      });
-      const pageToCopy = await copy.read(page._id);
-      const pageId = await ctx.db.insert("pages", {
-        publicId: createPublicId(),
-        strategyId,
-        name: page.name,
-        ...(page.isAutoNamed === undefined
-          ? {}
-          : { isAutoNamed: page.isAutoNamed }),
-        sortIndex: page.sortIndex,
-        isAttack: page.isAttack,
-        revision: 1,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await ctx.db.insert("pageContents", {
-        pageId,
-        settings: content?.settings,
-        revision: 1,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await copy.write(pageToCopy, pageId);
-    }
-
-    // The copy's summary comes from the rows just copied: reading them back
-    // would read the strategy's agents a second time.
-    await storeStrategyAgentSummary(
+    await copyStrategy(
       ctx,
-      strategyId,
-      agentTypesOf(copy.elements, copy.lineupAgents),
+      source,
+      {
+        publicId: args.publicId,
+        ownerId: user._id,
+        folderId,
+        name: args.name,
+        userId: user._id,
+      },
+      () =>
+        errorWithCode(
+          "STRATEGY_TOO_LARGE_TO_DUPLICATE",
+          "This strategy is too large to duplicate.",
+        ),
     );
     return { ok: true } as const;
   },
@@ -933,59 +867,3 @@ export const abandonMove = mutation({
   },
 });
 
-/// Deletes [strategy] with everything that belongs to it.
-async function deleteStrategyRecord(
-  ctx: MutationCtx,
-  strategy: Doc<"strategies">,
-) {
-  // Pages in the trash are left to their purge (purgeTrashedPages), which
-  // needs no strategy: one purge scheduled per page must stay within
-  // Convex's scheduling limit however many pages the trash holds. Nothing
-  // can reach or restore them once the strategy is gone.
-  const pages = await livePagesQuery(ctx, strategy._id).collect();
-
-  for (const page of pages) {
-    const pageContents = await ctx.db
-      .query("pageContents")
-      .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-      .collect();
-    for (const pageContent of pageContents) {
-      await ctx.db.delete(pageContent._id);
-    }
-    await ctx.db.delete(page._id);
-    await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
-      pageId: page._id,
-      strategyId: strategy._id,
-    });
-  }
-
-  const collaborators = await ctx.db
-    .query("strategyCollaborators")
-    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-    .collect();
-  for (const collaborator of collaborators) {
-    await ctx.db.delete(collaborator._id);
-  }
-
-  const invites = await ctx.db
-    .query("inviteTokens")
-    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-    .collect();
-  for (const invite of invites) {
-    await ctx.db.delete(invite._id);
-  }
-
-  const shareLinks = await ctx.db
-    .query("shareLinks")
-    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-    .collect();
-  for (const shareLink of shareLinks) {
-    await ctx.db.delete(shareLink._id);
-  }
-
-  await ctx.scheduler.runAfter(0, markDeletedStrategyImageAssetsRef, {
-    strategyId: strategy._id,
-  });
-  await deleteStrategyAgentSummary(ctx, strategy._id);
-  await ctx.db.delete(strategy._id);
-}

@@ -136,6 +136,7 @@ flutter:
     - assets/maps/world/corrode_navigation.json.gz
     - assets/maps/world/summit_navigation.json.gz
     - assets/maps/thumbnails/
+    - assets/maps/aerial/
     - assets/agents/
     - assets/weapons/
     - assets/replay/

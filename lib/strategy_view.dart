@@ -38,6 +38,10 @@ import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
+import 'package:icarus/collab/community_models.dart';
+import 'package:icarus/widgets/community/community_post_view.dart';
+import 'package:icarus/widgets/community/community_review.dart';
+import 'package:flutter/services.dart';
 import 'package:icarus/widgets/strategy_presence.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -57,6 +61,8 @@ class StrategyView extends ConsumerStatefulWidget {
     this.initialIsAttack = true,
     this.initialPageId,
     this.backTooltip,
+    this.communityPost,
+    this.startExpanded = false,
   });
 
   final String? initialStrategyId;
@@ -72,6 +78,44 @@ class StrategyView extends ConsumerStatefulWidget {
   /// (a replay's Capture): leaving goes back there, so the leading button is
   /// a back arrow with this tooltip instead of the house.
   final String? backTooltip;
+
+  /// Set when the strategy is a Community post, read through its token
+  /// (see showCommunityPost): the editor shows the post's controls instead
+  /// of an editor's, first as a quick look over the Community tab.
+  final CommunityPost? communityPost;
+
+  /// Opens [communityPost] at full screen instead of as a quick look.
+  final bool startExpanded;
+
+  /// A Community post over the tab it was opened from: a sheet first, that
+  /// opens out to the full view-only editor in place.
+  static PageRoute<void> communityRoute(
+    CommunityPost post, {
+    bool expanded = false,
+  }) {
+    return PageRouteBuilder<void>(
+      settings: const RouteSettings(name: Routes.strategyView),
+      opaque: false,
+      barrierColor: const Color(0x99000000),
+      transitionDuration: const Duration(milliseconds: 200),
+      reverseTransitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (context, animation, _) => StrategyView(
+        initialStrategyId: post.strategyPublicId,
+        initialStrategyName: post.title,
+        initialStrategySource: StrategySource.cloud,
+        initialMapValue: post.map,
+        initialIsAttack: post.side != CommunitySide.defense,
+        communityPost: post,
+        startExpanded: expanded,
+      ),
+      transitionsBuilder: (context, animation, _, child) =>
+          EasedRouteTransition(
+        animation: animation,
+        scaleFrom: 0.98,
+        child: child,
+      ),
+    );
+  }
 
   static PageRoute<void> route({
     String? initialStrategyId,
@@ -130,6 +174,10 @@ class StrategyView extends ConsumerStatefulWidget {
 class _StrategyViewState extends ConsumerState<StrategyView>
     with WindowListener {
   bool _isClosingWindow = false;
+  late bool _expanded = widget.startExpanded;
+
+  /// Keeps the map's canvas mounted when a quick look opens out.
+  final _communityCanvasKey = GlobalKey(debugLabel: 'community-canvas');
   bool _isInitialLoadPending = false;
   bool _hasInitialLoadCompleted = false;
 
@@ -313,6 +361,14 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     return settled.future.whenComplete(subscription.close);
   }
 
+  /// Leaves the post for the reader's copy of it, [strategyPublicId].
+  Future<void> _openCommunityCopy(String strategyPublicId) async {
+    // Read before leaving: this view is gone once it has.
+    final open = ref.read(sharedStrategyToOpenProvider.notifier);
+    await _leaveToLibrary();
+    if (_hasLeft) open.state = strategyPublicId;
+  }
+
   Future<void> _leaveToLibrary() async {
     await guardUnsavedStrategyExit(
       context: context,
@@ -331,6 +387,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           Navigator.pop(context);
         }
         await ref.read(strategyProvider.notifier).clearCurrentStrategy();
+        forgetCommunityPost(ref, widget.communityPost?.strategyPublicId);
       },
     );
   }
@@ -349,7 +406,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       }
       ref.read(shareLinkControllerProvider.notifier).forgetViewedLink();
       Settings.showToast(
-        message: context.l10n.strategyViewShareLinkDisabled,
+        message: widget.communityPost != null
+            ? context.l10n.communityPostTakenDown
+            : context.l10n.strategyViewShareLinkDisabled,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       unawaited(_leaveToLibrary());
@@ -365,6 +424,13 @@ class _StrategyViewState extends ConsumerState<StrategyView>
 
     final formFactor = FormFactor.of(context);
     final touch = formFactor.isTouch;
+
+    if (widget.communityPost case final post?) {
+      return StrategyAccessWatcher(
+        onLeave: _leaveToLibrary,
+        child: _buildCommunityPost(context, post, loading: showSkeleton),
+      );
+    }
 
     if (showSkeleton) {
       // Watched from the first frame: opening can be refused outright.
@@ -520,6 +586,210 @@ class _StrategyViewState extends ConsumerState<StrategyView>
               backTooltip: widget.backTooltip,
             ),
         ],
+      ),
+    );
+  }
+
+  /// A Community post: a sheet over the tab (the quick look) that opens out
+  /// to the full view-only editor, the map staying where it is.
+  Widget _buildCommunityPost(
+    BuildContext context,
+    CommunityPost post, {
+    required bool loading,
+  }) {
+    const theme = Settings.tacticalVioletTheme;
+    final l10n = context.l10n;
+    final expanded = _expanded;
+    final underReview = ref.watch(communityPostUnderReviewProvider);
+    final width = MediaQuery.sizeOf(context).width;
+    final side = width > 1000 ? 62.0 : 16.0;
+    final canvas = KeyedSubtree(
+      key: _communityCanvasKey,
+      child: loading
+          ? const Center(child: WingDotLoader())
+          : Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: RepaintBoundary(
+                      child: InteractiveMap(dotsBeyondMap: true)),
+                ),
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Says which map and side; a reader can't change it.
+                        const CanvasChrome(
+                          child: IgnorePointer(child: MapSelector()),
+                        ),
+                        if (expanded) ...[
+                          const SizedBox(height: 8),
+                          const EditorToolbar(),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                if (!expanded)
+                  Align(
+                    alignment: Alignment.topCenter,
+                    // Centred between the map card and the window buttons,
+                    // and cut short before it reaches either; a narrow sheet
+                    // still leaves the title room for its name.
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final inset = ((constraints.maxWidth - 180) / 2)
+                            .clamp(0.0, 276.0);
+                        return Padding(
+                          padding: EdgeInsets.fromLTRB(inset, 12, inset, 0),
+                          child: CommunityPostTitle(post: post, height: 38),
+                        );
+                      },
+                    ),
+                  ),
+                if (!expanded)
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CommunityWindowButton(
+                            icon: LucideIcons.maximize2,
+                            tooltip: l10n.communityOpenFullScreen,
+                            onPressed: () => setState(() => _expanded = true),
+                          ),
+                          const SizedBox(width: 8),
+                          CommunityWindowButton(
+                            icon: LucideIcons.x,
+                            tooltip: l10n.communityClose,
+                            onPressed: _leaveToLibrary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: expanded
+                        ? const CanvasChrome(child: PagesBar())
+                        : const CommunityPageStepper(),
+                  ),
+                ),
+                if (underReview)
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: CommunityReportsCard(post: post),
+                    ),
+                  ),
+                Align(
+                  alignment: Alignment.bottomRight,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: underReview
+                        ? CommunityReviewActions(
+                            post: post,
+                            onDecided: _leaveToLibrary,
+                          )
+                        : CommunityPostActions(
+                            post: post,
+                            onOpenCopy: _openCommunityCopy,
+                          ),
+                  ),
+                ),
+              ],
+            ),
+    );
+    final frame = Column(
+      children: [
+        if (expanded)
+          AppWindowStrip(
+            child: Stack(
+              children: [
+                Row(
+                  children: [
+                    const SizedBox(width: 6),
+                    _LeaveButton(onPressed: _leaveToLibrary),
+                    const IcarusWordmark(),
+                    const Expanded(
+                      child: WindowDragArea(child: SizedBox.expand()),
+                    ),
+                    const _DiscordLink(),
+                    const SizedBox(width: 10),
+                  ],
+                ),
+                Center(
+                  child: CommunityPostTitle(
+                    post: post,
+                    hidden:
+                        underReview && !ref.watch(communityPostStillUpProvider),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Expanded(child: canvas),
+      ],
+    );
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            if (!_expanded) unawaited(_leaveToLibrary());
+          },
+          // The quick look's pages; the full view has the editor's own keys.
+          if (!_expanded) ...{
+            const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+                unawaited(stepCommunityPage(ref, -1)),
+            const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+                unawaited(stepCommunityPage(ref, 1)),
+          },
+        },
+        child: Focus(
+          autofocus: true,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // A click beside the sheet closes it, as the X does.
+              if (!expanded)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _leaveToLibrary,
+                ),
+              AnimatedPadding(
+                duration: const Duration(milliseconds: 220),
+                curve: Settings.easeOut,
+                padding: expanded
+                    ? EdgeInsets.zero
+                    : EdgeInsets.fromLTRB(side, 56, side, 54),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Settings.easeOut,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    color: theme.background,
+                    borderRadius: BorderRadius.circular(expanded ? 0 : 16),
+                    border: Border.all(
+                      color: expanded ? Colors.transparent : theme.border,
+                    ),
+                  ),
+                  child: frame,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

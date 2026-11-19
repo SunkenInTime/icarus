@@ -34,6 +34,7 @@ export const errorCodes = [
   "PAGE_STRATEGY_MISMATCH",
   "PAGE_TOO_LARGE_TO_COPY",
   "R2_OBJECT_KEY_MISMATCH",
+  "RATE_LIMITED",
   "SHARE_LINK_REVOKED",
   "STRATEGY_TOO_LARGE_TO_DUPLICATE",
   "UNAUTHENTICATED",
@@ -81,6 +82,12 @@ export function invalidPayloadError(detail: string): ConvexError<ErrorData> {
 
 export function conflictError(detail: string): ConvexError<ErrorData> {
   return makeError("CONFLICT", detail);
+}
+
+/// The caller did this too often lately and can try again later. [message]
+/// says so in plain words, for any client that shows it.
+export function rateLimitedError(message: string): ConvexError<ErrorData> {
+  return makeError("RATE_LIMITED", message);
 }
 
 export function invalidOpError(detail: string): ConvexError<ErrorData> {

@@ -1087,6 +1087,69 @@ async function storeFile(w: World, contents: string) {
 }
 
 const ledger: Record<string, LedgerEntry> = {
+  // Community: a post's snapshot is owned by the community account, which
+  // no user is, and no user is ever made a member of it; people read it only
+  // through its token, which keeps no offline copy. So making, replacing or
+  // deleting a snapshot changes no one's full read or content version.
+  "community.js:clearReportsBatch": {
+    exempt: "deletes a restored post's reports, which no full read carries",
+  },
+  "community.js:foldCountChanges": {
+    exempt: "writes only posts' star and save counts, which no full read carries",
+  },
+  "community.js:publish": {
+    exempt:
+      "copies the strategy into a new snapshot owned by the community account, which nobody's full read or content versions include",
+  },
+  "community.js:refreshTrending": {
+    exempt: "writes only posts' trend scores, which no full read carries",
+  },
+  "community.js:report": {
+    exempt: "writes a report and the post's report count and status, which no full read carries",
+  },
+  "community.js:review": {
+    exempt:
+      "puts a post back, or deletes its snapshot, which nobody's full read or content versions include",
+  },
+  "community.js:copyPost": {
+    scenarios: [
+      {
+        name: "copying a post into your library",
+        changesRead: true,
+        creates: ["s-copy"],
+        setup: async (w) => {
+          await seed(w);
+          const posted = await w.owner.mutation(
+            makeFunctionReference<"mutation">("community:publish"),
+            {
+              ...protocol,
+              strategyPublicId: S,
+              postPublicId: "ledger-post",
+              title: "Posted",
+            },
+          );
+          w.state.postPublicId = posted.postPublicId;
+        },
+        run: (w, mutate) =>
+          mutate(w.other, {
+            ...protocol,
+            postPublicId: w.state.postPublicId,
+            publicId: "s-copy",
+          }),
+      },
+    ],
+  },
+  "community.js:setStar": {
+    exempt: "writes a star and a count change, which no full read carries",
+  },
+  "community.js:takeDown": {
+    exempt:
+      "deletes a post's snapshot, which nobody's full read or content versions include",
+  },
+  "community.js:updatePost": {
+    exempt:
+      "renames or replaces a post's snapshot, which nobody's full read or content versions include",
+  },
   "folders.js:create": {
     exempt:
       "a new folder holds no strategy and no member, so nobody's role on any strategy changes",

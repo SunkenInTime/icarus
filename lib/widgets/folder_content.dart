@@ -20,6 +20,7 @@ import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/client_upgrade_button.dart';
+import 'package:icarus/widgets/community/community_tab.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/widgets/library_breadcrumb.dart';
@@ -145,7 +146,7 @@ class FolderContent extends ConsumerWidget {
     final tab = ref.watch(libraryTabProvider);
     switch (tab) {
       case LibraryTab.community:
-        return _buildCommunityPlaceholder(context, ref);
+        return const CommunityTab();
       case LibraryTab.replays:
         return const ReplayLibraryContent();
       case LibraryTab.shared:
@@ -933,21 +934,6 @@ class FolderContent extends ConsumerWidget {
       ),
     );
   }
-
-  Widget _buildCommunityPlaceholder(BuildContext context, WidgetRef ref) {
-    return _LibraryMessageState(
-      icon: LucideIcons.globe,
-      iconColor: Settings.tacticalVioletTheme.primary,
-      title: context.l10n.folderCommunityTitle,
-      subtitle: context.l10n.folderCommunitySubtitle,
-      actions: [
-        ShadButton.secondary(
-          onPressed: ref.read(libraryNavigationProvider).showLibrary,
-          child: Text(context.l10n.folderBackToMyLibrary),
-        ),
-      ],
-    );
-  }
 }
 
 /// Shown above the My Library root while the cloud half's first fetch is out.
@@ -1125,8 +1111,8 @@ class _CloudBanner extends StatelessWidget {
 }
 
 /// Shared full-pane message layout (dot-grid backdrop, icon, title, subtitle,
-/// action row) used by the community placeholder and cloud
-/// unavailable/error states so they carry the same visual weight.
+/// action row) used by the cloud unavailable/error states so they carry the
+/// same visual weight.
 class _LibraryMessageState extends StatelessWidget {
   const _LibraryMessageState({
     required this.icon,

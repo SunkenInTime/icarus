@@ -112,6 +112,133 @@ ConvexValue _decodeRaw(
   throw ConvexDecodingException(path, 'value does not satisfy closed union');
 }
 
+enum CommunityGetPostResultPostSide {
+  attack('attack'),
+  defense('defense'),
+  mixed('mixed');
+
+  const CommunityGetPostResultPostSide(this.wireName);
+  final String wireName;
+
+  static CommunityGetPostResultPostSide fromWireName(
+    String wireName,
+    String path,
+  ) {
+    for (final value in values) {
+      if (value.wireName == wireName) return value;
+    }
+    throw ConvexDecodingException(
+      path,
+      'unknown CommunityGetPostResultPostSide $wireName',
+    );
+  }
+}
+
+enum CommunityGetPostResultStatus {
+  hidden('hidden'),
+  listed('listed'),
+  removed('removed');
+
+  const CommunityGetPostResultStatus(this.wireName);
+  final String wireName;
+
+  static CommunityGetPostResultStatus fromWireName(
+    String wireName,
+    String path,
+  ) {
+    for (final value in values) {
+      if (value.wireName == wireName) return value;
+    }
+    throw ConvexDecodingException(
+      path,
+      'unknown CommunityGetPostResultStatus $wireName',
+    );
+  }
+}
+
+enum CommunityGetReportsResultItemReason {
+  link('link'),
+  offensive('offensive'),
+  picture('picture'),
+  spam('spam'),
+  stolen('stolen');
+
+  const CommunityGetReportsResultItemReason(this.wireName);
+  final String wireName;
+
+  static CommunityGetReportsResultItemReason fromWireName(
+    String wireName,
+    String path,
+  ) {
+    for (final value in values) {
+      if (value.wireName == wireName) return value;
+    }
+    throw ConvexDecodingException(
+      path,
+      'unknown CommunityGetReportsResultItemReason $wireName',
+    );
+  }
+}
+
+enum CommunityListPostsArgsSide {
+  attack('attack'),
+  defense('defense');
+
+  const CommunityListPostsArgsSide(this.wireName);
+  final String wireName;
+
+  static CommunityListPostsArgsSide fromWireName(String wireName, String path) {
+    for (final value in values) {
+      if (value.wireName == wireName) return value;
+    }
+    throw ConvexDecodingException(
+      path,
+      'unknown CommunityListPostsArgsSide $wireName',
+    );
+  }
+}
+
+enum CommunityListPostsArgsSort {
+  newValue('new'),
+  top('top'),
+  trending('trending');
+
+  const CommunityListPostsArgsSort(this.wireName);
+  final String wireName;
+
+  static CommunityListPostsArgsSort fromWireName(String wireName, String path) {
+    for (final value in values) {
+      if (value.wireName == wireName) return value;
+    }
+    throw ConvexDecodingException(
+      path,
+      'unknown CommunityListPostsArgsSort $wireName',
+    );
+  }
+}
+
+enum CommunityReviewArgsDecision {
+  ban('ban'),
+  remove('remove'),
+  restore('restore');
+
+  const CommunityReviewArgsDecision(this.wireName);
+  final String wireName;
+
+  static CommunityReviewArgsDecision fromWireName(
+    String wireName,
+    String path,
+  ) {
+    for (final value in values) {
+      if (value.wireName == wireName) return value;
+    }
+    throw ConvexDecodingException(
+      path,
+      'unknown CommunityReviewArgsDecision $wireName',
+    );
+  }
+}
+
 enum ElementsListForPageResultItemElementType {
   ability('ability'),
   agent('agent'),
@@ -606,6 +733,646 @@ sealed class StrategyListContentVersionsResultItem {
   ConvexObject encode(String path);
 }
 
+final class CommunityGetPostPreviewResult {
+  const CommunityGetPostPreviewResult({
+    required this.agentTypes,
+    required this.mapData,
+    required this.name,
+    required this.side,
+  });
+  final List<String> agentTypes;
+  final String mapData;
+  final String name;
+  final CommunityGetPostResultPostSide side;
+
+  factory CommunityGetPostPreviewResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    return CommunityGetPostPreviewResult(
+      agentTypes:
+          _decodeArray(
+                object.value['agentTypes'] ?? _missing(path, 'agentTypes'),
+                '$path.agentTypes',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.agentTypes', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      mapData: _decodeString(
+        object.value['mapData'] ?? _missing(path, 'mapData'),
+        '$path.mapData',
+      ),
+      name: _decodeString(
+        object.value['name'] ?? _missing(path, 'name'),
+        '$path.name',
+      ),
+      side: CommunityGetPostResultPostSide.fromWireName(
+        _decodeString(
+          object.value['side'] ?? _missing(path, 'side'),
+          '$path.side',
+        ),
+        '$path.side',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'agentTypes': ConvexArray(
+        agentTypes.indexed
+            .map((entry) => ConvexString(entry.$2))
+            .toList(growable: false),
+      ),
+      'mapData': ConvexString(mapData),
+      'name': ConvexString(name),
+      'side': ConvexString(side.wireName),
+    });
+  }
+}
+
+final class CommunityGetPostResult {
+  const CommunityGetPostResult({required this.post, required this.status});
+  final CommunityGetPostResultPost post;
+  final CommunityGetPostResultStatus status;
+
+  factory CommunityGetPostResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    return CommunityGetPostResult(
+      post: CommunityGetPostResultPost.decode(
+        object.value['post'] ?? _missing(path, 'post'),
+        '$path.post',
+      ),
+      status: CommunityGetPostResultStatus.fromWireName(
+        _decodeString(
+          object.value['status'] ?? _missing(path, 'status'),
+          '$path.status',
+        ),
+        '$path.status',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'post': post.encode('$path.post'),
+      'status': ConvexString(status.wireName),
+    });
+  }
+}
+
+final class CommunityGetPostResultPost {
+  const CommunityGetPostResultPost({
+    required this.agentTypes,
+    required this.authorAvatarUrl,
+    required this.authorName,
+    required this.lineupCount,
+    required this.mapData,
+    required this.pageCount,
+    required this.publicId,
+    required this.publishedAt,
+    required this.shareToken,
+    required this.side,
+    required this.starCount,
+    required this.strategyPublicId,
+    required this.title,
+  });
+  final List<String> agentTypes;
+  final String? authorAvatarUrl;
+  final String? authorName;
+  final double lineupCount;
+  final String mapData;
+  final double pageCount;
+  final String publicId;
+  final double publishedAt;
+  final String shareToken;
+  final CommunityGetPostResultPostSide side;
+  final double starCount;
+  final String strategyPublicId;
+  final String title;
+
+  factory CommunityGetPostResultPost.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    return CommunityGetPostResultPost(
+      agentTypes:
+          _decodeArray(
+                object.value['agentTypes'] ?? _missing(path, 'agentTypes'),
+                '$path.agentTypes',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.agentTypes', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      authorAvatarUrl:
+          (object.value['authorAvatarUrl'] ?? _missing(path, 'authorAvatarUrl'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['authorAvatarUrl'] ??
+                  _missing(path, 'authorAvatarUrl'),
+              '$path.authorAvatarUrl',
+            ),
+      authorName:
+          (object.value['authorName'] ?? _missing(path, 'authorName'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['authorName'] ?? _missing(path, 'authorName'),
+              '$path.authorName',
+            ),
+      lineupCount: _decodeNumber(
+        object.value['lineupCount'] ?? _missing(path, 'lineupCount'),
+        '$path.lineupCount',
+      ),
+      mapData: _decodeString(
+        object.value['mapData'] ?? _missing(path, 'mapData'),
+        '$path.mapData',
+      ),
+      pageCount: _decodeNumber(
+        object.value['pageCount'] ?? _missing(path, 'pageCount'),
+        '$path.pageCount',
+      ),
+      publicId: _decodeString(
+        object.value['publicId'] ?? _missing(path, 'publicId'),
+        '$path.publicId',
+      ),
+      publishedAt: _decodeNumber(
+        object.value['publishedAt'] ?? _missing(path, 'publishedAt'),
+        '$path.publishedAt',
+      ),
+      shareToken: _decodeString(
+        object.value['shareToken'] ?? _missing(path, 'shareToken'),
+        '$path.shareToken',
+      ),
+      side: CommunityGetPostResultPostSide.fromWireName(
+        _decodeString(
+          object.value['side'] ?? _missing(path, 'side'),
+          '$path.side',
+        ),
+        '$path.side',
+      ),
+      starCount: _decodeNumber(
+        object.value['starCount'] ?? _missing(path, 'starCount'),
+        '$path.starCount',
+      ),
+      strategyPublicId: _decodeString(
+        object.value['strategyPublicId'] ?? _missing(path, 'strategyPublicId'),
+        '$path.strategyPublicId',
+      ),
+      title: _decodeString(
+        object.value['title'] ?? _missing(path, 'title'),
+        '$path.title',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'agentTypes': ConvexArray(
+        agentTypes.indexed
+            .map((entry) => ConvexString(entry.$2))
+            .toList(growable: false),
+      ),
+      'authorAvatarUrl': authorAvatarUrl == null
+          ? const ConvexNull()
+          : ConvexString(authorAvatarUrl!),
+      'authorName': authorName == null
+          ? const ConvexNull()
+          : ConvexString(authorName!),
+      'lineupCount': _encodeNumber(lineupCount, '$path.lineupCount'),
+      'mapData': ConvexString(mapData),
+      'pageCount': _encodeNumber(pageCount, '$path.pageCount'),
+      'publicId': ConvexString(publicId),
+      'publishedAt': _encodeNumber(publishedAt, '$path.publishedAt'),
+      'shareToken': ConvexString(shareToken),
+      'side': ConvexString(side.wireName),
+      'starCount': _encodeNumber(starCount, '$path.starCount'),
+      'strategyPublicId': ConvexString(strategyPublicId),
+      'title': ConvexString(title),
+    });
+  }
+}
+
+final class CommunityGetReportsResultItem {
+  const CommunityGetReportsResultItem({
+    required this.count,
+    required this.notes,
+    required this.reason,
+  });
+  final double count;
+  final List<String> notes;
+  final CommunityGetReportsResultItemReason reason;
+
+  factory CommunityGetReportsResultItem.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    return CommunityGetReportsResultItem(
+      count: _decodeNumber(
+        object.value['count'] ?? _missing(path, 'count'),
+        '$path.count',
+      ),
+      notes:
+          _decodeArray(
+                object.value['notes'] ?? _missing(path, 'notes'),
+                '$path.notes',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.notes', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      reason: CommunityGetReportsResultItemReason.fromWireName(
+        _decodeString(
+          object.value['reason'] ?? _missing(path, 'reason'),
+          '$path.reason',
+        ),
+        '$path.reason',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'count': _encodeNumber(count, '$path.count'),
+      'notes': ConvexArray(
+        notes.indexed
+            .map((entry) => ConvexString(entry.$2))
+            .toList(growable: false),
+      ),
+      'reason': ConvexString(reason.wireName),
+    });
+  }
+}
+
+final class CommunityGetSourceChangedResult {
+  const CommunityGetSourceChangedResult({
+    required this.changed,
+    required this.sourceExists,
+  });
+  final bool changed;
+  final bool sourceExists;
+
+  factory CommunityGetSourceChangedResult.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    return CommunityGetSourceChangedResult(
+      changed: _decodeBoolean(
+        object.value['changed'] ?? _missing(path, 'changed'),
+        '$path.changed',
+      ),
+      sourceExists: _decodeBoolean(
+        object.value['sourceExists'] ?? _missing(path, 'sourceExists'),
+        '$path.sourceExists',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'changed': ConvexBoolean(changed),
+      'sourceExists': ConvexBoolean(sourceExists),
+    });
+  }
+}
+
+final class CommunityGetViewerResult {
+  const CommunityGetViewerResult({
+    required this.authorName,
+    required this.canPost,
+    required this.isReviewer,
+  });
+  final String? authorName;
+  final bool canPost;
+  final bool isReviewer;
+
+  factory CommunityGetViewerResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    return CommunityGetViewerResult(
+      authorName:
+          (object.value['authorName'] ?? _missing(path, 'authorName'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['authorName'] ?? _missing(path, 'authorName'),
+              '$path.authorName',
+            ),
+      canPost: _decodeBoolean(
+        object.value['canPost'] ?? _missing(path, 'canPost'),
+        '$path.canPost',
+      ),
+      isReviewer: _decodeBoolean(
+        object.value['isReviewer'] ?? _missing(path, 'isReviewer'),
+        '$path.isReviewer',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'authorName': authorName == null
+          ? const ConvexNull()
+          : ConvexString(authorName!),
+      'canPost': ConvexBoolean(canPost),
+      'isReviewer': ConvexBoolean(isReviewer),
+    });
+  }
+}
+
+final class CommunityListForReviewResultItem {
+  const CommunityListForReviewResultItem({
+    required this.hidden,
+    required this.post,
+    required this.reportCount,
+  });
+  final bool hidden;
+  final CommunityGetPostResultPost post;
+  final double reportCount;
+
+  factory CommunityListForReviewResultItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    return CommunityListForReviewResultItem(
+      hidden: _decodeBoolean(
+        object.value['hidden'] ?? _missing(path, 'hidden'),
+        '$path.hidden',
+      ),
+      post: CommunityGetPostResultPost.decode(
+        object.value['post'] ?? _missing(path, 'post'),
+        '$path.post',
+      ),
+      reportCount: _decodeNumber(
+        object.value['reportCount'] ?? _missing(path, 'reportCount'),
+        '$path.reportCount',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'hidden': ConvexBoolean(hidden),
+      'post': post.encode('$path.post'),
+      'reportCount': _encodeNumber(reportCount, '$path.reportCount'),
+    });
+  }
+}
+
+final class CommunityListMineResultItem {
+  const CommunityListMineResultItem({
+    required this.copyCount,
+    required this.post,
+    required this.sourceStrategyPublicId,
+    required this.status,
+    required this.updatedAt,
+  });
+  final double copyCount;
+  final CommunityGetPostResultPost post;
+  final String sourceStrategyPublicId;
+  final CommunityGetPostResultStatus status;
+  final double updatedAt;
+
+  factory CommunityListMineResultItem.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    return CommunityListMineResultItem(
+      copyCount: _decodeNumber(
+        object.value['copyCount'] ?? _missing(path, 'copyCount'),
+        '$path.copyCount',
+      ),
+      post: CommunityGetPostResultPost.decode(
+        object.value['post'] ?? _missing(path, 'post'),
+        '$path.post',
+      ),
+      sourceStrategyPublicId: _decodeString(
+        object.value['sourceStrategyPublicId'] ??
+            _missing(path, 'sourceStrategyPublicId'),
+        '$path.sourceStrategyPublicId',
+      ),
+      status: CommunityGetPostResultStatus.fromWireName(
+        _decodeString(
+          object.value['status'] ?? _missing(path, 'status'),
+          '$path.status',
+        ),
+        '$path.status',
+      ),
+      updatedAt: _decodeNumber(
+        object.value['updatedAt'] ?? _missing(path, 'updatedAt'),
+        '$path.updatedAt',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'copyCount': _encodeNumber(copyCount, '$path.copyCount'),
+      'post': post.encode('$path.post'),
+      'sourceStrategyPublicId': ConvexString(sourceStrategyPublicId),
+      'status': ConvexString(status.wireName),
+      'updatedAt': _encodeNumber(updatedAt, '$path.updatedAt'),
+    });
+  }
+}
+
+final class CommunityListMyCopiesResultItem {
+  const CommunityListMyCopiesResultItem({
+    required this.postPublicId,
+    required this.strategyPublicId,
+  });
+  final String postPublicId;
+  final String strategyPublicId;
+
+  factory CommunityListMyCopiesResultItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    return CommunityListMyCopiesResultItem(
+      postPublicId: _decodeString(
+        object.value['postPublicId'] ?? _missing(path, 'postPublicId'),
+        '$path.postPublicId',
+      ),
+      strategyPublicId: _decodeString(
+        object.value['strategyPublicId'] ?? _missing(path, 'strategyPublicId'),
+        '$path.strategyPublicId',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'postPublicId': ConvexString(postPublicId),
+      'strategyPublicId': ConvexString(strategyPublicId),
+    });
+  }
+}
+
+final class CommunityListPostableResultItem {
+  const CommunityListPostableResultItem({
+    required this.mapData,
+    required this.name,
+    required this.postPublicId,
+    required this.strategyPublicId,
+    required this.updatedAt,
+  });
+  final String mapData;
+  final String name;
+  final String? postPublicId;
+  final String strategyPublicId;
+  final double updatedAt;
+
+  factory CommunityListPostableResultItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    return CommunityListPostableResultItem(
+      mapData: _decodeString(
+        object.value['mapData'] ?? _missing(path, 'mapData'),
+        '$path.mapData',
+      ),
+      name: _decodeString(
+        object.value['name'] ?? _missing(path, 'name'),
+        '$path.name',
+      ),
+      postPublicId:
+          (object.value['postPublicId'] ?? _missing(path, 'postPublicId'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['postPublicId'] ?? _missing(path, 'postPublicId'),
+              '$path.postPublicId',
+            ),
+      strategyPublicId: _decodeString(
+        object.value['strategyPublicId'] ?? _missing(path, 'strategyPublicId'),
+        '$path.strategyPublicId',
+      ),
+      updatedAt: _decodeNumber(
+        object.value['updatedAt'] ?? _missing(path, 'updatedAt'),
+        '$path.updatedAt',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'mapData': ConvexString(mapData),
+      'name': ConvexString(name),
+      'postPublicId': postPublicId == null
+          ? const ConvexNull()
+          : ConvexString(postPublicId!),
+      'strategyPublicId': ConvexString(strategyPublicId),
+      'updatedAt': _encodeNumber(updatedAt, '$path.updatedAt'),
+    });
+  }
+}
+
+final class CommunityListPostsResult {
+  const CommunityListPostsResult({
+    required this.nextCursor,
+    required this.posts,
+  });
+  final String? nextCursor;
+  final List<CommunityGetPostResultPost> posts;
+
+  factory CommunityListPostsResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    return CommunityListPostsResult(
+      nextCursor:
+          (object.value['nextCursor'] ?? _missing(path, 'nextCursor'))
+              is ConvexNull
+          ? null
+          : _decodeString(
+              object.value['nextCursor'] ?? _missing(path, 'nextCursor'),
+              '$path.nextCursor',
+            ),
+      posts:
+          _decodeArray(
+                object.value['posts'] ?? _missing(path, 'posts'),
+                '$path.posts',
+              ).value.indexed
+              .map(
+                (entry) => CommunityGetPostResultPost.decode(
+                  entry.$2,
+                  _indexPath('$path.posts', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'nextCursor': nextCursor == null
+          ? const ConvexNull()
+          : ConvexString(nextCursor!),
+      'posts': ConvexArray(
+        posts.indexed
+            .map(
+              (entry) => entry.$2.encode(_indexPath('$path.posts', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+    });
+  }
+}
+
+final class CommunityPublishResult {
+  const CommunityPublishResult({required this.ok, required this.postPublicId});
+  final bool ok;
+  final String postPublicId;
+
+  factory CommunityPublishResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    return CommunityPublishResult(
+      ok: _expectLiteral(
+        _decodeBoolean(object.value['ok'] ?? _missing(path, 'ok'), '$path.ok'),
+        true,
+        '$path.ok',
+      ),
+      postPublicId: _decodeString(
+        object.value['postPublicId'] ?? _missing(path, 'postPublicId'),
+        '$path.postPublicId',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'ok': ConvexBoolean(_expectLiteral(ok, true, '$path.ok')),
+      'postPublicId': ConvexString(postPublicId),
+    });
+  }
+}
+
+final class CommunityReportResult {
+  const CommunityReportResult({required this.ok});
+  final bool ok;
+
+  factory CommunityReportResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    return CommunityReportResult(
+      ok: _expectLiteral(
+        _decodeBoolean(object.value['ok'] ?? _missing(path, 'ok'), '$path.ok'),
+        true,
+        '$path.ok',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'ok': ConvexBoolean(_expectLiteral(ok, true, '$path.ok')),
+    });
+  }
+}
+
 final class ElementsListForPageResultItem {
   const ElementsListForPageResultItem({
     required this.createdAt,
@@ -694,28 +1461,6 @@ final class ElementsListForPageResultItem {
       'sortIndex': _encodeNumber(sortIndex, '$path.sortIndex'),
       'strategyPublicId': ConvexString(strategyPublicId),
       'updatedAt': _encodeNumber(updatedAt, '$path.updatedAt'),
-    });
-  }
-}
-
-final class FoldersDeleteResult {
-  const FoldersDeleteResult({required this.ok});
-  final bool ok;
-
-  factory FoldersDeleteResult.decode(ConvexValue value, String path) {
-    final object = _decodeObject(value, path);
-    return FoldersDeleteResult(
-      ok: _expectLiteral(
-        _decodeBoolean(object.value['ok'] ?? _missing(path, 'ok'), '$path.ok'),
-        true,
-        '$path.ok',
-      ),
-    );
-  }
-
-  ConvexObject encode(String path) {
-    return ConvexObject({
-      'ok': ConvexBoolean(_expectLiteral(ok, true, '$path.ok')),
     });
   }
 }
@@ -5433,7 +6178,7 @@ ConvexValue _encodeOpsApplyBatchResultResultsItemRejectedCurrentElementValue(
   };
 }
 
-bool _validateFoldersCreateResult(ConvexValue value) =>
+bool _validateCommunityCopyPostResult(ConvexValue value) =>
     (_matchesRaw0(value) || _matchesRaw2(value));
 
 bool _matchesRaw0(ConvexValue value) =>
@@ -5602,6 +6347,289 @@ bool _matchesRaw33(ConvexValue value) =>
     (value.value['reused'] != null && _matchesRaw1(value.value['reused']!)) &&
     (value.value['revision'] != null && _matchesRaw4(value.value['revision']!));
 
+ConvexObject encodeCommunityCopyPostArgs({
+  required double clientProtocolVersion,
+  ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+  required String postPublicId,
+  required String publicId,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:copyPost.args.clientProtocolVersion',
+  ),
+  if (folderPublicId.isPresent)
+    'folderPublicId': ConvexString(folderPublicId.value),
+  'postPublicId': ConvexString(postPublicId),
+  'publicId': ConvexString(publicId),
+});
+
+ConvexValue decodeCommunityCopyPostResult(ConvexValue value) => _decodeRaw(
+  value,
+  'community.js:copyPost.returns',
+  _validateCommunityCopyPostResult,
+);
+
+ConvexObject encodeCommunityGetPostArgs({required String postPublicId}) =>
+    ConvexObject({'postPublicId': ConvexString(postPublicId)});
+
+CommunityGetPostResult? decodeCommunityGetPostResult(ConvexValue value) =>
+    (value) is ConvexNull
+    ? null
+    : CommunityGetPostResult.decode(value, 'community.js:getPost.returns');
+
+ConvexObject encodeCommunityGetPostPreviewArgs({
+  required String strategyPublicId,
+}) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
+
+CommunityGetPostPreviewResult decodeCommunityGetPostPreviewResult(
+  ConvexValue value,
+) => CommunityGetPostPreviewResult.decode(
+  value,
+  'community.js:getPostPreview.returns',
+);
+
+ConvexObject encodeCommunityGetReportsArgs({required String postPublicId}) =>
+    ConvexObject({'postPublicId': ConvexString(postPublicId)});
+
+List<CommunityGetReportsResultItem> decodeCommunityGetReportsResult(
+  ConvexValue value,
+) => _decodeArray(value, 'community.js:getReports.returns').value.indexed
+    .map(
+      (entry) => CommunityGetReportsResultItem.decode(
+        entry.$2,
+        _indexPath('community.js:getReports.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
+
+ConvexObject encodeCommunityGetSourceChangedArgs({
+  required String postPublicId,
+}) => ConvexObject({'postPublicId': ConvexString(postPublicId)});
+
+CommunityGetSourceChangedResult decodeCommunityGetSourceChangedResult(
+  ConvexValue value,
+) => CommunityGetSourceChangedResult.decode(
+  value,
+  'community.js:getSourceChanged.returns',
+);
+
+ConvexObject encodeCommunityGetViewerArgs() => ConvexObject({});
+
+CommunityGetViewerResult decodeCommunityGetViewerResult(ConvexValue value) =>
+    CommunityGetViewerResult.decode(value, 'community.js:getViewer.returns');
+
+ConvexObject encodeCommunityListForReviewArgs() => ConvexObject({});
+
+List<CommunityListForReviewResultItem> decodeCommunityListForReviewResult(
+  ConvexValue value,
+) => _decodeArray(value, 'community.js:listForReview.returns').value.indexed
+    .map(
+      (entry) => CommunityListForReviewResultItem.decode(
+        entry.$2,
+        _indexPath('community.js:listForReview.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
+
+ConvexObject encodeCommunityListMineArgs() => ConvexObject({});
+
+List<CommunityListMineResultItem> decodeCommunityListMineResult(
+  ConvexValue value,
+) => _decodeArray(value, 'community.js:listMine.returns').value.indexed
+    .map(
+      (entry) => CommunityListMineResultItem.decode(
+        entry.$2,
+        _indexPath('community.js:listMine.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
+
+ConvexObject encodeCommunityListMyCopiesArgs() => ConvexObject({});
+
+List<CommunityListMyCopiesResultItem> decodeCommunityListMyCopiesResult(
+  ConvexValue value,
+) => _decodeArray(value, 'community.js:listMyCopies.returns').value.indexed
+    .map(
+      (entry) => CommunityListMyCopiesResultItem.decode(
+        entry.$2,
+        _indexPath('community.js:listMyCopies.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
+
+ConvexObject encodeCommunityListMyStarsArgs() => ConvexObject({});
+
+List<String> decodeCommunityListMyStarsResult(ConvexValue value) =>
+    _decodeArray(value, 'community.js:listMyStars.returns').value.indexed
+        .map(
+          (entry) => _decodeString(
+            entry.$2,
+            _indexPath('community.js:listMyStars.returns', entry.$1),
+          ),
+        )
+        .toList(growable: false);
+
+ConvexObject encodeCommunityListPostableArgs() => ConvexObject({});
+
+List<CommunityListPostableResultItem> decodeCommunityListPostableResult(
+  ConvexValue value,
+) => _decodeArray(value, 'community.js:listPostable.returns').value.indexed
+    .map(
+      (entry) => CommunityListPostableResultItem.decode(
+        entry.$2,
+        _indexPath('community.js:listPostable.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
+
+ConvexObject encodeCommunityListPostsArgs({
+  ConvexOptional<List<String>> agentTypes = const ConvexOptional.absent(),
+  ConvexOptional<String> cursor = const ConvexOptional.absent(),
+  ConvexOptional<String> mapData = const ConvexOptional.absent(),
+  ConvexOptional<CommunityListPostsArgsSide> side =
+      const ConvexOptional.absent(),
+  required CommunityListPostsArgsSort sort,
+  ConvexOptional<String> text = const ConvexOptional.absent(),
+}) => ConvexObject({
+  if (agentTypes.isPresent)
+    'agentTypes': ConvexArray(
+      agentTypes.value.indexed
+          .map((entry) => ConvexString(entry.$2))
+          .toList(growable: false),
+    ),
+  if (cursor.isPresent) 'cursor': ConvexString(cursor.value),
+  if (mapData.isPresent) 'mapData': ConvexString(mapData.value),
+  if (side.isPresent) 'side': ConvexString(side.value.wireName),
+  'sort': ConvexString(sort.wireName),
+  if (text.isPresent) 'text': ConvexString(text.value),
+});
+
+CommunityListPostsResult decodeCommunityListPostsResult(ConvexValue value) =>
+    CommunityListPostsResult.decode(value, 'community.js:listPosts.returns');
+
+ConvexObject encodeCommunityListStarredArgs({
+  ConvexOptional<List<String>> agentTypes = const ConvexOptional.absent(),
+  ConvexOptional<String> cursor = const ConvexOptional.absent(),
+  ConvexOptional<String> mapData = const ConvexOptional.absent(),
+  ConvexOptional<CommunityListPostsArgsSide> side =
+      const ConvexOptional.absent(),
+  ConvexOptional<String> text = const ConvexOptional.absent(),
+}) => ConvexObject({
+  if (agentTypes.isPresent)
+    'agentTypes': ConvexArray(
+      agentTypes.value.indexed
+          .map((entry) => ConvexString(entry.$2))
+          .toList(growable: false),
+    ),
+  if (cursor.isPresent) 'cursor': ConvexString(cursor.value),
+  if (mapData.isPresent) 'mapData': ConvexString(mapData.value),
+  if (side.isPresent) 'side': ConvexString(side.value.wireName),
+  if (text.isPresent) 'text': ConvexString(text.value),
+});
+
+CommunityListPostsResult decodeCommunityListStarredResult(ConvexValue value) =>
+    CommunityListPostsResult.decode(value, 'community.js:listStarred.returns');
+
+ConvexObject encodeCommunityPublishArgs({
+  required double clientProtocolVersion,
+  required String postPublicId,
+  required String strategyPublicId,
+  required String title,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:publish.args.clientProtocolVersion',
+  ),
+  'postPublicId': ConvexString(postPublicId),
+  'strategyPublicId': ConvexString(strategyPublicId),
+  'title': ConvexString(title),
+});
+
+CommunityPublishResult decodeCommunityPublishResult(ConvexValue value) =>
+    CommunityPublishResult.decode(value, 'community.js:publish.returns');
+
+ConvexObject encodeCommunityReportArgs({
+  required double clientProtocolVersion,
+  ConvexOptional<String> note = const ConvexOptional.absent(),
+  required String postPublicId,
+  required CommunityGetReportsResultItemReason reason,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:report.args.clientProtocolVersion',
+  ),
+  if (note.isPresent) 'note': ConvexString(note.value),
+  'postPublicId': ConvexString(postPublicId),
+  'reason': ConvexString(reason.wireName),
+});
+
+CommunityReportResult decodeCommunityReportResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'community.js:report.returns');
+
+ConvexObject encodeCommunityReviewArgs({
+  required double clientProtocolVersion,
+  required CommunityReviewArgsDecision decision,
+  required String postPublicId,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:review.args.clientProtocolVersion',
+  ),
+  'decision': ConvexString(decision.wireName),
+  'postPublicId': ConvexString(postPublicId),
+});
+
+CommunityReportResult decodeCommunityReviewResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'community.js:review.returns');
+
+ConvexObject encodeCommunitySetStarArgs({
+  required double clientProtocolVersion,
+  required String postPublicId,
+  required bool starred,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:setStar.args.clientProtocolVersion',
+  ),
+  'postPublicId': ConvexString(postPublicId),
+  'starred': ConvexBoolean(starred),
+});
+
+CommunityReportResult decodeCommunitySetStarResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'community.js:setStar.returns');
+
+ConvexObject encodeCommunityTakeDownArgs({
+  required double clientProtocolVersion,
+  required String postPublicId,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:takeDown.args.clientProtocolVersion',
+  ),
+  'postPublicId': ConvexString(postPublicId),
+});
+
+CommunityReportResult decodeCommunityTakeDownResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'community.js:takeDown.returns');
+
+ConvexObject encodeCommunityUpdatePostArgs({
+  required double clientProtocolVersion,
+  required String postPublicId,
+  ConvexOptional<bool> refresh = const ConvexOptional.absent(),
+  ConvexOptional<String> title = const ConvexOptional.absent(),
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:updatePost.args.clientProtocolVersion',
+  ),
+  'postPublicId': ConvexString(postPublicId),
+  if (refresh.isPresent) 'refresh': ConvexBoolean(refresh.value),
+  if (title.isPresent) 'title': ConvexString(title.value),
+});
+
+CommunityReportResult decodeCommunityUpdatePostResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'community.js:updatePost.returns');
+
 ConvexObject encodeElementsListForPageArgs({
   required double clientProtocolVersion,
   ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
@@ -5702,7 +6730,7 @@ ConvexObject encodeFoldersCreateArgs({
 ConvexValue decodeFoldersCreateResult(ConvexValue value) => _decodeRaw(
   value,
   'folders.js:create.returns',
-  _validateFoldersCreateResult,
+  _validateCommunityCopyPostResult,
 );
 
 ConvexObject encodeFoldersDeleteArgs({
@@ -5719,8 +6747,8 @@ ConvexObject encodeFoldersDeleteArgs({
     'withinFolderPublicId': ConvexString(withinFolderPublicId.value),
 });
 
-FoldersDeleteResult decodeFoldersDeleteResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'folders.js:delete.returns');
+CommunityReportResult decodeFoldersDeleteResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'folders.js:delete.returns');
 
 ConvexObject encodeFoldersListTreeArgs({
   ConvexOptional<FoldersListTreeArgsScope> scope =
@@ -5754,8 +6782,8 @@ ConvexObject encodeFoldersMoveArgs({
     'parentFolderPublicId': ConvexString(parentFolderPublicId.value),
 });
 
-FoldersDeleteResult decodeFoldersMoveResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'folders.js:move.returns');
+CommunityReportResult decodeFoldersMoveResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'folders.js:move.returns');
 
 ConvexObject encodeFoldersUpdateArgs({
   ConvexOptional<bool> clearCustomColorValue = const ConvexOptional.absent(),
@@ -5802,8 +6830,8 @@ ConvexObject encodeFoldersUpdateArgs({
   if (name.isPresent) 'name': ConvexString(name.value),
 });
 
-FoldersDeleteResult decodeFoldersUpdateResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'folders.js:update.returns');
+CommunityReportResult decodeFoldersUpdateResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'folders.js:update.returns');
 
 ConvexObject encodeHealthPingArgs({
   ConvexOptional<double> clientProtocolVersion = const ConvexOptional.absent(),
@@ -5885,8 +6913,8 @@ ConvexObject encodeImagesDeleteAssetRefArgs({
   'strategyPublicId': ConvexString(strategyPublicId),
 });
 
-FoldersDeleteResult decodeImagesDeleteAssetRefResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'images.js:deleteAssetRef.returns');
+CommunityReportResult decodeImagesDeleteAssetRefResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'images.js:deleteAssetRef.returns');
 
 ConvexObject encodeImagesGenerateUploadUrlArgs({
   required String assetPublicId,
@@ -6005,8 +7033,8 @@ ConvexObject encodeInvitesCreateArgs({
   'token': ConvexString(token),
 });
 
-FoldersDeleteResult decodeInvitesCreateResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'invites.js:create.returns');
+CommunityReportResult decodeInvitesCreateResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'invites.js:create.returns');
 
 ConvexObject encodeInvitesGetArgs({
   ConvexOptional<String> strategyPublicId = const ConvexOptional.absent(),
@@ -6047,8 +7075,8 @@ ConvexObject encodeInvitesRevokeArgs({
   'token': ConvexString(token),
 });
 
-FoldersDeleteResult decodeInvitesRevokeResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'invites.js:revoke.returns');
+CommunityReportResult decodeInvitesRevokeResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'invites.js:revoke.returns');
 
 ConvexObject encodeLineupsListForPageArgs({
   required double clientProtocolVersion,
@@ -6405,8 +7433,8 @@ ConvexObject encodeSharesCreateArgs({
   'token': ConvexString(token),
 });
 
-FoldersDeleteResult decodeSharesCreateResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'shares.js:create.returns');
+CommunityReportResult decodeSharesCreateResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'shares.js:create.returns');
 
 ConvexObject encodeSharesLeaveArgs({
   required double clientProtocolVersion,
@@ -6421,8 +7449,8 @@ ConvexObject encodeSharesLeaveArgs({
   'targetType': ConvexString(targetType.wireName),
 });
 
-FoldersDeleteResult decodeSharesLeaveResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'shares.js:leave.returns');
+CommunityReportResult decodeSharesLeaveResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'shares.js:leave.returns');
 
 ConvexObject encodeSharesListArgs({
   required String targetPublicId,
@@ -6528,8 +7556,8 @@ ConvexObject encodeSharesRemoveMemberArgs({
   'targetType': ConvexString(targetType.wireName),
 });
 
-FoldersDeleteResult decodeSharesRemoveMemberResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'shares.js:removeMember.returns');
+CommunityReportResult decodeSharesRemoveMemberResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'shares.js:removeMember.returns');
 
 ConvexObject encodeSharesResolveArgs({required String token}) =>
     ConvexObject({'token': ConvexString(token)});
@@ -6555,8 +7583,8 @@ ConvexObject encodeSharesRevokeArgs({
   'token': ConvexString(token),
 });
 
-FoldersDeleteResult decodeSharesRevokeResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'shares.js:revoke.returns');
+CommunityReportResult decodeSharesRevokeResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'shares.js:revoke.returns');
 
 ConvexObject encodeSharesSetMemberRoleArgs({
   required double clientProtocolVersion,
@@ -6575,8 +7603,8 @@ ConvexObject encodeSharesSetMemberRoleArgs({
   'targetType': ConvexString(targetType.wireName),
 });
 
-FoldersDeleteResult decodeSharesSetMemberRoleResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'shares.js:setMemberRole.returns');
+CommunityReportResult decodeSharesSetMemberRoleResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'shares.js:setMemberRole.returns');
 
 ConvexObject encodeStrategiesAbandonMoveArgs({
   required double clientProtocolVersion,
@@ -6629,7 +7657,7 @@ ConvexObject encodeStrategiesCreateArgs({
 ConvexValue decodeStrategiesCreateResult(ConvexValue value) => _decodeRaw(
   value,
   'strategies.js:create.returns',
-  _validateFoldersCreateResult,
+  _validateCommunityCopyPostResult,
 );
 
 ConvexObject encodeStrategiesCreateWithInitialPageArgs({
@@ -6685,7 +7713,7 @@ ConvexValue decodeStrategiesCreateWithInitialPageResult(ConvexValue value) =>
     _decodeRaw(
       value,
       'strategies.js:createWithInitialPage.returns',
-      _validateFoldersCreateResult,
+      _validateCommunityCopyPostResult,
     );
 
 ConvexObject encodeStrategiesDeleteArgs({
@@ -6707,8 +7735,8 @@ ConvexObject encodeStrategiesDeleteArgs({
     'withinFolderPublicId': ConvexString(withinFolderPublicId.value),
 });
 
-FoldersDeleteResult decodeStrategiesDeleteResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'strategies.js:delete.returns');
+CommunityReportResult decodeStrategiesDeleteResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'strategies.js:delete.returns');
 
 ConvexObject encodeStrategiesDuplicateArgs({
   required double clientProtocolVersion,
@@ -6731,7 +7759,7 @@ ConvexObject encodeStrategiesDuplicateArgs({
 ConvexValue decodeStrategiesDuplicateResult(ConvexValue value) => _decodeRaw(
   value,
   'strategies.js:duplicate.returns',
-  _validateFoldersCreateResult,
+  _validateCommunityCopyPostResult,
 );
 
 ConvexObject encodeStrategiesFinishMoveArgs({
@@ -6748,8 +7776,8 @@ ConvexObject encodeStrategiesFinishMoveArgs({
   'strategyPublicId': ConvexString(strategyPublicId),
 });
 
-FoldersDeleteResult decodeStrategiesFinishMoveResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'strategies.js:finishMove.returns');
+CommunityReportResult decodeStrategiesFinishMoveResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'strategies.js:finishMove.returns');
 
 ConvexObject encodeStrategiesGetHeaderArgs({
   required String strategyPublicId,
@@ -6962,8 +7990,8 @@ ConvexObject encodeUsersEnsureCurrentUserArgs({
   ),
 });
 
-FoldersDeleteResult decodeUsersEnsureCurrentUserResult(ConvexValue value) =>
-    FoldersDeleteResult.decode(value, 'users.js:ensureCurrentUser.returns');
+CommunityReportResult decodeUsersEnsureCurrentUserResult(ConvexValue value) =>
+    CommunityReportResult.decode(value, 'users.js:ensureCurrentUser.returns');
 
 ConvexObject encodeUsersMeArgs() => ConvexObject({});
 

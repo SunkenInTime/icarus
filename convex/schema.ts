@@ -341,6 +341,153 @@ export default defineSchema({
     strategyId: v.id("strategies"),
     version: v.number(),
   }).index("by_strategyId", ["strategyId"]),
+  // Community: strategies their authors posted for anyone to open and copy.
+  // A post shows a frozen copy of the author's strategy (the snapshot), a
+  // strategy owned by the community account so it sits in nobody's library;
+  // anyone reads it through the post's share token, signed in or not.
+  // Everything a feed card shows is on this row, so a page of the feed is
+  // one index read. The counts are folded in by a cron (see
+  // lib/community.ts), so starring never re-runs the feed for everyone.
+  communityPosts: defineTable({
+    publicId: v.string(),
+    authorId: v.id("users"),
+    // The author's name and picture when they last posted or updated it.
+    authorName: v.union(v.string(), v.null()),
+    authorAvatarUrl: v.union(v.string(), v.null()),
+    // The strategy in the author's library that the post was copied from,
+    // and its content version then, to tell the author it has changed.
+    sourceStrategyId: v.id("strategies"),
+    sourceStrategyPublicId: v.string(),
+    sourceContentVersion: v.number(),
+    // Unset once the post is removed: the snapshot is deleted with it.
+    snapshotStrategyId: v.optional(v.id("strategies")),
+    snapshotStrategyPublicId: v.string(),
+    // The link anyone reads the snapshot through. Switched off while the
+    // post is hidden.
+    shareToken: v.string(),
+    // While hidden: a second link to the snapshot that only reviewers are
+    // given, so they can look at what was reported.
+    reviewToken: v.optional(v.string()),
+    title: v.string(),
+    // Lower-cased title and author, for the search index.
+    searchText: v.string(),
+    mapData: v.string(),
+    side: v.union(v.literal("attack"), v.literal("defense"), v.literal("mixed")),
+    agentTypes: v.array(v.string()),
+    pageCount: v.number(),
+    lineupCount: v.number(),
+    // listed: in the feed. hidden: taken out of it by reports until a
+    // reviewer looks. removed: taken down by its author or a reviewer.
+    status: v.union(
+      v.literal("listed"),
+      v.literal("hidden"),
+      v.literal("removed"),
+    ),
+    starCount: v.number(),
+    copyCount: v.number(),
+    // Stars and copies from the last week (see refreshTrending).
+    trendScore: v.number(),
+    reportCount: v.number(),
+    // When a reviewer last put the post back. While set, reports still count
+    // but don't hide it again; reviewers are told instead. Unset when its
+    // author changes what the reviewer cleared.
+    clearedAt: v.optional(v.number()),
+    publishedAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_publicId", ["publicId"])
+    .index("by_sourceStrategyId", ["sourceStrategyId"])
+    .index("by_authorId", ["authorId"])
+    .index("by_authorId_and_status", ["authorId", "status"])
+    .index("by_authorId_and_publishedAt", ["authorId", "publishedAt"])
+    // Cleared posts reported again, for the review list.
+    .index("by_status_and_reportCount", ["status", "reportCount"])
+    .index("by_trendScore", ["trendScore"])
+    .index("by_status_and_publishedAt", ["status", "publishedAt"])
+    .index("by_status_and_trendScore_and_publishedAt", [
+      "status",
+      "trendScore",
+      "publishedAt",
+    ])
+    .index("by_status_and_starCount_and_publishedAt", [
+      "status",
+      "starCount",
+      "publishedAt",
+    ])
+    .index("by_status_and_mapData_and_publishedAt", [
+      "status",
+      "mapData",
+      "publishedAt",
+    ])
+    .index("by_status_and_mapData_and_trendScore_and_publishedAt", [
+      "status",
+      "mapData",
+      "trendScore",
+      "publishedAt",
+    ])
+    .index("by_status_and_mapData_and_starCount_and_publishedAt", [
+      "status",
+      "mapData",
+      "starCount",
+      "publishedAt",
+    ])
+    .searchIndex("search_text", {
+      searchField: "searchText",
+      filterFields: ["status", "mapData"],
+    }),
+  // One row per (post, account) that starred it.
+  communityStars: defineTable({
+    postId: v.id("communityPosts"),
+    // So an account's stars are listed without reading their posts.
+    postPublicId: v.string(),
+    userId: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_postId_and_userId", ["postId", "userId"])
+    .index("by_userId", ["userId"])
+    .index("by_createdAt", ["createdAt"]),
+  // Each copy of a post someone made in their library: which post it came
+  // from, so the post can open their copy and the library can say where the
+  // copy came from. Only an account's first copy of someone else's post is
+  // counted, in the post's copy count and in trending.
+  communityCopies: defineTable({
+    userId: v.id("users"),
+    postId: v.id("communityPosts"),
+    postPublicId: v.string(),
+    strategyPublicId: v.string(),
+    counted: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_userId_and_createdAt", ["userId", "createdAt"])
+    .index("by_postId_and_userId", ["postId", "userId"])
+    .index("by_counted_and_createdAt", ["counted", "createdAt"]),
+  // A star, unstar or copy not yet folded into its post's counts. Writers
+  // only insert, so two people starring one post never collide.
+  communityCountChanges: defineTable({
+    postId: v.id("communityPosts"),
+    stars: v.number(),
+    copies: v.number(),
+  }),
+  communityReports: defineTable({
+    postId: v.id("communityPosts"),
+    reporterId: v.id("users"),
+    reason: v.union(
+      v.literal("offensive"),
+      v.literal("picture"),
+      v.literal("link"),
+      v.literal("spam"),
+      v.literal("stolen"),
+    ),
+    note: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_postId_and_reporterId", ["postId", "reporterId"])
+    .index("by_reporterId_and_createdAt", ["reporterId", "createdAt"]),
+  // Accounts a reviewer stopped from posting.
+  communityBans: defineTable({
+    userId: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_userId", ["userId"]),
   operationEvents: defineTable({
     strategyId: v.id("strategies"),
     pageId: v.optional(v.id("pages")),

@@ -27,8 +27,10 @@ import {
   notFoundError,
   errorWithCode,
   conflictError,
+  forbiddenError,
   invalidOpError,
 } from "./lib/errors";
+import { COMMUNITY_TOKEN_PREFIX } from "./lib/community";
 import { discordAvatarUrl, UNKNOWN_DISPLAY_NAME } from "./lib/profile";
 import {
   accessRoleValidator,
@@ -332,6 +334,11 @@ export const redeem = mutation({
 
     if (link.revokedAt !== undefined) {
       throw errorWithCode("SHARE_LINK_REVOKED", "Share link revoked");
+    }
+    // A Community post is opened through its token, never joined: joining
+    // would put the post's frozen copy in the reader's Shared tab.
+    if (link.token.startsWith(COMMUNITY_TOKEN_PREFIX)) {
+      throw forbiddenError();
     }
 
     if (link.targetType === "strategy") {
