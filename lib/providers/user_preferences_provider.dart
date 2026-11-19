@@ -366,9 +366,13 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
   static const String appPreferencesSingletonKey = 'app_preferences';
   static const int customProfilesSoftCap = 10;
 
+  /// The walls are the map art's own wall colour (`MapSvgSourceColors.detail`)
+  /// about a third darker, so the map sits behind what is placed on it. The
+  /// floor and sites are the art's own. A store that holds an earlier Default
+  /// takes this one at launch ([bootstrap]).
   static final MapThemePalette immutableDefaultPalette = MapThemePalette(
     baseColorValue: 0xFF271406,
-    detailColorValue: 0xFFB27C40,
+    detailColorValue: 0xFF784700,
     highlightColorValue: 0xFFF08234,
   );
 
