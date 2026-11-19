@@ -28,6 +28,9 @@ const createStrategy = makeFunctionReference<"mutation">(
 const listSharedWithMe = makeFunctionReference<"query">(
   "strategies:listSharedWithMe",
 );
+const listForFolder = makeFunctionReference<"query">(
+  "strategies:listForFolder",
+);
 const getShell = makeFunctionReference<"query">("strategy:getShell");
 const updateStrategy = makeFunctionReference<"mutation">("strategies:update");
 const createShare = makeFunctionReference<"mutation">("shares:create");
@@ -490,6 +493,38 @@ describe("share members", () => {
       memberId: folderMemberId,
     });
     await expect(shell(b, "inside")).rejects.toThrow("Forbidden");
+  });
+
+  test("a strategy shared out of a private folder lists at the top of Shared", async () => {
+    const { users } = await createHarness();
+    const { a, b, c } = users;
+    await a.mutation(createFolder, { ...protocol, publicId: "team", name: "Team plans" });
+    await seedStrategy(a, "inside", "team");
+    await share(a, "inside", "strategy-link", "editor");
+    await share(a, "team", "folder-link", "viewer", "folder");
+
+    // B only has the strategy: it lands at the top of Shared, never in a
+    // folder B can't open.
+    await expect(redeem(b, "strategy-link")).resolves.toMatchObject({
+      strategyPublicId: "inside",
+      folderPublicId: null,
+    });
+    await expect(b.query(listSharedWithMe, {})).resolves.toMatchObject([
+      { publicId: "inside" },
+    ]);
+    await expect(
+      b.query(listForFolder, { scope: "shared" }),
+    ).resolves.toMatchObject([{ publicId: "inside" }]);
+
+    // C can open the folder too, so the strategy lists in it, not twice.
+    await redeem(c, "folder-link");
+    await expect(redeem(c, "strategy-link")).resolves.toMatchObject({
+      folderPublicId: "team",
+    });
+    await expect(c.query(listSharedWithMe, {})).resolves.toEqual([]);
+    await expect(
+      c.query(listForFolder, { folderPublicId: "team", scope: "shared" }),
+    ).resolves.toMatchObject([{ publicId: "inside" }]);
   });
 
   test("nested folders pass access down, and direct access outlives a folder's", async () => {

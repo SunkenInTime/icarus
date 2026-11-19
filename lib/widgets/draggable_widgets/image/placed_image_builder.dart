@@ -18,6 +18,8 @@ import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/canonical_positioned.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/scalable_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/tag_color_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_context_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -252,46 +254,24 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
   }
 
   List<ShadContextMenuItem> _buildTagColorItems(WidgetRef ref) {
+    final l10n = context.l10n;
     return [
-      ShadContextMenuItem(
-        child: Text(context.l10n.canvasItemResetTagToGray),
-        onPressed: () {
+      buildTagColorMenuItem(
+        context,
+        current: widget.placedImage.tagColorValue,
+        choices: [
+          for (final entry in ref.watch(colorLibraryProvider))
+            (color: entry.color, label: colorLibraryEntryLabel(l10n, entry)),
+        ],
+        onPicked: (colorValue) {
           ref
               .read(placedImageProvider.notifier)
-              .updateTagColor(widget.placedImage.id, null);
+              .updateTagColor(widget.placedImage.id, colorValue);
           ref.read(strategyProvider.notifier).setUnsaved();
         },
       ),
-      ...ref.watch(colorLibraryProvider).map(
-            (entry) => ShadContextMenuItem(
-              leading: Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: entry.color,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              child: Text(_labelForColor(entry)),
-              onPressed: () {
-                ref.read(placedImageProvider.notifier).updateTagColor(
-                    widget.placedImage.id, entry.color.toARGB32());
-                ref.read(strategyProvider.notifier).setUnsaved();
-              },
-            ),
-          ),
       ...buildCaptionMenuItems(context, ref, widget.placedImage.id),
       ...buildAdjacentPageCopyMenuItems(ref, widget.placedImage.id),
     ];
-  }
-
-  String _labelForColor(ColorLibraryEntry entry) {
-    final hex = (entry.color.toARGB32() & 0x00FFFFFF)
-        .toRadixString(16)
-        .padLeft(6, '0')
-        .toUpperCase();
-    return entry.isCustom
-        ? context.l10n.canvasItemCustomColorTag(hex)
-        : context.l10n.canvasItemDefaultColorTag(hex);
   }
 }

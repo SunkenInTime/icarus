@@ -48,9 +48,7 @@ class InteractionStateProvider extends Notifier<InteractionState> {
 
     if (state == InteractionState.drawing) {
       final coordinateSystem = CoordinateSystem.instance;
-      ref
-          .read(drawingProvider.notifier)
-          .finishFreeDrawing(null, coordinateSystem);
+      ref.read(drawingProvider.notifier).finishCurrentDrawing(coordinateSystem);
     } else if (state == InteractionState.lineUpPlacing) {
       ref.read(lineUpProvider.notifier).clearPlacement();
       ref.read(abilityBarProvider.notifier).updateData(null);

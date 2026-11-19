@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/widgets/draggable_widgets/text/text_links.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_markup.dart';
 
 class FormattedTextView extends StatelessWidget {
@@ -7,11 +9,16 @@ class FormattedTextView extends StatelessWidget {
     required this.text,
     required this.style,
     required this.hintText,
+    this.links = true,
   });
 
   final String text;
   final TextStyle style;
   final String hintText;
+
+  /// Whether addresses in the text are drawn as links. A saved picture or
+  /// video draws them as plain text: nothing in a picture can be clicked.
+  final bool links;
 
   @override
   Widget build(BuildContext context) {
@@ -48,17 +55,16 @@ class FormattedTextView extends StatelessWidget {
       TextSpan(
         style: contentStyle,
         children: [
-          for (final inline in line.inlines)
-            if (!inline.isMarker)
-              TextSpan(
-                text: inline.raw,
-                style: contentStyle.copyWith(
-                  fontWeight:
-                      inline.bold ? FontWeight.w700 : contentStyle.fontWeight,
-                  fontStyle:
-                      inline.italic ? FontStyle.italic : contentStyle.fontStyle,
-                ),
+          for (final piece in textPieces(line))
+            _span(
+              piece,
+              contentStyle.copyWith(
+                fontWeight:
+                    piece.bold ? FontWeight.w700 : contentStyle.fontWeight,
+                fontStyle:
+                    piece.italic ? FontStyle.italic : contentStyle.fontStyle,
               ),
+            ),
         ],
       ),
     );
@@ -83,6 +89,20 @@ class FormattedTextView extends StatelessWidget {
         SizedBox(width: fontSize * 0.4),
         Expanded(child: content),
       ],
+    );
+  }
+
+  TextSpan _span(TextPiece piece, TextStyle style) {
+    final uri = piece.uri;
+    if (uri == null || !links) return TextSpan(text: piece.text, style: style);
+    return TextLinkSpan(
+      uri: uri,
+      text: piece.text,
+      style: style.copyWith(
+        color: Settings.accentInk,
+        decoration: TextDecoration.underline,
+        decorationColor: Settings.accentInk,
+      ),
     );
   }
 }

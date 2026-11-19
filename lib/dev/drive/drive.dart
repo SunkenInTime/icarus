@@ -35,6 +35,11 @@
 //   {"tapAt": [x, y], "hold": s?}      {"hoverAt": [x, y]}
 //   {"tapDoor": id}  {"hoverDoor": id}  the middle of a map door's bar
 //                                      hold: seconds down, for a long press
+//   {"tapWords": t, "nth": n?, "times": k?, "touch": b?, "button": "secondary"?}
+//                                      where a longer text draws t, such as an
+//                                      address in a text box, on t's first line;
+//                                      times 2 is a double-click, touch a finger
+//   {"hoverWords": t}                  {"dragWords": t, "by": [dx, dy]}
 //   {"dragAt": [x1, y1, x2, y2]}       {"path": [[x, y], ...], "held": png?}
 //                                      held: a shot before letting go
 //   {"scrollAt": [x, y, dy]}           {"key": name}  {"keyCombo": [names]}
@@ -104,6 +109,11 @@
 //                                      them: p50, p90, p99, worst, in ms
 //   {"expectText": t, "count": n}      fails unless t is on screen n times
 //   {"expectSelected": n}              fails unless n items are selected
+//   {"expectOpened": [urls]}           fails unless these are the links opened so
+//                                      far, in order; a run opens no browser
+//   {"expectEditing": b}               fails unless a text field has the keyboard,
+//                                      or with false, unless none has
+//   {"logTexts": tag}                  every text box's position, width and text
 //   {"expectAgents": n}                fails unless n agents are on the page
 //   {"expectInView": n, "only": id?,   fails unless n items are drawn, all of
 //    "middles": b?}                    them in the map's view; logs their outlines.
@@ -112,7 +122,14 @@
 //                                      item's middle has to be in view
 //   {"expectOnMapLine": id}            fails unless the agent or ability's dot is
 //                                      on a line the map draws; logs how far off
-//   {"expectDead": n}                  fails unless n agents on the page are dead
+//   {"expectOpacity": id, "percent": n, "seconds": s?}
+//                                      fails unless the shape is drawn at n
+//                                      percent, waiting up to s seconds for it
+//   {"expectTag": id, "color": hex?, "seconds": s?}
+//                                      fails unless the text box or picture's tag
+//                                      is this color, six lowercase hex digits,
+//                                      or gray without one; lastImage as above
+//   {"expectDead": n}                 fails unless n agents on the page are dead
 //   {"expectItem": id, "gone": b?}     fails unless the item is on the page, or
 //                                      with gone, unless it is not
 //   {"expectImages": n, "lineups": m?} fails unless n pictures are on the page,
@@ -124,6 +141,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' show showDialog;
 import 'package:flutter/rendering.dart';
@@ -402,6 +420,46 @@ Offset _centerOf(bool Function(Widget) test, {int nth = 0}) {
   return found[nth];
 }
 
+/// Where a longer text draws [words]: the middle of their first line, in
+/// the [nth] text that holds them.
+Offset _wordsPoint(String words, {int nth = 0}) {
+  final found = <Offset>[];
+  void visit(RenderObject node) {
+    if (node is RenderParagraph && node.attached && node.hasSize) {
+      final at = node.text.toPlainText().indexOf(words);
+      final boxes = at < 0
+          ? const <ui.TextBox>[]
+          : node.getBoxesForSelection(
+              TextSelection(baseOffset: at, extentOffset: at + words.length),
+            );
+      if (boxes.isNotEmpty) {
+        found.add(node.localToGlobal(boxes.first.toRect().center));
+      }
+    }
+    node.visitChildren(visit);
+  }
+
+  RendererBinding.instance.renderViews.forEach(visit);
+  if (found.length <= nth) {
+    throw StateError('"$words" drawn ${found.length} times');
+  }
+  return found[nth];
+}
+
+/// Whether a text field has the keyboard.
+bool _editing() {
+  var editing = false;
+  void visit(Element element) {
+    if (element case StatefulElement(:final EditableTextState state)) {
+      editing = editing || state.widget.focusNode.hasFocus;
+    }
+    element.visitChildElements(visit);
+  }
+
+  WidgetsBinding.instance.rootElement?.visitChildElements(visit);
+  return editing;
+}
+
 /// The middle of item [id] as drawn: its innermost outline.
 Offset _itemCenter(String id) {
   RenderEditorItemOutline? best;
@@ -528,38 +586,40 @@ Future<void> _hover(Offset at) async {
   await _frames();
 }
 
+/// Clicks at [at], [times] in a row as a double-click does, or taps there
+/// with a finger when [touch].
 Future<void> _tap(
   Offset at, {
   bool secondary = false,
   Duration hold = const Duration(milliseconds: 60),
+  int times = 1,
+  bool touch = false,
 }) async {
   final pointer = _pointer++;
   final binding = GestureBinding.instance;
-  _addMouse(pointer, at);
-  binding.handlePointerEvent(
-    PointerHoverEvent(
-      pointer: pointer,
-      kind: PointerDeviceKind.mouse,
-      position: at,
-    ),
-  );
-  await _frames(2);
-  binding.handlePointerEvent(
-    PointerDownEvent(
-      pointer: pointer,
-      kind: PointerDeviceKind.mouse,
-      buttons: secondary ? kSecondaryMouseButton : kPrimaryMouseButton,
-      position: at,
-    ),
-  );
-  await Future<void>.delayed(hold);
-  binding.handlePointerEvent(
-    PointerUpEvent(
-      pointer: pointer,
-      kind: PointerDeviceKind.mouse,
-      position: at,
-    ),
-  );
+  final kind = touch ? PointerDeviceKind.touch : PointerDeviceKind.mouse;
+  if (!touch) {
+    _addMouse(pointer, at);
+    binding.handlePointerEvent(
+      PointerHoverEvent(pointer: pointer, kind: kind, position: at),
+    );
+    await _frames(2);
+  }
+  for (var i = 0; i < times; i++) {
+    if (i > 0) await Future<void>.delayed(const Duration(milliseconds: 80));
+    binding.handlePointerEvent(
+      PointerDownEvent(
+        pointer: pointer,
+        kind: kind,
+        buttons: secondary ? kSecondaryMouseButton : kPrimaryMouseButton,
+        position: at,
+      ),
+    );
+    await Future<void>.delayed(hold);
+    binding.handlePointerEvent(
+      PointerUpEvent(pointer: pointer, kind: kind, position: at),
+    );
+  }
   await Future<void>.delayed(const Duration(milliseconds: 500));
   await _frames();
 }
@@ -988,6 +1048,18 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'hoverAt':
       await _hover(_point(step, name));
+    case 'tapWords':
+      await _tap(
+        _wordsPoint(value as String, nth: nth),
+        secondary: step['button'] == 'secondary',
+        times: (step['times'] ?? 1) as int,
+        touch: step['touch'] == true,
+      );
+    case 'hoverWords':
+      await _hover(_wordsPoint(value as String, nth: nth));
+    case 'dragWords':
+      final from = _wordsPoint(value as String, nth: nth);
+      await _drag([from, from + _point(step, 'by')]);
     case 'tapDoor':
       await _tap(_doorPoint(value as String));
     case 'hoverDoor':
@@ -1512,6 +1584,26 @@ Future<void> _run(Map<String, dynamic> step) async {
         'selected=${c.read(canvasSelectionProvider).length} '
         'tool=${c.read(interactionStateProvider).name}',
       );
+    case 'expectOpened':
+      if (!listEquals(_openedLinks, (value as List).cast<String>())) {
+        throw StateError('opened $_openedLinks, expected $value');
+      }
+    case 'expectEditing':
+      if (_editing() != value) {
+        throw StateError(
+            '${_editing() ? 'a' : 'no'} text field has the keyboard');
+      }
+    case 'logTexts':
+      _log('TEXTBOXES $value ${jsonEncode([
+            for (final text in c.read(textProvider))
+              {
+                'id': text.id,
+                'x': text.position.dx,
+                'y': text.position.dy,
+                'width': text.size,
+                'text': text.text,
+              },
+          ])}');
     case 'expectSelected':
       final selected = c.read(canvasSelectionProvider).length;
       if (selected != value) {
@@ -1595,6 +1687,47 @@ Future<void> _run(Map<String, dynamic> step) async {
       if (items.isEmpty != (step['gone'] == true)) {
         throw StateError('$value is $at');
       }
+    case 'expectTag':
+      final id = _itemId(value as String);
+      final wanted = step['color'] as String?;
+      // One entry while the item is on the page; an item that's gone has no
+      // tag, which isn't a gray one.
+      List<int?> tags() => [
+            for (final text in c.read(textProvider))
+              if (text.id == id) text.tagColorValue,
+            for (final image in c.read(placedImageProvider).images)
+              if (image.id == id) image.tagColorValue,
+          ];
+      String name(int? color) => color == null
+          ? 'gray'
+          : (color & 0xFFFFFF).toRadixString(16).padLeft(6, '0');
+      try {
+        await _waitFor(
+          () => tags().isNotEmpty && name(tags().first) == (wanted ?? 'gray'),
+          (step['seconds'] ?? 0) as num,
+        );
+      } on TimeoutException {
+        throw StateError(
+          tags().isEmpty
+              ? '$value is not on the page'
+              : "$value's tag is ${name(tags().first)}, not ${wanted ?? 'gray'}",
+        );
+      }
+    case 'expectOpacity':
+      int? opacity() => c
+          .read(utilityProvider)
+          .where((utility) => utility.id == value)
+          .firstOrNull
+          ?.customOpacityPercent;
+      try {
+        await _waitFor(
+          () => opacity() == step['percent'],
+          (step['seconds'] ?? 0) as num,
+        );
+      } on TimeoutException {
+        throw StateError('$value is at ${opacity()}%, not ${step['percent']}%');
+      }
+      _log('OPACITY $value ${opacity()}%');
     case 'expectDead':
       final dead = c
           .read(agentProvider)

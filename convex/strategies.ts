@@ -15,6 +15,7 @@ import {
   getEffectiveStrategyRoleForUser,
   higherRole,
   requireCurrentUser,
+  strategyFolderOpenTo,
 } from "./lib/auth";
 import type { StrategyRole } from "./lib/auth";
 import {
@@ -208,6 +209,30 @@ async function summarizeStrategies(
   }));
 }
 
+/// The strategies shared with [userId] on their own that list at the top of
+/// their Shared: each one whose folder they can't open. One in a folder they
+/// can open lists in that folder instead.
+async function sharedAtTopLevel(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+): Promise<Doc<"strategies">[]> {
+  const memberships = await ctx.db
+    .query("strategyCollaborators")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .collect();
+  const shared = await Promise.all(
+    memberships.map((membership) => ctx.db.get(membership.strategyId)),
+  );
+  const topLevel: Doc<"strategies">[] = [];
+  for (const strategy of shared) {
+    if (strategy === null || strategy.ownerId === userId) continue;
+    if ((await strategyFolderOpenTo(ctx, strategy, userId)) === null) {
+      topLevel.push(strategy);
+    }
+  }
+  return topLevel;
+}
+
 async function listStrategiesInFolder(
   ctx: QueryCtx,
   folderId: Id<"folders"> | undefined,
@@ -218,19 +243,7 @@ async function listStrategiesInFolder(
   if (folderId !== undefined) {
     candidates = await listedStrategiesInFolder(ctx, folderId);
   } else if (scope === "shared") {
-    const memberships = await ctx.db
-      .query("strategyCollaborators")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
-    const shared = await Promise.all(
-      memberships.map((membership) => ctx.db.get(membership.strategyId)),
-    );
-    candidates = shared.filter(
-      (strategy): strategy is Doc<"strategies"> =>
-        strategy !== null &&
-        strategy.ownerId !== userId &&
-        strategy.folderId === undefined,
-    );
+    candidates = await sharedAtTopLevel(ctx, userId);
   } else {
     candidates = await ctx.db
       .query("strategies")
@@ -243,21 +256,7 @@ async function listStrategiesInFolder(
       .collect();
 
     if (scope === "all") {
-      const memberships = await ctx.db
-        .query("strategyCollaborators")
-        .withIndex("by_userId", (q) => q.eq("userId", userId))
-        .collect();
-      const shared = await Promise.all(
-        memberships.map((membership) => ctx.db.get(membership.strategyId)),
-      );
-      candidates.push(
-        ...shared.filter(
-          (strategy): strategy is Doc<"strategies"> =>
-            strategy !== null &&
-            strategy.ownerId !== userId &&
-            strategy.folderId === undefined,
-        ),
-      );
+      candidates.push(...(await sharedAtTopLevel(ctx, userId)));
     }
   }
 
@@ -505,20 +504,7 @@ export const listSharedWithMe = query({
   returns: v.array(strategySummaryValidator),
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
-    const memberships = await ctx.db
-      .query("strategyCollaborators")
-      .withIndex("by_userId", (q) => q.eq("userId", user._id))
-      .collect();
-    const shared = await Promise.all(
-      memberships.map((membership) => ctx.db.get(membership.strategyId)),
-    );
-    const strategies = shared.filter(
-      (strategy): strategy is Doc<"strategies"> =>
-        strategy !== null &&
-        isListed(strategy) &&
-        strategy.ownerId !== user._id &&
-        strategy.folderId === undefined,
-    );
+    const strategies = (await sharedAtTopLevel(ctx, user._id)).filter(isListed);
     return await summarizeStrategies(
       ctx,
       strategies,

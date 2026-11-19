@@ -10,11 +10,13 @@ import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/freehand_pen.dart';
 import 'package:icarus/const/json_converters.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
+import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -70,6 +72,9 @@ final drawingProvider =
 
 class DrawingProvider extends Notifier<DrawingState> {
   List<DrawingElement> poppedElements = [];
+
+  /// The pen of the freehand stroke in progress.
+  FreehandPen? _freehandPen;
 
   @override
   DrawingState build() {
@@ -586,6 +591,12 @@ class DrawingProvider extends Notifier<DrawingState> {
     );
 
     freeDrawing.appendPoint(normalizedStart);
+    _freehandPen = FreehandPen(
+      normalizedStart,
+      // A screen pixel, however far the map is zoomed in.
+      unit: coordinateSystem
+          .screenHeightToWorld(1 / ref.read(screenZoomProvider)),
+    );
 
     state = state.copyWith(currentElement: freeDrawing);
 
@@ -597,22 +608,38 @@ class DrawingProvider extends Notifier<DrawingState> {
     final currentDrawing = (state.currentElement as FreeDrawing);
     final normalizedOffset = coordinateSystem.screenToCoordinate(offset);
 
-    List<Offset> currentPoints = currentDrawing.listOfPoints;
-    Offset lastPoint = currentPoints[currentPoints.length - 1];
-
-    final minDistance =
-        coordinateSystem.normalize(Settings.freeDrawMinDistance);
-    if ((lastPoint - normalizedOffset).distance < minDistance) return;
-
-    final boundingBox =
-        updateBoundingBox(currentDrawing.boundingBox!, normalizedOffset);
-
-    currentDrawing.appendPoint(normalizedOffset);
+    _drawWithPen(currentDrawing, normalizedOffset);
     currentDrawing.rebuildPath(coordinateSystem);
 
-    currentDrawing.boundingBox = boundingBox;
     state = state.copyWith(currentElement: currentDrawing);
     _triggerRepaint();
+  }
+
+  /// Finishes the drawing under the pointer, whichever tool it is being
+  /// drawn with, where it has got to.
+  void finishCurrentDrawing(CoordinateSystem coordinateSystem) {
+    switch (state.currentElement) {
+      case FreeDrawing():
+        finishFreeDrawing(null, coordinateSystem);
+      case Line():
+        finishCurrentLine(null, coordinateSystem);
+      case RectangleDrawing():
+        finishRectangle(null, coordinateSystem);
+      case EllipseDrawing():
+        finishEllipse(null, coordinateSystem);
+      default:
+        break;
+    }
+  }
+
+  /// Moves the pen to [pointer] and gives [drawing] the stroke it has drawn.
+  /// The pen's curve can run a little outside the pointer's own path, so
+  /// the box is the curve's.
+  void _drawWithPen(FreeDrawing drawing, Offset pointer) {
+    final points = _freehandPen!.moveTo(pointer);
+    drawing
+      ..replacePoints(points)
+      ..boundingBox = BoundingBox.around(points);
   }
 
   void finishFreeDrawing(Offset? offset, CoordinateSystem coordinateSystem) {
@@ -622,12 +649,11 @@ class DrawingProvider extends Notifier<DrawingState> {
     final currentDrawing = state.currentElement as FreeDrawing;
     FreeDrawing finalDrawing = currentDrawing.copyWith(
       listOfPoints: [...currentDrawing.listOfPoints],
-      cachedPolylineLengthUnits: currentDrawing.cachedPolylineLengthUnits,
     );
-
     if (offset != null) {
-      finalDrawing.appendPoint(coordinateSystem.screenToCoordinate(offset));
+      _drawWithPen(finalDrawing, coordinateSystem.screenToCoordinate(offset));
     }
+    _freehandPen = null;
 
     if (Settings.enableStrokeSimplification) {
       finalDrawing = douglasPeucker(
@@ -819,14 +845,6 @@ class DrawingProvider extends Notifier<DrawingState> {
     ref.read(actionProvider.notifier).addAction(action);
 
     _triggerRepaint();
-  }
-
-  BoundingBox updateBoundingBox(BoundingBox currentBox, Offset newPoint) {
-    final minX = min(currentBox.min.dx, newPoint.dx);
-    final minY = min(currentBox.min.dy, newPoint.dy);
-    final maxX = max(currentBox.max.dx, newPoint.dx);
-    final maxY = max(currentBox.max.dy, newPoint.dy);
-    return BoundingBox(min: Offset(minX, minY), max: Offset(maxX, maxY));
   }
 
   void startLine(

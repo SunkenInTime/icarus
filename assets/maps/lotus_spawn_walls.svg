@@ -1,10 +1,11 @@
 <svg width="493" height="473" viewBox="0 0 493 473" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect x="368.5" y="198" width="35" height="4" fill="#FB5757" fill-opacity="0.71"/>
-<rect x="448.56" y="192.54" width="4" height="46.02" fill="#FB5757" fill-opacity="0.71"/>
-<rect x="186.5" y="352" width="4" height="76" fill="#57FBA9" fill-opacity="0.71"/>
-<rect x="326.5" y="325" width="19" height="4" fill="#57FBA9" fill-opacity="0.71"/>
-<rect x="89.5" y="242" width="4" height="28" fill="#FB5757" fill-opacity="0.71"/>
-<rect x="203.5" y="236" width="22" height="4" fill="#FB5757" fill-opacity="0.71"/>
-<rect x="239.5" y="353" width="31" height="4" fill="#57FBA9" fill-opacity="0.71"/>
-<rect x="334.91" y="200.23" width="4" height="12.53" fill="#FB5757" fill-opacity="0.71"/>
+<rect x="376.69" y="198" width="25.88" height="4" fill="#FB5757" fill-opacity="0.71"/>
+<rect x="448.56" y="193.11" width="4" height="44.38" fill="#FB5757" fill-opacity="0.71"/>
+<rect x="186.5" y="352.69" width="4" height="28.5" fill="#57FBA9" fill-opacity="0.71"/>
+<path d="M190.5 397.69L190.5 425.64L186.5 423.73L186.5 397.69Z" fill="#57FBA9" fill-opacity="0.71"/>
+<rect x="327.69" y="325" width="16.75" height="4" fill="#57FBA9" fill-opacity="0.71"/>
+<rect x="89.5" y="242.69" width="4" height="25.5" fill="#FB5757" fill-opacity="0.71"/>
+<rect x="204.44" y="236" width="20.12" height="4" fill="#FB5757" fill-opacity="0.71"/>
+<rect x="241.31" y="353" width="19.38" height="4" fill="#57FBA9" fill-opacity="0.71"/>
+<rect x="334.91" y="200.81" width="4" height="9.88" fill="#FB5757" fill-opacity="0.71"/>
 </svg>

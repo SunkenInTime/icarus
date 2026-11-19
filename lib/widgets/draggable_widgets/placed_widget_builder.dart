@@ -50,6 +50,7 @@ import 'package:icarus/widgets/line_up_line_painter.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
+import 'package:icarus/widgets/text_link_read_region.dart';
 import 'package:uuid/uuid.dart';
 
 class PlacedWidgetBuilder extends ConsumerStatefulWidget {
@@ -61,6 +62,9 @@ class PlacedWidgetBuilder extends ConsumerStatefulWidget {
 }
 
 class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
+  /// The placed items, for a reader's click on a link in one of them.
+  final _items = GlobalKey();
+
   PlacedAgent? _hoveredAgentAttachmentTarget() {
     final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
     if (hoveredTarget == null || hoveredTarget.type != DeleteTargetType.agent) {
@@ -148,6 +152,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                         key: const ValueKey('strategy-canvas-object-editor'),
                         ignoring: !canEditPages,
                         child: Stack(
+                          key: _items,
                           clipBehavior: Clip.none,
                           children: [
                             _CustomShapeUtilityList(
@@ -183,8 +188,10 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                         ),
                       ),
                     ),
-                    if (!canEditPages)
+                    if (!canEditPages) ...[
                       const Positioned.fill(child: CaptionReadRegion()),
+                      Positioned.fill(child: TextLinkReadRegion(items: _items)),
+                    ],
                     const LineUpOverlay(),
                   ],
                 ),

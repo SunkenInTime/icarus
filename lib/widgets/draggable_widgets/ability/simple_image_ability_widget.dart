@@ -71,6 +71,17 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
                 color: inactiveTraceColor!,
               ),
             ),
+          Center(
+            child: Opacity(
+              key: const ValueKey('image-ability-center-dot'),
+              opacity: rangeOpacity,
+              child: IgnorePointer(
+                child: _CenterDot(
+                  size: coordinateSystem.scale(Settings.smokeCenterDotSize),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -87,6 +98,33 @@ class SimpleImageAbilityWidget extends ConsumerWidget {
       deleteTarget: deleteTarget,
       contextMenuItems: contextMenuItems,
       child: content,
+    );
+  }
+}
+
+/// Marks a smoke's center, so it can be lined up against a wall corner for a
+/// one-way. Faint and light with a dark rim, so it reads on dark and light
+/// smoke art alike.
+class _CenterDot extends StatelessWidget {
+  const _CenterDot({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: size,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Settings.smokeCenterDotFill,
+          border: Border.all(
+            color: Settings.smokeCenterDotRim,
+            width: size * 0.2,
+            strokeAlign: BorderSide.strokeAlignOutside,
+          ),
+        ),
+      ),
     );
   }
 }

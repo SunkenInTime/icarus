@@ -3618,6 +3618,20 @@
   "@shapeToolsCustomColorMenu": {
     "description": "Right-click menu entry on a custom shape that opens a color picker."
   },
+  "shapeToolsOpacityMenu": "Opacity",
+  "@shapeToolsOpacityMenu": {
+    "description": "Right-click menu entry on a custom shape that opens its opacity choices."
+  },
+  "shapeToolsOpacityPercent": "{percent}%",
+  "@shapeToolsOpacityPercent": {
+    "description": "One opacity choice in a custom shape's right-click menu, e.g. 30%.",
+    "placeholders": {
+      "percent": {
+        "type": "int",
+        "description": "Opacity in percent, 5 to 80."
+      }
+    }
+  },
   "shapeToolsColorWhite": "White",
   "shapeToolsColorRed": "Red",
   "shapeToolsColorBlue": "Blue",
@@ -3747,35 +3761,29 @@
   "@canvasItemEditCaption": {
     "description": "Right-click menu entry on a placed item that has a caption: change it."
   },
-  "canvasItemResetTagToGray": "Reset tag to gray",
-  "@canvasItemResetTagToGray": {
-    "description": "Right-click menu entry on a text box or image: remove its color tag."
+  "canvasItemOpenTheLink": "Open link",
+  "@canvasItemOpenTheLink": {
+    "description": "Right-click menu entry on a text box whose text holds one web address: opens it in the browser."
   },
-  "canvasItemGreenTag": "Green tag",
-  "canvasItemBlueTag": "Blue tag",
-  "canvasItemAmberTag": "Amber tag",
-  "canvasItemRedTag": "Red tag",
-  "canvasItemPurpleTag": "Purple tag",
-  "canvasItemCustomColorTag": "#{hex} custom tag",
-  "@canvasItemCustomColorTag": {
-    "description": "Right-click menu entry on an image: tag it with a color the user saved.",
+  "canvasItemOpenLink": "Open {address}",
+  "@canvasItemOpenLink": {
+    "description": "Right-click menu entry on a text box whose text holds more than one web address, one entry for each: opens it in the browser. {address} is that address without https://, such as youtube.com/shorts/H36dywKYmI4; a long one is cut short.",
     "placeholders": {
-      "hex": {
-        "type": "String",
-        "description": "Six-digit hex color code, e.g. FF8800."
+      "address": {
+        "type": "String"
       }
     }
   },
-  "canvasItemDefaultColorTag": "#{hex} default tag",
-  "@canvasItemDefaultColorTag": {
-    "description": "Right-click menu entry on an image: tag it with one of the built-in colors.",
-    "placeholders": {
-      "hex": {
-        "type": "String",
-        "description": "Six-digit hex color code, e.g. FF8800."
-      }
-    }
+  "canvasItemTagColorMenu": "Tag color",
+  "@canvasItemTagColorMenu": {
+    "description": "Right-click menu entry on a text box or image that opens the colors its tag can take."
   },
+  "canvasItemTagColorGray": "Gray",
+  "@canvasItemTagColorGray": {
+    "description": "A tag color in the Tag color menu: the gray of a text box or image that was never tagged."
+  },
+  "canvasItemTagColorAmber": "Amber",
+  "canvasItemTagColorPurple": "Purple",
   "canvasItemCopyToPreviousPage": "Copy to previous page",
   "@canvasItemCopyToPreviousPage": {
     "description": "Right-click menu entry on a placed item: copy it onto the page before this one."

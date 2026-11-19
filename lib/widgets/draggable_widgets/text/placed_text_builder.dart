@@ -14,6 +14,8 @@ import 'package:icarus/widgets/context_menu_region.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/canonical_positioned.dart';
+import 'package:icarus/widgets/draggable_widgets/tag_color_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/text/text_links.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_scale_controller.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -40,13 +42,11 @@ class PlacedTextBuilder extends ConsumerStatefulWidget {
 
 class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
   static const double minSize = 60;
-  static const List<Color> _tagPalette = [
-    Color(0xFF22C55E),
-    Color(0xFF3B82F6),
-    Color(0xFFF59E0B),
-    Color(0xFFEF4444),
-    Color(0xFFA855F7),
-  ];
+  static const _tagGreen = Color(0xFF22C55E);
+  static const _tagBlue = Color(0xFF3B82F6);
+  static const _tagAmber = Color(0xFFF59E0B);
+  static const _tagRed = Color(0xFFEF4444);
+  static const _tagPurple = Color(0xFFA855F7);
   final _boxKey = GlobalKey();
   double? localSize; // Make localScale nullable to check if it's initialized
   bool isPanning = false;
@@ -107,8 +107,9 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
 
-    final stillLoaded =
-        ref.read(textProvider).any((text) => identical(text, resizedText));
+    final stillLoaded = ref
+        .read(textProvider)
+        .any((text) => identical(text, resizedText));
     if (pinned != null && stillLoaded) _storeResize(resizedText, pinned);
     setState(() {
       isPanning = false;
@@ -158,9 +159,11 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
       localSize = texts[index].size;
     }
     final coordinateSystem = CoordinateSystem.instance;
-    final attackScreenPosition =
-        coordinateSystem.coordinateToScreen(widget.placedText.position);
-    final drawnSize = ref.watch(
+    final attackScreenPosition = coordinateSystem.coordinateToScreen(
+      widget.placedText.position,
+    );
+    final drawnSize =
+        ref.watch(
           textWidgetHeightProvider.select(
             (sizes) => sizes[widget.placedText.id],
           ),
@@ -184,8 +187,9 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
               details.globalPosition.dx - leftEdgeGlobal.dx;
           final widthInContentSpace =
               widthInScreenPixels / scale + pointerShift;
-          final widthInWorldSpace =
-              coordinateSystem.screenWidthToWorld(widthInContentSpace);
+          final widthInWorldSpace = coordinateSystem.screenWidthToWorld(
+            widthInContentSpace,
+          );
 
           setState(() {
             isPanning = true;
@@ -199,7 +203,8 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         },
         onPanEnd: (_) => _finishResize(),
         child: CanvasDraggable<PlacedText>(
-          dot: widget.placedText.position +
+          dot:
+              widget.placedText.position +
               coordinateSystem
                   .screenSizeToWorld(Size(drawnSize.dx, drawnSize.dy))
                   .center(Offset.zero),
@@ -219,8 +224,9 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
             ),
           ),
           childWhenDragging: const SizedBox.shrink(),
-          dragAnchorStrategy:
-              ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
+          dragAnchorStrategy: ref
+              .read(screenZoomProvider.notifier)
+              .zoomDragAnchorStrategy,
           onDragStarted: () {
             ref
                 .read(textDraftProvider.notifier)
@@ -237,7 +243,10 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
           },
           child: EditorItemOutline(
             child: ContextMenuRegion(
-              items: _buildTagColorItems(),
+              items: [
+                ..._buildLinkItems(draftText ?? widget.placedText.text),
+                ..._buildTagColorItems(),
+              ],
               child: MouseWatch(
                 cursor: SystemMouseCursors.click,
                 deleteTarget: HoveredDeleteTarget.text(
@@ -260,54 +269,64 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
     );
   }
 
-  List<ShadContextMenuItem> _buildTagColorItems() {
+  /// Open, for each link in [text]: the way to a link for someone editing on
+  /// a touch screen, and where the click that opens one is written down. One
+  /// link reads "Open link"; several are told apart by their addresses.
+  List<ShadContextMenuItem> _buildLinkItems(String text) {
+    final muted = ShadTheme.of(context).colorScheme.mutedForeground;
+    final links = textLinks(text).toList();
     return [
-      ShadContextMenuItem(
-        child: Text(context.l10n.canvasItemResetTagToGray),
-        onPressed: () {
-          ref
-              .read(textProvider.notifier)
-              .updateTagColor(widget.placedText.id, null);
-          ref.read(strategyProvider.notifier).setUnsaved();
-        },
-      ),
-      ..._tagPalette.map(
-        (color) => ShadContextMenuItem(
-          leading: Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
+      for (final link in links)
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.externalLink, size: 16),
+          trailing: Text(
+            openLinkShortcut,
+            style: TextStyle(color: muted, fontSize: 12),
+          ),
+          onPressed: () => openTextLink(link),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: Text(
+              links.length == 1
+                  ? context.l10n.canvasItemOpenTheLink
+                  : context.l10n.canvasItemOpenLink(_shortAddress(link)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          child: Text(_labelForColor(color)),
-          onPressed: () {
-            ref
-                .read(textProvider.notifier)
-                .updateTagColor(widget.placedText.id, color.toARGB32());
-            ref.read(strategyProvider.notifier).setUnsaved();
-          },
         ),
+    ];
+  }
+
+  /// [link] without the parts every address has, so the part that tells
+  /// links apart fits in a menu.
+  static String _shortAddress(Uri link) {
+    final address = link.toString().replaceFirst(RegExp(r'^https?://'), '');
+    return address.startsWith('www.') ? address.substring(4) : address;
+  }
+
+  List<ShadContextMenuItem> _buildTagColorItems() {
+    final l10n = context.l10n;
+    return [
+      buildTagColorMenuItem(
+        context,
+        current: widget.placedText.tagColorValue,
+        choices: [
+          (color: _tagGreen, label: l10n.shapeToolsColorGreen),
+          (color: _tagBlue, label: l10n.shapeToolsColorBlue),
+          (color: _tagAmber, label: l10n.canvasItemTagColorAmber),
+          (color: _tagRed, label: l10n.shapeToolsColorRed),
+          (color: _tagPurple, label: l10n.canvasItemTagColorPurple),
+        ],
+        onPicked: (colorValue) {
+          ref
+              .read(textProvider.notifier)
+              .updateTagColor(widget.placedText.id, colorValue);
+          ref.read(strategyProvider.notifier).setUnsaved();
+        },
       ),
       ...buildCaptionMenuItems(context, ref, widget.placedText.id),
       ...buildAdjacentPageCopyMenuItems(ref, widget.placedText.id),
     ];
-  }
-
-  String _labelForColor(Color color) {
-    if (color.toARGB32() == const Color(0xFF22C55E).toARGB32()) {
-      return context.l10n.canvasItemGreenTag;
-    }
-    if (color.toARGB32() == const Color(0xFF3B82F6).toARGB32()) {
-      return context.l10n.canvasItemBlueTag;
-    }
-    if (color.toARGB32() == const Color(0xFFF59E0B).toARGB32()) {
-      return context.l10n.canvasItemAmberTag;
-    }
-    if (color.toARGB32() == const Color(0xFFEF4444).toARGB32()) {
-      return context.l10n.canvasItemRedTag;
-    }
-    return context.l10n.canvasItemPurpleTag;
   }
 }
