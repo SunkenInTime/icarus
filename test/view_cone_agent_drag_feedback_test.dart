@@ -11,13 +11,10 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
-import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-
-import 'vision_geometry_test_support.dart';
 
 class _FixedMapProvider extends MapProvider {
   @override
@@ -36,9 +33,6 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         mapProvider.overrideWith(_FixedMapProvider.new),
-        viewConeGeometryProvider.overrideWith(
-          (ref, map) async => twoLayerAscentGeometry(),
-        ),
       ],
     );
     addTearDown(container.dispose);
@@ -98,9 +92,6 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         mapProvider.overrideWith(_FixedMapProvider.new),
-        viewConeGeometryProvider.overrideWith(
-          (ref, map) async => twoLayerAscentGeometry(),
-        ),
       ],
     );
     addTearDown(container.dispose);
@@ -114,7 +105,6 @@ void main() {
       length: 75,
     );
     container.read(agentProvider.notifier).fromHive([agent]);
-    await container.read(viewConeGeometryProvider(MapValue.ascent).future);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -208,9 +198,6 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         mapProvider.overrideWith(_FixedMapProvider.new),
-        viewConeGeometryProvider.overrideWith(
-          (ref, map) async => twoLayerAscentGeometry(),
-        ),
       ],
     );
     addTearDown(container.dispose);
@@ -223,7 +210,6 @@ void main() {
     );
     utility.updateRotation(0.5, 75);
     container.read(utilityProvider.notifier).fromHive([utility]);
-    await container.read(viewConeGeometryProvider(MapValue.ascent).future);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(

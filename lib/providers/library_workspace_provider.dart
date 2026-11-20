@@ -79,10 +79,6 @@ final libraryWorkspaceProvider =
   LibraryWorkspaceNotifier.new,
 );
 
-final isCloudWorkspaceSelectedProvider = Provider<bool>((ref) {
-  return ref.watch(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
-});
-
 final cloudLibrarySectionProvider =
     NotifierProvider<CloudLibrarySectionNotifier, CloudLibrarySection>(
   CloudLibrarySectionNotifier.new,

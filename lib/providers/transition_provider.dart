@@ -192,14 +192,6 @@ class TransitionProvider extends Notifier<PageTransitionState> {
     );
   }
 
-  void setHideView(bool hide) {
-    state = state.copyWith(hideView: hide);
-  }
-
-  void setAllWidgets(List<PlacedWidget> widgets) {
-    state = state.copyWith(allWidgets: widgets);
-  }
-
   void complete() {
     state = state.copyWith(
       active: false,

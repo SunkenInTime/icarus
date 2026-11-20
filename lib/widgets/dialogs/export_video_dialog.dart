@@ -10,7 +10,6 @@ import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
-import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/providers/navigation_geometry_provider.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/screenshot/caption_export_layout.dart';
@@ -27,7 +26,6 @@ import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:icarus/services/video_export/video_exporter.dart';
 import 'package:icarus/services/video_export/video_frame_sink.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
-import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/dialogs/screenshot_dialog.dart';
 import 'package:icarus/widgets/page_choice_list.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -290,18 +288,10 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
           .toList();
 
       final mapState = ref.read(mapProvider);
-      final requireNavigation =
-          ref.read(worldGeometryEnabledProvider(mapState.currentMap));
-      VisionGeometryMap? geometry;
       NavigationGeometryMap? navigation;
       try {
-        if (requireNavigation) {
-          navigation = await ref
-              .read(navigationGeometryProvider(mapState.currentMap).future);
-        } else {
-          geometry = await ref
-              .read(viewConeGeometryProvider(mapState.currentMap).future);
-        }
+        navigation = await ref
+            .read(navigationGeometryProvider(mapState.currentMap).future);
       } on Object {
       }
       if (_cancelRequested) throw VideoExportCancelled();
@@ -312,12 +302,11 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         mapState: mapState,
         backgroundDotOpacity:
             ref.read(appPreferencesProvider).backgroundDotOpacity,
-        geometry: geometry,
         transparentBackground: transparent,
         includeCaptions: includeCaptions,
         imageSources: images.sources,
         navigation: navigation,
-        requireNavigation: requireNavigation,
+        requireNavigation: true,
         l10n: l10n,
       );
       setState(() {

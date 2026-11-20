@@ -648,11 +648,6 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
     return _readFromHive();
   }
 
-  Future<void> refreshFromHive() async {
-    await _writeQueue;
-    state = _readFromHive();
-  }
-
   Future<void> setDefaultThemeProfileIdForNewStrategies(String profileId) {
     return _updatePreferences(
       (current) =>
@@ -863,6 +858,12 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
     return _updatePreferences(
       (current) => current.copyWith(customShortcutBindings: const {}),
     );
+  }
+
+  Future<void> restoreFromBackup(
+    AppPreferences Function(AppPreferences current) restore,
+  ) {
+    return _updatePreferences(restore);
   }
 
   Future<void> flushPendingWrites() => _writeQueue;

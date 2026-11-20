@@ -151,7 +151,6 @@ VideoExporter _exporter(
     ),
     mapState: MapState(currentMap: MapValue.ascent, isAttack: true),
     backgroundDotOpacity: 1,
-    geometry: null,
     transparentBackground: transparent,
     imageSources: {'image-1': ImageBytes(_magentaPng)},
   );

@@ -13,10 +13,8 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/page_transition/navigation_geometry.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
-import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/providers/navigation_geometry_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/view_cone_geometry_provider.dart';
 
 import 'navigation_geometry_test.dart' show mesh, rect;
 
@@ -177,10 +175,7 @@ void main() {
           defenseOffsetCanvas: offset);
       AgentTransitionPath route() => AgentTransitionPathPlanner.plan(
           entries: entries,
-          geometry: null,
           navigation: navigation,
-          startAgentSize: 0,
-          endAgentSize: 0,
           coordinateSystem: coordinates)['sova']!;
       final defense = route();
       expect(defense.points.first, start);
@@ -203,7 +198,6 @@ void main() {
     final bundle = _NavigationBundle(failNextRead: true);
     final container = ProviderContainer(overrides: [
       mapProvider.overrideWith(_MapProvider.new),
-      worldGeometryEnabledProvider.overrideWith((ref, map) => true),
       navigationGeometryBundleProvider.overrideWithValue(bundle),
     ]);
     addTearDown(container.dispose);
@@ -224,7 +218,6 @@ void main() {
     final bundle = _NavigationBundle();
     final container = ProviderContainer(overrides: [
       mapProvider.overrideWith(_MapProvider.new),
-      worldGeometryEnabledProvider.overrideWith((ref, map) => true),
       navigationGeometryBundleProvider.overrideWithValue(bundle),
     ]);
     addTearDown(container.dispose);
@@ -252,10 +245,8 @@ void main() {
     expect(navigation.observerHeightCm, 175);
     expect(navigation.defaultFloorElevationCm, 300);
     final coordinates = CoordinateSystem(playAreaSize: const Size(1920, 1080));
-    final start =
-        VisionGeometryMap.projectUv(MapValue.split, const Offset(.3, .4));
-    final end =
-        VisionGeometryMap.projectUv(MapValue.split, const Offset(.7, .6));
+    final start = Maps.projectUv(MapValue.split, const Offset(.3, .4));
+    final end = Maps.projectUv(MapValue.split, const Offset(.7, .6));
     final anchor = coordinates.virtualOffsetToWorld(storedAgentAnchor);
     final routes = AgentTransitionPathPlanner.plan(
       entries: [
@@ -266,10 +257,7 @@ void main() {
               id: 'sova', type: AgentType.sova, position: end - anchor),
         )
       ],
-      geometry: null,
       navigation: navigation,
-      startAgentSize: 0,
-      endAgentSize: 0,
       coordinateSystem: coordinates,
     );
     expect(navigation.geometry.findRoute(start: start, end: end).isReachable,
@@ -350,10 +338,7 @@ void main() {
               id: 'sova', type: AgentType.sova, position: onFloor - anchor),
         )
       ],
-      geometry: null,
       navigation: navigation,
-      startAgentSize: 0,
-      endAgentSize: 0,
       coordinateSystem: coordinates,
     )['sova']!;
     expect(path.positionAt(0), apart);
@@ -370,9 +355,6 @@ void main() {
           to: PlacedAgent(id: 'sova', type: AgentType.sova, position: end),
         )
       ],
-      geometry: null,
-      startAgentSize: 20,
-      endAgentSize: 40,
       coordinateSystem: coordinates,
     );
     final anchor = coordinates.virtualOffsetToWorld(storedAgentAnchor);

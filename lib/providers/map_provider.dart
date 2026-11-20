@@ -41,15 +41,34 @@ class MapState {
 class MapProvider extends Notifier<MapState> {
   @override
   MapState build() {
-    final preferences = ref.read(appPreferencesProvider);
-    return MapState(
-      currentMap: MapValue.ascent,
-      isAttack: true,
-      showSpawnBarrier: preferences.showSpawnBarrier,
-      showUltOrbs: preferences.showUltOrbs,
-      showRegionNames: preferences.showRegionNames,
+    ref.listen(
+      appPreferencesProvider.select(
+        (preferences) => (
+          preferences.showSpawnBarrier,
+          preferences.showUltOrbs,
+          preferences.showRegionNames,
+        ),
+      ),
+      (_, __) => state = _withVisibilityFrom(
+        ref.read(appPreferencesProvider),
+        state,
+      ),
+    );
+    return _withVisibilityFrom(
+      ref.read(appPreferencesProvider),
+      MapState(currentMap: MapValue.ascent, isAttack: true),
     );
   }
+
+  static MapState _withVisibilityFrom(
+    AppPreferences preferences,
+    MapState mapState,
+  ) =>
+      mapState.copyWith(
+        showSpawnBarrier: preferences.showSpawnBarrier,
+        showUltOrbs: preferences.showUltOrbs,
+        showRegionNames: preferences.showRegionNames,
+      );
 
   void updateMap(MapValue map) {
     state = state.copyWith(currentMap: map);
@@ -59,27 +78,16 @@ class MapProvider extends Notifier<MapState> {
     state = state.copyWith(currentMap: map, isAttack: isAttack);
   }
 
-  void syncVisibilityFromPreferences(AppPreferences preferences) {
-    state = state.copyWith(
-      showSpawnBarrier: preferences.showSpawnBarrier,
-      showUltOrbs: preferences.showUltOrbs,
-      showRegionNames: preferences.showRegionNames,
-    );
+  Future<void> updateSpawnBarrier(bool value) {
+    return ref.read(appPreferencesProvider.notifier).setShowSpawnBarrier(value);
   }
 
-  Future<void> updateSpawnBarrier(bool value) async {
-    state = state.copyWith(showSpawnBarrier: value);
-    await ref.read(appPreferencesProvider.notifier).setShowSpawnBarrier(value);
+  Future<void> updateUltOrbs(bool value) {
+    return ref.read(appPreferencesProvider.notifier).setShowUltOrbs(value);
   }
 
-  Future<void> updateUltOrbs(bool value) async {
-    state = state.copyWith(showUltOrbs: value);
-    await ref.read(appPreferencesProvider.notifier).setShowUltOrbs(value);
-  }
-
-  Future<void> updateRegionNames(bool value) async {
-    state = state.copyWith(showRegionNames: value);
-    await ref.read(appPreferencesProvider.notifier).setShowRegionNames(value);
+  Future<void> updateRegionNames(bool value) {
+    return ref.read(appPreferencesProvider.notifier).setShowRegionNames(value);
   }
 
   void switchSide() {

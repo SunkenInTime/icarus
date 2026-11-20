@@ -54,8 +54,7 @@ import 'package:icarus/widgets/text_link_read_region.dart';
 import 'package:uuid/uuid.dart';
 
 class PlacedWidgetBuilder extends ConsumerStatefulWidget {
-  const PlacedWidgetBuilder({super.key, this.isScreenshot = false});
-  final bool isScreenshot;
+  const PlacedWidgetBuilder({super.key});
   @override
   ConsumerState<ConsumerStatefulWidget> createState() =>
       _PlacedWidgetBuilderState();

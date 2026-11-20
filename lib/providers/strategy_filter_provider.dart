@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -57,21 +55,25 @@ class StrategyFilterProvider extends Notifier<StrategyFilterState> {
 
   @override
   StrategyFilterState build() {
-    final preferences = ref.read(appPreferencesProvider);
+    final (sortByName, sortOrderName) = ref.watch(
+      appPreferencesProvider.select(
+        (preferences) =>
+            (preferences.librarySortByName, preferences.librarySortOrderName),
+      ),
+    );
     return StrategyFilterState(
       sortBy: SortBy.values.firstWhere(
-        (value) => value.name == preferences.librarySortByName,
+        (value) => value.name == sortByName,
         orElse: () => SortBy.dateCreated,
       ),
       sortOrder: SortOrder.values.firstWhere(
-        (value) => value.name == preferences.librarySortOrderName,
+        (value) => value.name == sortOrderName,
         orElse: () => SortOrder.ascending,
       ),
     );
   }
 
   void setSortBy(SortBy sortBy) {
-    state = state.copyWith(sortBy: sortBy);
     unawaited(
       ref
           .read(appPreferencesProvider.notifier)
@@ -80,24 +82,10 @@ class StrategyFilterProvider extends Notifier<StrategyFilterState> {
   }
 
   void setSortOrder(SortOrder sortOrder) {
-    state = state.copyWith(sortOrder: sortOrder);
     unawaited(
       ref
           .read(appPreferencesProvider.notifier)
           .setLibrarySort(sortOrderName: sortOrder.name),
     );
-  }
-
-  ({IconData icon, String label}) getCurrentSortBy() {
-    final label = sortByLabel(state.sortBy, ref.read(l10nProvider));
-
-    switch (state.sortBy) {
-      case SortBy.alphabetical:
-        return (icon: LucideIcons.arrowDownAZ, label: label);
-      case SortBy.dateCreated:
-        return (icon: LucideIcons.calendarPlus, label: label);
-      case SortBy.dateUpdated:
-        return (icon: LucideIcons.history, label: label);
-    }
   }
 }

@@ -279,10 +279,6 @@ RemoteStrategyHeader drawnStrategyHeader(
   return waiting == null ? known : known.withPatch(waiting.payload);
 }
 
-final pendingStrategyOpsProvider = Provider<List<StrategyOp>>((ref) {
-  return ref.watch(strategyOpQueueProvider).pending.map((op) => op.op).toList();
-});
-
 class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   static const int _maxBatchSize = 40;
   static const int _maxAttempts = 8;

@@ -86,13 +86,14 @@ jobs:
   #   ci: all
   #
   # Lanes: analyze, test, web, replay, convex, cost, presence, contract,
-  # bridge, gauntlet, desktop, library, separated by spaces or commas,
+  # bridge, gauntlet, cones, desktop, library, separated by spaces or commas,
   # unquoted. "skip" runs none of them. A word that is not a lane runs every
-  # lane. Lanes that guard production or the library (convex, cost, presence,
-  # contract, gauntlet, desktop, library) still run when the PR changes their
-  # files, whatever the line says. Without the line, a PR runs analyze, test
-  # and web plus the lanes its changed files reach. The line is read when the
-  # run starts, so after editing it, rerun the run.
+  # lane. Lanes that guard production, the library, or what desktop and web
+  # agree on (convex, cost, presence, contract, gauntlet, cones, desktop,
+  # library) still run when the PR changes their files, whatever the line
+  # says. Without the line, a PR runs analyze, test and web plus the lanes its
+  # changed files reach. The line is read when the run starts, so after
+  # editing it, rerun the run.
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -109,6 +110,7 @@ jobs:
       contract: ${{ steps.lanes.outputs.contract }}
       bridge: ${{ steps.lanes.outputs.bridge }}
       gauntlet: ${{ steps.lanes.outputs.gauntlet }}
+      cones: ${{ steps.lanes.outputs.cones }}
       desktop: ${{ steps.lanes.outputs.desktop }}
       library: ${{ steps.lanes.outputs.library }}
     steps:
@@ -150,14 +152,14 @@ jobs:
               unknown=0
               for word in "${words[@]}"; do
                 case "$word" in
-                  analyze|test|web|replay|convex|cost|presence|contract|bridge|gauntlet|desktop|library|skip) named+="$word " ;;
+                  analyze|test|web|replay|convex|cost|presence|contract|bridge|gauntlet|cones|desktop|library|skip) named+="$word " ;;
                   all) named+="all "; full=true ;;
                   *) unknown=$((unknown + 1)) ;;
                 esac
               done
               printf 'The description names:%s\n' "$named"
               if (( unknown > 0 )); then
-                printf '::warning::The ci: line has %d word(s) that are not lanes; running every lane. Lanes: analyze test web replay convex cost presence contract bridge gauntlet desktop library skip all.\n' "$unknown"
+                printf '::warning::The ci: line has %d word(s) that are not lanes; running every lane. Lanes: analyze test web replay convex cost presence contract bridge gauntlet cones desktop library skip all.\n' "$unknown"
                 full=true
               fi
             fi
@@ -213,6 +215,11 @@ jobs:
           # functions the gauntlet calls), the native client, and the
           # gauntlet itself.
           lane gauntlet '^(lib/collab/|lib/providers/collab/|lib/providers/strategy_save_state_provider\.dart$|lib/startup/cloud_bootstrap\.dart$|third_party/convex_(flutter|rs)/|convex/(ops|schema|strategy|strategies|folders|users)\.ts$|convex/lib/|tool/sync_gauntlet/|tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment\.mjs$)' guarded
+          # View cones: the C++ cutter desktop builds use, the Dart one the
+          # web build uses, the wall height data both cut, the door, map and
+          # coordinate code that turns a map into their input, and the tests
+          # that compare them.
+          lane cones '^(native/height/|lib/view_cone/|lib/providers/svg_height_runtime_provider\.dart$|lib/const/(map_doors|maps|coordinate_system|map_artwork_registration)\.dart$|lib/services/app_assets\.dart$|lib/widgets/draggable_widgets/utilities/svg_height_view_cone\.dart$|assets/maps/[a-z_]+_svg_height_[a-z]+\.json\.gz$|test/(svg_cone_exact|map_door_cones|svg_height_native|view_cone_agent_anchor)_test\.dart$)' guarded
           # The desktop builds and the upgrade/rollback test, for changes to
           # what a shipped build finds in its Hive store, the installer, the
           # release scripts, or the test itself. The release runs the same
@@ -610,6 +617,51 @@ jobs:
           name: gauntlet-report-${{ env.RELEASE_SOURCE_SHA }}
           path: ${{ runner.temp }}/gauntlet-report.json
           if-no-files-found: ignore
+
+  # Desktop builds cut view cones with native/height (C++), the web build with
+  # the Dart code in lib/view_cone/. The tests below compare the two and skip
+  # without the library, so this job builds it, runs its ABI test, and fails
+  # if any of them skipped.
+  cones:
+    needs: changes
+    if: needs.changes.outputs.cones == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - name: Build Native Height Library
+        run: |
+          cmake -S native/height -B build/native-height -DIH_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/native-height --parallel
+
+      - name: Test Native Height ABI
+        run: ctest --test-dir build/native-height --output-on-failure --no-tests=error
+
+      - uses: ./.github/actions/setup-flutter
+
+      - name: Compare Dart And Native Cones
+        shell: bash
+        env:
+          REPORT: ${{ runner.temp }}/cones.json
+        run: |
+          export ICARUS_SVG_NATIVE_LIBRARY="$PWD/build/native-height/libicarus_height.so"
+          fvm flutter test --file-reporter "json:$REPORT" \
+            test/svg_cone_exact_test.dart \
+            test/map_door_cones_test.dart \
+            test/svg_height_native_test.dart \
+            test/view_cone_agent_anchor_test.dart
+          node -e '
+            const events = require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean).map(JSON.parse);
+            const names = new Map(events.filter((e) => e.type === "testStart").map((e) => [e.test.id, e.test.name]));
+            const done = events.filter((e) => e.type === "testDone" && !e.hidden);
+            const skipped = done.filter((e) => e.skipped).map((e) => names.get(e.testID));
+            console.log(`${done.length} tests, ${skipped.length} skipped`);
+            for (const name of skipped) console.log(`::error::Skipped: ${name}`);
+            if (done.length === 0 || skipped.length > 0) process.exit(1);
+          ' "$REPORT"
 
   linux-build:
     needs: changes
