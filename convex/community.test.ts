@@ -1013,6 +1013,7 @@ describe("limits", () => {
     );
     vi.advanceTimersByTime(HOUR);
     await expect(copy("copy-30")).resolves.toEqual({ ok: true });
+    await settle(harness);
   });
 
   test("an account sends at most twenty reports a day", async () => {
@@ -1042,6 +1043,43 @@ describe("limits", () => {
     );
     vi.advanceTimersByTime(24 * HOUR);
     await expect(reportPost(last)).resolves.toEqual({ ok: true });
+    await settle(harness);
+  });
+});
+
+describe("folding counts", () => {
+  test("stars schedule one fold, which stops once it has folded them", async () => {
+    const harness = await createHarness();
+    const { t, as } = harness;
+    await seedStrategy(harness, "author", "source");
+    const postId = await post(harness, "author", "source");
+    await settle(harness);
+    const folding = () =>
+      t.run(async (ctx) => ({
+        chains: (await ctx.db.query("foldChains").collect()).map(
+          (row) => row.chain,
+        ),
+        waiting: (await ctx.db.system.query("_scheduled_functions").collect())
+          .filter((job) => job.state.kind === "pending")
+          .map((job) => job.name),
+      }));
+    for (const person of ["reader", "second", "third"] as const) {
+      await as(person).mutation(setStar, {
+        ...protocol,
+        postPublicId: postId,
+        starred: true,
+      });
+    }
+    await expect(folding()).resolves.toEqual({
+      chains: ["communityCounts"],
+      waiting: ["community:scheduledCountFold"],
+    });
+    vi.advanceTimersByTime(5 * 60 * 1000);
+    await t.finishInProgressScheduledFunctions();
+    expect(
+      (await t.query(getPost, { postPublicId: postId })).post.starCount,
+    ).toBe(3);
+    await expect(folding()).resolves.toEqual({ chains: [], waiting: [] });
   });
 });
 

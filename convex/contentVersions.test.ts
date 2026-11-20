@@ -281,6 +281,170 @@ describe("a strategy's content version", () => {
   });
 });
 
+async function folding(t: Harness, owner: Harness, publicId: string) {
+  const state = await t.run(async (ctx) => ({
+    chains: (await ctx.db.query("foldChains").collect()).length,
+    waiting: (
+      await ctx.db.system.query("_scheduled_functions").collect()
+    ).filter(
+      (job) =>
+        job.name === "maintenance:scheduledContentFold" &&
+        job.state.kind === "pending",
+    ).length,
+    unfolded: (await ctx.db.query("strategyContentChanges").collect()).length,
+  }));
+  const [answer] = await versions(owner, publicId);
+  return {
+    ...state,
+    version: answer!.status === "found" ? answer!.contentVersion : null,
+  };
+}
+
+describe("folding content changes", () => {
+  test("a burst of writes schedules one fold", async () => {
+    const { t, owner } = await createHarness();
+    await create(owner, "s");
+    for (let index = 0; index < 20; index++) {
+      await addAgent(owner, "s", `agent-${index}`);
+    }
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 1,
+      waiting: 1,
+      unfolded: 21,
+      version: 21,
+    });
+  });
+
+  test("a change too young for a fold waits for the next, and one made after folding stops starts it again", async () => {
+    const { t, owner } = await createHarness();
+    await create(owner, "s");
+    vi.advanceTimersByTime(2 * 60 * 1000 - 1000);
+    await addAgent(owner, "s", "late");
+    vi.advanceTimersByTime(1000);
+    await t.finishInProgressScheduledFunctions();
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 1,
+      waiting: 1,
+      unfolded: 1,
+      version: 2,
+    });
+
+    vi.advanceTimersByTime(2 * 60 * 1000);
+    await t.finishInProgressScheduledFunctions();
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 0,
+      waiting: 0,
+      unfolded: 0,
+      version: 2,
+    });
+
+    await addAgent(owner, "s", "after");
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 1,
+      waiting: 1,
+      unfolded: 1,
+      version: 3,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 0,
+      waiting: 0,
+      unfolded: 0,
+      version: 3,
+    });
+  });
+
+  test("the hourly sweep restarts folding when its next fold is not coming", async () => {
+    const { t, owner } = await createHarness();
+    await create(owner, "s");
+    await t.run(async (ctx) => {
+      const [run] = await ctx.db.query("foldChainRuns").collect();
+      await ctx.scheduler.cancel(run!.next);
+    });
+    await addAgent(owner, "s", "stranded");
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 1,
+      waiting: 0,
+      unfolded: 2,
+      version: 2,
+    });
+    await t.mutation(foldContentChanges, {});
+    expect(await folding(t, owner, "s")).toMatchObject({
+      chains: 1,
+      waiting: 1,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 0,
+      waiting: 0,
+      unfolded: 0,
+      version: 2,
+    });
+  });
+
+  test("the hourly sweep starts folding a young row nothing is folding", async () => {
+    const { t, owner } = await createHarness();
+    await create(owner, "s");
+    await t.run(async (ctx) => {
+      for (const chain of await ctx.db.query("foldChains").collect()) {
+        await ctx.db.delete(chain._id);
+      }
+      const [run] = await ctx.db.query("foldChainRuns").collect();
+      await ctx.scheduler.cancel(run!.next);
+    });
+    await t.mutation(foldContentChanges, {});
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 1,
+      waiting: 1,
+      unfolded: 1,
+      version: 1,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 0,
+      waiting: 0,
+      unfolded: 0,
+      version: 1,
+    });
+  });
+
+  test("the hourly sweep folds change rows nothing is folding", async () => {
+    const { t, owner } = await createHarness();
+    await create(owner, "s");
+    await t.run(async (ctx) => {
+      for (const chain of await ctx.db.query("foldChains").collect()) {
+        await ctx.db.delete(chain._id);
+      }
+      for (const job of await ctx.db.system
+        .query("_scheduled_functions")
+        .collect()) {
+        if (job.state.kind === "pending") await ctx.scheduler.cancel(job._id);
+      }
+      const strategy = await ctx.db.query("strategies").first();
+      for (let index = 0; index < 249; index++) {
+        await ctx.db.insert("strategyContentChanges", {
+          strategyId: strategy!._id,
+        });
+      }
+    });
+    vi.advanceTimersByTime(2 * 60 * 1000);
+    await t.mutation(foldContentChanges, {});
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 1,
+      waiting: 1,
+      unfolded: 50,
+      version: 250,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 0,
+      waiting: 0,
+      unfolded: 0,
+      version: 250,
+    });
+  });
+});
+
 describe("listContentVersions", () => {
   test("someone who can't read the strategy only learns it is gone", async () => {
     const { owner, other } = await createHarness();

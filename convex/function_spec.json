@@ -1581,6 +1581,20 @@
     {
       "args": {
         "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "community.js:scheduledCountFold",
+      "returns": {
+        "type": "null"
+      },
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
         "value": {
           "clientProtocolVersion": {
             "fieldType": {
@@ -50132,6 +50146,18 @@
       },
       "functionType": "Mutation",
       "identifier": "maintenance.js:purgeTrashedPages",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {}
+      },
+      "functionType": "Mutation",
+      "identifier": "maintenance.js:scheduledContentFold",
       "returns": null,
       "visibility": {
         "kind": "internal"

@@ -87,8 +87,8 @@ export async function measure(logs, http, work) {
   return { value, entries };
 }
 
-const FOLD = "maintenance:foldContentChanges";
-const isFoldChain = (entry) => entry.caller === "Scheduler" && entry.identifier === FOLD;
+const FOLDS = new Set(["maintenance:scheduledContentFold", "community:scheduledCountFold"]);
+const isFoldChain = (entry) => entry.caller === "Scheduler" && FOLDS.has(entry.identifier);
 
 async function mark(logs, http) {
   const from = logs.entries.length;
