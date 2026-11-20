@@ -31,7 +31,7 @@
   {"tapKey": "community-post-confirm"},
   {"wait": 3},
   {"shot": "{out}/3-pressed-post.png"},
-  {"waitText": "Your latest changes haven't reached the server yet, so the post would miss them. Check your connection, then try again.", "seconds": 40},
+  {"waitText": "A picture in this strategy didn't upload, so the post would be missing it. Open the strategy and choose Retry sync from its sync button, then try again.", "seconds": 40},
   {"shot": "{out}/4-refused.png"},
   {"texts": 1},
   {"signal": "unblock-uploads"},
