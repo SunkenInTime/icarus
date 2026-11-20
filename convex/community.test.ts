@@ -368,7 +368,7 @@ describe("posting", () => {
             .withIndex("by_publicId", (q) => q.eq("publicId", "source"))
             .unique())!.revision,
       );
-      await as("author").mutation(applyBatch, {
+      const { results } = await as("author").mutation(applyBatch, {
         ...protocol,
         strategyPublicId: "source",
         clientId: "edit",
@@ -381,6 +381,7 @@ describe("posting", () => {
           },
         ],
       });
+      expect(results[0].status).toBe("applied");
     };
     const refresh = () =>
       as("author").mutation(updatePost, {
@@ -398,14 +399,23 @@ describe("posting", () => {
     expect(await sourceChanged()).toBe(true);
     await refresh();
     expect(await sourceChanged()).toBe(false);
-    await patchSource("palette", {
-      themeOverridePalette: { base: "#111111", detail: "#222222", highlight: "#333333" },
-    });
+    const palette = { base: "#111111", detail: "#222222", highlight: "#333333" };
+    await patchSource("palette", { themeOverridePalette: palette });
     expect(await sourceChanged()).toBe(true);
     await refresh();
     expect(await sourceChanged()).toBe(false);
+    for (const color of ["base", "detail", "highlight"] as const) {
+      await patchSource(`palette-${color}`, {
+        themeOverridePalette: { ...palette, [color]: "#444444" },
+      });
+      expect(await sourceChanged()).toBe(true);
+      await patchSource(`palette-${color}-back`, { themeOverridePalette: palette });
+      expect(await sourceChanged()).toBe(false);
+    }
     await patchSource("profile", { themeProfileId: "ember" });
     expect(await sourceChanged()).toBe(true);
+    await refresh();
+    expect(await sourceChanged()).toBe(false);
     await settle(harness);
   });
 
