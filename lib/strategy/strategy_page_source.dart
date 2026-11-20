@@ -458,3 +458,4 @@ class CloudStrategyPageSource implements StrategyPageSource {
     }
   }
 }
+
