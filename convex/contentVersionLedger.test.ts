@@ -581,7 +581,7 @@ async function check(identifier: string, scenario: Scenario) {
   await settle(w);
 }
 
-function foldingOldChangeRows(): Scenario {
+function foldingOldChangeRows(as: "sweep" | "chainRun"): Scenario {
   return {
     name: "folding old change rows, a young one left, changes no answer",
     changesRead: false,
@@ -597,6 +597,12 @@ function foldingOldChangeRows(): Scenario {
         expectedRevision: await strategyRevision(w, "doomed"),
       });
       await w.t.finishAllScheduledFunctions(() => vi.advanceTimersByTime(0));
+      if (as === "chainRun") {
+        await w.t.run(async (ctx) => {
+          const runs = await ctx.db.query("foldChainRuns").collect();
+          for (const run of runs) await ctx.scheduler.cancel(run.next);
+        });
+      }
       vi.advanceTimersByTime(90 * 1000);
       // Younger than a minute: left for a later fold.
       await apply(w.owner, S, [addElement("s-late", P2, agent("s-late"), 1)]);
@@ -1547,7 +1553,7 @@ const ledger: Record<string, LedgerEntry> = {
     exempt: "writes only strategyAgentSummaries rows, which no full read reads",
   },
   "maintenance.js:foldContentChanges": {
-    scenarios: [foldingOldChangeRows()],
+    scenarios: [foldingOldChangeRows("sweep")],
   },
   "maintenance.js:purgeDeletedPageOrphans": {
     scenarios: [
@@ -1663,7 +1669,7 @@ const ledger: Record<string, LedgerEntry> = {
   },
 
   "maintenance.js:scheduledContentFold": {
-    scenarios: [foldingOldChangeRows()],
+    scenarios: [foldingOldChangeRows("chainRun")],
   },
   "ops.js:applyBatch": { scenarios: applyBatch },
 

@@ -498,8 +498,8 @@
           "budget": 9
         },
         "readBytesPerHour": {
-          "today": 0,
-          "budget": 0
+          "today": 435,
+          "budget": 544
         },
         "writeBytesPerHour": {
           "today": 0,

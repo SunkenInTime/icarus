@@ -315,7 +315,7 @@ describe("folding content changes", () => {
     });
   });
 
-  test("a change made while folding runs is folded, and one made after it stops starts it again", async () => {
+  test("a change too young for a fold waits for the next, and one made after folding stops starts it again", async () => {
     const { t, owner } = await createHarness();
     await create(owner, "s");
     vi.advanceTimersByTime(2 * 60 * 1000 - 1000);
@@ -354,7 +354,35 @@ describe("folding content changes", () => {
     });
   });
 
-  test("the hourly sweep folds old change rows nothing is folding", async () => {
+  test("the hourly sweep restarts folding when its next fold is not coming", async () => {
+    const { t, owner } = await createHarness();
+    await create(owner, "s");
+    await t.run(async (ctx) => {
+      const [run] = await ctx.db.query("foldChainRuns").collect();
+      await ctx.scheduler.cancel(run!.next);
+    });
+    await addAgent(owner, "s", "stranded");
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 1,
+      waiting: 0,
+      unfolded: 2,
+      version: 2,
+    });
+    await t.mutation(foldContentChanges, {});
+    expect(await folding(t, owner, "s")).toMatchObject({
+      chains: 1,
+      waiting: 1,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 0,
+      waiting: 0,
+      unfolded: 0,
+      version: 2,
+    });
+  });
+
+  test("the hourly sweep folds change rows nothing is folding", async () => {
     const { t, owner } = await createHarness();
     await create(owner, "s");
     await t.run(async (ctx) => {

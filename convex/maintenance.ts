@@ -21,7 +21,7 @@ import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
 import { foldOldContentChanges } from "./lib/contentVersions";
 import {
   continueFolding,
-  startFolding,
+  sweepFolding,
   type FoldLeft,
 } from "./lib/foldChains";
 
@@ -250,9 +250,7 @@ export const foldContentChanges = internalMutation({
   args: {},
   handler: async (ctx) => {
     const read = await foldOldContentChanges(ctx, MAINTENANCE_BATCH_SIZE);
-    if (read === MAINTENANCE_BATCH_SIZE) {
-      await startFolding(ctx, "contentChanges");
-    }
+    await sweepFolding(ctx, "contentChanges", await contentLeft(ctx, read));
   },
 });
 

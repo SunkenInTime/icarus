@@ -59,6 +59,7 @@ import { copyStrategy, deleteStrategyRecord } from "./lib/strategyCopy";
 import {
   continueFolding,
   startFolding,
+  sweepFolding,
   type FoldLeft,
 } from "./lib/foldChains";
 
@@ -1078,9 +1079,7 @@ export const foldCountChanges = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
-    if ((await foldCountBatch(ctx)) === "fullBatch") {
-      await startFolding(ctx, "communityCounts");
-    }
+    await sweepFolding(ctx, "communityCounts", await foldCountBatch(ctx));
     return null;
   },
 });

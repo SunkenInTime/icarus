@@ -343,6 +343,10 @@ export default defineSchema({
   foldChains: defineTable({
     chain: v.union(v.literal("contentChanges"), v.literal("communityCounts")),
   }).index("by_chain", ["chain"]),
+  foldChainRuns: defineTable({
+    chain: v.union(v.literal("contentChanges"), v.literal("communityCounts")),
+    next: v.id("_scheduled_functions"),
+  }).index("by_chain", ["chain"]),
   // Community: strategies their authors posted for anyone to open and copy.
   // A post shows a frozen copy of the author's strategy (the snapshot), a
   // strategy owned by the community account so it sits in nobody's library;
