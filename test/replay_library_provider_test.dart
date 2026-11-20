@@ -23,8 +23,11 @@ void main() {
   String? heldPath;
   late Completer<void> held;
 
+  late List<String> probed;
+  late List<Future<void>> reads;
+
   /// Reads the header these tests write: `{"id": ..., "at": ...}`.
-  Future<ReplayProbe> probe(String path) async {
+  Future<ReplayProbe> read(String path) async {
     if (p.basename(path) == 'slow.vrf' && slowReads++ == 0) {
       await slowGate.future;
     }
@@ -46,10 +49,20 @@ void main() {
     }
   }
 
+  Future<ReplayProbe> probe(String path) {
+    probed.add(path);
+    final reading = read(path);
+    reads.add(reading.then((_) {}, onError: (_) {}));
+    return reading;
+  }
+
   setUp(() async {
     slowGate = Completer()..complete();
     slowReads = 0;
     heldPath = null;
+    held = Completer()..complete();
+    probed = [];
+    reads = [];
     root = await Directory.systemTemp.createTemp('icarus-replay-library');
     support = await Directory(p.join(root.path, 'support')).create();
     demos = await Directory(p.join(root.path, 'VALORANT', 'Saved', 'Demos'))
@@ -66,6 +79,9 @@ void main() {
 
   tearDown(() async {
     container.dispose();
+    if (!slowGate.isCompleted) slowGate.complete();
+    if (!held.isCompleted) held.complete();
+    await Future.wait(reads);
     await root.delete(recursive: true);
   });
 
@@ -213,6 +229,36 @@ void main() {
     final listings = container.read(replayLibraryProvider).requireValue;
     expect(listings.map((listing) => listing.file.path),
         contains(result.added.single));
+  });
+
+  test('a listing a refresh replaced reads no more files', () async {
+    slowGate = Completer();
+    await writeReplay(demos, 'slow.vrf',
+        matchId: 'slow',
+        playedAt: '2026-07-02T00:00:00Z',
+        fileTime: DateTime(2026, 7, 2));
+    final replays = await Directory(p.join(support.path, 'replays')).create();
+    final gone = await writeReplay(replays, 'gone.vrf',
+        matchId: 'gone',
+        playedAt: '2026-07-01T00:00:00Z',
+        fileTime: DateTime(2026, 7, 1));
+
+    container.listen(replayLibraryProvider, (_, __) {});
+    while (slowReads == 0) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    final library = container.read(replayLibraryProvider.notifier);
+    await library.refresh();
+    final listed = container
+        .read(replayLibraryProvider)
+        .requireValue
+        .singleWhere((listing) => listing.file.path == gone.path);
+    await library.remove(listed.file);
+    slowGate.complete();
+    await Future.wait(reads);
+    await pumpEventQueue();
+
+    expect(probed.where((path) => path == gone.path), hasLength(1));
   });
 
   test('remove waits for an add in progress and spares the file it wrote',

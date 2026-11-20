@@ -90,12 +90,20 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
   }
 
   @override
-  Future<List<ReplayListing>> build() => _load();
+  Future<List<ReplayListing>> build() {
+    var abandoned = false;
+    ref.onDispose(() => abandoned = true);
+    return _load(abandoned: () => abandoned);
+  }
 
   /// Newest match first, by the date each tile shows.
-  Future<List<ReplayListing>> _load() async {
+  Future<List<ReplayListing>> _load({bool Function()? abandoned}) async {
     final files = await ref.read(replayFilesProvider).list();
-    final listings = [for (final file in files) await _listing(file)];
+    final listings = <ReplayListing>[];
+    for (final file in files) {
+      if (abandoned?.call() ?? false) return const [];
+      listings.add(await _listing(file));
+    }
     return listings
       ..sort((a, b) {
         final byDate = b.date.compareTo(a.date);
