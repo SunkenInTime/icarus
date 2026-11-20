@@ -220,8 +220,9 @@ final class _AbortingLease extends ForwardingLease {
   );
 
   @override
-  Future<Stored<String?>> read(String area, String key) async =>
-      _harness._crashed ? _stopped : await inner.read(area, key);
+  Future<KeyRead> read(String area, String key) async => _harness._crashed
+      ? const KeyNotRead(DeviceFailure('the tab stopped'))
+      : await inner.read(area, key);
 
   @override
   Future<Stored<List<String>>> keys(String area, String prefix) async =>

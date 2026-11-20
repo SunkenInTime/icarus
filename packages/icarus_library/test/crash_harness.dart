@@ -103,8 +103,9 @@ final class _SteppedLease extends ForwardingLease {
   );
 
   @override
-  Future<Stored<String?>> read(String area, String key) async =>
-      _harness._crashed ? _stopped : await inner.read(area, key);
+  Future<KeyRead> read(String area, String key) async => _harness._crashed
+      ? const KeyNotRead(DeviceFailure('the app stopped'))
+      : await inner.read(area, key);
 
   @override
   Future<Stored<List<String>>> keys(String area, String prefix) async =>
@@ -125,6 +126,12 @@ Future<StorageLease> leaseOf(StorageEngine engine) async =>
       final other => fail('no lease: $other'),
     };
 
+String? valueOf(KeyRead read) => switch (read) {
+  KeyHeld(:final value) => value,
+  KeyMissing() => null,
+  KeyNotRead(:final failure) => fail('reading failed: $failure'),
+};
+
 T stored<T>(Stored<T> result) => switch (result) {
   Done(:final value) => value,
   StorageFailed(:final failure) => fail('storage failed: $failure'),
@@ -135,7 +142,7 @@ Future<Contents> contentsOf(StorageLease engine, Iterable<String> areas) async {
   for (final area in areas) {
     final values = <String, String>{};
     for (final key in stored(await engine.keys(area, ''))) {
-      values[key] = stored(await engine.read(area, key))!;
+      values[key] = valueOf(await engine.read(area, key))!;
     }
     if (values.isNotEmpty) contents[area] = values;
   }

@@ -77,23 +77,35 @@ final class InlineLease implements StorageLease {
   int get maxKeyLength => rowsMaxKeyLength;
 
   @override
-  Future<Stored<String?>> read(String area, String key) async =>
-      rows.read(area, key);
+  LeaseStatus get status => _ended ? const Ended() : const Holding();
+
+  @override
+  Future<KeyRead> read(String area, String key) async =>
+      _ended ? const KeyNotRead(LeaseEnded()) : rows.read(area, key);
 
   @override
   Future<Stored<List<String>>> keys(String area, String prefix) async =>
-      rows.keys(area, prefix);
+      _ended ? const StorageFailed(LeaseEnded()) : rows.keys(area, prefix);
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
+      _ended ? const StorageFailed(LeaseEnded()) : rows.entries(area, prefix);
 
   @override
   Future<Stored<void>> write(String area, Map<String, String> values) async =>
-      rows.write(area, values);
+      _ended ? const StorageFailed(LeaseEnded()) : rows.write(area, values);
 
   @override
   Future<Stored<void>> delete(String area, Iterable<String> keys) async =>
-      rows.delete(area, keys.toList());
+      _ended
+      ? const StorageFailed(LeaseEnded())
+      : rows.delete(area, keys.toList());
+
+  var _ended = false;
 
   void end() {
     if (!_drive._open.remove(this)) return;
+    _ended = true;
     try {
       rows.close();
     } on SqliteException {
@@ -102,7 +114,10 @@ final class InlineLease implements StorageLease {
   }
 
   @override
-  Future<void> release() async => end();
+  Future<Releasing> release() async {
+    end();
+    return const Released();
+  }
 }
 
 RowsDatabase opened(RowsOpening opening) => switch (opening) {

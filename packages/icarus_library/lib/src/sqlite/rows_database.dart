@@ -209,16 +209,20 @@ final class RowsDatabase {
     }
   }
 
-  static const _notText = StorageFailed<Never>(
-    DeviceFailure('the library holds a value that is not text'),
+  static const _notTextFailure = DeviceFailure(
+    'the library holds a value that is not text',
   );
 
-  Stored<String?> read(String area, String key) => _guarded(
-    () => switch (_get.select([area, key]).firstOrNull?.columnAt(0)) {
-      final String? value => Done(value),
-      _ => _notText,
-    },
-  );
+  static const _notText = StorageFailed<Never>(_notTextFailure);
+
+  KeyRead read(String area, String key) => switch (_guarded(
+    () => Done(_get.select([area, key]).firstOrNull?.columnAt(0)),
+  )) {
+    StorageFailed(:final failure) => KeyNotRead(failure),
+    Done(value: null) => const KeyMissing(),
+    Done(value: final String value) => KeyHeld(value),
+    Done() => const KeyNotRead(_notTextFailure),
+  };
 
   Stored<List<String>> keys(String area, String prefix) => _guarded(() {
     final keys = <String>[];
@@ -236,22 +240,21 @@ final class RowsDatabase {
     return Done(keys);
   });
 
-  Stored<Map<String, String>> entries(String area, String prefix) =>
-      _guarded(() {
-        final found = <String, String>{};
-        for (final row in switch (_after(prefix)) {
-          null => _entriesFrom.select([area, prefix]),
-          final upper => _entriesBetween.select([area, prefix, upper]),
-        }) {
-          switch ((row.columnAt(0), row.columnAt(1))) {
-            case (final String key, final String value):
-              found[key] = value;
-            case _:
-              return _notText;
-          }
-        }
-        return Done(found);
-      });
+  Stored<List<StoredEntry>> entries(String area, String prefix) => _guarded(() {
+    final found = <StoredEntry>[];
+    for (final row in switch (_after(prefix)) {
+      null => _entriesFrom.select([area, prefix]),
+      final upper => _entriesBetween.select([area, prefix, upper]),
+    }) {
+      switch ((row.columnAt(0), row.columnAt(1))) {
+        case (final String key, final String value):
+          found.add((key: key, value: value));
+        case _:
+          return _notText;
+      }
+    }
+    return Done(found);
+  });
 
   static String? _after(String prefix) {
     final points = prefix.runes.toList();
@@ -267,12 +270,18 @@ final class RowsDatabase {
     return null;
   }
 
-  Stored<void> write(String area, Map<String, String> values) =>
-      _transaction(() {
-        for (final MapEntry(:key, :value) in values.entries) {
-          _put.execute([area, key, value]);
-        }
-      });
+  Stored<void> write(String area, Map<String, String> values) {
+    for (final key in values.keys) {
+      if (key.length > rowsMaxKeyLength) {
+        return StorageFailed(KeyTooLong(area, key));
+      }
+    }
+    return _transaction(() {
+      for (final MapEntry(:key, :value) in values.entries) {
+        _put.execute([area, key, value]);
+      }
+    });
+  }
 
   Stored<void> delete(String area, List<String> keys) => _transaction(() {
     for (final key in keys) {

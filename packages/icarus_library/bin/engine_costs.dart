@@ -48,26 +48,37 @@ final class _CallingIsolateLease implements StorageLease {
   int get maxKeyLength => rowsMaxKeyLength;
 
   @override
-  Future<Stored<String?>> read(String area, String key) async =>
-      _rows.read(area, key);
+  LeaseStatus get status => _ended ? const Ended() : const Holding();
+
+  @override
+  Future<KeyRead> read(String area, String key) async =>
+      _ended ? const KeyNotRead(LeaseEnded()) : _rows.read(area, key);
 
   @override
   Future<Stored<List<String>>> keys(String area, String prefix) async =>
-      _rows.keys(area, prefix);
+      _ended ? const StorageFailed(LeaseEnded()) : _rows.keys(area, prefix);
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
+      _ended ? const StorageFailed(LeaseEnded()) : _rows.entries(area, prefix);
 
   @override
   Future<Stored<void>> write(String area, Map<String, String> values) async =>
-      _rows.write(area, values);
+      _ended ? const StorageFailed(LeaseEnded()) : _rows.write(area, values);
 
   @override
   Future<Stored<void>> delete(String area, Iterable<String> keys) async =>
-      _rows.delete(area, keys.toList());
+      _ended
+      ? const StorageFailed(LeaseEnded())
+      : _rows.delete(area, keys.toList());
 
   @override
-  Future<void> release() async {
-    if (_ended) return;
-    _ended = true;
-    _rows.close();
+  Future<Releasing> release() async {
+    if (!_ended) {
+      _ended = true;
+      _rows.close();
+    }
+    return const Released();
   }
 }
 

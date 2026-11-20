@@ -35,8 +35,8 @@ void main() {
       stored(
         await engine.write('a', {'pagf': 'after the prefix', 'page': 'before'}),
       );
-      expect(stored(await engine.read('a', 'page/1')), 'one');
-      expect(stored(await engine.read('a', 'missing')), isNull);
+      expect(valueOf(await engine.read('a', 'page/1')), 'one');
+      expect(valueOf(await engine.read('a', 'missing')), isNull);
       expect(stored(await engine.keys('a', 'page/')), ['page/1', 'page/2']);
       stored(await engine.delete('a', ['page/1']));
       expect(stored(await engine.keys('a', '')), [
@@ -45,7 +45,7 @@ void main() {
         'page/2',
         'pagf',
       ]);
-      expect(stored(await engine.read('b', 'page/1')), 'elsewhere');
+      expect(valueOf(await engine.read('b', 'page/1')), 'elsewhere');
       await engine.release();
     },
   );
@@ -113,7 +113,7 @@ void main() {
     abortNextAfterItsFirstRequest();
     expect(await engine.delete('a', ['k1', 'k2']), isA<StorageFailed<void>>());
     expect(stored(await engine.keys('a', '')), ['k1', 'k2']);
-    expect(stored(await engine.read('a', 'k1')), 'old');
+    expect(valueOf(await engine.read('a', 'k1')), 'old');
     await engine.release();
   });
 

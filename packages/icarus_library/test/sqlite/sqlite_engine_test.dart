@@ -143,7 +143,7 @@ void main() {
     }
     final generations = <String>{};
     for (var key = 0; key < probeKeys; key++) {
-      final value = stored<String?>(await lease.read(probeArea, 'k$key'));
+      final value = valueOf(await lease.read(probeArea, 'k$key'));
       generations.add(value!.split('-').first);
     }
     expect(refusals, greaterThan(0));
@@ -237,7 +237,7 @@ void main() {
       final lease = await leaseOf(engine);
       final generations = <String>{};
       for (var key = 0; key < probeKeys; key++) {
-        final value = stored<String?>(await lease.read(probeArea, 'k$key'));
+        final value = valueOf(await lease.read(probeArea, 'k$key'));
         generations.add((value ?? '0').split('-').first);
       }
       expect(generations, hasLength(1), reason: 'run $run: a torn write');

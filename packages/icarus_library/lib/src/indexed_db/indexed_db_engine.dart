@@ -159,6 +159,13 @@ final class IndexedDbLease implements StorageLease {
   @override
   int get maxKeyLength => indexedDbMaxKeyLength;
 
+  @override
+  LeaseStatus get status => _ended ? const Ended() : const Holding();
+
+  static const _notText = DeviceFailure(
+    'the library holds a value that is not text',
+  );
+
   Stored<IDBTransaction> _transaction(IDBTransactionMode mode) {
     if (_ended) return const StorageFailed(LeaseEnded());
     try {
@@ -176,21 +183,19 @@ final class IndexedDbLease implements StorageLease {
   }
 
   @override
-  Future<Stored<String?>> read(String area, String key) async {
+  Future<KeyRead> read(String area, String key) async {
     switch (_transaction('readonly')) {
       case StorageFailed(:final failure):
-        return StorageFailed(failure);
+        return KeyNotRead(failure);
       case Done(value: final transaction):
         final request = transaction.objectStore(_rows).get(_key(area, key));
         return switch (await _result(request, 'reading')) {
-          StorageFailed(:final failure) => StorageFailed(failure),
-          Done(value: null) => const Done(null),
-          Done(:final value?) when value.isA<JSString>() => Done(
+          StorageFailed(:final failure) => KeyNotRead(failure),
+          Done(value: null) => const KeyMissing(),
+          Done(:final value?) when value.isA<JSString>() => KeyHeld(
             (value as JSString).toDart,
           ),
-          Done() => const StorageFailed(
-            DeviceFailure('the library holds a value that is not text'),
-          ),
+          Done() => const KeyNotRead(_notText),
         };
     }
   }
@@ -226,10 +231,8 @@ final class IndexedDbLease implements StorageLease {
       key.toDart[1].toDart,
   ];
 
-  Future<Stored<Map<String, String>>> entries(
-    String area,
-    String prefix,
-  ) async {
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async {
     switch (_transaction('readonly')) {
       case StorageFailed(:final failure):
         return StorageFailed(failure);
@@ -245,15 +248,13 @@ final class IndexedDbLease implements StorageLease {
           case (Done(value: final listed), Done(value: final read)):
             final texts = (read as JSArray<JSAny?>).toDart;
             final names = _keysOf(listed);
-            final found = <String, String>{};
+            final found = <StoredEntry>[];
             for (var i = 0; i < names.length; i++) {
               final text = texts[i];
               if (text == null || !text.isA<JSString>()) {
-                return const StorageFailed(
-                  DeviceFailure('the library holds a value that is not text'),
-                );
+                return const StorageFailed(_notText);
               }
-              found[names[i]] = (text as JSString).toDart;
+              found.add((key: names[i], value: (text as JSString).toDart));
             }
             return Done(found);
         }
@@ -284,12 +285,18 @@ final class IndexedDbLease implements StorageLease {
   }
 
   @override
-  Future<Stored<void>> write(String area, Map<String, String> values) =>
-      _change('writing', (rows) {
-        for (final MapEntry(:key, :value) in values.entries) {
-          rows.put(value.toJS, _key(area, key));
-        }
-      });
+  Future<Stored<void>> write(String area, Map<String, String> values) async {
+    for (final key in values.keys) {
+      if (key.length > indexedDbMaxKeyLength) {
+        return StorageFailed(KeyTooLong(area, key));
+      }
+    }
+    return _change('writing', (rows) {
+      for (final MapEntry(:key, :value) in values.entries) {
+        rows.put(value.toJS, _key(area, key));
+      }
+    });
+  }
 
   @override
   Future<Stored<void>> delete(String area, Iterable<String> keys) =>
@@ -300,12 +307,13 @@ final class IndexedDbLease implements StorageLease {
       });
 
   @override
-  Future<void> release() async {
-    if (_ended) return;
+  Future<Releasing> release() async {
+    if (_ended) return const Released();
     _ended = true;
     await Future.wait(_writing);
     _db.close();
     _release.complete();
     await _released;
+    return const Released();
   }
 }

@@ -102,8 +102,8 @@ Future<void> main(List<String> arguments) async {
   var (move, revision) = await jettPosition(store);
   final lease = probing.granted!;
   var probe = switch (await lease.read(probeArea, 'k0')) {
-    Done(value: final String value) => int.parse(value.split('-').first),
-    _ => 0,
+    KeyHeld(:final value) => int.parse(value.split('-').first),
+    KeyMissing() || KeyNotRead() => 0,
   };
   while (true) {
     move++;

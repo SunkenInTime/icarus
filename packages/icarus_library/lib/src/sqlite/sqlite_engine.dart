@@ -60,7 +60,7 @@ final class _Reply {
   const _Reply(this.id, this.result);
 
   final int id;
-  final Stored<Object?> result;
+  final Object result;
 }
 
 void _serve((String, SendPort) start) {
@@ -75,7 +75,7 @@ void _serve((String, SendPort) start) {
       replies.send(_Ready(requests.sendPort));
       requests.listen((message) {
         final request = message as _Request;
-        final Stored<Object?> result = switch (request) {
+        final Object result = switch (request) {
           _Read(:final area, :final key) => rows.read(area, key),
           _Keys(:final area, :final prefix) => rows.keys(area, prefix),
           _Entries(:final area, :final prefix) => rows.entries(area, prefix),
@@ -172,7 +172,7 @@ final class SqliteLease implements StorageLease {
 
   _Worker _worker;
   var _next = 0;
-  final _pending = <int, Completer<Stored<Object?>>>{};
+  final _pending = <int, Completer<Object>>{};
 
   void _stop(String reason) {
     _worker = _Gone(reason);
@@ -182,47 +182,59 @@ final class SqliteLease implements StorageLease {
     _pending.clear();
   }
 
-  Future<Stored<T>> _ask<T>(_Request Function(int id) request) async {
+  Future<R> _ask<R>(_Request Function(int id) request, R ended) async {
     switch (_worker) {
       case _Ended():
-        return const StorageFailed(LeaseEnded());
+        return ended;
       case _Gone(:final reason):
         throw StateError(reason);
       case _Running(:final requests):
         final id = _next++;
-        final reply = _pending[id] = Completer<Stored<Object?>>();
+        final reply = _pending[id] = Completer<Object>();
         requests.send(request(id));
-        return await reply.future as Stored<T>;
+        return await reply.future as R;
     }
   }
+
+  static const _ended = StorageFailed<Never>(LeaseEnded());
+
+  @override
+  LeaseStatus get status => switch (_worker) {
+    _Running() => const Holding(),
+    _Ended() || _Gone() => const Ended(),
+  };
 
   @override
   int get maxKeyLength => rowsMaxKeyLength;
 
   @override
-  Future<Stored<String?>> read(String area, String key) =>
-      _ask((id) => _Read(id, area, key));
+  Future<KeyRead> read(String area, String key) =>
+      _ask((id) => _Read(id, area, key), const KeyNotRead(LeaseEnded()));
 
   @override
   Future<Stored<List<String>>> keys(String area, String prefix) =>
-      _ask((id) => _Keys(id, area, prefix));
+      _ask((id) => _Keys(id, area, prefix), _ended);
 
-  Future<Stored<Map<String, String>>> entries(String area, String prefix) =>
-      _ask((id) => _Entries(id, area, prefix));
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
+      _ask((id) => _Entries(id, area, prefix), _ended);
 
   @override
   Future<Stored<void>> write(String area, Map<String, String> values) =>
-      _ask((id) => _Write(id, area, values));
+      _ask((id) => _Write(id, area, values), _ended);
 
   @override
   Future<Stored<void>> delete(String area, Iterable<String> keys) =>
-      _ask((id) => _Delete(id, area, keys.toList()));
+      _ask((id) => _Delete(id, area, keys.toList()), _ended);
 
   @override
-  Future<void> release() async {
-    if (_worker is! _Running) return;
-    final releasing = _ask<void>(_Release.new);
+  Future<Releasing> release() async {
+    if (_worker is! _Running) return const Released();
+    final releasing = _ask<Stored<void>>(_Release.new, done);
     _worker = const _Ended();
-    await releasing;
+    return switch (await releasing) {
+      Done() => const Released(),
+      StorageFailed(:final failure) => ReleaseFailed(failure),
+    };
   }
 }
