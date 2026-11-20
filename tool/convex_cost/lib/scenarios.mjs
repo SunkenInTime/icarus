@@ -2,14 +2,31 @@
 // calls in the same order, with the same live queries subscribed.
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ConvexClient, ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { convexToJson } from "convex/values";
 import { measure, summarize } from "./logs.mjs";
 import { batches, elementAdds, pageSliceStarts, seeded } from "./content.mjs";
 
-export const ELEMENT_FIELD_LEVEL = 3;
+function clientFieldLevel() {
+  const models = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "lib", "collab", "collab_models.dart");
+  const match = readFileSync(models, "utf8").match(/const currentElementFieldLevel\s*=\s*(\d+);/);
+  if (!match) throw new Error(`No currentElementFieldLevel in ${models}`);
+  return Number(match[1]);
+}
+
+export const ELEMENT_FIELD_LEVEL = clientFieldLevel();
+const SCENARIO_DEADLINE_MS = 5 * 60 * 1000;
+
+export function deadline(promise, ms, what) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`${what} did not finish within ${ms / 1000} s`)), ms))),
+  ]).finally(() => clearTimeout(timer));
+}
 
 /// The deployed checkout's function arguments (convex/function_spec.json),
 /// so a call leaves out arguments an older server doesn't take: the same
@@ -416,9 +433,27 @@ async function elementRevision(device, editor, page, elementPublicId) {
 }
 
 /// Seeds the library and runs [names], each on the same library, in order.
-export async function runScenarios({ url, adminKey, projectDir, logs, names, scenarios = SCENARIOS, worlds = {} }) {
+export async function runScenarios({
+  url,
+  adminKey,
+  projectDir,
+  logs,
+  names,
+  scenarios = SCENARIOS,
+  worlds = {},
+  ownBackend = false,
+}) {
   const http = new ConvexHttpClient(url, { skipConvexDeploymentUrlCheck: true });
-  const env = { url, adminKey, logs, http, spec: loadSpec(projectDir), protocol: protocolVersion(projectDir), devices: [] };
+  const env = {
+    url,
+    adminKey,
+    logs,
+    http,
+    ownBackend,
+    spec: loadSpec(projectDir),
+    protocol: protocolVersion(projectDir),
+    devices: [],
+  };
   try {
     return await runSeeded({ env, projectDir, names, scenarios, worlds });
   } finally {
@@ -457,14 +492,18 @@ async function runSeeded({ env, projectDir, names, scenarios, worlds }) {
     // Each scenario draws from its own generator, so leaving one out
     // doesn't change what another writes.
     env.devices.forEach((device) => (device.errors = []));
-    const result = await scenario.run({
-      owner,
-      rng: seeded(hash(name)),
-      library,
-      env,
-      projectDir,
-      world: prepared[scenario.world],
-    });
+    const result = await deadline(
+      scenario.run({
+        owner,
+        rng: seeded(hash(name)),
+        library,
+        env,
+        projectDir,
+        world: prepared[scenario.world],
+      }),
+      SCENARIO_DEADLINE_MS,
+      name,
+    );
     result.seconds = (Date.now() - at) / 1000;
     // A cheap flow that failed is not a pass.
     result.problems = [

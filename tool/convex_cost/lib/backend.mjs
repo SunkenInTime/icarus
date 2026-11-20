@@ -170,6 +170,24 @@ export function deploy({ url, adminKey, projectDir, withoutCrons = false }) {
   }
 }
 
+export function setEnvironment({ url, adminKey, projectDir, values }) {
+  for (const [name, value] of Object.entries(values)) {
+    const result = spawnSync(
+      process.execPath,
+      [join(projectDir, "node_modules", "convex", "bin", "main.js"), "env", "set", name, value],
+      { cwd: projectDir, env: selfHosted(url, adminKey), encoding: "utf8" },
+    );
+    if (result.status !== 0) throw new Error(`convex env set ${name} failed:\n${result.stdout}\n${result.stderr}`);
+  }
+}
+
+function selfHosted(url, adminKey) {
+  const env = { ...process.env, CONVEX_SELF_HOSTED_URL: url, CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey };
+  delete env.CONVEX_DEPLOY_KEY;
+  delete env.CONVEX_DEPLOYMENT;
+  return env;
+}
+
 function deployFrom({ url, adminKey, projectDir, deployed }) {
   const env = { ...process.env, CONVEX_SELF_HOSTED_URL: url, CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey };
   // A deploy key or a selected deployment would win over the self-hosted

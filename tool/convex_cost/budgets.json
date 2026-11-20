@@ -71,27 +71,27 @@
     },
     "libraryOpen": {
       "title": "Open the library",
-      "about": "A signed-in user with 150 strategies in 20 folders (five with three subfolders each) opens the library: the folder tree with its per-folder summaries (scope all) and My Library's top level, live; then Shared, which swaps the strategy list for strategies:listSharedWithMe while the tree stays. This is all the web build reads; a desktop launch also walks the library (launchUnchanged).",
+      "about": "A signed-in user with 150 strategies in 20 folders (five with three subfolders each) opens the library: the folder tree with its per-folder summaries (scope all) and My Library's top level, live; then Shared, which swaps the strategy list for strategies:listSharedWithMe while the tree stays. The tiles also watch the user's Community posts (community:listMine) and read once per sign-in which strategies are Community copies (community:listMyCopies). This is all the web build reads; a desktop launch also walks the library (launchUnchanged).",
       "metrics": {
         "functionCalls": {
-          "today": 3,
-          "budget": 5
+          "today": 5,
+          "budget": 7
         },
         "readBytes": {
-          "today": 145412,
-          "budget": 181765
+          "today": 145908,
+          "budget": 182385
         },
         "writeBytes": {
           "today": 0,
           "budget": 0
         },
         "sentBytes": {
-          "today": 83,
-          "budget": 104
+          "today": 87,
+          "budget": 109
         },
         "returnBytes": {
-          "today": 19797,
-          "budget": 24747
+          "today": 19801,
+          "budget": 24752
         },
         "queryReruns": {
           "today": 0,
@@ -210,8 +210,8 @@
           "budget": 1102
         },
         "returnBytes": {
-          "today": 257776,
-          "budget": 322220
+          "today": 258136,
+          "budget": 322670
         },
         "queryReruns": {
           "today": 0,
@@ -240,8 +240,8 @@
           "budget": 1102
         },
         "returnBytes": {
-          "today": 12602080,
-          "budget": 15752600
+          "today": 12602440,
+          "budget": 15753050
         },
         "queryReruns": {
           "today": 0,
@@ -330,8 +330,8 @@
           "budget": 1102
         },
         "returnBytes": {
-          "today": 257779,
-          "budget": 322224
+          "today": 258139,
+          "budget": 322674
         },
         "queryReruns": {
           "today": 0,
@@ -360,8 +360,8 @@
           "budget": 858
         },
         "returnBytes": {
-          "today": 87534,
-          "budget": 109418
+          "today": 87894,
+          "budget": 109868
         },
         "queryReruns": {
           "today": 0,

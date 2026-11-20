@@ -19,7 +19,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BACKEND_RELEASE, deploy, startBackend } from "./lib/backend.mjs";
+import { BACKEND_RELEASE, deploy, setEnvironment, startBackend } from "./lib/backend.mjs";
 import { LogStream } from "./lib/logs.mjs";
 import { runScenarios, SCENARIOS as CORE } from "./lib/scenarios.mjs";
 import { seedTeam, SESSIONS } from "./lib/sessions.mjs";
@@ -63,13 +63,13 @@ const METRICS = {
   conflictRetries: { label: "write-conflict retries", unit: "", headroom: 0 },
   functionCalls: { label: "function calls", unit: "", headroom: 0.2 },
   writeBytes: { label: "bytes written in all", unit: "B", headroom: 0.25 },
-  sentBytes: { label: "bytes the client sent", unit: "B", headroom: 0.25 },
-  returnBytes: { label: "bytes the functions returned", unit: "B", headroom: 0.25 },
+  sentBytes: { label: "bytes of call arguments the client sent", unit: "B", headroom: 0.25 },
+  returnBytes: { label: "bytes the functions returned, cached answers included", unit: "B", headroom: 0.25 },
   queryReruns: { label: "query re-runs", unit: "", headroom: 0.2 },
   callsPerHour: { label: "function calls an hour", unit: "", headroom: 0.2 },
   readBytesPerHour: { label: "bytes read an hour", unit: "B", headroom: 0.25 },
   writeBytesPerHour: { label: "bytes written an hour", unit: "B", headroom: 0.25 },
-  sentBytesPerHour: { label: "bytes the client sent an hour", unit: "B", headroom: 0.25 },
+  sentBytesPerHour: { label: "bytes of call arguments the client sent an hour", unit: "B", headroom: 0.25 },
 };
 
 function budgetFor(metric, today) {
@@ -113,6 +113,12 @@ async function main() {
     if (backend) {
       const at = Date.now();
       deploy({ url, adminKey, projectDir: options.project, withoutCrons: true });
+      setEnvironment({
+        url,
+        adminKey,
+        projectDir: options.project,
+        values: { PRESENCE_URL: "https://presence.cost.icarus.test", PRESENCE_PASS_SECRET: "cost-run-presence-secret" },
+      });
       console.log(`Deployed ${options.project === repoRoot ? "this checkout" : options.project} in ${((Date.now() - at) / 1000).toFixed(1)} s`);
     }
     logs.start();
@@ -123,6 +129,7 @@ async function main() {
       logs,
       names,
       scenarios: SCENARIOS,
+      ownBackend: backend !== null,
       worlds: { team: seedTeam },
     });
   } finally {

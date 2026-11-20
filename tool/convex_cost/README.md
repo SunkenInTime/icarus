@@ -38,7 +38,16 @@ and every read of a content version (getFullSnapshot, listContentVersions)
 then varies by a few hundred bytes from run to run. Instead the run folds the
 coach library's seed changes itself once they are a minute old, while the
 first four flows run, so its strategies start out folded as they are in
-production. `idleHour` runs each job directly.
+production. `idleHour` runs each job directly. Both need a backend the run
+started (they refuse `--url`), because they run maintenance jobs until those
+have nothing left to do.
+
+The run sets `PRESENCE_URL` and `PRESENCE_PASS_SECRET` on its backend, so
+`presence:issueRoomPass` signs and returns a real pass. Calls send the element
+field level the client sends (`currentElementFieldLevel` in
+`lib/collab/collab_models.dart`). A flow that hasn't finished in five minutes,
+or a page watch that gets no answer in a minute, fails the run instead of
+hanging it.
 
 Each flow runs over websocket clients acting as a signed-in user (the admin
 key with an identity), with the live queries the app holds subscribed. The
@@ -69,8 +78,8 @@ in here.
 | `agentDrag` | One element.patch of an agent's position on the 60-item page, watched in slices, with the library lists live behind the editor. | bytes applyBatch read and wrote, live-query re-runs, bytes read in all |
 | `sliceEdit` | One item moved on the page the editor watches as page:getFrame plus four page:getElementSlice ranges. | page-part re-runs, bytes they read, other re-runs |
 | `concurrentEdits` | Two devices each send 10 one-drag batches to the same strategy at once. | write-conflict retries (must stay 0) |
-| `libraryOpen` | My Library (folder tree, top-level list), then Shared. | the everyday set (below) |
-| `launchUnchanged` | Desktop connects and checks its copy of 162 strategies by content version; nothing changed. | the everyday set |
+| `libraryOpen` | My Library (folder tree, top-level list, the user's Community posts and copies), then Shared. | the everyday set (below) |
+| `launchUnchanged` | Desktop connects and checks its copy of 162 strategies by content version; nothing changed. The copy's versions are taken first, and only strategies whose header or version differ are read whole, as `_changedOf` decides. | the everyday set |
 | `launchOneChanged` | The same with one 4-page strategy changed, which is then read whole. | the everyday set |
 | `launchWeekly` | The same once every copy is a week old: every strategy read whole. | the everyday set |
 | `openTypical`, `openLarge` | A cold open on desktop, copy read included. | the everyday set |
@@ -106,7 +115,10 @@ compute in GB-hours, database storage, file storage and data egress
   machine.
 - **Storage, file storage and data egress** are not measured. The log
   stream doesn't report storage, and no flow serves a file.
-- **Bytes the client sent** and **bytes returned** are not billed. They are
+- **Bytes the client sent** and **bytes returned** are not billed, and are
+  not bytes on the wire either: the first is the JSON of each call's
+  arguments, the second the size of each returned value as the backend
+  measures it, cached answers included and before compression. They show
   what a user on a slow connection waits for.
 
 ## When a budget fails

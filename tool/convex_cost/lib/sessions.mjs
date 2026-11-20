@@ -4,7 +4,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { measure, summarize } from "./logs.mjs";
 import { batches, elementAdds, freehandPayload, pageSliceStarts, seeded } from "./content.mjs";
-import { createStrategy, Device, ELEMENT_FIELD_LEVEL, hash } from "./scenarios.mjs";
+import { createStrategy, deadline, Device, ELEMENT_FIELD_LEVEL, hash } from "./scenarios.mjs";
 
 const ISSUER = "https://cost.icarus.test";
 const COACH = { subject: "cost-coach", issuer: ISSUER, name: "Coach" };
@@ -16,6 +16,8 @@ const PEER_EDITS = 20;
 const ROOM_PASS_RENEWALS_PER_HOUR = 60;
 const DRAWING_POINTS = 2000;
 const LARGE_DRAWING_POINTS = 250;
+const ANSWER_DEADLINE_MS = 60_000;
+const SCHEDULER_QUIET_MS = 1000;
 
 const fullSnapshotArgs = (strategyPublicId) => ({
   strategyPublicId,
@@ -54,7 +56,7 @@ class PageWatch {
 
   static async start(device, strategyPublicId, pagePublicId) {
     const watch = new PageWatch(device, strategyPublicId, pagePublicId);
-    await new Promise((resolve) => {
+    const first = new Promise((resolve) => {
       watch.stopWhole = device.watchEach(
         "page:getSnapshot",
         wholePageArgs(strategyPublicId, pagePublicId),
@@ -64,6 +66,7 @@ class PageWatch {
         },
       );
     });
+    await deadline(first, ANSWER_DEADLINE_MS, `page:getSnapshot of ${pagePublicId}`);
     return watch;
   }
 
@@ -103,7 +106,7 @@ class PageWatch {
         ),
       ),
     ];
-    await ready;
+    await deadline(ready, ANSWER_DEADLINE_MS, `the slices of ${this.pagePublicId}`);
     this.stopWhole();
     this.stopWhole = null;
   }
@@ -118,7 +121,8 @@ class PageWatch {
 
   waitFor(test) {
     if (test(this.elements)) return Promise.resolve();
-    return new Promise((resolve) => this.waiters.push({ test, resolve }));
+    const seen = new Promise((resolve) => this.waiters.push({ test, resolve }));
+    return deadline(seen, ANSWER_DEADLINE_MS, `the edit reaching ${this.pagePublicId}`);
   }
 
   settle() {
@@ -172,6 +176,7 @@ async function watchMyLibrary(device) {
   return [
     await device.watch("folders:listTree", { scope: "all" }),
     await device.watch("strategies:listForFolder", { scope: "owned", includeAgentTypes: true }),
+    await device.watch("community:listMine", {}),
   ];
 }
 
@@ -358,6 +363,9 @@ export async function seedTeam({ env, rng, projectDir }) {
     large,
     sketch,
     listed: [library[0], library[40], teammateOwn[0], inTeamFolder[0]],
+    openable: [...library, large, typical, session, sketch, ...teammateOwn.slice(0, 3), ...inTeamFolder].map(
+      (strategy) => strategy.publicId,
+    ),
     opened: [typical, session, large, sketch],
   };
 }
@@ -397,10 +405,35 @@ async function walkLibrary(device) {
   return [...ids].sort();
 }
 
-async function askContentVersions(device, ids) {
-  for (let start = 0; start < ids.length; start += CONTENT_VERSIONS_BATCH) {
-    await device.query("strategy:listContentVersions", { strategyPublicIds: ids.slice(start, start + CONTENT_VERSIONS_BATCH) });
+const versionKey = (answer) =>
+  answer.status === "found" ? JSON.stringify([canonical(answer.header), answer.contentVersion]) : null;
+
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+}
+
+async function copiedVersions(device, ids) {
+  const copied = new Map();
+  for (const id of ids) {
+    const [answer] = await device.query("strategy:listContentVersions", { strategyPublicIds: [id] });
+    copied.set(id, versionKey(answer));
   }
+  return copied;
+}
+
+async function changedSinceCopied(device, ids, copied) {
+  const changed = [];
+  for (let start = 0; start < ids.length; start += CONTENT_VERSIONS_BATCH) {
+    const answers = await device.query("strategy:listContentVersions", {
+      strategyPublicIds: ids.slice(start, start + CONTENT_VERSIONS_BATCH),
+    });
+    for (const answer of answers) {
+      if (versionKey(answer) !== copied.get(answer.strategyPublicId)) changed.push(answer.strategyPublicId);
+    }
+  }
+  return changed;
 }
 
 function openScenario(key, title, about) {
@@ -416,7 +449,9 @@ function openScenario(key, title, about) {
       editor.close();
       const fullRead = result.summary.byFunction.get("strategy:getFullSnapshot");
       result.notes = [
-        `strategy:getFullSnapshot ran for ${Math.round((fullRead?.slowestSeconds ?? 0) * 1000)} ms of the 1 s a query may run (not budgeted: run time follows the machine)`,
+        `strategy:getFullSnapshot took ${Math.round((fullRead?.slowestSeconds ?? 0) * 1000)} ms, ` +
+          `${Math.round((fullRead?.slowestCodeSeconds ?? 0) * 1000)} ms of it in its own code, where Convex stops a query at 1 s ` +
+          "(not budgeted: run time follows the machine)",
       ];
       return result;
     },
@@ -444,6 +479,7 @@ function launchScenario({ changed, rereadAll }) {
     async run({ env, world, rng }) {
       await freshenLists(world);
       for (const strategy of world.opened) await rename(strategy);
+      const copied = await copiedVersions(world.coach, world.openable);
       if (changed) {
         const editor = await new Editor(world.coach, world.typical, { desktop: false }).open();
         const row = editor.page.elements.find((element) => element.payload.kind === "agent");
@@ -453,12 +489,11 @@ function launchScenario({ changed, rereadAll }) {
       }
       const result = await metered([world.coach], env, async () => {
         const ids = await walkLibrary(world.coach);
-        if (!rereadAll) await askContentVersions(world.coach, ids);
-        const reread = rereadAll ? ids : changed ? [world.typical.publicId] : [];
+        const reread = rereadAll ? ids : await changedSinceCopied(world.coach, ids, copied);
         for (const id of reread) await world.coach.query("strategy:getFullSnapshot", fullSnapshotArgs(id));
-        return ids.length;
+        return { walked: ids.length, reread: reread.length };
       });
-      result.notes = [`${result.value} strategies in the walk`];
+      result.notes = [`${result.value.walked} strategies in the walk, ${result.value.reread} read whole`];
       return result;
     },
   };
@@ -497,12 +532,28 @@ function foldAfterMs(projectDir) {
   return match[1].split("*").reduce((product, factor) => product * Number(factor.replaceAll("_", "").trim()), 1);
 }
 
+async function schedulerQuiet(env) {
+  let seen = -1;
+  while (true) {
+    const scheduled = env.logs.entries.filter((entry) => entry.caller === "Scheduler").length;
+    if (scheduled === seen) return;
+    seen = scheduled;
+    await new Promise((resolve) => setTimeout(resolve, SCHEDULER_QUIET_MS));
+  }
+}
+
+function requireOwnBackend(env, what) {
+  if (!env.ownBackend) throw new Error(`${what} runs maintenance jobs, so it only runs on a backend this run started`);
+}
+
 async function foldSeedChanges(env, projectDir, seededAt) {
+  requireOwnBackend(env, "Folding the seed's content changes");
   const wait = seededAt + foldAfterMs(projectDir) + 1000 - Date.now();
   if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
   const admin = new ConvexHttpClient(env.url, { skipConvexDeploymentUrlCheck: true });
   admin.setAdminAuth(env.adminKey);
   await idleRun(env, admin, { job: "fold-content-changes", name: "maintenance:foldContentChanges", kind: "mutation" });
+  await schedulerQuiet(env);
 }
 
 const IDLE_ATTEMPTS = 50;
@@ -526,17 +577,21 @@ export const SESSIONS = {
     about:
       "A signed-in user with 150 strategies in 20 folders (five with three subfolders each) opens the library: the folder " +
       "tree with its per-folder summaries (scope all) and My Library's top level, live; then Shared, which swaps the " +
-      "strategy list for strategies:listSharedWithMe while the tree stays. This is all the web build reads; a desktop " +
-      "launch also walks the library (launchUnchanged).",
+      "strategy list for strategies:listSharedWithMe while the tree stays. The tiles also watch the user's Community " +
+      "posts (community:listMine) and read once per sign-in which strategies are Community copies " +
+      "(community:listMyCopies). This is all the web build reads; a desktop launch also walks the library " +
+      "(launchUnchanged).",
     world: "team",
     async run({ env, world }) {
       await freshenLists(world);
       const coach = world.coach;
       const result = await metered([coach], env, async () => {
-        const [tree, mine] = await watchMyLibrary(coach);
+        const [tree, mine, posts] = await watchMyLibrary(coach);
+        await coach.query("community:listMyCopies", {});
         mine();
         const shared = await coach.watch("strategies:listSharedWithMe", { includeAgentTypes: true });
         tree();
+        posts();
         shared();
       });
       return result;
@@ -749,6 +804,7 @@ export const SESSIONS = {
       "include the functions it calls.",
     world: "team",
     async run({ env, projectDir }) {
+      requireOwnBackend(env, "idleHour");
       const admin = new ConvexHttpClient(env.url, { skipConvexDeploymentUrlCheck: true });
       admin.setAdminAuth(env.adminKey);
       const total = { calls: 0, readBytes: 0, writeBytes: 0, actionMbSeconds: 0 };
@@ -756,6 +812,7 @@ export const SESSIONS = {
       const notes = [];
       for (const job of cronJobs(projectDir)) {
         const measured = await idleRun(env, admin, job);
+        await schedulerQuiet(env);
         const calls = measured.total.runs + measured.total.cachedRuns;
         total.calls += calls * job.perHour;
         total.readBytes += measured.total.readBytes * job.perHour;
@@ -767,8 +824,8 @@ export const SESSIONS = {
         );
       }
       notes.push(
-        `scheduled actions: ${((total.actionMbSeconds / 1024 / 3600) * 1000).toFixed(3)} GB-hours per 1000 hours of ` +
-          "local run time (not budgeted: run time varies with the machine)",
+        `scheduled actions: ${(total.actionMbSeconds / 1024).toFixed(4)} GB-seconds an hour of local run time ` +
+          "(not budgeted: run time varies with the machine)",
       );
       return {
         summary: { total: {}, byFunction },
