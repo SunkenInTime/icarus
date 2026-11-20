@@ -83,9 +83,11 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 - Pages that share a place are ordered by `publicId` with Dart's string
   order. The server uses `localeCompare`, which can order punctuation
   differently.
-- An edit that first sets `mapDoor` or `isZone` has `UndoUnavailable`. Those
-  fields are never cleared (a door goes back to rest by deleting its row, and
-  a zone stays a zone), so there is no value an undo could write.
+- An edit that first sets `mapDoor`, `isZone` or a picture id (`assetId`)
+  has `UndoUnavailable`. Those fields are never cleared (a door goes back to
+  rest by deleting its row, a zone stays a zone, and the server keeps a
+  picture id that a write leaves out), so there is no value an undo could
+  write.
 - Whole numbers of 9.2e18 or more that arrive as decimals compare and measure
   as Dart writes them, not as JavaScript does.
 - Each op is applied alone. The server also lets several page ops queued from
@@ -103,10 +105,12 @@ The package holds both halves:
   `WholeEdit` with a `WholeReason`. They compare payloads with each field's
   default filled in and treat a missing field and `null` as the same, so
   opening an old item never counts as an edit of it. `elementEditOp` and
-  `lineupEditOp` build the patch: field names, the place when it moved, and,
-  for work that waited offline (`Connection.offline`), each field's value in
-  the base. A store that also has to claim an older revision for a whole
-  write (see "What the client promises") sets that on the op itself.
+  `lineupEditOp` build the patch: the item's page, field names, the place
+  when it moved, and, for work that waited offline (`Connection.offline`),
+  each field's value in the base. A whole write claims `drawnRevision` when
+  that is older than the base's revision: once the client's own merge has
+  landed, the row's newer revision also holds a teammate's fields the client
+  has not drawn, and claiming it would write over them.
 - **The server's half.** `mergeElementPayload` and `mergeLineupPayload` give
   the payload the server would hold, `Merged`, or say why it will not merge:
   `WriteWhole` with a `WholeReason`, or `MergeConflict` naming the field that
@@ -130,6 +134,7 @@ about each element kind. The app's live sync reads it too.
 | Moves together | image | `position`, `scale`, `sizeVersion` |
 | Moves together | utility of type `customRectangle` | `position`, `rotation`, `customWidth`, `customLength` |
 | Moves together | any other utility | `rotation`, `length` |
+| Kept when a write leaves it out, never cleared | every kind | `assetId` (the picture id), when it is a string |
 | Later field, level 1, cleared by `""` | agent, ability, text, image, utility | `caption` |
 | Later field, level 2, cleared by `[]` | ability | `wallPath` |
 | Later field, level 3, never cleared | utility | `mapDoor` |
@@ -146,7 +151,8 @@ that first set it writes.
 
 The server keeps its own copies of the identity keys
 (`ELEMENT_IDENTITY_KEYS` in `convex/lib/fieldMerge.ts`) and the later fields
-(`LATER_ELEMENT_FIELDS` in `convex/lib/elementFields.ts`), because
+(`LATER_ELEMENT_FIELDS` in `convex/lib/elementFields.ts`) and the picture
+id (`keepPictureId` in `convex/lib/imageAssets.ts`), because
 `convex/` deploys on merge and has to keep reading the files it reads now.
 `tool/library_parity/field_rules.test.ts` fails when either copy differs
 from this table. Groups, empty values and defaults exist only on the client.
@@ -172,6 +178,14 @@ invalid. Each story's ops are built with `elementEditOp` and
 fails when the server's outcome or rows differ from `applyOp`'s, and when
 either differs from the story. `test/merge_stories_test.dart` plays the same
 stories through `applyOp` alone.
+
+`tool/merge_seeds.dart` adds 12 seeded sequences on the stories' strategy,
+weighted toward the cases a field merge exists for: offline edits of one
+field sent with the rest of the payload as it was then, offline moves in the
+stack from a place a teammate has since changed, for elements and lineup
+groups, and whole writes from older builds that leave out the picture id
+and the later fields. Generating fails when a seed run never produces one of
+those (`mustGenerate`).
 
 Default-aware comparison happens only on the client, so the server never
 sees it. `tool/library_parity/cases/field_defaults.json` holds cases of it:
