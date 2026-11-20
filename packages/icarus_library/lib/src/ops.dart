@@ -1,3 +1,5 @@
+import 'package:collection/collection.dart';
+
 import 'json.dart';
 import 'payloads.dart';
 import 'wire.dart';
@@ -9,35 +11,41 @@ final class FieldMerge {
     : fields = List.unmodifiable(fields),
       base = base == null ? null : frozenJsonObject(base);
 
-  static Decoded<FieldMerge> decode(Object? json) => JsonFields.read(
-    json,
-    'merge',
-    (fields) {
-      final names = fields.json['fields'];
-      final base = fields.json['base'];
-      if (names is! List<Object?> || names.any((name) => name is! String)) {
-        fields.reject('expected "fields" to be strings');
+  static Decoded<FieldMerge> decode(
+    Object? json,
+  ) => JsonFields.read(json, 'merge', (fields) {
+    final names = fields.json['fields'];
+    final base = fields.json['base'];
+    if (names is! List<Object?> || names.any((name) => name is! String)) {
+      fields.reject('expected "fields" to be strings');
+    }
+    if (base != null &&
+        (base is! List<Object?> ||
+            base.any(
+              (entry) =>
+                  entry is! Map<String, Object?> || entry['field'] is! String,
+            ))) {
+      fields.reject('expected "base" to be a list of fields');
+    } else if (base is List<Object?> && names is List<Object?>) {
+      final based = [
+        for (final entry in base.cast<Map<String, Object?>>()) entry['field'],
+      ];
+      if (based.toSet().length != based.length ||
+          !const SetEquality<Object?>().equals(based.toSet(), names.toSet())) {
+        fields.reject('expected "base" to name each field once');
       }
-      if (base != null &&
-          (base is! List<Object?> ||
-              base.any(
-                (entry) =>
-                    entry is! Map<String, Object?> || entry['field'] is! String,
-              ))) {
-        fields.reject('expected "base" to be a list of fields');
-      }
-      return () => FieldMerge(
-        fields: (names! as List<Object?>).cast<String>(),
-        base: base is List<Object?>
-            ? {
-                for (final entry in base.cast<Map<String, Object?>>())
-                  if (entry.containsKey('value'))
-                    entry['field']! as String: entry['value'],
-              }
-            : null,
-      );
-    },
-  );
+    }
+    return () => FieldMerge(
+      fields: (names! as List<Object?>).cast<String>(),
+      base: base is List<Object?>
+          ? {
+              for (final entry in base.cast<Map<String, Object?>>())
+                if (entry.containsKey('value'))
+                  entry['field']! as String: entry['value'],
+            }
+          : null,
+    );
+  });
 
   final List<String> fields;
   final Map<String, Object?>? base;

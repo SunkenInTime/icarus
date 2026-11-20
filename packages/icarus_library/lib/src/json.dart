@@ -28,17 +28,29 @@ String _jsonKey(Object? key) => key is String
     ? key
     : throw ArgumentError.value(key, 'key', 'a JSON object key is a string');
 
-Object? _canonical(Object? value) => switch (value) {
-  Map<Object?, Object?>() => {
-    for (final key in value.keys.cast<String>().toList()..sort())
-      key: _canonical(value[key]),
-  },
-  List<Object?>() => [for (final item in value) _canonical(item)],
-  num() => value.toDouble(),
-  _ => value,
-};
+const _largestExactWhole = 9007199254740991;
 
-String canonicalJson(Object? value) => jsonEncode(_canonical(value));
+Object? _asJavaScript(Object? value, {required bool sortKeys}) =>
+    switch (value) {
+      Map<Object?, Object?>() => {
+        for (final key
+            in sortKeys
+                ? (value.keys.cast<String>().toList()..sort())
+                : value.keys.cast<String>())
+          key: _asJavaScript(value[key], sortKeys: sortKeys),
+      },
+      List<Object?>() => [
+        for (final item in value) _asJavaScript(item, sortKeys: sortKeys),
+      ],
+      double()
+          when value == value.truncateToDouble() &&
+              value.abs() <= _largestExactWhole =>
+        value.toInt(),
+      _ => value,
+    };
+
+String canonicalJson(Object? value) =>
+    jsonEncode(_asJavaScript(value, sortKeys: true));
 
 bool sameJson(Object? left, Object? right) =>
     identical(left, right) || canonicalJson(left) == canonicalJson(right);
@@ -47,7 +59,9 @@ const maxOpBytes = 900 * 1024;
 const maxArrayEntries = 8000;
 
 bool exceedsSizePolicy(Object? json) =>
-    utf8.encode(jsonEncode(json)).length > maxOpBytes || _hasLongList(json);
+    utf8.encode(jsonEncode(_asJavaScript(json, sortKeys: false))).length >
+        maxOpBytes ||
+    _hasLongList(json);
 
 bool _hasLongList(Object? json) => switch (json) {
   List<Object?>() => json.length > maxArrayEntries || json.any(_hasLongList),

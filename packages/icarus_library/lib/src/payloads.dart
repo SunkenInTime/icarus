@@ -75,6 +75,11 @@ final class LineupGroupPayload {
           fields.reject('kind ${fields.json['kind']} is not a lineup group');
         }
         final payloadVersion = fields.whole('payloadVersion');
+        if (payloadVersion != lineupGroupPayloadVersion) {
+          fields.reject(
+            'payload version $payloadVersion is not one this build reads',
+          );
+        }
         final data = fields.object('data');
         return () =>
             LineupGroupPayload(payloadVersion: payloadVersion, data: data);

@@ -76,7 +76,13 @@ final class _Apply {
 
   List<LivePage> get livePages {
     final live = rows.pages.whereType<LivePage>().toList();
-    mergeSort(live, compare: (a, b) => a.sortIndex.compareTo(b.sortIndex));
+    mergeSort(
+      live,
+      compare: (a, b) => switch (a.sortIndex.compareTo(b.sortIndex)) {
+        0 => a.publicId.compareTo(b.publicId),
+        final order => order,
+      },
+    );
     return live;
   }
 
@@ -630,6 +636,7 @@ final class _Apply {
         return refused;
       }
       final added = LiveLineupGroup(
+        strategyPublicId: strategy.publicId,
         publicId: op.lineupPublicId,
         pagePublicId: op.pagePublicId,
         payload: op.payload,
@@ -652,6 +659,7 @@ final class _Apply {
           return refused;
         }
         final restored = LiveLineupGroup(
+          strategyPublicId: strategy.publicId,
           publicId: existing.publicId,
           pagePublicId: op.pagePublicId,
           payload: op.payload,
@@ -693,6 +701,7 @@ final class _Apply {
       }
     }
     final after = DeletedLineupGroup(
+      strategyPublicId: strategy.publicId,
       publicId: existing.publicId,
       pagePublicId: existing.pagePublicId,
       payload: existing.payload,
@@ -738,6 +747,7 @@ final class _Apply {
       return refused;
     }
     final after = LiveLineupGroup(
+      strategyPublicId: strategy.publicId,
       publicId: existing.publicId,
       pagePublicId: existing.pagePublicId,
       payload: existing.payload,
@@ -811,6 +821,7 @@ final class _Apply {
       }
     }
     final after = LiveLineupGroup(
+      strategyPublicId: strategy.publicId,
       publicId: existing.publicId,
       pagePublicId: existing.pagePublicId,
       payload: payload,
@@ -1124,6 +1135,12 @@ Set<String> _changedLineupFields(
     final after = byId(right);
     for (final id in {...before.keys, ...after.keys}) {
       if (!_sameEntry(before, after, id)) changed.add('$key/$id');
+    }
+    final kept = [...before.keys.where(after.containsKey)];
+    if (!const ListEquality<String>().equals(kept, [
+      ...after.keys.where(before.containsKey),
+    ])) {
+      changed.add(key);
     }
   }
   return changed;

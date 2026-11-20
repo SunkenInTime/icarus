@@ -228,6 +228,29 @@ void main() {
       },
       {
         'opId': 'x',
+        'type': 'element.patch',
+        'elementPublicId': 'jett',
+        'expectedElementRevision': 1,
+        'merge': {
+          'fields': ['caption'],
+          'base': <Object?>[],
+        },
+      },
+      {
+        'opId': 'x',
+        'type': 'element.patch',
+        'elementPublicId': 'jett',
+        'expectedElementRevision': 1,
+        'merge': {
+          'fields': ['caption'],
+          'base': [
+            {'field': 'caption', 'value': 'a'},
+            {'field': 'caption', 'value': 'b'},
+          ],
+        },
+      },
+      {
+        'opId': 'x',
         'type': 'element.reorder',
         'elementPublicId': 'jett',
         'pagePublicId': 'p',

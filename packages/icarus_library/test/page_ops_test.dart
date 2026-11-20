@@ -252,4 +252,31 @@ void main() {
     session.apply(undoOp(cleared));
     expect(session.rows.strategy.themeProfileId, 'ember');
   });
+
+  test(
+    'pages that share a place are ordered by id, as the server orders them',
+    () {
+      final session = Session(
+        strategyRows(
+          pages: [
+            page('z', sortIndex: 0, name: 'z'),
+            page('a', sortIndex: 0, name: 'a'),
+          ],
+        ),
+      );
+      session.apply(
+        const PageAddOp(
+          opId: 'add',
+          pagePublicId: 'n',
+          name: 'n',
+          sortIndex: 2,
+          expectedStrategyRevision: 1,
+        ),
+      );
+      expect(session.rows.page('a')!.sortIndex, 0);
+      expect(session.rows.page('a')!.revision, 1);
+      expect(session.rows.page('z')!.sortIndex, 1);
+      expect(session.rows.page('z')!.revision, 2);
+    },
+  );
 }

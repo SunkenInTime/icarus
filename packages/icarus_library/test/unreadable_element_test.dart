@@ -5,6 +5,8 @@ import 'package:test/test.dart';
 
 import 'support.dart';
 
+bool _anyPayload(ElementPayload payload) => true;
+
 void main() {
   final fromNewerBuild = <String, Object?>{
     'publicId': 'smoke',
@@ -47,7 +49,9 @@ void main() {
       late Session session;
 
       setUp(() {
-        row = readValue(ElementRow.decode(jsonDecode(jsonEncode(json))));
+        row = readValue(
+          ElementRow.decode(jsonDecode(jsonEncode(json)), canRead: _anyPayload),
+        );
         session = Session(
           strategyRows(
             elements: [
@@ -143,7 +147,9 @@ void main() {
   }
 
   test('a copied page carries a copy of an element this build cannot read', () {
-    final row = readValue(ElementRow.decode(fromNewerBuild));
+    final row = readValue(
+      ElementRow.decode(fromNewerBuild, canRead: _anyPayload),
+    );
     final session = Session(strategyRows(elements: [row]));
     session.apply(
       const PageAddOp(
@@ -179,4 +185,45 @@ void main() {
     );
     expect(session.rows.element('wall'), isA<UnreadableElement>());
   });
+
+  test(
+    'an element the editor cannot draw is carried like one from a newer build',
+    () {
+      final json = <String, Object?>{
+        'publicId': 'jett',
+        'pagePublicId': 'page-a',
+        'payload': {
+          'kind': 'agent',
+          'payloadVersion': 1,
+          'data': {'id': 'jett'},
+        },
+        'sortIndex': 0,
+        'revision': 1,
+        'deleted': false,
+      };
+      final row = readValue(
+        ElementRow.decode(
+          json,
+          canRead: (payload) => payload.data.containsKey('position'),
+        ),
+      );
+      expect(row, isA<UnreadableElement>());
+      expect(jsonEncode(row.toJson()), jsonEncode(json));
+      expect(
+        refused(
+          applyOp(
+            strategyRows(elements: [row]),
+            const ElementDeleteOp(
+              opId: 'delete',
+              elementPublicId: 'jett',
+              pagePublicId: 'page-a',
+              expectedElementRevision: 1,
+            ),
+            newId: Ids().call,
+          ),
+        ),
+        const UnreadableTarget('jett'),
+      );
+    },
+  );
 }

@@ -33,8 +33,10 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   typed value or `CouldNotRead` with the JSON it was given, untouched.
 - **A row this build cannot read is carried, never touched.** An element
   whose kind is unknown, whose payload version is newer than
-  `newestElementPayloadVersion`, or whose data is not an object decodes as an
-  `UnreadableElement` holding its row's JSON exactly. It is saved back byte for
+  `newestElementPayloadVersion`, whose data is not an object, or that the
+  app's `canRead` check refuses decodes as an `UnreadableElement` holding its
+  row's JSON exactly. `ElementRow.decode` requires `canRead`, so the app's own
+  decoder decides what it can draw. It is saved back byte for
   byte. Every op aimed at it is refused with `UnreadableTarget`, including a
   delete; deleting its page keeps it, as it keeps every row on the page.
 - **Applying an op predicts the server.** The meaning comes from
@@ -59,6 +61,19 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 - This package sees one strategy. Ids that collide with a row in another
   strategy (`element_strategy_mismatch`, a page id used elsewhere) cannot be
   seen, and `strategy.patch` does not check map names.
+- A page copy too large for the server's copy budget
+  (`PAGE_TOO_LARGE_TO_COPY`) is applied here.
+- A strategy patch that both sets and clears the same theme field, or a
+  sort index that is not a whole number, is `CouldNotRead`. The server takes
+  both; no build sends either.
+- A delete of content on a page in the trash fails with `PAGE_DELETED`, as it
+  does for clients that send `checkTrashedPageDeletes`, which the app does.
+- Pages that share a place are ordered by `publicId` with Dart's string
+  order. The server uses `localeCompare`, which can order punctuation
+  differently.
+- Undo of an edit that first set a later field (`caption`, `wallPath`) does
+  not remove it: the server keeps a later field a write leaves out, and
+  clearing one means writing its empty value, which only the app knows.
 - Each op is applied alone. The server also lets several page ops queued from
   the same strategy revision land in one batch; that belongs to whoever sends
   batches.

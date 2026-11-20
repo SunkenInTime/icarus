@@ -349,4 +349,22 @@ void main() {
     expect(write.fields, isEmpty);
     expect(write.dataFields, {'position'});
   });
+
+  test('a value that only changes from 0 to -0.0 is not a change', () {
+    final turned = element('jett', fields: {'rotation': 0});
+    final session = Session(strategyRows(elements: [turned]));
+    expect(
+      describe(
+        session.attempt(
+          ElementPatchOp(
+            opId: 'spin',
+            elementPublicId: 'jett',
+            expectedElementRevision: 1,
+            payload: agentPayload('jett', {'rotation': -0.0}),
+          ),
+        ),
+      ),
+      'unchanged',
+    );
+  });
 }

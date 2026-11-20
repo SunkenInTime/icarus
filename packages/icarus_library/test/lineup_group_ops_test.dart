@@ -38,6 +38,7 @@ void main() {
     links: [link('k1', 'o1', 'l1')],
   );
   final row = LiveLineupGroup(
+    strategyPublicId: strategyId,
     publicId: 'g1',
     pagePublicId: 'page-a',
     payload: oneLineup,
@@ -99,6 +100,7 @@ void main() {
         strategyRows(
           lineupGroups: [
             LiveLineupGroup(
+              strategyPublicId: strategyId,
               publicId: 'g1',
               pagePublicId: 'page-a',
               payload: group(
@@ -206,5 +208,57 @@ void main() {
     session.apply(undoOp(edited));
     final data = session.rows.lineupGroup('g1')!.payload.data;
     expect(data['links'], [link('k1', 'o1', 'l1'), link('k2', 'o2', 'l1')]);
+  });
+
+  test('putting two lineups of a group in a new order saves the order', () {
+    final twoLinks = group(
+      'g1',
+      origins: [origin('o1')],
+      landings: [landing('l1')],
+      links: [link('a', 'o1', 'l1'), link('b', 'o1', 'l1')],
+    );
+    final session = Session(
+      strategyRows(
+        lineupGroups: [
+          LiveLineupGroup(
+            strategyPublicId: strategyId,
+            publicId: 'g1',
+            pagePublicId: 'page-a',
+            payload: twoLinks,
+            sortIndex: 0,
+            revision: 1,
+          ),
+        ],
+      ),
+    );
+    final reordered = session.apply(
+      LineupGroupPatchOp(
+        opId: 'reorder-links',
+        lineupPublicId: 'g1',
+        expectedLineupRevision: 1,
+        payload: group(
+          'g1',
+          origins: [origin('o1')],
+          landings: [landing('l1')],
+          links: [link('b', 'o1', 'l1'), link('a', 'o1', 'l1')],
+        ),
+      ),
+    );
+    final links =
+        session.rows.lineupGroup('g1')!.payload.data['links']! as List<Object?>;
+    expect(
+      [for (final link in links.cast<Map<String, Object?>>()) link['id']],
+      ['b', 'a'],
+    );
+    session.apply(undoOp(reordered));
+    expect(session.rows.lineupGroup('g1')!.payload, twoLinks);
+  });
+
+  test('the same lineup group id in two strategies names two rows', () {
+    expect(
+      const LineupGroupKey('strategy-1', 'g1'),
+      isNot(const LineupGroupKey('strategy-2', 'g1')),
+    );
+    expect(row.key, const LineupGroupKey(strategyId, 'g1'));
   });
 }

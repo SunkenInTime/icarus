@@ -36,7 +36,18 @@ final class ElementKey extends RowKey {
 }
 
 final class LineupGroupKey extends RowKey {
-  const LineupGroupKey(super.id);
+  const LineupGroupKey(this.strategyPublicId, super.id);
+
+  final String strategyPublicId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LineupGroupKey &&
+      other.strategyPublicId == strategyPublicId &&
+      other.id == id;
+
+  @override
+  int get hashCode => Object.hash(LineupGroupKey, strategyPublicId, id);
 }
 
 sealed class Row {
@@ -329,7 +340,10 @@ final class PageSettingsRow extends Row {
 sealed class ElementRow extends Row {
   const ElementRow._({required this.publicId, required this.pagePublicId});
 
-  static Decoded<ElementRow> decode(Object? json) {
+  static Decoded<ElementRow> decode(
+    Object? json, {
+    required bool Function(ElementPayload payload) canRead,
+  }) {
     final ids = JsonFields.read(json, 'element row', (fields) {
       final publicId = fields.string('publicId');
       final pagePublicId = fields.string('pagePublicId');
@@ -342,8 +356,8 @@ sealed class ElementRow extends Row {
     if (publicId == null) return CouldNotRead(json, pagePublicId);
     final readable = JsonFields.read(json, 'element row', (fields) {
       final payload = fields.decoded('payload', ElementPayload.decode);
-      if (payload != null && !payload.isReadable) {
-        fields.reject('its payload version is from a newer build');
+      if (payload != null && (!payload.isReadable || !canRead(payload))) {
+        fields.reject('this build cannot read its payload');
       }
       final sortIndex = fields.whole('sortIndex');
       final revision = fields.whole('revision');
@@ -450,6 +464,7 @@ final class UnreadableElement extends ElementRow {
 sealed class LineupGroupRow extends Row {
   const LineupGroupRow._({
     required this.publicId,
+    required this.strategyPublicId,
     required this.pagePublicId,
     required this.payload,
     required this.sortIndex,
@@ -459,6 +474,7 @@ sealed class LineupGroupRow extends Row {
   static Decoded<LineupGroupRow> decode(Object? json) =>
       JsonFields.read(json, 'lineup group row', (fields) {
         final publicId = fields.string('publicId');
+        final strategyPublicId = fields.string('strategyPublicId');
         final pagePublicId = fields.string('pagePublicId');
         final payload = fields.decoded('payload', LineupGroupPayload.decode);
         final sortIndex = fields.whole('sortIndex');
@@ -467,6 +483,7 @@ sealed class LineupGroupRow extends Row {
         return () => deleted
             ? DeletedLineupGroup(
                 publicId: publicId,
+                strategyPublicId: strategyPublicId,
                 pagePublicId: pagePublicId,
                 payload: payload!,
                 sortIndex: sortIndex,
@@ -474,6 +491,7 @@ sealed class LineupGroupRow extends Row {
               )
             : LiveLineupGroup(
                 publicId: publicId,
+                strategyPublicId: strategyPublicId,
                 pagePublicId: pagePublicId,
                 payload: payload!,
                 sortIndex: sortIndex,
@@ -482,17 +500,19 @@ sealed class LineupGroupRow extends Row {
       });
 
   final String publicId;
+  final String strategyPublicId;
   final String pagePublicId;
   final LineupGroupPayload payload;
   final int sortIndex;
   final int revision;
 
   @override
-  LineupGroupKey get key => LineupGroupKey(publicId);
+  LineupGroupKey get key => LineupGroupKey(strategyPublicId, publicId);
 
   @override
   Map<String, Object?> toJson() => {
     'publicId': publicId,
+    'strategyPublicId': strategyPublicId,
     'pagePublicId': pagePublicId,
     'payload': payload.toJson(),
     'sortIndex': sortIndex,
@@ -504,6 +524,7 @@ sealed class LineupGroupRow extends Row {
 final class LiveLineupGroup extends LineupGroupRow {
   const LiveLineupGroup({
     required super.publicId,
+    required super.strategyPublicId,
     required super.pagePublicId,
     required super.payload,
     required super.sortIndex,
@@ -514,6 +535,7 @@ final class LiveLineupGroup extends LineupGroupRow {
 final class DeletedLineupGroup extends LineupGroupRow {
   const DeletedLineupGroup({
     required super.publicId,
+    required super.strategyPublicId,
     required super.pagePublicId,
     required super.payload,
     required super.sortIndex,

@@ -34,6 +34,7 @@ void main() {
     ],
     lineupGroups: [
       LiveLineupGroup(
+        strategyPublicId: strategyId,
         publicId: 'g1',
         pagePublicId: 'page-a',
         payload: _group(''),

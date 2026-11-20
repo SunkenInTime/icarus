@@ -101,11 +101,7 @@ final class PageCopy {
     final pictureId = kind == ElementKind.image.name
         ? _pictureIdOf(data)
         : null;
-    return {
-      ...data,
-      'id': publicId,
-      'assetId': ?pictureId,
-    };
+    return {...data, 'id': publicId, 'assetId': ?pictureId};
   }
 
   String? _pictureIdOf(Map<String, Object?> data) => switch (data) {
@@ -147,6 +143,7 @@ final class PageCopy {
         value is List<Object?> ? value : const [];
 
     return LiveLineupGroup(
+      strategyPublicId: source.strategyPublicId,
       publicId: id,
       pagePublicId: pagePublicId,
       payload: LineupGroupPayload(
