@@ -367,4 +367,22 @@ void main() {
       'unchanged',
     );
   });
+
+  test('undo of the first caption on an agent is not offered', () {
+    final session = Session(strategyRows(elements: [jett]));
+    final captioned = session.apply(
+      moveAgent('caption', jett, {'caption': 'entry'}, merged: ['caption']),
+    );
+    expect(captioned.undo, isA<UndoUnavailable>());
+  });
+
+  test('undo of a changed caption puts the old caption back', () {
+    final captioned = element('jett', fields: {'caption': 'entry'});
+    final session = Session(strategyRows(elements: [captioned]));
+    final edited = session.apply(
+      moveAgent('caption', captioned, {'caption': 'lurk'}, merged: ['caption']),
+    );
+    session.apply(undoOp(edited));
+    expect(session.dataOf('jett')['caption'], 'entry');
+  });
 }

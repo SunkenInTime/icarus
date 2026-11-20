@@ -11,7 +11,10 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 - **Rows**, in the server's shape with public ids: `StrategyRow`,
   `FolderRow`, `PageRow`, `PageSettingsRow`, `ElementRow` and
   `LineupGroupRow`. A row's state is its type: a page is a `LivePage` or a
-  `TrashedPage`; an element is a `LiveElement`, a `DeletedElement` or an
+  `TrashedPage`, and a trashed page is either a `PendingTrashedPage`, deleted
+  by an op the server has not confirmed, or a `ConfirmedTrashedPage` with the
+  time and who deleted it (`DeletedByYou`, `DeletedByName`, or
+  `DeleterUnknown` when the server has no name for them); an element is a `LiveElement`, a `DeletedElement` or an
   `UnreadableElement`; a lineup group is a `LiveLineupGroup` or a
   `DeletedLineupGroup`.
 - **Payloads**: an element or lineup group payload stays canonical JSON
@@ -21,7 +24,8 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   exactly as the app sends them today (`toJson`).
 - **`applyOp`**: given a strategy's rows and an op, the rows the server would
   hold after accepting it, the op that undoes it, and which rows and fields
-  changed.
+  changed. It is a pure function of the two: the same rows and op always give
+  the same result, ids included.
 
 ## Rules it keeps
 
@@ -45,8 +49,12 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   tombstone, and a deleted page keeps its content and its place; each
   accepted write raises that row's revision by one.
 - **Applying an op twice gives the rows that applying it once gave.** The
-  second time it is `OpUnchanged`. This is what lets the store save an edit
-  as its op before anything else and apply it again after a crash.
+  second time it is `OpUnchanged`. The store saves an op together with its
+  `OpApplied.writes` and, after a crash, writes those again; an op that is
+  also applied again changes nothing.
+- **Ids come from the op.** The undo op's id and the ids of rows a page copy
+  creates are derived from the op's id (and, for a copy, the source row's
+  id), so recomputing the base with its pending ops never renames anything.
 - **An undo names only what the op changed.** Undoing an edit to an agent's
   position writes the position back and leaves a teammate's change to its
   side alone.
@@ -55,9 +63,12 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 
 - An op aimed at an `UnreadableElement` is refused here. The server would
   accept it, since it reads every kind.
-- A page added as a copy gets ids for its copied rows from `newId`. The
-  server picks its own random ids, so the copies match in content but not in
-  id.
+- `copyContentFromPagePublicId` is read because shipped builds queued ops
+  that carry it, but the store never writes it. A copy made on this device is
+  a `page.add` followed by adds whose ids were chosen once, when the user
+  acted. For an op that does carry the field, the copied rows get ids derived
+  from the op, while the server picks random ones, so the copies match in
+  content but not in id.
 - This package sees one strategy. Ids that collide with a row in another
   strategy (`element_strategy_mismatch`, a page id used elsewhere) cannot be
   seen, and `strategy.patch` does not check map names.
@@ -71,9 +82,10 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 - Pages that share a place are ordered by `publicId` with Dart's string
   order. The server uses `localeCompare`, which can order punctuation
   differently.
-- Undo of an edit that first set a later field (`caption`, `wallPath`) does
-  not remove it: the server keeps a later field a write leaves out, and
-  clearing one means writing its empty value, which only the app knows.
+- An edit that first sets a later field (`caption`, `wallPath`, `mapDoor`,
+  `isZone`) has `UndoUnavailable`. The server keeps a later field that a write
+  leaves out, so the undo would have to write the field's empty value, and
+  this package does not know those yet.
 - Each op is applied alone. The server also lets several page ops queued from
   the same strategy revision land in one batch; that belongs to whoever sends
   batches.

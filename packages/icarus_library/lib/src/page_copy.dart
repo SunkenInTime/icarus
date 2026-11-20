@@ -1,3 +1,4 @@
+import 'derived_id.dart';
 import 'payloads.dart';
 import 'rows.dart';
 
@@ -17,18 +18,17 @@ String pageCopyRoot(String id) {
       : id;
 }
 
-String pageCopyId(String id, String Function() newId) {
+String pageCopyId(String id, String fresh) {
   final root = pageCopyRoot(id);
-  final fresh = newId();
   return Uri.encodeComponent(root).length > _maxKeptRootLength
       ? fresh
       : '$root$_copyMark$fresh';
 }
 
 final class PageCopy {
-  PageCopy(this._newId);
+  PageCopy(this._opId);
 
-  final String Function() _newId;
+  final String _opId;
   final _lineupIds = <String, String>{};
 
   List<Row> content(
@@ -57,7 +57,10 @@ final class PageCopy {
           'a deleted row is not copied',
         );
       case LiveElement(:final payload, :final sortIndex):
-        final publicId = pageCopyId(source.publicId, _newId);
+        final publicId = pageCopyId(
+          source.publicId,
+          derivedId('$_opId/copy/element/${source.publicId}'),
+        );
         return LiveElement(
           publicId: publicId,
           pagePublicId: pagePublicId,
@@ -70,7 +73,10 @@ final class PageCopy {
           revision: 1,
         );
       case UnreadableElement(:final json):
-        final publicId = pageCopyId(source.publicId, _newId);
+        final publicId = pageCopyId(
+          source.publicId,
+          derivedId('$_opId/copy/element/${source.publicId}'),
+        );
         return UnreadableElement(
           publicId: publicId,
           pagePublicId: pagePublicId,
@@ -112,7 +118,10 @@ final class PageCopy {
 
   String _lineupId(Object? id) {
     final key = id is String ? id : '';
-    return _lineupIds.putIfAbsent(key, () => pageCopyId(key, _newId));
+    return _lineupIds.putIfAbsent(
+      key,
+      () => pageCopyId(key, derivedId('$_opId/copy/lineup/$key')),
+    );
   }
 
   LiveLineupGroup _lineupGroup(LiveLineupGroup source, String pagePublicId) {

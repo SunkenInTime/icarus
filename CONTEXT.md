@@ -114,8 +114,8 @@ _Avoid_: entity, node, widget (for the stored thing)
 
 **Row**:
 One stored record of the library: a strategy, a folder, a page, a page's
-settings, an element or a lineup group. Every row has an id and a revision
-that goes up with each change.
+settings, an element or a lineup group. Every row has an id. Every row except
+a folder has a revision that goes up with each change.
 _Avoid_: document, record, entry
 
 **Store**:

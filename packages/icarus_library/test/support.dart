@@ -3,12 +3,6 @@ import 'package:test/test.dart';
 
 const strategyId = 'strategy-1';
 
-final class Ids {
-  int _next = 0;
-
-  String call() => 'new-${_next++}';
-}
-
 PageRow page(
   String id, {
   required int sortIndex,
@@ -17,7 +11,7 @@ PageRow page(
   bool deleted = false,
   int revision = 1,
 }) => deleted
-    ? TrashedPage(
+    ? PendingTrashedPage(
         publicId: id,
         strategyPublicId: strategyId,
         name: name ?? 'Page ${sortIndex + 1}',
@@ -124,15 +118,14 @@ final class Session {
   Session(this.rows);
 
   StrategyRowSet rows;
-  final Ids ids = Ids();
 
   OpApplied apply(StrategyOp op) {
-    final result = applied(applyOp(rows, op, newId: ids.call));
+    final result = applied(applyOp(rows, op));
     rows = rows.withRows(result.rows);
     return result;
   }
 
-  ApplyResult attempt(StrategyOp op) => applyOp(rows, op, newId: ids.call);
+  ApplyResult attempt(StrategyOp op) => applyOp(rows, op);
 
   Map<String, Object?> dataOf(String elementId) =>
       switch (rows.element(elementId)) {

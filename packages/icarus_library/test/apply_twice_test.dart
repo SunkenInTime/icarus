@@ -197,11 +197,8 @@ void main() {
 
   for (final MapEntry(key: name, value: op) in ops.entries) {
     test('$name found again at startup leaves the rows as one apply did', () {
-      final ids = Ids();
-      final once = rows.withRows(
-        applied(applyOp(rows, op, newId: ids.call)).rows,
-      );
-      final again = applyOp(once, op, newId: ids.call);
+      final once = rows.withRows(applied(applyOp(rows, op)).rows);
+      final again = applyOp(once, op);
       expect(describe(again), 'unchanged');
       expect(once, isNot(rows));
     });

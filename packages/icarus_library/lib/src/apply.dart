@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:collection/collection.dart';
 
+import 'derived_id.dart';
 import 'field_merge.dart';
 import 'json.dart';
 import 'ops.dart';
@@ -11,15 +12,11 @@ import 'payloads.dart';
 import 'rows.dart';
 import 'strategy_rows.dart';
 
-ApplyResult applyOp(
-  StrategyRows rows,
-  StrategyOp op, {
-  required String Function() newId,
-}) {
+ApplyResult applyOp(StrategyRows rows, StrategyOp op) {
   if (exceedsSizePolicy(op.toJson())) {
     return _failed(FailureCode.invalidPayload);
   }
-  final apply = _Apply(rows, newId);
+  final apply = _Apply(rows, undoOpId(op.opId), op.opId);
   return switch (op) {
     StrategyPatchOp() => apply.strategyPatch(op),
     PageAddOp() => apply.pageAdd(op),
@@ -67,10 +64,11 @@ final class _Refused<T> extends _Target<T> {
 }
 
 final class _Apply {
-  _Apply(this.rows, this.newId);
+  _Apply(this.rows, this.undoId, this.opId);
 
   final StrategyRows rows;
-  final String Function() newId;
+  final String undoId;
+  final String opId;
 
   StrategyRow get strategy => rows.strategy;
 
@@ -124,7 +122,7 @@ final class _Apply {
       writes: [write],
       undo: UndoWithOp(
         StrategyPatchOp(
-          opId: newId(),
+          opId: undoId,
           expectedStrategyRevision: after.revision,
           name: fields.contains(RowField.name) ? current.name : null,
           mapData: fields.contains(RowField.mapData) ? current.mapData : null,
@@ -193,7 +191,7 @@ final class _Apply {
           ),
         ),
         if (source is LivePage)
-          for (final row in PageCopy(newId).content(
+          for (final row in PageCopy(opId).content(
             rows.elementsOn(source.publicId),
             rows.lineupGroupsOn(source.publicId),
             page.publicId,
@@ -203,7 +201,7 @@ final class _Apply {
       ],
       undo: UndoWithOp(
         PageDeleteOp(
-          opId: newId(),
+          opId: undoId,
           pagePublicId: page.publicId,
           expectedStrategyRevision: strategy.revision + 1,
         ),
@@ -270,7 +268,7 @@ final class _Apply {
       ],
       undo: UndoWithOp(
         PageReorderOp(
-          opId: newId(),
+          opId: undoId,
           pagePublicId: existing.publicId,
           sortIndex: currentIndex,
           expectedStrategyRevision: strategy.revision + 1,
@@ -307,7 +305,7 @@ final class _Apply {
       writes: [write],
       undo: UndoWithOp(
         PagePatchOp(
-          opId: newId(),
+          opId: undoId,
           pagePublicId: existing.publicId,
           expectedPageRevision: after.revision,
           name: fields.contains(RowField.name) ? existing.name : null,
@@ -341,7 +339,7 @@ final class _Apply {
       undo: switch (existing.settings) {
         final settings? => UndoWithOp(
           PageSettingsPatchOp(
-            opId: newId(),
+            opId: undoId,
             pagePublicId: op.pagePublicId,
             settings: settings,
             expectedPageSettingsRevision: after.revision,
@@ -418,7 +416,7 @@ final class _Apply {
 
   Undo _undoAdd(ElementRow added, int revision) => UndoWithOp(
     ElementDeleteOp(
-      opId: newId(),
+      opId: undoId,
       elementPublicId: added.publicId,
       pagePublicId: added.pagePublicId,
       expectedElementRevision: revision,
@@ -459,7 +457,7 @@ final class _Apply {
       writes: [_changed(live, after)],
       undo: UndoWithOp(
         ElementAddOp(
-          opId: newId(),
+          opId: undoId,
           elementPublicId: live.publicId,
           pagePublicId: live.pagePublicId,
           payload: live.payload,
@@ -509,7 +507,7 @@ final class _Apply {
       writes: [_changed(existing, after)],
       undo: UndoWithOp(
         ElementReorderOp(
-          opId: newId(),
+          opId: undoId,
           elementPublicId: existing.publicId,
           pagePublicId: existing.pagePublicId,
           sortIndex: existing.sortIndex,
@@ -595,13 +593,17 @@ final class _Apply {
         return refused;
       }
     }
-    return OpApplied(
-      writes: [write],
-      undo: UndoWithOp(_undoElementPatch(existing, write)),
-    );
+    return OpApplied(writes: [write], undo: _undoElementPatch(existing, write));
   }
 
-  ElementPatchOp _undoElementPatch(LiveElement before, RowChanged write) {
+  Undo _undoElementPatch(LiveElement before, RowChanged write) {
+    if (write.dataFields.any(
+      (field) =>
+          _isLaterField(before.payload.kind, field) &&
+          !before.payload.data.containsKey(field),
+    )) {
+      return const UndoUnavailable();
+    }
     final fields = write.fields;
     final movedPlace = fields.contains(RowField.sortIndex);
     final payloadChanged =
@@ -612,14 +614,18 @@ final class _Apply {
       if (payloadChanged) ...write.dataFields.toList()..sort(),
       if (movedPlace) placeField,
     ];
-    return ElementPatchOp(
-      opId: newId(),
-      elementPublicId: before.publicId,
-      expectedElementRevision: before.revision + 1,
-      pagePublicId: fields.contains(RowField.page) ? before.pagePublicId : null,
-      payload: payloadChanged ? before.payload : null,
-      sortIndex: movedPlace ? before.sortIndex : null,
-      merge: mergeFields.isEmpty ? null : FieldMerge(fields: mergeFields),
+    return UndoWithOp(
+      ElementPatchOp(
+        opId: undoId,
+        elementPublicId: before.publicId,
+        expectedElementRevision: before.revision + 1,
+        pagePublicId: fields.contains(RowField.page)
+            ? before.pagePublicId
+            : null,
+        payload: payloadChanged ? before.payload : null,
+        sortIndex: movedPlace ? before.sortIndex : null,
+        merge: mergeFields.isEmpty ? null : FieldMerge(fields: mergeFields),
+      ),
     );
   }
 
@@ -681,7 +687,7 @@ final class _Apply {
 
   Undo _undoGroupAdd(LiveLineupGroup added) => UndoWithOp(
     LineupGroupDeleteOp(
-      opId: newId(),
+      opId: undoId,
       lineupPublicId: added.publicId,
       pagePublicId: added.pagePublicId,
       expectedLineupRevision: added.revision,
@@ -712,7 +718,7 @@ final class _Apply {
       writes: [_changed(existing, after)],
       undo: UndoWithOp(
         LineupGroupAddOp(
-          opId: newId(),
+          opId: undoId,
           lineupPublicId: existing.publicId,
           pagePublicId: existing.pagePublicId,
           payload: existing.payload,
@@ -758,7 +764,7 @@ final class _Apply {
       writes: [_changed(existing, after)],
       undo: UndoWithOp(
         LineupGroupReorderOp(
-          opId: newId(),
+          opId: undoId,
           lineupPublicId: existing.publicId,
           pagePublicId: existing.pagePublicId,
           sortIndex: existing.sortIndex,
@@ -863,7 +869,7 @@ final class _Apply {
       if (movedPlace) placeField,
     ];
     return LineupGroupPatchOp(
-      opId: newId(),
+      opId: undoId,
       lineupPublicId: before.publicId,
       expectedLineupRevision: before.revision + 1,
       payload: payloadChanged ? before.payload : null,
@@ -960,6 +966,10 @@ const _laterElementFields = <(String, Set<ElementKind>)>[
   ('mapDoor', {ElementKind.utility}),
   ('isZone', {ElementKind.utility}),
 ];
+
+bool _isLaterField(ElementKind kind, String field) => _laterElementFields.any(
+  (entry) => entry.$1 == field && entry.$2.contains(kind),
+);
 
 ElementPayload _keptStoredFields(ElementPayload stored, ElementPayload next) {
   final data = {...next.data};

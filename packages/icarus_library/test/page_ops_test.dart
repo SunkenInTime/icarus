@@ -279,4 +279,79 @@ void main() {
       expect(session.rows.page('z')!.revision, 2);
     },
   );
+
+  test(
+    'the same copy op gives the same copied rows every time it is applied',
+    () {
+      final rows = strategyRows(
+        pages: [page('page-a', sortIndex: 0)],
+        elements: [element('jett', pageId: 'page-a')],
+      );
+      const copy = PageAddOp(
+        opId: 'copy-op',
+        pagePublicId: 'page-copy',
+        sortIndex: 1,
+        expectedStrategyRevision: 1,
+        copyContentFromPagePublicId: 'page-a',
+      );
+      final first = applied(applyOp(rows, copy));
+      final second = applied(applyOp(rows, copy));
+      expect(second.rows.toList(), first.rows.toList());
+      expect(second.undo, first.undo);
+      final other = applied(
+        applyOp(
+          rows,
+          const PageAddOp(
+            opId: 'another-copy-op',
+            pagePublicId: 'page-copy',
+            sortIndex: 1,
+            expectedStrategyRevision: 1,
+            copyContentFromPagePublicId: 'page-a',
+          ),
+        ),
+      );
+      final ids = {for (final row in first.rows) row.key};
+      final otherIds = {for (final row in other.rows) row.key};
+      expect(ids.difference(otherIds).whereType<ElementKey>(), hasLength(1));
+    },
+  );
+
+  test('a page deleted here waits in the trash without a time', () {
+    final session = Session(strategyRows());
+    session.apply(
+      const PageDeleteOp(
+        opId: 'delete',
+        pagePublicId: 'page-b',
+        expectedStrategyRevision: 1,
+      ),
+    );
+    expect(session.rows.page('page-b'), isA<PendingTrashedPage>());
+  });
+
+  test('a page the server trashed says when and who', () {
+    Map<String, Object?> trashed(Object? deletedBy) => {
+      'publicId': 'page-b',
+      'strategyPublicId': strategyId,
+      'name': 'Page 2',
+      'sortIndex': 1,
+      'isAttack': true,
+      'revision': 3,
+      'deleted': true,
+      'deletedAt': 1700000000000,
+      'deletedBy': deletedBy,
+    };
+    for (final (json, deleter) in [
+      (trashed('you'), const DeletedByYou()),
+      (trashed({'name': 'Mia'}), const DeletedByName('Mia')),
+      (trashed('unknown'), const DeleterUnknown()),
+    ]) {
+      final row = readValue(PageRow.decode(json));
+      expect(row, isA<ConfirmedTrashedPage>());
+      final confirmed = row as ConfirmedTrashedPage;
+      expect(confirmed.deletedBy, deleter);
+      expect(confirmed.deletedAt.millisecondsSinceEpoch, 1700000000000);
+      expect(row.toJson(), json);
+    }
+    expect(PageRow.decode(trashed(null)), isA<CouldNotRead<PageRow>>());
+  });
 }

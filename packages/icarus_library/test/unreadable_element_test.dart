@@ -219,7 +219,6 @@ void main() {
               pagePublicId: 'page-a',
               expectedElementRevision: 1,
             ),
-            newId: Ids().call,
           ),
         ),
         const UnreadableTarget('jett'),

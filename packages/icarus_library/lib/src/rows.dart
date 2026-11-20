@@ -211,25 +211,47 @@ sealed class PageRow extends Row {
         final isAttack = fields.boolean('isAttack');
         final revision = fields.whole('revision');
         final deleted = fields.boolean('deleted');
-        return () => deleted
-            ? TrashedPage(
-                publicId: publicId,
-                strategyPublicId: strategyPublicId,
-                name: name,
-                isAutoNamed: isAutoNamed,
-                sortIndex: sortIndex,
-                isAttack: isAttack,
-                revision: revision,
-              )
-            : LivePage(
-                publicId: publicId,
-                strategyPublicId: strategyPublicId,
-                name: name,
-                isAutoNamed: isAutoNamed,
-                sortIndex: sortIndex,
-                isAttack: isAttack,
-                revision: revision,
-              );
+        final deletedAt = fields.optionalWhole('deletedAt');
+        final deletedBy = deletedAt == null
+            ? null
+            : fields.decoded('deletedBy', PageDeleter.decode);
+        if (!deleted && deletedAt != null) {
+          fields.reject('a live page has no deletion time');
+        }
+        return () => switch ((deleted, deletedAt)) {
+          (false, _) => LivePage(
+            publicId: publicId,
+            strategyPublicId: strategyPublicId,
+            name: name,
+            isAutoNamed: isAutoNamed,
+            sortIndex: sortIndex,
+            isAttack: isAttack,
+            revision: revision,
+          ),
+          (true, null) => PendingTrashedPage(
+            publicId: publicId,
+            strategyPublicId: strategyPublicId,
+            name: name,
+            isAutoNamed: isAutoNamed,
+            sortIndex: sortIndex,
+            isAttack: isAttack,
+            revision: revision,
+          ),
+          (true, final int deletedAt) => ConfirmedTrashedPage(
+            publicId: publicId,
+            strategyPublicId: strategyPublicId,
+            name: name,
+            isAutoNamed: isAutoNamed,
+            sortIndex: sortIndex,
+            isAttack: isAttack,
+            revision: revision,
+            deletedAt: DateTime.fromMillisecondsSinceEpoch(
+              deletedAt,
+              isUtc: true,
+            ),
+            deletedBy: deletedBy!,
+          ),
+        };
       });
 
   final String publicId;
@@ -253,6 +275,10 @@ sealed class PageRow extends Row {
     'isAttack': isAttack,
     'revision': revision,
     'deleted': this is TrashedPage,
+    if (this case ConfirmedTrashedPage(:final deletedAt, :final deletedBy)) ...{
+      'deletedAt': deletedAt.millisecondsSinceEpoch,
+      'deletedBy': deletedBy.toJson(),
+    },
   };
 }
 
@@ -277,7 +303,7 @@ final class LivePage extends PageRow {
     revision: revision + 1,
   );
 
-  TrashedPage trashed() => TrashedPage(
+  PendingTrashedPage trashed() => PendingTrashedPage(
     publicId: publicId,
     strategyPublicId: strategyPublicId,
     name: name,
@@ -288,8 +314,20 @@ final class LivePage extends PageRow {
   );
 }
 
-final class TrashedPage extends PageRow {
-  const TrashedPage({
+sealed class TrashedPage extends PageRow {
+  const TrashedPage._({
+    required super.publicId,
+    required super.strategyPublicId,
+    required super.name,
+    required super.sortIndex,
+    required super.isAttack,
+    required super.revision,
+    required super.isAutoNamed,
+  }) : super._();
+}
+
+final class PendingTrashedPage extends TrashedPage {
+  const PendingTrashedPage({
     required super.publicId,
     required super.strategyPublicId,
     required super.name,
@@ -298,6 +336,66 @@ final class TrashedPage extends PageRow {
     required super.revision,
     super.isAutoNamed,
   }) : super._();
+}
+
+final class ConfirmedTrashedPage extends TrashedPage {
+  const ConfirmedTrashedPage({
+    required super.publicId,
+    required super.strategyPublicId,
+    required super.name,
+    required super.sortIndex,
+    required super.isAttack,
+    required super.revision,
+    required this.deletedAt,
+    required this.deletedBy,
+    super.isAutoNamed,
+  }) : super._();
+
+  final DateTime deletedAt;
+  final PageDeleter deletedBy;
+}
+
+sealed class PageDeleter {
+  const PageDeleter();
+
+  static Decoded<PageDeleter> decode(Object? json) => switch (json) {
+    'you' => const Read(DeletedByYou()),
+    'unknown' => const Read(DeleterUnknown()),
+    {'name': final String name} => Read(DeletedByName(name)),
+    _ => CouldNotRead(json, 'Expected who deleted the page'),
+  };
+
+  Object toJson();
+
+  @override
+  bool operator ==(Object other) =>
+      other is PageDeleter && sameJson(other.toJson(), toJson());
+
+  @override
+  int get hashCode => canonicalJson(toJson()).hashCode;
+}
+
+final class DeletedByYou extends PageDeleter {
+  const DeletedByYou();
+
+  @override
+  Object toJson() => 'you';
+}
+
+final class DeletedByName extends PageDeleter {
+  const DeletedByName(this.name);
+
+  final String name;
+
+  @override
+  Object toJson() => {'name': name};
+}
+
+final class DeleterUnknown extends PageDeleter {
+  const DeleterUnknown();
+
+  @override
+  Object toJson() => 'unknown';
 }
 
 final class PageSettingsRow extends Row {

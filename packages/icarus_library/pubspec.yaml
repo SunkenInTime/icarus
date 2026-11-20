@@ -7,6 +7,7 @@ environment:
 
 dependencies:
   collection: ^1.18.0
+  crypto: ^3.0.3
 
 dev_dependencies:
   lints: ^6.0.0
