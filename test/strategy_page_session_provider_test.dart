@@ -5016,35 +5016,47 @@ void main() {
       expect(sent.op.expectedRevision, 1);
     });
 
+    void teammateMakesHeldUnreadable(
+      _FakeRemoteEditorNotifier remote,
+      RemotePage page,
+    ) =>
+        remote.setSnapshot(_editorSnapshot(
+          pages: [page],
+          activePage: _pageSnapshot(
+            page,
+            contentRevision: 2,
+            elements: [
+              RemoteElement(
+                publicId: 'held',
+                strategyPublicId: 'cloud-strategy',
+                pagePublicId: page.publicId,
+                elementType: 'text',
+                payload: cloudElementPayload(kind: 'text', data: {
+                  'id': 'held',
+                  'elementType': 'text',
+                  'size': 'from a newer build',
+                }),
+                sortIndex: 0,
+                revision: 2,
+                deleted: false,
+              ),
+              _textElement(page.publicId, 'other', 'other v1',
+                  sortIndex: 1, worldSized: true),
+            ],
+          ),
+        ));
+
+    StrategyOp sentFor(ProviderContainer container, String id) => container
+        .read(strategyOpQueueProvider)
+        .pending
+        .singleWhere((item) => item.op.entityPublicId == id)
+        .op;
+
     test(
         'an edit committed to it is sent when a teammate made it unreadable '
         'here', () async {
       final (container, remote, page) = await open();
-      remote.setSnapshot(_editorSnapshot(
-        pages: [page],
-        activePage: _pageSnapshot(
-          page,
-          contentRevision: 2,
-          elements: [
-            RemoteElement(
-              publicId: 'held',
-              strategyPublicId: 'cloud-strategy',
-              pagePublicId: page.publicId,
-              elementType: 'text',
-              payload: cloudElementPayload(kind: 'text', data: {
-                'id': 'held',
-                'elementType': 'text',
-                'size': 'from a newer build',
-              }),
-              sortIndex: 0,
-              revision: 2,
-              deleted: false,
-            ),
-            _textElement(page.publicId, 'other', 'other v1',
-                sortIndex: 1, worldSized: true),
-          ],
-        ),
-      ));
+      teammateMakesHeldUnreadable(remote, page);
       await _settle();
       container
           .read(textProvider.notifier)
@@ -5052,12 +5064,60 @@ void main() {
       container.read(editorPointersProvider.notifier).release(1);
       await _settle();
 
-      final sent = container
-          .read(strategyOpQueueProvider)
-          .pending
-          .singleWhere((item) => item.op.entityPublicId == 'held');
-      expect(sent.op, isA<ElementPatchOp>());
-      expect(sent.op.expectedRevision, 1);
+      final sent = sentFor(container, 'held');
+      expect(sent, isA<ElementPatchOp>());
+      expect(sent.expectedRevision, 1);
+      expect(
+        cloudPayloadData(sent.payload)['position'],
+        {'dx': 300.0, 'dy': 300.0},
+      );
+    });
+
+    test(
+        'let go untouched after a teammate made it unreadable here, it is '
+        'kept unshown and no element op is sent', () async {
+      final (container, remote, page) = await open();
+      teammateMakesHeldUnreadable(remote, page);
+      await _settle();
+      expect(textOf(container, 'held'), 'held v1');
+
+      container.read(editorPointersProvider.notifier).release(1);
+      await _settle();
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .flushCurrentPage();
+
+      expect(container.read(textProvider).map((text) => text.id), ['other']);
+      expect(
+        container
+            .read(unshownCloudContentProvider)
+            .elements
+            .map((element) => element.publicId),
+        ['held'],
+      );
+      expect(
+        [
+          for (final item in container.read(strategyOpQueueProvider).pending)
+            if (item.op.entityType == StrategyOpEntityType.element)
+              '${item.op.runtimeType} ${item.op.entityPublicId}',
+        ],
+        isEmpty,
+      );
+    });
+
+    test(
+        'deleting it is sent when a teammate made it unreadable here, '
+        'checked against the version the user saw', () async {
+      final (container, remote, page) = await open();
+      teammateMakesHeldUnreadable(remote, page);
+      await _settle();
+      container.read(textProvider.notifier).removeText('held');
+      container.read(editorPointersProvider.notifier).release(1);
+      await _settle();
+
+      final sent = sentFor(container, 'held');
+      expect(sent, isA<ElementDeleteOp>());
+      expect(sent.expectedRevision, 1);
     });
 
     test('a teammate deleting it leaves it under the pointer until release',

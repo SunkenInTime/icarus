@@ -94,7 +94,13 @@ Set<EntitySyncKey> mergeRemoteStrategyEditorPageData(
   ref.read(textProvider.notifier).mergeRemote(data.texts, keep);
   ref.read(placedImageProvider.notifier).mergeRemote(data.images, keep);
   ref.read(utilityProvider.notifier).mergeRemote(data.utilities, keep);
-  ref.read(unshownCloudContentProvider.notifier).state = data.unshown;
+  ref.read(unshownCloudContentProvider.notifier).state = UnshownCloudContent(
+    elements: [
+      for (final element in data.unshown.elements)
+        if (!keep(element.publicId)) element,
+    ],
+    settings: data.unshown.settings,
+  );
 
   final liveSync = ref.read(activePageLiveSyncProvider.notifier);
   final (lineUpGraph, heldGroups) = mergeHeldLineups(

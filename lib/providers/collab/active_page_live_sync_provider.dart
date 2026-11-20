@@ -1694,16 +1694,14 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
 
     for (final element in unshown.elements) {
       final key = EntitySyncKey.element(pageId, element.publicId);
-      entities.putIfAbsent(
-          key,
-          () => _NormalizedEntity(
-                key: key,
-                overlayEntityType: ActivePageOverlayEntityType.element,
-                payload: element.payload,
-                sortIndex: element.sortIndex,
-                revision: 0,
-                deleted: false,
-              ));
+      entities[key] = _NormalizedEntity(
+        key: key,
+        overlayEntityType: ActivePageOverlayEntityType.element,
+        payload: element.payload,
+        sortIndex: element.sortIndex,
+        revision: 0,
+        deleted: false,
+      );
     }
 
     // One row per lineup group, holding its lineups and their spots as the
