@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:isolate';
 
+import '../engines/commit.dart';
 import '../store/engine.dart';
 import 'library_file.dart';
 import 'rows_database.dart';
@@ -32,18 +33,10 @@ final class _Entries extends _Request {
   final String prefix;
 }
 
-final class _Write extends _Request {
-  const _Write(super.id, this.area, this.values);
+final class _Commit extends _Request {
+  const _Commit(super.id, this.changes);
 
-  final String area;
-  final Map<String, String> values;
-}
-
-final class _Delete extends _Request {
-  const _Delete(super.id, this.area, this.keys);
-
-  final String area;
-  final List<String> keys;
+  final List<Change> changes;
 }
 
 final class _Release extends _Request {
@@ -79,8 +72,7 @@ void _serve((String, SendPort) start) {
           _Read(:final area, :final key) => rows.read(area, key),
           _Keys(:final area, :final prefix) => rows.keys(area, prefix),
           _Entries(:final area, :final prefix) => rows.entries(area, prefix),
-          _Write(:final area, :final values) => rows.write(area, values),
-          _Delete(:final area, :final keys) => rows.delete(area, keys),
+          _Commit(:final changes) => rows.commit(changes),
           _Release() => _released(rows, requests),
         };
         replies.send(_Reply(request.id, result));
@@ -99,9 +91,11 @@ final class SqliteEngine implements StorageEngine {
 
   final String path;
   final _granted = <SqliteLease>[];
+  var _closed = false;
 
   @override
   Future<Leasing> lease() async {
+    if (_closed) return const LeaseFailed(StoreClosed());
     final replies = ReceivePort();
     final first = Completer<Leasing>();
     SqliteLease? granted;
@@ -115,18 +109,20 @@ final class SqliteEngine implements StorageEngine {
           replies.close();
           first.complete(refused);
         case _Reply(:final id, :final result):
-          granted!._pending.remove(id)!.complete(result);
+          granted!._pending.remove(id)!.$1.complete(result);
         case [final error, final stack]:
-          granted?._stop('the library worker failed: $error\n$stack');
-          if (!first.isCompleted) first.completeError(StateError('$error'));
+          final failure = DeviceFailure(
+            'the library worker failed: $error\n$stack',
+          );
+          granted?._stop(failure);
+          if (!first.isCompleted) first.complete(LeaseFailed(failure));
         case null:
           replies.close();
+          const failure = DeviceFailure('the library worker stopped');
           if (granted case final lease? when lease._worker is _Running) {
-            lease._stop('the library worker stopped');
+            lease._stop(failure);
           }
-          if (!first.isCompleted) {
-            first.completeError(StateError('the library worker stopped'));
-          }
+          if (!first.isCompleted) first.complete(const LeaseFailed(failure));
       }
     });
     await Isolate.spawn(
@@ -140,6 +136,7 @@ final class SqliteEngine implements StorageEngine {
   }
 
   Future<void> close() async {
+    _closed = true;
     for (final lease in _granted) {
       await lease.release();
     }
@@ -162,9 +159,9 @@ final class _Ended extends _Worker {
 }
 
 final class _Gone extends _Worker {
-  const _Gone(this.reason);
+  const _Gone(this.failure);
 
-  final String reason;
+  final StorageFailure failure;
 }
 
 final class SqliteLease implements StorageLease {
@@ -172,25 +169,31 @@ final class SqliteLease implements StorageLease {
 
   _Worker _worker;
   var _next = 0;
-  final _pending = <int, Completer<Object>>{};
+  final _pending =
+      <int, (Completer<Object>, Object Function(StorageFailure))>{};
 
-  void _stop(String reason) {
-    _worker = _Gone(reason);
-    for (final waiting in _pending.values) {
-      waiting.completeError(StateError(reason));
+  void _stop(StorageFailure failure) {
+    _worker = _Gone(failure);
+    for (final (waiting, gone) in _pending.values) {
+      waiting.complete(gone(failure));
     }
     _pending.clear();
   }
 
-  Future<R> _ask<R>(_Request Function(int id) request, R ended) async {
+  Future<R> _ask<R extends Object>(
+    _Request Function(int id) request, {
+    required R ended,
+    required R Function(StorageFailure failure) gone,
+  }) async {
     switch (_worker) {
       case _Ended():
         return ended;
-      case _Gone(:final reason):
-        throw StateError(reason);
+      case _Gone(:final failure):
+        return gone(failure);
       case _Running(:final requests):
         final id = _next++;
-        final reply = _pending[id] = Completer<Object>();
+        final reply = Completer<Object>();
+        _pending[id] = (reply, gone);
         requests.send(request(id));
         return await reply.future as R;
     }
@@ -207,30 +210,51 @@ final class SqliteLease implements StorageLease {
   @override
   int get maxKeyLength => rowsMaxKeyLength;
 
+  static StorageFailed<Never> _failed(StorageFailure failure) =>
+      StorageFailed(failure);
+
   @override
-  Future<KeyRead> read(String area, String key) =>
-      _ask((id) => _Read(id, area, key), const KeyNotRead(LeaseEnded()));
+  Future<KeyRead> read(String area, String key) => _ask(
+    (id) => _Read(id, area, key),
+    ended: const KeyNotRead(LeaseEnded()),
+    gone: KeyNotRead.new,
+  );
 
   @override
   Future<Stored<List<String>>> keys(String area, String prefix) =>
-      _ask((id) => _Keys(id, area, prefix), _ended);
+      _ask((id) => _Keys(id, area, prefix), ended: _ended, gone: _failed);
 
   @override
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
-      _ask((id) => _Entries(id, area, prefix), _ended);
+      _ask((id) => _Entries(id, area, prefix), ended: _ended, gone: _failed);
+
+  Future<Committing> commit(List<Change> changes) => _ask(
+    (id) => _Commit(id, changes),
+    ended: const CommitRefused(LeaseEnded()),
+    gone: CommitInDoubt.new,
+  );
 
   @override
-  Future<Stored<void>> write(String area, Map<String, String> values) =>
-      _ask((id) => _Write(id, area, values), _ended);
+  Future<Stored<void>> write(String area, Map<String, String> values) async =>
+      storedOf(
+        await commit([
+          for (final MapEntry(:key, :value) in values.entries)
+            ChangePut(area, key, value),
+        ]),
+      );
 
   @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) =>
-      _ask((id) => _Delete(id, area, keys.toList()), _ended);
+  Future<Stored<void>> delete(String area, Iterable<String> keys) async =>
+      storedOf(await commit([for (final key in keys) ChangeDelete(area, key)]));
 
   @override
   Future<Releasing> release() async {
     if (_worker is! _Running) return const Released();
-    final releasing = _ask<Stored<void>>(_Release.new, done);
+    final releasing = _ask<Stored<void>>(
+      _Release.new,
+      ended: done,
+      gone: _failed,
+    );
     _worker = const _Ended();
     return switch (await releasing) {
       Done() => const Released(),

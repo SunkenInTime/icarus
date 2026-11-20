@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/engines/commit.dart';
 import 'package:icarus_library/sqlite_storage.dart';
 import 'package:icarus_library/src/sqlite/library_file.dart';
 import 'package:icarus_library/src/sqlite/rows_database.dart';
@@ -62,15 +63,21 @@ final class _CallingIsolateLease implements StorageLease {
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
       _ended ? const StorageFailed(LeaseEnded()) : _rows.entries(area, prefix);
 
+  Future<Committing> commit(List<Change> changes) async =>
+      _ended ? const CommitRefused(LeaseEnded()) : _rows.commit(changes);
+
   @override
   Future<Stored<void>> write(String area, Map<String, String> values) async =>
-      _ended ? const StorageFailed(LeaseEnded()) : _rows.write(area, values);
+      storedOf(
+        await commit([
+          for (final MapEntry(:key, :value) in values.entries)
+            ChangePut(area, key, value),
+        ]),
+      );
 
   @override
   Future<Stored<void>> delete(String area, Iterable<String> keys) async =>
-      _ended
-      ? const StorageFailed(LeaseEnded())
-      : _rows.delete(area, keys.toList());
+      storedOf(await commit([for (final key in keys) ChangeDelete(area, key)]));
 
   @override
   Future<Releasing> release() async {

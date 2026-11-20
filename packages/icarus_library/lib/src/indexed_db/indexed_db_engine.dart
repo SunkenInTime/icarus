@@ -4,6 +4,7 @@ import 'dart:js_interop_unsafe';
 
 import 'package:web/web.dart';
 
+import '../engines/commit.dart';
 import '../store/engine.dart';
 
 const _rows = 'rows';
@@ -98,9 +99,11 @@ final class IndexedDbEngine implements StorageEngine {
 
   final String name;
   final _granted = <IndexedDbLease>[];
+  var _closed = false;
 
   @override
   Future<Leasing> lease() async {
+    if (_closed) return const LeaseFailed(StoreClosed());
     final navigator = window.navigator;
     if (!navigator.has('locks')) {
       return const LeaseFailed(
@@ -140,6 +143,7 @@ final class IndexedDbEngine implements StorageEngine {
   }
 
   Future<void> close() async {
+    _closed = true;
     for (final lease in _granted) {
       await lease.release();
     }
@@ -153,7 +157,7 @@ final class IndexedDbLease implements StorageLease {
   final IDBDatabase _db;
   final Completer<void> _release;
   final Future<JSAny?> _released;
-  final _writing = <Future<Stored<void>>>{};
+  final _writing = <Future<Committing>>{};
   var _ended = false;
 
   @override
@@ -184,6 +188,9 @@ final class IndexedDbLease implements StorageLease {
 
   @override
   Future<KeyRead> read(String area, String key) async {
+    if (readTooLong(area, key, indexedDbMaxKeyLength) case final failure?) {
+      return KeyNotRead(failure);
+    }
     switch (_transaction('readonly')) {
       case StorageFailed(:final failure):
         return KeyNotRead(failure);
@@ -261,50 +268,53 @@ final class IndexedDbLease implements StorageLease {
     }
   }
 
-  Future<Stored<void>> _change(
-    String what,
-    void Function(IDBObjectStore rows) changes,
-  ) async {
+  Future<Committing> commit(List<Change> changes) async {
+    if (nameTooLong(changes, indexedDbMaxKeyLength) case final failure?) {
+      return CommitRefused(failure);
+    }
     switch (_transaction('readwrite')) {
       case StorageFailed(:final failure):
-        return StorageFailed(failure);
+        return CommitRefused(failure);
       case Done(value: final transaction):
-        final finished = Completer<Stored<void>>();
+        final finished = Completer<Committing>();
         transaction
-          ..oncomplete = ((Event _) => finished.complete(done)).toJS
+          ..oncomplete = ((Event _) => finished.complete(
+            const CommitApplied(),
+          )).toJS
           ..onabort = ((Event _) => finished.complete(
-            StorageFailed(_failure(transaction.error, what)),
+            CommitRefused(_failure(transaction.error, 'committing')),
           )).toJS;
-        changes(transaction.objectStore(_rows));
-        final writing = finished.future;
-        _writing.add(writing);
-        final result = await writing;
-        _writing.remove(writing);
+        final rows = transaction.objectStore(_rows);
+        for (final change in changes) {
+          switch (change) {
+            case ChangePut(:final area, :final key, :final value):
+              rows.put(value.toJS, _key(area, key));
+            case ChangeDelete(:final area, :final key):
+              rows.delete(_key(area, key));
+            case ChangeClearArea(:final area):
+              rows.delete(_under(area, ''));
+          }
+        }
+        final committing = finished.future;
+        _writing.add(committing);
+        final result = await committing;
+        _writing.remove(committing);
         return result;
     }
   }
 
   @override
-  Future<Stored<void>> write(String area, Map<String, String> values) async {
-    for (final key in values.keys) {
-      if (key.length > indexedDbMaxKeyLength) {
-        return StorageFailed(KeyTooLong(area, key));
-      }
-    }
-    return _change('writing', (rows) {
-      for (final MapEntry(:key, :value) in values.entries) {
-        rows.put(value.toJS, _key(area, key));
-      }
-    });
-  }
+  Future<Stored<void>> write(String area, Map<String, String> values) async =>
+      storedOf(
+        await commit([
+          for (final MapEntry(:key, :value) in values.entries)
+            ChangePut(area, key, value),
+        ]),
+      );
 
   @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) =>
-      _change('deleting', (rows) {
-        for (final key in keys) {
-          rows.delete(_key(area, key));
-        }
-      });
+  Future<Stored<void>> delete(String area, Iterable<String> keys) async =>
+      storedOf(await commit([for (final key in keys) ChangeDelete(area, key)]));
 
   @override
   Future<Releasing> release() async {

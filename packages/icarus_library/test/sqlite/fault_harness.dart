@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:icarus_library/engine_contract.dart';
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/engines/commit.dart';
 import 'package:icarus_library/src/sqlite/library_file.dart';
 import 'package:icarus_library/src/sqlite/rows_database.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -91,15 +92,21 @@ final class InlineLease implements StorageLease {
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
       _ended ? const StorageFailed(LeaseEnded()) : rows.entries(area, prefix);
 
+  Future<Committing> commit(List<Change> changes) async =>
+      _ended ? const CommitRefused(LeaseEnded()) : rows.commit(changes);
+
   @override
   Future<Stored<void>> write(String area, Map<String, String> values) async =>
-      _ended ? const StorageFailed(LeaseEnded()) : rows.write(area, values);
+      storedOf(
+        await commit([
+          for (final MapEntry(:key, :value) in values.entries)
+            ChangePut(area, key, value),
+        ]),
+      );
 
   @override
   Future<Stored<void>> delete(String area, Iterable<String> keys) async =>
-      _ended
-      ? const StorageFailed(LeaseEnded())
-      : rows.delete(area, keys.toList());
+      storedOf(await commit([for (final key in keys) ChangeDelete(area, key)]));
 
   var _ended = false;
 
@@ -153,7 +160,11 @@ final class SqliteCrashHarness implements CrashHarness {
     final drive = _drive = FaultDrive();
     final rows = opened(drive.open());
     for (final MapEntry(key: area, value: values) in seed.entries) {
-      if (rows.write(area, values) case StorageFailed(:final failure)) {
+      if (rows.commit([
+            for (final MapEntry(:key, :value) in values.entries)
+              ChangePut(area, key, value),
+          ])
+          case CommitRefused(:final failure) || CommitInDoubt(:final failure)) {
         throw StateError('seed not written: $failure');
       }
     }

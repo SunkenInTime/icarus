@@ -1,5 +1,6 @@
 import 'package:sqlite3/sqlite3.dart';
 
+import '../engines/commit.dart';
 import '../store/engine.dart';
 
 const libraryApplicationId = 0x49434c42;
@@ -73,6 +74,7 @@ final class RowsDatabase {
     required PreparedStatement put,
     required PreparedStatement remove,
     required PreparedStatement supersede,
+    required PreparedStatement clearArea,
   }) : _get = get,
        _keysFrom = keysFrom,
        _keysBetween = keysBetween,
@@ -80,7 +82,8 @@ final class RowsDatabase {
        _entriesBetween = entriesBetween,
        _put = put,
        _remove = remove,
-       _supersede = supersede;
+       _supersede = supersede,
+       _clearArea = clearArea;
 
   static RowsOpening open(Database db, {required bool fresh}) {
     final prepared = <PreparedStatement>[];
@@ -146,6 +149,7 @@ final class RowsDatabase {
           ),
           remove: prepare('DELETE FROM rows WHERE area = ?1 AND key = ?2'),
           supersede: prepare('UPDATE generation SET value = value + 1'),
+          clearArea: prepare('DELETE FROM rows WHERE area = ?1'),
         ),
       );
     } on SqliteException catch (error) {
@@ -194,6 +198,7 @@ final class RowsDatabase {
   final PreparedStatement _put;
   final PreparedStatement _remove;
   final PreparedStatement _supersede;
+  final PreparedStatement _clearArea;
   _Connection _connection = const _Usable();
 
   Stored<T> _guarded<T>(Stored<T> Function() task) {
@@ -215,7 +220,13 @@ final class RowsDatabase {
 
   static const _notText = StorageFailed<Never>(_notTextFailure);
 
-  KeyRead read(String area, String key) => switch (_guarded(
+  KeyRead read(String area, String key) =>
+      switch (readTooLong(area, key, rowsMaxKeyLength)) {
+        final failure? => KeyNotRead(failure),
+        null => _read(area, key),
+      };
+
+  KeyRead _read(String area, String key) => switch (_guarded(
     () => Done(_get.select([area, key]).firstOrNull?.columnAt(0)),
   )) {
     StorageFailed(:final failure) => KeyNotRead(failure),
@@ -270,47 +281,45 @@ final class RowsDatabase {
     return null;
   }
 
-  Stored<void> write(String area, Map<String, String> values) {
-    for (final key in values.keys) {
-      if (key.length > rowsMaxKeyLength) {
-        return StorageFailed(KeyTooLong(area, key));
-      }
-    }
-    return _transaction(() {
-      for (final MapEntry(:key, :value) in values.entries) {
-        _put.execute([area, key, value]);
-      }
-    });
-  }
-
-  Stored<void> delete(String area, List<String> keys) => _transaction(() {
-    for (final key in keys) {
-      _remove.execute([area, key]);
-    }
-  });
-
-  Stored<void> _transaction(void Function() writes) {
+  Committing commit(List<Change> changes) {
     if (_connection case _Unusable(:final failure)) {
-      return StorageFailed(failure);
+      return CommitRefused(failure);
     }
+    if (nameTooLong(changes, rowsMaxKeyLength) case final failure?) {
+      return CommitRefused(failure);
+    }
+    var committing = false;
     try {
       _db.execute('BEGIN IMMEDIATE');
-      writes();
+      for (final change in changes) {
+        switch (change) {
+          case ChangePut(:final area, :final key, :final value):
+            _put.execute([area, key, value]);
+          case ChangeDelete(:final area, :final key):
+            _remove.execute([area, key]);
+          case ChangeClearArea(:final area):
+            _clearArea.execute([area]);
+        }
+      }
       if (_connection is _AfterFailedWrite) _supersede.execute();
+      committing = true;
       _db.execute('COMMIT');
       _connection = const _Usable();
-      return done;
+      return const CommitApplied();
     } on SqliteException catch (error) {
-      return _failedWrite(failureOf(error));
+      return _failedCommit(failureOf(error), committing: committing);
     } on FormatException catch (error) {
-      return _failedWrite(DeviceFailure(_undescribed(error)));
+      return _failedCommit(
+        DeviceFailure(_undescribed(error)),
+        committing: committing,
+      );
     }
   }
 
-  Stored<void> _failedWrite(StorageFailure failure) {
-    _connection = const _AfterFailedWrite();
+  Committing _failedCommit(StorageFailure failure, {required bool committing}) {
+    if (committing) _connection = const _AfterFailedWrite();
     if (!_db.autocommit) _rollBack(failure);
-    return StorageFailed(failure);
+    return committing ? CommitInDoubt(failure) : CommitRefused(failure);
   }
 
   void _rollBack(StorageFailure cause) {
@@ -340,6 +349,7 @@ final class RowsDatabase {
       _put,
       _remove,
       _supersede,
+      _clearArea,
     ]) {
       statement.close();
     }
