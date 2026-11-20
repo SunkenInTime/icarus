@@ -26,8 +26,10 @@
   {"waitSettled": 90},
   {"expectRow": "future-{run}"},
   {"expectRow": "broken-{run}"},
-  {"wait": 3},
+  {"waitText": "This page has 2 items this version of Icarus can't show. They're kept as they are.", "seconds": 30},
+  {"wait": 1},
   {"shot": "{out}/a1-owner-sent-rows.png"},
+  {"expectText": "This page has an item this version of Icarus can't show. It's kept as it is.", "count": 0},
   {"shareLink": "editor", "file": "{out}/edit-code.txt"},
   {"signal": "rows-up"},
 

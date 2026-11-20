@@ -15,6 +15,7 @@ import 'package:icarus/interactive_map.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/collab/unshown_cloud_content_provider.dart';
+import 'package:toastification/toastification.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
@@ -176,6 +177,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     with WindowListener {
   bool _isClosingWindow = false;
   late bool _expanded = widget.startExpanded;
+  ToastificationItem? _unshownNotice;
 
   /// Keeps the map's canvas mounted when a quick look opens out.
   final _communityCanvasKey = GlobalKey(debugLabel: 'community-canvas');
@@ -422,7 +424,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           .any((element) => !shownBefore.contains(element.publicId));
       final newSettings = next.settings != null && previous?.settings == null;
       if (!newElements && !newSettings) return;
-      Settings.showToast(
+      final replaced = _unshownNotice;
+      if (replaced != null) Settings.dismissToast(replaced);
+      _unshownNotice = Settings.showToast(
         message: next.elements.isNotEmpty
             ? context.l10n.strategyMsgPageHasUnshownItems(next.elements.length)
             : context.l10n.strategyMsgPageHasUnshownSettings,
