@@ -1127,9 +1127,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           projectedSettingsPayload = cloudObjectPayloadOrNull(
               _decodeObject(drawn.payload)['settings']);
         case ActivePageOverlayEntityType.element:
-          final elementType =
-              cloudPayloadData(drawn.payload)['elementType'] as String? ??
-                  (drawn.payload as Map?)?['kind'] as String?;
+          final elementType = _elementTypeOf(drawn.payload);
           if (drawn.deleted || elementType == null) {
             remoteElements.remove(key);
           } else {
@@ -1187,9 +1185,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           if (elementId == null || overlay.desiredPayload == null) {
             continue;
           }
-          final decoded = cloudPayloadData(overlay.desiredPayload);
-          final elementType = decoded['elementType'] as String? ??
-              (overlay.desiredPayload as Map?)?['kind'] as String?;
+          final elementType = _elementTypeOf(overlay.desiredPayload);
           if (elementType == null) {
             _debugLog(
               'projected.skip_overlay ${entry.key} reason=missing_element_type',
@@ -1362,10 +1358,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           }
           return true;
         case ActivePageOverlayEntityType.element:
-          final payload = cloudObjectPayload(drawn.payload);
-          final data = cloudPayloadData(payload);
-          final elementType =
-              data['elementType'] as String? ?? payload['kind'] as String?;
+          final data = cloudPayloadData(drawn.payload);
+          final elementType = _elementTypeOf(drawn.payload);
           return elementType != null &&
               readCloudElement(elementType, data) is DrawnCloudElement;
         case ActivePageOverlayEntityType.lineup:
@@ -1508,6 +1502,15 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         return null;
     }
   }
+
+  String? _elementTypeOf(Object? payload) => switch ((
+        cloudPayloadData(payload)['elementType'],
+        payload is Map ? payload['kind'] : null,
+      )) {
+        (final String type, _) => type,
+        (_, final String kind) => kind,
+        _ => null,
+      };
 
   Map<String, dynamic> _decodeObject(Object payload) {
     final decoded = payload is String ? jsonDecode(payload) : payload;
@@ -1691,14 +1694,16 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
 
     for (final element in unshown.elements) {
       final key = EntitySyncKey.element(pageId, element.publicId);
-      entities[key] = _NormalizedEntity(
-        key: key,
-        overlayEntityType: ActivePageOverlayEntityType.element,
-        payload: element.payload,
-        sortIndex: element.sortIndex,
-        revision: 0,
-        deleted: false,
-      );
+      entities.putIfAbsent(
+          key,
+          () => _NormalizedEntity(
+                key: key,
+                overlayEntityType: ActivePageOverlayEntityType.element,
+                payload: element.payload,
+                sortIndex: element.sortIndex,
+                revision: 0,
+                deleted: false,
+              ));
     }
 
     // One row per lineup group, holding its lineups and their spots as the

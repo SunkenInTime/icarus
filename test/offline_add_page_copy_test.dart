@@ -207,7 +207,7 @@ void main() {
       'elementType': 'utility',
       'payload': {
         'kind': 'utility',
-        'payloadVersion': 1,
+        'payloadVersion': 9,
         'data': {
           'id': 'future-1',
           'elementType': 'utility',
@@ -221,8 +221,24 @@ void main() {
       'createdAt': 1.0,
       'updatedAt': 1.0,
     };
+    server.elements['broken-1'] = {
+      'publicId': 'broken-1',
+      'strategyPublicId': 'strategy',
+      'pagePublicId': 'p1',
+      'elementType': 'text',
+      'payload': {
+        'kind': 'text',
+        'payloadVersion': 1,
+        'data': {'id': 'broken-1', 'elementType': 7},
+      },
+      'sortIndex': 6,
+      'revision': 1,
+      'deleted': false,
+      'createdAt': 1.0,
+      'updatedAt': 1.0,
+    };
     final app = await start(online: true);
-    expect(server.elementsOn('p1').keys, contains('future-1'));
+    expect(server.elementsOn('p1').keys, containsAll(['future-1', 'broken-1']));
     setOnline(app, false);
 
     await app.read(strategyProvider.notifier).addPage();
@@ -235,17 +251,30 @@ void main() {
         for (final element in app.read(unshownCloudContentProvider).elements)
           pageCopyRoot(element.publicId),
       ],
-      ['future-1'],
+      ['future-1', 'broken-1'],
     );
     expect(app.read(strategyOpQueueProvider).attentionByEntityKey, isEmpty);
 
     await reconnect(app);
 
+    final copy = server
+        .elementsOn(pageId)
+        .entries
+        .singleWhere((row) => pageCopyRoot(row.key) == 'future-1');
+    final copied = copy.value['payload']! as Map;
+    expect(copied['payloadVersion'], 9);
+    expect(copied['data'], {
+      'id': copy.key,
+      'elementType': 'utility',
+      'type': 'aUtilityFromANewerBuild',
+      'position': {'dx': 1.0, 'dy': 2.0},
+    });
+    expect(copy.value['sortIndex'], 5);
     expect(
       server.elementsOn(pageId).keys.map(pageCopyRoot),
-      contains('future-1'),
+      contains('broken-1'),
     );
-    expect(server.elementsOn('p1').keys, contains('future-1'));
+    expect(server.elementsOn('p1').keys, containsAll(['future-1', 'broken-1']));
     expect(app.read(strategyOpQueueProvider).pending, isEmpty);
   });
 

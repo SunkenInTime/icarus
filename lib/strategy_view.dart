@@ -177,7 +177,8 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     with WindowListener {
   bool _isClosingWindow = false;
   late bool _expanded = widget.startExpanded;
-  ToastificationItem? _unshownNotice;
+  ToastificationItem? _unshownItemsNotice;
+  ToastificationItem? _unshownSettingsNotice;
 
   /// Keeps the map's canvas mounted when a quick look opens out.
   final _communityCanvasKey = GlobalKey(debugLabel: 'community-canvas');
@@ -423,16 +424,27 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       final newElements = next.elements
           .any((element) => !shownBefore.contains(element.publicId));
       final newSettings = next.settings != null && previous?.settings == null;
-      if (!newElements && !newSettings) return;
-      final replaced = _unshownNotice;
-      if (replaced != null) Settings.dismissToast(replaced);
-      _unshownNotice = Settings.showToast(
-        message: next.elements.isNotEmpty
-            ? context.l10n.strategyMsgPageHasUnshownItems(next.elements.length)
-            : context.l10n.strategyMsgPageHasUnshownSettings,
-        backgroundColor: Settings.tacticalVioletTheme.secondary,
-        autoCloseDuration: const Duration(seconds: 8),
-      );
+      ToastificationItem? notify(ToastificationItem? replaced, String message) {
+        if (replaced != null) Settings.dismissToast(replaced);
+        return Settings.showToast(
+          message: message,
+          backgroundColor: Settings.tacticalVioletTheme.secondary,
+          autoCloseDuration: const Duration(seconds: 8),
+        );
+      }
+
+      if (newElements) {
+        _unshownItemsNotice = notify(
+          _unshownItemsNotice,
+          context.l10n.strategyMsgPageHasUnshownItems(next.elements.length),
+        );
+      }
+      if (newSettings) {
+        _unshownSettingsNotice = notify(
+          _unshownSettingsNotice,
+          context.l10n.strategyMsgPageHasUnshownSettings,
+        );
+      }
     });
     final strategyState = ref.watch(strategyProvider);
     final viewOnly = ref.watch(isViewOnlyStrategyProvider);

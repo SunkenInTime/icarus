@@ -5016,6 +5016,50 @@ void main() {
       expect(sent.op.expectedRevision, 1);
     });
 
+    test(
+        'an edit committed to it is sent when a teammate made it unreadable '
+        'here', () async {
+      final (container, remote, page) = await open();
+      remote.setSnapshot(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(
+          page,
+          contentRevision: 2,
+          elements: [
+            RemoteElement(
+              publicId: 'held',
+              strategyPublicId: 'cloud-strategy',
+              pagePublicId: page.publicId,
+              elementType: 'text',
+              payload: cloudElementPayload(kind: 'text', data: {
+                'id': 'held',
+                'elementType': 'text',
+                'size': 'from a newer build',
+              }),
+              sortIndex: 0,
+              revision: 2,
+              deleted: false,
+            ),
+            _textElement(page.publicId, 'other', 'other v1',
+                sortIndex: 1, worldSized: true),
+          ],
+        ),
+      ));
+      await _settle();
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'held');
+      container.read(editorPointersProvider.notifier).release(1);
+      await _settle();
+
+      final sent = container
+          .read(strategyOpQueueProvider)
+          .pending
+          .singleWhere((item) => item.op.entityPublicId == 'held');
+      expect(sent.op, isA<ElementPatchOp>());
+      expect(sent.op.expectedRevision, 1);
+    });
+
     test('a teammate deleting it leaves it under the pointer until release',
         () async {
       final (container, remote, page) = await open();
