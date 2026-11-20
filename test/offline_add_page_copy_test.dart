@@ -29,6 +29,7 @@ import 'package:icarus/providers/collab/drawn_cloud_pages_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/collab/unshown_cloud_content_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -195,6 +196,57 @@ void main() {
       unorderedEquals([agent.id, image.id]),
     );
     expect(queued.whereType<LineupAddOp>().single.pagePublicId, pageId);
+  });
+
+  test('offline "+" copies an item this build cannot draw, and it lands',
+      () async {
+    server.elements['future-1'] = {
+      'publicId': 'future-1',
+      'strategyPublicId': 'strategy',
+      'pagePublicId': 'p1',
+      'elementType': 'utility',
+      'payload': {
+        'kind': 'utility',
+        'payloadVersion': 1,
+        'data': {
+          'id': 'future-1',
+          'elementType': 'utility',
+          'type': 'aUtilityFromANewerBuild',
+          'position': {'dx': 1.0, 'dy': 2.0},
+        },
+      },
+      'sortIndex': 5,
+      'revision': 1,
+      'deleted': false,
+      'createdAt': 1.0,
+      'updatedAt': 1.0,
+    };
+    final app = await start(online: true);
+    expect(server.elementsOn('p1').keys, contains('future-1'));
+    setOnline(app, false);
+
+    await app.read(strategyProvider.notifier).addPage();
+    await _settle();
+
+    final pageId = activePage(app)!;
+    expect(pageId, isNot('p1'));
+    expect(
+      [
+        for (final element in app.read(unshownCloudContentProvider).elements)
+          pageCopyRoot(element.publicId),
+      ],
+      ['future-1'],
+    );
+    expect(app.read(strategyOpQueueProvider).attentionByEntityKey, isEmpty);
+
+    await reconnect(app);
+
+    expect(
+      server.elementsOn(pageId).keys.map(pageCopyRoot),
+      contains('future-1'),
+    );
+    expect(server.elementsOn('p1').keys, contains('future-1'));
+    expect(app.read(strategyOpQueueProvider).pending, isEmpty);
   });
 
   test('next and previous reach a page made here, as any page', () async {

@@ -1,4 +1,4 @@
-# ADR 0009: Cloud items this build cannot draw stay on the page
+# ADR 0010: Cloud items this build cannot draw stay on the page
 
 **Status:** Accepted (2026-11-20)
 **Feature:** Cloud page hydration and sync (`lib/strategy/strategy_page_source.dart`, `lib/strategy/cloud_element_decoding.dart`, `lib/providers/collab/active_page_live_sync_provider.dart`)

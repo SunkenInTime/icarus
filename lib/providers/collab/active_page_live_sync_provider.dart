@@ -1327,9 +1327,16 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       // work: it is drawn as the user had it, whole, and waits in
       // attention, where Keep mine saves that version over the server's
       // and Use cloud drops it. Edits made on top of it are whole too, so
-      // they keep it. Work that can't be read even so is left off the page.
-      noLongerFits[key] = (opId: head.opId, serverRevision: over?.revision);
+      // they keep it. An element that can't be read even so is kept unshown.
       final whole = drawnFrom([for (final op in ops) op.withMerge(null)]);
+      if (whole != null &&
+          !_drawable(whole.drawn) &&
+          whole.drawn.overlayEntityType ==
+              ActivePageOverlayEntityType.element) {
+        work[key] = whole;
+        continue;
+      }
+      noLongerFits[key] = (opId: head.opId, serverRevision: over?.revision);
       if (whole != null && _drawable(whole.drawn)) work[key] = whole;
     }
     if (noLongerFits.isNotEmpty) {

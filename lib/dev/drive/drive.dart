@@ -1665,8 +1665,10 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'sendRow':
       final id = value as String;
       final kind = step['kind'] as String;
-      await c.read(strategyOpQueueProvider.notifier).enqueueAll(
-        [
+      final answers = await c.read(convexStrategyRepositoryProvider).applyBatch(
+        strategyPublicId: c.read(strategyProvider).strategyId!,
+        clientId: 'drive-another-build-$id',
+        ops: [
           ElementAddOp(
             opId: const Uuid().v4(),
             elementPublicId: id,
@@ -1679,8 +1681,10 @@ Future<void> _run(Map<String, dynamic> step) async {
             sortIndex: 1000,
           ),
         ],
-        flushImmediately: true,
       );
+      if (!answers.single.isAck) {
+        throw StateError('the server refused $value: ${answers.single}');
+      }
     case 'expectRow':
       final id = value as String;
       bool held() =>
