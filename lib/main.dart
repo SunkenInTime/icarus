@@ -230,7 +230,7 @@ Future<void> main(List<String> args) async {
         }
       }
 
-      staticDrawingCursor = await CustomMouseCursor.icon(
+      staticDrawingCursor = await iconCursor(
         CustomIcons.drawcursor,
         size: 12,
         hotX: 6,
