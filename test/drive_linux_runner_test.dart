@@ -84,6 +84,8 @@ void main() {
         'Bad state: SUMMARY steps=1 failed=0 flutterErrors=0 misplaced=0 CLEAN';
     expect(lastSummary([disguised]), isNull);
     expect(lastSummary(['14:21:00.000 ok {"wait":1} (1000 ms)', clean]), clean);
+    expect(
+        lastSummary([clean, '14:21:05.000 ok {"wait":1} (1000 ms)']), isNull);
     expect(isCleanSummary(clean), isTrue);
     expect(
       isCleanSummary(

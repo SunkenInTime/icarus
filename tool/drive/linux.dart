@@ -115,13 +115,19 @@ bool signsIn(List<Object?> steps) =>
 
 bool exportsMp4(String scriptText) => RegExp(r'\.mp4"').hasMatch(scriptText);
 
-final _summaryLine = RegExp(r'^\S+ SUMMARY ');
+final _summaryLine = RegExp(r'^\d\d:\d\d:\d\d\.\d{3} SUMMARY ');
 final _cleanSummary = RegExp(
-  r'^\S+ SUMMARY steps=\d+ failed=0 flutterErrors=0 misplaced=0 CLEAN$',
+  r'^\d\d:\d\d:\d\d\.\d{3} SUMMARY '
+  r'steps=\d+ failed=0 flutterErrors=0 misplaced=0 CLEAN$',
 );
 
-String? lastSummary(List<String> logLines) =>
-    logLines.where(_summaryLine.hasMatch).lastOrNull;
+String? lastSummary(List<String> logLines) {
+  final last = logLines.lastWhere(
+    (line) => line.trim().isNotEmpty,
+    orElse: () => '',
+  );
+  return _summaryLine.hasMatch(last) ? last : null;
+}
 
 bool isCleanSummary(String summary) => _cleanSummary.hasMatch(summary);
 
@@ -320,10 +326,7 @@ Future<int> _run(Map<String, String> options) async {
 
   _Screen? screen;
   Future<void> stopAll() async {
-    await Future.wait([
-      for (final instance in instances)
-        if (!instance.exited.isCompleted) _stop(instance),
-    ]);
+    await Future.wait([for (final instance in instances) _stop(instance)]);
     await screen?.stop();
   }
 
@@ -337,9 +340,10 @@ Future<int> _run(Map<String, String> options) async {
   ];
 
   try {
-    screen = await _Screen.start(out.path);
+    screen = await _Screen.launch(out.path);
+    final display = await screen.display();
     for (final instance in instances) {
-      await _start(instance, exe, out.path, run, screen.display, passwords);
+      await _start(instance, exe, out.path, run, display, passwords);
     }
     await Future.wait([
       for (final instance in instances)
@@ -409,11 +413,11 @@ Future<Map<String, String>> _passwords(
 }
 
 class _Screen {
-  _Screen(this._process, this.display);
+  _Screen(this._process, this._out);
   final Process _process;
-  final String display;
+  final String _out;
 
-  static Future<_Screen> start(String out) async {
+  static Future<_Screen> launch(String out) async {
     final process = await Process.start('Xvfb', [
       '-displayfd',
       '1',
@@ -424,18 +428,20 @@ class _Screen {
       'tcp',
       '-noreset',
     ]);
-    final log = File('$out/xvfb.log').openWrite();
-    unawaited(process.stderr.pipe(log));
-    final number = await process.stdout
+    unawaited(process.stderr.pipe(File('$out/xvfb.log').openWrite()));
+    return _Screen(process, out);
+  }
+
+  Future<String> display() async {
+    final number = await _process.stdout
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .first
         .timeout(const Duration(seconds: 20), onTimeout: () => '');
     if (int.tryParse(number.trim()) == null) {
-      process.kill(ProcessSignal.sigkill);
-      throw StateError('Xvfb did not start; see $out/xvfb.log');
+      throw StateError('Xvfb did not start; see $_out/xvfb.log');
     }
-    return _Screen(process, ':${number.trim()}');
+    return ':${number.trim()}';
   }
 
   Future<void> stop() async {
@@ -493,16 +499,12 @@ Future<void> _start(
 Future<int> _stop(_Instance instance) async {
   final process = instance.process;
   if (process == null) return -1;
-  Future<void> signalGroup(String signal) =>
-      Process.run('kill', ['-$signal', '--', '-${process.pid}']);
-  await signalGroup('TERM');
-  return instance.exited.future.timeout(
-    const Duration(seconds: 5),
-    onTimeout: () async {
-      await signalGroup('KILL');
-      return instance.exited.future;
-    },
-  );
+  Future<int> leaderExit(int seconds) => instance.exited.future
+      .timeout(Duration(seconds: seconds), onTimeout: () => -1);
+  Process.killPid(-process.pid, ProcessSignal.sigterm);
+  await leaderExit(5);
+  Process.killPid(-process.pid, ProcessSignal.sigkill);
+  return leaderExit(2);
 }
 
 Future<bool> _report(_Instance instance, String out, int timeout) async {
