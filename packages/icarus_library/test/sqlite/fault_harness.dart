@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:icarus_library/engine_contract.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/src/sqlite/library_file.dart';
@@ -10,11 +12,13 @@ import 'fault_disk.dart';
 
 const libraryPath = '/library.sqlite';
 
+final _isolateMark = Random.secure().nextInt(1 << 32);
+
 var _vfsCount = 0;
 
 final class FaultDrive {
   FaultDrive() : disk = FaultDisk() {
-    vfs = FaultVfs(disk, name: 'fault-${_vfsCount++}');
+    vfs = FaultVfs(disk, name: 'fault-$_isolateMark-${_vfsCount++}');
     sqlite3.registerVirtualFileSystem(vfs);
   }
 
