@@ -127,12 +127,7 @@ abstract base class ForwardingLease implements StorageLease {
       inner.entries(area, prefix);
 
   @override
-  Future<Writing> write(String area, Map<String, String> values) =>
-      inner.write(area, values);
-
-  @override
-  Future<Writing> delete(String area, Iterable<String> keys) =>
-      inner.delete(area, keys);
+  Future<Committing> commit(List<Change> changes) => inner.commit(changes);
 
   @override
   Future<Releasing> release() => inner.release();
@@ -189,18 +184,19 @@ final class CountingLease extends ForwardingLease {
   }
 
   @override
-  Future<Writing> write(String area, Map<String, String> values) {
+  Future<Committing> commit(List<Change> changes) {
     counts.calls++;
-    counts.written.addAll([for (final key in values.keys) (area, key)]);
-    return super.write(area, values);
-  }
-
-  @override
-  Future<Writing> delete(String area, Iterable<String> keys) {
-    final all = keys.toList();
-    counts.calls++;
-    counts.deleted.addAll([for (final key in all) (area, key)]);
-    return super.delete(area, all);
+    for (final change in changes) {
+      switch (change) {
+        case Put(:final area, :final key):
+          counts.written.add((area, key));
+        case Delete(:final area, :final key):
+          counts.deleted.add((area, key));
+        case ClearArea(:final area):
+          counts.deleted.add((area, '*'));
+      }
+    }
+    return super.commit(changes);
   }
 }
 
@@ -229,13 +225,14 @@ final class CrashingLease extends ForwardingLease {
 
   final Cut cut;
 
-  Future<Writing> _gate(Future<Writing> Function() call) async {
+  @override
+  Future<Committing> commit(List<Change> changes) async {
     if (!cut.allows) {
       cut.cut = true;
-      return const DidNotWrite(crashed);
+      return const CommitRefused(crashed);
     }
     cut.landed++;
-    return call();
+    return super.commit(changes);
   }
 
   @override
@@ -252,14 +249,6 @@ final class CrashingLease extends ForwardingLease {
   Future<Stored<List<String>>> keys(String area, String prefix) => cut.cut
       ? Future.value(const StorageFailed(crashed))
       : super.keys(area, prefix);
-
-  @override
-  Future<Writing> write(String area, Map<String, String> values) =>
-      _gate(() => super.write(area, values));
-
-  @override
-  Future<Writing> delete(String area, Iterable<String> keys) =>
-      _gate(() => super.delete(area, keys));
 }
 
 StorageEngine crashing(StorageEngine inner, Cut cut) =>
@@ -273,26 +262,18 @@ final class FlakyLease extends ForwardingLease {
   final Map<int, Failing> failing;
   int calls = 0;
 
-  Future<Writing> _maybe(Future<Writing> Function() call) async {
-    final how = failing[calls++];
-    switch (how) {
+  @override
+  Future<Committing> commit(List<Change> changes) async {
+    switch (failing[calls++]) {
       case null:
-        return call();
+        return super.commit(changes);
       case Failing.refused:
-        return const DidNotWrite(DeviceFailure('disk full'));
+        return const CommitRefused(DeviceFailure('disk full'));
       case Failing.landed:
-        await call();
-        return const MayHaveWritten(DeviceFailure('lost the reply'));
+        await super.commit(changes);
+        return const CommitUnknown(DeviceFailure('lost the reply'));
     }
   }
-
-  @override
-  Future<Writing> write(String area, Map<String, String> values) =>
-      _maybe(() => super.write(area, values));
-
-  @override
-  Future<Writing> delete(String area, Iterable<String> keys) =>
-      _maybe(() => super.delete(area, keys));
 }
 
 StorageEngine flaky(StorageEngine inner, Map<int, Failing> failing) =>

@@ -134,14 +134,14 @@ final class JournalRecord {
       }
     }
     for (final MapEntry(key: area, value: values) in puts.entries) {
-      if (asStored(await lease.write(area, values)) case StorageFailed(
+      if (await putAll(lease, area, values) case StorageFailed(
         :final failure,
       )) {
         return StorageFailed(failure);
       }
     }
     for (final MapEntry(key: area, value: keys) in deletes.entries) {
-      if (asStored(await lease.delete(area, keys)) case StorageFailed(
+      if (await deleteAll(lease, area, keys) case StorageFailed(
         :final failure,
       )) {
         return StorageFailed(failure);
@@ -151,19 +151,40 @@ final class JournalRecord {
   }
 
   Future<Stored<void>> save(StorageLease lease) =>
-      lease.write(journalArea, {journalKey: encode()}).then(asStored);
+      putAll(lease, journalArea, {journalKey: encode()});
 
   Future<Stored<void>> recover(StorageLease lease) async {
     if (await replay(lease) case StorageFailed(:final failure)) {
       return StorageFailed(failure);
     }
-    return asStored(
-      await lease.write(journalArea, {
-        recoveredKey(attempt): '${issuedAt.millisecondsSinceEpoch}',
-      }),
-    );
+    return putAll(lease, journalArea, {
+      recoveredKey(attempt): '${issuedAt.millisecondsSinceEpoch}',
+    });
   }
 
   static Future<Stored<void>> clear(StorageLease lease) =>
-      lease.delete(journalArea, const [journalKey]).then(asStored);
+      deleteAll(lease, journalArea, const [journalKey]);
 }
+
+Stored<void> committed(Committing committing) => switch (committing) {
+  CommitApplied() => done,
+  CommitRefused(:final failure) ||
+  CommitUnknown(:final failure) => StorageFailed(failure),
+};
+
+Future<Stored<void>> putAll(
+  StorageLease lease,
+  String area,
+  Map<String, String> values,
+) async => committed(
+  await lease.commit([
+    for (final MapEntry(:key, :value) in values.entries) Put(area, key, value),
+  ]),
+);
+
+Future<Stored<void>> deleteAll(
+  StorageLease lease,
+  String area,
+  Iterable<String> keys,
+) async =>
+    committed(await lease.commit([for (final key in keys) Delete(area, key)]));

@@ -102,39 +102,60 @@ abstract interface class StorageLease {
 
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix);
 
-  Future<Writing> write(String area, Map<String, String> values);
-
-  Future<Writing> delete(String area, Iterable<String> keys);
+  Future<Committing> commit(List<Change> changes);
 
   Future<Releasing> release();
 }
 
 typedef StoredEntry = ({String key, String value});
 
-sealed class Writing {
-  const Writing();
+sealed class Change {
+  const Change(this.area);
+
+  final String area;
 }
 
-final class Wrote extends Writing {
-  const Wrote();
+final class Put extends Change {
+  const Put(super.area, this.key, this.value);
+
+  final String key;
+  final String value;
 }
 
-final class DidNotWrite extends Writing {
-  const DidNotWrite(this.failure);
+final class Delete extends Change {
+  const Delete(super.area, this.key);
+
+  final String key;
+}
+
+final class ClearArea extends Change {
+  const ClearArea(super.area);
+}
+
+sealed class Committing {
+  const Committing();
+}
+
+final class CommitApplied extends Committing {
+  const CommitApplied();
+}
+
+final class CommitRefused extends Committing {
+  const CommitRefused(this.failure);
 
   final StorageFailure failure;
 
   @override
-  String toString() => 'DidNotWrite($failure)';
+  String toString() => 'CommitRefused($failure)';
 }
 
-final class MayHaveWritten extends Writing {
-  const MayHaveWritten(this.failure);
+final class CommitUnknown extends Committing {
+  const CommitUnknown(this.failure);
 
   final StorageFailure failure;
 
   @override
-  String toString() => 'MayHaveWritten($failure)';
+  String toString() => 'CommitUnknown($failure)';
 }
 
 sealed class KeyRead {
@@ -191,9 +212,3 @@ bool isName(String name) =>
     name.codeUnits.every((unit) => nameAlphabet.codeUnits.contains(unit));
 
 const done = Done<void>(null);
-
-Stored<void> asStored(Writing writing) => switch (writing) {
-  Wrote() => done,
-  DidNotWrite(:final failure) ||
-  MayHaveWritten(:final failure) => StorageFailed(failure),
-};

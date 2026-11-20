@@ -110,33 +110,34 @@ final class _MemoryLease implements StorageLease {
         ],
       );
 
-  Future<Writing> _writing(void Function() task) async {
-    if (_status is Ended) return const DidNotWrite(LeaseEnded());
+  @override
+  Future<Committing> commit(List<Change> changes) async {
+    if (_status is Ended) return const CommitRefused(LeaseEnded());
+    for (final change in changes) {
+      if (change case Put(
+        :final area,
+        :final key,
+      ) when key.length > maxKeyLength) {
+        return CommitRefused(KeyTooLong(area, key));
+      }
+    }
     if (_storage._hold case final hold?) {
       _storage._hold = null;
       hold._reached.complete();
       await hold._letGo.future;
-      if (_status is Ended) return const DidNotWrite(LeaseEnded());
+      if (_status is Ended) return const CommitRefused(LeaseEnded());
     }
-    task();
-    return const Wrote();
-  }
-
-  @override
-  Future<Writing> write(String area, Map<String, String> values) async {
-    if (_status is Ended) return const DidNotWrite(LeaseEnded());
-    for (final key in values.keys) {
-      if (key.length > maxKeyLength) {
-        return DidNotWrite(KeyTooLong(area, key));
+    for (final change in changes) {
+      switch (change) {
+        case Put(:final area, :final key, :final value):
+          _storage._area(area)[key] = value;
+        case Delete(:final area, :final key):
+          _storage._areas[area]?.remove(key);
+        case ClearArea(:final area):
+          _storage._areas.remove(area);
       }
     }
-    return _writing(() => _storage._area(area).addAll(values));
-  }
-
-  @override
-  Future<Writing> delete(String area, Iterable<String> keys) {
-    final named = keys.toList();
-    return _writing(() => named.forEach(_storage._area(area).remove));
+    return const CommitApplied();
   }
 
   @override

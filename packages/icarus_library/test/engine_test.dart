@@ -108,7 +108,7 @@ void main() {
   test('the contract fails an engine that loses writes in a crash', () async {
     final results = await runAll(ForgetfulHarness.new);
     expect(
-      results['a write or delete that returned Wrote survives a crash, whole'],
+      results['a commit that applied survives a crash, whole'],
       isA<Broke>(),
     );
   });
