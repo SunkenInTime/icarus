@@ -119,8 +119,9 @@ jobs:
       # Live presence (who is on a strategy, their cursors) runs in its own
       # Worker. It pairs with production Convex through PRESENCE_URL and
       # PRESENCE_PASS_SECRET, set once on both sides (presence/README.md).
-      # Its checks run here, before anything deploys, so a failing Worker
-      # never leaves production with a new Convex and an old Worker.
+      # Its checks run here, before anything deploys, so a Worker that fails
+      # its tests doesn't leave production with a new Convex and an old
+      # Worker.
       - name: Install Presence Worker Dependencies
         working-directory: presence
         run: npm ci

@@ -219,7 +219,7 @@ jobs:
           # op path on the server (convex/ops.ts, what it imports from
           # convex/lib/, and the functions the gauntlet calls), the native
           # client, and the gauntlet itself.
-          lane gauntlet '^(lib/collab/|lib/providers/collab/|lib/providers/strategy_(provider|page_session_provider|save_state_provider)\.dart$|lib/strategy/(strategy_page_(source|apply|models)|cloud_element_decoding|remote_page_merge|lineup_group_changes)\.dart$|lib/const/hive_boxes\.dart$|lib/startup/cloud_bootstrap\.dart$|third_party/convex_(flutter|rs)/|convex/(ops|schema|strategy|strategies|folders|users)\.ts$|convex/lib/|tool/sync_gauntlet/|tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment\.mjs$)' guarded
+          lane gauntlet '^(lib/collab/|lib/providers/collab/|lib/providers/strategy_(provider|page_session_provider|save_state_provider)\.dart$|lib/strategy/(strategy_page_(source|apply|models)|cloud_element_decoding|remote_page_merge|lineup_group_changes)\.dart$|lib/const/hive_boxes\.dart$|lib/startup/cloud_bootstrap\.dart$|third_party/convex_(flutter|rs)/|convex/(ops|schema|strategy|strategies|folders|users)\.ts$|convex/lib/|package-lock\.json$|tool/sync_gauntlet/|tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment\.mjs$)' guarded
           # The desktop builds and the upgrade/rollback test, for changes to
           # what a shipped build finds in its Hive store, the installer, the
           # release scripts, or the test itself. The release runs the same
@@ -228,11 +228,11 @@ jobs:
           # What reads or writes the library: the Hive adapters and the models
           # they and the .ica format serialize, migrations, import and export
           # and the backup manifest, the store's startup and the load and save
-          # path, the outboxes and cloud copy kept in Hive, moving a library to
-          # the cloud, the packages (Hive among them), and the fixtures and
-          # tests that hold old data. The test list is the
-          # integrity job's.
-          lane integrity '^(lib/hive/|lib/migrations/|lib/strategy/|lib/domain/|lib/main\.dart$|lib/startup/hive_store_launch\.dart$|lib/services/archive_manifest\.dart$|lib/collab/(cloud_library_copy|pending_media_bytes_store)\.dart$|lib/providers/collab/move_to_cloud_provider\.dart$|pubspec\.(yaml|lock)$|lib/providers/(strategy_provider|strategy_page|strategy_page_session_provider|strategy_settings_provider|folder_provider|user_preferences_provider|agent_provider|ability_provider|drawing_provider|image_provider|text_provider|utility_provider)\.dart$|lib/const/(placed_classes|drawing_element|bounding_box|line_provider|json_converters|hive_boxes)\.dart$|lib/collab/durable_[a-z_]*outbox\.dart$|test/fixtures/strategy_integrity/|test/(strategy_integrity|canvas_compatibility_fixture|strategy_folder_import|strategy_import_version_guard)_test\.dart$|test/hive_[a-z_]*_test\.dart$|test/[a-z_]*_migration_test\.dart$|test/durable_[a-z_]*_version_test\.dart$|test/desktop_[a-z0-9_]*_test_support\.dart$|test/providers/move_to_cloud_provider_test\.dart$|tool/generate_canvas_compatibility_fixture\.dart$)|\.g\.dart$' guarded
+          # path, where pictures are kept and how they are named, the outboxes
+          # and cloud copy kept in Hive, moving a library to the cloud, the
+          # packages (Hive among them), and the fixtures and tests that hold
+          # old data. The test list is the integrity job's.
+          lane integrity '^(lib/hive/|lib/migrations/|lib/strategy/|lib/domain/|lib/main\.dart$|lib/startup/hive_store_launch\.dart$|lib/services/(archive_manifest|strategy_folders|image_file_name)\.dart$|lib/collab/(cloud_library_copy|pending_media_bytes_store)\.dart$|lib/providers/collab/move_to_cloud_provider\.dart$|pubspec\.(yaml|lock)$|lib/providers/(strategy_provider|strategy_page|strategy_page_session_provider|strategy_settings_provider|folder_provider|user_preferences_provider|agent_provider|ability_provider|drawing_provider|image_provider|text_provider|utility_provider)\.dart$|lib/const/(placed_classes|drawing_element|bounding_box|line_provider|json_converters|hive_boxes)\.dart$|lib/collab/durable_[a-z_]*outbox\.dart$|test/fixtures/strategy_integrity/|test/(strategy_integrity|canvas_compatibility_fixture|strategy_folder_import|strategy_import_version_guard|strategy_folders|image_file_name)_test\.dart$|test/hive_[a-z_]*_test\.dart$|test/[a-z_]*_migration_test\.dart$|test/durable_[a-z_]*_version_test\.dart$|test/desktop_[a-z0-9_]*_test_support\.dart$|test/providers/move_to_cloud_provider_test\.dart$|tool/generate_canvas_compatibility_fixture\.dart$)|\.g\.dart$' guarded
 
   # Runs on every PR and push, whatever the ci: line names: no PR adds a
   # comment to a file beyond tool/comment_baseline.json.
@@ -643,6 +643,8 @@ jobs:
             test/canvas_compatibility_fixture_test.dart \
             test/strategy_folder_import_test.dart \
             test/strategy_import_version_guard_test.dart \
+            test/strategy_folders_test.dart \
+            test/image_file_name_test.dart \
             test/providers/move_to_cloud_provider_test.dart \
             test/hive_*_test.dart \
             test/*_migration_test.dart \
