@@ -4804,6 +4804,10 @@
   "@strategyMsgPageUnreachableUnnamed": {
     "description": "Toast when a cloud page the user switched to could not be loaded and its name is unknown."
   },
+  "strategyMsgPageEditsNotSaved": "Couldn't save this page's changes, so you're still on it. Your work is still here.",
+  "@strategyMsgPageEditsNotSaved": {
+    "description": "Toast when the user switched pages but the edits on the page they were on could not be saved, so the app kept them on that page."
+  },
   "strategyMsgDeletedPageFallbackName": "This page",
   "@strategyMsgDeletedPageFallbackName": {
     "description": "Stands in for a page's name in the deleted-page dialog (deletedPageDescription, deletedPageGone) when the page's name is unknown. Shown inside quotes there."

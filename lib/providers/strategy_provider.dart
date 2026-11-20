@@ -15,6 +15,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:meta/meta.dart';
 import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
@@ -65,6 +66,7 @@ import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/strategy_page_source.dart';
 import 'package:icarus/services/image_file_name.dart';
 
 export 'package:icarus/strategy/strategy_models.dart'
@@ -565,7 +567,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       ..setCloudSyncError(null);
     await ref
         .read(strategyPageSessionProvider.notifier)
-        .flushCurrentPage(flushImmediately: flushImmediately);
+        .handOverForSyncStatus(flushImmediately: flushImmediately);
   }
 
   Future<void> notifyCloudStrategyMutation({
@@ -830,9 +832,10 @@ class StrategyProvider extends Notifier<StrategyState> {
               notifyCloudStrategyMutation(flushImmediately: true);
           marksSaved = saveState.dirtyMarks;
           await strategySync;
-          handedOver = await ref
+          final handover = await ref
               .read(strategyPageSessionProvider.notifier)
               .flushCurrentPage(flushImmediately: true);
+          handedOver = handover is! HeldOnCanvas;
           cloudSaved = id;
         } else {
           cloudSaved = null;
@@ -1083,7 +1086,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       return PageCopyResult.unavailable;
     }
 
-    await _syncCurrentPageToHive();
+    final handover = await _syncCurrentPageToHive();
+    if (handover is HeldOnCanvas) return PageCopyResult.notSaved;
 
     final strategyId = state.strategyId;
     if (strategyId == null) return PageCopyResult.unavailable;
@@ -1536,17 +1540,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     required PageTransitionDirection direction,
     required LineUpGraph lineUps,
   }) async {
-    try {
-      await _syncCurrentPageToHive();
-    } catch (error, stackTrace) {
-      AppErrorReporter.reportWarning(
-        'Could not save the page before copying lineups.',
-        source: 'strategy.copyLineUps',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return PageCopyResult.notSaved;
-    }
+    final handover = await _syncCurrentPageToHive();
+    if (handover is HeldOnCanvas) return PageCopyResult.notSaved;
     if (state.strategyId != strategyId) return PageCopyResult.unavailable;
     final pages = _orderedLocalPages();
     final currentIndex = pages.indexWhere(
@@ -1816,7 +1811,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       final sourcePageId = pages.isEmpty ? null : pages[sourceIndex].publicId;
       // Edits made just before "+" go ahead of the add, so the server's
       // copy has them.
-      await ref.read(strategyPageSessionProvider.notifier).flushCurrentPage();
+      await ref
+          .read(strategyPageSessionProvider.notifier)
+          .handOverForSyncStatus();
       if (state.strategyId != strategyId) return none;
       // Edits to the page the server refused: the copy, made from the
       // server's page, doesn't have them.
@@ -1932,7 +1929,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
-    await _syncCurrentPageToHive();
+    await _saveLocalPageOrThrow();
 
     final strategyId = state.strategyId;
     if (strategyId == null) return none;
@@ -2066,9 +2063,9 @@ class StrategyProvider extends Notifier<StrategyState> {
           : activePageId;
 
       if (activePageId == pageId) {
-        await ref.read(strategyPageSessionProvider.notifier).flushCurrentPage(
-              flushImmediately: true,
-            );
+        await ref
+            .read(strategyPageSessionProvider.notifier)
+            .handOverForSyncStatus(flushImmediately: true);
       }
 
       final ack = await _enqueueCloudPageDescriptorOp(
@@ -2634,7 +2631,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     _requireLocalLibrary('save');
     final dirtyMarksSaved =
         ref.read(strategySaveStateProvider.notifier).dirtyMarks;
-    await _syncCurrentPageToHive();
+    await _saveLocalPageOrThrow();
 
     final StrategyData? savedStrat =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(id);
@@ -2663,55 +2660,23 @@ class StrategyProvider extends Notifier<StrategyState> {
     log("Save to hive was called");
   }
 
-  // Flush currently active page into Hive. Safe if no active page is selected.
-  Future<void> _syncCurrentPageToHive() async {
-    if (_currentStrategyIsCloud()) {
-      return;
+  Future<void> _saveLocalPageOrThrow() async {
+    if (await _syncCurrentPageToHive() case HeldOnCanvas(:final reason)) {
+      throw StateError('The page on screen could not be saved: ${reason.name}.');
     }
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+  }
+
+  @useResult
+  Future<PageHandover> _syncCurrentPageToHive() async {
     final strategyId = state.strategyId;
-    if (strategyId == null) {
-      return;
+    if (_currentStrategyIsCloud() || strategyId == null) {
+      return const NothingToHandOver();
     }
-    log("Syncing current page to hive for strategy $strategyId");
-    final strat = box.get(strategyId);
-    if (strat == null || strat.pages.isEmpty) {
-      log("No strategy or pages found for syncing.");
-      return;
-    }
-
-    final pageId = ref.read(strategyPageSessionProvider).activePageId ??
-        strat.pages.first.id;
-    final idx = strat.pages.indexWhere((p) => p.id == pageId);
-    if (idx == -1) {
-      log("Active page ID $pageId not found in strategy ${strat.id}");
-      return;
-    }
-
-    final updatedPage = strat.pages[idx].copyWith(
-      drawingData: ref.read(drawingProvider).elements,
-      agentData: ref.read(agentProvider),
-      abilityData: ref.read(abilityProvider),
-      textData: ref.read(textProvider.notifier).snapshotForPersistence(),
-      imageData: ref.read(placedImageProvider).images,
-      utilityData: ref.read(utilityProvider),
-      isAttack: ref.read(mapProvider).isAttack,
-      settings: ref.read(strategySettingsProvider),
-      lineUpGraph: ref.read(lineUpProvider).graph,
-    );
-
-    final strategyTheme = ref.read(strategyThemeProvider);
-    final newPages = [...strat.pages]..[idx] = updatedPage;
-    final updated = strat.copyWith(
-      pages: newPages,
-      mapData: ref.read(mapProvider).currentMap,
-      themeProfileId: strategyTheme.profileId,
-      clearThemeProfileId: strategyTheme.profileId == null,
-      themeOverridePalette: strategyTheme.overridePalette,
-      clearThemeOverridePalette: strategyTheme.overridePalette == null,
-      lastEdited: DateTime.now(),
-    );
-    await box.put(updated.id, updated);
+    return LocalStrategyPageSource(
+      ref,
+      strategyId: strategyId,
+      activePageId: () => ref.read(strategyPageSessionProvider).activePageId,
+    ).flushCurrentPage();
   }
 
   /// Copies current [strategySettingsProvider] marker sizes to every page in
@@ -2886,7 +2851,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    await _syncCurrentPageToHive();
+    await _saveLocalPageOrThrow();
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strategyId = state.strategyId;

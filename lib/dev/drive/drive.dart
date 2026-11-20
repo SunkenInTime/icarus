@@ -69,6 +69,8 @@
 //   {"reconnect": true}                drops the cloud connection and dials it again
 //   {"newLocal": map, "name": n}       {"newCloud": name, "map": m?}
 //   {"newCloudFolder": name}           {"openCloudFolder": name}
+//   {"outboxWrites": b}                with false, the outbox refuses writes
+//   {"dropOpenPage": 1}                the open local page leaves the library
 //   {"shareLink": role, "file": path}  makes a link to the open strategy and
 //                                      writes its code to the file
 //   {"openShareLink": path}            opens the link whose code is in the file
@@ -102,8 +104,7 @@
 //   {"logUtilities": tag}              every utility's type, position and door
 //   {"logDoors": tag}                  the map doors changed on the page
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
-//   {"logCaptions": tag}               every placed item's caption
-//   {"logCard": tag}                   the caption card that's open, and where
+//   {"logCaptions": tag}  {"logCard": tag}  every caption; the open card
 //   {"logLineups": tag}                {"logImages": tag}
 //   {"framesStart": 1} / {"framesLog": tag}   frame build and raster times between
 //                                      them: p50, p90, p99, worst, in ms
@@ -114,7 +115,7 @@
 //   {"expectEditing": b}               fails unless a text field has the keyboard,
 //                                      or with false, unless none has
 //   {"logTexts": tag}                  every text box's position, width and text
-//   {"expectAgents": n}                fails unless n agents are on the page
+//   {"expectAgents": n}  {"expectDead": n}  n agents on the page, n dead
 //   {"expectInView": n, "only": id?,   fails unless n items are drawn, all of
 //    "middles": b?}                    them in the map's view; logs their outlines.
 //                                      With only, checks that item, and the page
@@ -129,7 +130,6 @@
 //                                      fails unless the text box or picture's tag
 //                                      is this color, six lowercase hex digits,
 //                                      or gray without one; lastImage as above
-//   {"expectDead": n}                 fails unless n agents on the page are dead
 //   {"expectItem": id, "gone": b?}     fails unless the item is on the page; gone flips it
 //   {"expectRow": id, "gone": b?, "copy": b?, "version": n?}  the same for the server's copy of the page; copy: a copy of id
 //   {"sendRow": id, "kind": k, "data": {}, "version": n?}  adds or replaces a row as another build writes it
@@ -154,6 +154,8 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -935,6 +937,8 @@ String _probe() {
     'unsaved': c.read(strategySaveStateProvider).isDirty,
     'canLeave': c.read(strategySaveStateProvider).canLeaveSafely,
     'deletedPage': c.read(strategyPageSessionProvider).deletedPage?.name,
+    'page': c.read(strategyPageSessionProvider).activePageId,
+    'canvasHeld': c.read(strategySaveStateProvider.notifier).canvasHeld,
   });
 }
 
@@ -1814,6 +1818,25 @@ Future<void> _run(Map<String, dynamic> step) async {
       }
     case 'probe':
       _log('PROBE $value ${_probe()}');
+    case 'outboxWrites':
+      if (value == true) {
+        await Hive.openBox<dynamic>(HiveBoxNames.strategyOutboxBox);
+      } else {
+        await Hive.box<dynamic>(HiveBoxNames.strategyOutboxBox).close();
+      }
+    case 'dropOpenPage':
+      final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+      final strategy = box.get(c.read(strategyProvider).strategyId)!;
+      final pageId = c.read(strategyPageSessionProvider).activePageId;
+      await box.put(
+        strategy.id,
+        strategy.copyWith(
+          pages: [
+            for (final page in strategy.pages)
+              if (page.id != pageId) page,
+          ],
+        ),
+      );
     case 'texts':
       final seen = <String>[];
       void visit(Element element) {

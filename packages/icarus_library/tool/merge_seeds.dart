@@ -24,12 +24,21 @@ final mustGenerate = [
 ];
 
 typedef RowsJson = Map<String, Object?> Function(StrategyRowSet rows);
+typedef OutcomeJson =
+    Map<String, Object?> Function(
+      ApplyResult result,
+      StrategyOp op,
+      StrategyRows after,
+    );
 
-List<Map<String, Object?>> mergeSeedScenarios(RowsJson rowsJson) {
+List<Map<String, Object?>> mergeSeedScenarios(
+  RowsJson rowsJson,
+  OutcomeJson outcomeJson,
+) {
   final reached = <String, int>{};
   final scenarios = [
     for (var seed = 0; seed < mergeSeedCount; seed++)
-      _scenario(seed, rowsJson, reached),
+      _scenario(seed, rowsJson, outcomeJson, reached),
   ];
   final missing = [
     for (final name in mustGenerate)
@@ -44,6 +53,7 @@ List<Map<String, Object?>> mergeSeedScenarios(RowsJson rowsJson) {
 Map<String, Object?> _scenario(
   int seed,
   RowsJson rowsJson,
+  OutcomeJson outcomeJson,
   Map<String, int> reached,
 ) {
   final rng = Random(seed);
@@ -196,7 +206,7 @@ Map<String, Object?> _scenario(
       }
     }
     ops.add(op);
-    predicted.add({...outcomeJson(result), 'rows': rowsJson(rows)});
+    predicted.add({...outcomeJson(result, op, rows), 'rows': rowsJson(rows)});
   }
   return {
     'name': 'merge seed $seed',

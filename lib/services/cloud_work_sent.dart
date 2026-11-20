@@ -108,8 +108,9 @@ Future<SameAccountCheck> sendCloudWork(
       // Queues the open page's edits, text still being typed included. Not
       // forceSaveNow: when there is nothing to send, it leaves the save
       // chip saying syncing.
-      canvasQueued =
+      final handover =
           await read(strategyPageSessionProvider.notifier).flushCurrentPage();
+      canvasQueued = handover is! HeldOnCanvas;
       // Sends what is queued: once at the start, and again once the canvas
       // is in. Each send skips the retry backoff, so not on every check.
       // Not awaited: a stalled request must not hold the copy past the

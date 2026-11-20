@@ -163,23 +163,42 @@ from this table. Groups, empty values and defaults exist only on the client.
 ## Checked against the server
 
 `node tool/library_parity/run.mjs` generates random op sequences
-(`tool/parity_scenarios.dart`), applies each op with `applyOp` and with
-`ops:applyBatch` from `convex/ops.ts` under convex-test, and fails on the
-first op whose outcome or rows differ. It also fails if the run never reaches
-the outcomes listed in `run.mjs`, such as `merge_invalid` and edits to a
-trashed page. CI runs 24 fixed seeds. `--large` runs 150, and `--seed <n>`
-replays one sequence that failed. Set `DART` to the Dart command when it is
-not `dart` (CI uses `fvm dart`). Page copies are left out, because their ids
-differ from the server's on purpose.
+(`tool/parity_scenarios.dart`) and applies each op twice: with `applyOp`,
+and with `ops:applyBatch` from `convex/ops.ts` under convex-test. It fails on
+the first op whose outcome or rows differ, including a row either side holds
+twice, a number JavaScript cannot hold exactly, or a server exception.
 
-The run also plays the merge stories in `tool/merge_stories.dart`: two
-people editing different fields, the same field online and after one was
-offline, grouped fields, a later field set, cleared and undone, edits that
-fall back to a whole write, and lineup group merges that end valid and
-invalid. Each story's ops are built with `elementEditOp` and
+- **Payloads** come from `tool/library_parity/samples.json`. That file holds
+  what the app's own move-to-cloud encoder writes for the canvas
+  compatibility fixture, and `test/library_parity_samples_test.dart` fails when
+  it goes stale (`UPDATE_PARITY_SAMPLES=1` rewrites it). Every element kind
+  appears, as do folders and a drawing past the 8,000-entry limit.
+- **The run checks itself.** It fails if a seed is missing or a sequence is
+  short, or if any outcome listed in `run.mjs` is reached fewer times than its
+  minimum. A 300-op run meets none of them.
+  `node --test tool/library_parity/compare.test.mjs` proves that a duplicate
+  row, a dropped sequence and thin coverage each fail.
+- **Running it:** CI runs 24 fixed seeds of 150 ops. `--large` runs 150 seeds
+  of 200. `--seed <n> --steps <s>` regenerates one sequence. `--counts`
+  prints how often each outcome was reached.
+- **Replaying a failure.** A failure writes its ops, with the Dart version
+  and step count, to `build/library_parity/`, and prints
+  `--replay <file>`, which applies those exact ops again whatever the Dart
+  random stream does. Set `DART` to the Dart command when it is not `dart`
+  (CI uses `fvm dart`).
+- **Left out:** page copies, because their ids differ from the server's on
+  purpose.
+
+After the seeds, the run plays the merge stories in
+`tool/merge_stories.dart` (`parity_scenarios.dart stories`), in their own
+test: two people editing different fields, the same field online and after
+one was offline, grouped fields, a later field set, cleared and undone,
+edits that fall back to a whole write, and lineup group merges that end
+valid and invalid. Each story's ops are built with `elementEditOp` and
 `lineupEditOp`, and each says what the user should end up with. The run
 fails when the server's outcome or rows differ from `applyOp`'s, and when
-either differs from the story. `test/merge_stories_test.dart` plays the same
+either differs from the story, and when a story is missing from the
+report. `--replay` skips them. `test/merge_stories_test.dart` plays the same
 stories through `applyOp` alone.
 
 `tool/merge_seeds.dart` adds 12 seeded sequences on the stories' strategy,
