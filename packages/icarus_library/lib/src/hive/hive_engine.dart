@@ -40,27 +40,25 @@ final class _LazyBox extends _Box {
 final class HiveEngine implements StorageEngine {
   HiveEngine(this.directory);
 
-  static String? _directoryInUse;
-  static var _enginesOpen = 0;
+  static HiveEngine? _holder;
 
   final String? directory;
-  var _holdsDirectory = false;
 
   @override
   int get maxKeyLength => _maxKeyLength;
 
   Future<Stored<_Box>> _box(String area) async {
-    if (!_holdsDirectory) {
-      if (_enginesOpen > 0 && _directoryInUse != directory) {
+    switch (_holder) {
+      case null:
+        _holder = this;
+      case final holder when !identical(holder, this):
         return StorageFailed(
           DeviceFailure(
-            'Hive already holds the store boxes for $_directoryInUse',
+            'another HiveEngine holds the store boxes, for ${holder.directory}',
           ),
         );
-      }
-      _directoryInUse = directory;
-      _enginesOpen++;
-      _holdsDirectory = true;
+      case _:
+        break;
     }
     final opening = _boxes[area] ??= _openBox(area);
     final opened = await opening;
@@ -137,13 +135,10 @@ final class HiveEngine implements StorageEngine {
       });
 
   Future<void> close() async {
-    for (final opening in _boxes.values) {
+    for (final opening in [..._boxes.values]) {
       if (await opening case Done(value: final box)) await box.box.close();
     }
     _boxes.clear();
-    if (_holdsDirectory) {
-      _holdsDirectory = false;
-      _enginesOpen--;
-    }
+    if (identical(_holder, this)) _holder = null;
   }
 }

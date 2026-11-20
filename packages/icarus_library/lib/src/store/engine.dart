@@ -46,6 +46,13 @@ final class StoreStopped extends StorageFailure {
   String toString() => 'StoreStopped($cause)';
 }
 
+final class StoreClosed extends StorageFailure {
+  const StoreClosed();
+
+  @override
+  String toString() => 'StoreClosed()';
+}
+
 abstract interface class StorageEngine {
   int get maxKeyLength;
 

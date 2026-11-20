@@ -172,4 +172,14 @@ void main() {
     expect(done(await engine.read('library', 'a')), isNull);
     await engine.close();
   });
+
+  test('a second hive engine on the same directory is refused', () async {
+    final first = HiveEngine(directory.path);
+    done(await first.write('library', {'a': 'b'}));
+    final second = HiveEngine(directory.path);
+    expect(await second.read('library', 'a'), isA<StorageFailed<String?>>());
+    await first.close();
+    expect(done(await second.read('library', 'a')), 'b');
+    await second.close();
+  });
 }

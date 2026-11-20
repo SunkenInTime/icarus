@@ -49,6 +49,10 @@ final class _Finishing extends _State {
   final JournalRecord record;
 }
 
+final class _Closed extends _State {
+  const _Closed();
+}
+
 final class _Stopped extends _State {
   const _Stopped(this.cause);
 
@@ -69,9 +73,13 @@ final class LibraryStore {
   }) async {
     if (_held[engine] != null) return const StoreNotOpened(StoreAlreadyOpen());
     _held[engine] = true;
-    final opening = await _open(engine, canRead, clock);
-    if (opening is StoreNotOpened) _held[engine] = null;
-    return opening;
+    StoreOpening? opening;
+    try {
+      opening = await _open(engine, canRead, clock);
+      return opening;
+    } finally {
+      if (opening is! StoreOpened) _held[engine] = null;
+    }
   }
 
   static final _held = Expando<bool>();
@@ -123,6 +131,8 @@ final class LibraryStore {
   );
 
   Future<void> close() => _inTurn(() async {
+    if (_state is _Closed) return;
+    _state = const _Closed();
     await _changes.close();
     _held[_engine] = null;
   });
@@ -162,16 +172,32 @@ final class LibraryStore {
     }
     final toRebuild = <String>[];
     for (final key in summaryKeys) {
-      final id = Uri.decodeComponent(key.substring(summaryPrefix.length));
-      switch (await _readKey(libraryArea, key, StrategySummary.decode)) {
-        case NotRead(:final failure):
+      final String text;
+      switch (await _engine.read(libraryArea, key)) {
+        case StorageFailed(:final failure):
           return failure;
-        case Found(:final value) when value.publicId == id:
-          _summaries[id] = value;
-        case Found():
-        case NotFound():
-        case Unreadable():
-          toRebuild.add(id);
+        case Done(value: null):
+          continue;
+        case Done(value: final String value):
+          text = value;
+      }
+      switch (readStored(libraryArea, key, text, StrategySummary.decode)) {
+        case ReadText(:final value) when summaryKey(value.publicId) == key:
+          _summaries[value.publicId] = value;
+        case ReadText():
+        case UnreadableText():
+          switch (readStored(libraryArea, key, text, SummaryTimes.decode)) {
+            case ReadText(:final value) when summaryKey(value.publicId) == key:
+              toRebuild.add(value.publicId);
+            case ReadText():
+            case UnreadableText():
+              _unreadable[key] = UnreadableRow(
+                area: libraryArea,
+                key: key,
+                text: text,
+                problem: 'a summary that does not say which strategy it is',
+              );
+          }
       }
     }
     final List<String> folderKeys;
@@ -550,6 +576,8 @@ final class LibraryStore {
         return null;
       case _Stopped(:final cause):
         return StoreStopped(cause);
+      case _Closed():
+        return const StoreClosed();
       case _Finishing(:final record):
         if (await _finish(_engine, record) case final failure?) {
           return failure;
@@ -563,6 +591,7 @@ final class LibraryStore {
     JournalRecord record,
     S Function() take,
   ) async {
+    if (await _settle() case final failure?) return NotSaved(failure);
     for (final write in record.writes) {
       if (write.key.length > _engine.maxKeyLength) {
         return NotSaved(KeyTooLong(write.area, write.key));
@@ -781,13 +810,16 @@ final class LibraryStore {
 }
 
 final class SummaryTimes {
-  const SummaryTimes(this.createdAt, this.updatedAt);
+  const SummaryTimes(this.publicId, this.createdAt, this.updatedAt);
+
+  final String publicId;
 
   final DateTime createdAt;
   final DateTime updatedAt;
 
   static Decoded<SummaryTimes> decode(Object? json) =>
       JsonFields.read(json, 'summary times', (fields) {
+        final publicId = fields.string('publicId');
         final created = fields.whole('createdAt');
         final updated = fields.whole('updatedAt');
         if (created.abs() > 8640000000000000 ||
@@ -795,6 +827,7 @@ final class SummaryTimes {
           fields.reject('expected times');
         }
         return () => SummaryTimes(
+          publicId,
           DateTime.fromMillisecondsSinceEpoch(created, isUtc: true),
           DateTime.fromMillisecondsSinceEpoch(updated, isUtc: true),
         );

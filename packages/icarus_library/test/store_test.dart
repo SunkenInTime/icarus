@@ -365,7 +365,7 @@ void main() {
           'library': {
             ...seeded['library']!,
             'summary/$strategyId':
-                '{"summaryVersion":2,"createdAt":1767322800000,"updatedAt":1767322800000}',
+                '{"summaryVersion":2,"publicId":"$strategyId","createdAt":1767322800000,"updatedAt":1767322800000}',
           },
         });
         final store = await openStore(disk);
@@ -652,6 +652,114 @@ void main() {
               fail('unexpected ${describeSaving(result)}');
           }
         }
+      },
+    );
+  });
+
+  group('After close', () {
+    test('a closed store saves and reads nothing', () async {
+      final disk = MemoryEngine(seeded);
+      final store = await openStore(disk);
+      final queued = store.commit(strategyId, moveJett);
+      await store.close();
+      final afterClose = await store.commit(
+        strategyId,
+        everyOpType()['strategy.patch']!,
+      );
+      expect(describeSaving(await queued), 'saved');
+      expect(
+        afterClose,
+        isA<NotSaved<StrategyEdited, CommitRefusal>>().having(
+          (result) => result.failure,
+          'failure',
+          isA<StoreClosed>(),
+        ),
+      );
+      expect(
+        await store.readPage(strategyId, 'page-a'),
+        isA<NotRead<PageContent>>(),
+      );
+      final reopened = await openStore(MemoryEngine(disk.contents));
+      expect(reopened.library.strategies.single.name, 'Retake B');
+    });
+
+    test(
+      'closing an old store again does not free the engine for a third',
+      () async {
+        final disk = MemoryEngine(seeded);
+        final old = await openStore(disk);
+        await old.close();
+        final current = await openStore(disk);
+        await old.close();
+        expect(
+          await LibraryStore.open(disk, canRead: readsKnownKinds),
+          isA<StoreNotOpened>(),
+        );
+        await current.close();
+      },
+    );
+  });
+
+  group('Opening', () {
+    test(
+      'a summary key that names no strategy is listed as unreadable',
+      () async {
+        final store = await openStore(
+          MemoryEngine({
+            ...seeded,
+            'library': {...seeded['library']!, 'summary/%': 'garbled'},
+          }),
+        );
+        expect(store.library.strategies, hasLength(1));
+        expect(store.library.unreadable.single.key, 'summary/%');
+      },
+    );
+
+    test(
+      'a repair cut short is finished before the next repair is saved',
+      () async {
+        final second = sampleStrategy();
+        final engine = MemoryEngine(seeded);
+        final adding = await openStore(engine);
+        savedValue(
+          await adding.editLibrary([
+            AddStrategy(
+              StrategyRowSet(
+                strategy: const StrategyRow(
+                  publicId: 'strategy-2',
+                  name: 'Second',
+                  mapData: 'bind',
+                  revision: 1,
+                ),
+                pages: second.pages,
+                settings: second.settings,
+              ),
+              createdAt: createdAt,
+              updatedAt: createdAt,
+            ),
+          ]),
+        );
+        await adding.close();
+        final newer =
+            '{"summaryVersion":9,"publicId":"%s","createdAt":0,"updatedAt":0}';
+        final disk = MemoryEngine({
+          ...engine.contents,
+          'library': {
+            'summary/$strategyId': newer.replaceFirst('%s', strategyId),
+            'summary/strategy-2': newer.replaceFirst('%s', 'strategy-2'),
+          },
+        });
+        final flaky = FlakyEngine(disk);
+        flaky.failing.add(1);
+        final store = await openStore(flaky);
+        expect(store.library.strategies, hasLength(2));
+        expect(disk.contents.containsKey('journal'), isFalse);
+        final reopened = await openStore(MemoryEngine(disk.contents));
+        expect(reopened.library.strategies, hasLength(2));
+        expect(
+          disk.contents['library']!.values,
+          everyElement(contains('"summaryVersion":1')),
+        );
       },
     );
   });
