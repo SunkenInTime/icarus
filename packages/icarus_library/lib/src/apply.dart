@@ -618,7 +618,16 @@ final class _Apply {
         fields.contains(RowField.payloadVersion) ||
         fields.contains(RowField.kind);
     final mergeFields = [
-      if (payloadChanged) ...write.dataFields.toList()..sort(),
+      if (payloadChanged)
+        ...groupedFields(
+          before.payload.kind,
+          switch (write.after) {
+            ReadableElementRow(:final payload) => payload.data,
+            _ => const {},
+          },
+          restored,
+          write.dataFields,
+        ),
       if (movedPlace) placeField,
     ];
     return UndoWithOp(

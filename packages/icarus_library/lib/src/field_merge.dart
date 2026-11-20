@@ -88,6 +88,20 @@ final class WholeEdit extends EditShape {
 
 enum Connection { live, offline }
 
+sealed class Drawn {
+  const Drawn(this.revision);
+
+  final int revision;
+}
+
+final class DrawnAt extends Drawn {
+  const DrawnAt(super.revision);
+}
+
+final class BehindWholeWrite extends Drawn {
+  const BehindWholeWrite(super.revision);
+}
+
 typedef _Read = ({bool present, Object? value});
 
 List<String> payloadFields(FieldMerge merge) => [
@@ -128,21 +142,31 @@ EditShape elementEdit(ElementPayload base, ElementPayload desired) {
       return WholeEdit(IdentityDiffers(key));
     }
   }
-  final changed = <String>{
-    for (final key in {...before.keys, ...after.keys})
-      if (!_sameOrUnset(before, after, key)) key,
-  };
+  return FieldEdit(
+    groupedFields(desired.kind, before, after, {
+      for (final key in {...before.keys, ...after.keys})
+        if (!_sameOrUnset(before, after, key)) key,
+    }),
+  );
+}
+
+List<String> groupedFields(
+  ElementKind kind,
+  Map<String, Object?> before,
+  Map<String, Object?> after,
+  Set<String> changed,
+) {
+  final named = {...changed};
   for (final group in fieldGroups) {
-    if (group.appliesTo(desired.kind, after) &&
-        changed.any(group.fields.contains)) {
-      changed.addAll(
+    if (group.appliesTo(kind, after) && changed.any(group.fields.contains)) {
+      named.addAll(
         group.fields.where(
           (key) => before.containsKey(key) || after.containsKey(key),
         ),
       );
     }
   }
-  return FieldEdit(changed.toList()..sort());
+  return named.toList()..sort();
 }
 
 Map<String, Map<String, Object?>> _itemsById(
@@ -221,7 +245,7 @@ FieldMerge _editMerge(
 ElementPatchOp elementEditOp({
   required String opId,
   required LiveElement base,
-  required int drawnRevision,
+  required Drawn drawn,
   required ElementPayload payload,
   required int sortIndex,
   required Connection connection,
@@ -235,9 +259,12 @@ ElementPatchOp elementEditOp({
     sortIndex: sortIndex,
     merge: merge,
   );
-  return switch (elementEdit(base.payload, payload)) {
-    WholeEdit() => patch(null, math.min(base.revision, drawnRevision)),
-    FieldEdit(:final fields) => patch(
+  return switch ((drawn, elementEdit(base.payload, payload))) {
+    (BehindWholeWrite(), _) || (DrawnAt(), WholeEdit()) => patch(
+      null,
+      math.min(base.revision, drawn.revision),
+    ),
+    (DrawnAt(), FieldEdit(:final fields)) => patch(
       _editMerge(
         fields,
         _elementReader(base.payload.data),
@@ -253,7 +280,7 @@ ElementPatchOp elementEditOp({
 LineupGroupPatchOp lineupEditOp({
   required String opId,
   required LiveLineupGroup base,
-  required int drawnRevision,
+  required Drawn drawn,
   required LineupGroupPayload payload,
   required int sortIndex,
   required Connection connection,
@@ -268,9 +295,12 @@ LineupGroupPatchOp lineupEditOp({
         sortIndex: sortIndex,
         merge: merge,
       );
-  return switch (lineupEdit(base.payload, payload)) {
-    WholeEdit() => patch(null, math.min(base.revision, drawnRevision)),
-    FieldEdit(:final fields) => patch(
+  return switch ((drawn, lineupEdit(base.payload, payload))) {
+    (BehindWholeWrite(), _) || (DrawnAt(), WholeEdit()) => patch(
+      null,
+      math.min(base.revision, drawn.revision),
+    ),
+    (DrawnAt(), FieldEdit(:final fields)) => patch(
       _editMerge(
         fields,
         _lineupBaseReader(base.payload.data),

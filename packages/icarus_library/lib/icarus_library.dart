@@ -1,7 +1,10 @@
 export 'src/apply.dart' show applyOp;
 export 'src/field_merge.dart'
     show
+        BehindWholeWrite,
         Connection,
+        Drawn,
+        DrawnAt,
         EditShape,
         FieldEdit,
         IdentityDiffers,

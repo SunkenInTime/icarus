@@ -49,7 +49,7 @@ void main() {
     final op = elementEditOp(
       opId: 'op',
       base: jett,
-      drawnRevision: 4,
+      drawn: DrawnAt(4),
       payload: _with(jett, {'isAlly': false}),
       sortIndex: 2,
       connection: Connection.live,
@@ -63,7 +63,7 @@ void main() {
     final op = elementEditOp(
       opId: 'op',
       base: jett,
-      drawnRevision: 4,
+      drawn: DrawnAt(4),
       payload: _with(jett, {'isAlly': false, 'caption': 'lurk'}),
       sortIndex: 5,
       connection: Connection.offline,
@@ -82,7 +82,7 @@ void main() {
     final op = elementEditOp(
       opId: 'op',
       base: jett,
-      drawnRevision: 3,
+      drawn: DrawnAt(3),
       payload: _with(jett, {'type': 'sova'}),
       sortIndex: 2,
       connection: Connection.live,
@@ -103,7 +103,7 @@ void main() {
     final op = lineupEditOp(
       opId: 'op',
       base: base,
-      drawnRevision: 2,
+      drawn: DrawnAt(2),
       payload: _group([_link('k0', 'jump'), _link('k1', '')]),
       sortIndex: 0,
       connection: Connection.offline,
@@ -149,4 +149,90 @@ void main() {
       final other => other,
     }, _group([_link('k0', '')]));
   });
+
+  test('an edit made behind a pending whole write is whole too, claiming the '
+      'same revision', () {
+    final op = elementEditOp(
+      opId: 'op',
+      base: jett,
+      drawn: const BehindWholeWrite(3),
+      payload: _with(jett, {'isAlly': false}),
+      sortIndex: 2,
+      connection: Connection.live,
+    );
+    expect(op.merge, isNull);
+    expect(op.expectedElementRevision, 3);
+  });
+
+  test('a lineup group written whole claims only the revision this client '
+      'drew', () {
+    final base = LiveLineupGroup(
+      strategyPublicId: strategyId,
+      publicId: 'g0',
+      pagePublicId: 'page-a',
+      payload: _group([_link('k0', '')]),
+      sortIndex: 0,
+      revision: 4,
+    );
+    LineupGroupPatchOp edit(Drawn drawn) => lineupEditOp(
+      opId: 'op',
+      base: base,
+      drawn: drawn,
+      payload: _group([_link('k0', 'jump')]),
+      sortIndex: 0,
+      connection: Connection.live,
+    );
+    expect(
+      (
+        edit(const BehindWholeWrite(2)).merge,
+        edit(const BehindWholeWrite(2)).expectedLineupRevision,
+      ),
+      (null, 2),
+    );
+    expect(edit(const DrawnAt(4)).merge, FieldMerge(fields: ['links/k0']));
+  });
+
+  const groups = [
+    (ElementKind.agent, 'agent', ['length', 'rotation']),
+    (ElementKind.ability, 'ability', ['length', 'rotation']),
+    (
+      ElementKind.drawing,
+      'drawing',
+      ['boundingBox', 'end', 'lineEnd', 'lineStart', 'listOfPoints', 'start'],
+    ),
+    (ElementKind.text, 'text', ['fontSize', 'position', 'size', 'sizeVersion']),
+    (ElementKind.image, 'image', ['position', 'scale', 'sizeVersion']),
+    (
+      ElementKind.utility,
+      'customRectangle',
+      ['customLength', 'customWidth', 'position', 'rotation'],
+    ),
+    (ElementKind.utility, 'viewCone90', ['length', 'rotation']),
+  ];
+  for (final (kind, type, members) in groups) {
+    for (final member in members) {
+      test('changing ${kind.name} ($type) $member names its whole group', () {
+        final base = ElementPayload(
+          kind: kind,
+          payloadVersion: 1,
+          data: {
+            'id': 'x',
+            'elementType': kind.name,
+            if (kind == ElementKind.utility) 'type': type,
+            for (final field in members) field: 1,
+            'isAlly': true,
+          },
+        );
+        final desired = ElementPayload(
+          kind: kind,
+          payloadVersion: 1,
+          data: {...base.data, member: 2},
+        );
+        expect(switch (elementEdit(base, desired)) {
+          FieldEdit(:final fields) => fields,
+          WholeEdit(:final reason) => reason,
+        }, members);
+      });
+    }
+  }
 }

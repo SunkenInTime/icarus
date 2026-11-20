@@ -97,7 +97,7 @@ Map<String, Object?> _scenario(
         op = elementEditOp(
           opId: opId,
           base: row,
-          drawnRevision: row.revision,
+          drawn: DrawnAt(row.revision),
           payload: changed(row, pick(fieldsOf(row, sideOnly: false))),
           sortIndex: rng.nextInt(5) == 0 ? rng.nextInt(4) : row.sortIndex,
           connection: Connection.live,
@@ -109,7 +109,7 @@ Map<String, Object?> _scenario(
         op = elementEditOp(
           opId: opId,
           base: base,
-          drawnRevision: base.revision,
+          drawn: DrawnAt(base.revision),
           payload: changed(base, pick(fieldsOf(base, sideOnly: true))),
           sortIndex: base.sortIndex,
           connection: Connection.offline,
@@ -125,7 +125,7 @@ Map<String, Object?> _scenario(
         op = elementEditOp(
           opId: opId,
           base: base,
-          drawnRevision: base.revision,
+          drawn: DrawnAt(base.revision),
           payload: base.payload,
           sortIndex: base.sortIndex + 1 + rng.nextInt(2),
           connection: Connection.offline,
@@ -138,7 +138,7 @@ Map<String, Object?> _scenario(
         op = lineupEditOp(
           opId: opId,
           base: base,
-          drawnRevision: base.revision,
+          drawn: DrawnAt(base.revision),
           payload: base.payload,
           sortIndex: base.sortIndex + 1 + rng.nextInt(2),
           connection: offline ? Connection.offline : Connection.live,
@@ -170,7 +170,9 @@ Map<String, Object?> _scenario(
     }
     final result = applyOp(rows, op);
     final counts = switch ((goal, result)) {
-      (final String goal?, OpApplied()) when !goal.endsWith('refused') => goal,
+      (final String goal?, OpApplied(:final rows))
+          when !goal.endsWith('refused') && _goalHolds(goal, op, rows) =>
+        goal,
       (
         final String goal?,
         OpRefused(refusal: Rejected(reason: RejectionReason.fieldConflict)),
@@ -202,4 +204,16 @@ Map<String, Object?> _scenario(
     'ops': [for (final op in ops) op.toJson()],
     'predicted': predicted,
   };
+}
+
+bool _goalHolds(String goal, StrategyOp op, Iterable<Row> written) {
+  const prefix = 'older build write kept ';
+  if (!goal.startsWith(prefix) || op is! ElementPatchOp) return true;
+  final field = goal.substring(prefix.length);
+  return written.any(
+    (row) =>
+        row is LiveElement &&
+        row.publicId == op.elementPublicId &&
+        row.payload.data.containsKey(field),
+  );
 }

@@ -261,7 +261,7 @@ ElementPatchOp _edit(
 }) => elementEditOp(
   opId: opId,
   base: base,
-  drawnRevision: base.revision,
+  drawn: DrawnAt(base.revision),
   payload: _with(base, changes),
   sortIndex: sortIndex ?? base.sortIndex,
   connection: connection,
@@ -343,7 +343,7 @@ LineupGroupPatchOp _groupEdit(
 }) => lineupEditOp(
   opId: opId,
   base: _group,
-  drawnRevision: _group.revision,
+  drawn: DrawnAt(_group.revision),
   payload: payload,
   sortIndex: sortIndex ?? _group.sortIndex,
   connection: connection,
@@ -360,6 +360,7 @@ List<MergeStory> mergeStories() {
     ],
   });
   final firstCaption = _edit('caption-first', _jett, {'caption': 'entry'});
+  final scaled = _edit('scale', _photo, {'scale': 2});
   return [
     MergeStory(
       'two people move and recolour one agent online, both keep their change',
@@ -583,6 +584,30 @@ List<MergeStory> mergeStories() {
             _link('k0', 'o0', 'l0', 'jump throw'),
             _link('k1', 'o1', 'l1', ''),
           ],
+        },
+      },
+    ),
+    MergeStory(
+      'undo of an image scale puts its position back with its scale over a '
+      'teammate\'s move',
+      ops: [
+        scaled,
+        ElementPatchOp(
+          opId: 'teammate-move',
+          elementPublicId: 'photo',
+          expectedElementRevision: 2,
+          payload: _with(_after(_photo, scaled), {
+            'position': {'x': 1, 'y': 1},
+          }),
+          merge: FieldMerge(fields: ['position']),
+        ),
+        _undo(_photo, scaled),
+      ],
+      outcomes: [_applied, _applied, _applied],
+      expected: {
+        'photo': {
+          'position': {'x': 10, 'y': 10},
+          'scale': 1,
         },
       },
     ),
