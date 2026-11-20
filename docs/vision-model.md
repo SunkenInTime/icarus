@@ -1074,6 +1074,8 @@ that was true for every map and never reached it.
 It is gone: the loader, the boundary editor and its assets, the grid search,
 `tool/generate_view_cone_geometry.dart` and `tool/vision_collision_audit/`.
 Cones come only from the height models described above, and agents walk only
-on the baked navigation; a move with no route goes straight. The navigation
+on the baked navigation. A move the navigation has no route for goes
+straight; if the navigation file fails to load, the editor moves agents
+straight and video export stops with an error. The navigation
 files are still stored in Riot's minimap uv, so `Maps.projectUv` keeps the
 padding, quarter turns and alignment that place them on the art.

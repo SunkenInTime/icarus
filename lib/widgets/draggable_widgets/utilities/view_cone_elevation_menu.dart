@@ -72,18 +72,6 @@ String formatVisionElevation(double elevation) {
       '${meters.toStringAsFixed(wholeMeters ? 0 : 2)} m';
 }
 
-ShadContextMenuItem buildViewConeDebugMenuItem({
-  required bool enabled,
-  required ValueChanged<bool> onChanged,
-}) {
-  return ShadContextMenuItem(
-    leading: Icon(enabled ? LucideIcons.eye : LucideIcons.eyeOff, size: 16),
-    trailing: Text(enabled ? 'On' : 'Off'),
-    onPressed: () => onChanged(!enabled),
-    child: const Text('Vision calibration'),
-  );
-}
-
 ShadContextMenuItem _elevationItem({
   required String label,
   required bool selected,
