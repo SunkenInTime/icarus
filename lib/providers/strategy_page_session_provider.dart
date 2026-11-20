@@ -425,22 +425,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final startSettings = ref.read(strategySettingsProvider);
     final previous = _snapshotAllPlaced();
     final previousDoors = _changedDoors();
-    final strategyState = ref.read(strategyProvider);
     final sourcePageId = state.activePageId;
-    var fadeInDrawings = false;
-    if (strategyState.source == StrategySource.local &&
-        strategyState.strategyId != null) {
-      final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-          .get(strategyState.strategyId);
-      final targetPage =
-          strategy?.pages.where((page) => page.id == pageId).firstOrNull;
-      if (targetPage != null) {
-        fadeInDrawings = TransitionPlanner.drawingsChanged(
-          ref.read(drawingProvider).elements,
-          targetPage.drawingData,
-        );
-      }
-    }
     transitionNotifier.prepare(
       previous.values.toList(),
       direction: direction,
@@ -448,7 +433,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       startAbilitySize: startSettings.abilitySize,
       sourcePageId: sourcePageId,
       targetPageId: pageId,
-      fadeInDrawings: fadeInDrawings,
       fromDoors: previousDoors,
     );
 
@@ -505,6 +489,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       _resumePendingRemoteReapplyIfPossible();
       Error.throwWithStackTrace(error, stackTrace);
     }
+    final fadeInDrawings = ref.read(transitionProvider).fadeInDrawings;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final preliminaryNext = _snapshotAllPlaced();
       final preliminaryEntries = _diffToTransitions(previous, preliminaryNext);
@@ -567,7 +552,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         sourcePageId: sourcePageId,
         targetPageId: pageId,
         agentPaths: agentPaths,
-        fadeInDrawings: fadeInDrawings,
       );
       state = state.copyWith(transitionState: PageTransitionState.idle);
       _resumePendingRemoteReapplyIfPossible();
@@ -1192,6 +1176,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
 
     final pageData = await pageSource.loadPage(pageId);
+    if (animated) {
+      ref.read(transitionProvider.notifier).targetRead(
+            pageId,
+            fadeInDrawings: TransitionPlanner.drawingsChanged(
+              ref.read(drawingProvider).elements,
+              pageData.drawings,
+            ),
+          );
+    }
     await _applyLoadedPageData(
       pageData,
       strategyId: strategyId,

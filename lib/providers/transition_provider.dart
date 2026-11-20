@@ -139,7 +139,6 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       required double startAbilitySize,
       String? sourcePageId,
       String? targetPageId,
-      bool fadeInDrawings = false,
       Set<String> fromDoors = const {}}) {
     state = state.copyWith(
       allWidgets: widgets,
@@ -156,9 +155,17 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       sourcePageId: sourcePageId,
       targetPageId: targetPageId,
       agentPaths: const {},
-      fadeInDrawings: fadeInDrawings,
+      fadeInDrawings: false,
       fromDoors: fromDoors,
     );
+  }
+
+  void targetRead(String targetPageId, {required bool fadeInDrawings}) {
+    if (state.phase != PageTransitionPhase.preparing ||
+        state.targetPageId != targetPageId) {
+      return;
+    }
+    state = state.copyWith(fadeInDrawings: fadeInDrawings);
   }
 
   void start(List<PageTransitionEntry> entries,
@@ -170,8 +177,7 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       required double endAbilitySize,
       Map<String, AgentTransitionPath> agentPaths = const {},
       String? sourcePageId,
-      String? targetPageId,
-      bool fadeInDrawings = false}) {
+      String? targetPageId}) {
     state = state.copyWith(
       hideView: true,
       active: true,
@@ -188,7 +194,6 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       sourcePageId: sourcePageId,
       targetPageId: targetPageId,
       agentPaths: agentPaths,
-      fadeInDrawings: fadeInDrawings,
     );
   }
 
