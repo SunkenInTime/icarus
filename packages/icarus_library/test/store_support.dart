@@ -102,12 +102,18 @@ abstract base class ForwardingLease implements StorageLease {
   int get maxKeyLength => inner.maxKeyLength;
 
   @override
-  Future<Stored<String?>> read(String area, String key) =>
-      inner.read(area, key);
+  LeaseStatus get status => inner.status;
+
+  @override
+  Future<KeyRead> read(String area, String key) => inner.read(area, key);
 
   @override
   Future<Stored<List<String>>> keys(String area, String prefix) =>
       inner.keys(area, prefix);
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
+      inner.entries(area, prefix);
 
   @override
   Future<Stored<void>> write(String area, Map<String, String> values) =>
@@ -118,7 +124,7 @@ abstract base class ForwardingLease implements StorageLease {
       inner.delete(area, keys);
 
   @override
-  Future<void> release() => inner.release();
+  Future<Releasing> release() => inner.release();
 }
 
 final class Counts {
@@ -147,9 +153,20 @@ final class CountingLease extends ForwardingLease {
   final Counts counts;
 
   @override
-  Future<Stored<String?>> read(String area, String key) {
+  Future<KeyRead> read(String area, String key) {
     counts.reads.add((area, key));
     return super.read(area, key);
+  }
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async {
+    counts.listings.add((area, prefix));
+    final result = await super.entries(area, prefix);
+    if (result case Done(:final value)) {
+      counts.listed += value.length;
+      counts.reads.addAll([for (final entry in value) (area, entry.key)]);
+    }
+    return result;
   }
 
   @override
@@ -211,9 +228,14 @@ final class CrashingLease extends ForwardingLease {
   }
 
   @override
-  Future<Stored<String?>> read(String area, String key) => cut.cut
+  Future<KeyRead> read(String area, String key) =>
+      cut.cut ? Future.value(const KeyNotRead(crashed)) : super.read(area, key);
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
+      cut.cut
       ? Future.value(const StorageFailed(crashed))
-      : super.read(area, key);
+      : super.entries(area, prefix);
 
   @override
   Future<Stored<List<String>>> keys(String area, String prefix) => cut.cut

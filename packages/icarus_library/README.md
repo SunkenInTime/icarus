@@ -248,9 +248,15 @@ the app stops without closing). Each check returns `Passed` or
 `Broke(what)`. This package runs them on `MemoryEngine` in
 `test/engine_test.dart`, along with two broken engines the checks catch.
 
-- **Keys** are ASCII strings inside a named area. `keys(area, prefix)` lists
-  the keys that start with the prefix, in ascending order. A lease holds any
-  key up to its `maxKeyLength`, which is at least 255.
+- **Keys** are ASCII strings inside a named area of at most `maxAreaLength`
+  (64) ASCII characters. A lease holds any key up to its `maxKeyLength`,
+  which is at least 255, and a write naming a longer key returns
+  `StorageFailed(KeyTooLong)` and writes none of its keys.
+- **Reading.** `read(area, key)` is `KeyHeld(value)`, `KeyMissing` or
+  `KeyNotRead(failure)`. `keys(area, prefix)` lists the keys that start with
+  the prefix, and `entries(area, prefix)` lists them with their values, both
+  in ascending order. The store reads a page, the summaries and the folders
+  with one `entries` call each.
 - **A write or delete is whole.** Each call writes or deletes all of its keys
   or none of them, also across a crash.
 - **A call that returned `Done` survives a crash**, including the device
@@ -260,14 +266,19 @@ the app stops without closing). Each check returns `Passed` or
 - **One writer at a time, for its whole life.** An engine grants one lease at
   a time for the storage under it, whichever engine object, process or tab
   asks: a second `lease()` is `HeldByAnotherWriter` until the first is
-  released. A lease ends when its holder releases it or its engine closes,
-  and once ended it never works again: every call through it returns
-  `StorageFailed(LeaseEnded)` and changes nothing, even after another writer
-  has come and gone. A store whose lease ends stops (`StoreStopped`); it
-  never takes the storage back.
-- **Failures are values.** A call returns `StorageFailed` with a
-  `DeviceFailure`, `KeyTooLong` or `LeaseEnded`; nothing the device does
-  throws.
+  released, also while the first holder's write is in flight. A lease's
+  `status` is `Holding` or `Ended`. It ends when its holder calls
+  `release()` or its engine closes, and once ended it never works again:
+  every call through it returns `LeaseEnded` and changes nothing, even after
+  another writer has come and gone. A write in flight when its lease ends
+  either lands whole before the next lease is granted, or does not land.
+- **Releasing** returns `Released`, or `ReleaseFailed(failure)` when the
+  device failed while letting go. Either way the lease is ended for its
+  holder; after `ReleaseFailed` the storage may still refuse a new lease
+  until the engine closes or its process ends.
+- **Failures are values.** A call returns `StorageFailed` (or `KeyNotRead`)
+  with a `DeviceFailure`, `KeyTooLong` or `LeaseEnded`; nothing the device
+  does throws.
 
 ### Where rows are kept
 

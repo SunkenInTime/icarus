@@ -82,9 +82,26 @@ final class _WatchedLease implements StorageLease {
   @override
   int get maxKeyLength => _inner.maxKeyLength;
 
+  Future<Stored<String?>> text(String area, String key) async =>
+      switch (await read(area, key)) {
+        KeyHeld(:final value) => Done(value),
+        KeyMissing() => const Done(null),
+        KeyNotRead(:final failure) => StorageFailed(failure),
+      };
+
   @override
-  Future<Stored<String?>> read(String area, String key) =>
-      _watch(_inner.read(area, key));
+  LeaseStatus get status => _inner.status;
+
+  @override
+  Future<KeyRead> read(String area, String key) async {
+    final result = await _inner.read(area, key);
+    if (result case KeyNotRead(failure: LeaseEnded())) _ended();
+    return result;
+  }
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
+      _watch(_inner.entries(area, prefix));
 
   @override
   Future<Stored<List<String>>> keys(String area, String prefix) =>
@@ -99,7 +116,7 @@ final class _WatchedLease implements StorageLease {
       _watch(_inner.delete(area, keys));
 
   @override
-  Future<void> release() => _inner.release();
+  Future<Releasing> release() => _inner.release();
 }
 
 final class LibraryStore {
@@ -134,7 +151,7 @@ final class LibraryStore {
     DateTime Function() clock,
   ) async {
     final store = LibraryStore._(lease, canRead, clock);
-    switch (await store._lease.read(journalArea, journalKey)) {
+    switch (await store._lease.text(journalArea, journalKey)) {
       case StorageFailed(:final failure):
         return StoreNotOpened(OpenStorageFailed(failure));
       case Done(value: null):
@@ -269,7 +286,7 @@ final class LibraryStore {
     final toRebuild = <String>[];
     for (final key in summaryKeys) {
       final id = _id(key.substring(summaryPrefix.length));
-      switch (await _lease.read(libraryArea, key)) {
+      switch (await _lease.text(libraryArea, key)) {
         case StorageFailed(:final failure):
           return failure;
         case Done(value: null):
@@ -291,7 +308,7 @@ final class LibraryStore {
         folderKeys = value;
     }
     for (final key in folderKeys) {
-      switch (await _lease.read(libraryArea, key)) {
+      switch (await _lease.text(libraryArea, key)) {
         case StorageFailed(:final failure):
           return failure;
         case Done(value: null):
@@ -338,7 +355,7 @@ final class LibraryStore {
     if (_strategies[strategyPublicId] case final loaded?) return Found(loaded);
     final area = strategyArea(strategyPublicId);
     final ReadableStrategy header;
-    switch (await _lease.read(area, headerKey)) {
+    switch (await _lease.text(area, headerKey)) {
       case StorageFailed(:final failure):
         return NotRead(failure);
       case Done(value: null):
@@ -400,27 +417,12 @@ final class LibraryStore {
   Future<Stored<List<(String, String)>>> _texts(
     String area,
     String prefix,
-  ) async {
-    final List<String> keys;
-    switch (await _lease.keys(area, prefix)) {
-      case StorageFailed(:final failure):
-        return StorageFailed(failure);
-      case Done(:final value):
-        keys = value;
-    }
-    final texts = <(String, String)>[];
-    for (final key in keys) {
-      switch (await _lease.read(area, key)) {
-        case StorageFailed(:final failure):
-          return StorageFailed(failure);
-        case Done(value: null):
-          break;
-        case Done(value: final String text):
-          texts.add((key, text));
-      }
-    }
-    return Done(texts);
-  }
+  ) async => switch (await _lease.entries(area, prefix)) {
+    StorageFailed(:final failure) => StorageFailed(failure),
+    Done(:final value) => Done([
+      for (final (:key, :value) in value) (key, value),
+    ]),
+  };
 
   Future<StorageFailure?> _loadPages(
     LoadedStrategy strategy,
@@ -537,7 +539,7 @@ final class LibraryStore {
 
   Future<Recovery> recovered(SaveReceipt receipt) => _inTurn(() async {
     if (await _settle() case final failure?) return RecoveryNotRead(failure);
-    return switch (await _lease.read(journalArea, recoveredKey(receipt.id))) {
+    return switch (await _lease.text(journalArea, recoveredKey(receipt.id))) {
       StorageFailed(:final failure) => RecoveryNotRead(failure),
       Done(value: null) => const EditNotRecovered(),
       Done(value: String()) => const EditRecovered(),

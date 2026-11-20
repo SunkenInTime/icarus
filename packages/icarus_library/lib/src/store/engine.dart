@@ -87,15 +87,69 @@ final class LeaseFailed extends Leasing {
 abstract interface class StorageLease {
   int get maxKeyLength;
 
-  Future<Stored<String?>> read(String area, String key);
+  LeaseStatus get status;
+
+  Future<KeyRead> read(String area, String key);
 
   Future<Stored<List<String>>> keys(String area, String prefix);
+
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix);
 
   Future<Stored<void>> write(String area, Map<String, String> values);
 
   Future<Stored<void>> delete(String area, Iterable<String> keys);
 
-  Future<void> release();
+  Future<Releasing> release();
 }
+
+typedef StoredEntry = ({String key, String value});
+
+sealed class KeyRead {
+  const KeyRead();
+}
+
+final class KeyHeld extends KeyRead {
+  const KeyHeld(this.value);
+
+  final String value;
+}
+
+final class KeyMissing extends KeyRead {
+  const KeyMissing();
+}
+
+final class KeyNotRead extends KeyRead {
+  const KeyNotRead(this.failure);
+
+  final StorageFailure failure;
+}
+
+sealed class LeaseStatus {
+  const LeaseStatus();
+}
+
+final class Holding extends LeaseStatus {
+  const Holding();
+}
+
+final class Ended extends LeaseStatus {
+  const Ended();
+}
+
+sealed class Releasing {
+  const Releasing();
+}
+
+final class Released extends Releasing {
+  const Released();
+}
+
+final class ReleaseFailed extends Releasing {
+  const ReleaseFailed(this.failure);
+
+  final StorageFailure failure;
+}
+
+const maxAreaLength = 64;
 
 const done = Done<void>(null);

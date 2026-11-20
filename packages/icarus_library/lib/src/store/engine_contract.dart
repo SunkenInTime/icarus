@@ -52,11 +52,20 @@ T _done<T>(Stored<T> stored, String what) => switch (stored) {
   StorageFailed(:final failure) => _broke('$what failed: $failure'),
 };
 
+String? _value(KeyRead read, String what) => switch (read) {
+  KeyHeld(:final value) => value,
+  KeyMissing() => null,
+  KeyNotRead(:final failure) => _broke('$what failed: $failure'),
+};
+
+Future<String?> _read(StorageLease lease, String area, String key) async =>
+    _value(await lease.read(area, key), 'read $area $key');
+
 void _same(Object? actual, Object? expected, String what) {
   if (actual != expected) _broke('$what: expected $expected, got $actual');
 }
 
-void _sameList(List<String> actual, List<String> expected, String what) {
+void _sameList(List<Object?> actual, List<Object?> expected, String what) {
   if (actual.length != expected.length ||
       !Iterable<int>.generate(
         actual.length,
@@ -65,9 +74,18 @@ void _sameList(List<String> actual, List<String> expected, String what) {
   }
 }
 
-void _ended<T>(Stored<T> stored, String what) {
-  if (stored case StorageFailed(failure: LeaseEnded())) return;
-  _broke('$what through an ended lease gave $stored, not LeaseEnded');
+void _ended(Object result, String what) {
+  switch (result) {
+    case StorageFailed(failure: LeaseEnded()) ||
+        KeyNotRead(failure: LeaseEnded()):
+      return;
+    case _:
+      _broke('$what through an ended lease gave $result, not LeaseEnded');
+  }
+}
+
+void _endedStatus(StorageLease lease, String when) {
+  if (lease.status is! Ended) _broke('a lease $when still says it holds');
 }
 
 EngineCheck _check(
@@ -97,30 +115,40 @@ final List<EngineCheck> engineContract = [
     final lease = await _lease(engine);
     _done(await lease.write('one', _values), 'write');
     for (final MapEntry(:key, :value) in _values.entries) {
-      _same(_done(await lease.read('one', key), 'read'), value, 'read $key');
-      _same(_done(await lease.read('two', key), 'read'), null, 'other area');
+      _same(await _read(lease, 'one', key), value, 'read $key');
+      _same(await _read(lease, 'two', key), null, 'other area');
     }
-    _same(_done(await lease.read('one', 'missing'), 'read'), null, 'missing');
+    if (await lease.read('one', 'missing') is! KeyMissing) {
+      _broke('a key never written did not read as missing');
+    }
     await harness.close(engine);
   }),
-  _check('lists keys by prefix in ascending order', (harness) async {
+  _check('lists keys, and keys with values, by prefix in ascending order', (
+    harness,
+  ) async {
     final engine = await harness.open();
     final lease = await _lease(engine);
-    _done(
-      await lease.write('a', {
-        'page/b': '2',
-        'page/a': '1',
-        'page/a/x': '3',
-        'pages': '4',
-        'other': '5',
-      }),
-      'write',
+    final values = {
+      'page/b': '2',
+      'page/a': '1',
+      'page/a/x': '3',
+      'pages': '4',
+      'other': '5',
+    };
+    _done(await lease.write('a', values), 'write');
+    const under = ['page/a', 'page/a/x', 'page/b'];
+    _sameList(_done(await lease.keys('a', 'page/'), 'keys'), under, 'keys');
+    _sameList(
+      [
+        for (final (:key, :value) in _done(
+          await lease.entries('a', 'page/'),
+          'entries',
+        ))
+          '$key=$value',
+      ],
+      [for (final key in under) '$key=${values[key]}'],
+      'entries',
     );
-    _sameList(_done(await lease.keys('a', 'page/'), 'keys'), [
-      'page/a',
-      'page/a/x',
-      'page/b',
-    ], 'keys under page/');
     _sameList(_done(await lease.keys('a', ''), 'keys'), [
       'other',
       'page/a',
@@ -128,7 +156,7 @@ final List<EngineCheck> engineContract = [
       'page/b',
       'pages',
     ], 'every key');
-    _sameList(_done(await lease.keys('b', ''), 'keys'), [], 'empty area');
+    _sameList(_done(await lease.entries('b', ''), 'entries'), [], 'empty');
     await harness.close(engine);
   }),
   _check('a delete removes only the keys it names', (harness) async {
@@ -154,39 +182,80 @@ final List<EngineCheck> engineContract = [
     final reopened = await _lease(after);
     for (var i = 0; i < 50; i++) {
       _same(
-        _done(await reopened.read('a', 'k$i'), 'read'),
+        await _read(reopened, 'a', 'k$i'),
         i == 7 || i == 8 ? null : 'v$i',
         'k$i after a crash',
       );
     }
     await harness.close(after);
   }),
-  _check('holds a key as long as its maxKeyLength, at least 255', (
-    harness,
-  ) async {
-    final engine = await harness.open();
-    final lease = await _lease(engine);
-    if (lease.maxKeyLength < 255) {
-      _broke('maxKeyLength ${lease.maxKeyLength} is under 255');
-    }
-    final key = 'k' * (lease.maxKeyLength < 4096 ? lease.maxKeyLength : 4096);
-    _done(await lease.write('a', {key: 'v'}), 'write');
-    _same(_done(await lease.read('a', key), 'read'), 'v', 'long key');
-    await harness.close(engine);
-  }),
+  _check(
+    'holds keys up to its maxKeyLength, at least 255, and refuses longer',
+    (harness) async {
+      final engine = await harness.open();
+      final lease = await _lease(engine);
+      final limit = lease.maxKeyLength;
+      if (limit < 255) _broke('maxKeyLength $limit is under 255');
+      final area = 'a' * maxAreaLength;
+      final longest = 'k' * limit;
+      _done(await lease.write(area, {longest: 'v'}), 'write');
+      _same(await _read(lease, area, longest), 'v', 'the longest key');
+      switch (await lease.write(area, {'${longest}k': 'v', 'short': 'v'})) {
+        case StorageFailed(failure: KeyTooLong()):
+          break;
+        case final other:
+          _broke('a key past maxKeyLength gave $other, not KeyTooLong');
+      }
+      _same(await _read(lease, area, 'short'), null, 'a refused write landed');
+      await harness.close(engine);
+    },
+  ),
   _check('grants one lease at a time on the same storage', (harness) async {
     final first = await harness.open();
     final second = await harness.open();
     final held = await _lease(first);
+    if (held.status is! Holding) _broke('a new lease does not say it holds');
     if (await second.lease() is! HeldByAnotherWriter) {
       _broke('a second engine leased storage that was already leased');
     }
     if (await first.lease() is! HeldByAnotherWriter) {
       _broke('the same engine leased its storage twice');
     }
+    final writing = held.write('a', {'x': 'first'});
+    if (await second.lease() is! HeldByAnotherWriter) {
+      _broke('a second lease was granted while the first was writing');
+    }
+    _done(await writing, 'write');
+    if (await held.release() is! Released) _broke('release did not release');
+    _endedStatus(held, 'released');
+    final next = await _lease(second);
+    _same(await _read(next, 'a', 'x'), 'first', 'the first writer\'s write');
+    await harness.close(first);
+    await harness.close(second);
+  }),
+  _check('a write in flight when its lease ends lands whole or not at all', (
+    harness,
+  ) async {
+    final first = await harness.open();
+    final second = await harness.open();
+    final held = await _lease(first);
+    final values = {for (var i = 0; i < 20; i++) 'k$i': 'v$i'};
+    final writing = held.write('a', values);
     await held.release();
     final next = await _lease(second);
-    _done(await next.write('a', {'x': 'second'}), 'write');
+    final atGrant = [
+      for (final key in values.keys) await _read(next, 'a', key),
+    ];
+    final wrote = await writing;
+    final afterWrite = [
+      for (final key in values.keys) await _read(next, 'a', key),
+    ];
+    _sameList(afterWrite, atGrant, 'the old lease wrote after the new grant');
+    final expected = switch (wrote) {
+      Done() => values.values.toList(),
+      StorageFailed() => List<String?>.filled(values.length, null),
+    };
+    _sameList(atGrant, expected, 'what the in-flight write left');
     await harness.close(first);
     await harness.close(second);
   }),
@@ -195,12 +264,14 @@ final List<EngineCheck> engineContract = [
     final lease = await _lease(engine);
     _done(await lease.write('a', {'x': 'kept'}), 'write');
     await lease.release();
+    _endedStatus(lease, 'released');
     _ended(await lease.read('a', 'x'), 'read');
     _ended(await lease.keys('a', ''), 'keys');
+    _ended(await lease.entries('a', ''), 'entries');
     _ended(await lease.write('a', {'x': 'lost'}), 'write');
     _ended(await lease.delete('a', ['x']), 'delete');
     final next = await _lease(engine);
-    _same(_done(await next.read('a', 'x'), 'read'), 'kept', 'after release');
+    _same(await _read(next, 'a', 'x'), 'kept', 'after release');
     await harness.close(engine);
   }),
   _check(
@@ -210,6 +281,7 @@ final List<EngineCheck> engineContract = [
       final old = await _lease(first);
       _done(await old.write('a', {'name': 'before'}), 'write');
       await harness.close(first);
+      _endedStatus(old, 'whose engine closed');
       _ended(await old.write('a', {'name': 'stale'}), 'write');
       final second = await harness.open();
       final current = await _lease(second);
@@ -219,7 +291,7 @@ final List<EngineCheck> engineContract = [
       _ended(await old.read('a', 'name'), 'read');
       final check = await _lease(second);
       _same(
-        _done(await check.read('a', 'name'), 'read'),
+        await _read(check, 'a', 'name'),
         'renamed',
         'the ended lease wrote nothing',
       );

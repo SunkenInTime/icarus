@@ -22,65 +22,93 @@ final class MemoryStorage {
 }
 
 final class MemoryEngine implements StorageEngine {
-  MemoryEngine(this.storage);
+  MemoryEngine(this.storage, {this.maxKeyLength = 1024});
 
   final MemoryStorage storage;
+  final int maxKeyLength;
   final _granted = <_MemoryLease>[];
 
   @override
   Future<Leasing> lease() async {
-    if (storage._holder case final holder? when !holder._ended) {
+    if (storage._holder case final holder? when holder.status is Holding) {
       return const HeldByAnotherWriter();
     }
-    final lease = _MemoryLease(storage);
+    final lease = _MemoryLease(storage, maxKeyLength);
     storage._holder = lease;
     _granted.add(lease);
     return Leased(lease);
   }
 
   Future<void> close() async {
-    for (final lease in _granted) {
+    final granted = [..._granted];
+    _granted.clear();
+    for (final lease in granted) {
       await lease.release();
     }
-    _granted.clear();
   }
 }
 
 final class _MemoryLease implements StorageLease {
-  _MemoryLease(this._storage);
+  _MemoryLease(this._storage, this.maxKeyLength);
 
   final MemoryStorage _storage;
-  var _ended = false;
+  @override
+  final int maxKeyLength;
+  LeaseStatus _status = const Holding();
 
   @override
-  int get maxKeyLength => 1 << 20;
+  LeaseStatus get status => _status;
 
-  Stored<T> _held<T>(T Function() task) =>
-      _ended ? const StorageFailed(LeaseEnded()) : Done(task());
-
-  @override
-  Future<Stored<String?>> read(String area, String key) async =>
-      _held(() => _storage._areas[area]?[key]);
+  Stored<T> _held<T>(T Function() task) => switch (_status) {
+    Holding() => Done(task()),
+    Ended() => const StorageFailed(LeaseEnded()),
+  };
 
   @override
-  Future<Stored<List<String>>> keys(String area, String prefix) async => _held(
-    () => [
-      for (final key in _storage._areas[area]?.keys ?? const <String>[])
-        if (key.startsWith(prefix)) key,
-    ],
-  );
+  Future<KeyRead> read(String area, String key) async => switch (_status) {
+    Ended() => const KeyNotRead(LeaseEnded()),
+    Holding() => switch (_storage._areas[area]?[key]) {
+      final String value => KeyHeld(value),
+      null => const KeyMissing(),
+    },
+  };
+
+  Iterable<MapEntry<String, String>> _under(String area, String prefix) =>
+      (_storage._areas[area] ?? const <String, String>{}).entries.where(
+        (entry) => entry.key.startsWith(prefix),
+      );
 
   @override
-  Future<Stored<void>> write(String area, Map<String, String> values) async =>
-      _held(() => _storage._area(area).addAll(values));
+  Future<Stored<List<String>>> keys(String area, String prefix) async =>
+      _held(() => [for (final entry in _under(area, prefix)) entry.key]);
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
+      _held(
+        () => [
+          for (final entry in _under(area, prefix))
+            (key: entry.key, value: entry.value),
+        ],
+      );
+
+  @override
+  Future<Stored<void>> write(String area, Map<String, String> values) async {
+    for (final key in values.keys) {
+      if (key.length > maxKeyLength) {
+        return StorageFailed(KeyTooLong(area, key));
+      }
+    }
+    return _held(() => _storage._area(area).addAll(values));
+  }
 
   @override
   Future<Stored<void>> delete(String area, Iterable<String> keys) async =>
       _held(() => keys.toList().forEach(_storage._area(area).remove));
 
   @override
-  Future<void> release() async {
-    _ended = true;
+  Future<Releasing> release() async {
+    _status = const Ended();
     if (identical(_storage._holder, this)) _storage._holder = null;
+    return const Released();
   }
 }
