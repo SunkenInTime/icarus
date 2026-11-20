@@ -2289,7 +2289,7 @@ void main() {
 
         expect(
           queued.keys,
-          contains(EntitySyncKey.element('page-1', 'kept')),
+          contains(const EntitySyncKey.element('page-1', 'kept')),
         );
         expect(
           queued.keys,
@@ -2345,7 +2345,7 @@ void main() {
 
       expect(
         queued.keys,
-        isNot(contains(EntitySyncKey.pageContent('page-1'))),
+        isNot(contains(const EntitySyncKey.pageContent('page-1'))),
       );
     });
   });
