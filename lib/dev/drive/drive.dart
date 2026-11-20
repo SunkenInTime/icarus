@@ -130,10 +130,10 @@
 //                                      is this color, six lowercase hex digits,
 //                                      or gray without one; lastImage as above
 //   {"expectDead": n}                 fails unless n agents on the page are dead
-//   {"expectItem": id, "gone": b?}     fails unless the item is on the page, or
-//                                      with gone, unless it is not
-//   {"expectImages": n, "lineups": m?} fails unless n pictures are on the page,
-//                                      and m in its lineups
+//   {"expectItem": id, "gone": b?}     fails unless the item is on the page; gone flips it
+//   {"expectRow": id, "gone": b?}      the same for the server's copy of the page
+//   {"sendRow": id, "kind": k, "data": {}}  sends a row as another build writes it
+//   {"expectImages": n, "lineups": m?} fails unless n pictures are on the page, m in lineups
 //   {"exit": 1}
 import 'dart:async';
 import 'dart:convert';
@@ -149,6 +149,8 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
+import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_provider_container.dart';
@@ -1660,6 +1662,44 @@ Future<void> _run(Map<String, dynamic> step) async {
           throw StateError('$id is out of view: $drawn');
         }
       }
+    case 'sendRow':
+      final id = value as String;
+      final kind = step['kind'] as String;
+      await c.read(strategyOpQueueProvider.notifier).enqueueAll(
+        [
+          ElementAddOp(
+            opId: const Uuid().v4(),
+            elementPublicId: id,
+            pagePublicId: c.read(strategyPageSessionProvider).activePageId!,
+            payload: cloudElementPayload(kind: kind, data: {
+              ...(step['data'] as Map).cast<String, dynamic>(),
+              'id': id,
+              'elementType': kind,
+            }),
+            sortIndex: 1000,
+          ),
+        ],
+        flushImmediately: true,
+      );
+    case 'expectRow':
+      final id = value as String;
+      bool held() =>
+          c
+              .read(remoteEditorSnapshotProvider)
+              .valueOrNull
+              ?.activePage
+              ?.elements
+              .any((row) => row.publicId == id && !row.deleted) ??
+          false;
+      final gone = step['gone'] == true;
+      try {
+        await _waitFor(() => held() != gone, 30);
+      } on TimeoutException {
+        throw StateError(
+          gone ? 'the server still holds $value' : 'the server lost $value',
+        );
+      }
+      _log('ROW $value ${held() ? 'held' : 'gone'}');
     case 'expectItem':
       final id = _itemId(value as String);
       final items = _placedItems().where((item) => item.id == id);

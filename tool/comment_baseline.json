@@ -305,7 +305,7 @@
   "lib/share/share_link_format.dart": 9,
   "lib/startup/cloud_bootstrap.dart": 16,
   "lib/startup/windows_process_termination_io.dart": 5,
-  "lib/strategy/cloud_element_decoding.dart": 5,
+  "lib/strategy/cloud_element_decoding.dart": 3,
   "lib/strategy/copied_page_check.dart": 10,
   "lib/strategy/lineup_group_changes.dart": 13,
   "lib/strategy/open_attempt.dart": 16,

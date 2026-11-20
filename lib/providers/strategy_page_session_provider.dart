@@ -29,6 +29,7 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/editor_operation_provider.dart';
+import 'package:icarus/providers/collab/unshown_cloud_content_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -1094,6 +1095,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     _pendingRemoteReapply = false;
     _isResolvingConflicts = false;
     ref.read(activePageLiveSyncProvider.notifier).reset();
+    ref.read(unshownCloudContentProvider.notifier).state =
+        UnshownCloudContent.none;
   }
 
   /// Stays on the page on screen ([_PageSwitch.stayed]) if a teammate
@@ -1181,8 +1184,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             : ref.read(l10nProvider).strategyMsgPageUnreachable(name),
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
-    } catch (error) {
-    }
+    } catch (error) {}
   }
 
   /// Reads the page an open starts on and puts it on the canvas. A step of

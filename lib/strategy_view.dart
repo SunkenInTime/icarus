@@ -14,6 +14,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:icarus/providers/collab/unshown_cloud_content_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
@@ -412,6 +413,22 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       unawaited(_leaveToLibrary());
+    });
+    ref.listen(unshownCloudContentProvider, (previous, next) {
+      final shownBefore = {
+        for (final element in previous?.elements ?? const []) element.publicId,
+      };
+      final newElements = next.elements
+          .any((element) => !shownBefore.contains(element.publicId));
+      final newSettings = next.settings != null && previous?.settings == null;
+      if (!newElements && !newSettings) return;
+      Settings.showToast(
+        message: next.elements.isNotEmpty
+            ? context.l10n.strategyMsgPageHasUnshownItems(next.elements.length)
+            : context.l10n.strategyMsgPageHasUnshownSettings,
+        backgroundColor: Settings.tacticalVioletTheme.secondary,
+        autoCloseDuration: const Duration(seconds: 8),
+      );
     });
     final strategyState = ref.watch(strategyProvider);
     final viewOnly = ref.watch(isViewOnlyStrategyProvider);

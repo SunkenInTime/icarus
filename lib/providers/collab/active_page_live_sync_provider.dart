@@ -21,6 +21,7 @@ import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/collab/unshown_cloud_content_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -1359,7 +1360,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           final elementType =
               data['elementType'] as String? ?? payload['kind'] as String?;
           return elementType != null &&
-              decodeCloudElement(elementType, data) != null;
+              readCloudElement(elementType, data) is DrawnCloudElement;
         case ActivePageOverlayEntityType.lineup:
           lineUpGraphFromCloudRows([
             CloudLineupRow(
@@ -1598,12 +1599,19 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       revision: 0,
       deleted: false,
     );
+    final unshown = ref.read(unshownCloudContentProvider);
+    final settings = ref.read(strategySettingsProvider).toJson();
     final contentKey = EntitySyncKey.pageContent(pageId);
     entities[contentKey] = _NormalizedEntity(
       key: contentKey,
       overlayEntityType: ActivePageOverlayEntityType.pageContent,
       payload: <String, dynamic>{
-        'settings': ref.read(strategySettingsProvider).toJson(),
+        'settings': switch (unshown.settings) {
+          (:final payload, :final shownInstead)
+              when cloudJsonEquivalent(settings, shownInstead.toJson()) =>
+            payload,
+          _ => settings,
+        },
       },
       sortIndex: null,
       revision: 0,
@@ -1669,6 +1677,18 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         payload: cloudElementPayload(
             kind: envelope.kind.name, data: envelope.payload),
         sortIndex: stackedSortIndex(key, envelope.kind),
+        revision: 0,
+        deleted: false,
+      );
+    }
+
+    for (final element in unshown.elements) {
+      final key = EntitySyncKey.element(pageId, element.publicId);
+      entities[key] = _NormalizedEntity(
+        key: key,
+        overlayEntityType: ActivePageOverlayEntityType.element,
+        payload: element.payload,
+        sortIndex: element.sortIndex,
         revision: 0,
         deleted: false,
       );
