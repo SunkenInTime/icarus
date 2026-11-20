@@ -1,32 +1,65 @@
+import 'dart:collection';
 import 'dart:convert';
 
-Object? frozenJson(Object? value) => switch (value) {
-  null || bool() || String() => value,
-  num() when value.isFinite => value,
-  List<Object?>() => List<Object?>.unmodifiable(value.map(frozenJson)),
-  Map<Object?, Object?>() => Map<String, Object?>.unmodifiable({
-    for (final MapEntry(:key, :value) in value.entries)
-      _jsonKey(key): frozenJson(value),
-  }),
-  _ => throw ArgumentError.value(value, 'value', 'not a JSON value'),
+final class _FrozenMap extends UnmodifiableMapView<String, Object?> {
+  _FrozenMap(super.map);
+}
+
+final class _FrozenList extends UnmodifiableListView<Object?> {
+  _FrozenList(super.source);
+}
+
+final class _NotJson {
+  const _NotJson();
+}
+
+const _notJson = _NotJson();
+
+Object? _freeze(Object? value) {
+  switch (value) {
+    case null || bool() || String() || _FrozenMap() || _FrozenList():
+      return value;
+    case num():
+      return value.isFinite ? value : _notJson;
+    case List<Object?>():
+      final items = List<Object?>.filled(value.length, null);
+      for (var i = 0; i < value.length; i++) {
+        final item = _freeze(value[i]);
+        if (identical(item, _notJson)) return _notJson;
+        items[i] = item;
+      }
+      return _FrozenList(items);
+    case Map<Object?, Object?>():
+      final entries = <String, Object?>{};
+      for (final MapEntry(:key, :value) in value.entries) {
+        if (key is! String) return _notJson;
+        final item = _freeze(value);
+        if (identical(item, _notJson)) return _notJson;
+        entries[key] = item;
+      }
+      return _FrozenMap(entries);
+    case _:
+      return _notJson;
+  }
+}
+
+Object? frozenJson(Object? value) => switch (_freeze(value)) {
+  _NotJson() => throw ArgumentError.value(value, 'value', 'not a JSON value'),
+  final frozen => frozen,
 };
 
-bool isJson(Object? value) => switch (value) {
-  null || bool() || String() => true,
-  num() => value.isFinite,
-  List<Object?>() => value.every(isJson),
-  Map<Object?, Object?>() => value.entries.every(
-    (entry) => entry.key is String && isJson(entry.value),
-  ),
-  _ => false,
+Map<String, Object?>? frozenJsonObjectOrNull(Object? value) => switch (value) {
+  Map<Object?, Object?>() => switch (_freeze(value)) {
+    final Map<String, Object?> frozen => frozen,
+    _ => null,
+  },
+  _ => null,
 };
+
+bool isJson(Object? value) => !identical(_freeze(value), _notJson);
 
 Map<String, Object?> frozenJsonObject(Map<Object?, Object?> value) =>
     frozenJson(value)! as Map<String, Object?>;
-
-String _jsonKey(Object? key) => key is String
-    ? key
-    : throw ArgumentError.value(key, 'key', 'a JSON object key is a string');
 
 const _largestWholeAsInt = 9.2e18;
 

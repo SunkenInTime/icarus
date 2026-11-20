@@ -47,11 +47,16 @@ decodes a payload into a typed item at the edge of the editor.
 - An edit is saved as its op before anything else is written. In a cloud
   strategy the pending op is the only saved form of the edit: the rows the
   user sees are worked out by applying pending ops to the base, and the base
-  changes only when the server confirms. In a local strategy the op is saved,
-  then applied to the rows, then cleared, and an op found at startup is
-  applied again. Applying an op twice gives the same rows as applying it
-  once. So a crash can never leave a changed row without the op that changed
-  it.
+  changes only when the server confirms. In a local strategy the store
+  applies the op in memory, then saves one record holding the op together
+  with every key the edit writes (the rows in `OpApplied.writes` and the
+  strategy's summary), then writes those keys, then clears the record. A
+  record found at startup has its writes written again before anything is
+  read. Writing the same keys twice gives the same rows, so a crash at any
+  point leaves the rows from before the edit or after it, never half.
+  Applying the op again was the first plan and does not work: a page copy cut
+  short leaves some copied rows behind, and applying the copy to those rows
+  gives different rows than applying it once.
 - A row this build cannot read is carried untouched. It is never dropped,
   rewritten or inferred as deleted, whether it failed to decode or is a kind
   from a newer build.

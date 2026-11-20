@@ -27,6 +27,11 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   changed. It is a pure function of the two: the same rows and op always give
   the same result, ids included.
 
+- **The store** (`LibraryStore`): where a library's rows live on the device,
+  and the one way to save an edit. It runs on a `StorageEngine`, which is
+  `MemoryEngine` in tests and `HiveEngine` (from `hive_storage.dart`) in the
+  app.
+
 ## Rules it keeps
 
 - **Every outcome is a value.** `applyOp` returns `OpApplied`, `OpUnchanged`
@@ -92,3 +97,106 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 - Each op is applied alone. The server also lets several page ops queued from
   the same strategy revision land in one batch; that belongs to whoever sends
   batches.
+
+## The store
+
+### Where rows are kept
+
+A `StorageEngine` reads, writes, deletes and lists string keys inside a
+named area. A write that returns `Done` is on disk; a write that fails may
+have written some of its keys. Engines never throw for what the disk does:
+they return `StorageFailed`. `HiveEngine` keeps each area in its own Hive box
+in the directory the app passes (IndexedDB on the web):
+
+| Area | Box | Keys |
+| --- | --- | --- |
+| `library` | held in memory | `summary/<strategy>`, `folder/<folder>` |
+| `journal` | held in memory, compacted after every clear | `edit` |
+| `strategy/<strategy>` | lazy: only keys are held | `strategy`, `page/<page>`, `settings/<page>`, `content/<page>/element/<id>`, `content/<page>/lineup/<id>` |
+
+Ids are URI-encoded inside keys. Opening the store reads the journal, the
+summaries and the folders, and nothing of any strategy. Reading a strategy
+reads its row, its page rows and its page settings, and lists the keys under
+`content/` so the store knows which page each element is on. Reading a page
+reads only the keys under `content/<page>/`. A page read stays in memory for
+as long as the store is open.
+
+### Saving an edit
+
+`commit(strategyPublicId, op)` loads the pages the op can look at, runs
+`applyOp`, and then:
+
+1. saves one record in `journal/edit` holding the op and every key the edit
+   writes: each row in `OpApplied.writes`, a delete of the old key when an
+   element moves page, and the strategy's new summary;
+2. writes those keys;
+3. clears the record.
+
+When the store opens and finds a record, it writes the record's keys again
+and clears it before reading anything. Writing the same keys twice gives the
+same rows, so a crash at any step leaves the rows from before the edit or the
+rows after it. Library edits (`editLibrary`) are saved the same way.
+
+Every save returns a `Saving`, which the caller has to handle:
+
+- `Saved`: the record is on disk, so the edit survives a crash. If writing the
+  rows or clearing the record failed, the store finishes the record before its
+  next read or save, and again when it next opens.
+- `NothingToSave`: the op changes nothing.
+- `Refused`: `OpRefusal` when `applyOp` refused it, `NoSuchStrategy`, or
+  `UnreadableRowInTheWay` when the edit would write over a row this build
+  cannot read. For library edits: `StrategyAlreadyInStore`, `NoSuchFolder`,
+  `FolderNotEmpty`, `FolderInsideItself`.
+- `NotSaved`: the record could not be saved and nothing changed. Also
+  returned for later saves while an earlier record cannot be finished, or
+  after the store has stopped (`StoreStopped`).
+- `SaveInDoubt`: the record could not be saved and could not be cleared
+  either, so the disk may or may not hold it. The store stops: every later
+  save is `NotSaved(StoreStopped)`. Reopening settles it: a record that did
+  land is finished, so the edit is there; one that did not leaves the rows as
+  they were.
+
+Saves and reads run one at a time, in the order they were called.
+
+### Reading
+
+`readStrategy` and `readPage` return a `Reading`: `Found`, `NotFound`,
+`Unreadable` when the strategy's own row cannot be read, or `NotRead` when
+the device failed. `library` is the list in memory: one `StrategySummary` per
+strategy, the folders, and any summary or folder row this build cannot read.
+
+### Rows this build cannot read
+
+A key whose text is not JSON, whose row does not decode, whose row names
+another key, or whose kind under `content/<page>/` is unknown is carried as an
+`UnreadableRow`: its area, key, text exactly as stored, and why. An element
+that decodes as an `UnreadableElement` stays in `PageContent.elements`. The
+store never writes a key that holds a row it cannot read: an edit that would
+is refused with `UnreadableRowInTheWay`. Rows are written as canonical JSON
+of `toJson()`.
+
+### Summaries
+
+A `StrategySummary` holds the name, map, folder, created and updated times,
+live page count, `Sides` (attack, defend or mixed), the agents placed on live
+pages, and how many items they hold. It also keeps a tally per page, so
+trashing a page updates the counts without reading that page. Every commit
+writes the new summary in the same record as its rows. `rebuildSummary`
+recomputes it from the rows and keeps the times, since no row holds them.
+When the store opens and cannot read a summary, it rebuilds it, taking
+`createdAt` and `updatedAt` from the unreadable summary when they are whole
+milliseconds. A later summary version must keep those two fields.
+
+### Telling the editor what changed
+
+`changes` is a stream of `StrategyEdited` (the strategy, the `RowWrite`s with
+their changed fields and data fields, the undo, the new summary) and
+`LibraryEdited`. It fires after the save, once per `Saved`.
+
+### Measuring it
+
+`dart run tool/store_benchmark.dart` times opening a 500-strategy library
+list, opening a 300-item page where half the items are 1000-point drawings,
+and two commits on that page, on both engines. `test/store_budget_test.dart`
+counts the keys each of those touches and fails when the count grows.
+

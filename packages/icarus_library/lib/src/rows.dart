@@ -450,7 +450,11 @@ sealed class ElementRow extends Row {
     Object? json, {
     required bool Function(ElementPayload payload) canRead,
   }) {
-    final ids = JsonFields.read(json, 'element row', (fields) {
+    final frozen = frozenJsonObjectOrNull(json);
+    if (frozen == null) {
+      return CouldNotRead(json, 'Expected element row to be a JSON object');
+    }
+    final ids = JsonFields.read(frozen, 'element row', (fields) {
       final publicId = fields.string('publicId');
       final pagePublicId = fields.string('pagePublicId');
       return () => (publicId, pagePublicId);
@@ -460,7 +464,7 @@ sealed class ElementRow extends Row {
       CouldNotRead(:final problem) => (null, problem),
     };
     if (publicId == null) return CouldNotRead(json, pagePublicId);
-    final readable = JsonFields.read(json, 'element row', (fields) {
+    final readable = JsonFields.read(frozen, 'element row', (fields) {
       final payload = fields.decoded('payload', ElementPayload.decode);
       if (payload != null && (!payload.isReadable || !canRead(payload))) {
         fields.reject('this build cannot read its payload');
@@ -489,7 +493,7 @@ sealed class ElementRow extends Row {
       CouldNotRead() => UnreadableElement(
         publicId: publicId,
         pagePublicId: pagePublicId,
-        json: json! as Map<Object?, Object?>,
+        json: frozen,
       ),
     });
   }

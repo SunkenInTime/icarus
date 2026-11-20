@@ -28,10 +28,11 @@ final class JsonFields {
     String what,
     T Function() Function(JsonFields fields) read,
   ) {
-    if (raw is! Map<Object?, Object?> || !isJson(raw)) {
+    final frozen = frozenJsonObjectOrNull(raw);
+    if (frozen == null) {
       return CouldNotRead(raw, 'Expected $what to be a JSON object');
     }
-    final fields = JsonFields._(frozenJsonObject(raw));
+    final fields = JsonFields._(frozen);
     final build = read(fields);
     return switch (fields._problem) {
       final problem? => CouldNotRead(raw, '$what: $problem'),

@@ -8,6 +8,8 @@ environment:
 dependencies:
   collection: ^1.18.0
   crypto: ^3.0.3
+  hive_ce: ^2.19.3
+  web: ^1.1.0
 
 dev_dependencies:
   lints: ^6.0.0
