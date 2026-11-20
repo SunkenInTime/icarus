@@ -83,11 +83,32 @@ void main() {
       expect(
         find.text(
           "A picture in this strategy didn't upload, so the post would be "
-          'missing it. Open the strategy and press Save to retry, then try '
-          'again.',
+          'missing it. Open the strategy and choose Retry sync from its '
+          'sync button, then try again.',
         ),
         findsOneWidget,
       );
+    });
+
+    testWidgets('closing the dialog mid-wait posts nothing', (tester) async {
+      final repository = _Repository();
+      final ops = _Ops(_unsent(queued: 1));
+      final shown = ValueNotifier(true);
+      await _openDialog(
+        tester,
+        repository: repository,
+        ops: ops,
+        shown: shown,
+      );
+
+      await tester.tap(find.byKey(_postButton));
+      await tester.pump(const Duration(seconds: 1));
+      shown.value = false;
+      await tester.pump();
+      ops.land();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(repository.published, isEmpty);
     });
 
     testWidgets('another account signing in mid-wait posts nothing',
@@ -167,6 +188,7 @@ Future<void> _openDialog(
   _Auth? auth,
   List<CloudMediaUploadJob> images = const [],
   bool posted = false,
+  ValueNotifier<bool>? shown,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1400, 1000));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -191,8 +213,13 @@ Future<void> _openDialog(
       child: ShadApp(
         home: MediaQuery.withClampedTextScaling(
           maxScaleFactor: 0.5,
-          child: const Scaffold(
-            body: PostToCommunityDialog(strategyPublicId: _strategyId),
+          child: Scaffold(
+            body: ValueListenableBuilder(
+              valueListenable: shown ?? ValueNotifier(true),
+              builder: (context, show, _) => show
+                  ? const PostToCommunityDialog(strategyPublicId: _strategyId)
+                  : const SizedBox.shrink(),
+            ),
           ),
         ),
       ),
@@ -275,7 +302,7 @@ class _Repository extends CommunityRepository {
     String? title,
     bool refresh = false,
   }) async {
-    updated.add(postPublicId);
+    if (refresh) updated.add(postPublicId);
   }
 }
 

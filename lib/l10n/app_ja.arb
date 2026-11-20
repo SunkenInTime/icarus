@@ -1361,7 +1361,7 @@
   "communityPostUpdateFailed": "投稿を更新できませんでした。もう一度お試しください。",
   "communityPostNotSentStillSending": "最新の変更がまだサーバーに届いていないため、投稿に反映されません。接続を確認してから、もう一度お試しください。",
   "communityPostNotSentNeedsReview": "この作戦の一部の変更は、同期する前に確認が必要なため、投稿に反映されません。作戦を開いて変更を確認してから、もう一度お試しください。",
-  "communityPostNotSentUploadFailed": "この作戦の画像がアップロードされていないため、投稿に含まれません。作戦を開いて保存を押して再試行してから、もう一度お試しください。",
+  "communityPostNotSentUploadFailed": "この作戦の画像がアップロードされていないため、投稿に含まれません。作戦を開き、同期ボタンから「同期を再試行」を選んでから、もう一度お試しください。",
   "communityPostNotSentUnreadable": "このデバイスに保存された一部のクラウドの変更を読み込めないため、投稿に反映されない可能性があります。変更を確認してから、もう一度お試しください。",
   "communityPostNotSentAccountChanged": "準備中に別のアカウントでサインインしたため、何も送信されていません。もう一度お試しください。",
   "communityTakeDown": "取り下げる",

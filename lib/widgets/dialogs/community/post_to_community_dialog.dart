@@ -165,6 +165,7 @@ class _PostFormState extends ConsumerState<_PostForm> {
         });
         return;
       case StrategyWorkOnServer():
+        if (!mounted) return;
     }
     try {
       await container.read(communityRepositoryProvider).publish(
@@ -374,6 +375,7 @@ class _PostedViewState extends ConsumerState<_PostedView> {
         });
         return;
       case StrategyWorkOnServer():
+        if (!mounted) return;
     }
     try {
       await container

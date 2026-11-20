@@ -6412,9 +6412,9 @@
   "@communityPostNotSentNeedsReview": {
     "description": "Post or Update was refused because a change to the strategy is held for the user to review."
   },
-  "communityPostNotSentUploadFailed": "A picture in this strategy didn't upload, so the post would be missing it. Open the strategy and press Save to retry, then try again.",
+  "communityPostNotSentUploadFailed": "A picture in this strategy didn't upload, so the post would be missing it. Open the strategy and choose Retry sync from its sync button, then try again.",
   "@communityPostNotSentUploadFailed": {
-    "description": "Post or Update was refused because an image failed to upload. 'Save' is the name of the strategy save button."
+    "description": "Post or Update was refused because an image failed to upload. 'Retry sync' is the action in the editor's sync button menu."
   },
   "communityPostNotSentUnreadable": "Icarus can't read some cloud changes saved on this device, so the post might miss them. Review them, then try again.",
   "@communityPostNotSentUnreadable": {

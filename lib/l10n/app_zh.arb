@@ -1361,7 +1361,7 @@
   "communityPostUpdateFailed": "无法更新帖子，请重试。",
   "communityPostNotSentStillSending": "你最新的更改尚未到达服务器，因此帖子中不会包含它们。请检查网络连接，然后再试。",
   "communityPostNotSentNeedsReview": "此战术的部分更改需要你查看后才能同步，因此帖子中不会包含它们。请打开该战术查看这些更改，然后再试。",
-  "communityPostNotSentUploadFailed": "此战术中的一张图片未能上传，因此帖子中会缺少它。请打开该战术并点击保存以重试，然后再试。",
+  "communityPostNotSentUploadFailed": "此战术中的一张图片未能上传，因此帖子中会缺少它。请打开该战术，在同步按钮中选择“重试同步”，然后再试。",
   "communityPostNotSentUnreadable": "Icarus 无法读取此设备上保存的部分云端更改，因此帖子中可能不包含它们。请查看这些更改后再试。",
   "communityPostNotSentAccountChanged": "准备期间你登录了另一个账号，因此未发送任何内容。请再试一次。",
   "communityTakeDown": "撤下",
