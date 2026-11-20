@@ -2827,9 +2827,10 @@ void main() {
       pageTwo.publicId,
       direction: PageTransitionDirection.forward,
     );
+    expect(container.read(drawingProvider).elements.single.id, stroke.id);
+    expect(container.read(drawingsTransitionOpacityProvider), 0);
     await _drawFrame();
 
-    expect(container.read(drawingProvider).elements.single.id, stroke.id);
     final transition = container.read(transitionProvider);
     expect(transition.active, isTrue);
     expect(transition.fadeInDrawings, isTrue);

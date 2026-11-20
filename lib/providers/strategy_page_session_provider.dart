@@ -490,7 +490,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       Error.throwWithStackTrace(error, stackTrace);
     }
     final fadeInDrawings = ref.read(transitionProvider).fadeInDrawings;
+    final generation = _pageSessionGeneration;
+    bool superseded() => generation != _pageSessionGeneration;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (superseded()) return;
       final preliminaryNext = _snapshotAllPlaced();
       final preliminaryEntries = _diffToTransitions(previous, preliminaryNext);
       final doorsMove = !setEquals(previousDoors, _changedDoors());
@@ -519,12 +522,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         }
       }
 
-      final currentTransition = ref.read(transitionProvider);
-      if (currentTransition.phase != PageTransitionPhase.preparing ||
-          currentTransition.sourcePageId != sourcePageId ||
-          currentTransition.targetPageId != pageId) {
-        return;
-      }
+      if (superseded()) return;
 
       final next = _snapshotAllPlaced();
       final entries = _diffToTransitions(previous, next);
