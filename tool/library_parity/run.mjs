@@ -105,6 +105,25 @@ export function reportProblems(seeds, steps, report) {
   return problems;
 }
 
+export function storyProblems(scenarios, report) {
+  const problems = [];
+  const names = scenarios.map((scenario) => scenario.name);
+  const compared = report.map((entry) => entry.name);
+  if (JSON.stringify(compared) !== JSON.stringify(names)) {
+    problems.push(`the server compared ${compared.length} merge stories and seeds, not ${names.length}`);
+  }
+  for (const entry of report) {
+    if (entry.difference !== undefined) {
+      problems.push(
+        `${entry.name}, step ${entry.difference.step}: ` +
+          `${entry.difference.problem ?? `${entry.difference.op.type} differs`}\n` +
+          JSON.stringify(entry.difference, null, 1),
+      );
+    }
+  }
+  return problems;
+}
+
 export function missingCoverage(outcomes) {
   return Object.entries(mustReach)
     .filter(([outcome, least]) => (outcomes[outcome] ?? 0) < least)
@@ -115,9 +134,9 @@ function dartCommand() {
   return (process.env.DART ?? "dart").split(" ");
 }
 
-function dart(args) {
+function dart(args, tool = "tool/parity_scenarios.dart") {
   const [command, ...prefix] = dartCommand();
-  execFileSync(command, [...prefix, "run", "tool/parity_scenarios.dart", ...args], {
+  execFileSync(command, [...prefix, "run", tool, ...args], {
     cwd: join(root, "packages/icarus_library"),
     stdio: "inherit",
   });
@@ -150,6 +169,9 @@ function main() {
   const work = mkdtempSync(join(tmpdir(), "library-parity-"));
   const scenariosPath = join(work, "scenarios.json");
   const reportPath = join(work, "report.json");
+  const storiesPath = join(work, "stories.json");
+  const storiesReportPath = join(work, "stories-report.json");
+  const rulesPath = join(work, "field_rules.json");
   try {
     let seeds;
     let steps;
@@ -175,13 +197,24 @@ function main() {
     }
     const scenarios = JSON.parse(readFileSync(scenariosPath, "utf8"));
     const problems = corpusProblems(seeds, steps, scenarios);
+    dart([rulesPath], "tool/field_rules.dart");
+    const withStories = run.replay === undefined;
+    if (withStories) dart(["stories", storiesPath]);
     const vitest = spawnSync(
       "npx",
       ["vitest", "run", "--config", "tool/library_parity/vitest.config.ts"],
       {
         cwd: root,
         stdio: "inherit",
-        env: { ...process.env, PARITY_IN: scenariosPath, PARITY_OUT: reportPath },
+        env: {
+          ...process.env,
+          PARITY_IN: scenariosPath,
+          PARITY_OUT: reportPath,
+          FIELD_RULES: rulesPath,
+          ...(withStories
+            ? { PARITY_STORIES: storiesPath, PARITY_STORIES_OUT: storiesReportPath }
+            : {}),
+        },
       },
     );
     const { scenarios: report, outcomes } = JSON.parse(readFileSync(reportPath, "utf8"));
@@ -203,8 +236,17 @@ function main() {
         console.log(`${String(count).padStart(6)} ${outcome}`);
       }
     }
-    const compared = report.reduce((total, entry) => total + entry.compared, 0);
-    console.log(`${compared} ops in ${report.length} sequences matched convex/ops.ts`);
+    let stories = [];
+    if (withStories) {
+      const named = JSON.parse(readFileSync(storiesPath, "utf8"));
+      stories = JSON.parse(readFileSync(storiesReportPath, "utf8")).scenarios;
+      problems.push(...storyProblems(named, stories));
+    }
+    const compared = [...report, ...stories].reduce((total, entry) => total + entry.compared, 0);
+    console.log(
+      `${compared} ops in ${report.length} seeded sequences and ${stories.length} ` +
+        `merge stories and merge seeds matched convex/ops.ts`,
+    );
     for (const problem of problems) console.error(problem);
     if (vitest.status !== 0 || problems.length > 0) process.exitCode = 1;
   } finally {

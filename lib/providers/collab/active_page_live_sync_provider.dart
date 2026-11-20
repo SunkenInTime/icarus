@@ -7,11 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/const/sort_index_order.dart';
-import 'package:icarus/const/weapons.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/field_merge.dart';
+import 'package:icarus_library/icarus_library.dart' show withFieldDefaults;
 import 'package:icarus/collab/page_made_here.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
@@ -1974,9 +1974,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         ? null
         : lineup
             ? lineupMergeFields(base.payload, payload,
-                normalize: _withFieldDefaults)
+                normalize: withFieldDefaults)
             : elementMergeFields(base.payload, payload,
-                normalize: _withFieldDefaults);
+                normalize: withFieldDefaults);
     if (base == null || fields == null) {
       // A whole write claims no newer revision than the one at which the
       // server held exactly what this client drew.
@@ -2072,33 +2072,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
 
   bool _payloadsEquivalent(Object? left, Object? right) {
     return cloudJsonEquivalent(
-      _withFieldDefaults(left),
-      _withFieldDefaults(right),
+      withFieldDefaults(left),
+      withFieldDefaults(right),
     );
-  }
-
-  /// Payloads written before a field existed compare equal to the field's
-  /// default, so hydrating old cloud data never authors a rewrite of it.
-  Object? _withFieldDefaults(Object? value) {
-    if (value is List) {
-      return [for (final item in value) _withFieldDefaults(item)];
-    }
-    if (value is! Map) {
-      return value;
-    }
-    final normalized = <String, dynamic>{
-      for (final entry in value.entries)
-        entry.key.toString(): _withFieldDefaults(entry.value),
-    };
-    final visualState = normalized['visualState'];
-    if (visualState is Map<String, dynamic>) {
-      visualState.putIfAbsent('showVisionCone', () => true);
-    }
-    // Only agents carry an AgentState; firearms default to none.
-    if (normalized.containsKey('state')) {
-      normalized.putIfAbsent('weapon', () => WeaponType.none.name);
-    }
-    return normalized;
   }
 
   void _debugLog(String message) {

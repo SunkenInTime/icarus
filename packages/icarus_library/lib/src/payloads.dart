@@ -54,6 +54,13 @@ final class ElementPayload {
 
   bool get isReadable => payloadVersion <= newestElementPayloadVersion;
 
+  ElementPayload withData(Map<String, Object?> data) => ElementPayload(
+    kind: kind,
+    payloadVersion: payloadVersion,
+    data: data,
+    unknownFields: unknownFields,
+  );
+
   Map<String, Object?> toJson() => {
     ...unknownFields,
     'kind': kind.name,
@@ -100,6 +107,12 @@ final class LineupGroupPayload {
   final int payloadVersion;
   final Map<String, Object?> data;
   final Map<String, Object?> unknownFields;
+
+  LineupGroupPayload withData(Map<String, Object?> data) => LineupGroupPayload(
+    payloadVersion: payloadVersion,
+    data: data,
+    unknownFields: unknownFields,
+  );
 
   Map<String, Object?> toJson() => {
     ...unknownFields,

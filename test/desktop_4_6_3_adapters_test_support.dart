@@ -9,12 +9,19 @@
 
 // ignore_for_file: deprecated_member_use_from_same_package
 
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:hive_ce/src/binary/binary_reader_impl.dart';
+import 'package:hive_ce/src/binary/binary_writer_impl.dart';
+import 'package:hive_ce/src/hive_impl.dart';
+import 'package:hive_ce/src/util/logger.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/hive/hive_adapters.dart'
     show
         ellipseDrawingAdapterTypeId,
@@ -27,6 +34,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/domain/folder.dart';
+import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 
@@ -785,4 +793,165 @@ int _readDrawingHiveColorValue(
     final Color color => color.toARGB32(),
     _ => 0xFFFFFFFF,
   };
+}
+
+HiveImpl currentRegistry() {
+  final registry = HiveImpl();
+  registerIcarusAdapters(registry);
+  return registry;
+}
+
+HiveImpl desktop463Registry() {
+  final registry = currentRegistry();
+  final previousLevel = Logger.level;
+  Logger.level = LoggerLevel.error;
+  try {
+    return registry
+      ..registerAdapter(Desktop463PlacedAgentAdapter(), override: true)
+      ..registerAdapter(Desktop463PlacedAbilityAdapter(), override: true)
+      ..registerAdapter(Desktop463StrategyPageAdapter(), override: true)
+      ..registerAdapter(Desktop463FolderAdapter(), override: true)
+      ..registerAdapter(Desktop463FreeDrawingAdapter(), override: true)
+      ..registerAdapter(Desktop463LineAdapter(), override: true)
+      ..registerAdapter(Desktop463RectangleDrawingAdapter(), override: true)
+      ..registerAdapter(Desktop463EllipseDrawingAdapter(), override: true)
+      ..registerAdapter(Desktop463WeaponTypeAdapter(), override: true)
+      ..registerAdapter(Desktop463AgentTypeAdapter(), override: true);
+  } finally {
+    Logger.level = previousLevel;
+  }
+}
+
+Uint8List writeRecord(HiveImpl registry, Object value) {
+  final writer = BinaryWriterImpl(registry)..write(value);
+  return Uint8List.fromList(writer.toBytes());
+}
+
+T readRecord<T>(HiveImpl registry, Uint8List bytes) =>
+    BinaryReaderImpl(bytes, registry).read() as T;
+
+T across<T extends Object>(HiveImpl from, HiveImpl to, T value) =>
+    readRecord<T>(to, writeRecord(from, value));
+
+PlacedAbility desktop463Ability(
+  String id, {
+  AbilityVisualState visualState = const AbilityVisualState(),
+}) {
+  return PlacedAbility(
+    id: id,
+    data: AgentData.agents[AgentType.breach]!.abilities.first,
+    position: const Offset(30, 40),
+    visualState: visualState,
+  );
+}
+
+StrategyPage desktop463RosterPage(List<AgentType> types) {
+  return StrategyPage(
+    id: 'page-roster',
+    name: 'Roster',
+    drawingData: const [],
+    agentData: [
+      for (var a = 0; a < types.length; a++)
+        PlacedAgent(
+          id: 'agent-$a',
+          type: types[a],
+          position: const Offset(1, 1),
+        ),
+    ],
+    abilityData: [
+      for (var a = 0; a < types.length; a++)
+        for (final (i, info) in AgentData.agents[types[a]]!.abilities.indexed)
+          PlacedAbility(
+            id: 'ability-$a-$i',
+            data: info,
+            position: const Offset(5, 5),
+          ),
+    ],
+    textData: const [],
+    imageData: const [],
+    utilityData: const [],
+    sortIndex: 0,
+    isAttack: true,
+    settings: StrategySettings(),
+  );
+}
+
+StrategyPage desktop463RichPage() {
+  const hidden = AbilityVisualState(showRangeFill: false);
+  return StrategyPage(
+    id: 'page-1',
+    name: 'Page 1',
+    drawingData: [
+      Line(
+        id: 'line-1',
+        lineStart: const Offset(1, 2),
+        lineEnd: const Offset(3, 4),
+        colorValue: 0xFFFFFFFF,
+        isDotted: false,
+        hasArrow: false,
+      ),
+      EllipseDrawing(
+        id: 'ellipse-1',
+        start: const Offset(5, 6),
+        end: const Offset(7, 8),
+        colorValue: 0xFF22C55E,
+        isDotted: true,
+        hasArrow: false,
+      ),
+    ],
+    agentData: [
+      PlacedAgent(
+        id: 'agent-plain',
+        type: AgentType.breach,
+        position: const Offset(10, 20),
+        weapon: WeaponType.vandal,
+      ),
+      PlacedViewConeAgent(
+        id: 'agent-cone',
+        type: AgentType.killjoy,
+        position: const Offset(30, 40),
+        presetType: UtilityType.viewCone90,
+        rotation: 1.2,
+        length: 50,
+        visionElevation: 1,
+        weapon: WeaponType.operator,
+      ),
+      PlacedCircleAgent(
+        id: 'agent-circle',
+        type: AgentType.viper,
+        position: const Offset(50, 60),
+        diameterMeters: 12,
+        colorValue: 0xFF3B82F6,
+        opacityPercent: 45,
+      ),
+    ],
+    abilityData: [desktop463Ability('ability-map', visualState: hidden)],
+    textData: const [],
+    imageData: const [],
+    utilityData: const [],
+    sortIndex: 0,
+    isAttack: true,
+    settings: StrategySettings(),
+    lineUpGroups: [
+      LineUpGroup(
+        id: 'group-1',
+        agent: PlacedAgent(
+          id: 'lineup-agent',
+          type: AgentType.breach,
+          position: const Offset(70, 80),
+          weapon: WeaponType.sheriff,
+        ),
+        items: [
+          LineUpItem(
+            id: 'item-1',
+            ability: desktop463Ability('lineup-ability-1', visualState: hidden),
+          ),
+          LineUpItem(
+            id: 'item-2',
+            ability: desktop463Ability('lineup-ability-2'),
+          ),
+        ],
+      ),
+    ],
+  );
 }

@@ -1,4 +1,6 @@
 import 'package:icarus/collab/canonical_json.dart';
+import 'package:icarus_library/icarus_library.dart'
+    show ElementKind, elementIdentityKeys, fieldGroups;
 
 /// What a patch merged by field changed (see docs/collaborative-editing.md):
 /// the server writes only [fields] of the op's payload onto the row as it is
@@ -80,48 +82,6 @@ final class FieldMerge {
 /// row there only when its merge names this field.
 const placeMergeField = '@sortIndex';
 
-/// Keys of an element's data that say what it is. A merge never writes
-/// them; an edit that changes one is sent as a whole item instead (the
-/// server falls back the same way).
-const _elementIdentityKeys = {'id', 'elementType', 'kind', 'type', 'data'};
-
-/// Keys of an element's data that only make sense together, for a payload
-/// of [kind] holding [data]: when any of a group changes, the merge names
-/// all of them, so a teammate's half of the group never mixes with this
-/// edit's.
-List<Set<String>> _fieldGroups(Object? kind, Map<String, Object?> data) =>
-    switch (kind) {
-      // A view cone's handle sets its rotation and length together.
-      'agent' || 'ability' => const [
-          {'rotation', 'length'},
-        ],
-      'drawing' => const [
-          {
-            'listOfPoints',
-            'lineStart',
-            'lineEnd',
-            'start',
-            'end',
-            'boundingBox',
-          },
-        ],
-      // Resizing from the defending side moves the box as it scales it.
-      'text' => const [
-          {'position', 'size', 'fontSize', 'sizeVersion'},
-        ],
-      'image' => const [
-          {'position', 'scale', 'sizeVersion'},
-        ],
-      // A custom rectangle resizes about its rotation, moving as it does.
-      'utility' when data['type'] == 'customRectangle' => const [
-          {'position', 'rotation', 'customWidth', 'customLength'},
-        ],
-      'utility' => const [
-          {'rotation', 'length'},
-        ],
-      _ => const [],
-    };
-
 Map<String, Object?>? _dataOf(Object? payload) {
   if (payload is! Map) return null;
   final data = payload['data'];
@@ -160,16 +120,19 @@ List<String>? elementMergeFields(
   final baseData = _dataOf(base);
   final desiredData = _dataOf(desired);
   if (baseData == null || desiredData == null) return null;
-  for (final key in _elementIdentityKeys) {
+  for (final key in elementIdentityKeys) {
     if (!_sameKey(baseData, desiredData, key)) return null;
   }
   final changed = <String>{
     for (final key in {...baseData.keys, ...desiredData.keys})
       if (!_sameKey(baseData, desiredData, key)) key,
   };
-  for (final group in _fieldGroups(desired['kind'], desiredData)) {
-    if (changed.any(group.contains)) {
-      changed.addAll(group.where(
+  final kind = ElementKind.named(desired['kind']);
+  for (final group in fieldGroups) {
+    if (kind != null &&
+        group.appliesTo(kind, desiredData) &&
+        changed.any(group.fields.contains)) {
+      changed.addAll(group.fields.where(
         (key) => baseData.containsKey(key) || desiredData.containsKey(key),
       ));
     }
@@ -305,7 +268,7 @@ Map<String, dynamic>? mergedPayload(
   final fields = _payloadFields(merge);
   if (lineup
       ? !cloudJsonEquivalent(currentData['id'], desiredData['id'])
-      : _elementIdentityKeys.any((key) =>
+      : elementIdentityKeys.any((key) =>
           fields.contains(key) || !_sameKey(currentData, desiredData, key))) {
     return null;
   }

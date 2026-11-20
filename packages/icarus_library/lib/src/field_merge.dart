@@ -1,14 +1,52 @@
+import 'dart:math' as math;
+
+import 'field_rules.dart';
 import 'json.dart';
 import 'ops.dart';
 import 'payloads.dart';
+import 'rows.dart';
 
 const maxMergeFields = 512;
-
-const elementIdentityKeys = ['id', 'elementType', 'kind', 'type', 'data'];
 
 const _unsafeKeys = {'__proto__', 'constructor', 'prototype'};
 
 const lineupCollections = ['origins', 'landings', 'links'];
+
+sealed class WholeReason {
+  const WholeReason();
+}
+
+final class KindDiffers extends WholeReason {
+  const KindDiffers();
+}
+
+final class PayloadVersionDiffers extends WholeReason {
+  const PayloadVersionDiffers();
+}
+
+final class IdentityDiffers extends WholeReason {
+  const IdentityDiffers(this.key);
+
+  final String key;
+}
+
+final class NamesIdentityKey extends WholeReason {
+  const NamesIdentityKey(this.key);
+
+  final String key;
+}
+
+final class NamesUnsafeKey extends WholeReason {
+  const NamesUnsafeKey(this.key);
+
+  final String key;
+}
+
+final class NamesNoLineupItem extends WholeReason {
+  const NamesNoLineupItem(this.field);
+
+  final String field;
+}
 
 sealed class MergeOutcome<T> {
   const MergeOutcome();
@@ -21,11 +59,47 @@ final class Merged<T> extends MergeOutcome<T> {
 }
 
 final class WriteWhole<T> extends MergeOutcome<T> {
-  const WriteWhole();
+  const WriteWhole(this.reason);
+
+  final WholeReason reason;
 }
 
 final class MergeConflict<T> extends MergeOutcome<T> {
-  const MergeConflict();
+  const MergeConflict(this.field);
+
+  final String field;
+}
+
+sealed class EditShape {
+  const EditShape();
+}
+
+final class FieldEdit extends EditShape {
+  FieldEdit(List<String> fields) : fields = List.unmodifiable(fields);
+
+  final List<String> fields;
+}
+
+final class WholeEdit extends EditShape {
+  const WholeEdit(this.reason);
+
+  final WholeReason reason;
+}
+
+enum Connection { live, offline }
+
+sealed class Drawn {
+  const Drawn(this.revision);
+
+  final int revision;
+}
+
+final class DrawnAt extends Drawn {
+  const DrawnAt(super.revision);
+}
+
+final class BehindWholeWrite extends Drawn {
+  const BehindWholeWrite(super.revision);
 }
 
 typedef _Read = ({bool present, Object? value});
@@ -47,48 +121,264 @@ bool _same(_Read left, _Read right) {
 _Read _key(Map<String, Object?> data, String key) =>
     (present: data.containsKey(key), value: data[key]);
 
+bool _sameOrUnset(
+  Map<String, Object?> left,
+  Map<String, Object?> right,
+  String key,
+) => sameJson(left[key], right[key]);
+
+Map<String, Object?> _normalized(Map<String, Object?> data) =>
+    withFieldDefaults(data)! as Map<String, Object?>;
+
+EditShape elementEdit(ElementPayload base, ElementPayload desired) {
+  if (base.kind != desired.kind) return const WholeEdit(KindDiffers());
+  if (base.payloadVersion != desired.payloadVersion) {
+    return const WholeEdit(PayloadVersionDiffers());
+  }
+  final before = _normalized(base.data);
+  final after = _normalized(desired.data);
+  for (final key in elementIdentityKeys) {
+    if (!_sameOrUnset(before, after, key)) {
+      return WholeEdit(IdentityDiffers(key));
+    }
+  }
+  return FieldEdit(
+    groupedFields(desired.kind, before, after, {
+      for (final key in {...before.keys, ...after.keys})
+        if (!_sameOrUnset(before, after, key)) key,
+    }),
+  );
+}
+
+List<String> groupedFields(
+  ElementKind kind,
+  Map<String, Object?> before,
+  Map<String, Object?> after,
+  Set<String> changed,
+) {
+  final named = {...changed};
+  for (final group in fieldGroups) {
+    if (group.appliesTo(kind, after) && changed.any(group.fields.contains)) {
+      named.addAll(
+        group.fields.where(
+          (key) => before.containsKey(key) || after.containsKey(key),
+        ),
+      );
+    }
+  }
+  return named.toList()..sort();
+}
+
+Map<String, Map<String, Object?>> _itemsById(
+  Map<String, Object?> data,
+  String collection,
+) => {
+  for (final item in lineupItems(data, collection))
+    if (item['id'] case final String id) id: item,
+};
+
+EditShape lineupEdit(LineupGroupPayload base, LineupGroupPayload desired) {
+  if (base.payloadVersion != desired.payloadVersion) {
+    return const WholeEdit(PayloadVersionDiffers());
+  }
+  final before = _normalized(base.data);
+  final after = _normalized(desired.data);
+  if (!sameJson(before['id'], after['id'])) {
+    return const WholeEdit(IdentityDiffers('id'));
+  }
+  final fields = <String>[];
+  for (final collection in lineupCollections) {
+    final beforeItems = _itemsById(before, collection);
+    final afterItems = _itemsById(after, collection);
+    for (final id in {
+      ...beforeItems.keys,
+      ...afterItems.keys,
+    }.toList()..sort()) {
+      final left = beforeItems[id];
+      final right = afterItems[id];
+      if ((left == null) != (right == null) || !sameJson(left, right)) {
+        fields.add('$collection/$id');
+      }
+    }
+  }
+  return FieldEdit(fields);
+}
+
+_Read Function(String field) _elementReader(Map<String, Object?> data) =>
+    (field) => _key(data, field);
+
+_Read Function(String field) _lineupBaseReader(Map<String, Object?> data) {
+  final byCollection = {
+    for (final collection in lineupCollections)
+      collection: _itemsById(data, collection),
+  };
+  return (field) {
+    final target = lineupField(field);
+    final item = target == null
+        ? null
+        : byCollection[target.collection]![target.id];
+    return (present: item != null, value: item);
+  };
+}
+
+FieldMerge _editMerge(
+  List<String> fields,
+  _Read Function(String field) baseValue, {
+  required int baseSortIndex,
+  required int sortIndex,
+  required Connection connection,
+}) {
+  final moved = sortIndex != baseSortIndex;
+  return FieldMerge(
+    fields: [...fields, if (moved) placeField],
+    base: switch (connection) {
+      Connection.live => null,
+      Connection.offline => {
+        for (final field in fields)
+          if (baseValue(field) case (present: true, :final value)) field: value,
+        if (moved) placeField: baseSortIndex,
+      },
+    },
+  );
+}
+
+ElementPatchOp elementEditOp({
+  required String opId,
+  required LiveElement base,
+  required Drawn drawn,
+  required ElementPayload payload,
+  required int sortIndex,
+  required Connection connection,
+}) {
+  ElementPatchOp patch(FieldMerge? merge, int expected) => ElementPatchOp(
+    opId: opId,
+    elementPublicId: base.publicId,
+    pagePublicId: base.pagePublicId,
+    expectedElementRevision: expected,
+    payload: payload,
+    sortIndex: sortIndex,
+    merge: merge,
+  );
+  return switch ((drawn, elementEdit(base.payload, payload))) {
+    (BehindWholeWrite(), _) || (DrawnAt(), WholeEdit()) => patch(
+      null,
+      math.min(base.revision, drawn.revision),
+    ),
+    (DrawnAt(), FieldEdit(:final fields)) => patch(
+      _editMerge(
+        fields,
+        _elementReader(base.payload.data),
+        baseSortIndex: base.sortIndex,
+        sortIndex: sortIndex,
+        connection: connection,
+      ),
+      base.revision,
+    ),
+  };
+}
+
+LineupGroupPatchOp lineupEditOp({
+  required String opId,
+  required LiveLineupGroup base,
+  required Drawn drawn,
+  required LineupGroupPayload payload,
+  required int sortIndex,
+  required Connection connection,
+}) {
+  LineupGroupPatchOp patch(FieldMerge? merge, int expected) =>
+      LineupGroupPatchOp(
+        opId: opId,
+        lineupPublicId: base.publicId,
+        pagePublicId: base.pagePublicId,
+        expectedLineupRevision: expected,
+        payload: payload,
+        sortIndex: sortIndex,
+        merge: merge,
+      );
+  return switch ((drawn, lineupEdit(base.payload, payload))) {
+    (BehindWholeWrite(), _) || (DrawnAt(), WholeEdit()) => patch(
+      null,
+      math.min(base.revision, drawn.revision),
+    ),
+    (DrawnAt(), FieldEdit(:final fields)) => patch(
+      _editMerge(
+        fields,
+        _lineupBaseReader(base.payload.data),
+        baseSortIndex: base.sortIndex,
+        sortIndex: sortIndex,
+        connection: connection,
+      ),
+      base.revision,
+    ),
+  };
+}
+
 MergeOutcome<ElementPayload> mergeElementPayload(
   ElementPayload current,
   ElementPayload desired,
   FieldMerge merge,
 ) {
-  if (current.kind != desired.kind ||
-      current.payloadVersion != desired.payloadVersion) {
-    return const WriteWhole();
+  if (current.kind != desired.kind) return const WriteWhole(KindDiffers());
+  if (current.payloadVersion != desired.payloadVersion) {
+    return const WriteWhole(PayloadVersionDiffers());
   }
   final fields = payloadFields(merge);
   for (final key in elementIdentityKeys) {
-    if (fields.contains(key) ||
-        !_same(_key(current.data, key), _key(desired.data, key))) {
-      return const WriteWhole();
+    if (fields.contains(key)) return WriteWhole(NamesIdentityKey(key));
+    if (!_same(_key(current.data, key), _key(desired.data, key))) {
+      return WriteWhole(IdentityDiffers(key));
     }
   }
-  if (fields.any(_unsafeKeys.contains)) return const WriteWhole();
-  if (_baseChanged(
-    merge,
-    (field) => _key(current.data, field),
-    (field) => _key(desired.data, field),
-  )) {
-    return const MergeConflict();
-  }
-  final data = {...current.data};
   for (final field in fields) {
-    if (desired.data.containsKey(field)) {
-      data[field] = desired.data[field];
-    } else {
-      data.remove(field);
-    }
+    if (_unsafeKeys.contains(field)) return WriteWhole(NamesUnsafeKey(field));
   }
-  return Merged(
-    ElementPayload(
-      kind: current.kind,
-      payloadVersion: current.payloadVersion,
-      data: data,
-    ),
-  );
+  if (_conflictingField(
+        merge,
+        _elementReader(current.data),
+        _elementReader(desired.data),
+      )
+      case final field?) {
+    return MergeConflict(field);
+  }
+  return Merged(_elementWith(current, fields, _elementReader(desired.data)));
 }
 
-({String collection, String id})? lineupField(String field) {
+ElementPayload _elementWith(
+  ElementPayload payload,
+  List<String> fields,
+  _Read Function(String field) valueOf,
+) {
+  final data = {...payload.data};
+  for (final field in fields) {
+    switch (valueOf(field)) {
+      case (present: true, :final value):
+        data[field] = value;
+      case (present: false, value: _):
+        data.remove(field);
+    }
+  }
+  return payload.withData(data);
+}
+
+_Read _mergeBase(FieldMerge merge, String field) {
+  final base = merge.base!;
+  return (present: base.containsKey(field), value: base[field]);
+}
+
+ElementPayload elementPayloadAtMergeBase(
+  ElementPayload payload,
+  FieldMerge merge,
+) => merge.base == null
+    ? payload
+    : _elementWith(
+        payload,
+        payloadFields(merge),
+        (field) => _mergeBase(merge, field),
+      );
+
+typedef LineupItemField = ({String collection, String id});
+
+LineupItemField? lineupField(String field) {
   final slash = field.indexOf('/');
   if (slash <= 0) return null;
   final collection = field.substring(0, slash);
@@ -130,77 +420,127 @@ _Read Function(String field) _lineupReader(Map<String, Object?> data) =>
       return (present: item != null, value: item);
     };
 
+sealed class _LineupNames {
+  const _LineupNames();
+}
+
+final class _Items extends _LineupNames {
+  const _Items(this.items);
+
+  final List<LineupItemField> items;
+}
+
+final class _NotAnItem extends _LineupNames {
+  const _NotAnItem(this.field);
+
+  final String field;
+}
+
+_LineupNames _lineupNames(FieldMerge merge) {
+  final items = <LineupItemField>[];
+  for (final field in payloadFields(merge)) {
+    final item = lineupField(field);
+    if (item == null) return _NotAnItem(field);
+    items.add(item);
+  }
+  return _Items(items);
+}
+
 MergeOutcome<LineupGroupPayload> mergeLineupPayload(
   LineupGroupPayload current,
   LineupGroupPayload desired,
   FieldMerge merge,
 ) {
-  if (current.payloadVersion != desired.payloadVersion ||
-      !sameJson(current.data['id'], desired.data['id'])) {
-    return const WriteWhole();
+  if (current.payloadVersion != desired.payloadVersion) {
+    return const WriteWhole(PayloadVersionDiffers());
   }
-  final named = payloadFields(merge).map(lineupField).toList();
-  if (named.any((entry) => entry == null)) return const WriteWhole();
-  if (_baseChanged(
-    merge,
-    _lineupReader(current.data),
-    _lineupReader(desired.data),
-  )) {
-    return const MergeConflict();
+  if (!sameJson(current.data['id'], desired.data['id'])) {
+    return const WriteWhole(IdentityDiffers('id'));
   }
+  final List<LineupItemField> items;
+  switch (_lineupNames(merge)) {
+    case _NotAnItem(:final field):
+      return WriteWhole(NamesNoLineupItem(field));
+    case _Items(items: final named):
+      items = named;
+  }
+  if (_conflictingField(
+        merge,
+        _lineupReader(current.data),
+        _lineupReader(desired.data),
+      )
+      case final field?) {
+    return MergeConflict(field);
+  }
+  return Merged(_lineupWith(current, items, _lineupReader(desired.data)));
+}
+
+MergeOutcome<LineupGroupPayload> lineupPayloadAtMergeBase(
+  LineupGroupPayload payload,
+  FieldMerge merge,
+) {
+  if (merge.base == null) return Merged(payload);
+  return switch (_lineupNames(merge)) {
+    _NotAnItem(:final field) => WriteWhole(NamesNoLineupItem(field)),
+    _Items(:final items) => Merged(
+      _lineupWith(payload, items, (field) => _mergeBase(merge, field)),
+    ),
+  };
+}
+
+LineupGroupPayload _lineupWith(
+  LineupGroupPayload payload,
+  List<LineupItemField> items,
+  _Read Function(String field) valueOf,
+) {
   final lists = {
     for (final collection in lineupCollections)
-      collection: [...lineupItems(current.data, collection)],
+      collection: [...lineupItems(payload.data, collection)],
   };
-  for (final entry in named) {
-    final (:collection, :id) = entry!;
+  for (final (:collection, :id) in items) {
     final list = lists[collection]!;
     final index = list.indexWhere((item) => item['id'] == id);
-    final wanted = _itemById(desired.data, collection, id);
-    if (wanted == null) {
-      if (index >= 0) list.removeAt(index);
-    } else if (index >= 0) {
-      list[index] = wanted;
-    } else {
-      list.add(wanted);
+    switch (valueOf('$collection/$id')) {
+      case (present: true, value: final Map<String, Object?> wanted):
+        if (index >= 0) {
+          list[index] = wanted;
+        } else {
+          list.add(wanted);
+        }
+      case _:
+        if (index >= 0) list.removeAt(index);
     }
   }
   final links = lists['links']!;
   final usedOrigins = {for (final link in links) link['originId']};
   final usedLandings = {for (final link in links) link['landingId']};
-  return Merged(
-    LineupGroupPayload(
-      payloadVersion: current.payloadVersion,
-      data: {
-        ...current.data,
-        'origins': [
-          for (final origin in lists['origins']!)
-            if (usedOrigins.contains(origin['id'])) origin,
-        ],
-        'landings': [
-          for (final landing in lists['landings']!)
-            if (usedLandings.contains(landing['id'])) landing,
-        ],
-        'links': links,
-      },
-    ),
-  );
+  return payload.withData({
+    ...payload.data,
+    'origins': [
+      for (final origin in lists['origins']!)
+        if (usedOrigins.contains(origin['id'])) origin,
+    ],
+    'landings': [
+      for (final landing in lists['landings']!)
+        if (usedLandings.contains(landing['id'])) landing,
+    ],
+    'links': links,
+  });
 }
 
-bool _baseChanged(
+String? _conflictingField(
   FieldMerge merge,
   _Read Function(String field) current,
   _Read Function(String field) desired,
 ) {
-  final base = merge.base;
-  if (base == null) return false;
-  for (final field in merge.fields) {
-    if (field == placeField) continue;
+  if (merge.base == null) return null;
+  for (final field in payloadFields(merge)) {
     final now = current(field);
-    final atBase = (present: base.containsKey(field), value: base[field]);
-    if (!_same(now, atBase) && !_same(now, desired(field))) return true;
+    if (!_same(now, _mergeBase(merge, field)) && !_same(now, desired(field))) {
+      return field;
+    }
   }
-  return false;
+  return null;
 }
 
 bool placeChanged(FieldMerge? merge, int currentSortIndex, int? sortIndex) {
@@ -209,4 +549,21 @@ bool placeChanged(FieldMerge? merge, int currentSortIndex, int? sortIndex) {
     return false;
   }
   return base[placeField] != currentSortIndex && sortIndex != currentSortIndex;
+}
+
+ElementPayload keepStoredFields(ElementPayload stored, ElementPayload next) {
+  final data = {...next.data};
+  final pictureId = stored.data[pictureIdField];
+  if (pictureId is String && !next.data.containsKey(pictureIdField)) {
+    data[pictureIdField] = pictureId;
+  }
+  for (final entry in laterElementFields) {
+    if (entry.kinds.contains(next.kind) &&
+        stored.data.containsKey(entry.field) &&
+        !data.containsKey(entry.field)) {
+      data[entry.field] = stored.data[entry.field];
+    }
+  }
+  if (data.length == next.data.length) return next;
+  return next.withData(data);
 }

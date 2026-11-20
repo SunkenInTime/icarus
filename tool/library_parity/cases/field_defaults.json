@@ -1,0 +1,56 @@
+[
+  {
+    "name": "a vision cone shown by default is not a change",
+    "kind": "ability",
+    "base": { "id": "a", "elementType": "ability", "position": { "x": 1, "y": 1 }, "visualState": { "showRange": false } },
+    "desired": { "id": "a", "elementType": "ability", "position": { "x": 2, "y": 2 }, "visualState": { "showRange": false, "showVisionCone": true } },
+    "current": { "id": "a", "elementType": "ability", "position": { "x": 1, "y": 1 }, "visualState": { "showRange": true } },
+    "fields": ["position"],
+    "merged": { "id": "a", "elementType": "ability", "position": { "x": 2, "y": 2 }, "visualState": { "showRange": true } }
+  },
+  {
+    "name": "a hidden vision cone is a change",
+    "kind": "ability",
+    "base": { "id": "a", "elementType": "ability", "visualState": { "showRange": false } },
+    "desired": { "id": "a", "elementType": "ability", "visualState": { "showRange": false, "showVisionCone": false } },
+    "current": { "id": "a", "elementType": "ability", "visualState": { "showRange": false } },
+    "fields": ["visualState"],
+    "merged": { "id": "a", "elementType": "ability", "visualState": { "showRange": false, "showVisionCone": false } }
+  },
+  {
+    "name": "an agent with a state and no weapon holds no weapon",
+    "kind": "agent",
+    "base": { "id": "j", "elementType": "agent", "state": "none", "isAlly": true },
+    "desired": { "id": "j", "elementType": "agent", "state": "none", "weapon": "none", "isAlly": false },
+    "current": { "id": "j", "elementType": "agent", "state": "none", "isAlly": true },
+    "fields": ["isAlly"],
+    "merged": { "id": "j", "elementType": "agent", "state": "none", "isAlly": false }
+  },
+  {
+    "name": "a weapon on an item with no state is a change",
+    "kind": "agent",
+    "base": { "id": "j", "elementType": "agent" },
+    "desired": { "id": "j", "elementType": "agent", "weapon": "none" },
+    "current": { "id": "j", "elementType": "agent" },
+    "fields": ["weapon"],
+    "merged": { "id": "j", "elementType": "agent", "weapon": "none" }
+  },
+  {
+    "name": "a field written as null where it was absent is not a change",
+    "kind": "utility",
+    "base": { "id": "u", "elementType": "utility", "type": "viewCone90", "isAlly": true },
+    "desired": { "id": "u", "elementType": "utility", "type": "viewCone90", "isAlly": false, "customColorValue": null },
+    "current": { "id": "u", "elementType": "utility", "type": "viewCone90", "isAlly": true },
+    "fields": ["isAlly"],
+    "merged": { "id": "u", "elementType": "utility", "type": "viewCone90", "isAlly": false }
+  },
+  {
+    "name": "a group names only the fields the item holds",
+    "kind": "text",
+    "base": { "id": "t", "elementType": "text", "position": { "x": 1, "y": 1 }, "fontSize": 12 },
+    "desired": { "id": "t", "elementType": "text", "position": { "x": 1, "y": 1 }, "fontSize": 20 },
+    "current": { "id": "t", "elementType": "text", "position": { "x": 4, "y": 4 }, "fontSize": 12 },
+    "fields": ["fontSize", "position"],
+    "merged": { "id": "t", "elementType": "text", "position": { "x": 1, "y": 1 }, "fontSize": 20 }
+  }
+]
