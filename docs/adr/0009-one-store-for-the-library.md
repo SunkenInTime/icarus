@@ -146,23 +146,32 @@ What decided it:
   its log frames were written came back on the next open, and SQLite's quick
   check let a damaged file open with strategies missing.
 - **Costs**, on release builds (`bin/engine_costs.dart` ahead of time, and
-  `dart compile js -O4` in headless Chrome 157), a 500-strategy library of
-  85 MiB, medians of three runs of 15 or 60 on a Ryzen 7 5700U with a
-  Kingston NVMe drive, under load from other agents (load average 4 to 12):
+  `dart compile js -O4` in headless Chrome 157). The library holds 700
+  strategies (55 MiB on disk), one of them with 20 pages of 300 items whose
+  first page is half 1000-point drawings. Figures are medians of three runs
+  (each of 15 opens, 60 saves or 200 moves) on a Ryzen 7 5700U with a Kingston
+  NVMe drive, under load from other agents (load average 5 to 10):
 
   | | Memory (floor) | SQLite, XFS | SQLite, ext4 | Memory in Chrome | IndexedDB, Chrome |
   | --- | --- | --- | --- | --- | --- |
-  | Cold start, list 500 strategies | 4.9 ms | 29.5 ms | 34.5 ms | 9.4 ms | 117 ms |
-  | Open a 300-item page | 153 ms | 163 ms | 187 ms | 173 ms | 214 ms |
-  | Save one moved item | 0.1 ms | 21.1 ms | 6.6 ms | 0.3 ms | 8.7 ms |
-  | Save a 1000-point drawing | 9.3 ms | 32.3 ms | 19.7 ms | 8.7 ms | 17.9 ms |
+  | Cold start, list 700 strategies | 8.8 ms | 41.3 ms | 48.5 ms | 11.9 ms | 24.5 ms |
+  | Open the 20-page strategy | 24.4 ms | 25.3 ms | 25.2 ms | 14.8 ms | 53.5 ms |
+  | Cold read of a 300-item page | 174 ms | 165 ms | 198 ms | 165 ms | 199 ms |
+  | Save one moved item | 0.2 ms | 23.3 ms | 6.3 ms | 0.5 ms | 9.1 ms |
+  | Save a 1000-point drawing | 9.5 ms | 36.5 ms | 19.3 ms | 11.2 ms | 20.8 ms |
+  | 200 moves, each awaited: p50 / p95 | 0.15 / 0.19 ms | 24.6 / 35.4 ms | 6.2 / 9.4 ms | 0.2 / 0.4 ms | 8.2 / 11.0 ms |
+  | 200 moves issued at once, issue to saved: p50 / p95 | 16 / 32 ms | 2.5 / 5.2 s | 0.63 / 1.2 s | 38 / 64 ms | 0.87 / 1.6 s |
+  | One engine write of one small key | — | 5.6 ms | 1.3 ms | — | 1.7 ms |
 
-  Opening a page costs the same on every engine because decoding 150
-  drawings dominates it. A save is the store's four engine calls (the saved
-  record, two areas of rows, clearing the record), each one synced
-  transaction; on SQLite the time is the syncs. Saves happen behind the
-  canvas, so none of this delays an edit on screen. The ext4 numbers are one
-  run; macOS, where `fullfsync` makes each sync slower, is not measured.
+  A page read costs the same on every engine because decoding 150 drawings
+  dominates it. A save is the store's four engine calls (the saved record,
+  two areas of rows, clearing the record), each one synced transaction, so
+  on SQLite a save costs about four single writes. Saves happen behind the
+  canvas and never delay an edit on screen, but they do bound how fast the
+  saved state can keep up: on the loaded XFS disk SQLite saves about 40 edits
+  a second, so a burst of 200 moves takes 5.5 seconds to be saved. The ext4
+  numbers are one run; macOS, where `fullfsync` makes each sync slower, is
+  not measured.
 - **Size.** On Linux the release bundle grows by 1,801,745 bytes, the SQLite
   library itself, and the engine's Dart code adds 98,304 bytes to `libapp.so`
   once the app uses it. The Windows library is 1,709,056 bytes, and macOS

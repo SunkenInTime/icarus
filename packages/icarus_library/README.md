@@ -722,8 +722,10 @@ commit.
 `dart build cli -t bin/engine_costs.dart -o build/engine_costs` builds the
 engine cost tool ahead of time, and `build/engine_costs/bundle/bin/engine_costs
 <folder>` times, on the memory engine and on SQLite in `<folder>`: opening the
-store and listing a 500-strategy library, opening a 300-item page, and saving
-a moved item and a 1000-point drawing. `tool/engine_costs_web.sh` does the same
+store and listing a 700-strategy library, opening a 20-page strategy, a cold
+read of a 300-item page, saving a moved item and a 1000-point drawing, 200
+moves awaited one by one and 200 issued at once, and one engine write of a
+single key. `tool/engine_costs_web.sh` does the same
 for the memory engine and IndexedDB in headless Chrome, compiled with
 `dart compile js -O4`.
 

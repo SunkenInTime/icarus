@@ -6,6 +6,7 @@ const pageItems = 300;
 const drawingPoints = 1000;
 const coldRuns = 15;
 const saveRuns = 60;
+const burst = 200;
 
 bool _readsAll(ElementPayload payload) => true;
 
@@ -96,10 +97,12 @@ final class Times {
     return sorted[((sorted.length - 1) * fraction).round()];
   }
 
+  void add(int micros) => _micros.add(micros);
+
   String get summary {
     String ms(int micros) => (micros / 1000).toStringAsFixed(2);
     return '$name: median ${ms(_at(0.5))} ms, p90 ${ms(_at(0.9))} ms, '
-        'n=${_micros.length}';
+        'p95 ${ms(_at(0.95))} ms, n=${_micros.length}';
   }
 }
 
@@ -209,13 +212,76 @@ Future<List<String>> measure(EngineOpener open, EngineCloser close) async {
       ),
     );
   }
+  var revision = saveRuns + 1;
+  final awaited = Times(
+    '$burst moves of one item, each awaited before the next',
+  );
+  for (var run = 0; run < burst; run++) {
+    _saved(
+      await awaited.time(
+        () => store.commit(
+          'big',
+          ElementPatchOp(
+            opId: 'drag-$run',
+            elementPublicId: 'big-p0-0',
+            expectedElementRevision: revision++,
+            payload: _agent('big-p0-0', 900.0 + run),
+          ),
+        ),
+      ),
+    );
+  }
+  final issued = Times('$burst moves issued at once, issue to saved');
+  final clock = Stopwatch()..start();
+  final waiting = [
+    for (var run = 0; run < burst; run++)
+      store
+          .commit(
+            'big',
+            ElementPatchOp(
+              opId: 'burst-$run',
+              elementPublicId: 'big-p0-0',
+              expectedElementRevision: revision++,
+              payload: _agent('big-p0-0', 2000.0 + run),
+            ),
+          )
+          .then((result) {
+            _saved(result);
+            issued.add(clock.elapsedMicroseconds);
+          }),
+  ];
+  await Future.wait(waiting);
+  final allSaved = clock.elapsedMicroseconds;
   await store.close();
   await close(engine);
+
+  final raw = open();
+  final single = Times(
+    'one engine write of one small key (one synced transaction)',
+  );
+  switch (await raw.lease()) {
+    case Leased(:final lease):
+      for (var run = 0; run < saveRuns; run++) {
+        final written = await single.time(
+          () => lease.write('probe', {'key': 'value $run'}),
+        );
+        if (written is! Done<void>) throw StateError('not written: $written');
+      }
+      await lease.release();
+    case final other:
+      throw StateError('no lease: $other');
+  }
+  await close(raw);
   return [
     cold.summary,
     strategy.summary,
     page.summary,
     move.summary,
     redraw.summary,
+    awaited.summary,
+    issued.summary,
+    '$burst moves issued at once: all saved after '
+        '${(allSaved / 1000).toStringAsFixed(1)} ms',
+    single.summary,
   ];
 }
