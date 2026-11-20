@@ -260,8 +260,12 @@ class DrawingProvider extends Notifier<DrawingState> {
 
   /// The drawing [elementToJson] wrote. A free drawing comes back without
   /// its screen path; rebuild it before putting it on the canvas.
-  static DrawingElement elementFromJson(Map<String, dynamic> json) =>
-      _deserializeDrawingElement(json);
+  static DrawingElement elementFromJson(Map<String, dynamic> json) {
+    if (json['type'] == 'freeDrawing' && json['listOfPoints'] is! List) {
+      throw const FormatException('A free drawing has no points.');
+    }
+    return _deserializeDrawingElement(json);
+  }
 
   static Map<String, dynamic> _serializeDrawingElement(DrawingElement element) {
     if (element is FreeDrawing) {

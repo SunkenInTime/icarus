@@ -690,6 +690,15 @@ void main() {
       },
       'missing its end': Map<String, dynamic>.from(_line('broken-line'))
         ..remove('lineEnd'),
+      'drawn freehand without its points': DrawingProvider.elementToJson(
+        FreeDrawing(
+          listOfPoints: const [Offset(120, 340), Offset(480, 360)],
+          color: Colors.red,
+          isDotted: false,
+          hasArrow: false,
+          id: 'broken-stroke',
+        ),
+      )..remove('listOfPoints'),
     };
 
     for (final MapEntry(key: description, value: damaged)
