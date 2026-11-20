@@ -92,3 +92,15 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 - Each op is applied alone. The server also lets several page ops queued from
   the same strategy revision land in one batch; that belongs to whoever sends
   batches.
+
+## Checked against the server
+
+`node tool/library_parity/run.mjs` generates random op sequences
+(`tool/parity_scenarios.dart`), applies each op with `applyOp` and with
+`ops:applyBatch` from `convex/ops.ts` under convex-test, and fails on the
+first op whose outcome or rows differ. It also fails if the run never reaches
+the outcomes listed in `run.mjs`, such as `merge_invalid` and edits to a
+trashed page. CI runs 24 fixed seeds. `--large` runs 150, and `--seed <n>`
+replays one sequence that failed. Set `DART` to the Dart command when it is
+not `dart` (CI uses `fvm dart`). Page copies are left out, because their ids
+differ from the server's on purpose.

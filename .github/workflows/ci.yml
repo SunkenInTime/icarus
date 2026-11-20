@@ -225,7 +225,7 @@ jobs:
           # release scripts, or the test itself. The release runs the same
           # test on every signed installer; this catches a break on its PR.
           lane desktop '^(installer/|scripts/|lib/migrations/|test/windows_online_beta_library_probe_test\.dart$)|\.g\.dart$' guarded
-          lane library '^packages/icarus_library/' guarded
+          lane library '^(packages/icarus_library/|tool/library_parity/|convex/(ops|schema)\.ts$|convex/lib/|package(-lock)?\.json$)' guarded
 
   # Runs on every PR and push, whatever the ci: line names: no PR adds a
   # comment to a file beyond tool/comment_baseline.json.
@@ -283,12 +283,25 @@ jobs:
 
       - uses: ./.github/actions/setup-flutter
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
       - name: Analyze And Test The Library Package
         working-directory: packages/icarus_library
         run: |
           fvm dart pub get
           fvm dart analyze --fatal-infos
           fvm dart test
+
+      - name: Install Convex dependencies
+        run: npm ci
+
+      - name: Compare applyOp With convex/ops.ts
+        env:
+          DART: fvm dart
+        run: node tool/library_parity/run.mjs
 
   # Flutter compiles test files one after another, and that takes longer than
   # running them, so the suite's time falls with the number of files a runner
