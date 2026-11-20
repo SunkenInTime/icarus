@@ -129,10 +129,15 @@ jobs:
             merged=true
           elif [[ "$EVENT" != "pull_request" ]]; then
             full=true
-          elif ! files=$(gh pr diff "$PR" --repo "$REPO" --name-only); then
-            echo "Could not list the PR's files; running every lane."
+          # A renamed file counts at both paths, so moving code out of a
+          # guarded folder still runs its lane. The files API stops at 3000
+          # files; a listing shorter than the PR's file count runs every lane.
+          elif ! listing=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[] | [.filename, (.previous_filename // "")] | @tsv') \
+            || ! total=$(gh pr view "$PR" --repo "$REPO" --json changedFiles --jq .changedFiles) \
+            || [[ $(grep -c . <<<"$listing") -ne "$total" ]]; then
+            echo "Could not list every file the PR changes; running every lane."
             full=true
-          elif grep -qE '^\.github/' <<<"$files"; then
+          elif files=$(tr '\t' '\n' <<<"$listing" | grep .) && grep -qE '^\.github/' <<<"$files"; then
             full=true
           else
             # The description is fetched, not taken from the event, so a
@@ -198,7 +203,7 @@ jobs:
           lane web ''
           lane replay '^native/replay/'
           # The contract scripts in tool/ run in this lane, against its preview.
-          lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$|tool/check_convex_shipped_clients(\.test)?\.mjs$|tool/check_convex_deploy\.mjs$|tool/convex_opt_in_results\.json$)' guarded
+          lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$|tool/check_convex_shipped_clients(\.test)?\.mjs$|tool/check_convex_deploy\.mjs$|tool/convex_cost/lib/backend\.mjs$|tool/convex_opt_in_results\.json$|presence/src/pass\.ts$)' guarded
           # A server change can make a cloud flow cost more without failing a
           # test: the cost lane runs whenever the server, its packages or the
           # run changes.
@@ -221,11 +226,13 @@ jobs:
           # test on every signed installer; this catches a break on its PR.
           lane desktop '^(installer/|scripts/|lib/hive/|lib/migrations/|test/windows_online_beta_library_probe_test\.dart$)|\.g\.dart$' guarded
           # What reads or writes the library: the Hive adapters and the models
-          # they and the .ica format serialize, migrations, import and export,
-          # the load and save path, the outboxes kept in Hive, and the
-          # fixtures and tests that hold old data. The test list is the
+          # they and the .ica format serialize, migrations, import and export
+          # and the backup manifest, the store's startup and the load and save
+          # path, the outboxes and cloud copy kept in Hive, moving a library to
+          # the cloud, the packages (Hive among them), and the fixtures and
+          # tests that hold old data. The test list is the
           # integrity job's.
-          lane integrity '^(lib/hive/|lib/migrations/|lib/strategy/|lib/providers/(strategy_provider|strategy_page|strategy_page_session_provider|strategy_settings_provider|folder_provider|user_preferences_provider|agent_provider|ability_provider|drawing_provider|image_provider|text_provider|utility_provider)\.dart$|lib/const/(placed_classes|drawing_element|bounding_box|line_provider|json_converters|hive_boxes)\.dart$|lib/collab/durable_[a-z_]*outbox\.dart$|test/fixtures/strategy_integrity/|test/(strategy_integrity|canvas_compatibility_fixture|strategy_folder_import|strategy_import_version_guard)_test\.dart$|test/hive_[a-z_]*_test\.dart$|test/[a-z_]*_migration_test\.dart$|test/durable_[a-z_]*_version_test\.dart$|test/desktop_[a-z0-9_]*_test_support\.dart$|test/providers/move_to_cloud_provider_test\.dart$|tool/generate_canvas_compatibility_fixture\.dart$)|\.g\.dart$' guarded
+          lane integrity '^(lib/hive/|lib/migrations/|lib/strategy/|lib/domain/|lib/main\.dart$|lib/startup/hive_store_launch\.dart$|lib/services/archive_manifest\.dart$|lib/collab/(cloud_library_copy|pending_media_bytes_store)\.dart$|lib/providers/collab/move_to_cloud_provider\.dart$|pubspec\.(yaml|lock)$|lib/providers/(strategy_provider|strategy_page|strategy_page_session_provider|strategy_settings_provider|folder_provider|user_preferences_provider|agent_provider|ability_provider|drawing_provider|image_provider|text_provider|utility_provider)\.dart$|lib/const/(placed_classes|drawing_element|bounding_box|line_provider|json_converters|hive_boxes)\.dart$|lib/collab/durable_[a-z_]*outbox\.dart$|test/fixtures/strategy_integrity/|test/(strategy_integrity|canvas_compatibility_fixture|strategy_folder_import|strategy_import_version_guard)_test\.dart$|test/hive_[a-z_]*_test\.dart$|test/[a-z_]*_migration_test\.dart$|test/durable_[a-z_]*_version_test\.dart$|test/desktop_[a-z0-9_]*_test_support\.dart$|test/providers/move_to_cloud_provider_test\.dart$|tool/generate_canvas_compatibility_fixture\.dart$)|\.g\.dart$' guarded
 
   # Runs on every PR and push, whatever the ci: line names: no PR adds a
   # comment to a file beyond tool/comment_baseline.json.
