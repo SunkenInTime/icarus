@@ -19,14 +19,50 @@ const cloudWorkSendTimeout = Duration(seconds: 20);
 /// This device holds cloud work the server does not have yet, so a copy
 /// read from the server would leave out changes the user can see.
 class CloudWorkNotSent implements Exception {
-  const CloudWorkNotSent({required this.unreadable});
+  const CloudWorkNotSent(this.reason);
+
+  final CloudWorkNotSentReason reason;
 
   /// Work saved on this device could not be read, so none of it can be
   /// shown to have landed.
-  final bool unreadable;
+  bool get unreadable => reason == CloudWorkNotSentReason.unreadable;
 
   @override
-  String toString() => 'CloudWorkNotSent(unreadable: $unreadable)';
+  String toString() => 'CloudWorkNotSent(${reason.name})';
+}
+
+enum CloudWorkNotSentReason {
+  unreadable,
+  needsReview,
+  uploadFailed,
+  stillSending,
+  accountChanged,
+}
+
+sealed class StrategyWorkSent {
+  const StrategyWorkSent();
+}
+
+final class StrategyWorkOnServer extends StrategyWorkSent {
+  const StrategyWorkOnServer();
+}
+
+final class StrategyWorkNotOnServer extends StrategyWorkSent {
+  const StrategyWorkNotOnServer(this.reason);
+
+  final CloudWorkNotSentReason reason;
+}
+
+Future<StrategyWorkSent> sendStrategyWork(
+  ProviderReader read, {
+  required String strategyId,
+}) async {
+  try {
+    await sendCloudWork(read, strategyId: strategyId);
+    return const StrategyWorkOnServer();
+  } on CloudWorkNotSent catch (error) {
+    return StrategyWorkNotOnServer(error.reason);
+  }
 }
 
 /// A copy of one cloud strategy that [sendCloudWork] can refuse.
@@ -86,7 +122,7 @@ Future<SameAccountCheck> sendCloudWork(
   final accountId = read(authProvider).user?.id;
   void sameAccount() {
     if (read(authProvider).user?.id != accountId) {
-      throw const CloudWorkNotSent(unreadable: false);
+      throw const CloudWorkNotSent(CloudWorkNotSentReason.accountChanged);
     }
   }
 
@@ -122,7 +158,7 @@ Future<SameAccountCheck> sendCloudWork(
     final ops = read(strategyOpQueueProvider);
     final media = read(cloudMediaUploadQueueProvider);
     if (!ops.outboxIsReliable || !media.outboxIsReliable) {
-      throw const CloudWorkNotSent(unreadable: true);
+      throw const CloudWorkNotSent(CloudWorkNotSentReason.unreadable);
     }
     final unsent = [
       for (final strategy in ops.accountOutbox.strategies.values)
@@ -149,16 +185,19 @@ Future<SameAccountCheck> sendCloudWork(
       sameAccount();
       return sameAccount;
     }
-    // Work held for review, kept for a deleted strategy, or failed to
-    // upload never lands by waiting.
-    final stuck = unsent.any((strategy) => strategy.needsAttention) ||
+    final needsReview = unsent.any((strategy) => strategy.needsAttention) ||
         orphaned ||
-        uploads.any((job) => job.isFailed) ||
         (queueCovered &&
             (ops.pausedByEntityKey.isNotEmpty ||
                 ops.attentionByEntityKey.isNotEmpty));
-    if (stuck || waited >= cloudWorkSendTimeout) {
-      throw const CloudWorkNotSent(unreadable: false);
+    if (needsReview) {
+      throw const CloudWorkNotSent(CloudWorkNotSentReason.needsReview);
+    }
+    if (uploads.any((job) => job.isFailed)) {
+      throw const CloudWorkNotSent(CloudWorkNotSentReason.uploadFailed);
+    }
+    if (waited >= cloudWorkSendTimeout) {
+      throw const CloudWorkNotSent(CloudWorkNotSentReason.stillSending);
     }
     await Future<void>.delayed(step);
     waited += step;

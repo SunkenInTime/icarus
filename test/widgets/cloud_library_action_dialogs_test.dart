@@ -216,7 +216,8 @@ void main() {
       ProviderScope(
         overrides: [
           cloudStrategyExporterProvider.overrideWithValue(
-            (_) async => throw const CloudWorkNotSent(unreadable: false),
+            (_) async => throw const CloudWorkNotSent(
+                CloudWorkNotSentReason.stillSending),
           ),
           cloudLibraryActionReporterProvider.overrideWithValue(
             CloudLibraryActionReporter(

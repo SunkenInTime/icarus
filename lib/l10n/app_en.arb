@@ -6404,6 +6404,26 @@
   "@communityPostUpdateFailed": {
     "description": "Updating a post failed."
   },
+  "communityPostNotSentStillSending": "Your latest changes haven't reached the server yet, so the post would miss them. Check your connection, then try again.",
+  "@communityPostNotSentStillSending": {
+    "description": "Post or Update was refused because this device's changes to the strategy had not reached the server in time."
+  },
+  "communityPostNotSentNeedsReview": "Some changes to this strategy need your review before they can sync, so the post would miss them. Open the strategy to review them, then try again.",
+  "@communityPostNotSentNeedsReview": {
+    "description": "Post or Update was refused because a change to the strategy is held for the user to review."
+  },
+  "communityPostNotSentUploadFailed": "A picture in this strategy didn't upload, so the post would be missing it. Open the strategy and press Save to retry, then try again.",
+  "@communityPostNotSentUploadFailed": {
+    "description": "Post or Update was refused because an image failed to upload. 'Save' is the name of the strategy save button."
+  },
+  "communityPostNotSentUnreadable": "Icarus can't read some cloud changes saved on this device, so the post might miss them. Review them, then try again.",
+  "@communityPostNotSentUnreadable": {
+    "description": "Post or Update was refused because saved cloud work on this device could not be read."
+  },
+  "communityPostNotSentAccountChanged": "You signed in to a different account while this was getting ready, so nothing was sent. Try again.",
+  "@communityPostNotSentAccountChanged": {
+    "description": "Post or Update was refused because a different account signed in while it waited for changes to sync."
+  },
   "communityTakeDown": "Take it down",
   "@communityTakeDown": {
     "description": "Takes a post down."
