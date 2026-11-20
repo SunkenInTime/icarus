@@ -101,7 +101,7 @@ function main() {
     ).length;
     const ops = results.reduce((total, result) => total + (result.ok ?? 0), 0);
     console.log(
-      `${ops} ops in ${results.length} sequences, ${stories} of them merge stories, matched convex/ops.ts` +
+      `${ops} ops in ${results.length} sequences, ${stories} of them merge stories and merge seeds, matched convex/ops.ts` +
         (differences.length > 0 ? `; ${differences.length} sequences differ` : ""),
     );
     const missing = run.replay ? [] : missingCoverage(outcomes);

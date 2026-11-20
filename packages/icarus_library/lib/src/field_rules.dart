@@ -118,6 +118,8 @@ const laterElementFields = [
   LaterField('isZone', 4, {ElementKind.utility}, NeverCleared()),
 ];
 
+const pictureIdField = 'assetId';
+
 LaterField? laterField(ElementKind kind, String field) {
   for (final entry in laterElementFields) {
     if (entry.field == field && entry.kinds.contains(kind)) return entry;
@@ -190,6 +192,7 @@ Map<String, Object?> fieldRulesJson() => {
         'fields': group.fields.toList()..sort(),
       },
   ],
+  'pictureIdField': pictureIdField,
   'laterElementFields': [
     for (final entry in laterElementFields)
       {

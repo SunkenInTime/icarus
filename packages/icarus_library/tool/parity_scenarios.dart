@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:icarus_library/icarus_library.dart';
 
+import 'merge_seeds.dart';
 import 'merge_stories.dart';
 
 const strategyId = 's1';
@@ -22,6 +23,7 @@ void main(List<String> args) {
   final scenarios = [
     for (var seed = first; seed < first + seeds; seed++) _scenario(seed, steps),
     for (final story in mergeStories()) _story(story),
+    ...mergeSeedScenarios(_rowsJson),
   ];
   File(args[3]).writeAsStringSync(jsonEncode(scenarios));
 }

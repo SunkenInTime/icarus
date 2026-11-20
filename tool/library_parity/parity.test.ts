@@ -35,8 +35,8 @@ test("applyOp matches convex/ops.ts", { timeout: 1_800_000 }, async () => {
   const outcomes: Record<string, number> = {};
   for (const scenario of scenarios) {
     const t = convexTest(schema, modules);
-    const name = scenario.story ?? `seed ${scenario.seed}`;
-    const subject = `parity-${scenario.seed ?? scenario.story.length}`;
+    const name = scenario.story ?? scenario.name ?? `seed ${scenario.seed}`;
+    const subject = `parity-${scenario.seed ?? name.length}`;
     const asUser = t.withIdentity({
       issuer: "https://parity.test",
       subject,
@@ -223,19 +223,18 @@ test("applyOp matches convex/ops.ts", { timeout: 1_800_000 }, async () => {
         break;
       }
     }
-    if (mismatches === 0 && scenario.story !== undefined) {
+    if (mismatches === 0 && scenario.expected !== undefined) {
       const final = await dump();
       const rows = [...final.elements, ...final.lineupGroups];
       const unmet = Object.entries(scenario.expected).flatMap(([id, fields]) =>
         Object.entries(fields as Record<string, Json>)
-          .filter(([key, value]) => {
-            const row = rows.find((r) => r.publicId === id);
-            return canon(row?.payload.data[key]) !== canon(value);
-          })
           .map(([key, value]) => {
             const row = rows.find((r) => r.publicId === id);
-            return { key: `${id}.${key}`, server: row?.payload.data[key], story: value };
-          }),
+            const server =
+              key === "@sortIndex" ? row?.sortIndex : row?.payload.data[key];
+            return { key: `${id}.${key}`, server, story: value };
+          })
+          .filter(({ server, story }) => canon(server) !== canon(story)),
       );
       if (canon(actualOutcomes) !== canon(scenario.outcomes) || unmet.length > 0) {
         mismatches++;

@@ -9,6 +9,12 @@ Object? _dataOf(Row row) => switch (row) {
   final other => fail('$other holds no payload'),
 };
 
+int _placeOf(Row row) => switch (row) {
+  ReadableElementRow(:final sortIndex) => sortIndex,
+  LineupGroupRow(:final sortIndex) => sortIndex,
+  final other => fail('$other has no place'),
+};
+
 void main() {
   for (final story in mergeStories()) {
     test(story.name, () {
@@ -24,7 +30,11 @@ void main() {
         final row = rows.element(id) ?? rows.lineupGroup(id);
         final data = _dataOf(row!)! as Map<String, Object?>;
         for (final MapEntry(:key, :value) in fields.entries) {
-          expect(data[key], value, reason: '$id.$key');
+          expect(
+            key == placeField ? _placeOf(row) : data[key],
+            value,
+            reason: '$id.$key',
+          );
         }
       }
     });

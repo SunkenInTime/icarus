@@ -87,6 +87,33 @@ final _tide = _element('tide', ElementKind.ability, {
   'visualState': {'showRange': false},
 });
 
+final _picture = _element('picture', ElementKind.image, {
+  'position': {'x': 6, 'y': 6},
+  'scale': 1,
+  'assetId': 'asset-1',
+  'caption': 'B site',
+});
+
+final _wall = _element('wall', ElementKind.ability, {
+  'type': 'highTide',
+  'position': {'x': 7, 'y': 7},
+  'wallPath': [
+    {'x': 3, 'y': 0},
+  ],
+});
+
+final _door = _element('door', ElementKind.utility, {
+  'type': 'customRectangle',
+  'position': {'x': 8, 'y': 8},
+  'mapDoor': 'summit-a',
+});
+
+final _zone = _element('zone', ElementKind.utility, {
+  'type': 'customRectangle',
+  'position': {'x': 9, 'y': 9},
+  'isZone': true,
+});
+
 final _line = _element('line', ElementKind.drawing, {
   'listOfPoints': [
     {'x': 0, 'y': 0},
@@ -161,7 +188,18 @@ final storyRows = StrategyRowSet(
         revision: 1,
       ),
   ],
-  elements: [_jett, _note, _box, _cone, _tide, _line],
+  elements: [
+    _jett,
+    _note,
+    _box,
+    _cone,
+    _tide,
+    _line,
+    _picture,
+    _wall,
+    _door,
+    _zone,
+  ],
   lineupGroups: [_group],
 );
 
@@ -172,16 +210,36 @@ ElementPayload _with(LiveElement row, Map<String, Object?> changes) =>
       data: {...row.payload.data, ...changes},
     );
 
+ElementPatchOp _olderBuildMove(
+  LiveElement row,
+  Map<String, Object?> position,
+) => ElementPatchOp(
+  opId: 'older-build-move-${row.publicId}',
+  elementPublicId: row.publicId,
+  expectedElementRevision: row.revision,
+  payload: ElementPayload(
+    kind: row.payload.kind,
+    payloadVersion: row.payload.payloadVersion,
+    data: {
+      for (final MapEntry(:key, :value) in row.payload.data.entries)
+        if (key != pictureIdField && laterField(row.payload.kind, key) == null)
+          key: value,
+      'position': position,
+    },
+  ),
+);
+
 ElementPatchOp _edit(
   String opId,
   LiveElement base,
   Map<String, Object?> changes, {
   Connection connection = Connection.live,
+  int? sortIndex,
 }) => elementEditOp(
   opId: opId,
   base: base,
   payload: _with(base, changes),
-  sortIndex: base.sortIndex,
+  sortIndex: sortIndex ?? base.sortIndex,
   connection: connection,
 );
 
@@ -253,14 +311,18 @@ LineupGroupPayload _groupWith({
   );
 }
 
-LineupGroupPatchOp _groupEdit(String opId, LineupGroupPayload payload) =>
-    lineupEditOp(
-      opId: opId,
-      base: _group,
-      payload: payload,
-      sortIndex: _group.sortIndex,
-      connection: Connection.live,
-    );
+LineupGroupPatchOp _groupEdit(
+  String opId,
+  LineupGroupPayload payload, {
+  Connection connection = Connection.live,
+  int? sortIndex,
+}) => lineupEditOp(
+  opId: opId,
+  base: _group,
+  payload: payload,
+  sortIndex: sortIndex ?? _group.sortIndex,
+  connection: connection,
+);
 
 List<MergeStory> mergeStories() {
   final captioned = _edit('caption-add', _jett, {
@@ -326,7 +388,8 @@ List<MergeStory> mergeStories() {
       },
     ),
     MergeStory(
-      'a recolour made offline lands beside a teammate\'s move',
+      'a recolour made offline, sent with the position it had then, keeps a '
+      'teammate\'s move',
       ops: [
         _edit('move-online', _jett, {
           'position': {'x': 5, 'y': 5},
@@ -357,6 +420,73 @@ List<MergeStory> mergeStories() {
       expected: {
         'jett': {
           'position': {'x': 5, 'y': 5},
+        },
+      },
+    ),
+    MergeStory(
+      'an item moved in the stack offline, from where a teammate moved it, '
+      'waits for the user',
+      ops: [
+        _edit('raise-online', _jett, const {}, sortIndex: 1),
+        _edit(
+          'raise-offline',
+          _jett,
+          const {},
+          sortIndex: 2,
+          connection: Connection.offline,
+        ),
+      ],
+      outcomes: [_applied, _rejected('field_conflict')],
+      expected: {
+        'jett': {'@sortIndex': 1},
+      },
+    ),
+    MergeStory(
+      'a lineup group moved offline, from where a teammate moved it, waits '
+      'for the user',
+      ops: [
+        _groupEdit('raise-online', _group.payload, sortIndex: 1),
+        _groupEdit(
+          'raise-offline',
+          _group.payload,
+          sortIndex: 2,
+          connection: Connection.offline,
+        ),
+      ],
+      outcomes: [_applied, _rejected('field_conflict')],
+      expected: {
+        'g0': {'@sortIndex': 1},
+      },
+    ),
+    MergeStory(
+      'a build that predates them keeps the picture, caption, wall, door and '
+      'zone when it moves the item',
+      ops: [
+        _olderBuildMove(_picture, {'x': 1, 'y': 2}),
+        _olderBuildMove(_wall, {'x': 1, 'y': 3}),
+        _olderBuildMove(_door, {'x': 1, 'y': 4}),
+        _olderBuildMove(_zone, {'x': 1, 'y': 5}),
+      ],
+      outcomes: [_applied, _applied, _applied, _applied],
+      expected: {
+        'picture': {
+          'position': {'x': 1, 'y': 2},
+          'assetId': 'asset-1',
+          'caption': 'B site',
+        },
+        'wall': {
+          'position': {'x': 1, 'y': 3},
+          'wallPath': [
+            {'x': 3, 'y': 0},
+          ],
+        },
+        'door': {
+          'position': {'x': 1, 'y': 4},
+          'mapDoor': 'summit-a',
+        },
+        'zone': {
+          'position': {'x': 1, 'y': 5},
+          'isZone': true,
         },
       },
     ),

@@ -511,9 +511,9 @@ bool placeChanged(FieldMerge? merge, int currentSortIndex, int? sortIndex) {
 
 ElementPayload keepStoredFields(ElementPayload stored, ElementPayload next) {
   final data = {...next.data};
-  final assetId = stored.data['assetId'];
-  if (assetId is String && !next.data.containsKey('assetId')) {
-    data['assetId'] = assetId;
+  final pictureId = stored.data[pictureIdField];
+  if (pictureId is String && !next.data.containsKey(pictureIdField)) {
+    data[pictureIdField] = pictureId;
   }
   for (final entry in laterElementFields) {
     if (entry.kinds.contains(next.kind) &&
