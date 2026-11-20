@@ -68,7 +68,9 @@ export function isOurs(path, text) {
   if (!language) return false;
   if (NOT_OURS.some((pattern) => pattern.test(path))) return false;
   const headEnd = text.split("\n", 5).join("\n").length;
-  const header = lex(text, language).comments.filter((comment) => comment.start < headEnd);
+  const header = lex(text, language).comments.filter(
+    (comment) => comment.start < headEnd && /^\s*$/.test(text.slice(text.lastIndexOf("\n", comment.start - 1) + 1, comment.start)),
+  );
   return !header.some((comment) => GENERATED_HEADER.test(comment.text));
 }
 
@@ -105,8 +107,10 @@ function lexSlash(text, language) {
   let closedControlHead = false;
 
   const top = () => stack[stack.length - 1];
-  const significant = (c) => {
-    beforeLast = last;
+  let lastAt = -1;
+  const significant = (c, at = i) => {
+    beforeLast = lastAt >= 0 && at === lastAt + 1 ? last : "";
+    lastAt = at;
     last = c;
   };
   const pushString = (mode, at) => {
@@ -229,7 +233,8 @@ function lexSlash(text, language) {
 
     if (c === "(") {
       const word = /([\w$]+)\s*$/.exec(text.slice(Math.max(0, i - 40), i));
-      parens.push(Boolean(word && CONTROL_HEADS.has(word[1])));
+      const member = word && text[i - word[0].length - 1] === ".";
+      parens.push(Boolean(word && !member && CONTROL_HEADS.has(word[1])));
     }
     if (!/\s/.test(c)) {
       closedControlHead = c === ")" ? (parens.pop() ?? false) : false;
@@ -325,7 +330,7 @@ function lexHash(text, language) {
   while (i < text.length) {
     const c = text[i];
     if (quote) {
-      const escapes = language === "powershell" ? quote.endsWith('"') || quote === '"' : quote !== "'";
+      const escapes = language === "powershell" ? quote.endsWith('"') : !(language === "shell" && quote === "'");
       if (escapes && c === (language === "powershell" ? "`" : "\\")) {
         i += 2;
         continue;
@@ -369,8 +374,8 @@ function lexHash(text, language) {
       i = stop;
       continue;
     }
-    if (language === "shell" && text.startsWith("<<", i) && text[i + 2] !== "<") {
-      const heredoc = /^<<(-?)\s*(['"]?)([\w.-]+)\2/.exec(text.slice(i, i + 80));
+    if (language === "shell" && text.startsWith("<<", i) && text[i + 2] !== "<" && text[i - 1] !== "<") {
+      const heredoc = /^<<(-?)\s*(?:\\|(['"]?))([A-Za-z_][\w.-]*)\2/.exec(text.slice(i, i + 80));
       if (heredoc) {
         heredocs.push({ delimiter: heredoc[3], tabs: heredoc[1] === "-" });
         i += heredoc[0].length;
@@ -459,6 +464,12 @@ export function commentLineCount(text, language) {
   return lines.size;
 }
 
+export class MidLineComment extends Error {
+  constructor(block) {
+    super(`line ${block.startLine + 1} has code on both sides of the comment; edit it by hand`);
+  }
+}
+
 export function removeBlocks(text, removed) {
   const lines = text.split("\n");
   const drop = new Set();
@@ -479,10 +490,10 @@ export function removeBlocks(text, removed) {
     while (end < out.length && blank(out[end])) end += 1;
     const lineEnds = end === out.length || out[end] === "\n" || (out[end] === "\r" && out[end + 1] === "\n");
     const lineStarts = start === 0 || out[start - 1] === "\n";
-    let joint = "";
-    if (lineStarts) start = block.start;
-    else if (!lineEnds && (start < block.start || end > block.end || fuses(out[start - 1], out[end]))) joint = " ";
-    out = out.slice(0, start) + joint + out.slice(end);
+    if (lineEnds) end = block.end;
+    else if (lineStarts) start = block.start;
+    else throw new MidLineComment(block);
+    out = out.slice(0, start) + out.slice(end);
   }
   if (drop.size === 0) return out;
   const kept = [];
@@ -672,19 +683,28 @@ function remove(idsFile) {
     wanted.get(path).add(Number(id.slice(at + 1)));
   }
   let removedCount = 0;
+  const writes = [];
   for (const [path, lines] of wanted) {
     const language = languageOf(path);
     const text = readFileSync(path, "utf8");
     const found = blocks(text, language).filter((block) => lines.has(block.startLine + 1) && !block.directive);
     const missing = [...lines].filter((line) => !found.some((block) => block.startLine + 1 === line));
     if (missing.length > 0) throw new Error(`${path}: no comment block starts on line(s) ${missing.join(", ")}`);
-    const next = removeBlocks(text, found);
+    let next;
+    try {
+      next = removeBlocks(text, found);
+    } catch (error) {
+      throw new Error(`${path}: ${error.message}; nothing written`);
+    }
     if (codeOnly(next, language) !== codeOnly(text, language)) {
       throw new Error(`${path}: removing comments would change the code; nothing written`);
     }
+    writes.push({ path, next });
+    removedCount += found.length;
+  }
+  for (const { path, next } of writes) {
     if (next.trim() === "") unlinkSync(path);
     else writeFileSync(path, next);
-    removedCount += found.length;
   }
   console.log(`Removed ${removedCount} comment blocks from ${wanted.size} files.`);
 }
@@ -766,5 +786,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.error("usage: node tool/comments.mjs check | baseline | list [paths] | remove <ids-file> | same-code [ref] | stats [paths]");
     process.exit(2);
   }
-  commands[command]();
+  try {
+    commands[command]();
+  } catch (error) {
+    console.error(error.message);
+    process.exit(1);
+  }
 }

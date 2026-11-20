@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Delete comments
 
-Icarus is moving to code without comments. `tool/comments.mjs check` runs in CI's analyze lane and holds every file to the comment count in `tool/comment_baseline.json`: a file may lose comments, never gain them, and a new file starts at zero. Each run of this skill takes one area to fewer comments, keeps the knowledge they held, and lowers the baseline.
+Icarus is moving to code without comments. `tool/comments.mjs check` runs in CI on every PR and holds every file to the comment count in `tool/comment_baseline.json`: a file may lose comments, never gain them, and a new file starts at zero. Each run of this skill takes one area to fewer comments, keeps the knowledge they held, and lowers the baseline.
 
 ## 1. Pick the area
 
@@ -33,7 +33,7 @@ Done when every id from `list` has exactly one category. For more than about 400
 - **decision**: write it into an ADR for the subsystem, `docs/adr/NNNN-<subsystem>-implementation-decisions.md`, numbered after the highest in `docs/adr/` (`0008-video-export-implementation-decisions.md` is the model): each decision with its reason, naming the code it governs, grouped by component. Check each fact you write against the code. Then delete.
 - **contract**: turn it into code where you can: a name that says it, a type that enforces it, or a test that pins the promise, then delete it. Otherwise leave it; the baseline keeps it from growing.
 
-Write the ids to delete into a file, one per line, and run `node tool/comments.mjs remove <file>`. It deletes only those blocks, deletes files left empty, and refuses to write a file whose code would change.
+Write the ids to delete into a file, one per line, and run `node tool/comments.mjs remove <file>`. It deletes only those blocks and deletes files left empty. It refuses the whole run, writing nothing, when a comment has code on both sides of it (`f(a, /* x */ b)`): rewrite that line by hand. It also refuses when a file's code would change.
 
 ## 4. Prove nothing but comments moved
 

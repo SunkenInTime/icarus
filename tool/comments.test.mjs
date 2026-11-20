@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { blocks, codeOnly, commentLineCount, isOurs, removeBlocks, scan } from "./comments.mjs";
+import { MidLineComment, blocks, codeOnly, commentLineCount, isOurs, removeBlocks, scan } from "./comments.mjs";
 
 const texts = (source, language) => scan(source, language).map((comment) => comment.text);
 
@@ -44,8 +44,10 @@ test("javascript regexes and templates hide comment markers", () => {
     "function f(y) { return /[/]/.test(y); }",
     "if (ok) /[//]/.test(s);",
     "i++ / 2; // after a postfix",
+    'console.log(+ +/[//]/.test("/"));',
+    "obj.if(true) / 2; // after a method named if",
   ].join("\n");
-  assert.deepEqual(texts(source, "js"), ["// half", "// after a postfix"]);
+  assert.deepEqual(texts(source, "js"), ["// half", "// after a postfix", "// after a method named if"]);
 });
 
 test("rust lifetimes, chars and raw strings", () => {
@@ -84,8 +86,15 @@ test("removing blocks keeps the code and one blank line", () => {
 });
 
 test("shell heredocs and powershell here-strings are data", () => {
-  const shell = ["cat <<'EOF'", "# delivered literally", "EOF", "echo done # trailing"].join("\n");
-  assert.deepEqual(texts(shell, "shell"), ["# trailing"]);
+  const shell = [
+    "cat <<'EOF'", "# delivered literally", "EOF",
+    "cat <<\\END", "# also literal", "END",
+    "cat <<< hello", "# after a here-string",
+    "((x = 1<<2))", "# after a shift",
+    "echo done # trailing",
+  ].join("\n");
+  assert.deepEqual(texts(shell, "shell"), ["# after a here-string", "# after a shift", "# trailing"]);
+  assert.deepEqual(texts(`value = 'it\\'s # literal'\n# real`, "python"), ["# real"]);
   const powershell = ["$t = @'\r", "This is Icarus's template\r", "# part of the emitted script\r", "'@\r", "$a = 'ends in `' # real\r", ""].join("\n");
   assert.deepEqual(texts(powershell, "powershell"), ["# real"]);
 });
@@ -95,11 +104,17 @@ test("a generated marker counts only inside a header comment", () => {
   assert.equal(isOurs("tool/x.ts", `// Do not edit: generated.\nexport const x = 1;\n`), false);
 });
 
-test("removing a comment between tokens never fuses them", () => {
-  const source = "console.log(a+/* split */++b, f(/* none */), g /* both */ (1));";
-  const removed = removeBlocks(source, blocks(source, "js"));
-  assert.equal(removed, "console.log(a+ ++b, f(), g (1));");
-  assert.equal(codeOnly(removed, "js"), codeOnly(source, "js"));
+test("a comment with code on both sides is left for a person", () => {
+  for (const [source, language] of [
+    ["const n = 1/**/.toString();", "js"],
+    ["const t = typeof/**/x;", "js"],
+    ["#define F/**/(x) x", "c"],
+    ["return /* note\n*/ (7);", "js"],
+  ]) {
+    assert.throws(() => removeBlocks(source, blocks(source, language)), MidLineComment, source);
+  }
+  const opening = "  /* gone */ run();\n";
+  assert.equal(removeBlocks(opening, blocks(opening, "js")), "  run();\n");
   assert.notEqual(codeOnly("a+++b", "js"), codeOnly("a+ ++b", "js"));
 });
 
