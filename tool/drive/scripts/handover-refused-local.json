@@ -8,7 +8,7 @@
   {"wait": 6},
   {"tapIcon": "x", "optional": true},
   {"addAgent": "a{run}", "at": [600, 450]},
-  {"tapAt": [33, 857]},
+  {"key": "keyC"},
   {"wait": 3},
   {"addAgent": "b{run}", "at": [900, 450]},
   {"wait": 1},
@@ -16,7 +16,7 @@
 
   {"dropOpenPage": 1},
   {"wait": 1},
-  {"tapText": "Page 1"},
+  {"key": "keyA"},
   {"wait": 0.6},
   {"shot": "{out}/1-switch-refused.png"},
   {"wait": 2},
