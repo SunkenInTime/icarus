@@ -95,12 +95,39 @@ facing, and the utility on the map at that instant.
 _Avoid_: snapshot, export
 
 **Op**:
-One queued change to cloud data. An op lands when the server accepts it.
-Its op ID names that exact change. Changing the intended work creates a new op
-with a new ID; retrying the same work keeps the existing ID.
+One change to a strategy: adding, changing, deleting or reordering a page, an
+element or a lineup group. An op is saved once the store on this device holds
+it. In a cloud strategy it lands when the server accepts it. Its op ID names
+that exact change. Changing the intended work creates a new op with a new ID;
+retrying the same work keeps the existing ID.
 _Avoid_: request, event
 
 **Outbox record**:
 The durable saved form of one queued op and its delivery state, used to recover
 unsent cloud work after an app restart. It is not a server payload.
 _Avoid_: payload, cached request
+
+**Element**:
+One thing on a page as it is stored: an agent, ability, drawing, text, image
+or utility. Placed items and drawings are elements; a lineup group is not.
+_Avoid_: entity, node, widget (for the stored thing)
+
+**Row**:
+One stored record of the library: a strategy, a folder, a page, a page's
+settings, an element or a lineup group. Every row has an id and a revision
+that goes up with each change.
+_Avoid_: document, record, entry
+
+**Store**:
+Where the library's rows live on this device. One store holds every strategy,
+local or cloud.
+_Avoid_: cache, database, offline copy
+
+**Base**:
+A cloud strategy's rows as the server last confirmed them.
+_Avoid_: snapshot, server copy
+
+**Pending op**:
+An op the store holds that the server has not accepted yet. What the user
+sees is the base with the pending ops applied.
+_Avoid_: overlay, unsynced change
