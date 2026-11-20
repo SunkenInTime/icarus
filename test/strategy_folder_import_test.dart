@@ -18,14 +18,14 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
-import 'package:icarus/providers/strategy_page.dart';
-import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -824,13 +824,14 @@ void main() {
     }
 
     test('in the form every shipped Icarus reads', () {
-      final json = pages.last.toJson('strategy-1');
+      final page = pages.last.copyWith(name: 'Retake');
+      final json = page.toJson('strategy-1');
 
       expect(json['sortIndex'], '3');
       expect(json['isAttack'], 'true');
       expect(json.containsKey('isAutoNamed'), isFalse);
       expect(
-        pages.last.copyWith(isAutoNamed: false).toJson('strategy-1'),
+        page.copyWith(isAutoNamed: false).toJson('strategy-1'),
         containsPair('isAutoNamed', false),
       );
     });

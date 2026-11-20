@@ -8,7 +8,7 @@
   {"tapIcon": "x", "optional": true},
   {"addAgent": "a1-{run}", "at": [640, 420]},
   {"wait": 2},
-  {"tapText": "Page 1"},
+  {"tapAt": [205, 857]},
   {"wait": 1},
   {"shot": "{out}/0-pages-open.png"},
   {"tapText": "Page 1", "button": "secondary"},
@@ -39,6 +39,7 @@
   {"wait": 6},
   {"tapIcon": "x", "optional": true},
   {"logPage": "imported"},
+  {"expectText": "A \"split\" C:\\new", "count": 1},
   {"shot": "{out}/4-imported-opened.png"},
   {"exit": 1}
 ]
