@@ -284,7 +284,6 @@ final class SavePathGauntlet {
     await _pageWork(seed, editor, round);
 
     if (round == _offlineRound) {
-      // Everything made offline is waiting, and the chip must say so.
       await _settle(seed, allowOffline: true);
       final shown = await _check(seed, 'offline with edits waiting');
       if (shown == CloudSyncStatus.synced) {
@@ -423,7 +422,6 @@ final class SavePathGauntlet {
         'customOpacityPercent': 30,
       });
       await editor.draw(id, payload: payload, sortIndex: 2000 + step);
-      // The queue sends 180 ms after the last edit.
       await Future<void>.delayed(Duration(milliseconds: 176 + step * 3));
       await editor.draw(id, payload: null, sortIndex: 2000 + step);
     }
@@ -750,8 +748,6 @@ final class SavePathGauntlet {
     ];
   }
 
-  // --- Faults at the network and process. ---
-
   /// The user adds a page and the answer to it is lost, after the server
   /// applied it. The strategy changes the user then makes offline are made
   /// against the revision before the add, and must land once the add is
@@ -883,8 +879,6 @@ final class SavePathGauntlet {
       ..editor = editor.toJson();
     return true;
   }
-
-  // --- Checks. ---
 
   /// Waits for the app to stop sending: the chip shows something other than
   /// syncing and the queue has nothing it could send right now.

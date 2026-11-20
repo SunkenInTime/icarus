@@ -114,7 +114,6 @@ class ReplayConeWorker {
     return worker;
   }
 
-  /// Cuts [request]'s cone.
   Future<ReplayConeResult> cut(ReplayConeRequest request) {
     if (_closed) return Future.error(StateError('Cone worker is closed.'));
     final ticket = _nextTicket++;

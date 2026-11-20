@@ -45,7 +45,6 @@ class LineUpEditorsNotice extends ConsumerWidget {
           Flexible(
             child: Text(
               lineUpEditorsText(context.l10n, editors, lineups: lineups),
-              // The label role: 12px/600.
               style: theme.textTheme.small.copyWith(
                 color: theme.colorScheme.mutedForeground,
                 fontSize: 12,

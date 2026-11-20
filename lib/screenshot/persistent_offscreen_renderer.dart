@@ -95,9 +95,6 @@ class PersistentOffscreenRenderer {
   bool _visualUpdateScheduled = false;
   bool _disposed = false;
 
-  /// Updates the persistent tree and gives newly introduced asynchronous
-  /// assets a bounded opportunity to resolve before the first capture that
-  /// needs them. This delay is paid per new page, not per video frame.
   Future<void> prepare(
     Widget widget, {
     Duration settleDuration = Duration.zero,

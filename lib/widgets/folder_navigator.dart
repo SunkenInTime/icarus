@@ -62,7 +62,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   void initState() {
     super.initState();
 
-    // Warn about a missing WebView only once, after the first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       _followCloudAvailability(ref.read(isCloudWorkspaceAvailableProvider));
@@ -204,7 +203,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     final canCreate =
         tab == LibraryTab.library && !ref.watch(librarySignInRequiredProvider);
 
-    /// Making something in a cloud folder needs the cloud.
     bool refusedOffline() =>
         ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud &&
         refuseCloudChangeWhileOffline(

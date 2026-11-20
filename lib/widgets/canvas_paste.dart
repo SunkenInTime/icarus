@@ -131,8 +131,6 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
     }
   }
 
-  /// A toast joins the screen on the next frame, and dismissing it before
-  /// then does nothing: it would show afterwards and stay.
   void _dismissAfterItShows(ToastificationItem toast) {
     SchedulerBinding.instance
       ..addPostFrameCallback((_) => toastification.dismiss(toast))

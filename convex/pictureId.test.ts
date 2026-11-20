@@ -297,7 +297,6 @@ test("a picture from before upload statuses is found beside copies elsewhere and
       createdAt: now,
       updatedAt: now,
     });
-    // Twenty newer rows of the same picture, copied into another strategy.
     for (let index = 0; index < 20; index += 1) {
       await ctx.db.insert("imageAssets", {
         publicId: "legacy-picture",
@@ -309,7 +308,6 @@ test("a picture from before upload statuses is found beside copies elsewhere and
         updatedAt: now + index + 1,
       });
     }
-    // Ten newer failed attempts at the same picture in this strategy.
     for (let index = 0; index < 10; index += 1) {
       await ctx.db.insert("imageAssets", {
         publicId: "legacy-picture",

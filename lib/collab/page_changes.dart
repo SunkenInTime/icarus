@@ -11,7 +11,6 @@ import 'package:icarus/collab/collab_models.dart';
 /// A page's side is not a page change: the canvas syncs it with the page's
 /// other content (EntitySyncKey.pageDescriptor).
 
-/// Whether [op] belongs in a strategy's list of page changes.
 bool isPageChangeOp(StrategyOp op) => switch (op) {
       PageAddOp() || PageDeleteOp() || PageReorderOp() => true,
       PagePatchOp(:final payload) => payload.containsKey('name'),
@@ -106,8 +105,6 @@ List<DrawnPage> drawPages(
   ];
   int indexOf(String pageId) =>
       pages.indexWhere((page) => page.publicId == pageId);
-  // An add, delete or reorder renames every automatically named page after
-  // its new place.
   void renumber() {
     for (var i = 0; i < pages.length; i++) {
       if (pages[i].isAutoNamed) {

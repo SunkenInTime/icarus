@@ -91,7 +91,6 @@ async function mark(logs, http) {
   return await logs.waitFor(from, (entry) => entry.identifier === MARKER && entry.caller === "HttpApi");
 }
 
-/// Per-function totals of [entries].
 export function summarize(entries) {
   const byFunction = new Map();
   const total = { runs: 0, cachedRuns: 0, readBytes: 0, writeBytes: 0, readDocuments: 0, writeDocuments: 0, conflictRetries: 0, failures: 0 };

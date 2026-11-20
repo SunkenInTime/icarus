@@ -50,17 +50,12 @@ void main() {
 
   StrategyOpQueueState queue() => container!.read(strategyOpQueueProvider);
 
-  /// Brings the connection back and sends until nothing is left to send.
   Future<void> reconnectAndSend(StrategyOpQueueNotifier notifier) async {
     online.state = true;
     final giveUp = DateTime.now().add(const Duration(seconds: 5));
     for (var i = 0; i < 12 && queue().queuedByEntityKey.isNotEmpty; i++) {
       await notifier.flushNow();
       await _settle();
-      // The server has a batch before the outbox has dropped it: a change
-      // stays listed until its removal from disk finishes, which a slow
-      // machine can stretch past the turns above. Work behind that batch is
-      // queued only once it has gone, so the loop looks again after it.
       while (queue().inFlightByEntityKey.isNotEmpty &&
           DateTime.now().isBefore(giveUp)) {
         await Future<void>.delayed(const Duration(milliseconds: 1));
@@ -210,11 +205,9 @@ void main() {
     const expected = ['page-3:Page 1', 'page-2:Retake'];
     expect(drawn(before), expected);
 
-    // A restart keeps them drawn.
     open();
     expect(drawn(before), expected);
 
-    // Landed, they stay drawn over the read from before they landed.
     await reconnectAndSend(container!.read(strategyOpQueueProvider.notifier));
     expect(queue().pending, isEmpty);
     expect(drawn(before), expected);
@@ -401,8 +394,6 @@ void main() {
     Future<StrategyOpQueueNotifier> deleteThenEdit() async {
       final notifier = open();
       await notifier.enqueue(delete('page-2'));
-      // Made a moment later, as a user makes them: a clock that ticks once
-      // a millisecond can't tell them apart otherwise.
       await Future<void>.delayed(const Duration(milliseconds: 5));
       await notifier.enqueue(rename('page-2', 'Retake'));
       await flipSide(notifier, 'page-2');
@@ -437,7 +428,6 @@ void main() {
       expect(server.page('page-2').trashed, isFalse);
       final refused = queue().attentionByEntityKey.entries.single;
       expect(refused.value.pending.op, isA<PageDeleteOp>());
-      // Neither is lost or sent while the user decides.
       expect(queue().queuedByEntityKey, hasLength(2));
       expect(server.calls.expand((ops) => ops).map((op) => op.opId),
           ['delete-page-2']);
@@ -518,7 +508,6 @@ void main() {
     final notifier = open();
     await notifier.enqueue(move('page-1', 2));
     await notifier.enqueue(move('page-2', 0));
-    // A teammate reorders first.
     server.teammateMoves('page-3', 0);
 
     await reconnectAndSend(notifier);

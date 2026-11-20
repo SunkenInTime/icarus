@@ -7,7 +7,6 @@ import 'package:icarus/services/app_assets.dart';
 import 'package:icarus/widgets/loading_spinner.dart';
 import 'package:icarus/widgets/sidebar_widgets/ability_bar.dart';
 
-// A 1x1 PNG.
 final _png = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA'
   '60e6kgAAAABJRU5ErkJggg==',

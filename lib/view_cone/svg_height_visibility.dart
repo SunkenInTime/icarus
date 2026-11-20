@@ -627,11 +627,9 @@ class SvgHeightVisibility {
       double reach = double.infinity}) {
     final List<int> edges;
     if (accept == null) {
-      // The first nearest edge, as before any acceptance test existed.
       final nearest = footprint._nearestEdge(point);
       edges = nearest < 0 ? const [] : [nearest];
     } else {
-      // Only edges within reach, usually a handful even on a long wall.
       final feet = <(double, int)>[];
       for (var e = 0; e < footprint._edgeCount; e++) {
         final d = footprint._distanceTo(e, point.dx, point.dy);
@@ -1137,8 +1135,6 @@ class SvgHeightVisibility {
         final angle = bins.vertexAngle[vertex];
         if (!open(angle, distance)) continue;
         if (_seam(vertex, active)) continue;
-        // Rays just beside a vertex the wall runs straight across meet its
-        // two edges, so only the vertex ray adds a corner.
         emit(angle,
             beside: !_passThrough(
                 vertex, topology.points[vertex] - origin, active));
@@ -1706,7 +1702,6 @@ class _Footprint {
     if (!(x.abs() < 1e100 && y.abs() < 1e100 && _rowHeight < 1e100)) {
       for (var e = 0; e < _edgeCount; e++) {
         final d = _distanceTo(e, x, y);
-        // A NaN distance is kept when it comes first, as it was.
         if (d < 0) continue;
         if (best < 0 || d < bestDistance) {
           best = e;
@@ -1956,7 +1951,6 @@ class _VertexTopology {
   final List<Offset> points;
 }
 
-/// [values] sorted, with exact repeats removed.
 List<double> _sortedUnique(List<double> values) {
   values.sort();
   final out = <double>[];

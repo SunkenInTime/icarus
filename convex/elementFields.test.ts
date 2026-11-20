@@ -720,7 +720,6 @@ describe("a zone and the builds that don't know it", () => {
     };
   }
 
-  /// [seed]'s strategy, plus "area", a zone.
   async function seedZone() {
     const seeded = await seed();
     const data = zoneData({ isZone: true });

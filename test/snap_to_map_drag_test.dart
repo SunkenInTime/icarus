@@ -63,7 +63,6 @@ final _lines = MapLines([
   (Offset(_wallX, _floorY), Offset(_wallX + 300, _floorY)),
 ]);
 
-/// World units per canvas pixel on [_canvas].
 double get _perPixel => CoordinateSystem.instance
     .screenToCoordinate(
       const Offset(1, 0),

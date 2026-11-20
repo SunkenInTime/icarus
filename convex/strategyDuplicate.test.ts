@@ -196,7 +196,6 @@ async function seedSource(t: RootHarness, owner: Harness): Promise<void> {
         pagePublicId: firstPage,
         expectedElementRevision: 1,
       },
-      // One lineup group showing an image.
       {
         opId: "add-lineup",
         type: "lineup.add",
@@ -321,7 +320,6 @@ describe("strategies:duplicate", () => {
     })) as { elements: Row[]; lineups: Row[] };
     const agents = copy.elements.filter((row) => row.elementType === "agent");
     expect(agents).toHaveLength(2);
-    // Both agents in the copy are copies of the same root, under new ids.
     expect(agents.map((row) => pageCopyRoot(row.publicId))).toEqual([
       "placed-agent",
       "placed-agent",
@@ -333,7 +331,6 @@ describe("strategies:duplicate", () => {
     }
     const image = copy.elements.find((row) => row.elementType === "image")!;
     expect(pageCopyRoot(image.publicId)).toBe("placed-image");
-    // Lineups keep their roots too.
     const lineup = copy.lineups[0]!;
     expect(pageCopyRoot(lineup.publicId)).toBe("item-1");
     expect(pageCopyRoot(lineup.payload.data.origins[0].id)).toBe("origin-1");
@@ -600,10 +597,8 @@ describe("strategies:duplicate", () => {
     expect(copied).toHaveLength(2);
     const [copiedGroup, copiedLone] = copied as [Row, Row];
 
-    // Read the new ids off the copy, in the source's order.
     const newIdOf = new Map<string, string>();
     const remember = (sourceId: string, copyId: string) => {
-      // One source id always becomes one copy id.
       expect(newIdOf.get(sourceId) ?? copyId).toBe(copyId);
       newIdOf.set(sourceId, copyId);
     };
@@ -621,7 +616,6 @@ describe("strategies:duplicate", () => {
         );
       }
     }
-    // Ids that were apart stay apart, and none is reused from the source.
     const sourceIds = [...newIdOf.keys()].sort();
     const copyIds = [...newIdOf.values()];
     expect(sourceIds).toEqual([
@@ -731,7 +725,6 @@ describe("strategies:duplicate", () => {
     const copyImage = copy.elements.find((row) => row.elementType === "image")!;
     const copyImagePage = copyImage.pagePublicId as string;
 
-    // Delete the copy's image element, leaving a tombstone.
     await owner.mutation(applyBatch, {
       ...protocol,
       strategyPublicId: "duplicate-copy",
@@ -746,12 +739,10 @@ describe("strategies:duplicate", () => {
         },
       ],
     });
-    // 31 days later the tombstone is purged.
     vi.setSystemTime(Date.now() + 31 * 24 * 60 * 60 * 1000);
     await t.mutation(purgeOldTombstones, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
-    // Then the copy's page and the original go.
     const copyRevision = await t.run(async (ctx) => {
       const row = await ctx.db
         .query("strategies")
@@ -842,7 +833,6 @@ describe("strategies:duplicate", () => {
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(await activeRows()).toEqual(["active"]);
 
-    // Once that tombstone is purged too, the image is reclaimed.
     vi.setSystemTime(Date.now() + 31 * day);
     await t.mutation(purgeOldTombstones, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
@@ -1563,7 +1553,6 @@ describe('"+": a page added as a copy of another', () => {
     })) as { pages: Row[]; elements: Row[]; lineups: Row[] };
   }
 
-  /// The live rows on a page.
   const onPage = (rows: Row[], pagePublicId: string) =>
     rows.filter((row) => row.pagePublicId === pagePublicId && !row.deleted);
 
@@ -1614,7 +1603,6 @@ describe('"+": a page added as a copy of another', () => {
         images: [{ id: "lineup-image" }],
       },
     ]);
-    // The pages copied from are as they were.
     expect(
       onPage(after.elements, firstPage).map((row) => row.publicId),
     ).toEqual(["placed-image"]);
@@ -1693,7 +1681,6 @@ describe('"+": a page added as a copy of another', () => {
     const [image] = onPage((await snapshot(owner)).elements, "copy-of-1");
     expect(image!.payload.data.assetId).toBe("placed-image");
 
-    // The upload lands: the copy's page shows the picture.
     await setPlacedStatus("active");
     const copyPage = (await owner.query(getPageSnapshot, {
       ...protocol,

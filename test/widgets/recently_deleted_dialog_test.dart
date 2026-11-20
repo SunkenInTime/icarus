@@ -29,7 +29,6 @@ TrashedPage _trashed(
       deletedByYou: byYou,
     );
 
-/// Serves [pages] as the server's trash, or fails while [offline].
 class _TrashRepository implements ConvexStrategyRepository {
   _TrashRepository(this.pages);
 

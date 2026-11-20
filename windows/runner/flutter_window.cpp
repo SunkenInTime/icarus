@@ -14,7 +14,7 @@
 namespace {
 constexpr char kUpdateChannelName[] = "icarus/update_checker";
 constexpr char kCheckWindowsStoreUpdateMethod[] = "checkWindowsStoreUpdate";
-}  // namespace
+}
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -32,7 +32,6 @@ bool FlutterWindow::OnCreate() {
   // creation / destruction in the startup path.
   flutter_controller_ = std::make_unique<flutter::FlutterViewController>(
       frame.right - frame.left, frame.bottom - frame.top, project_);
-  // Ensure that basic setup of the controller was successful.
   if (!flutter_controller_->engine() || !flutter_controller_->view()) {
     return false;
   }
@@ -81,7 +80,6 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
-  // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =
         flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,

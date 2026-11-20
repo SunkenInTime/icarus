@@ -50,7 +50,6 @@ class SearchTextField extends ConsumerStatefulWidget {
   ConsumerState<SearchTextField> createState() => _SearchTextFieldState();
 }
 
-/// Manages the search text for the strategy browser.
 final strategySearchQueryProvider =
     AutoDisposeNotifierProvider<StrategySearchQueryNotifier, String>(
         StrategySearchQueryNotifier.new);
@@ -86,7 +85,6 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
 
   void _handleTextChanged() {
     ref.read(strategySearchQueryProvider.notifier).update(_controller.text);
-    // Expansion depends on whether text is empty; trigger rebuild.
     setState(() {});
   }
 
@@ -108,7 +106,6 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
   void _clear() {
     ref.read(strategySearchQueryProvider.notifier).update("");
     _controller.clear();
-    // After clearing, collapse if not hovering (will rebuild).
     setState(() {});
   }
 
@@ -132,7 +129,6 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
         width: _expanded ? widget.expandedWidth : widget.collapsedWidth,
         duration: widget.duration,
         curve: widget.curve,
-        // Let the height be intrinsic.
         alignment: Alignment.centerLeft,
         child: TextEditingShortcutScope(
           child: _buildField(textStyle, contentPadding, compact),
@@ -148,9 +144,6 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
       focusNode: _focusNode,
       autofocus: widget.autofocus,
       textInputAction: TextInputAction.search,
-      // onChanged: (String value) {
-      //   ref.read(strategySearchQueryProvider.notifier).update(value);
-      // },
       onSubmitted: widget.onSubmitted,
       style: textStyle,
       cursorColor: Settings.tacticalVioletTheme.primary,
@@ -210,7 +203,6 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
               )
             : null,
       ),
-      // When collapsed and user taps, force expansion by focusing.
       onTap: () {
         if (!_expanded) {
           _focusNode.requestFocus();

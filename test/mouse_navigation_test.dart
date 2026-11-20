@@ -211,9 +211,6 @@ void main() {
 
     testWidgets('a back whose open gave way does not count as having moved',
         (tester) async {
-      // An open that gives way to a newer one returns without opening. Back
-      // used to record the move anyway, and history gained a place the
-      // reader never reached.
       final strategies = _RecordingStrategies()..givesWay.add('shared-id');
       await tester.pumpWidget(
         ProviderScope(
@@ -297,10 +294,6 @@ void main() {
 
     testWidgets('going home while a back is loading is where history is',
         (tester) async {
-      // The reader presses back, then leaves for the library before the
-      // strategy has loaded. Nothing is recorded during a back, so history
-      // went on believing the strategy they left was still open, and the
-      // next back from a strategy opened in the library reopened it.
       final strategies =
           await openOtherAfterShared(tester, StrategySource.local);
       strategies.givesWay.add('shared-id');
@@ -313,7 +306,6 @@ void main() {
       await tester.pump();
       await pressBack(tester, 2);
 
-      // Back to the library it was opened from, not into another strategy.
       expect(strategies.state.strategyId, isNull);
       expect(strategies.opened, ['local:shared-id']);
     });
@@ -332,7 +324,6 @@ void main() {
 
       expect(strategies.state.strategyId, isNull);
       expect(find.text('Could not load strategy.'), findsOneWidget);
-      // The toast's timer.
       await tester.pump(const Duration(seconds: 10));
     });
   });

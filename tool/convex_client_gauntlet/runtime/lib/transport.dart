@@ -102,8 +102,6 @@ final class DartvexTransport implements IcarusConvexTransport {
           }),
       cancel: () async {
         subscription.cancel();
-        // Dartvex exposes a synchronous cancel that schedules its actual
-        // unsubscribe. Give that task a turn before a process-level close.
         await Future<void>.delayed(const Duration(milliseconds: 25));
       },
     );
@@ -185,8 +183,6 @@ final class ConvexFlutterTransport implements IcarusConvexTransport {
     _authHandle = null;
     _nextAuthToken = null;
     await _client.clearAuth();
-    // The native handle clears auth asynchronously when its cancellation wakes.
-    // Let that task settle before creating the replacement handle.
     await Future<void>.delayed(const Duration(milliseconds: 50));
     if (token == null) return;
     _nextAuthToken = token;

@@ -47,7 +47,6 @@ abstract final class CaptionExportMetrics {
 /// How long a note takes to read, at about 20 characters a second.
 const captionReadCharsPerSecond = 20;
 
-/// Seconds a reader needs for all of [layout].
 int captionReadSeconds(CaptionExportLayout layout) {
   final characters = layout.entries.fold(0, (sum, e) => sum + e.text.length);
   return (characters / captionReadCharsPerSecond).ceil();
@@ -188,7 +187,6 @@ CaptionExportLayout layoutExportCaptions({
 List<Offset> _placeNumbers(List<CaptionExportNote> notes, Size frame) {
   const radius = CaptionExportMetrics.dotRadius;
   const apart = 2 * radius + CaptionExportMetrics.dotGap;
-  // A number past the frame's edge would be cut off.
   Offset inFrame(Offset spot) => Offset(
         spot.dx.clamp(radius, frame.width - radius),
         spot.dy.clamp(radius, frame.height - radius),

@@ -55,7 +55,6 @@ LineUpGraph _page() => LineUpGraph(
 
 String _json(LineUpGraph graph) => jsonEncode(graph.toJson());
 
-/// [rows] as canonical JSON, to compare them exactly.
 String _canonical(Iterable<CloudLineupRow> rows) =>
     canonicalCloudJsonEncode(jsonDecode(jsonEncode([
       for (final row in rows)
@@ -261,7 +260,6 @@ void main() {
       cloudLineupRows(graph, groupOf: {'gone': 'k1'}).rows.single.publicId,
       'k2',
     );
-    // Every lineup id taken: a fresh id.
     final fresh = cloudLineupRows(graph, takenGroupIds: {'k1', 'k2'});
     expect(fresh.rows.single.publicId, isNot(anyOf('k1', 'k2')));
     expect(fresh.groupOf['k1'], fresh.rows.single.publicId);

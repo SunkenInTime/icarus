@@ -110,7 +110,6 @@ class ContentWrites {
     return row;
   }
 
-  /// The query, with whatever content rows it returns remembered.
   private query(table: string) {
     const query = (this.raw.query as (t: string) => object)(table);
     return isContentTable(table) ? this.watch(table, query) : query;
@@ -173,7 +172,6 @@ class ContentWrites {
     return id;
   }
 
-  /// patch, replace and delete, with or without the table name first.
   private async change(
     method: "patch" | "replace" | "delete",
     args: unknown[],
@@ -208,7 +206,6 @@ class ContentWrites {
     );
   }
 
-  /// Notes the strategy that content row [id] of [table] belongs to.
   private async note(table: ContentTable, id: string) {
     let owner = this.owners.get(id);
     if (owner === undefined) {

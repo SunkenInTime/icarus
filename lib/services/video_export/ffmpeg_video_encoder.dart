@@ -28,7 +28,6 @@ double videoEncodeAttemptProgress({
       .clamp(0.0, 1.0);
 }
 
-/// Builds the output filter for the selected preset and planned duration.
 String videoExportFilter({
   required VideoExportQuality quality,
   required double totalSeconds,
@@ -79,8 +78,6 @@ class FfmpegVideoEncoder {
   static final RegExp _timePattern =
       RegExp(r'time=(\d+):(\d{2}):(\d{2})\.(\d+)');
 
-  /// The packaged binary ships next to the executable (ADR 0004); a PATH
-  /// install is the local-development fallback on non-Windows platforms.
   static Future<String?> resolveBinary() async {
     if (Platform.isWindows) {
       final exeDir = File(Platform.resolvedExecutable).parent.path;
@@ -91,9 +88,6 @@ class FfmpegVideoEncoder {
       for (final candidate in candidates) {
         if (File(candidate).existsSync()) return candidate;
       }
-      // No PATH fallback on Windows: `where` resolves the working directory
-      // first, so a planted ffmpeg.exe could be launched. Stage the bundled
-      // binary instead (scripts/fetch_ffmpeg.ps1).
       return null;
     }
     try {
@@ -142,27 +136,18 @@ class FfmpegVideoEncoder {
       '0',
       '-i',
       concatListFileName,
-      // The concat playlist repeats its final still so FFmpeg honors that
-      // entry's duration. Some FFmpeg builds inherit the duration on the
-      // repeated file and hold the final page twice, so cap the output to the
-      // duration planned by VideoExporter.
       '-t',
       totalSeconds.toStringAsFixed(6),
       '-movflags',
       '+faststart',
     ];
 
-    // `-y` truncates its target immediately, so ffmpeg never writes to the
-    // user-chosen path directly: a failed or cancelled encode must not
-    // destroy a video that already existed there. The destination is only
-    // replaced once an encode has succeeded.
     final partialPath = '$outputPath.icarus-partial.mp4';
     Future<void> removePartialOutput() async {
       try {
         final partial = File(partialPath);
         if (await partial.exists()) await partial.delete();
       } on Object {
-        // Best effort only.
       }
     }
 
@@ -179,17 +164,12 @@ class FfmpegVideoEncoder {
           codecIndex < codecAttempts.length;
           codecIndex++) {
         final codec = codecAttempts[codecIndex];
-        // Reserve one progress slot for every possible invocation. A size
-        // correction therefore continues from halfway instead of making the
-        // dialog jump backward. Max's codec fallback behaves the same way.
         final attemptCount = sizePolicy != null ? 2 : codecAttempts.length;
         final attemptIndex = sizePolicy != null ? sizeRetries : codecIndex;
         if (_cancelled) {
           await removePartialOutput();
           throw VideoExportCancelled();
         }
-        // This encoder always produces MP4. Declaring the muxer explicitly
-        // avoids relying on FFmpeg to infer it from the selected path.
         final args = [
           ...baseArgs,
           '-vf',
@@ -343,13 +323,6 @@ class FfmpegVideoEncoder {
           ];
   }
 
-  /// Moves the finished encode over the destination. The partial file lives
-  /// in the destination's directory, so this is a same-volume rename, which
-  /// replaces the destination atomically. There is deliberately no copy
-  /// fallback: a copy truncates the destination before it completes, so a
-  /// mid-copy failure would damage the very video the partial file protects.
-  /// If the rename fails the caller surfaces the error and the existing
-  /// destination is left untouched.
   static Future<void> _replaceDestination(String from, String to) =>
       File(from).rename(to);
 }

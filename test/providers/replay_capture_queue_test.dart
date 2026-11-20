@@ -219,7 +219,6 @@ void main() {
     await queue().retry([refused.id]);
     await queue().sendNow();
 
-    // Only the refused item went again, not the two that landed.
     expect(cloud.itemBatches, [
       [(unlanded as ElementAddOp).elementPublicId],
     ]);
@@ -722,7 +721,6 @@ class _FakeCloud extends Fake implements ConvexStrategyRepository {
     message: 'Not found.',
   );
 
-  /// Answers lost so far.
   var lost = 0;
 
   void _answer({bool lost = false}) {

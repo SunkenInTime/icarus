@@ -35,7 +35,6 @@ export type FieldMerge = Infer<typeof fieldMergeValidator>;
 /// payload.
 export const PLACE_FIELD = "@sortIndex";
 
-/// The payload fields [merge] names: all but the place.
 function payloadFields(merge: FieldMerge): string[] {
   return merge.fields.filter((field) => field !== PLACE_FIELD);
 }
@@ -73,8 +72,6 @@ function has(record: Record<string, unknown>, key: string): boolean {
   );
 }
 
-/// Whether two possibly absent values are the same: both absent, or both
-/// present and equal.
 function same(
   leftPresent: boolean,
   left: unknown,
@@ -85,7 +82,6 @@ function same(
   return valuesEqual(left, right);
 }
 
-/// A field name that cannot be used as a key on a plain object safely.
 function unsafeKey(key: string): boolean {
   return key === "__proto__" || key === "constructor" || key === "prototype";
 }

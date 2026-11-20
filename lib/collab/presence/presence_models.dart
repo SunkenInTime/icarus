@@ -42,7 +42,6 @@ class PresenceCursor {
   int get hashCode => Object.hash(pageId, x, y);
 }
 
-/// What one connection is editing, on one page.
 class PresenceEditing {
   const PresenceEditing({
     required this.pageId,
@@ -106,7 +105,6 @@ class PresencePeer {
   /// their cursor first shows.
   final String? pageId;
 
-  /// What they are editing, if anything.
   final PresenceEditing? editing;
 
   /// With [cursor] in place of the last one; hiding it keeps [pageId].
@@ -121,7 +119,6 @@ class PresencePeer {
         editing: editing,
       );
 
-  /// With [editing] in place of what they were editing.
   PresencePeer withEditing(PresenceEditing? editing) => PresencePeer(
         sid: sid,
         uid: uid,
@@ -217,7 +214,6 @@ class PresenceRoomState {
     return editors;
   }
 
-  /// Other people's cursors on [pageId].
   List<PresencePeer> cursorsOn(String pageId) => [
         for (final peer in peers.values)
           if (peer.uid != selfUid && peer.cursor?.pageId == pageId) peer,

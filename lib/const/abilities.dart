@@ -77,7 +77,6 @@ double _squareRenderedHeight({
 }
 
 sealed class Ability {
-  //
   Offset getAnchorPoint({double? mapScale, double? abilitySize});
   Offset getSize({double? mapScale, double? abilitySize});
   Widget createWidget({
@@ -126,7 +125,6 @@ class BaseAbility extends Ability {
   @override
   Offset getAnchorPoint({double? mapScale, double? abilitySize}) {
     assert(abilitySize != null, 'abilitySize must be provided');
-    // abilitySize is required, so no need for !
     return Offset(abilitySize! / 2, abilitySize / 2);
   }
 
@@ -599,7 +597,6 @@ class RotatableImageAbility extends Ability {
   }
 }
 
-//As much as I would love to extend square
 class ResizableSquareAbility extends SquareAbility {
   final double minLength;
   final bool defaultToMaxLength;

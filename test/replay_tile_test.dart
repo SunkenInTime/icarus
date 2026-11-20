@@ -9,7 +9,6 @@ import 'package:icarus/widgets/replay/replay_library_content.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 void main() {
-  /// Right-clicks a replay kept in Icarus and returns the menu's labels.
   Future<void> openMenu(WidgetTester tester) async {
     await tester.pumpWidget(
       ProviderScope(

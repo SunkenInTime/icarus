@@ -183,7 +183,6 @@ Future<void> _loadFonts() async {
   }
 }
 
-/// Saves the screen to $ICARUS_COPY_MENU_ARTIFACT_DIR/[name].png when set.
 Future<void> _capture(WidgetTester tester, String name) async {
   final directory = _artifactDir;
   if (directory == null) return;

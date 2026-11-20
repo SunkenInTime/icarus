@@ -46,7 +46,6 @@ Future<bool> _claim(File file) async {
   }
 }
 
-/// [shots] as one .zip, for a browser to download in one go.
 Uint8List zipScreenshots(String strategyName, List<PageScreenshot> shots) {
   final archive = Archive();
   for (final shot in shots) {

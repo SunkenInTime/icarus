@@ -52,7 +52,6 @@ void main() {
         ),
       ),
     );
-    // The shader loads on the real event loop.
     for (var i = 0; i < 10; i++) {
       await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 50)));
@@ -72,7 +71,6 @@ void main() {
     await frames();
     expect(glow(), greaterThan(0.5));
 
-    // Hide the dots, then leave the grid while they're hidden.
     await setOpacity(0);
     await tester.pump();
     await mouse.moveTo(const Offset(400, 400));

@@ -8,12 +8,10 @@ const communityMaxTitleLength = 60;
 /// Which side a post's pages play: all attack, all defense, or both.
 enum CommunitySide { attack, defense, mixed }
 
-/// How the feed is ordered.
 enum CommunitySort {
   /// Stars and saves from the last week.
   trending,
 
-  /// Newest first.
   newest,
 
   /// Most starred of all time.
@@ -33,7 +31,6 @@ enum CommunityPostStatus {
 
 enum CommunityReportReason { offensive, picture, link, spam, stolen }
 
-/// What a reviewer may do with a reported post.
 enum CommunityReviewDecision { restore, remove, ban }
 
 /// One post as a feed card shows it. Opening it reads the frozen copy of the
@@ -88,7 +85,6 @@ class CommunityPost {
   int get hashCode => Object.hash(publicId, title, starCount, strategyPublicId);
 }
 
-/// What the feed is narrowed to and how it is ordered.
 @immutable
 class CommunityFilter {
   const CommunityFilter({
@@ -165,7 +161,6 @@ typedef CommunityFeedPage = ({
   String? nextCursor,
 });
 
-/// One of the signed-in user's own posts.
 typedef MyCommunityPost = ({
   CommunityPost post,
   CommunityPostStatus status,

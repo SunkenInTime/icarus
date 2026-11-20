@@ -12,8 +12,6 @@ import 'package:icarus/services/local_image_file.dart';
 import 'package:icarus/services/halved_image.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
-/// Where the bytes for one image in the open strategy (a placed image or a
-/// lineup image) come from.
 sealed class StrategyImageSource {
   const StrategyImageSource();
 
@@ -46,7 +44,6 @@ final class LocalImageFile extends StrategyImageSource {
   final String path;
 }
 
-/// The image is fetched from its cloud asset URL.
 final class RemoteImageUrl extends StrategyImageSource {
   const RemoteImageUrl(this.url);
   final String url;
@@ -107,7 +104,6 @@ StrategyImageSource readStrategyImageSource(
 ) =>
     _strategyImageSource(ref.read, image);
 
-/// [readStrategyImageSource] for code that holds a provider's [Ref].
 StrategyImageSource readStrategyImageSourceOf(
   Ref ref,
   StrategyImageKey image,

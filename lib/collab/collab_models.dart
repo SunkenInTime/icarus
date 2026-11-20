@@ -615,14 +615,11 @@ sealed class StrategyOp {
         _ => this,
       };
 
-  /// The field merge of an element or lineup patch; null for any other op.
   FieldMerge? get merge => switch (this) {
         ElementPatchOp(:final merge) || LineupPatchOp(:final merge) => merge,
         _ => null,
       };
 
-  /// This op with [merge] in place of its own, if it is an element or
-  /// lineup patch; any other op as it is.
   StrategyOp withMerge(FieldMerge? merge) => switch (this) {
         ElementPatchOp() => ElementPatchOp(
             opId: opId,
@@ -1680,7 +1677,6 @@ class RemoteFullPage {
   final RemotePageContent content;
 }
 
-/// A one-shot whole-strategy value used only by explicit export/import flows.
 class RemoteFullStrategySnapshot {
   const RemoteFullStrategySnapshot({
     required this.header,

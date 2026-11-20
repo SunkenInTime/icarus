@@ -4,9 +4,6 @@ import FlutterMacOS
 /// Icarus draws its own title strip, so the window keeps only the native
 /// traffic lights and lets the Flutter view extend under the title bar.
 class MainFlutterWindow: NSWindow {
-  /// Height of the strip every screen draws in place of the title bar
-  /// (`kWindowStripHeight` in lib/widgets/window_chrome.dart). The traffic
-  /// lights are centered on it once and never move.
   private let titleStripHeight: CGFloat = 40
   private var layoutObservers: [NSObjectProtocol] = []
 

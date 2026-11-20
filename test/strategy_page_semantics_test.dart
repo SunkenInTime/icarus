@@ -448,8 +448,6 @@ void main() {
         PageCopyResult.copied,
       );
 
-      // The next page has both lineups, still meeting at one landing, with
-      // their names, notes and screenshots, where they were.
       final there = savedLineUps('page-3');
       expect(there.links.map((link) => link.name), ['Bolt A', 'Bolt B']);
       expect(
@@ -481,7 +479,6 @@ void main() {
             .position,
         const Offset(10, 10),
       );
-      // This page is left as it was.
       expect(container.read(lineUpProvider).links, hasLength(3));
     });
 
@@ -500,7 +497,6 @@ void main() {
         PageCopyResult.alreadyThere,
       );
       expect(savedLineUps('page-3').links, hasLength(2));
-      // Another lineup can still go.
       expect(notifier.copyDirectionsForLineUps({'recon'}), [
         PageTransitionDirection.backward,
         PageTransitionDirection.forward,

@@ -176,7 +176,6 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
         ));
       },
     );
-    // A Community post's link opens it over the Community tab.
     _communityPostSub = ref.listenManual(
       communityPostToOpenProvider,
       (_, postPublicId) {
@@ -394,7 +393,6 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
       while (from.isNotEmpty) {
         final target = from.removeLast();
         if (!_isLocationAvailable(target)) {
-          // Folder or strategy has been deleted since; drop the stale entry.
           continue;
         }
         final bool moved = await _navigateTo(target);

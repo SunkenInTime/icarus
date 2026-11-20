@@ -10,7 +10,7 @@ import 'package:icarus/widgets/loading_spinner.dart';
 
 class LineupMediaPage extends ConsumerStatefulWidget {
   final TextEditingController youtubeLinkController;
-  final List<SimpleImageData> images; // Placeholder for actual image data
+  final List<SimpleImageData> images;
   final VoidCallback onAddImage;
   final VoidCallback onPasteImage;
 
@@ -45,8 +45,6 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
 
   @override
   void dispose() {
-    // widget.youtubeLinkController.dispose();
-    // widget.notesController.dispose();
     super.dispose();
   }
 
@@ -106,9 +104,6 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
         CustomTextField(
           hintText: l10n.lineupMediaNotesHint,
           controller: widget.notesController,
-          // onEnterPressed: (intent) {
-          //   // Handle enter pressed if needed
-          // },
         ),
       ],
     );
@@ -155,7 +150,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
         crossAxisSpacing: 8,
         childAspectRatio: 1,
       ),
-      itemCount: widget.images.length + 2, // +1 for Add, +1 for Paste
+      itemCount: widget.images.length + 2,
       itemBuilder: (context, index) {
         if (index == widget.images.length + 1) {
           return _buildAddButton();

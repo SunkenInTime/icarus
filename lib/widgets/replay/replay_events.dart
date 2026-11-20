@@ -65,7 +65,6 @@ class ReplayRoundEvent {
   final ReplayEventKind kind;
   final int timeMs;
 
-  /// The kill, for a kill.
   final ReplayKill? kill;
 
   /// Who planted or defused, when the replay says, or who used the ability.
@@ -74,7 +73,6 @@ class ReplayRoundEvent {
   /// Where the spike was planted, for a plant or a detonation.
   final String? site;
 
-  /// The ability used, for an ability use.
   final AbilityInfo? ability;
 }
 

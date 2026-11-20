@@ -6,9 +6,6 @@ import 'package:icarus/screenshot/offscreen_capture.dart';
 void main() {
   testWidgets('a capture does not tell the browser the page moved',
       (tester) async {
-    // On web the address is where a reload reopens the editor. The capture
-    // shell used to be an app with its own navigator, which reported `/` as
-    // the page's route: after a screenshot, a reload opened the library.
     final reported = <String>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.navigation,

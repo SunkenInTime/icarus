@@ -416,10 +416,6 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
                 overlayAlignment: Alignment.topCenter,
               ),
 
-              // const Aligned(
-              //   follower: Alignment.bottomCenter,
-              //   target: Alignment.topCenter,
-              // ),
               child: interactiveChild,
             ),
     );

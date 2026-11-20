@@ -53,7 +53,6 @@ void main() {
           ),
         ),
       );
-      // The thumbnails decode and paint off the test's fake clock.
       for (var i = 0; i < 20; i++) {
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 50)),

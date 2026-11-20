@@ -95,7 +95,6 @@ class _CommunityTabState extends ConsumerState<CommunityTab> {
   @override
   Widget build(BuildContext context) {
     final feed = ref.watch(communityFeedProvider);
-    // A filter change starts at the top.
     ref.listen(communityFilterProvider, (_, __) {
       if (_scroll.hasClients) _scroll.jumpTo(0);
     });

@@ -77,7 +77,6 @@ class _TeamTextButtonState extends State<_TeamTextButton> {
                       : (isHovered
                           ? widget.selectedColor.withValues(alpha: 0.7)
                           : Settings.tacticalVioletTheme.mutedForeground),
-                  // fontSize: 14,
                 ),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2.0),

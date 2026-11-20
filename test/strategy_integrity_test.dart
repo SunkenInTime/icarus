@@ -160,7 +160,6 @@ class _IcaHarness {
     return importIca(await writeIca(name, payload));
   }
 
-  /// Exports [strategy] the way the app does and returns the .ica file.
   Future<File> exportIca(StrategyData strategy) async {
     if (!strategies.containsKey(strategy.id)) {
       await strategies.put(strategy.id, strategy);
@@ -180,7 +179,6 @@ class _IcaHarness {
   }
 }
 
-/// Every non-JSON file in an .ica archive, by name.
 Future<Map<String, List<int>>> _icaAttachments(File file) async {
   final archive = ZipDecoder().decodeBytes(await file.readAsBytes());
   return {

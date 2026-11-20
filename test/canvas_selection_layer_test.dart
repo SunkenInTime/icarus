@@ -38,7 +38,6 @@ class _NoopStrategyProvider extends StrategyProvider {
   void setUnsaved() {}
 }
 
-/// How often the handle on item a has been dragged.
 var _handleMoves = 0;
 
 /// An item drawn as a 20 px square with its top-left at [at], the way the

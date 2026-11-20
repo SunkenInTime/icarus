@@ -544,7 +544,6 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     ));
   }
 
-  /// Live page sets [retryRestoredPages] was asked to re-send for.
   final List<Set<String>> livePageRetries = [];
 
   @override
@@ -696,10 +695,8 @@ class _RecordingMediaQueue extends CloudMediaUploadQueueNotifier {
   }
 }
 
-/// Whether this device can reach the server, for tests that go offline.
 final _online = StateProvider<bool>((ref) => true);
 
-/// A ref, for functions that read providers through one.
 final _refProvider = Provider<Ref>((ref) => ref);
 
 Future<void> _settle() async {
@@ -707,10 +704,6 @@ Future<void> _settle() async {
   await Future<void>.delayed(Duration.zero);
 }
 
-/// Draws a frame, which is when an animated page switch plans its transition.
-/// Earlier tests in this file leave post-frame work queued on the shared
-/// binding, and it fails on their disposed containers, so those errors are let
-/// go here. What a test then checks is what proves its own frame ran.
 Future<void> _drawFrame() async {
   runZonedGuarded(
     () => WidgetsBinding.instance
@@ -721,7 +714,6 @@ Future<void> _drawFrame() async {
   await _settle();
 }
 
-/// Waits, in real time, until [condition] holds.
 Future<void> _until(bool Function() condition) async {
   final deadline = DateTime.now().add(const Duration(seconds: 5));
   while (!condition()) {
@@ -897,22 +889,18 @@ Map<String, dynamic> _abilityJson(
       'armLengthsMeters': [10, 10, 10, 10],
     };
 
-/// Origin [id] as a lineup group row carries it.
 Map<String, dynamic> _originJson(
   String id, [
   Offset position = const Offset(10, 20),
 ]) =>
     {'id': id, 'agent': _agentJson(id, position)};
 
-/// Landing [id] as a lineup group row carries it.
 Map<String, dynamic> _landingJson(
   String id, [
   Offset position = const Offset(30, 40),
 ]) =>
     {'id': id, 'ability': _abilityJson(id, position)};
 
-/// Lineup [id], from origin [originId] to landing [landingId], as a lineup
-/// group row carries it.
 Map<String, dynamic> _linkJson(
   String id, {
   required String originId,
@@ -930,8 +918,6 @@ Map<String, dynamic> _linkJson(
       'images': <Object?>[],
     };
 
-/// One lineup group as the server stores it: the row [id], holding the
-/// group's [origins], [landings] and [links].
 RemoteLineup _groupRow(
   String pageId,
   String id, {
@@ -987,22 +973,17 @@ RemoteLineup _lineup(
 EntitySyncKey _lineupKey(String pageId, String id) =>
     EntitySyncKey.lineup(pageId, 'link-$id');
 
-/// The entries of lineup group [data] under [field] (`origins`,
-/// `landings` or `links`), to read or to edit in place.
 List<Map> _entries(Map data, String field) =>
     [for (final entry in data[field] as List) entry as Map];
 
-/// Entry [id] of lineup group [data] under [field].
 Map _entry(Map data, String field, String id) =>
     _entries(data, field).singleWhere((entry) => entry['id'] == id);
 
-/// [edit] applied to every lineup in a group's data.
 void Function(Map<String, dynamic> data) _eachLink(
   void Function(Map link) edit,
 ) =>
     (data) => _entries(data, 'links').forEach(edit);
 
-/// [edit] applied to every origin's agent in a group's data.
 void Function(Map<String, dynamic> data) _eachAgent(
   void Function(Map agent) edit,
 ) =>
@@ -1011,7 +992,6 @@ void Function(Map<String, dynamic> data) _eachAgent(
             origin['agent'] as Map,
         ].forEach(edit);
 
-/// [edit] applied to every landing's ability in a group's data.
 void Function(Map<String, dynamic> data) _eachAbility(
   void Function(Map ability) edit,
 ) =>
@@ -1020,11 +1000,9 @@ void Function(Map<String, dynamic> data) _eachAbility(
             landing['ability'] as Map,
         ].forEach(edit);
 
-/// Lineup [id] in the group [payload] carries.
 Map _linkIn(CloudPayload? payload, String id) =>
     _entry(cloudPayloadData(payload!), 'links', id);
 
-/// The one lineup in the group [payload] carries.
 Map _onlyLinkIn(CloudPayload? payload) =>
     _entries(cloudPayloadData(payload!), 'links').single;
 
@@ -1100,7 +1078,6 @@ class _FakeServer {
   final Map<String, _Row> _lineups = {};
   final Map<String, _Row> _elements = {};
 
-  /// The answer to each element and lineup op taken, by op id.
   final Map<String, OpAck> _answers = {};
 
   /// The strategy's map, theme and revision as this server holds them. A
@@ -1113,10 +1090,8 @@ class _FakeServer {
   CloudPayload? strategyThemePalette;
   int strategyRevision = 1;
 
-  /// Every strategy patch this server answered, in order.
   final List<StrategyPatchOp> strategyPatches = [];
 
-  /// Every page added through this server, in order.
   final List<RemotePage> addedPages = [];
 
   /// Pages a teammate deleted: the server no longer lists them.
@@ -1127,7 +1102,6 @@ class _FakeServer {
   /// real server chains them (see applyBatch in convex/ops.ts).
   int? _batchBase;
 
-  /// Starts a batch (see [_batchBase]).
   void beginBatch() => _batchBase = null;
 
   /// The answer to [op], which takes the strategy's revision, given what it
@@ -1182,7 +1156,6 @@ class _FakeServer {
     return answer;
   }
 
-  /// A teammate's map change, landed: the strategy moves to a new revision.
   void teammateSetsMap(String mapData) {
     strategyMap = mapData;
     strategyRevision += 1;
@@ -1518,11 +1491,9 @@ class _FakeServer {
     _lineups[id] = row.next(payload: payload);
   }
 
-  /// A teammate's delete of lineup group row [id] lands.
   void teammateDelete(String id) =>
       _lineups[id] = _lineups[id]!.next(deleted: true);
 
-  /// A teammate's delete of element row [id] lands.
   void teammateDeleteElement(String id) =>
       _elements[id] = _elements[id]!.next(deleted: true);
 
@@ -1537,7 +1508,6 @@ class _FakeServer {
       canonicalCloudJsonEncode(jsonDecode(jsonEncode(right)));
 }
 
-/// One row as [_FakeServer] stores it.
 class _Row {
   _Row({
     required CloudPayload payload,
@@ -1570,7 +1540,6 @@ class _Row {
   final bool deleted;
   final String? elementType;
 
-  /// This row one revision on, as a teammate's write leaves it.
   _Row next({CloudPayload? payload, bool? deleted}) => _Row(
         payload: payload ?? this.payload,
         sortIndex: sortIndex,
@@ -1691,7 +1660,6 @@ void main() {
       queue: _FakeStrategyOpQueueNotifier(),
     );
 
-    // The user changes the map: the canvas no longer shows the server's.
     container.read(mapProvider.notifier).updateMap(MapValue.bind);
     await container
         .read(strategyProvider.notifier)
@@ -1940,7 +1908,6 @@ void main() {
           gaps, (unsavedEdits: false, waitingForCloud: true, notSaved: false));
       expect(
           container.read(strategyPageSessionProvider).activePageId, 'page-1');
-      // The add stays queued, to land later.
       expect(queuedAdd(queue), isNotNull);
       await _settle();
     });
@@ -1948,7 +1915,6 @@ void main() {
     test('a send that stalls still answers "+" in time', () async {
       final (container, queue, _) = await open();
       StrategyProvider.cloudPageAddWait = const Duration(milliseconds: 200);
-      // The send never comes back.
       queue.onFlush = () => Completer<void>().future;
 
       final started = DateTime.now();
@@ -1961,7 +1927,6 @@ void main() {
     test('says when edits to the page were refused, so are not in its copy',
         () async {
       final (container, queue, land) = await open();
-      // The server refused an edit to page 1.
       queue.state = queue.state.copyWith(attentionByEntityKey: {
         const EntitySyncKey.element('page-1', 'uploaded'):
             const QueuedEntityIntent(
@@ -2800,7 +2765,6 @@ void main() {
           source: StrategySource.cloud,
           selectFirstPageIfNeeded: true,
         );
-    // The pen is down on the canvas, over no item.
     container.read(editorPointersProvider.notifier)
       ..markCanvas(1)
       ..down(1);
@@ -2960,9 +2924,6 @@ void main() {
     final (:container, :one, :strokeId, queue: _, remote: _, two: _) =
         await strokeOnDeletedPage();
 
-    // The stroke can never be sent to a page the server no longer has.
-    // Before, the page stayed on screen with the sync button spinning for
-    // good; now the user is told, and nothing moves until they have read it.
     final session = container.read(strategyPageSessionProvider);
     expect(session.deletedPage, (pageId: one.publicId, name: 'A exec'));
     expect(session.activePageId, one.publicId);
@@ -3160,8 +3121,6 @@ void main() {
       queue.onFlush = null;
       await _settle();
 
-      // Before, the page read as deleted by a teammate and the switch the
-      // delete planned was refused.
       final session = container.read(strategyPageSessionProvider);
       expect(session.deletedPage, isNull);
       expect(session.activePageId, two.publicId);
@@ -3520,7 +3479,6 @@ void main() {
     expect(session.activePageId, two.publicId);
     expect(container.read(drawingProvider).elements, isEmpty);
     expect(container.read(textProvider).single.text, 'two');
-    // The deleted page's work is gone; the other page's still waits.
     expect(
       container
           .read(strategyOpQueueProvider)
@@ -3671,7 +3629,6 @@ void main() {
     expect(queue.flushNowCount, greaterThan(flushesBefore));
     expect(queue.restoredPageRetries,
         [(pageId: one.publicId, inFlight: false, refused: false)]);
-    // The live read is back on the page on screen.
     expect(
       container
           .read(remoteEditorSnapshotProvider)
@@ -4099,7 +4056,6 @@ void main() {
         selectFirstPageIfNeeded: true,
       );
 
-      // This device deletes page one; the server accepts it.
       await queue.syncDesiredGenericOp(
         entityKey: EntitySyncKey.pageDescriptor(one.publicId),
         desiredOp: PageDeleteOp(
@@ -4161,8 +4117,6 @@ void main() {
         await _settle();
       }
 
-      // Before, the old delete still counted as this device's and the stroke
-      // could be dropped unseen.
       expect(container.read(strategyPageSessionProvider).deletedPage?.pageId,
           one.publicId);
       await session.setActivePage(two.publicId);
@@ -4435,7 +4389,6 @@ void main() {
           .queuedByEntityKey[EntitySyncKey.element(page.publicId, 'a')]!
           .pending
           .op as ElementPatchOp;
-      // The user starts typing into it before the move is acked.
       container.read(textDraftProvider.notifier).setDraft('a', 'typing');
       land(queue, sent, 2);
       container.read(strategySaveStateProvider.notifier).markPersisted();
@@ -4749,7 +4702,6 @@ void main() {
             deleted: false,
           ),
         ], contentRevision: 2));
-        // The first op for it sent from here on.
         final nextEdit = repository.nextEditOf('a');
         repository.landFirst();
         await _settle();
@@ -4790,7 +4742,6 @@ void main() {
           _FakeRemoteEditorNotifier(snapshot([text('a', 0), text('b', 1)]));
       final container = await open(remote);
       container.read(textDraftProvider.notifier).setDraft('a', 'typing');
-      // The teammate brings 'a' forward and adds 'c'.
       remote.setSnapshot(snapshot(
           [text('b', 1), text('a', 2, revision: 2), text('c', 3)],
           contentRevision: 2));
@@ -4907,7 +4858,6 @@ void main() {
             contentRevision: 2),
       ));
       await _settle();
-      // The drag ends: the move commits before the hold releases.
       container
           .read(textProvider.notifier)
           .updatePosition(const Offset(300, 300), 'held');
@@ -5753,7 +5703,6 @@ void main() {
         pageId: page.publicId,
         snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
       );
-    // The user switches to defense, and that is sent.
     container.read(mapProvider.notifier).setAttack(false);
     final defense = sync.syncLocalPage(
       strategyPublicId: 'cloud-strategy',
@@ -5761,7 +5710,6 @@ void main() {
     )![key]!;
     expect(defense.payload, {'isAttack': false});
     queue.holdInFlight(key, defense);
-    // They switch back while it is on its way.
     container.read(mapProvider.notifier).setAttack(true);
 
     final desired = sync.syncLocalPage(
@@ -6341,7 +6289,6 @@ void main() {
     expect(lineUps.landingById('landing')!.ability.position,
         const Offset(220, 220));
 
-    // Opening the page writes no lineup, nor does an unrelated edit.
     await _settle();
     Map<EntitySyncKey, StrategyOp> queuedLineupOps() => {
           for (final entry in container
@@ -6436,7 +6383,6 @@ void main() {
     final oneKey = EntitySyncKey.lineup(one.publicId, 'link-a');
     final twoKey = EntitySyncKey.lineup(two.publicId, 'dup-group');
 
-    // An edit on page 1 writes page 1's group.
     editNotes('on one');
     await _settle();
     expect(lineupOps().keys, [oneKey]);
@@ -6457,7 +6403,6 @@ void main() {
     expect(liveSync.lineupGroupOf(one.publicId, 'link-a'), 'link-a');
     expect(liveSync.lineupGroupOf(two.publicId, 'link-a'), 'dup-group');
 
-    // Back on page 1, its lineup still writes page 1's group.
     await session.setActivePage(one.publicId);
     await _settle();
     expect(container.read(lineUpProvider).originById('a')!.agent.position,
@@ -6736,7 +6681,6 @@ void main() {
 
     Future<void> settleSync(
         ProviderContainer container, int contentRevision) async {
-      // Ack reconciliation refreshes, re-syncs and rehydrates in turn.
       for (var i = 0; i < 10; i++) {
         await _settle();
       }
@@ -6752,7 +6696,6 @@ void main() {
             entry.key: entry.value.pending.op,
         };
 
-    /// The lineup writes in [ops].
     Map<EntitySyncKey, StrategyOp> lineupOps(
             Map<EntitySyncKey, StrategyOp> ops) =>
         {
@@ -6761,7 +6704,6 @@ void main() {
               entry.key: entry.value,
         };
 
-    /// The key of lineup group [id]'s row.
     EntitySyncKey keyOf(RemotePage page, String id) =>
         EntitySyncKey.lineup(page.publicId, id);
 
@@ -6885,7 +6827,6 @@ void main() {
         container.read(lineUpProvider).landings.single.ability.position,
         const Offset(300, 300),
       );
-      // Undoing the placement removes the whole lineup, leaving no node.
       container.read(actionProvider.notifier).undoAction();
       final empty = container.read(lineUpProvider);
       expect(empty.links, isEmpty);
@@ -6903,7 +6844,6 @@ void main() {
           .updateOriginAgentPosition(link.originId, const Offset(500, 500));
       await land(container, remote, page, contentRevision: 3);
 
-      // Then a teammate arms the same origin.
       server.teammateEdit(
           link.id, _eachAgent((agent) => agent['weapon'] = 'vandal'));
       remote.setSnapshot(serverSnapshot(page, server.rows, 4));
@@ -6938,7 +6878,6 @@ void main() {
       lineUps.deleteOrigin(link.originId);
       final after = await land(container, remote, page, contentRevision: 3);
       expect(after, isEmpty);
-      // The server keeps the deleted lineup as a tombstone.
       expect(server.row(link.id).deleted, isTrue);
 
       final history = container.read(actionProvider.notifier);
@@ -7018,7 +6957,6 @@ void main() {
       });
       expect(groupOf(container, page, b.id), group);
 
-      // Hydration draws the shared landing once.
       final hydrated = container.read(lineUpProvider);
       expect(hydrated.origins.map((origin) => origin.id), originIds);
       expect(hydrated.landings.single.id, a.landingId);
@@ -7067,7 +7005,6 @@ void main() {
       final other = place(container);
       var lineups = await land(container, remote, page, contentRevision: 2);
       final group = firstOf([a.id, b.id]);
-      // The group's row moves on to revision 2; the other's stays at 1.
       container.read(lineUpProvider.notifier).updateLink(
           container.read(lineUpProvider).linkById(a.id)!.copyWith(notes: 'x'));
       lineups = await land(container, remote, page, contentRevision: 3);
@@ -7081,8 +7018,6 @@ void main() {
           .read(lineUpProvider.notifier)
           .updateLandingPosition(a.landingId, moved);
 
-      // One patch, of the group, against its revision, carrying the moved
-      // landing once for both its lineups.
       final ops = desiredOps(container, page);
       expectLineupRows(ops);
       expect(ops.keys, [keyOf(page, group)]);
@@ -7124,7 +7059,6 @@ void main() {
       final group = firstOf([a.id, b.id]);
       container.read(lineUpProvider.notifier).deleteOrigin(a.originId);
       lineups = await land(container, remote, page, contentRevision: 3);
-      // The group keeps its row, now holding B alone.
       expect(_groupsOf(lineups), {
         group: {
           'origins': [b.originId],
@@ -7141,7 +7075,6 @@ void main() {
         (b.id, b.originId, a.landingId, 'From mid'),
         (a.id, a.originId, a.landingId, 'From heaven'),
       ]);
-      // A patch of the group's row, expecting its revision.
       final ops = desiredOps(container, page);
       expectLineupRows(ops);
       expect(ops.keys, [keyOf(page, group)]);
@@ -7167,11 +7100,9 @@ void main() {
 
       container.read(lineUpProvider.notifier).deleteLink(a.id);
 
-      // A's origin went with it; the landing B still uses stayed.
       var graph = container.read(lineUpProvider).graph;
       expect(graph.origins.map((origin) => origin.id), [b.originId]);
       expect(graph.landings.map((landing) => landing.id), [a.landingId]);
-      // The group's row is patched to hold B alone.
       final ops = desiredOps(container, page);
       expect(ops.keys, [keyOf(page, group)]);
       expect(ops.values.single, isA<LineupPatchOp>());
@@ -7187,7 +7118,6 @@ void main() {
       expect(graph.links.map((link) => link.id), [b.id]);
       expect(graph.landings.map((landing) => landing.id), [a.landingId]);
 
-      // Deleting the group's last lineup deletes its row, landing and all.
       container.read(lineUpProvider.notifier).deleteLink(b.id);
       graph = container.read(lineUpProvider).graph;
       expect(graph.origins, isEmpty);
@@ -7222,7 +7152,6 @@ void main() {
       );
       expect((mine[key]! as LineupPatchOp).expectedLineupRevision, 1);
 
-      // A teammate's edit to B, in the same group, lands first.
       server.teammateEdit(group,
           (data) => _entry(data, 'links', b.id)['notes'] = 'teammate notes');
       send(remote, page, queuedOps(), contentRevision: 3);
@@ -7230,7 +7159,6 @@ void main() {
         await _settle();
       }
 
-      // Refused: the server keeps the teammate's version, and mine waits.
       expect(
         queue.state.lastAckBatch
             .singleWhere((acked) => acked.entityKey == key)
@@ -7261,7 +7189,6 @@ void main() {
       final mine = queuedOps()[key]! as LineupPatchOp;
       expect(mine.expectedLineupRevision, 1);
 
-      // A teammate's notes edit to the same lineup lands first.
       server.teammateEdit(
           link.id, _eachLink((link) => link['notes'] = 'theirs'));
       remote.setSnapshot(serverSnapshot(page, server.rows, 3));
@@ -7273,7 +7200,6 @@ void main() {
         1,
       );
 
-      // The server refuses it; the user sees their work and a conflict.
       send(remote, page, queuedOps(), contentRevision: 3);
       await _settle();
       expect(
@@ -7289,7 +7215,6 @@ void main() {
       expect(queue.state.attentionByEntityKey.keys, [key]);
       expect(container.read(strategyConflictProvider), hasLength(1));
 
-      // Using theirs shows the teammate's notes and sends nothing.
       final resolved = await container
           .read(strategyPageSessionProvider.notifier)
           .useCloudVersionsForRejected();
@@ -7340,7 +7265,6 @@ void main() {
       expect(server.row(first.id).revision, 2);
       expect(queue.state.attentionByEntityKey.keys, [key]);
 
-      // Taking the cloud's version draws their lineup whole, on the origin.
       final resolved = await container
           .read(strategyPageSessionProvider.notifier)
           .useCloudVersionsForRejected();
@@ -7365,7 +7289,6 @@ void main() {
       await land(container, remote, page, contentRevision: 2);
       final key = keyOf(page, first.id);
 
-      // The user starts a new lineup from the landed origin...
       final lineUps = container.read(lineUpProvider.notifier)
         ..startFromOrigin(first.originId);
       lineUps.setDraftAbility(PlacedAbility(
@@ -7452,7 +7375,6 @@ void main() {
 
       final key = keyOf(page, link.id);
       final history = container.read(actionProvider.notifier);
-      // Undoes one step and lands it; returns the one write it made.
       Future<StrategyOp> undoAndLand() async {
         history.undoAction();
         final ops = desiredOps(container, page);
@@ -7550,7 +7472,6 @@ void main() {
       final lineUps = container.read(lineUpProvider.notifier);
       lineUps.updateLink(placed.copyWith(images: images(['a', 'b', 'c', 'd'])));
       await land(container, remote, page, contentRevision: 2);
-      // Remove the first image, then two from the middle.
       lineUps.updateLink(container
           .read(lineUpProvider)
           .links
@@ -7597,7 +7518,6 @@ void main() {
           .links
           .single
           .copyWith(images: images(['a', 'c'])));
-      // Our removal of b lands, and a teammate adds x right after a.
       await land(
         container,
         remote,
@@ -7661,7 +7581,6 @@ void main() {
       container
           .read(lineUpProvider.notifier)
           .updateOriginAgentPosition(link.originId, moved);
-      // Our move lands and, in the same server state, a teammate arms it.
       await land(
         container,
         remote,
@@ -7774,7 +7693,6 @@ void main() {
           revision: 7,
         );
 
-    /// Each lineup drawn, with the spot ids it is attached to.
     List<(String, String, String)> drawnLinks(ProviderContainer container) => [
           for (final link in container.read(lineUpProvider).links)
             (link.id, link.originId, link.landingId),
@@ -7791,7 +7709,6 @@ void main() {
       ]);
       expect(lineupOps(queuedOps()), isEmpty);
 
-      // Nor does the next hydration.
       remote.setSnapshot(serverSnapshot(page, server.rows, 2));
       await settleSync(container, 2);
       expect(lineupOps(queuedOps()), isEmpty);
@@ -7925,7 +7842,6 @@ void main() {
       return (container, repository.batches);
     }
 
-    /// Every op sent for [key] in [batches], in order.
     List<StrategyOp> sentFor(
       List<List<StrategyOp>> batches,
       EntitySyncKey key,
@@ -8044,7 +7960,6 @@ void main() {
       expect(saveState.isDirty, isTrue);
       expect(saveState.canLeaveSafely, isFalse);
 
-      // The read comes back: the text is handed over and lands.
       showServer();
       await _until(() =>
           batches.isNotEmpty &&
@@ -8087,8 +8002,6 @@ void main() {
       expect(container.read(strategyPageSessionProvider).activePageId,
           source.publicId);
 
-      // The user copies the text to the next page; the copy is sent and its
-      // answer is slow.
       final hold = repository.hold = Completer<void>();
       expect(
         await container
@@ -8136,7 +8049,6 @@ void main() {
       return (container, batches, hold);
     }
 
-    /// Lets the held copy's answer go, and waits for the queue to empty.
     Future<void> copyLands(
         ProviderContainer container, Completer<void> hold) async {
       StrategyOpQueueState queueState() =>
@@ -8222,7 +8134,6 @@ void main() {
       StrategyOpQueueState queueState() =>
           container.read(strategyOpQueueProvider);
 
-      // The user places text; it is sent and its answer is slow.
       container.read(textProvider.notifier).fromHive([
         PlacedText(id: 'local', position: const Offset(5, 5))..text = 'edit',
       ]);
@@ -8276,7 +8187,6 @@ void main() {
       }
       expect(container.read(textProvider).map((t) => t.id), ['text-1']);
 
-      // The copy is sent, and its answer held back.
       final hold = repository.hold = Completer<void>();
       expect(
         await container
@@ -8291,7 +8201,6 @@ void main() {
       final copyId = (batches.single.single as ElementAddOp).elementPublicId;
       expect(pageCopyRoot(copyId), 'text-1');
 
-      // The user opens page 2 before the copy lands, then it lands.
       final session = container.read(strategyPageSessionProvider.notifier);
       await session.setActivePage(target.publicId);
       readPage(target.publicId);
@@ -8343,7 +8252,6 @@ void main() {
       }
 
       expect(container.read(textProvider).map((t) => t.id), [copyId]);
-      // Page 2 sent the copy and the agent, and no delete of the copy.
       expect(
         [
           for (final batch in batches)
@@ -8376,7 +8284,6 @@ void main() {
       expect(container.read(lineUpProvider).links.map((link) => link.id),
           ['link-a']);
 
-      // The copy is sent, and its answer held back.
       final hold = repository.hold = Completer<void>();
       expect(
         await container
@@ -8390,7 +8297,6 @@ void main() {
       await _until(() => batches.isNotEmpty);
       final groupId = (batches.single.single as LineupAddOp).lineupPublicId;
 
-      // The user opens page 2 before the copy lands, then it lands.
       final session = container.read(strategyPageSessionProvider.notifier);
       await session.setActivePage(target.publicId);
       readPage(target.publicId);
@@ -8434,7 +8340,6 @@ void main() {
 
       expect(container.read(lineUpProvider).links.map((link) => link.name),
           ['Smoke']);
-      // Page 2 sent the copy and the agent, and no delete of the copy.
       expect(
         [
           for (final batch in batches)
@@ -8499,7 +8404,6 @@ void main() {
       // A teammate deletes the text; this canvas has not read that yet.
       server.teammateDeleteElement('text-a');
 
-      // The user moves it.
       container
           .read(textProvider.notifier)
           .updatePosition(const Offset(300, 300), 'text-a');
@@ -8575,7 +8479,6 @@ void main() {
       LineUpLink? onScreen() =>
           container.read(lineUpProvider).linkById('link-a');
 
-      // A teammate deletes the lineup while the user edits its notes.
       server.teammateDelete('link-a');
       container
           .read(lineUpProvider.notifier)
@@ -8607,7 +8510,6 @@ void main() {
           .where((text) => text.id == 'text-a')
           .firstOrNull;
 
-      // A teammate deletes the text while the user moves it.
       server.teammateDeleteElement('text-a');
       container
           .read(textProvider.notifier)
@@ -8660,7 +8562,6 @@ void main() {
         updatedAt: DateTime.utc(2026),
       ));
 
-      // Its send waits while the page opens.
       final hold = Completer<void>();
       final (container, batches) =
           await openOnRealQueue(page, store: store, hold: hold);
@@ -8694,7 +8595,6 @@ void main() {
         await _settle();
       }
 
-      // Only the recovered edit was ever sent for a lineup, as it was saved.
       expect(
         [
           for (final batch in batches)
@@ -8745,7 +8645,6 @@ void main() {
           .read(lineUpProvider.notifier)
           .updateLink(onScreen().copyWith(notes: 'one'));
       await _until(() => queueState().inFlightByEntityKey.containsKey(key));
-      // While it is on its way, the user edits again; that waits behind it.
       container
           .read(lineUpProvider.notifier)
           .updateLink(onScreen().copyWith(notes: 'two'));
@@ -8822,8 +8721,6 @@ void main() {
       expect(container.read(strategyConflictProvider), isEmpty);
     });
 
-    /// Every id in [graph]: its lineups, spots, and the agent and ability on
-    /// each spot.
     Set<String> idsIn(LineUpGraph graph) => {
           for (final origin in graph.origins) ...[origin.id, origin.agent.id],
           for (final landing in graph.landings) ...[
@@ -8833,13 +8730,11 @@ void main() {
           for (final link in graph.links) link.id,
         };
 
-    /// The lineups [rows] draw, each as `name: notes`.
     List<String> lineupsIn(Iterable<RemoteLineup> rows) => [
           for (final link in lineUpGraphFromRemoteLineups(rows).links)
             '${link.name}: ${link.notes}',
         ];
 
-    /// The changes [changes] lists, each as `label: description`.
     List<String> described(List<LineupChange> changes) => [
           for (final change in changes)
             '${change.label(_english)}: ${change.description(_english)}',
@@ -8898,7 +8793,6 @@ void main() {
             isEmpty);
         expect(lineupsIn(server.liveRows), ['Heaven: mine', 'Mid: theirs']);
 
-        // The teammate's change reaches the canvas too.
         showServer();
         await drained(container);
         final lineUps = container.read(lineUpProvider);
@@ -8971,7 +8865,6 @@ void main() {
         await _until(() => queueState().inFlightByEntityKey.containsKey(key));
         editNotes(container, 'link-a', 'two');
         await _until(() => queueState().successorByEntityKey.containsKey(key));
-        // The connection drops, and the user sets the notes back.
         container.read(_online.notifier).state = false;
         await _settle();
         editNotes(container, 'link-a', original);
@@ -9079,7 +8972,6 @@ void main() {
       for (var i = 0; i < 10; i++) {
         await _settle();
       }
-      // The user moves text B; its save is on its way.
       final hold = repository.hold = Completer<void>();
       const moved = Offset(300, 300);
       container.read(textProvider.notifier).updatePosition(moved, 'text-b');
@@ -9091,7 +8983,6 @@ void main() {
         await _settle();
       }
 
-      // The save lands, while the page read that follows is held up.
       final gate = liveRead.refreshGate = Completer<void>();
       var lost = false;
       container.listen(textProvider, (_, next) {
@@ -9158,7 +9049,6 @@ void main() {
         await _settle();
       }
 
-      // Before the page is read again, the user moves it once more.
       container
           .read(textProvider.notifier)
           .updatePosition(const Offset(320, 320), 'text-b');
@@ -9259,7 +9149,6 @@ void main() {
       final (container, batches) = await withHeldBackChange(page);
       final key = EntitySyncKey.element(page.publicId, 'text-c');
 
-      // The user adds text C; the page read after it is held up.
       final hold = repository.hold = Completer<void>();
       container
           .read(textProvider.notifier)
@@ -9275,7 +9164,6 @@ void main() {
         await _settle();
       }
 
-      // Before the page is read again, the user moves it.
       container
           .read(textProvider.notifier)
           .updatePosition(const Offset(60, 60), 'text-c');
@@ -9394,7 +9282,6 @@ void main() {
       expect(sentFor(batches, key), isEmpty);
       expect(queueState().queuedByEntityKey.keys, contains(key));
 
-      // Meanwhile a teammate renames B.
       server.teammateEdit(
           'link-a', (data) => _entry(data, 'links', 'link-b')['name'] = 'B');
 
@@ -9534,7 +9421,6 @@ void main() {
         expect((server.strategyMap, server.strategyRevision), ('haven', 2));
         expect(container.read(strategyConflictProvider), hasLength(1));
 
-        // Choosing the cloud's version draws the teammate's map.
         expect(
             await container
                 .read(strategyPageSessionProvider.notifier)
@@ -10235,7 +10121,6 @@ void main() {
         Map<String, dynamic> onServer(String id) =>
             cloudPayloadData(server.element(id).payload);
 
-        // What the user last set, by thing.
         final userWords = <String, String>{};
         final userPlaces = <String, Offset>{};
         var teammateWords = 'charlie';
@@ -10318,7 +10203,6 @@ void main() {
           await settle(1 + random.nextInt(4));
         }
 
-        // Everything settles: online, nothing held, sent and read back.
         log.add('settle');
         container.read(_online.notifier).state = true;
         repository.loseNextAnswer = null;
@@ -10400,7 +10284,6 @@ void main() {
 
         expect(asking(), isFalse, reason: 'The user is still asked. $why');
 
-        // The canvas shows what the server holds.
         expect(
           Maps.mapNames[container.read(mapProvider).currentMap],
           server.strategyMap,
@@ -10608,7 +10491,6 @@ void main() {
         // Meanwhile a teammate retypes a, a field the move left alone.
         server.teammateEditElement('a', (data) => data['text'] = 'theirs');
 
-        // Started again online, with the first send held on its way.
         final hold = Completer<void>();
         final (container, batches) = await openOnRealQueue(page,
             store: store, hold: hold, themeProfileId: theme);
@@ -10667,7 +10549,6 @@ void main() {
           for (final record in store.load().records)
             record.entityKey: record.pending.op.opId,
         };
-        // Started again while still offline.
         final (container, batches) = await openOnRealQueue(page,
             store: store, online: false, themeProfileId: theme);
         await container
@@ -10730,10 +10611,8 @@ void main() {
           await _settle();
         }
         expect(textOn(container, 'b').text, 'bravo offline');
-        // The server's rows from before the changes land.
         final before = server.elements;
 
-        // They land; the read that follows the acks is held on its way.
         final gate = liveRead.refreshGate = Completer<void>();
         hold.complete();
         await _until(
@@ -10864,7 +10743,6 @@ void main() {
             unorderedEquals(['link-a', 'link-b']),
           );
           expect(onScreen('link-a').notes, 'offline');
-          // The change is kept, waiting for the user, and was not sent.
           var record = store.load().records.single;
           expect(record.pending.op.opId, 'notes-edit');
           expect(record.status, DurableOutboxStatus.attention);
@@ -10873,7 +10751,6 @@ void main() {
           expect(container.read(cloudSyncStatusProvider),
               CloudSyncStatus.attention);
 
-          // The user edits link-b, in the same group.
           container
               .read(lineUpProvider.notifier)
               .updateLink(onScreen('link-b').copyWith(notes: 'b edited'));
@@ -11009,7 +10886,6 @@ void main() {
         expect(listed(conflict.yours), 'Heaven: notes edited');
         expect(listed(conflict.cloud!), 'Mid: notes edited; Heaven: deleted');
 
-        // Back online, nothing is sent, and the teammate's notes stand.
         container.read(_online.notifier).state = true;
         final queue = container.read(strategyOpQueueProvider.notifier);
         await queue.flushNow();
@@ -11263,7 +11139,6 @@ void main() {
           .read(lineUpProvider.notifier)
           .updateLink(onScreen().copyWith(notes: 'one'));
       await _until(() => queueState().inFlightByEntityKey.containsKey(key));
-      // The user edits again; that waits behind it.
       container
           .read(lineUpProvider.notifier)
           .updateLink(onScreen().copyWith(notes: 'two'));
@@ -11275,7 +11150,6 @@ void main() {
         await _settle();
       }
 
-      // The replay is answered as a noop with no revision...
       final sent = sentFor(batches, key);
       expect(sent, hasLength(2));
       expect(sent[1].opId, sent[0].opId);
@@ -11330,7 +11204,6 @@ void main() {
       container.read(_online.notifier).state = true;
       await container.read(strategyOpQueueProvider.notifier).flushNow();
       await refusedAsDeleted(container, batches, keyOf(page, 'link-a'));
-      // The user's version is still on screen.
       expect(container.read(lineUpProvider).links.map((link) => link.notes),
           ['mine', 'remote lineup']);
       return (container, batches);
@@ -11381,8 +11254,6 @@ void main() {
         await _settle();
       }
 
-      // The group stays deleted, as the teammate left it, and was never
-      // written again.
       expect(server.row('link-a').deleted, isTrue);
       expect(server.row('link-a').revision, 8);
       expect(sentFor(batches, keyOf(page, 'link-a')), hasLength(1));
@@ -11396,7 +11267,6 @@ void main() {
       expect(copyGraph.origins, hasLength(2));
       expect(sentFor(batches, keyOf(page, copy.publicId)).single,
           isA<LineupAddOp>());
-      // On screen, the copy alone; nothing waits.
       expect(idsIn(container.read(lineUpProvider).graph), idsIn(copyGraph));
       expect(queueState().attentionByEntityKey, isEmpty);
       expect(queueState().needsAttention, isFalse);
@@ -11422,12 +11292,10 @@ void main() {
         await _settle();
       }
 
-      // The cloud's group is untouched: the teammate's version, revision 8.
       final group = server.row('link-a');
       expect(group.revision, 8);
       expect(lineupsIn([group]), ['Heaven: remote lineup', 'Mid: theirs']);
       expect(sentFor(batches, keyOf(page, 'link-a')), hasLength(1));
-      // The user's version went to the server as a new group row.
       final copy =
           server.liveRows.singleWhere((row) => row.publicId != 'link-a');
       final copyGraph = lineUpGraphFromRemoteLineups([copy]);
@@ -11435,7 +11303,6 @@ void main() {
       expect(lineupsIn([copy]), ['Heaven: mine', 'Mid: remote lineup']);
       expect(sentFor(batches, keyOf(page, copy.publicId)).single,
           isA<LineupAddOp>());
-      // Both are on screen, and nothing waits.
       final onScreen = container.read(lineUpProvider);
       expect(
           [for (final link in onScreen.links) '${link.name}: ${link.notes}'],
@@ -11493,7 +11360,6 @@ void main() {
       return container;
     }
 
-    /// Where the server has lineup Z's landing.
     Offset serverLandingZ() =>
         lineUpGraphFromRemoteLineups([server.row('link-z')])
             .landings
@@ -11527,8 +11393,6 @@ void main() {
         }
         await settled(container);
 
-        // The cloud's version of the other group is on screen, and the edit
-        // is still open with its drag.
         expect(
             container.read(lineUpProvider).linkById('link-b')!.notes, 'theirs');
         expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
@@ -11798,7 +11662,6 @@ void main() {
         await _settle();
       }
 
-      // The refused work still waits, and the canvas shows it.
       final lineUps = container.read(lineUpProvider);
       expect(lineUps.linkById('link-a')!.notes, 'mine');
       expect(lineUps.linkById('link-b')!.notes, 'remote lineup');
@@ -11856,13 +11719,11 @@ void main() {
         await _settle();
       }
 
-      // No copy, on screen or on the server...
       expect(
         [for (final link in container.read(lineUpProvider).links) link.id],
         before,
       );
       expect(server.liveRows, hasLength(1));
-      // ...and the original work still waits for the user to choose.
       expect(queueState().attentionByEntityKey.keys, [key]);
       expect(
         store.load().records.singleWhere((r) => r.entityKey == key).status,
@@ -11872,7 +11733,6 @@ void main() {
       expect(container.read(strategyConflictProvider), hasLength(1));
     });
 
-    /// The lineups on screen, each as `name: notes`.
     List<String> onScreenOf(ProviderContainer container) => [
           for (final link in container.read(lineUpProvider).links)
             '${link.name}: ${link.notes}',
@@ -11900,15 +11760,12 @@ void main() {
       }
 
       expect(outcome, KeepBothOutcome.copiesOnly);
-      // The original still waits, in memory and on disk, as it was.
       expect(queueState().attentionByEntityKey[key]!.pending.op.opId, waiting);
       expect(
         store.load().records.singleWhere((r) => r.entityKey == key).status,
         DurableOutboxStatus.attention,
       );
       expect(sentFor(batches, key), hasLength(1));
-      // The copy is still on screen beside the user's version; the cloud's
-      // version was not taken.
       expect(
         onScreenOf(container),
         [
@@ -11918,7 +11775,6 @@ void main() {
           'Mid: remote lineup'
         ],
       );
-      // The server has only the teammate's version; nothing was discarded.
       expect(server.liveRows.map((row) => row.publicId), ['link-a']);
       expect(
           lineupsIn(server.liveRows), ['Heaven: remote lineup', 'Mid: theirs']);
@@ -11940,7 +11796,6 @@ void main() {
           .read(strategyPageSessionProvider.notifier)
           .keepBothForRejected();
       await _until(() => liveRead.refreshCount > refreshes);
-      // While the cloud's version is on its way, the user edits the group.
       container.read(lineUpProvider.notifier).updateLink(container
           .read(lineUpProvider)
           .linkById('link-b')!
@@ -11955,7 +11810,6 @@ void main() {
       // No copy was made of the version the edit replaced...
       expect(onScreenOf(container), ['Heaven: mine', 'Mid: newer']);
       expect(server.liveRows.map((row) => row.publicId), ['link-a']);
-      // ...and the newer edit waits behind the refused one, for the user.
       expect(queueState().attentionByEntityKey.keys, [key]);
       final newer = queueState().successorByEntityKey[key]!.pending.op;
       expect(
@@ -11986,7 +11840,6 @@ void main() {
 
       final keepBoth = session.keepBothForRejected();
       await _until(() => liveRead.refreshCount > refreshes);
-      // While the cloud's version is on its way, the user opens page 2.
       await session.setActivePage(other.publicId);
       readPage(other.publicId);
       gate.complete();
@@ -12000,7 +11853,6 @@ void main() {
       expect(container.read(lineUpProvider).links, isEmpty);
       expect(copyQueued(), isFalse);
 
-      // Back on page 1: the user's version, and no copy of it.
       await session.setActivePage(page.publicId);
       readPage(page.publicId);
       for (var i = 0; i < 10; i++) {
@@ -12086,7 +11938,6 @@ void main() {
       final first = liveRead.refreshCount + 1;
       liveRead.readFailsWhen = (count) => count > first;
       expect(await session.keepBothForRejected(), KeepBothOutcome.copiesOnly);
-      // The copy goes out; the waiting work stays.
       await _until(() =>
           queueState().queuedByEntityKey.isEmpty &&
           queueState().inFlightByEntityKey.isEmpty &&
@@ -12148,7 +11999,6 @@ void main() {
           .keepBothForRejected();
       await _until(() => liveRead.refreshGate == null);
       expect(onScreenOf(container), hasLength(4), reason: 'the copy is made');
-      // While the cloud's version is on its way, the user edits the group.
       container.read(lineUpProvider.notifier).updateLink(container
           .read(lineUpProvider)
           .linkById('link-b')!
@@ -12172,7 +12022,6 @@ void main() {
         await _settle();
       }
 
-      // The newer edit is on screen and waits behind the refused one...
       expect(container.read(lineUpProvider).linkById('link-b')!.notes, 'newer');
       expect(queueState().attentionByEntityKey.keys, [key]);
       final newer = queueState().successorByEntityKey[key]!.pending.op;
@@ -12182,7 +12031,6 @@ void main() {
         store.load().records.singleWhere((r) => r.entityKey == key).status,
         DurableOutboxStatus.attention,
       );
-      // ...the cloud's group is untouched, and there is one copy.
       expect(lineupsIn([server.row('link-a')]),
           ['Heaven: remote lineup', 'Mid: theirs']);
       expect(lineupsIn(copies()), ['Heaven: mine', 'Mid: remote lineup']);
@@ -12220,7 +12068,6 @@ void main() {
 
       // While writes still fail, the popover does not offer it...
       expect(container.read(lineupConflictsProvider), isNull);
-      // ...and pressed anyway, it changes nothing.
       expect(
           queueState().attentionByEntityKey.keys,
           everyElement(predicate<EntitySyncKey>(
@@ -12256,7 +12103,6 @@ void main() {
           .read(strategyPageSessionProvider.notifier)
           .useCloudVersionsForRejected();
       await _until(() => liveRead.refreshCount > refreshes);
-      // While the cloud's version is on its way, the user edits the group.
       container.read(lineUpProvider.notifier).updateLink(container
           .read(lineUpProvider)
           .linkById('link-b')!
@@ -12273,7 +12119,6 @@ void main() {
       }
       expect(replaced, isFalse);
       expect(onScreenOf(container), ['Heaven: mine', 'Mid: newer']);
-      // The refused work and the newer edit behind it both still wait.
       expect(queueState().attentionByEntityKey.keys, [key]);
       final newer = queueState().successorByEntityKey[key]!.pending.op;
       expect(
@@ -12318,7 +12163,6 @@ void main() {
         isEmpty,
         reason: 'the copy was never queued',
       );
-      // The waiting work is untouched, in memory and on disk.
       expect(queueState().attentionByEntityKey[key]!.pending.op.opId, waiting);
       expect(
         store.load().records.singleWhere((r) => r.entityKey == key).status,
@@ -12497,8 +12341,6 @@ void main() {
           .read(strategyPageSessionProvider.notifier)
           .useCloudVersionsForRejected();
       await _until(() => liveRead.refreshCount > refreshes);
-      // While the cloud's version is on its way, the user edits the group,
-      // and that edit cannot be written to the outbox.
       store.failPut = (record) => record.entityKey == key;
       container.read(lineUpProvider.notifier).updateLink(container
           .read(lineUpProvider)
@@ -12517,7 +12359,6 @@ void main() {
       expect(queueState().hasDurabilityFailure, isTrue);
       expect(replaced, isFalse);
       expect(onScreenOf(container), ['Heaven: mine', 'Mid: newer']);
-      // The refused work is not discarded, in memory or on disk.
       expect(queueState().attentionByEntityKey[key]!.pending.op.opId, waiting);
       final record =
           store.load().records.singleWhere((r) => r.entityKey == key);
@@ -12528,7 +12369,6 @@ void main() {
           lineupsIn(server.liveRows), ['Heaven: remote lineup', 'Mid: theirs']);
     });
 
-    /// The server's refusal of lineup group [key] for overlapping another.
     OpAck? Function(StrategyOp op) refuseAsOverlapping(EntitySyncKey key) =>
         (op) => EntitySyncKey.forStrategyOp(op) == key
             ? FailedOpAck(
@@ -12578,7 +12418,6 @@ void main() {
       final overlapping = keyOf(page, 'link-a');
       final deleted = keyOf(page, 'link-d');
       repository.refuse = refuseAsOverlapping(overlapping);
-      // A teammate deletes lineup d; the user edits both groups.
       server.teammateDelete('link-d');
       final lineUps = container.read(lineUpProvider.notifier);
       lineUps.updateLink(container
@@ -12664,7 +12503,6 @@ void main() {
       StrategyOpQueueState queueState() =>
           container.read(strategyOpQueueProvider);
 
-      // The first press cannot remove the refused work from the outbox.
       store.failRemove = (storageKey) => true;
       expect(await session.useCloudVersionsForRejected(), isFalse);
       for (var i = 0; i < 10; i++) {
@@ -12681,8 +12519,6 @@ void main() {
       expect(await session.useCloudVersionsForRejected(), isFalse);
       expect(onScreenOf(container), ['Heaven: mine', 'Mid: remote lineup']);
 
-      // The refused work goes out once more and is refused again: the
-      // teammate's version stands.
       await _until(() =>
           sentFor(batches, key).length == 2 &&
           queueState().attentionByEntityKey.containsKey(key));
@@ -12742,7 +12578,6 @@ void main() {
         }
       }
 
-      // The first press copies, then cannot load the cloud's version.
       final first = liveRead.refreshCount + 1;
       liveRead.readFailsWhen = (count) => count > first;
       expect(await session.keepBothForRejected(), KeepBothOutcome.copiesOnly);
@@ -12751,8 +12586,6 @@ void main() {
       final firstCopy = copyLinkIds();
       expect(firstCopy, hasLength(2));
 
-      // The cloud is reachable again; the user deletes the copy, and the
-      // deletion lands.
       liveRead.readFailsWhen = null;
       showServer();
       await _settle();
@@ -12766,7 +12599,6 @@ void main() {
       await landed();
       expect(copyLinkIds(), isEmpty);
 
-      // Pressed again with the cloud reachable: a fresh copy, and resolved.
       expect(await session.keepBothForRejected(), KeepBothOutcome.kept);
       await landed();
 
@@ -12816,15 +12648,12 @@ void main() {
         }
       }
 
-      // The first press copies both lineups, then cannot load the cloud's
-      // version.
       final first = liveRead.refreshCount + 1;
       liveRead.readFailsWhen = (count) => count > first;
       expect(await session.keepBothForRejected(), KeepBothOutcome.copiesOnly);
       await landed();
       expect(lineupsIn(copies()), ['Heaven: mine', 'Mid: remote lineup']);
 
-      // The cloud is reachable again; the user deletes one copied lineup.
       liveRead.readFailsWhen = null;
       showServer();
       await _settle();
@@ -12836,7 +12665,6 @@ void main() {
       await _until(() => lineupsIn(copies()).length == 1);
       await landed();
 
-      // Pressed again: the rest of the copy stands, nothing is copied again.
       expect(await session.keepBothForRejected(), KeepBothOutcome.kept);
       await landed();
 
@@ -12864,8 +12692,6 @@ void main() {
       StrategyOpQueueState queueState() =>
           container.read(strategyOpQueueProvider);
 
-      // A teammate deletes the lineup while the user edits it: refused as
-      // deleted.
       server.teammateDelete('link-a');
       container.read(lineUpProvider.notifier).updateLink(container
           .read(lineUpProvider)
@@ -13087,7 +12913,6 @@ void main() {
       container
           .read(lineUpProvider.notifier)
           .updateOriginAgentPosition('lineup-a', moved);
-      // The move lands and a teammate's lineup B arrives with it.
       await ackAndRehydrate(container, remote, page, [
         _lineup(page.publicId, 'lineup-a', agentPosition: moved, revision: 2),
         _lineup(page.publicId, 'lineup-b', sortIndex: 1),
@@ -13253,7 +13078,6 @@ void main() {
     );
     expect(await session.flushCurrentPage(), isTrue);
 
-    // A read of the strategy is refused while an edit is made.
     remote.failRead();
     container.read(textProvider.notifier).fromHive([
       PlacedText(id: 'local', position: const Offset(5, 5))..text = 'edit',
@@ -13285,7 +13109,6 @@ void main() {
     remote.failRead();
     expect(await session.flushCurrentPage(), isFalse);
 
-    // The same page reads again, unchanged.
     remote.setSnapshot(viewerSnapshot);
     expect(await session.flushCurrentPage(), isTrue);
   });
@@ -13525,7 +13348,6 @@ void main() {
       );
     }
 
-    /// Everything on the local canvas outside lineups.
     List<Object> canvasOf(ProviderContainer container) => [
           ...container.read(agentProvider),
           ...container.read(abilityProvider),
@@ -13556,7 +13378,6 @@ void main() {
         remote: remote,
         queue: _FakeStrategyOpQueueNotifier(),
       );
-      // Let queued sync work finish before the container is disposed.
       addTearDown(_settle);
       await container
           .read(strategyPageSessionProvider.notifier)
@@ -13995,7 +13816,6 @@ void main() {
       });
     }
 
-    /// [canvas] with the object [id] replaced by [edit] of it.
     List<Object> editing(
       List<Object> canvas,
       String id,
@@ -14003,7 +13823,6 @@ void main() {
     ) =>
         [for (final o in canvas) idOf(o) == id ? edit(o) : o];
 
-    /// [canvas] without the object [id].
     List<Object> without(List<Object> canvas, String id) => [
           for (final o in canvas)
             if (idOf(o) != id) o
@@ -14046,7 +13865,6 @@ void main() {
       expect(visual().showRangeOutline, isTrue);
       expect(visual().showRangeFill, isFalse);
 
-      // Another teammate toggle lands between undo and redo.
       await land(container, remote, page,
           teammate: (canvas) =>
               editing(canvas, 'mine', (o) => toggled(o, 'showInnerFill')));
@@ -14205,7 +14023,6 @@ void main() {
       expect(container.read(textProvider), isEmpty);
     });
 
-    /// [lineup]'s row as a teammate left it, with [notes].
     List<RemoteLineup> withNotes(RemoteLineup lineup, String notes) =>
         [_editedLineup(lineup, (link) => link['notes'] = notes)];
 
@@ -14412,7 +14229,6 @@ void main() {
           );
       history(container).undoAction();
       expect(linkImages(container), ['x', 'y']);
-      // A teammate removes x too.
       await land(container, remote, page, lineups: [
         _editedLineup(mine, (link) => link['images'] = [image('y')]),
       ]);
@@ -14514,7 +14330,6 @@ void main() {
 
       agents.updatePosition(const Offset(300, 300), 'sova');
       agents.setWeapon('jett', WeaponType.vandal);
-      // A teammate sets Jett back to the Classic.
       await land(container, remote, page,
           teammate: (canvas) => editing(
                 canvas,
@@ -14552,7 +14367,6 @@ void main() {
             .visualState
             .copyWith(showRangeOutline: false),
       );
-      // A teammate turns the outline back on.
       await land(container, remote, page,
           teammate: (canvas) => editing(
                 canvas,
@@ -14593,14 +14407,12 @@ void main() {
       PlacedCircleAgent circle() =>
           container.read(agentProvider).single as PlacedCircleAgent;
 
-      // One edit changes the diameter and the colour.
       container.read(agentProvider.notifier).updateCircleGeometry(
             id: 'circle',
             diameterMeters: 8,
             colorValue: red,
             opacityPercent: 60,
           );
-      // A teammate sets the colour back to white; the diameter stays 8.
       await land(container, remote, page,
           teammate: (canvas) => [
                 for (final o in canvas)
@@ -14699,7 +14511,6 @@ void main() {
         'a transaction a teammate fully reverted is skipped: undo undoes '
         'the step before', () async {
       final (container, remote, page) = await coneOnJettAfterSovaMove();
-      // A teammate puts the cone back and turns Jett back into an agent.
       await land(container, remote, page,
           teammate: (canvas) => [
                 for (final o in canvas)
@@ -14800,7 +14611,6 @@ void main() {
         PageTransitionDirection.forward,
         PageTransitionDirection.backward,
       ]);
-      // The add's sync runs before the container goes.
       await pumpEventQueue();
     });
 
@@ -14833,7 +14643,6 @@ void main() {
       expect(data['id'], add.elementPublicId);
       expect(data['text'], 'two');
       expect(queue.flushNowCount, greaterThan(0));
-      // The page on screen is left as it was.
       expect(container.read(textProvider).map((t) => t.id), ['text-page-2']);
     });
 
@@ -14947,7 +14756,6 @@ void main() {
             widgetId: 'text-page-2',
             direction: PageTransitionDirection.forward,
           );
-      // While page 3 is read, the user edits the text.
       container.read(textProvider.notifier).fromHive([
         PlacedText(id: 'text-page-2', position: const Offset(10, 20))
           ..text = 'edited',

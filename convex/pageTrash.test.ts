@@ -110,8 +110,6 @@ function imagePayload(assetPublicId: string) {
   };
 }
 
-/// Two lineup groups: one of two lineups thrown from one sova origin, the
-/// first showing an image, and one of a single lineup from another.
 const lineupRows = [
   {
     lineupPublicId: "k",
@@ -462,7 +460,6 @@ describe("page trash", () => {
       }),
     ).resolves.toMatchObject({ pages: expect.any(Array) });
 
-    // Restored, the strategy has no trash left, and older clients read it.
     await owner.mutation(restorePage, {
       ...protocol,
       strategyPublicId,
@@ -489,7 +486,6 @@ describe("page trash", () => {
     expect((await rowsOnPage(t, trashed!._id)).elements).toHaveLength(3);
     expect(await livePageIds(owner)).toEqual([pageA, pageC]);
     expect(await agentSummary(t)).toEqual(["sova"]);
-    // Deleting it again changes nothing.
     await expect(
       owner.mutation(deletePageLegacy, {
         ...protocol,
@@ -536,7 +532,6 @@ describe("page trash", () => {
         pagePublicId: pageB,
         expectedElementRevision: 1,
       },
-      // Moving content off the trashed page, or onto it.
       {
         type: "element.patch",
         elementPublicId: "b-image",
@@ -612,7 +607,6 @@ describe("page trash", () => {
       });
     }
 
-    // Deleting it again is already done.
     expect(
       await apply(owner, [
         {
@@ -699,7 +693,6 @@ describe("page trash", () => {
       { status: "applied", appliedRevision: 2 },
     ]);
 
-    // Restoring a live page changes nothing.
     await expect(
       owner.mutation(restorePage, {
         ...protocol,
@@ -799,7 +792,6 @@ describe("page trash", () => {
           pagePublicId: pageB,
           expectedLineupRevision: 1,
         },
-        // Anything that adds or changes content is still refused.
         {
           type: "element.patch",
           elementPublicId: "b-text",

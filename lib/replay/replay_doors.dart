@@ -23,7 +23,6 @@ double _shutterProgress(ReplayDoorMove move, int timeMs) => move.endMs > timeMs
     ? math.min(1.0, (timeMs - move.startMs) / _shutterMs)
     : 1.0;
 
-/// What a replay's doors do over time on one map.
 class ReplayDoors {
   ReplayDoors(ReplayDocument document, MapValue map)
       : _doors = mapDoorsOf(map),

@@ -289,7 +289,6 @@ export const listTrashed = query({
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { user } = await assertStrategyRole(ctx, strategy, "editor");
     const pages = await listRestorablePages(ctx, strategy._id, Date.now());
-    // One read per deleter, however many pages each deleted.
     const deleters = new Map<Id<"users">, Promise<Doc<"users"> | null>>();
     for (const page of pages) {
       if (page.deletedBy !== undefined && !deleters.has(page.deletedBy)) {

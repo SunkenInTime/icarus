@@ -237,7 +237,6 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
   factory FreeDrawing.fromJson(Map<String, dynamic> json) =>
       _$FreeDrawingFromJson(json);
 
-  // @override
   Map<String, dynamic> toJson() => _$FreeDrawingToJson(this);
 
   void updatePath(Path newPath) {
@@ -298,7 +297,6 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
         .map((p) => coordinateSystem.coordinateToScreen(p))
         .toList();
 
-    // Move to first point
     path.moveTo(screenPoints[0].dx, screenPoints[0].dy);
 
     Offset? previousPoint;
@@ -370,15 +368,12 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
       return points;
     }
 
-    // Add the first point
     smoothPoints.add(points[0]);
 
     for (int i = 0; i < points.length - 1; i++) {
       final p0 = points[i];
       final p1 = points[i + 1];
 
-      // Add more intermediate points with more extreme weighting
-      // This creates 5 points between each original pair
       final q1 = Offset(
         0.9 * p0.dx + 0.1 * p1.dx,
         0.9 * p0.dy + 0.1 * p1.dy,
@@ -407,7 +402,6 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
       smoothPoints.add(q5);
     }
 
-    // Add the last point
     smoothPoints.add(points.last);
 
     return smoothPoints;

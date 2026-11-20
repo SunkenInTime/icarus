@@ -51,7 +51,6 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
       dragAnchorStrategy:
           ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
       data: widget.utility,
-      // feedback:widget.data
       childWhenDragging: const SizedBox.shrink(),
 
       feedback: Opacity(

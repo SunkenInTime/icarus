@@ -37,7 +37,6 @@ import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 
-/// Grayscale color matrix for dead agents
 const List<double> _identityColorMatrix = <double>[
   1,
   0,
@@ -150,7 +149,6 @@ class AgentWidget extends ConsumerWidget {
 
     final agentImage = RepaintBoundary(child: Image.asset(agent.iconPath));
 
-    // Determine background color
     Color bgColor = isAlly ? Settings.allyBGColor : Settings.enemyBGColor;
     if (useNeutralTeamColors) {
       bgColor = ShadTheme.of(context).colorScheme.secondary;
@@ -163,7 +161,6 @@ class AgentWidget extends ConsumerWidget {
       bgColor = Settings.tacticalVioletTheme.primary;
     }
 
-    // Determine outline color
     Color outlineColor =
         isAlly ? Settings.allyOutlineColor : Settings.enemyOutlineColor;
     if (useNeutralTeamColors) {
@@ -204,8 +201,6 @@ class AgentWidget extends ConsumerWidget {
       );
     }
     final bool isLineUp = lineUpId != null;
-
-    // final bool isNoneInteractive = (id == null || id!.isEmpty);
 
     final decoration = BoxDecoration(
       color: bgColor,
@@ -690,7 +685,6 @@ List<double> _lerpColorMatrix(double t) {
   );
 }
 
-/// Draws a red X overlay for dead agents
 class _DeadXOverlayPainter extends CustomPainter {
   const _DeadXOverlayPainter();
 
@@ -702,17 +696,14 @@ class _DeadXOverlayPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
 
-    // Add some padding so the X doesn't touch the edges
     const padding = 4.0;
 
-    // Draw first diagonal (top-left to bottom-right)
     canvas.drawLine(
       const Offset(padding, padding),
       Offset(size.width - padding, size.height - padding),
       paint,
     );
 
-    // Draw second diagonal (top-right to bottom-left)
     canvas.drawLine(
       Offset(size.width - padding, padding),
       Offset(padding, size.height - padding),

@@ -552,7 +552,6 @@ class _ScreenshotDialogState extends ConsumerState<ScreenshotDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 ConstrainedBox(
-                  // Three rows show; more scroll.
                   constraints: BoxConstraints(
                     maxHeight: rowHeight * 3 + 16 * 2,
                   ),
@@ -707,7 +706,6 @@ class _PageTileState extends State<_PageTile> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // A page left out sits back.
                   AnimatedOpacity(
                     duration: const Duration(milliseconds: 150),
                     curve: Settings.easeOut,
@@ -826,7 +824,6 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-/// The checkerboard a see-through screenshot is previewed on.
 class _CheckerPainter extends CustomPainter {
   const _CheckerPainter();
 

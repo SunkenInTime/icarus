@@ -91,7 +91,6 @@ class NumericDragInput extends StatefulWidget {
   final TextStyle? valueTextStyle;
   final TextStyle? hintTextStyle;
 
-  /// Unused when [suffix] is set (suffix is drawn with [valueTextStyle] in-field).
   final TextStyle? suffixTextStyle;
   final double dragIconSize;
 

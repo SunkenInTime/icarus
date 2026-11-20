@@ -1668,7 +1668,6 @@ describe("a row a teammate deleted", () => {
         refused,
         refused,
       ]);
-      // None of it touched the tombstone.
       expect(await contentRow(owner, entity, id)).toEqual(tombstone);
 
       const restored = await applyOps(owner, "me", [
@@ -1791,7 +1790,6 @@ describe("a resent op whose ack was lost", () => {
       appliedRevision: 2,
     });
 
-    // A teammate's device edits the element after it.
     const teammate = await applyOps(owner, "teammate-client", [
       patch("theirs", "theirs", 2),
     ]);

@@ -43,7 +43,6 @@ void main() {
           await Future<void>.delayed(const Duration(milliseconds: 50));
           await installDirectory.delete(recursive: true);
         } on PathAccessException {
-          // Windows can briefly hold temp file handles after the final read.
         }
       }
     });

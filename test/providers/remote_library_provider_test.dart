@@ -256,9 +256,6 @@ void main() {
     expect(container.read(cloudStrategiesProvider).valueOrNull, isEmpty);
   });
 
-  // Adding a shared strategy moves the library to it, and each move rebuilds
-  // these lists; one rebuilt and dropped again before its stream started
-  // threw "Cannot call onDispose after a provider was disposed".
   for (final (name, provider) in [
     ('folder tree', cloudFolderTreeProvider),
     ('strategy list', cloudStrategiesProvider),

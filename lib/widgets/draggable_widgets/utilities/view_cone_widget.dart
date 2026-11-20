@@ -79,7 +79,6 @@ class ViewConeWidget extends ConsumerWidget {
 
     if (length != null && length! > 0) currentLength = length!;
 
-    // Scale length to screen coordinates
     final scaledLength = currentLength * coord.scaleFactor;
     final scaledAnchor = anchorPointVirtual.scale(
       coord.scaleFactor,
@@ -425,22 +424,15 @@ class ViewConePainter extends CustomPainter {
     // geometry returns a degenerate polygon and nothing should be painted.
     if (visibilityPolygon != null && visibilityPolygon!.length < 3) return;
 
-    // Convert angle to radians
     final angleRad = angle * (pi / 180);
 
-    // Center the cone so it's always pointing "up" (centered)
-    // Start angle should be at "up" (-pi/2) minus half of the cone, so it centers
     final startAngle = -pi / 2 - angleRad / 2;
 
-    // The apex (origin point) is in the middle of the container, one length
-    // below its top.
     final apex = Offset(size.width / 2, length);
 
-    // Save canvas state and apply clip
     canvas.save();
     // A full circle is the gradient's own circle, with no wedge to cut.
     if (angle < ViewConeUtility.fullCircleDegrees) {
-      // Create clipping path for the wedge
       final clipPath = Path();
       clipPath.moveTo(apex.dx, apex.dy);
       clipPath.arcTo(
@@ -450,8 +442,6 @@ class ViewConePainter extends CustomPainter {
         false,
       );
       clipPath.close();
-      // World polygons already contain the physical FOV and range. Applying a
-      // second circular screen-space clip would trim them on stretched maps.
       canvas.clipPath(clipPath);
     }
     if (visibilityPolygon != null && visibilityPolygon!.length >= 3) {
@@ -461,7 +451,6 @@ class ViewConePainter extends CustomPainter {
     final gradientCenter = apex;
     final gradientRadius = length;
 
-    // The world gradient uses the same physical circle as its visibility rays.
     final gradientPaint = Paint()
       ..shader = RadialGradient(
         center: Alignment.center,
@@ -476,7 +465,6 @@ class ViewConePainter extends CustomPainter {
 
     canvas.drawCircle(gradientCenter, gradientRadius, gradientPaint);
 
-    // Restore canvas state
     canvas.restore();
   }
 

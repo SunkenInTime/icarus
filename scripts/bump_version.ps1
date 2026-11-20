@@ -23,12 +23,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# File paths (relative to repo root)
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $pubspecPath = Join-Path $repoRoot "pubspec.yaml"
 $settingsPath = Join-Path $repoRoot "lib\const\settings.dart"
 
-# --- Read files ---
 if (-not (Test-Path $pubspecPath)) {
     Write-Error "pubspec.yaml not found at $pubspecPath"
     exit 1
@@ -41,7 +39,6 @@ if (-not (Test-Path $settingsPath)) {
 $pubspecContent = Get-Content $pubspecPath -Raw
 $settingsContent = Get-Content $settingsPath -Raw
 
-# --- Parse pubspec version: X.Y.Z+N ---
 if ($pubspecContent -notmatch 'version:\s*(\d+)\.(\d+)\.(\d+)\+(\d+)') {
     Write-Error "Could not parse 'version: X.Y.Z+N' in pubspec.yaml"
     exit 1
@@ -51,7 +48,6 @@ $pubMinor = [int]$Matches[2]
 $pubPatch = [int]$Matches[3]
 $pubBuild = [int]$Matches[4]
 
-# --- Parse pubspec msix_version: X.Y.Z.0 ---
 if ($pubspecContent -notmatch 'msix_version:\s*(\d+)\.(\d+)\.(\d+)\.(\d+)') {
     Write-Error "Could not parse 'msix_version: X.Y.Z.0' in pubspec.yaml"
     exit 1
@@ -65,7 +61,6 @@ if ($msixFourth -ne 0) {
     Write-Warning "msix_version fourth segment is $msixFourth (expected 0). It will remain as .0 after bump."
 }
 
-# --- Parse settings.dart versionNumber and versionName ---
 if ($settingsContent -notmatch 'static\s+const\s+int\s+versionNumber\s*=\s*(\d+)\s*;') {
     Write-Error "Could not parse 'versionNumber' in settings.dart"
     exit 1
@@ -80,7 +75,6 @@ $settingsMajor = [int]$Matches[1]
 $settingsMinor = [int]$Matches[2]
 $settingsPatch = [int]$Matches[3]
 
-# --- Validate consistency ---
 $pubVersion = "$pubMajor.$pubMinor.$pubPatch"
 $msixVersion = "$msixMajor.$msixMinor.$msixPatch"
 $settingsVersion = "$settingsMajor.$settingsMinor.$settingsPatch"
@@ -95,7 +89,6 @@ if ($pubBuild -ne $settingsBuild) {
     exit 1
 }
 
-# --- Compute new version ---
 $oldMajor = $pubMajor
 $oldMinor = $pubMinor
 $oldPatch = $pubPatch
@@ -131,26 +124,20 @@ Write-Host "  Old version:  $oldVersionFull"
 Write-Host "  New version:  $newVersionFull"
 Write-Host ""
 
-# --- Update pubspec.yaml ---
-# Replace version: line (preserve trailing comment)
 $pubspecContent = $pubspecContent -replace `
     '(version:\s*)\d+\.\d+\.\d+\+\d+', `
     "`${1}$newMajor.$newMinor.$newPatch+$newBuild"
 
-# Replace msix_version: line (preserve trailing comment, keep .0 as fourth segment)
 $pubspecContent = $pubspecContent -replace `
     '(msix_version:\s*)\d+\.\d+\.\d+\.\d+', `
     "`${1}$newMajor.$newMinor.$newPatch.0"
 
 Set-Content -Path $pubspecPath -Value $pubspecContent -NoNewline
 
-# --- Update settings.dart ---
-# Replace versionNumber
 $settingsContent = $settingsContent -replace `
     '(static\s+const\s+int\s+versionNumber\s*=\s*)\d+(\s*;)', `
     "`${1}$newBuild`${2}"
 
-# Replace versionName
 $settingsContent = $settingsContent -replace `
     '(static\s+const\s+String\s+versionName\s*=\s*")\d+\.\d+\.\d+(")', `
     "`${1}$newVersionBase`${2}"

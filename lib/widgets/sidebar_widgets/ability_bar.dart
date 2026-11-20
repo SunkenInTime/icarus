@@ -71,7 +71,6 @@ class AbiilityBar extends ConsumerWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // Agent bar
           ...List.generate(
             activeAgent.abilities.length,
             (index) {
@@ -113,7 +112,6 @@ class AbiilityBar extends ConsumerWidget {
                   ),
                 ),
 
-                // dragAnchorStrategy: centerDragStrategy,
                 child: MouseRegion(
                   cursor: SystemMouseCursors.click,
                   onEnter: (_) {
@@ -137,7 +135,6 @@ class AbiilityBar extends ConsumerWidget {
                   ),
                 ),
                 onDraggableCanceled: (velocity, offset) {
-                  // log("I oops");
                 },
               );
             },

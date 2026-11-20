@@ -117,7 +117,6 @@ void main() {
       ),
     );
 
-    // The white box's edges, read from the painted pixels.
     Future<Rect> paintedBox() async {
       final boundary =
           frame.currentContext!.findRenderObject()! as RenderRepaintBoundary;

@@ -962,12 +962,6 @@ class _ViewConeUtilityList extends ConsumerWidget {
                   isAttack: isAttack,
                 );
 
-                // if (coordinateSystem.isOutOfBounds(
-                //     virtualOffset.translate(agentSize / 2, agentSize / 2))) {
-                //   ref.read(utilityProvider.notifier).removeUtility(placedUtility.id);
-                //   return;
-                // }
-
                 final targetAgent = _hoveredPlainAgentTarget(ref);
                 if (targetAgent != null &&
                     _convertFreeUtilityToComposite(

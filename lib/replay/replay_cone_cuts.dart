@@ -8,7 +8,6 @@ import 'package:icarus/replay/replay_cone_worker.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 
-/// Where a player's view cone is aimed.
 @immutable
 class ReplayConeAim {
   const ReplayConeAim({

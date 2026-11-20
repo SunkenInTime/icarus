@@ -50,7 +50,6 @@ class ReplayCapture {
   /// The strategy captures go to, as the last capture or [reload] left it.
   CapturedStrategy? get strategy => _strategy;
 
-  /// The pages captured into [strategy], in order.
   List<String> get pageIds => List.unmodifiable(_pageIds);
 
   /// Saves [frame] as a page named [pageName], with [drawings] as its
@@ -217,7 +216,6 @@ String? _ownedCloudFolder(Ref ref) {
   return owned ? folderId : null;
 }
 
-/// Captures into the local library on this device.
 class LocalReplayCaptureStore implements ReplayCaptureStore {
   LocalReplayCaptureStore(this.createStrategy);
 
@@ -333,7 +331,6 @@ class CloudReplayCaptureStore implements ReplayCaptureStore {
   final ReplayCaptureQueue queue;
   final ReplayCaptureQueueState Function() queueState;
 
-  /// The account the strategy is made in.
   final String accountId;
   final String? folderId;
   final StrategySettings settings;

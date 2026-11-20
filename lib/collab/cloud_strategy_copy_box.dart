@@ -128,7 +128,6 @@ abstract class CloudStrategyCopyStore implements CloudAccountCopy {
     return (level is num ? level : 0) < currentElementFieldLevel;
   }
 
-  /// The strategies [scope] keeps anything of.
   Set<String> keptStrategyIds(CloudCopyScope scope) {
     final prefix = scope.storageKeyPrefix;
     return {
@@ -535,7 +534,6 @@ num _revision(Object? row) {
   return revision is num ? revision : -1;
 }
 
-/// [incoming] unless [existing] has the higher revision.
 Object? _newerRow(Object? existing, Object? incoming) =>
     _revision(incoming) >= _revision(existing) ? incoming : existing;
 

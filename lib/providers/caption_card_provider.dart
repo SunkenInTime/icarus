@@ -85,7 +85,6 @@ class CaptionCardNotifier extends Notifier<OpenCaption?> {
       ref.read(appPreferencesProvider).showCaptions &&
       (placedItemById(ref.container, id)?.caption?.isNotEmpty ?? false);
 
-  /// The pointer entered [region] of the item [id].
   void itemEntered(String id, Object region) {
     _regions[region] = id;
     _hovered = id;

@@ -5,7 +5,6 @@ import 'package:icarus/collab/pending_media_bytes_store.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/services/local_image_file.dart';
 
-/// The bytes one cloud media upload sends.
 sealed class MediaBytesSource {
   const MediaBytesSource();
 
@@ -49,9 +48,6 @@ final pendingMediaBytesStoreProvider = Provider<PendingMediaBytesStore>(
       : HivePendingMediaBytesStore(),
 );
 
-/// The largest image a cloud strategy takes: the server's default
-/// `R2_MAX_IMAGE_BYTES` (`convex/lib/r2.ts`). Checked before bytes are kept,
-/// so the browser never stores an image that can never upload.
 const maxCloudImageBytes = 15 * 1024 * 1024;
 
 class MediaTooLargeException implements Exception {

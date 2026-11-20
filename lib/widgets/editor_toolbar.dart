@@ -263,7 +263,6 @@ class EditorToolbarButton extends StatelessWidget {
   }
 }
 
-/// A 1px hairline between groups of toolbar controls.
 class EditorToolbarDivider extends StatelessWidget {
   const EditorToolbarDivider({super.key});
 

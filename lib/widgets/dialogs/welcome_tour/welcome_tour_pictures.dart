@@ -144,7 +144,6 @@ class WelcomeReplayPicture extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(context.l10n.welcomeTourPictureReplayDate, style: muted),
                   const SizedBox(height: 6),
-                  // Ten players spread across the tile, about 3px apart.
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [

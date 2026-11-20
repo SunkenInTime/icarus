@@ -415,7 +415,6 @@ class LineUpGraph {
     );
   }
 
-  /// The lineups [linkIds] and the spots they aim at.
   LineUpGraph linksWithSpots(Set<String> linkIds) {
     final picked = [
       for (final link in links)
@@ -621,7 +620,6 @@ class LineUpPlacementEdit {
   final Map<String, Offset> movedOrigins;
   final Map<String, Offset> movedLandings;
 
-  /// Every lineup, origin and landing the edit holds.
   Set<String> get itemIds => {...linkIds, ...originIds, ...landingIds};
 
   LineUpPlacementEdit copyWith({
@@ -721,7 +719,6 @@ class LineUpState {
     };
   }
 
-  /// Whether saving the edit would move anything.
   bool get editMovesAnything {
     final edit = this.edit;
     if (edit == null) return false;
@@ -993,8 +990,6 @@ class LineUpProvider extends Notifier<LineUpState> {
   List<LineUpLink> linksToLanding(String landingId) =>
       state.linksToLanding(landingId);
 
-  // --- Placement -----------------------------------------------------------
-
   void startFresh() {
     state = state.copyWith(
       placement: const LineUpPlacement(mode: LineUpPlacementMode.fresh),
@@ -1141,8 +1136,6 @@ class LineUpProvider extends Notifier<LineUpState> {
     if (state.placement == null) return;
     state = state.copyWith(placement: null);
   }
-
-  // --- Placement editing ---------------------------------------------------
 
   /// Starts moving [linkId] and every lineup joined to it through a shared
   /// origin or landing.
@@ -1346,8 +1339,6 @@ class LineUpProvider extends Notifier<LineUpState> {
     state = state.copyWith(origins: origins);
   }
 
-  // --- Edits (each records one undoable change to one field) --------------
-
   /// Records a change to the link's details: name, video link, notes and
   /// images. Which origin and landing it joins is never edited here.
   void updateLink(LineUpLink link) {
@@ -1477,8 +1468,6 @@ class LineUpProvider extends Notifier<LineUpState> {
       ),
     );
   }
-
-  // --- Deletions -----------------------------------------------------------
 
   void deleteLink(String linkId) {
     if (!ref.canEditPages) return;
@@ -1719,14 +1708,11 @@ class LineUpProvider extends Notifier<LineUpState> {
     }
   }
 
-  /// Redoes an origin weapon change; see [undoAction].
   void redoAction(UserAction action) {
     if (action is WeaponSelectionAction) {
       _applyOriginWeapon(action.id, action.after);
     }
   }
-
-  // --- Lifecycle and serialization -----------------------------------------
 
   /// Replaces the page's lineups. A placement edit ends with them: its ids
   /// may name lineups a copied page shares, and saving it there would move

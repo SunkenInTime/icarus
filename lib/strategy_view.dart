@@ -761,7 +761,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // A click beside the sheet closes it, as the X does.
               if (!expanded)
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,

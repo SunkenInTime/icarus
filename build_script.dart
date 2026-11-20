@@ -14,10 +14,8 @@ void main(List<String> args) {
   final fullVersion = '$version+$buildNumber';
   final msixVersion = '$version.0';
 
-  // Update pubspec.yaml
   updatePubspec(fullVersion, msixVersion);
 
-  // Update settings.dart
   updateSettings(buildNumber);
 
   print('Version updated to $fullVersion');
@@ -27,12 +25,10 @@ void updatePubspec(String fullVersion, String msixVersion) {
   final file = File('pubspec.yaml');
   String content = file.readAsStringSync();
 
-  // Update main version - fixed regex pattern
   content = content.replaceFirst(
       RegExp(r'version: [\d\.]+\+\d+ #version number'),
       'version: $fullVersion #version number');
 
-  // Update msix version - fixed regex pattern
   content = content.replaceFirst(
       RegExp(r'msix_version: [\d\.]+ #verion number'),
       'msix_version: $msixVersion #verion number');

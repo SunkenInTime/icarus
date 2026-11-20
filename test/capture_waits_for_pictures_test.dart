@@ -11,7 +11,6 @@ import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/widgets/asset_svg.dart';
 
-// A 1x1 PNG.
 final _png = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA'
   '60e6kgAAAABJRU5ErkJggg==',

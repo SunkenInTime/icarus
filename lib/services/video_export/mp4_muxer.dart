@@ -61,7 +61,6 @@ abstract class _SingleTrackMuxer {
   int _totalDuration = 0;
   bool _finished = false;
 
-  /// The file's ftyp box.
   Uint8List get _ftyp;
 
   /// The track's one sample description (an `stsd` entry).
@@ -104,7 +103,6 @@ abstract class _SingleTrackMuxer {
     _totalDuration += duration;
   }
 
-  /// Checks that there is a file to build, then builds it.
   Uint8List _finish() {
     if (_finished) throw StateError('The file has already been finished.');
     if (_samples.isEmpty) {
@@ -113,8 +111,6 @@ abstract class _SingleTrackMuxer {
     _finished = true;
     final ftyp = _ftyp;
 
-    // The single chunk offset is known only once moov's size is known, and
-    // moov's size does not depend on the offset's value, so build moov twice.
     final largeMdat = _payloadBytes + 8 > _maxUint32;
     final mdatHeaderSize = largeMdat ? 16 : 8;
     final moovSize = _moov(chunkOffset: 0).length;
@@ -226,7 +222,6 @@ abstract class _SingleTrackMuxer {
       longDuration ? _u64(_totalDuration) : _u32(_totalDuration);
 
   Uint8List _stbl(int chunkOffset) {
-    // Run-length encode the per-sample durations.
     final sttsEntries = <Uint8List>[];
     var runCount = 0;
     var runDelta = _durations.first;
@@ -358,10 +353,6 @@ class Mp4H264Muxer extends _SingleTrackMuxer {
       ]);
 }
 
-/// Builds a QuickTime .mov holding one QuickTime Animation track (`rle `,
-/// 32-bit ARGB), from the samples `QuickTimeAnimationEncoder` makes. The
-/// boxes match FFmpeg's own .mov for this codec, which DaVinci Resolve and
-/// Clipchamp read with its alpha.
 class MovAnimationMuxer extends _SingleTrackMuxer {
   MovAnimationMuxer({
     required super.width,
@@ -369,7 +360,6 @@ class MovAnimationMuxer extends _SingleTrackMuxer {
     required super.timescale,
   });
 
-  /// Returns the finished file.
   Uint8List finish() => _finish();
 
   @override
@@ -447,7 +437,6 @@ Uint8List _u16(int value) =>
 Uint8List _u32(int value) =>
     (ByteData(4)..setUint32(0, value)).buffer.asUint8List();
 
-/// ByteData.setUint64 is unsupported when compiled to JavaScript.
 Uint8List _u64(int value) => (ByteData(8)
       ..setUint32(0, value ~/ 0x100000000)
       ..setUint32(4, value % 0x100000000))

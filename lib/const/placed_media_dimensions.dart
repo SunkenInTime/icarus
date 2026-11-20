@@ -134,7 +134,6 @@ abstract final class PlacedTextDimensions {
     )..layout(minWidth: maxContentWidth, maxWidth: maxContentWidth);
 
     final lineMetrics = painter.computeLineMetrics();
-    // EditableText can keep one extra wrapped line in its scroll extent.
     final wrappedTextSlack = lineMetrics.length > 1 && lineMetrics.isNotEmpty
         ? lineMetrics.last.height.ceilToDouble()
         : 0.0;

@@ -71,7 +71,6 @@ Future<void> _openReplays(WidgetRef ref, List<String> paths) async {
   final result = await addReplays(ref, paths);
   final shown = [...?result?.added, ...?result?.alreadyListed];
   if (shown.isEmpty) return;
-  // One replay opens in the viewer.
   final listing = paths.length == 1 && shown.length == 1
       ? ref
           .read(replayLibraryProvider)

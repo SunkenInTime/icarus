@@ -367,11 +367,9 @@ String normalizeArchivePath(String value) {
   if (normalized == '.' || normalized == '/') {
     return '';
   }
-  // Strip a leading "./" if present to keep paths relative.
   String sanitized =
       normalized.startsWith('./') ? normalized.substring(2) : normalized;
 
-  // Strip any leading separators so paths like "/foo" cannot remain absolute.
   while (sanitized.startsWith('/')) {
     sanitized = sanitized.substring(1);
   }
@@ -380,7 +378,6 @@ String normalizeArchivePath(String value) {
     return '';
   }
 
-  // Reject any attempt at directory traversal.
   final segments = sanitized.split('/');
   if (segments.any((segment) => segment == '..')) {
     throw const FormatException(

@@ -211,8 +211,6 @@ class SvgHeightNative implements Finalizable {
     Uint8List? interiorSides,
     String? libraryPath,
   }) {
-    // Validate through the public constructor. DynamicLibrary.open and symbol
-    // lookup both report unavailable native code as ArgumentError.
     try {
       return SvgHeightNative.open(
           wallIds: wallIds,

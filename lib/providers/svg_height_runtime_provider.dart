@@ -188,7 +188,6 @@ final svgHeightRuntimeProvider = FutureProvider.autoDispose
     final runtime = SplitSvgHeightRuntime.forMap(map, attack, defense);
     currentRuntime = runtime;
     for (final side in [attack, defense]) {
-      // Without the native library (the web), cones use the Dart query.
       if (!side.enableNativeAcceleration()) side.prepareDartQuery();
     }
     return runtime;
@@ -314,6 +313,4 @@ class SplitSvgHeightRuntime {
   }
 }
 
-/// Map-neutral name used by production integration. The typedef preserves the
-/// existing Split constructor for audit tools while maps move to the registry.
 typedef SvgHeightRuntime = SplitSvgHeightRuntime;

@@ -37,7 +37,6 @@ class DrawingTools extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(l10n.drawingToolsColorLabel),
-          // const SizedBox(height: 10),
           ColorLibrary(
             selectedColorValue: ref.watch(
               penProvider.select((state) => state.color.toARGB32()),

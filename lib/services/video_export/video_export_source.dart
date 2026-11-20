@@ -24,7 +24,6 @@ import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
-/// A page the export dialog offers.
 typedef VideoExportPageChoice = ({String id, String name});
 
 /// The open strategy's pages in order, from wherever the strategy lives,
@@ -150,7 +149,6 @@ Future<SavedStrategyRead> readSavedStrategy(
   if (strategyId == null) {
     throw StateError('No strategy is open to export.');
   }
-  // A signed-out reader's only access is the link they opened.
   final linkView = ref.read(shareLinkViewProvider);
   final shareToken =
       linkView?.strategyPublicId == strategyId ? linkView!.token : null;
@@ -194,8 +192,6 @@ Future<SavedStrategyRead> readSavedStrategy(
       if (saved == null) {
         throw StateError('Strategy $strategyId is not in the library.');
       }
-      // The library's own objects, which the editor loads too: a capture
-      // rebuilds drawing paths in its own coordinates, so it gets copies.
       return (
         strategy: saved.copyWith(pages: saved.pages.map(_detached).toList()),
         assets: const <String, RemoteImageAsset>{},
@@ -223,7 +219,6 @@ Future<CaptureImages> resolvePageImages(
   return resolveCaptureImages(
     {
       for (final page in pages)
-        // By picture, as the captured pages' images look them up.
         for (final image in page.imageData)
           image.pictureId: (
             source: resolveStrategyImageSource(
@@ -233,9 +228,6 @@ Future<CaptureImages> resolvePageImages(
                 fileExtension: image.fileExtension,
               ),
               isCloudStrategy: isCloud,
-              // The whole strategy was just read. An export has waited for
-              // this device's uploads to land; a preview shows those that
-              // have.
               assetsLoaded: true,
               remoteAsset: read.assets[image.pictureId],
               uploadMayBeQueuedHere: false,

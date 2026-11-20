@@ -142,7 +142,6 @@ class ScreenshotView extends ConsumerWidget {
   /// around the map is transparent.
   final bool transparentBackground;
 
-  /// Prints the page's captions (see [CaptionExportOverlay]).
   final bool includeCaptions;
 
   /// Hears what [includeCaptions] worked out for the page.
@@ -172,7 +171,6 @@ class ScreenshotView extends ConsumerWidget {
   static const double _pageNameLeft = 28;
   static const double _pageNameBottom = 22;
 
-  /// Where [name] prints on a capture.
   Rect _pageNameRect(BuildContext context, String name) {
     const frame = CoordinateSystem.screenShotSize;
     final painter = TextPainter(
@@ -283,8 +281,6 @@ class ScreenshotView extends ConsumerWidget {
                 ),
               ),
             ),
-            // View cones: the map as they reveal it, shown wherever one
-            // reaches, as in the editor.
             Positioned.fill(
               child: ConeCoverageLayer(
                 coverage: cones,
@@ -377,9 +373,7 @@ class ScreenshotView extends ConsumerWidget {
               ),
             ),
 
-            //Painting
             Positioned.fill(
-              // Mirror the live map so defense-side screenshots flip drawings too.
               child: Opacity(
                 opacity: drawingsOpacity,
                 child: Transform.flip(

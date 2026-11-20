@@ -203,8 +203,6 @@ describe("posting", () => {
       role: "viewer",
     });
 
-    // The author's library holds their strategy once; nobody's Shared tab
-    // gains the snapshot, and the token can't be joined.
     const library = await as("author").query(listForFolder, {});
     expect(
       library.map((entry: { publicId: string }) => entry.publicId),
@@ -219,7 +217,6 @@ describe("posting", () => {
       as("reader").query(listSharedWithMe, {}),
     ).resolves.toEqual([]);
 
-    // A reader can't write to it.
     await expect(
       as("reader").mutation(updateStrategy, {
         ...protocol,
@@ -398,7 +395,6 @@ describe("posting", () => {
     expect(
       readerLibrary.map((entry: { publicId: string }) => entry.publicId),
     ).toEqual(["reader-copy"]);
-    // And the strategy can be posted again.
     await post(harness, "author", "source", "Second try");
     await settle(harness);
   });
@@ -543,7 +539,6 @@ describe("the feed", () => {
       postPublicId: postId,
       publicId: "reader-copy",
     });
-    // A retry of the same save is safe.
     await expect(
       as("reader").mutation(copyPost, {
         ...protocol,
@@ -659,7 +654,6 @@ describe("reports", () => {
       reason: "offensive",
     });
     await expect(feed(harness)).resolves.toEqual([]);
-    // Hidden from everyone but reviewers, its link included.
     await expect(t.query(getPost, { postPublicId: postId })).resolves.toBeNull();
     await expect(readThrough(card.shareToken)).rejects.toThrow(
       "Share link revoked",

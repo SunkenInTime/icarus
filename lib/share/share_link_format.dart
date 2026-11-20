@@ -11,7 +11,6 @@ final _shareCodePattern = RegExp(
   r'^ICR-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$',
 );
 
-/// The link for [code] on [origin], e.g. `https://icarusstrats.com/share/ICR-…`.
 String buildIcarusShareLink(String code, {required Uri origin}) {
   return origin.replace(pathSegments: ['share', code]).toString();
 }

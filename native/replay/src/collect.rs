@@ -31,7 +31,6 @@ pub struct Row {
     pub raw: Option<Vec<u8>>,
 }
 
-/// One movement sample, as compact as the analysis needs it.
 #[derive(Debug, Clone, Copy)]
 pub struct Move {
     pub time: u32,
@@ -264,7 +263,6 @@ pub struct ShutterState {
     pub state: u8,
 }
 
-/// Whose door a group of fields is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DoorGroup {
     None,

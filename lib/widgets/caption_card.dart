@@ -31,7 +31,6 @@ import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// The name a caption card shows for [item].
 String captionItemName(AppLocalizations l10n, PlacedWidget item) =>
     switch (item) {
       PlacedAgentNode() =>
@@ -72,7 +71,6 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
   final _card = GlobalKey();
   _Placement? _placement;
 
-  /// The note being written, while the card is open for writing.
   _Draft? _draft;
 
   /// Where the cursor starts in the next draft: the spot clicked in the card.
@@ -123,8 +121,6 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
       _notifier.closeNow();
       return;
     }
-    // The item is only at its new place once the canvas has drawn at the new
-    // zoom.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() {});
     });
@@ -166,8 +162,6 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
     if (state != AppLifecycleState.resumed) _notifier.closeNow();
   }
 
-  /// The user moved on: a note being written is saved, a card being read
-  /// closes.
   void _leave() {
     if (_writing) {
       _finish(save: true);
@@ -190,7 +184,6 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
     }
   }
 
-  /// The draft for [open], made when the card opens for writing.
   _Draft _draftFor(OpenCaption open, String start) {
     final current = _draft;
     if (current != null && current.open == open) return current;
@@ -200,9 +193,6 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
     if (current != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => current.dispose());
     }
-    // Opened from a menu that is still closing, which hands focus back to the
-    // canvas: an autofocus here would lose it, and the note would be typed
-    // into the app's shortcuts.
     void takeFocus() {
       if (mounted && _draft == draft && !draft.focus.hasFocus) {
         draft.focus.requestFocus();
@@ -211,11 +201,6 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
 
     WidgetsBinding.instance.addPostFrameCallback((_) => takeFocus());
     Future<void>.delayed(const Duration(milliseconds: 250), takeFocus);
-    // A press in another text field, such as a shape's size in the sidebar,
-    // is inside the card's tap region: Flutter puts every text field and the
-    // field's Cut, Copy and Paste menu in one group. So the keyboard landing
-    // in another field is what saves the note then. Losing it to the canvas
-    // as a menu closes, or to another window, doesn't.
     draft.focus.addListener(() {
       if (draft.focus.hasFocus) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -230,8 +215,6 @@ class _CaptionCardLayerState extends ConsumerState<CaptionCardLayer>
     return draft;
   }
 
-  /// Opens the card being read for writing, with the cursor at [offset] in
-  /// its note.
   void _write(String id, int offset) {
     _clickedAt = offset;
     _notifier.startWriting(id, currentCaptionPlace(_container));
@@ -368,7 +351,6 @@ void _save(ProviderContainer container, _Draft draft) {
   );
 }
 
-/// A note being written in a card: the text so far, and where it started.
 class _Draft {
   _Draft(this.open, this.start, {required int cursor})
       : controller = TextEditingController.fromValue(
@@ -472,7 +454,6 @@ class _CaptionCardLayout extends SingleChildLayoutDelegate {
       item != oldDelegate.item || placement != oldDelegate.placement;
 }
 
-/// How a note reads in a card, written or being written.
 TextStyle _noteStyle() => TextStyle(
       color: Settings.tacticalVioletTheme.foreground,
       fontSize: 14,
@@ -481,8 +462,6 @@ TextStyle _noteStyle() => TextStyle(
 
 const _notePadding = EdgeInsets.fromLTRB(12, 10, 12, 10);
 
-/// The card around a note: the item's name over the note, on the surface of
-/// the item name card.
 class _CardFrame extends StatelessWidget {
   const _CardFrame({required this.name, required this.body, this.trailing});
 

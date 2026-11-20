@@ -285,7 +285,6 @@ describe("a page read as a frame and element slices", () => {
   test("still does after moves, deletes and restores", async () => {
     const { owner } = await seed();
     await send(owner, "edits", [
-      // Moved to the other page.
       {
         opId: "move-b06",
         type: "element.patch",

@@ -75,7 +75,6 @@ afterEach(() => {
     try {
       ws.close(1000);
     } catch {
-      // Already closed.
     }
   }
 });
@@ -235,7 +234,6 @@ describe("room", () => {
       { headers: { Upgrade: "websocket" } },
     );
     expect(response.status).toBe(429);
-    // Someone else still gets in.
     const ben = await connect(await signPass(claims({ uid: "u-ben" }), SECRET));
     expect((await ben.next("welcome")).peers).toHaveLength(4);
   });

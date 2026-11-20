@@ -203,7 +203,6 @@ class StrategyCopyRefresher extends Notifier<void> {
     unawaited(refreshLibrary());
   }
 
-  /// Whether this session's library size was reported (once a session).
   static bool _libraryReported = false;
 
   /// Every strategy the signed-in account can open from its library: its
@@ -365,7 +364,6 @@ final _socketConnectedProvider = Provider<bool>((ref) {
   try {
     return ref.watch(convexConnectionSnapshotProvider);
   } catch (_) {
-    // No Convex client in this run.
     return true;
   }
 });

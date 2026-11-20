@@ -101,7 +101,6 @@ describe("viewing through a share link without an account", () => {
       }),
     ).resolves.toMatchObject({ page: { publicId: pagePublicId } });
 
-    // The link opens its own strategy and nothing else.
     await expect(
       t.query(getStrategyShell, {
         ...protocol,

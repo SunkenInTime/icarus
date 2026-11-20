@@ -12,7 +12,7 @@ import 'package:icarus/const/settings.dart';
 /// [DitherFireBanner]. Unlit lattice points render as faint "off" dots,
 /// like a real dot-matrix display.
 
-const _kViolet = Color(0xff7c3aed); // Settings.tacticalVioletTheme.primary
+const _kViolet = Color(0xff7c3aed);
 const _kDeepViolet = Color(0xff4c1d95);
 const _kWhite = Color(0xfffafafa);
 
@@ -69,7 +69,6 @@ abstract class _DotMatrixPainter extends CustomPainter {
       oldDelegate.t != t;
 }
 
-/// Shared stateful shell: runs a ticker and rebuilds a painter every frame.
 abstract class _DotLoaderState<T extends StatefulWidget> extends State<T>
     with SingleTickerProviderStateMixin {
   late final Ticker _ticker;
@@ -97,10 +96,6 @@ double _smoothstep(double a, double b, double x) {
   final u = ((x - a) / (b - a)).clamp(0.0, 1.0);
   return u * u * (3 - 2 * u);
 }
-
-// ---------------------------------------------------------------------------
-// Wing
-// ---------------------------------------------------------------------------
 
 /// An Icarus wing fanned out of feather strokes, beating with a phase lag
 /// that ripples from the leading feather to the trailing one. A brightness
@@ -190,10 +185,6 @@ class _WingDotPainter extends _DotMatrixPainter {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Fire
-// ---------------------------------------------------------------------------
-
 /// A violet flame: scrolling value noise masked by a teardrop flame profile.
 /// Hot core burns white, edges fall off through violet into deep violet.
 class FireDotLoader extends StatefulWidget {
@@ -275,10 +266,6 @@ class _FireDotPainter extends _DotMatrixPainter {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Cube
-// ---------------------------------------------------------------------------
-
 /// A wireframe cube tumbling in 3D, rasterized onto the dot lattice: dots
 /// near a projected edge light up, nearer edges render brighter and whiter,
 /// vertices get a soft glow. Reads as a hologram scan.
@@ -325,12 +312,10 @@ class _CubeDotPainter extends _DotMatrixPainter {
       final x = (i & 1) == 0 ? -1.0 : 1.0;
       final y = (i & 2) == 0 ? -1.0 : 1.0;
       final z = (i & 4) == 0 ? -1.0 : 1.0;
-      // Rotate around Y, then X.
       final x1 = x * cosY + z * sinY;
       final z1 = -x * sinY + z * cosY;
       final y1 = y * cosX - z1 * sinX;
       final z2 = y * sinX + z1 * cosX;
-      // Perspective projection into uv space.
       final persp = _focal / (_focal + z2);
       _projected[i] =
           Offset(0.5 + x1 * persp * 0.20, 0.5 + y1 * persp * 0.20);
@@ -344,9 +329,9 @@ class _CubeDotPainter extends _DotMatrixPainter {
   static const _perspMax = _focal / (_focal - 1.75);
 
   static const _edges = [
-    [0, 1], [2, 3], [4, 5], [6, 7], // along x
-    [0, 2], [1, 3], [4, 6], [5, 7], // along y
-    [0, 4], [1, 5], [2, 6], [3, 7], // along z
+    [0, 1], [2, 3], [4, 5], [6, 7],
+    [0, 2], [1, 3], [4, 6], [5, 7],
+    [0, 4], [1, 5], [2, 6], [3, 7],
   ];
 
   final List<Offset> _projected = List.filled(8, Offset.zero);
@@ -377,7 +362,6 @@ class _CubeDotPainter extends _DotMatrixPainter {
       }
     }
 
-    // Vertex hotspots.
     for (var i = 0; i < 8; i++) {
       final glow = math.exp(-_sq((uv - _projected[i]).distance / 0.034)) *
           (0.45 + 0.55 * _nearness[i]);
@@ -392,10 +376,6 @@ class _CubeDotPainter extends _DotMatrixPainter {
     return _DotSample(best, color);
   }
 }
-
-// ---------------------------------------------------------------------------
-// Ember spinner
-// ---------------------------------------------------------------------------
 
 /// The everywhere-loader: a circular comet chase on the dot lattice. The
 /// head burns white and trails off through violet embers that flicker as
@@ -467,10 +447,6 @@ class _EmberSpinPainter extends _DotMatrixPainter {
     return _DotSample(intensity, color);
   }
 }
-
-// ---------------------------------------------------------------------------
-// Icarus mark
-// ---------------------------------------------------------------------------
 
 /// The Icarus flame mark itself, rasterized onto the dot lattice and lit
 /// from within: rising ember noise plus a periodic shimmer sweep. For
@@ -606,10 +582,6 @@ class _IcarusMarkPainter extends _DotMatrixPainter {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Flight trail
-// ---------------------------------------------------------------------------
-
 /// A point of light flying an endless figure-eight, leaving a violet
 /// contrail that fades behind it. Flight that never lands — loading.
 class FlightTrailLoader extends StatefulWidget {
@@ -693,10 +665,6 @@ class _FlightTrailPainter extends _DotMatrixPainter {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Feather fall
-// ---------------------------------------------------------------------------
-
 /// A single feather drifting down, swaying side to side like a falling
 /// leaf and tilting into each swing. The feather Icarus lost.
 class FeatherFallLoader extends StatefulWidget {
@@ -746,7 +714,6 @@ class _FeatherFallPainter extends _DotMatrixPainter {
     );
     final tilt = -0.16 + 0.5 * math.cos(p * 4 * math.pi);
 
-    // Elongated ellipse in the feather's local frame.
     final rel = uv - center;
     final ca = math.cos(tilt), sa = math.sin(tilt);
     final x = rel.dx * ca + rel.dy * sa;
@@ -758,17 +725,12 @@ class _FeatherFallPainter extends _DotMatrixPainter {
     final fade = _smoothstep(0.0, 0.10, p) * (1 - _smoothstep(0.90, 1.0, p));
     if (fade < 0.05) return null;
 
-    // Bright central spine, softer vanes.
     final spine = math.exp(-_sq(y / 0.022));
     final intensity = (body * fade * (0.55 + 0.65 * spine)).clamp(0.0, 1.0);
     final color = Color.lerp(_kViolet, _kWhite, 0.25 + spine * 0.5)!;
     return _DotSample(intensity, color);
   }
 }
-
-// ---------------------------------------------------------------------------
-// Ember rise
-// ---------------------------------------------------------------------------
 
 /// Loose embers floating up and burning out — the flame mark,
 /// deconstructed. Quietest of the set; reads at very small sizes.
@@ -854,10 +816,6 @@ class _EmberRisePainter extends _DotMatrixPainter {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Ping
-// ---------------------------------------------------------------------------
-
 /// A tactical map ping: staggered rings expanding from a pulsing center
 /// dot. Less the myth, more the product — this is what Icarus is for.
 class PingLoader extends StatefulWidget {
@@ -909,7 +867,6 @@ class _PingPainter extends _DotMatrixPainter {
       best = math.max(best, ring);
     }
 
-    // Pulsing center dot: the ping's origin.
     final pulse = 0.75 + 0.25 * math.sin(2 * math.pi * t / _period);
     best = math.max(best, math.exp(-_sq(r / 0.055)) * pulse);
 
@@ -918,10 +875,6 @@ class _PingPainter extends _DotMatrixPainter {
     return _DotSample(best, color);
   }
 }
-
-// ---------------------------------------------------------------------------
-// Cute
-// ---------------------------------------------------------------------------
 
 /// A little dot-matrix blob that bounces in place: squashes on landing,
 /// stretches mid-air, blinks every few seconds. Eyes and mouth are unlit
@@ -969,7 +922,6 @@ class _CuteDotPainter extends _DotMatrixPainter {
     _rx = 0.27 * (1 + squash - 0.08 * air);
     _ry = 0.23 * (1 - squash + 0.12 * air);
 
-    // A quick blink every few seconds, plus one right after landing.
     final blink = math.exp(-_sq(((t / 3.1) % 1.0 - 0.55) / 0.025));
     _eyeOpen = 1 - blink;
   }
@@ -1010,7 +962,6 @@ class _CuteDotPainter extends _DotMatrixPainter {
       return null;
     }
 
-    // Cheeks blush.
     for (final side in const [-1.0, 1.0]) {
       final cheek = _center + Offset(side * _rx * 0.62, _ry * 0.12);
       if (_ellipse(uv, cheek, 0.045, 0.032) < 1) {

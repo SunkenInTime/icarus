@@ -125,7 +125,6 @@ void main() {
         expected.add(rgba);
       }
     }
-    // Clipchamp ends a clip at its last keyframe, so the file ends on one.
     final keyFrames = await Process.run(_ffprobe!, [
       '-v',
       'error',

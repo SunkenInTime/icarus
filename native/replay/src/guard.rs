@@ -5,7 +5,6 @@
 //! zeros dominate them; noise has about 1/256 zero bytes and half its bits
 //! set. The guard samples the start of every decoded field payload.
 
-/// Bytes taken from the front of each field payload.
 const PREFIX_BYTES: usize = 8;
 /// Stop sampling after this many bytes: enough for a stable share.
 const SAMPLE_LIMIT: u64 = 4 << 20;
@@ -15,11 +14,9 @@ pub struct GuardSample {
     pub bytes: u64,
     pub zero_bytes: u64,
     pub set_bits: u64,
-    /// Field payloads sampled.
     pub payloads: u64,
 }
 
-/// What the guard concluded.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GuardVerdict {
     pub zero_share: f64,

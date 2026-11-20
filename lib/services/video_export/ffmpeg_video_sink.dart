@@ -72,8 +72,6 @@ class FfmpegVideoSink implements VideoFrameSink {
     await _frameWriter!.finish();
     _frameWriter = null;
 
-    // The concat demuxer ignores the duration of the final entry unless the
-    // last file is repeated.
     if (_lastFrameFile != null) {
       _concatLines.add("file '$_lastFrameFile'");
     }
@@ -95,24 +93,18 @@ class FfmpegVideoSink implements VideoFrameSink {
 
   @override
   void cancel() {
-    // close() awaits the writer's termination; here we only need to
-    // interrupt the processes.
     unawaited(_frameWriter?.cancel());
     _encoder.cancel();
   }
 
   @override
   Future<void> close() async {
-    // Wait for ffmpeg to exit before deleting the directory it writes into;
-    // on Windows the delete races a still-exiting process otherwise.
     await _frameWriter?.cancel();
     _frameWriter = null;
     try {
       await _tempDir?.delete(recursive: true);
       _tempDir = null;
     } on Object {
-      // Leaving orphaned temp frames behind is preferable to masking the
-      // original export result.
     }
   }
 }

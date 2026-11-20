@@ -161,7 +161,6 @@ class _SoftenedThumbnail extends ImageProvider<_SoftenedThumbnailKey> {
     final tile = Offset.zero & key.size;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder)..scale(ratio);
-    // What ImageFiltered(blur 1) over Opacity(0.8) over Image(cover) drew.
     canvas.saveLayer(
       tile,
       Paint()..imageFilter = ui.ImageFilter.blur(sigmaX: 1, sigmaY: 1),

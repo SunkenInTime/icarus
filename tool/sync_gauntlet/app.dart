@@ -143,7 +143,6 @@ final class GauntletApp {
   StrategyOpQueueState get queueState =>
       container.read(strategyOpQueueProvider);
 
-  /// What the sync chip shows.
   CloudSyncStatus get chip => container.read(cloudSyncStatusProvider);
 
   /// What the save state says: the save button and the leave guard read it.
@@ -154,7 +153,6 @@ final class GauntletApp {
     _authHandle?.dispose();
     _authHandle = null;
     await ConvexClient.instance.clearAuth();
-    // The native handle clears auth when its cancellation wakes.
     await Future<void>.delayed(const Duration(milliseconds: 50));
     _token = token;
     _authHandle = await ConvexClient.instance.setAuthWithRefresh(

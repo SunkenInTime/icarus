@@ -108,7 +108,6 @@ Offset captionMarkerOrigin(Offset anchor, double devicePixelRatio) {
 class CaptionMarkers extends ConsumerStatefulWidget {
   const CaptionMarkers({required this.transformation, super.key});
 
-  /// The canvas's zoom and pan, which move every marker.
   final TransformationController transformation;
 
   @override

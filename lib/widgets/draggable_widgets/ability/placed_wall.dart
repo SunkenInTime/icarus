@@ -71,13 +71,10 @@ class WallOnScreen {
     return WallOnScreen._(topLeft + anchor, isAttack ? scale : -scale);
   }
 
-  /// Where a saved point is drawn.
   Offset point(Offset saved) => center + saved * _scale;
 
-  /// The saved point drawn at [screen].
   Offset saved(Offset screen) => (screen - center) / _scale;
 
-  /// The icon and every point of [path], on the canvas.
   List<Offset> points(List<Offset> path) => [center, ...path.map(point)];
 }
 
@@ -386,7 +383,6 @@ class _PlacedWallState extends ConsumerState<PlacedWall>
       abilitySize: settings.abilitySize,
       isAttack: mapState.isAttack,
     );
-    // While the selection is dragged, the wall goes with its icon.
     final shift = ref.watch(
       canvasGroupDragProvider.select(
         (drag) => drag != null && drag.ids.contains(ability.id) ? drag.by : null,

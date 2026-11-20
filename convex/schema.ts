@@ -1,4 +1,3 @@
-// convex/schema.ts
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
@@ -435,7 +434,6 @@ export default defineSchema({
       searchField: "searchText",
       filterFields: ["status", "mapData"],
     }),
-  // One row per (post, account) that starred it.
   communityStars: defineTable({
     postId: v.id("communityPosts"),
     // So an account's stars are listed without reading their posts.

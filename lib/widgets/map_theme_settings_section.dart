@@ -450,8 +450,6 @@ class _ProfileContextMenuButtonState
   }
 }
 
-// ─── Profile List Row ─────────────────────────────────────────
-
 class _ProfileListRow extends StatelessWidget {
   const _ProfileListRow({
     required this.title,
@@ -542,8 +540,6 @@ class _ProfileListRow extends StatelessWidget {
   }
 }
 
-// ─── Palette Widgets ──────────────────────────────────────────
-
 class _PaletteSwatches extends StatelessWidget {
   const _PaletteSwatches({required this.palette});
 
@@ -581,8 +577,6 @@ class _Swatch extends StatelessWidget {
     );
   }
 }
-
-// ─── Dialogs ──────────────────────────────────────────────────
 
 Future<String?> _showRenameDialog({
   required BuildContext context,

@@ -75,7 +75,6 @@ class _OpenStrategy extends StrategyProvider {
   Future<void> forceSaveNow(String id) async => saves++;
 }
 
-/// This device's op queue, set by the test.
 class _Queue extends StrategyOpQueueNotifier {
   _Queue(this.initial);
 
@@ -130,7 +129,6 @@ class _SignedOut extends AuthProvider {
       );
 }
 
-/// Signed in as one account, then as [signInAs] says.
 class _Auth extends AuthProvider {
   @override
   AppAuthState build() => _signedInAs('account-a');
@@ -671,9 +669,6 @@ void main() {
 
     testWidgets('hands a capture copies, never the library\'s own drawings',
         (tester) async {
-      // The editor draws this stroke from the library's objects at its own
-      // size. A capture rebuilds paths at 1920x1080; on the same objects,
-      // the editor would show the stroke at the capture's scale.
       CoordinateSystem(playAreaSize: const Size(1600, 900));
       final stroke = FreeDrawing(
         id: 'stroke',

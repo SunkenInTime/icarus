@@ -161,8 +161,6 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
     setState(() {
       _submitting = false;
       _message = error;
-      // These outcomes come back through the error channel but are good
-      // news — present them as info, not failure.
       _messageIsInfo = error == l10n.authMsgSignUpCheckInbox ||
           error == l10n.authMsgSignUpAlreadySent;
     });

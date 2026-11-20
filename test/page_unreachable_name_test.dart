@@ -169,7 +169,6 @@ void main() {
       container.read(strategyPageSessionProvider).activePageId,
       _pageOne.publicId,
     );
-    // The toast closes on its own.
     await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
   });

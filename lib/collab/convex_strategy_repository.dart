@@ -104,7 +104,6 @@ class ConvexStrategyRepository {
         .map(_listedStrategyEntries);
   }
 
-  /// The folders [scope] reaches, read once.
   Future<List<CloudFolderEntry>> fetchFolders({String scope = 'owned'}) async {
     final folders = await _api.folders
         .listTree(scope: ConvexOptional.present(_folderScope(scope)))
@@ -248,7 +247,6 @@ class ConvexStrategyRepository {
         elementFieldLevel: _elementFieldLevel,
       );
 
-  /// The frame and the slices starting at [starts] (see page_slices.dart).
   (
     ConvexQuery<PageGetFrameResult>,
     List<ConvexQuery<PageGetElementSliceResult>>,
@@ -333,7 +331,6 @@ class ConvexStrategyRepository {
         (assembled) {
           final page = _pageSnapshot(assembled);
           final (_, watchers) = _slicedPages[key] ?? (null, 0);
-          // The slices answered: they carry the page from here on.
           if (whole case final stopping?) {
             whole = null;
             unawaited(stopping.cancel());
@@ -430,7 +427,6 @@ class ConvexStrategyRepository {
     return referenced;
   }
 
-  /// The server's MAX_REFERENCED_ASSET_IDS_PER_QUERY.
   static const _referencedIdsBatch = 100;
 
   /// [shareToken]: see [fetchShell]. [forOfflineCopy] asks for the
@@ -952,9 +948,6 @@ class ConvexStrategyRepository {
     );
   }
 
-  /// Everyone besides the owner who can open the target. Owner only.
-  /// The people the target was shared with directly, a page at a time:
-  /// pass the previous page's [ShareMemberPage.nextCursor] as [cursor].
   Future<ShareMemberPage> listShareMembers({
     required String targetType,
     required String targetPublicId,
@@ -1050,7 +1043,6 @@ class ConvexStrategyRepository {
     );
   }
 
-  /// Ends the signed-in user's own access to something shared with them.
   Future<void> leaveShared({
     required String targetType,
     required String targetPublicId,

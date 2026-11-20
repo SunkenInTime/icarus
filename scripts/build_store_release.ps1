@@ -52,7 +52,6 @@ try {
     Write-JsonFileUtf8 -Path $dartDefinesPath -Value $dartDefines
     $flutterBuildArguments += "--dart-define-from-file=$dartDefinesPath"
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments $flutterBuildArguments
-    # Stage the video-export encoder into the build output before packaging.
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(
         "-ExecutionPolicy", "Bypass", "-File", "scripts/fetch_ffmpeg.ps1"
     )

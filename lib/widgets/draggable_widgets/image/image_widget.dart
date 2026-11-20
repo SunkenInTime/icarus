@@ -36,7 +36,6 @@ double _tallestCanvasHeight(BuildContext context, double canvasHeight) {
   return tallest.roundToDouble();
 }
 
-// Full-screen overlay launcher
 void _showImageFullScreenOverlay({
   required BuildContext context,
   required String heroTag,
@@ -105,7 +104,7 @@ class _ImageFullScreenOverlay extends StatelessWidget {
                   padding: const EdgeInsets.all(24.0),
                   child: LayoutBuilder(builder: (context, constraints) {
                     final width = constraints.maxWidth -
-                        100; // typically the screen width
+                        100;
                     final height = width / aspectRatio;
 
                     return Stack(
@@ -273,7 +272,6 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              //Tag container
               width: PlacedImageDimensions.tagWidth,
               decoration: BoxDecoration(
                 color: Color(widget.tagColorValue ?? 0xFFC5C5C5),

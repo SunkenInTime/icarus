@@ -90,7 +90,6 @@ class YoutubeHandler {
     return seconds > 0 ? seconds : null;
   }
 
-  /// The embed page playing [video].
   static Uri embedUri(YoutubeVideo video) {
     return Uri.https(embedHost, '/', {
       'v': video.id,

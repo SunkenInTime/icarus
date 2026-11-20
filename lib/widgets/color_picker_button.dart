@@ -19,7 +19,6 @@ class ColorPickerButton extends ConsumerStatefulWidget {
 
 class _ColorButtonsState extends ConsumerState<ColorPickerButton> {
   final _hoverColor = Colors.white;
-  // final _selectColor = const Color(0xFF2282FF);
 
   Color _currentColor = Colors.transparent;
 

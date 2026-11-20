@@ -415,7 +415,6 @@ void main() {
       final restored = _read(bytes);
       _expectSameContent(restored, page);
 
-      // Saving it again through the merged adapter loses nothing either.
       _expectSameContent(_read(_write(StrategyPageAdapter(), restored)), page);
     });
 

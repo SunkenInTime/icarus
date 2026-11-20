@@ -270,19 +270,6 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     state = newState;
   }
 
-  // void updateLength(int index, double length) {
-  //   final newState = [...state];
-  //   updateLengthHistory(index);
-  //   newState[index].updateLength(length);
-
-  //   final action = UserAction(
-  //       type: ActionType.edit,
-  //       id: newState[index].id,
-  //       group: ActionGroup.ability);
-  //   ref.read(actionProvider.notifier).addAction(action);
-  //   state = newState;
-  // }
-
   void updateRotationHistory(int index) {
     updateGeometryHistory(index);
   }
@@ -292,14 +279,6 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     _pendingEditBefore[state[index].id] =
         ActionObjectState.ability(state[index]);
   }
-
-  // void updateLengthHistory(int index) {
-  //   final newState = [...state];
-
-  //   newState[index].updateLengthHistory();
-
-  //   state = newState;
-  // }
 
   void undoAction(UserAction action) {
     final delta = action.objectDelta;

@@ -31,13 +31,9 @@ String pageCopyRoot(String id) {
   return _uuid.hasMatch(occurrence) ? id.substring(0, at) : id;
 }
 
-/// A fresh id for a copy of [id] on another page.
 String newPageCopyId(String id) =>
     '${pageCopyRoot(id)}$_copyMark${const Uuid().v4()}';
 
-/// The longest root a copy id keeps, URL-encoded, as the server's
-/// (convex/lib/pageCopyId.ts): a longer one would make the op's storage
-/// key too long to keep, so that copy gets a plain id.
 const _maxKeptRootLength = 80;
 
 /// [newPageCopyId], or a plain id when [id]'s root is too long for the copy

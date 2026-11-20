@@ -47,7 +47,7 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
       actions: [
         ShadButton.secondary(
           onPressed: () {
-            Navigator.of(context).pop(); // Close the dialog
+            Navigator.of(context).pop();
           },
           child: Text(l10n.commonCancel),
         ),
@@ -61,9 +61,8 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
                     source: widget.source,
                   );
               if (!context.mounted) return;
-              Navigator.of(context).pop(true); // Close the dialog with success
+              Navigator.of(context).pop(true);
             } else {
-              // Optionally, show an error message if the name is empty
               Settings.showToast(
                 message: l10n.renameStrategyEmptyName,
                 backgroundColor: Settings.tacticalVioletTheme.destructive,
@@ -91,9 +90,8 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
                     );
                 if (!context.mounted) return;
                 Navigator.of(context)
-                    .pop(true); // Close the dialog with success
+                    .pop(true);
               } else {
-                // Optionally, show an error message if the name is empty
 
                 Settings.showToast(
                   message: l10n.renameStrategyEmptyName,
@@ -105,11 +103,3 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
     );
   }
 }
-// How to use it:
-// showDialog(
-//   context: context,
-//   builder: (context) => RenameStrategyDialog(
-//     strategyId: "your_strategy_id",
-//     currentName: "Current Strategy Name",
-//   ),
-// );

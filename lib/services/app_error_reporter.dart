@@ -100,7 +100,6 @@ class AppErrorReporter {
 
   static String? get persistedLogPath => _persistedLogFile?.path;
 
-  /// Waits for every queued write to the persisted log.
   @visibleForTesting
   static Future<void> flushPersistedLog() => _persistedLogWriteQueue;
 
@@ -233,7 +232,6 @@ class AppErrorReporter {
     try {
       appProviderContainer.read(inAppDebugProvider.notifier).addEntry(entry);
     } catch (_) {
-      // Tests and early startup can report logs before the global container exists.
     }
     _queuePersistedLogWrite(entry);
     return entry;
@@ -274,7 +272,6 @@ class AppErrorReporter {
     return buffer.toString();
   }
 
-  /// What a report needs before anything else: which build, on what.
   static List<String> _environmentLines() {
     const flutterVersion = String.fromEnvironment('FLUTTER_VERSION');
     final platform = kIsWeb

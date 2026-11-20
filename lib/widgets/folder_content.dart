@@ -166,8 +166,6 @@ class FolderContent extends ConsumerWidget {
     }
   }
 
-  /// Skeleton -> content (and error transitions) cross-fade instead of
-  /// hard-snapping.
   Widget _crossFade(Widget child) {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 200),

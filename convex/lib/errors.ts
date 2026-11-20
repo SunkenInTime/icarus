@@ -65,9 +65,6 @@ export function notFoundError(entity: string, id: string): ConvexError<ErrorData
   return makeError("NOT_FOUND", `${entity} not found: ${id}`);
 }
 
-/// A change to a page in the trash, refused until the page is restored. The
-/// client matches this text (pageDeletedMessage) to send the change again
-/// once it is.
 export function pageDeletedError(): ConvexError<ErrorData> {
   return makeError("PAGE_DELETED", "This page was deleted");
 }

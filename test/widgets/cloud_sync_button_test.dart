@@ -54,7 +54,6 @@ class _SavingStrategyProvider extends _CloudStrategyProvider {
   }
 }
 
-/// Answers whether the server accepts this build's protocol.
 class _ProtocolRepository extends Fake implements ConvexStrategyRepository {
   _ProtocolRepository({required this.accepts});
 
@@ -395,7 +394,6 @@ ProviderContainer _createConflictContainer({
 Finder _syncButton(String status) =>
     find.byKey(ValueKey('cloud-sync-button-$status'));
 
-/// The one-line meaning the button shows on hover.
 String _syncTooltip(WidgetTester tester) {
   final button = tester.widget<EditorToolbarButton>(
     find.byType(EditorToolbarButton),

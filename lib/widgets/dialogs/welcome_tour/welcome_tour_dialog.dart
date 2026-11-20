@@ -36,7 +36,6 @@ Future<void> showWelcomeTourAtLaunch(BuildContext context) async {
   if (container.read(launchOpensFileOrLinkProvider)) return;
   if (await _updateMayPrompt(container)) return;
 
-  // Let anything the launch opened reach the screen before looking.
   await WidgetsBinding.instance.endOfFrame;
   if (!context.mounted) return;
   if (ModalRoute.of(context)?.isCurrent != true) return;

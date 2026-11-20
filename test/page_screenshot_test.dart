@@ -188,7 +188,6 @@ final _magentaPng = Uint8List.fromList(
   ),
 );
 
-/// Preferences with screenshots set to a transparent background.
 class _TransparentScreenshots extends AppPreferencesNotifier {
   @override
   AppPreferences build() => AppPreferences(
@@ -210,8 +209,6 @@ Future<void> _noThumbnails(
   void Function(String pageId, CaptionExportLayout layout)? onCaptions,
 }) async {}
 
-/// The test font draws every glyph a full em wide, so labels that fit in the
-/// app overflow here; that is the font, not the dialog. Anything else fails.
 void _ignoreTestFontOverflow(WidgetTester tester) {
   for (Object? error; (error = tester.takeException()) != null;) {
     expect('$error', contains('overflowed'));
@@ -352,7 +349,6 @@ void main() {
     expect(decoded.width, CoordinateSystem.screenShotSize.width);
     expect(decoded.height, CoordinateSystem.screenShotSize.height);
     expect(_magentaPixels(png as Uint8List), greaterThan(500));
-    // The capture leaves the editor's coordinate mode as it found it.
     expect(CoordinateSystem.instance.isScreenshot, isFalse);
   });
 
@@ -573,7 +569,6 @@ void main() {
       isTrue,
     );
 
-    // Closed without a shot and opened again: still ticked.
     await tester.tap(find.widgetWithText(ShadButton, 'Cancel'));
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 100));
@@ -607,7 +602,6 @@ void main() {
       () => MockClient((_) => response.future),
     );
     await tester.pump();
-    // The dialog says it is saving while the image is fetched.
     expect(find.text('Saving screenshot'), findsOneWidget);
     expect(CoordinateSystem.instance.isScreenshot, isFalse);
 

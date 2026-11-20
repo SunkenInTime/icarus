@@ -4,10 +4,8 @@ import 'package:supabase/supabase.dart';
 
 /// Where the runner gets its disposable account's access tokens.
 abstract interface class GauntletAuth {
-  /// Signs in and returns the first access token.
   Future<String> signIn();
 
-  /// Returns a fresh access token for the same account.
   Future<String> refresh();
 
   /// The account's identity subject (the JWT `sub`), once signed in.

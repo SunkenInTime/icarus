@@ -266,7 +266,6 @@ export function isUploadPlaceholder(asset: Doc<"imageAssets">): boolean {
   );
 }
 
-/// The image ids a live element or lineup row shows.
 export function referencedAssetIds(
   row: Doc<"elements"> | Doc<"lineups"> | null,
 ): Set<string> {

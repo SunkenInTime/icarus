@@ -123,7 +123,6 @@ List<String> _wrongOutline(SvgHeightVisibility model, List<Offset> outline,
   }
   for (final angle in probes) {
     if (angle <= -half || angle >= half) continue;
-    // The outline point pair the probe falls between, in ray order.
     var after = 0;
     while (after < angles.length && angles[after] < angle) {
       after++;

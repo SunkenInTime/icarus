@@ -20,11 +20,8 @@ class WebCodecsMp4Encoder {
 
   final AppLocalizations _l10n;
 
-  /// Keyframe spacing ceiling, so players can seek within long holds.
   static const _maxKeyFrameIntervalSeconds = 2;
 
-  /// Encoder queue depth at which [addFrame] waits for the encoder to catch
-  /// up, so a fast renderer cannot pile up frames in memory.
   static const _maxEncodeQueueSize = 8;
 
   /// Whether this browser can encode H.264 at this size, frame rate, and
@@ -56,7 +53,6 @@ class WebCodecsMp4Encoder {
   int _framesEncoded = 0;
   int _framesSinceKeyFrame = 0;
 
-  /// Sum of every [addFrame] duration, so rounding never accumulates.
   int _plannedMicros = 0;
 
   final List<_EncodedSample> _samples = [];
@@ -170,9 +166,6 @@ class WebCodecsMp4Encoder {
             duration: _timestampOf(index + 1) - timestamp,
           ),
         );
-        // A held page (a run longer than one frame) opens on a keyframe so it
-        // starts crisp and seeks cleanly. Single-frame runs are transition
-        // frames; keying each of them would spend the bitrate on I-frames.
         final keyFrame = index == 0 ||
             (i == 0 && repeats > 1) ||
             _framesSinceKeyFrame >= _maxKeyFrameIntervalSeconds * _fps;
@@ -193,7 +186,6 @@ class WebCodecsMp4Encoder {
     _checkRunning();
   }
 
-  /// Flushes the encoder and returns the finished .mp4 bytes.
   Future<Uint8List> finish() async {
     final encoder = _checkRunning();
     try {
@@ -219,9 +211,6 @@ class WebCodecsMp4Encoder {
       final sample = _samples[i];
       final nextFrame =
           i + 1 < _samples.length ? _samples[i + 1].frame : _framesEncoded;
-      // The MP4 has no composition offsets, so chunks must arrive in
-      // presentation order. Encoders that reorder (B-frames) fail loudly
-      // rather than produce a video that plays frames out of order.
       if (nextFrame <= sample.frame) {
         throw VideoExportException(_l10n.videoExportEncoderOutOfOrder);
       }
@@ -243,8 +232,6 @@ class WebCodecsMp4Encoder {
     _wakeWaiter();
   }
 
-  /// Media ticks per second. 1000 ticks per frame keeps every frame duration
-  /// an exact integer.
   int get _timescale => _fps * 1000;
 
   int _timestampOf(int frame) =>
@@ -293,7 +280,6 @@ class WebCodecsMp4Encoder {
         final config = _copyBufferSource(description);
         final previous = _avcDecoderConfig;
         if (previous != null && !_sameBytes(previous, config)) {
-          // The MP4 carries one avcC, which every sample must decode with.
           throw StateError('The encoder changed its H.264 parameter sets.');
         }
         _avcDecoderConfig = config;
@@ -339,19 +325,12 @@ class WebCodecsMp4Encoder {
     }
   }
 
-  /// Picks a bitrate for [bitrate] == null: 8 Mbps at 1080p30, the desktop
-  /// Max preset's H.264 rate, scaled by pixel count. 60 fps gets 1.5x rather
-  /// than 2x: consecutive frames differ less, and held pages cost almost
-  /// nothing either way.
   static int _defaultBitrate(int width, int height, int fps) {
     final pixelScale = width * height / (1920 * 1080);
     final rateScale = fps > 30 ? 1.5 : 1.0;
     return math.max(1000000, (8000000 * pixelScale * rateScale).round());
   }
 
-  /// The first H.264 profile this browser accepts at this size, or null.
-  /// High needs a hardware encoder in Chrome; its software encoder (OpenH264)
-  /// only does Constrained Baseline, so fall back through Main to that.
   static Future<_VideoEncoderConfig?> _supportedConfig({
     required int width,
     required int height,

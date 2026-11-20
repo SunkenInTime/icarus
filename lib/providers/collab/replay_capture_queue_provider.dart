@@ -17,7 +17,6 @@ import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:uuid/uuid.dart';
 
-/// What stopped a capture on this device.
 enum ReplayCaptureStuckCause {
   /// Its progress couldn't be stored.
   storage,
@@ -55,10 +54,8 @@ class ReplayCaptureQueueState {
   /// stored), by id, with what stopped them. They wait for Retry.
   final Map<String, ReplayCaptureStuckCause> stuck;
 
-  /// Whether every capture is readable and its progress stored.
   bool get isReliable => unreadable == 0 && stuck.isEmpty;
 
-  /// Whether [capture] waits for the user: refused, or stopped here.
   bool needsUser(ReplayCaptureRecord capture) =>
       capture.isFailed || stuck.containsKey(capture.id);
 
@@ -114,7 +111,6 @@ final replayCaptureQueueProvider =
 class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
   static const _maxOpsPerBatch = 40;
 
-  /// How long a capture still waiting is left before it is sent again.
   static Duration retryDelay = const Duration(seconds: 15);
 
   bool _draining = false;
@@ -149,7 +145,6 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
     ref.listen<AsyncValue<bool>>(convexConnectionProvider, (previous, next) {
       if (previous?.valueOrNull != true && next.valueOrNull == true) _kick();
     });
-    // The server accepts this build again.
     ref.listen<bool>(clientUpgradeRequiredProvider, (previous, next) {
       if (previous == true && !next) _kick();
     });
@@ -273,14 +268,12 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
   }
 
   bool _canSend() {
-    // The server refuses this build: nothing goes until that clears.
     if (ref.read(clientUpgradeRequiredProvider)) return false;
     try {
       return ref.read(cloudMediaAccountIdProvider) != null &&
           ref.read(authProvider).isConvexUserReady &&
           ref.read(convexConnectionSnapshotProvider);
     } catch (_) {
-      // No cloud client or sign-in to ask: no cloud in this build.
       return false;
     }
   }
@@ -610,7 +603,6 @@ class ReplayCaptureQueue extends Notifier<ReplayCaptureQueueState> {
       try {
         await _save(c.copyWith(uncertain: true));
       } on _Discarded {
-        // Discarded meanwhile: nothing to note.
       }
     }
     return false;
@@ -685,12 +677,10 @@ class _Discarded implements Exception {
   const _Discarded();
 }
 
-/// Another account was signed in while a capture was being sent.
 class _AccountChanged implements Exception {
   const _AccountChanged();
 }
 
-/// Writing a capture's progress to its box failed.
 class _StorageFailed implements Exception {
   const _StorageFailed(this.error, this.stackTrace);
 

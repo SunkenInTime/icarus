@@ -149,7 +149,6 @@ void main() {
     var furthest = 0.0;
     for (var i = 0; i < steps; i++) {
       final from = piece.at(i / steps), to = piece.at((i + 1) / steps);
-      // The curve half way along the step, against the step's middle.
       furthest = math.max(
         furthest,
         (piece.at((i + 0.5) / steps) - (from + to) / 2).distance,

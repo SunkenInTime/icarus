@@ -649,7 +649,6 @@ describe("share members", () => {
   });
 
   describe("at a link's scale", () => {
-    /** Lets [count] people into strategy [publicId] through link [token]. */
     async function letIn(
       t: TestConvexForDataModelAndIdentity<DataModel>,
       publicId: string,

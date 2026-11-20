@@ -197,7 +197,6 @@ void main() {
           expect(copy.keptStrategyIds(asked), isEmpty);
           if (next != null) expect(copy.keptStrategyIds(next), isEmpty);
 
-          // The same account signing back in writes as usual.
           final again = _beginSession('account-a');
           await copy.writeShell(again, shellAnswer(['a']),
               askedAt: _at(3), arrivedAt: _at(3));

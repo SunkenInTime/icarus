@@ -30,9 +30,9 @@ const _iidProgressSink = '{04b0f1a7-9490-44bc-96e1-4296a31252e2}';
 const _recycleIfPossible = 0x80;
 
 const _sOk = 0;
-const _eAbort = -2147467260; // E_ABORT
-const _eNoInterface = -2147467262; // E_NOINTERFACE
-const _eFail = -2147467259; // E_FAIL
+const _eAbort = -2147467260;
+const _eNoInterface = -2147467262;
+const _eFail = -2147467259;
 
 /// What the shell told the progress sink. One recycle runs per isolate, so
 /// these belong to it alone.

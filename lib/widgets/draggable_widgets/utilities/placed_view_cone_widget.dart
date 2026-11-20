@@ -62,7 +62,6 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
     localLength = widget.length > 0 ? widget.length : 50;
   }
 
-  /// Rotate a point around an origin by a given angle
   Offset rotateOffset(Offset point, Offset origin, double angle) {
     final dx = point.dx - origin.dx;
     final dy = point.dy - origin.dy;
@@ -105,7 +104,6 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
       localLength = utilityRef.length > 0 ? utilityRef.length : 50;
     }
 
-    // Get the view cone utility to access its methods
     final viewConeUtility = widget.utility.viewCone;
     final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1.0;
     final settings = ref.watch(strategySettingsProvider);
@@ -114,8 +112,6 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
       isAttack: widget.isAttack,
     );
 
-    // Calculate anchor point - bottom center of the cone, based on current length
-    // This is exactly like how abilities calculate their anchor points
     final anchorPoint = viewConeUtility.getAnchorPoint();
 
     final utilityChild = viewConeUtility.createWidget(
@@ -145,16 +141,13 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
         rotation: displayRotation,
         isDragging: isDragging,
         origin: anchorPoint,
-        // Position the rotation handle at the top (where the cone extends to)
         buttonTop: anchorPoint.dy - localLength! - 7.5,
         buttonLeft: anchorPoint.dx - 7.5,
         onPanStart: (details) {
-          // Save rotation history for undo/redo
           ref
               .read(utilityProvider.notifier)
               .updateRotationHistory(_currentIndex());
 
-          // Get the global position of the anchor point
           final box = context.findRenderObject() as RenderBox;
           final scaledAnchor = anchorPoint.scale(
             coordinateSystem.scaleFactor,
@@ -168,7 +161,6 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
           final currentPosition = details.globalPosition;
           final currentPositionNormalized = currentPosition - rotationOrigin;
 
-          // Calculate rotation angle - same as PlacedAbilityWidget
           double currentAngle = math.atan2(
             currentPositionNormalized.dy,
             currentPositionNormalized.dx,
@@ -179,12 +171,10 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
             isAttack: widget.isAttack,
           );
 
-          // Calculate new length from distance
           double newLength =
               coordinateSystem.normalize(currentPositionNormalized.distance) /
                   ref.watch(screenZoomProvider);
 
-          // Clamp length to valid range
           newLength = newLength.clamp(
             ViewConeUtility.minLength,
             ViewConeUtility.maxLength,

@@ -59,7 +59,6 @@ export function elementPayloadForClient(
   return acceptsPictureIds ? known : withoutPictureId(known);
 }
 
-/// [element] as a client sees it (see elementPayloadForClient).
 export function serializeElement(
   strategyPublicId: string,
   pagePublicId: string,

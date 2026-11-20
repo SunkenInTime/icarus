@@ -154,9 +154,6 @@ void main() {
         final annexBPath = '${dir.path}${Platform.pathSeparator}in.h264';
         final outPath = '${dir.path}${Platform.pathSeparator}out.mp4';
 
-        // No B-frames (the muxer writes no composition offsets), an access
-        // unit delimiter before every frame so the stream splits cleanly, and
-        // an IDR every 5 frames so stss has several entries.
         final encode = await Process.run('ffmpeg', [
           '-v', 'error', '-y', //
           '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=10',

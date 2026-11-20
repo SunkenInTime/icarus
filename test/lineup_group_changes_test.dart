@@ -125,8 +125,6 @@ void main() {
     expect(forkIds.intersection(originalIds), isEmpty);
     expect(forkIds, hasLength(originalIds.length));
 
-    // The fork is wired like the original: three lineups on one landing,
-    // each marker naming its own spot.
     expect(fork.links.map((link) => link.landingId).toSet(), {
       fork.landings.single.id,
     });
@@ -135,7 +133,6 @@ void main() {
     }
     expect(fork.landings.single.ability.lineUpID, fork.landings.single.id);
 
-    // And otherwise the same: nothing a user sees differs.
     String described(LineUpGraph graph) => [
           for (final link in graph.links)
             '${link.name}|${link.notes}|'

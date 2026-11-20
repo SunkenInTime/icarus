@@ -73,7 +73,6 @@ export 'package:icarus/strategy/strategy_models.dart'
 final strategyProvider =
     NotifierProvider<StrategyProvider, StrategyState>(StrategyProvider.new);
 
-/// What became of copying an item to the next or previous page.
 enum PageCopyResult {
   copied,
 
@@ -681,7 +680,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     final changed =
         _partsChangedIn == strategyId ? {..._partsChanged} : <_StrategyPart>{};
 
-    // The server's, as this device knows it holds them.
     final header = knownStrategyHeader(ref, snapshot.header);
     final queue = ref.read(strategyOpQueueProvider);
     final queueNotifier = ref.read(strategyOpQueueProvider.notifier);
@@ -862,10 +860,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<Directory> setStorageDirectory(String strategyID) async {
-    // final strategyID = state.id;
     final directory = await strategyFoldersRoot();
-
-    // Create a custom directory inside the application support directory.
 
     final customDirectory =
         Directory(strategyFolderPath(directory.path, strategyID));
@@ -896,7 +891,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  // Switch active page: flush old page first, then hydrate new
   Future<void> setActivePage(String pageID) async {
     await ref.read(strategyPageSessionProvider.notifier).setActivePage(pageID);
     state = state.copyWith(activePageId: pageID);
@@ -986,7 +980,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
   }
 
-  // Add these inside StrategyProvider
   Future<void> setActivePageAnimated(String pageID,
       {PageTransitionDirection? direction,
       Duration duration = kPageTransitionDuration}) async {
@@ -1481,7 +1474,6 @@ class StrategyProvider extends Notifier<StrategyState> {
         );
   }
 
-  /// The local strategy's pages in order, or none.
   List<StrategyPage> _orderedLocalPages() {
     final strategyId = state.strategyId;
     if (strategyId == null || !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) {
@@ -1534,7 +1526,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  /// Whether [links] holds one of [lineUps]' lineups, or a copy of it.
   static bool _hasAnyOf(Iterable<String> links, LineUpGraph lineUps) {
     final roots = {for (final link in lineUps.links) pageCopyRoot(link.id)};
     return links.any((id) => roots.contains(pageCopyRoot(id)));
@@ -1941,7 +1932,6 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
-    // Flush current page so its edits are not lost
     await _syncCurrentPageToHive();
 
     final strategyId = state.strategyId;
@@ -1994,13 +1984,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  /// Whether the server can't answer now: offline, or the connection down.
   bool _cloudCannotAnswer() {
     try {
       return ref.read(cloudOfflineProvider) ||
           !ref.read(convexConnectionSnapshotProvider);
     } catch (_) {
-      // No session or client to ask (tests that never connect).
       return false;
     }
   }
@@ -2181,7 +2169,6 @@ class StrategyProvider extends Notifier<StrategyState> {
         );
       }
 
-      // We clear previous data to avoid artifacts when loading a new strategy
       final migratedStrategy =
           StrategyMigrator.migrateToCurrentVersion(newStrat);
 
@@ -2222,7 +2209,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     });
   }
 
-  /// The page settings a new strategy starts with: the user's defaults.
   StrategySettings newStrategySettings() {
     final appPreferences = ref.read(appPreferencesProvider);
     return StrategySettings(
@@ -2646,13 +2632,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
     _requireLocalLibrary('save');
-    // final drawingData = ref.read(drawingProvider).elements;
-    // final agentData = ref.read(agentProvider);
-    // final abilityData = ref.read(abilityProvider);
-    // final textData = ref.read(textProvider);
-    // final mapData = ref.read(mapProvider);
-    // final imageData = ref.read(placedImageProvider).images;
-    // final utilityData = ref.read(utilityProvider);
     final dirtyMarksSaved =
         ref.read(strategySaveStateProvider.notifier).dirtyMarks;
     await _syncCurrentPageToHive();

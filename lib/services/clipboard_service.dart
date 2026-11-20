@@ -9,7 +9,6 @@ import 'package:icarus/services/browser_paste.dart';
 import 'package:image/image.dart' as img;
 import 'package:pasteboard/pasteboard.dart';
 
-/// A picture read from the clipboard.
 class ClipboardImage {
   ClipboardImage(this.bytes, {required this.name, Future<Uint8List>? saved})
       : saved = saved ?? pngOfBitmap(bytes);
@@ -107,7 +106,6 @@ class ClipboardBusyException implements Exception {}
 class ClipboardService {
   static const _name = 'Clipboard File';
 
-  /// What to tell someone when the clipboard stayed busy.
   static String busyMessage(AppLocalizations l10n) =>
       l10n.serviceMsgClipboardBusy;
 
@@ -150,7 +148,6 @@ class ClipboardService {
     final trimmed = clipboardFile.trim();
     if (trimmed.isEmpty) return false;
 
-    // Handle both paths and URIs by just grabbing the "basename".
     final lastSlash = trimmed.lastIndexOf('/');
     final lastBackslash = trimmed.lastIndexOf('\\');
     final cutIndex =

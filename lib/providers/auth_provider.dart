@@ -317,7 +317,6 @@ abstract class AuthProviderConvexApi {
   /// Whether the Convex socket is connected right now.
   bool get isConnected;
 
-  /// Each change of [isConnected].
   Stream<bool> get connectedChanges;
   Future<void> clearAuth();
   Future<bool> reconnect();
@@ -681,8 +680,6 @@ class AuthProvider extends Notifier<AppAuthState> {
     debugOfflineRetryDelay = null;
   }
 
-  /// How long an offline session waits before setup tries again: 5 s,
-  /// doubling to a minute.
   static Duration offlineRetryDelay(int attempt) {
     final debugDelay = debugOfflineRetryDelay;
     if (debugDelay != null) return debugDelay(attempt);

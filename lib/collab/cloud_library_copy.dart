@@ -57,7 +57,6 @@ class CloudCopyScope {
   final String accountId;
   final int session;
 
-  /// Every key of this scope's records starts with this.
   String get storageKeyPrefix => '${Uri.encodeComponent(deploymentUrl)}|'
       '${Uri.encodeComponent(accountId)}|';
 

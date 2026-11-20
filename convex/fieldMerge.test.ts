@@ -134,8 +134,6 @@ async function lineup(user: Harness, id: string): Promise<Row> {
   return row!;
 }
 
-// ---------------------------------------------------------------- elements
-
 type AgentData = Record<string, unknown>;
 
 function agentData(overrides: AgentData = {}): AgentData {
@@ -546,7 +544,6 @@ describe("element field merge", () => {
       sortIndex: 1,
       isAttack: false,
     });
-    // A teammate moves the agent to page 2.
     await applyOne(teammate, "teammate", {
       opId: nextOpId(),
       type: "element.patch",
@@ -566,8 +563,6 @@ describe("element field merge", () => {
     });
   });
 });
-
-// ------------------------------------------------------------ lineup groups
 
 const twoLinks: TestLineupGroup = {
   origins: [{ id: "o1" }],
@@ -712,7 +707,6 @@ describe("lineup group merge by item", () => {
   test("a lineup on a spot a teammate removed is refused as a merge that cannot stand", async () => {
     const { me, teammate } = await createHarness();
     await addGroup(me);
-    // The teammate removes lineup two and its landing.
     await applyOne(
       teammate,
       "teammate",
@@ -723,7 +717,6 @@ describe("lineup group merge by item", () => {
       ),
     );
 
-    // Meanwhile I aimed a new lineup at that landing.
     const added: TestLineupGroup = {
       origins: [...twoLinks.origins, { id: "o2" }],
       landings: twoLinks.landings,

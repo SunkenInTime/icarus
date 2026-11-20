@@ -290,7 +290,6 @@ mod tests {
 
     #[test]
     fn a_recording_that_ends_mid_spin_ends_the_move() {
-        // A lone write while it turns, then the recording stops.
         let times = [burst(390_000, 4), burst(391_500, 1)].concat();
 
         assert_eq!(moves_of(times, &LOTUS, 395_000), [(390_000, 395_000)]);

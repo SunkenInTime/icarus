@@ -85,7 +85,6 @@ class SvgHeightMapTransform {
   static final _floors = Expando<(Float64List, Path)>();
 }
 
-/// Compatibility accessors for Split-specific tests and audit tools.
 class SplitSvgMapTransform {
   const SplitSvgMapTransform._();
 

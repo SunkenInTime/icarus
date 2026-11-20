@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 class CoordinateSystem {
-  // System parameters
 
   CoordinateSystem._({required Size playAreaSize})
       : _playAreaSize = playAreaSize;
@@ -27,7 +26,6 @@ class CoordinateSystem {
   static CoordinateSystem _instance =
       CoordinateSystem._(playAreaSize: screenShotSize);
 
-  // Use screenshot dimensions when isScreenshot is true; otherwise use play area size
   Size get _effectiveSize => isScreenshot ? screenShotSize : _playAreaSize;
 
   Size get effectiveSize => _effectiveSize;
@@ -230,15 +228,12 @@ class CoordinateSystem {
   /// [virtualLengthToWorld] without an instance.
   static double virtualLengthInWorld(double virtualLength) =>
       virtualLength * (worldHeight / _virtualBaseHeight);
-  // Get the scale factor based on screen height
   double get _scaleFactor => _effectiveSize.height / _baseHeight;
 
   double get scaleFactor => _scaleFactor;
-  // Scale any dimension based on height
   double scale(double size) => (size * _scaleFactor);
 
   double normalize(double value) => (value / _scaleFactor);
-  // Scale a size maintaining aspect ratio
   Size scaleSize(Size size) =>
       Size(size.width * _scaleFactor, size.height * _scaleFactor);
 
@@ -246,7 +241,6 @@ class CoordinateSystem {
     return oldCoordinate;
   }
 
-  // Convenience method to wrap a widget with scaled dimensions
   Widget scaleWidget({required Widget child, required Size originalSize}) {
     Size scaledSize = scaleSize(originalSize);
     return SizedBox(

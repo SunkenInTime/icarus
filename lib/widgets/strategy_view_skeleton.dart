@@ -418,7 +418,6 @@ class _FloatingControlSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Mirrors EditorToolbar: five 32px controls in one 12px card.
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(

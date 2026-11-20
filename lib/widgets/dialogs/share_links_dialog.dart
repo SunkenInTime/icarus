@@ -228,7 +228,6 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         );
         if ((joins[token]?.joined ?? 0) == 0) break;
       } catch (_) {
-        // Not known this time; ask again.
       }
       if (!mounted) return;
       setState(() => _removingFrom.add(token));

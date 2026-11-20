@@ -128,7 +128,6 @@ class _CustomShapeColorItems extends ConsumerWidget {
   }
 }
 
-/// What a menu calls a color from the color library.
 String colorLibraryEntryLabel(AppLocalizations l10n, ColorLibraryEntry entry) {
   if (!entry.isCustom) {
     final color = entry.color.toARGB32();
@@ -146,7 +145,6 @@ String colorLibraryEntryLabel(AppLocalizations l10n, ColorLibraryEntry entry) {
   return entry.isCustom ? l10n.shapeToolsSavedColor(hex) : '#$hex';
 }
 
-/// The dot of color beside a color in a right-click menu.
 class MenuColorSwatch extends StatelessWidget {
   const MenuColorSwatch({super.key, required this.color});
 

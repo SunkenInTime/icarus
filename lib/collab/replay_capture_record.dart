@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:uuid/uuid.dart';
 
-/// Why a replay capture couldn't be saved.
 enum CaptureFailureKind {
   /// The server refused it. Retry sends it again under new op ids.
   refused,
@@ -106,7 +105,6 @@ class ReplayCaptureRecord {
 
   bool get isFailed => failure != null;
 
-  /// Whether some of it may already be in the cloud library.
   bool get mayHaveLanded =>
       uncertain || pageLanded || landedItemOpIds.isNotEmpty;
 

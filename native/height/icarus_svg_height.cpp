@@ -427,7 +427,6 @@ private:
     heapKeys[i] = key;
   }
 
-  // Removes the nearest node and its key.
   const Node *pop(double &popped) {
     const Node *top = heapNodes[0];
     popped = heapKeys[0];
@@ -935,7 +934,7 @@ int failure(Handle &handle, ISHResult *out, int status,
   }
   return status;
 }
-} // namespace
+}
 
 extern "C" {
 void *ish_open(const double *records, uint32_t edgeCount, uint32_t wallCount,

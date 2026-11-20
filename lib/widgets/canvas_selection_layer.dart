@@ -441,7 +441,6 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     _clickPointer = null;
     final down = _clickDown;
     if (_pressBecameDrag || down == null) return;
-    // A press that moved is a drag of something, not a click.
     if ((event.position - down).distance > kTouchSlop) return;
     _click(event);
   }

@@ -1619,7 +1619,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         _drawnWorkByKey[key]?.drawn.sortIndex ??
         _hydratedBaseByEntityKey[key]?.sortIndex;
 
-    /// Hands out sortIndexes after the page's highest for [kind].
     int Function() freshSortIndexes(EntitySyncKeyKind kind) {
       bool onPage(EntitySyncKey key) =>
           key.pageId == pageId && key.kind == kind;
@@ -2183,7 +2182,6 @@ class _DrawnWork {
   /// so an older answer arriving late can't take it off the page.
   final int? landedAt;
 
-  /// What the canvas shows.
   _NormalizedEntity get drawn => layers.last.entity;
 }
 

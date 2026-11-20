@@ -171,7 +171,6 @@ void main() {
     );
     expect(await valorantFile.exists(), isTrue);
 
-    // The cache folder leads into Valorant's folder.
     final cacheSupport = await Directory(p.join(root.path, 'cache')).create();
     await Link(p.join(cacheSupport.path, 'replay_cache')).create(demos.path);
     final cacheLinked = ReplayFiles(

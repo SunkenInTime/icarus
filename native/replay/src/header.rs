@@ -163,7 +163,6 @@ pub fn read_preamble(path: &Path) -> Result<Preamble, ReplayError> {
     }
 }
 
-/// The probe for one file.
 pub fn probe(path: &Path) -> Result<Probe, ReplayError> {
     Ok(Probe::from_preamble(&read_preamble(path)?))
 }

@@ -202,8 +202,6 @@ class _InsetShadowPainter extends BoxPainter {
   }
 
   void _paintShadow(Canvas canvas, Rect rect, RRect rrect, InsetShadow shadow) {
-    // The hole is the box itself, moved by the offset and shrunk by the
-    // spread; whatever it no longer covers inside the clip is the shadow.
     final hole = rrect.shift(shadow.offset).deflate(shadow.spreadRadius);
     // Extend the filled area past the clip so the blur never fades at the
     // box edge, only at the hole edge.

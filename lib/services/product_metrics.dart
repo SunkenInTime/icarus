@@ -24,8 +24,6 @@ class ProductMetrics {
   void _send(String event, Map<String, Object> properties) =>
       unawaited(_capture(event, properties));
 
-  // Cloud adoption.
-
   /// A sign-in that finished: [method] is `discord` or `email`; [outcome]
   /// is `success` or `failed`.
   void signIn({required String method, required bool succeeded}) =>
@@ -67,8 +65,6 @@ class ProductMetrics {
         'strategies': countBucket(total),
       });
 
-  // Sync health.
-
   /// Conflicts told to the user at once: how many, and the first one's
   /// reason ([reason] is a fixed code, see [syncReason]).
   void conflictShown({required int count, required String reason}) =>
@@ -101,8 +97,6 @@ class ProductMetrics {
         'ended': ended,
         'queued_changes': countBucket(queuedChanges),
       });
-
-  // Working together.
 
   /// A share link made: [role] `viewer` or `editor`; [target] `strategy` or
   /// `folder`.
@@ -137,7 +131,6 @@ String countBucket(int count) => switch (count) {
       _ => '200+',
     };
 
-/// [people] other people present, as a bucket.
 String peopleBucket(int people) => switch (people) {
       <= 0 => '0',
       1 => '1',
@@ -146,7 +139,6 @@ String peopleBucket(int people) => switch (people) {
       _ => '5+',
     };
 
-/// [duration] as a bucket.
 String durationBucket(Duration duration) {
   final minutes = duration.inMinutes;
   if (minutes < 1) return '<1m';

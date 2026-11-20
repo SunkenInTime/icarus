@@ -41,7 +41,6 @@ class FavoriteAgentsProvider extends Notifier<Set<AgentType>> {
       try {
         favorites.add(AgentType.values.byName(key));
       } catch (_) {
-        // Keep local settings resilient to stale/invalid keys.
       }
     }
     return favorites;

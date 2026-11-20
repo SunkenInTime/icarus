@@ -11,7 +11,6 @@ import 'package:icarus/services/text_input_trace.dart';
 
 const _codec = JSONMethodCodec();
 
-/// Answers every message with [reply] and remembers what reached it.
 class _FakeMessenger implements BinaryMessenger {
   _FakeMessenger({this.reply});
 

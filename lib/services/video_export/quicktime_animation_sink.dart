@@ -8,18 +8,6 @@ import 'package:icarus/services/video_export/quicktime_animation_encoder.dart';
 import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/services/video_export/video_frame_sink.dart';
 
-/// Transparent video, on desktop and in the browser alike: frames become a
-/// lossless QuickTime Animation .mov (see [QuickTimeAnimationEncoder]),
-/// encoded in Dart as they arrive.
-///
-/// The video is constant frame rate, as editors expect: each frame repeats at
-/// [fps] for its duration. A repeat that changes nothing costs a few bytes,
-/// and a keyframe every two seconds keeps seeking quick. The last frame is a
-/// keyframe too: Clipchamp ends a QuickTime Animation clip at its last
-/// keyframe, and would cut off whatever followed it.
-///
-/// With an [outputPath] (desktop) the finished file is written there and
-/// [finish] returns null; without one (the browser) [finish] returns it.
 class QuickTimeAnimationSink implements VideoFrameSink {
   QuickTimeAnimationSink({
     required this.fps,
@@ -46,7 +34,6 @@ class QuickTimeAnimationSink implements VideoFrameSink {
   int _framesExpected = 0;
   int _framesAdded = 0;
 
-  /// Sum of every [addFrame] duration, so rounding never accumulates.
   int _plannedMicros = 0;
   bool _cancelled = false;
 
@@ -60,7 +47,6 @@ class QuickTimeAnimationSink implements VideoFrameSink {
     _checkNotCancelled();
     _framesExpected = totalFrames;
     _encoder = QuickTimeAnimationEncoder(width: width, height: height);
-    // 1000 ticks a frame keeps every duration an exact integer.
     _muxer = MovAnimationMuxer(
       width: width,
       height: height,
@@ -107,15 +93,11 @@ class QuickTimeAnimationSink implements VideoFrameSink {
       onProgress?.call(1);
       return video;
     }
-    // Written beside the destination and renamed over it, so a failed or
-    // cancelled write never damages a video already there (as
-    // FfmpegVideoEncoder does).
     final partial = File('$path.icarus-partial.mov');
     Future<void> removePartial() async {
       try {
         if (await partial.exists()) await partial.delete();
       } on Object {
-        // Best effort only.
       }
     }
 
@@ -125,8 +107,6 @@ class QuickTimeAnimationSink implements VideoFrameSink {
       await removePartial();
       throw VideoExportException(l10n.videoExportWriteFailed('$error'));
     }
-    // A cancel that arrived during the write still wins: the rename is the
-    // only step that touches the destination.
     if (_cancelled) {
       await removePartial();
       throw VideoExportCancelled();

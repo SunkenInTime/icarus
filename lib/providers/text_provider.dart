@@ -80,7 +80,6 @@ class TextProvider extends Notifier<List<PlacedText>> {
 
     newState[index].updatePosition(position);
 
-    //Moving foward
     final temp = newState.removeAt(index);
 
     final action = UserAction(

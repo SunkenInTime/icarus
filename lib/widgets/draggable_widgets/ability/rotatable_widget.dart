@@ -217,39 +217,3 @@ class _RotatableWidgetState extends ConsumerState<RotatableWidget>
     );
   }
 }
-// }
-// class RotatableWidget extends StatefulWidget {
-//   final Widget child;
-//   final double rotation;
-//   final Offset origin;
-//   final Function(DragUpdateDetails details) onPanUpdate;
-//   final Function(DragStartDetails details) onPanStart;
-
-//   final Function(DragEndDetails details) onPanEnd;
-//   final bool isDragging;
-//   final double? buttonLeft;
-//   final double? buttonTop;
-//   RotatableWidget({
-//     super.key,
-//     required this.child,
-//     required this.rotation,
-//     required this.onPanUpdate,
-//     required this.onPanStart,
-//     required this.onPanEnd,
-//     required this.origin,
-//     required this.isDragging,
-//     this.buttonLeft,
-//     this.buttonTop,
-//   });
-//   bool isHovered = false;
-
-//   @override
-//   State<RotatableWidget> createState() => _RotatableWidgetState();
-// }
-
-// class _RotatableWidgetState extends State<RotatableWidget> {
-//   @override
-//   Widget build(BuildContext context) {
-
-//   }
-// }

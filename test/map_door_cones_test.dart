@@ -21,17 +21,14 @@ Map<String, dynamic> _json(MapValue map, bool isAttack) =>
 
 final _models = <(MapValue, bool, bool), SvgHeightVisibility>{};
 
-/// Every map with a door.
 final _doorMaps = {for (final door in mapDoors) door.map};
 
-/// The model of [map] on a side, with or without its doors.
 SvgHeightVisibility _model(MapValue map, bool isAttack, {bool doors = true}) =>
     _models[(map, isAttack, doors)] ??= SvgHeightVisibility.fromJson(
       _json(map, isAttack),
       doorWalls: doors ? mapDoorWalls(map, isAttack: isAttack) : const [],
     );
 
-/// [door]'s rest line in the model of its map on a side.
 (Offset, Offset) _lineInModel(MapDoor door, bool isAttack) {
   final transform = SvgHeightMapTransform.forMap(door.map);
   Offset inModel(Offset world) => transform.sourceFromSideWorld(

@@ -94,7 +94,6 @@ void main() {
     expect(store.readPage(_scope, 'strategy', 'a'), isNotNull);
     expect(refresher.kept, ['strategy']);
 
-    // A teammate's edit to page a arrives live.
     transport.pushPage('a', [agentRow('agent', 'a', revision: 2, x: 9)]);
     await _settle();
     expect(
@@ -102,7 +101,6 @@ void main() {
       2,
     );
 
-    // Switching to page b reads it, and keeps it.
     final b = await remote().fetchPage('b');
     expect(b.fromCopy, isFalse);
     await remote().setActivePage('b', fetched: b);

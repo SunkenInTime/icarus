@@ -31,7 +31,6 @@ const paranoiaCloudPayloadVersion = 2;
 /// they never change.
 const customCircleCloudPayloadVersion = 3;
 
-/// The newest payload version this build reads.
 const newestReadableCloudPayloadVersion = customCircleCloudPayloadVersion;
 
 /// Element [payload] as this build draws it on [map]: a Paranoia at its

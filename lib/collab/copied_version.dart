@@ -18,7 +18,6 @@ CopiedVersion? copiedVersionOf(ConvexObject answer) {
   return copiedVersionFrom(header, contentVersion.toInt());
 }
 
-/// The version of a strategy whose header reads [header].
 CopiedVersion copiedVersionFrom(ConvexObject header, int contentVersion) => (
       header: canonicalCloudJsonEncode(
         jsonDecode(jsonEncode(header.toDart())),

@@ -2,32 +2,6 @@
 
 import 'package:flutter/material.dart';
 
-// //Add this CustomPaint widget to the Widget Tree
-// CustomPaint(
-//     size = Size(558, 445),
-//     painter = RPSCustomPainter(),
-// )
-
-// Color shadeColor(Color color, double amount) {
-//   // amount < 0 => darken, amount > 0 => lighten, range -1.0 to 1.0
-//   assert(amount >= -1.0 && amount <= 1.0);
-//   if (amount == 0) return color;
-
-//   final target = amount > 0 ? Colors.white : Colors.black;
-//   final t = amount.abs();
-
-//   int mix(int channel, int mixWith) =>
-//       (channel + ((mixWith - channel) * t)).round().clamp(0, 255);
-
-//   return Color.fromARGB(
-//     color.alpha,
-//     mix(color.red, target.red),
-//     mix(color.green, target.green),
-//     mix(color.blue, target.blue),
-//   );
-// }
-
-//Copy this CustomPainter code to the Bottom of the File
 class CustomFolderPainter extends CustomPainter {
   final Color strokeColor;
   final Color backgroundColor;
@@ -38,7 +12,6 @@ class CustomFolderPainter extends CustomPainter {
   });
   @override
   void paint(Canvas canvas, Size size) {
-    // Calculate scale factors based on original size (558x445)
     double scaleX = size.width / 558;
     double scaleY = size.height / 445;
 
@@ -90,7 +63,6 @@ class CustomFolderPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    //Change this to purpleAccent when hovered
     paint1Stroke.color = strokeColor;
     canvas.drawPath(path_1, paint1Stroke);
 

@@ -341,7 +341,6 @@ void main() {
     await tester.pump();
     expect(rig.card, isNull);
 
-    // Back on the map, E deletes it.
     rig.canvas.requestFocus();
     hoverAgent();
     await tester.sendKeyEvent(LogicalKeyboardKey.keyE);

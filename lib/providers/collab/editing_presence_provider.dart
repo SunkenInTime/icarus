@@ -35,7 +35,6 @@ class OpenLineUpItemsNotifier extends Notifier<Map<Object, Set<String>>> {
     state = {...state}..remove(owner);
   }
 
-  /// The page [owner] opened on.
   String? pageOf(Object owner) => _pageOf[owner];
 }
 

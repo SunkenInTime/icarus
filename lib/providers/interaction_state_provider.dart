@@ -28,7 +28,6 @@ extension CanvasInteraction on InteractionState {
   bool get takesCanvasDrags =>
       this == InteractionState.drawing || this == InteractionState.erasing;
 
-  /// Whether the items on the page can be pressed, moved and selected.
   bool get itemsInReach => !takesCanvasDrags && !isLineUpMode;
 }
 

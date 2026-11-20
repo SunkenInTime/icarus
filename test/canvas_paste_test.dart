@@ -46,7 +46,6 @@ class _Images extends PlacedImageProvider {
   }
 }
 
-/// A clipboard holding copied items, or nothing.
 class _Items extends CanvasClipboardNotifier {
   _Items({required this.holdsItems});
 

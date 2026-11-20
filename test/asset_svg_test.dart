@@ -49,8 +49,6 @@ void main() {
         ),
       );
 
-  // Decoding runs outside the test's fake clock, so give it real time, then a
-  // frame to show the result.
   Future<void> settle(WidgetTester tester, [Duration? wait]) async {
     await tester.pump(wait);
     await tester.runAsync(

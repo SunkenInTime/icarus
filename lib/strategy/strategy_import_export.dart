@@ -2608,8 +2608,6 @@ class StrategyImportExportService {
     );
   }
 
-  /// [folderId] and every folder whose chain of parents in [parentOf] leads
-  /// to it.
   static Set<String> _subtree(
     String folderId, {
     required Map<String, String?> parentOf,
@@ -3024,7 +3022,6 @@ class StrategyImportExportService {
     await zipStrategy(id: id, outputFilePath: outputFile);
   }
 
-  /// A cloud strategy as the library models it, from the server's full copy.
   static StrategyData strategyDataFromRemoteSnapshot(
     RemoteFullStrategySnapshot snapshot,
   ) {

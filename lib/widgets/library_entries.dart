@@ -26,14 +26,11 @@ class LibraryFolderRow {
   /// The signed-in user's role on a cloud folder; null for local folders.
   final String? cloudRole;
 
-  /// Newest edit inside the folder tree, used for the "Date updated" sort.
-  /// Cloud folders do not carry this yet and fall back to their creation date.
   final DateTime lastUpdated;
 
   String get id => folder.id;
 }
 
-/// One strategy in the library grid, from either store.
 class LibraryStrategyRow {
   LibraryStrategyRow.local(StrategyData strategy,
       {required this.showDeviceBadge})

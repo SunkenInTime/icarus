@@ -71,4 +71,4 @@ void icarus_replay_free(IcarusReplayBuffer buffer);
 }
 #endif
 
-#endif /* ICARUS_REPLAY_H */
+#endif

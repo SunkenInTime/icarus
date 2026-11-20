@@ -394,7 +394,6 @@ Offset storedUtilityPositionForRenderedScreenPosition({
   return coordinateSystem.screenToCoordinate(attackScreenPosition - adjustment);
 }
 
-/// One entry describing how a single PlacedWidget should animate.
 class PageTransitionEntry {
   PageTransitionEntry.move({
     required this.from,
@@ -427,7 +426,6 @@ class PageTransitionEntry {
   Offset get startPos => (from ?? to)!.position;
   Offset get endPos => (to ?? from)!.position;
 
-  // Rotation is only relevant for some subtypes. Null when not applicable.
   static double? rotationOf(PlacedWidget w) {
     if (w is PlacedAbility) return w.rotation;
     if (w is PlacedUtility && UtilityData.usesRotation(w.type)) {

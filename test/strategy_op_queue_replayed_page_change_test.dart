@@ -216,7 +216,6 @@ final class _Server extends ConvexStrategyRepository {
   String pageName = 'Page 1';
   int _pageRevision = 1;
 
-  /// [op] reached the server and was applied before the test starts.
   void appliedEarlier(StrategyOp op) => _apply(op);
   final Map<String, int> _landed = {};
   final List<String> refused = [];

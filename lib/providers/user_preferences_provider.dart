@@ -154,10 +154,8 @@ class AppPreferences extends HiveObject {
   /// is a lossless .mov for editing, not an MP4 to share.
   final bool transparentVideoBackground;
 
-  /// Whether a screenshot prints the page's captions.
   final bool includeScreenshotCaptions;
 
-  /// Whether a video prints each page's captions.
   final bool includeVideoCaptions;
 
   /// Whether this install has said that a drag on the map selects and Space

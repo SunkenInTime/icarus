@@ -45,7 +45,6 @@ class PageListItemViewModel {
   final String name;
   final bool isAutoNamed;
 
-  /// The name as drawn (see [shownPageName]).
   String shownName(AppLocalizations l10n) =>
       shownPageName(l10n, name: name, isAutoNamed: isAutoNamed);
 }
@@ -260,7 +259,6 @@ class _PagesBarState extends ConsumerState<PagesBar> {
           ),
         ],
         child: CustomTextField(
-          // autofocus: true,
           controller: controller,
           onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
@@ -400,7 +398,6 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     }
   }
 
-  /// Whether the last snapshot lists the page [pageId].
   bool _lists(String pageId) =>
       ref
           .read(remoteEditorSnapshotProvider)
@@ -627,7 +624,6 @@ class _PageBarData {
   final String activeName;
 }
 
-/* -------- Collapsed pill -------- */
 class _CollapsedPill extends StatelessWidget {
   const _CollapsedPill({
     required this.activeName,
@@ -685,7 +681,6 @@ class _CollapsedPill extends StatelessWidget {
   }
 }
 
-/* -------- Expanded panel -------- */
 class _ExpandedPanel extends ConsumerWidget {
   const _ExpandedPanel({
     required this.pages,
@@ -732,13 +727,13 @@ class _ExpandedPanel extends ConsumerWidget {
   final bool isResizeActive;
   final void Function(int oldIndex, int newIndex)? onReorder;
 
-  static const double _rowHeight = 40; // each page tile height
-  static const double _verticalSpacing = 10; // separator height
+  static const double _rowHeight = 40;
+  static const double _verticalSpacing = 10;
   static const double _resizeHandleHeight = 8;
   static const double _headerFooterHeight =
       _pagesBarFooterHeight + 1; // bottom bar + divider
-  static const double _topPadding = 0; // handle + gap should match side inset
-  static const double _bottomPadding = 0; // list bottom padding inside Expanded
+  static const double _topPadding = 0;
+  static const double _bottomPadding = 0;
 
   static double minHeightForVisibleRows(int visibleRows) {
     final clampedRows = visibleRows < 1 ? 1 : visibleRows;
@@ -1094,7 +1089,6 @@ class _PageRowState extends State<_PageRow> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: Material(
-        // color: bg,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(_PageRow._rowRadius),
         ),
@@ -1260,7 +1254,6 @@ class _PageRowState extends State<_PageRow> {
   }
 }
 
-/* -------- Square + button -------- */
 class _SquareIconButton extends StatelessWidget {
   const _SquareIconButton({
     required this.icon,

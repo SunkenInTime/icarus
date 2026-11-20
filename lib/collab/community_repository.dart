@@ -109,7 +109,6 @@ class CommunityRepository {
     return (post: post, status: _status(result.status));
   }
 
-  /// The posts the signed-in user starred.
   Future<Set<String>> fetchMyStars() async {
     final stars = await _api.community.listMyStars().fetch();
     return stars.toSet();
@@ -336,7 +335,6 @@ CommunitySide _side(CommunityGetPostResultPostSide side) => switch (side) {
       CommunityGetPostResultPostSide.mixed => CommunitySide.mixed,
     };
 
-/// [names] as agents, leaving out any this build doesn't know.
 List<AgentType> _agents(List<String> names) => [
       for (final name in names)
         for (final type in AgentType.values)

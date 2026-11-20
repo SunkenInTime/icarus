@@ -86,7 +86,6 @@ if ($runBuild) {
         }
     }
 
-    # Stage the video-export encoder before signing and packaging the build.
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(
         "-ExecutionPolicy", "Bypass", "-File", "scripts/fetch_ffmpeg.ps1"
     )

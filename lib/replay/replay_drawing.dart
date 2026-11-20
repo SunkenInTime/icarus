@@ -144,7 +144,6 @@ class ReplayDrawing extends ChangeNotifier {
     _changed();
   }
 
-  /// Carries the stroke under the pointer on to [screenPoint].
   void extend(Offset screenPoint, CoordinateSystem coordinates) {
     final point = coordinates.screenToCoordinate(screenPoint);
     switch (_current) {

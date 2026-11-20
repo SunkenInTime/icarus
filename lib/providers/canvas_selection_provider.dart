@@ -31,7 +31,6 @@ enum SelectableKind {
   lineupEnd,
 }
 
-/// One selected item on the page on screen.
 typedef SelectedItem = ({SelectableKind kind, String id});
 
 /// What the user has selected on the page on screen. Selection belongs to
@@ -64,7 +63,6 @@ final selectedCanvasIdsProvider = Provider<Set<String>>((ref) {
   };
 });
 
-/// The ids of the selected drawings.
 final selectedDrawingIdsProvider = Provider<Set<String>>((ref) {
   return {
     for (final item in ref.watch(canvasSelectionProvider))
@@ -149,7 +147,6 @@ class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
     return const {};
   }
 
-  /// Every item on the page on screen.
   Set<SelectedItem> _everything() => {
         for (final agent in ref.read(agentProvider))
           (kind: SelectableKind.agent, id: agent.id),
@@ -177,13 +174,10 @@ class CanvasSelectionNotifier extends Notifier<Set<SelectedItem>> {
     if (kept.length != state.length) state = kept;
   }
 
-  /// Replaces the selection with [items].
   void select(Iterable<SelectedItem> items) => state = {...items};
 
-  /// Adds [items] to the selection.
   void add(Iterable<SelectedItem> items) => state = {...state, ...items};
 
-  /// Selects [item] if it isn't, and unselects it if it is.
   void toggle(SelectedItem item) => state =
       state.contains(item) ? ({...state}..remove(item)) : {...state, item};
 

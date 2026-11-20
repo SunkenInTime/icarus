@@ -117,11 +117,9 @@ class RemoteEditorSnapshotNotifier
   @override
   Future<RemoteEditorSnapshot?> build() async {
     ref.onDispose(_disposeSubscriptions);
-    // The server accepts this build again: read what it refused.
     ref.listen<bool>(clientUpgradeRequiredProvider, (previous, next) {
       if (previous == true && !next) unawaited(refresh());
     });
-    // Back online: what the copy showed is read live again.
     ref.listen<bool>(cloudOfflineProvider, (previous, next) {
       if (previous == true && !next && _showsCopy) unawaited(refresh());
     });
@@ -373,7 +371,6 @@ class RemoteEditorSnapshotNotifier
     );
   }
 
-  /// The shell held for [strategyPublicId], if any.
   RemoteStrategyShell? _shellOf(String strategyPublicId) {
     final current = state.valueOrNull;
     return current != null && current.header.publicId == strategyPublicId
@@ -702,7 +699,6 @@ class RemoteEditorSnapshotNotifier
         ));
   }
 
-  /// See [_keepShell].
   void _keepPage(
     RemotePageSnapshot page, {
     required DateTime askedAt,

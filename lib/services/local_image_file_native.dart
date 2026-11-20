@@ -4,7 +4,6 @@ import 'package:flutter/painting.dart';
 import 'package:icarus/services/image_file_name.dart';
 import 'package:path/path.dart' as path;
 
-/// Whether this platform keeps strategy images as files on the device.
 const bool deviceHasImageFiles = true;
 
 /// The path of an image's file under [storageDirectory], or null when the
@@ -23,9 +22,7 @@ String? findLocalImageFile({
 
 ImageProvider localImageProvider(String filePath) => FileImage(File(filePath));
 
-/// The size of the image file at [filePath], for uploading it.
 Future<int> localImageFileLength(String filePath) => File(filePath).length();
 
-/// The bytes of the image file at [filePath], for uploading it.
 Stream<List<int>> readLocalImageFile(String filePath) =>
     File(filePath).openRead();

@@ -88,14 +88,12 @@ class _Preferences extends AppPreferencesNotifier {
       AppPreferences(defaultThemeProfileIdForNewStrategies: 'default');
 }
 
-/// Serves [pages] as the strategy's trash.
 class _Trash implements ConvexStrategyRepository {
   _Trash([this.pages = const []]);
 
   List<TrashedPage> pages;
   final List<String> listed = [];
 
-  /// Reads fail while set, as offline.
   bool offline = false;
 
   @override

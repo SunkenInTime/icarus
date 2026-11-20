@@ -45,7 +45,6 @@ class ReplayEffectsPainter extends CustomPainter {
       final ink = _ink(effect.isAlly);
       switch (effect) {
         case ReplayActivation(:final centre, :final radius, :final progress):
-          // A ring spreading out to the ability's reach as it takes hold.
           final eased = Curves.easeOutCubic.transform(progress);
           final full = reach(radius);
           canvas.drawCircle(
@@ -57,7 +56,6 @@ class ReplayEffectsPainter extends CustomPainter {
               ..color = ink.withValues(alpha: 0.9 * (1 - progress)),
           );
         case ReplayExit(:final centre, :final radius, :final progress):
-          // A brief flash where it stood, and a ring bursting outward.
           final eased = Curves.easeOutCubic.transform(progress);
           final full = reach(radius);
           final at = replayScreenPoint(centre, isAttack: isAttack);
@@ -86,7 +84,6 @@ class ReplayEffectsPainter extends CustomPainter {
           // Drawn under the utility, by [ReplayWallPainter].
           continue;
         case ReplayFlight(:final trail):
-          // The path just flown, fading toward its tail.
           if (trail.length < 2) continue;
           final points = [
             for (final point in trail)
@@ -178,7 +175,6 @@ class ReplaySweepClipper extends CustomClipper<Path> {
     final from = replayScreenPoint(sweep.from, isAttack: isAttack);
     final to = replayScreenPoint(sweep.to, isAttack: isAttack);
     final reach = to - from;
-    // Nothing swept yet.
     if (reach.distance < 0.5) return Path();
     final along = reach / reach.distance;
     final across = Offset(-along.dy, along.dx) *

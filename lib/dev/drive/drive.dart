@@ -268,7 +268,6 @@ String _lines(String text, int count, String joiner) =>
     text.split('\n').take(count).join(joiner);
 
 Future<void> _play(String script) async {
-  // The app opens its window and first screen meanwhile.
   await Future<void>.delayed(const Duration(seconds: 6));
   final List<Object?> steps;
   try {
@@ -337,9 +336,6 @@ Object? _expand(Object? value) => switch (value) {
       _ => value,
     };
 
-/// Logs items drawn away from their saved positions. An item counts when it
-/// is still misplaced a moment later: a resize rebuilds the canvas a frame
-/// after it lays out.
 Future<void> _checkItems() async {
   await _frames();
   if (misplacedItems(appProviderContainer).isEmpty) return;
@@ -377,8 +373,6 @@ Offset _point(Map<String, dynamic> step, String key, [int at = 0]) {
   return Offset(xy[at].toDouble(), xy[at + 1].toDouble());
 }
 
-// Finding things on screen.
-
 bool _isText(Widget widget, String text) =>
     (widget is Text &&
         (widget.data ?? widget.textSpan?.toPlainText()) == text) ||
@@ -386,7 +380,6 @@ bool _isText(Widget widget, String text) =>
 
 bool _hasKey(Widget widget, String key) => widget.key == ValueKey<String>(key);
 
-/// How many widgets passing [test] are laid out.
 int _countOf(bool Function(Widget) test) {
   var count = 0;
   void visit(Element element) {
@@ -446,7 +439,6 @@ Offset _wordsPoint(String words, {int nth = 0}) {
   return found[nth];
 }
 
-/// Whether a text field has the keyboard.
 bool _editing() {
   var editing = false;
   void visit(Element element) {
@@ -487,7 +479,6 @@ Offset _itemCenter(String id) {
   return outline.localToGlobal(outline.size.center(Offset.zero));
 }
 
-/// The middle of a map door's bar, on the screen.
 Offset _doorPoint(String id) {
   final door = mapDoors.firstWhere((door) => door.id == id);
   // The bar's layer fills the canvas, so its middle is the canvas's.
@@ -499,8 +490,6 @@ Offset _doorPoint(String id) {
   );
   return canvasMiddle - canvas.center(Offset.zero) + onCanvas;
 }
-
-// The mouse.
 
 var _pointer = 900;
 final _pointerClock = Stopwatch()..start();
@@ -624,7 +613,6 @@ Future<void> _tap(
   await _frames();
 }
 
-/// Presses at the first point, moves through the rest, and lets go.
 Future<void> _drag(
   List<Offset> points, {
   int stepsPerLeg = 30,
@@ -680,8 +668,6 @@ Future<void> _drag(
   await Future<void>.delayed(const Duration(milliseconds: 300));
   await _frames();
 }
-
-// The keyboard.
 
 const _keys = {
   'digit0': (LogicalKeyboardKey.digit0, PhysicalKeyboardKey.digit0, '0'),
@@ -871,8 +857,6 @@ class _FakeOpener extends FilePicker {
     ]);
   }
 }
-
-// Cloud state.
 
 /// The links opened, kept here so a run never opens a browser on the desktop
 /// it shares.

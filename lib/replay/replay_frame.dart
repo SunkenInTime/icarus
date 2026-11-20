@@ -226,7 +226,6 @@ class ReplayGuidedWall extends ReplayEffect {
   final double opacity;
 }
 
-/// How a player stands at one moment.
 class ReplayPlayerState {
   const ReplayPlayerState({
     required this.player,
@@ -271,7 +270,6 @@ class ReplayFrameBuilder {
     return deaths;
   }();
 
-  /// Each utility's catalog entry, looked up once rather than every frame.
   late final List<ReplayAbilityEntry?> _entries = [
     for (final utility in document.utility) replayAbilityFor(utility.classPath),
   ];
@@ -395,7 +393,6 @@ class ReplayFrameBuilder {
         pose = track.poseAt(poseTime) ??
             track.heldPose(poseTime, notBeforeMs: roundStart);
       } else {
-        // Dead this round: keep where they fell.
         final death = _lastDeathBefore(player.subject, timeMs);
         if (death != null && death.timeMs >= roundStart) {
           pose = track.heldPose(death.timeMs, notBeforeMs: roundStart);
@@ -422,8 +419,6 @@ class ReplayFrameBuilder {
     return last;
   }
 
-  /// The spike stays planted until it is defused, it detonates, or the
-  /// round ends.
   static int _spikeGoneMs(ReplayRound round) => [
         round.endMs,
         if (round.defuse case final defuse?) defuse.timeMs,
@@ -528,7 +523,6 @@ class ReplayFrameBuilder {
           sight: sightLength / coneLength,
         );
       }
-      // What they carried out of the buy phase.
       final weapon =
           replayWeaponType(round?.economyFor(player.subject)?.weapon);
       agents.add(
@@ -565,7 +559,6 @@ class ReplayFrameBuilder {
       if (utility.spawnMs > timeMs) break;
       final endMs = _endOf(i);
       final active = endMs == null || timeMs < endMs;
-      // An ending utility lingers a moment to fade out.
       final leaving = !active && timeMs - endMs < exitMs;
       if (!active && !leaving) continue;
       final entry = _entries[i];

@@ -44,7 +44,7 @@ class PlacedImageBuilder extends StatefulWidget {
 
 class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
   final _boxKey = GlobalKey();
-  double? localScale; // Make localScale nullable to check if it's initialized
+  double? localScale;
   bool isPanning = false;
   bool isDragging = false;
   Offset? pinnedScreenPosition;

@@ -5,12 +5,6 @@ import 'dart:typed_data';
 
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
 
-/// Streams raw Flutter frames to one FFmpeg process that writes the lossless
-/// PNG sequence consumed by [FfmpegVideoEncoder].
-///
-/// Flutter's PNG conversion is expensive at 1080p. Raw RGBA readback is much
-/// faster, and the long-lived native process can encode frames while Flutter
-/// prepares the next one without retaining raw frames on disk.
 class FfmpegPngSequenceWriter {
   Process? _process;
   Future<void>? _stdoutDone;
@@ -144,7 +138,6 @@ class FfmpegPngSequenceWriter {
         if (_stderrDone != null) _stderrDone!,
       ]).timeout(const Duration(seconds: 2));
     } on TimeoutException {
-      // The pipes outlive a process that refused to die; stop waiting.
     }
   }
 

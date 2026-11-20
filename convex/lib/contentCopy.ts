@@ -166,7 +166,6 @@ export class ContentCopy {
     return { elements, lineups };
   }
 
-  /// Writes [page]'s copy onto [pageId].
   async write(page: PageToCopy, pageId: Id<"pages">): Promise<void> {
     const { ctx } = this;
     const { targetStrategyId: strategyId, now } = this.args;

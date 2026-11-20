@@ -32,7 +32,6 @@ class CloudWorkNotSent implements Exception {
 /// A copy of one cloud strategy that [sendCloudWork] can refuse.
 enum CloudStrategyCopy { export, duplicate }
 
-/// What to tell the user when [copy] of one cloud strategy was refused.
 String cloudStrategyCopyRefusal(
   AppLocalizations l10n,
   CloudWorkNotSent error,

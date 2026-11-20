@@ -36,23 +36,18 @@ class Win32Window {
   // |Show| is called. Returns true if the window was created successfully.
   bool Create(const std::wstring& title, const Point& origin, const Size& size);
 
-  // Show the current window. Returns true if the window was successfully shown.
   bool Show();
 
-  // Release OS resources associated with window.
   void Destroy();
 
-  // Inserts |content| into the window tree.
   void SetChildContent(HWND content);
 
   // Returns the backing Window handle to enable clients to set icon and other
   // window properties. Returns nullptr if the window has been destroyed.
   HWND GetHandle();
 
-  // If true, closing this window will quit the application.
   void SetQuitOnClose(bool quit_on_close);
 
-  // Return a RECT representing the bounds of the current client area.
   RECT GetClientArea();
 
  protected:
@@ -64,11 +59,8 @@ class Win32Window {
                                  WPARAM const wparam,
                                  LPARAM const lparam) noexcept;
 
-  // Called when CreateAndShow is called, allowing subclass window-related
-  // setup. Subclasses should return false if setup fails.
   virtual bool OnCreate();
 
-  // Called when Destroy is called.
   virtual void OnDestroy();
 
  private:
@@ -84,19 +76,15 @@ class Win32Window {
                                   WPARAM const wparam,
                                   LPARAM const lparam) noexcept;
 
-  // Retrieves a class instance pointer for |window|
   static Win32Window* GetThisFromHandle(HWND const window) noexcept;
 
-  // Update the window frame's theme to match the system theme.
   static void UpdateTheme(HWND const window);
 
   bool quit_on_close_ = false;
 
-  // window handle for top level window.
   HWND window_handle_ = nullptr;
 
-  // window handle for hosted content.
   HWND child_content_ = nullptr;
 };
 
-#endif  // RUNNER_WIN32_WINDOW_H_
+#endif

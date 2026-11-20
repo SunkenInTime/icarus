@@ -367,7 +367,6 @@ async function summariseFolderTrees(
     agentCounts.set(folder._id, agentTypesSeen);
   }
 
-  // Roll every folder's own counts up through its listed ancestors.
   const merged = new Map<Id<"folders">, FolderTreeSummary>();
   const totals = new Map<
     Id<"folders">,

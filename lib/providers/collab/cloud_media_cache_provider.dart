@@ -50,7 +50,6 @@ class CloudImageDownloadException implements Exception {
   String toString() => 'Failed to download image ($statusCode).';
 }
 
-/// How long one image download may take before it counts as failed.
 const cloudImageDownloadTimeout = Duration(seconds: 60);
 
 /// Downloads a cloud image's bytes from [url], through [client] when given

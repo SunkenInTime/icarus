@@ -351,7 +351,6 @@ class PresenceRoom {
   }
 }
 
-/// The room state after one server message. Pure, so it is tested alone.
 PresenceRoomState applyPresenceMessage(
   PresenceRoomState state,
   Map<String, dynamic> message,

@@ -42,7 +42,6 @@ void main() {
     final claimWrite = store.holdNextPut();
     final flushing = queue.flushNow();
     await claimWrite.reached;
-    // The user deletes the element while the add is being claimed.
     final deleting = queue.enqueue(const ElementDeleteOp(
       opId: 'delete',
       elementPublicId: 'element-1',
@@ -89,7 +88,6 @@ final class _HeldPut {
   void release() => _release.complete();
 }
 
-/// Accepts every op.
 final class _Server extends ConvexStrategyRepository {
   _Server() : super(IcarusConvexApi(_NoTransport()));
 

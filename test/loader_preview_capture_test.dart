@@ -1,9 +1,3 @@
-// Dev utility, not a real test: renders each dot-matrix loader at several
-// animation phases and writes PNG frames to build/loader_previews/ so the
-// designs can be reviewed without launching the app.
-//
-//   flutter test test/loader_preview_capture_test.dart
-
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -37,7 +31,6 @@ Future<void> _capture(
     ),
   );
 
-  // Let async work (e.g. logo decode) complete before capturing.
   await tester.runAsync(
     () => Future<void>.delayed(const Duration(milliseconds: 200)),
   );

@@ -15,7 +15,6 @@ final replayFilesProvider = Provider<ReplayFiles>(
 final replayProbeProvider =
     Provider<Future<ReplayProbe> Function(String path)>((ref) => probeReplay);
 
-/// One replay in the Replays tab: its file and what its header says.
 class ReplayListing {
   const ReplayListing({required this.file, this.probe, this.error});
 
@@ -36,7 +35,6 @@ class ReplayListing {
   String get matchId => probe?.matchId.toLowerCase() ?? file.matchId;
 }
 
-/// What adding replay files did, so the user can be told.
 class ReplayAddResult {
   const ReplayAddResult({
     this.added = const [],
@@ -71,7 +69,6 @@ final replayRevealProvider = StateProvider<ReplayReveal?>((ref) => null);
 class ReplayReveal {
   const ReplayReveal(this.paths);
 
-  /// Listed paths of the replays to show.
   final List<String> paths;
 }
 
@@ -154,7 +151,6 @@ class ReplayLibrary extends AsyncNotifier<List<ReplayListing>> {
     return future.then((_) {}, onError: (_) {});
   }
 
-  /// Copies [path] into Icarus's replays folder and lists it.
   Future<ReplayListing> import(String path) => _oneAtATime(() async {
         final file = await ref.read(replayFilesProvider).import(path);
         await refresh();

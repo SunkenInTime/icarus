@@ -21,12 +21,9 @@ FreeDrawing _free(List<Offset> points) => FreeDrawing(
       id: 'free',
     )..rebuildPath(CoordinateSystem.instance);
 
-/// Where [point], in world coordinates, is painted.
 Offset _drawn(Offset point) =>
     CoordinateSystem.instance.coordinateToScreen(point);
 
-/// A box over the world rectangle from (left, top) to (right, bottom), as
-/// painted.
 Rect _box(double left, double top, double right, double bottom) =>
     Rect.fromPoints(
       _drawn(Offset(left, top)),

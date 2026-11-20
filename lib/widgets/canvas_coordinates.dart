@@ -22,7 +22,6 @@ mixin CanvasCoordinates<T extends StatefulWidget> on State<T> {
   static Iterable<CanvasCoordinates> get onScreen =>
       _mounted.where((canvas) => canvas._onScreen && canvas._laidOut != null);
 
-  /// The play area this canvas laid out last.
   Size? get laidOutPlayArea => _laidOut;
 
   Size? _laidOut;
