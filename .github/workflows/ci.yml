@@ -792,14 +792,6 @@ jobs:
         with:
           ref: ${{ env.RELEASE_SOURCE_SHA }}
 
-      - name: Start Reading WebView2 Runtime
-        run: |
-          Start-Process -FilePath powershell -WindowStyle Hidden -ArgumentList @(
-            "-NoProfile", "-ExecutionPolicy", "Bypass",
-            "-File", "$PWD\scripts\read_webview2_runtime.ps1",
-            "-ResultPath", "$env:RUNNER_TEMP\webview2-read-ahead.json"
-          )
-
       - name: Test Release Safety Policy
         run: powershell -ExecutionPolicy Bypass -File scripts/test_release_safety.ps1
 
@@ -833,6 +825,14 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: third_party/convex_flutter/rust -> ../../../build/windows/x64/plugins/convex_flutter/cargokit_build
+
+      - name: Start Reading WebView2 Runtime
+        run: |
+          Start-Process -FilePath powershell -WindowStyle Hidden -ArgumentList @(
+            "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-File", "$PWD\scripts\read_webview2_runtime.ps1",
+            "-ResultPath", "$env:RUNNER_TEMP\webview2-read-ahead.json"
+          )
 
       - name: Build Windows Client
         run: fvm flutter build windows --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
