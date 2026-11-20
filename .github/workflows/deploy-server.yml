@@ -102,6 +102,19 @@ jobs:
       - name: Run Convex Tests
         run: npm run test:convex
 
+      # Each desktop-stable-v* tag is a build we shipped; the contract check
+      # reads its function spec.
+      - name: Fetch Shipped Client Tags
+        run: git fetch --no-tags --depth=1 origin '+refs/tags/desktop-stable-v*:refs/tags/desktop-stable-v*'
+
+      # On this checkout, the one deployed next: pushes convex/ to a local
+      # backend on the runner, compares the function spec it serves with the
+      # committed snapshot, then checks that snapshot against every shipped
+      # client. Nothing deploys if it fails. CI runs the same check, but a
+      # merge does not wait for CI.
+      - name: Check Convex Contract Against Shipped Clients
+        run: node tool/check_convex_deploy.mjs
+
       - name: Deploy Convex Production Backend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PRODUCTION_DEPLOY_KEY }}

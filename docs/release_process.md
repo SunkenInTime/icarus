@@ -95,7 +95,11 @@ first production release:
 merge (see "Server deploy"), and by hand: run it from `main` and type
 `deploy-production`. The workflow enters the GitHub `Production` environment,
 requires a `prod:` deploy key, installs locked dependencies, runs TypeScript and
-Convex tests, runs `npx convex deploy --typecheck enable`, then deploys the
+Convex tests, then checks the contract of the commit it is about to deploy
+(`tool/check_convex_deploy.mjs`: it pushes `convex/` to a local backend on the
+runner, compares the function spec that backend serves with the committed
+snapshot, and checks the snapshot against every `desktop-stable-v*` client).
+Only then does it run `npx convex deploy --typecheck enable` and deploy the
 presence Worker. Convex documents that `CONVEX_DEPLOY_KEY` selects the deployment
 associated with that key. See the
 [`convex deploy` reference](https://docs.convex.dev/cli/reference/deploy).

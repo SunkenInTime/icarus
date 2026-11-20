@@ -86,11 +86,11 @@ jobs:
   #   ci: all
   #
   # Lanes: analyze, test, web, replay, convex, cost, presence, contract,
-  # bridge, gauntlet, desktop, separated by spaces or commas, unquoted. "skip"
-  # runs none of them. A word that is not a lane runs every lane. Lanes that
-  # guard production or the library (convex, cost, presence, contract,
-  # gauntlet, desktop) still run when the PR changes their files, whatever the
-  # line says. Without the line, a PR runs analyze, test and web plus the lanes
+  # bridge, gauntlet, integrity, desktop, separated by spaces or commas,
+  # unquoted. "skip" runs none of them. A word that is not a lane runs every
+  # lane. Lanes that guard production or the library (convex, cost, presence,
+  # contract, gauntlet, integrity, desktop) still run when the PR changes
+  # their files, whatever the line says. Without the line, a PR runs analyze, test and web plus the lanes
   # its changed files reach. The line is read when the run starts, so after
   # editing it, rerun the run.
   changes:
@@ -109,6 +109,7 @@ jobs:
       contract: ${{ steps.lanes.outputs.contract }}
       bridge: ${{ steps.lanes.outputs.bridge }}
       gauntlet: ${{ steps.lanes.outputs.gauntlet }}
+      integrity: ${{ steps.lanes.outputs.integrity }}
       desktop: ${{ steps.lanes.outputs.desktop }}
     steps:
       - name: Pick lanes
@@ -149,14 +150,14 @@ jobs:
               unknown=0
               for word in "${words[@]}"; do
                 case "$word" in
-                  analyze|test|web|replay|convex|cost|presence|contract|bridge|gauntlet|desktop|skip) named+="$word " ;;
+                  analyze|test|web|replay|convex|cost|presence|contract|bridge|gauntlet|integrity|desktop|skip) named+="$word " ;;
                   all) named+="all "; full=true ;;
                   *) unknown=$((unknown + 1)) ;;
                 esac
               done
               printf 'The description names:%s\n' "$named"
               if (( unknown > 0 )); then
-                printf '::warning::The ci: line has %d word(s) that are not lanes; running every lane. Lanes: analyze test web replay convex cost presence contract bridge gauntlet desktop skip all.\n' "$unknown"
+                printf '::warning::The ci: line has %d word(s) that are not lanes; running every lane. Lanes: analyze test web replay convex cost presence contract bridge gauntlet integrity desktop skip all.\n' "$unknown"
                 full=true
               fi
             fi
@@ -197,7 +198,7 @@ jobs:
           lane web ''
           lane replay '^native/replay/'
           # The contract scripts in tool/ run in this lane, against its preview.
-          lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$|tool/check_convex_shipped_clients(\.test)?\.mjs$|tool/convex_opt_in_results\.json$)' guarded
+          lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$|tool/check_convex_shipped_clients(\.test)?\.mjs$|tool/check_convex_deploy\.mjs$|tool/convex_opt_in_results\.json$)' guarded
           # A server change can make a cloud flow cost more without failing a
           # test: the cost lane runs whenever the server, its packages or the
           # run changes.
@@ -205,18 +206,26 @@ jobs:
           lane presence '^presence/' guarded
           lane contract '^(convex/|tool/|lib/collab/)' guarded
           lane bridge '^third_party/'
-          # Sync: the app's save path (its op queue, outbox, repository and
-          # the providers under lib/providers/collab/, the save state and the
-          # cloud startup that opens the outbox), the op path on the server
-          # (convex/ops.ts, what it imports from convex/lib/, and the
-          # functions the gauntlet calls), the native client, and the
-          # gauntlet itself.
-          lane gauntlet '^(lib/collab/|lib/providers/collab/|lib/providers/strategy_save_state_provider\.dart$|lib/startup/cloud_bootstrap\.dart$|third_party/convex_(flutter|rs)/|convex/(ops|schema|strategy|strategies|folders|users)\.ts$|convex/lib/|tool/sync_gauntlet/|tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment\.mjs$)' guarded
+          # Sync: the app's save path (the editor code that turns an edit
+          # into an op: the strategy and page session providers and the page
+          # source, apply and merge code under lib/strategy/; its op queue,
+          # outbox, repository and the providers under lib/providers/collab/,
+          # the save state and the cloud startup that opens the outbox), the
+          # op path on the server (convex/ops.ts, what it imports from
+          # convex/lib/, and the functions the gauntlet calls), the native
+          # client, and the gauntlet itself.
+          lane gauntlet '^(lib/collab/|lib/providers/collab/|lib/providers/strategy_(provider|page_session_provider|save_state_provider)\.dart$|lib/strategy/(strategy_page_(source|apply|models)|cloud_element_decoding|remote_page_merge|lineup_group_changes)\.dart$|lib/const/hive_boxes\.dart$|lib/startup/cloud_bootstrap\.dart$|third_party/convex_(flutter|rs)/|convex/(ops|schema|strategy|strategies|folders|users)\.ts$|convex/lib/|tool/sync_gauntlet/|tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment\.mjs$)' guarded
           # The desktop builds and the upgrade/rollback test, for changes to
           # what a shipped build finds in its Hive store, the installer, the
           # release scripts, or the test itself. The release runs the same
           # test on every signed installer; this catches a break on its PR.
-          lane desktop '^(installer/|scripts/|lib/migrations/|test/windows_online_beta_library_probe_test\.dart$)|\.g\.dart$' guarded
+          lane desktop '^(installer/|scripts/|lib/hive/|lib/migrations/|test/windows_online_beta_library_probe_test\.dart$)|\.g\.dart$' guarded
+          # What reads or writes the library: the Hive adapters and the models
+          # they and the .ica format serialize, migrations, import and export,
+          # the load and save path, the outboxes kept in Hive, and the
+          # fixtures and tests that hold old data. The test list is the
+          # integrity job's.
+          lane integrity '^(lib/hive/|lib/migrations/|lib/strategy/|lib/providers/(strategy_provider|strategy_page|strategy_page_session_provider|strategy_settings_provider|folder_provider|user_preferences_provider|agent_provider|ability_provider|drawing_provider|image_provider|text_provider|utility_provider)\.dart$|lib/const/(placed_classes|drawing_element|bounding_box|line_provider|json_converters|hive_boxes)\.dart$|lib/collab/durable_[a-z_]*outbox\.dart$|test/fixtures/strategy_integrity/|test/(strategy_integrity|canvas_compatibility_fixture|strategy_folder_import|strategy_import_version_guard)_test\.dart$|test/hive_[a-z_]*_test\.dart$|test/[a-z_]*_migration_test\.dart$|test/durable_[a-z_]*_version_test\.dart$|test/desktop_[a-z0-9_]*_test_support\.dart$|test/providers/move_to_cloud_provider_test\.dart$|tool/generate_canvas_compatibility_fixture\.dart$)|\.g\.dart$' guarded
 
   # Runs on every PR and push, whatever the ci: line names: no PR adds a
   # comment to a file beyond tool/comment_baseline.json.
@@ -365,6 +374,16 @@ jobs:
 
       - name: Run Convex Tests
         run: npm run test:convex
+
+      - name: Cache the Convex backend
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/convex/binaries
+          key: convex-local-backend-${{ runner.os }}-${{ hashFiles('tool/convex_cost/lib/backend.mjs') }}
+
+      # What Deploy Server runs before it deploys production, on this commit.
+      - name: Check the contract the production deploy checks
+        run: node tool/check_convex_deploy.mjs
 
       # `--cmd` runs right after Convex claims the preview and before the push,
       # so the preview URL is recorded even when typecheck or the push fails.
@@ -589,6 +608,38 @@ jobs:
           name: gauntlet-report-${{ env.RELEASE_SOURCE_SHA }}
           path: ${{ runner.temp }}/gauntlet-report.json
           if-no-files-found: ignore
+
+  # The tests that load data an older version wrote, or check what this one
+  # writes: the .ica fixtures, the Hive store and its adapters, migrations,
+  # and the outboxes. They are in the test lane too; this job is the one a
+  # ci: line can't drop.
+  integrity:
+    needs: changes
+    if: needs.changes.outputs.integrity == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - uses: ./.github/actions/setup-flutter
+
+      # failglob: a pattern that matches nothing fails the job instead of
+      # quietly testing less.
+      - name: Run Library Integrity Tests
+        shell: bash
+        run: |
+          shopt -s failglob
+          fvm flutter test \
+            test/strategy_integrity_test.dart \
+            test/canvas_compatibility_fixture_test.dart \
+            test/strategy_folder_import_test.dart \
+            test/strategy_import_version_guard_test.dart \
+            test/providers/move_to_cloud_provider_test.dart \
+            test/hive_*_test.dart \
+            test/*_migration_test.dart \
+            test/durable_*_version_test.dart
 
   linux-build:
     needs: changes
