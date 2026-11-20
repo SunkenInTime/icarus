@@ -218,6 +218,25 @@ jobs:
           # test on every signed installer; this catches a break on its PR.
           lane desktop '^(installer/|scripts/|lib/migrations/|test/windows_online_beta_library_probe_test\.dart$)|\.g\.dart$' guarded
 
+  # Runs on every PR and push, whatever the ci: line names: no PR adds a
+  # comment to a file beyond tool/comment_baseline.json.
+  comments:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Check Comments Against The Baseline
+        run: |
+          node --test tool/comments.test.mjs
+          node tool/comments.mjs check
+
   analyze:
     needs: changes
     if: needs.changes.outputs.analyze == 'true'
@@ -234,11 +253,6 @@ jobs:
 
       - name: Check Convex Web Binding Against The Browser Bundle
         run: node tool/check_convex_web_binding.mjs
-
-      - name: Check Comments Against The Baseline
-        run: |
-          node --test tool/comments.test.mjs
-          node tool/comments.mjs check
 
       - uses: ./.github/actions/setup-flutter
 

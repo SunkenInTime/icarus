@@ -39,8 +39,8 @@ Write the ids to delete into a file, one per line, and run `node tool/comments.m
 
 All of these hold before the PR opens:
 
-- `node tool/comments.mjs same-code origin/main` passes: outside the contract rewrites, the diff is comments, whitespace and Dart imports nothing uses any more.
-- `fvm flutter analyze` shows nothing new against main except two expected kinds: an `unused_import` for an import that only a doc link (`[SomeType]`) used, which you delete; and `empty_catches` where the deleted comment excused an empty `catch`, which its issue or ADR now covers.
+- `node tool/comments.mjs same-code origin/main` lists only the files you changed on purpose: contracts turned into code, and imports that only a doc link (`[SomeType]`) used. Read the diff of each listed file; everything else differs from main in comments and layout alone.
+- `fvm flutter analyze` shows nothing new against main except two expected kinds: an `unused_import` for such a doc-link import, which you delete; and `empty_catches` where the deleted comment excused an empty `catch`, which its issue or ADR now covers.
 - The checks for each language touched pass: `fvm flutter test` for the files it touches, `npx tsc --noEmit` and `npm run test:convex` for `convex/`, `cargo test --locked` for `native/replay`.
 - `node tool/comments.mjs baseline` lowers the baseline, and `node tool/comments.mjs check` passes.
 

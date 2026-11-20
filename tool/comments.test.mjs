@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { blocks, codeOnly, commentLineCount, removeBlocks, sameCodeBesidesImports, scan } from "./comments.mjs";
+import { blocks, codeOnly, commentLineCount, isOurs, removeBlocks, scan } from "./comments.mjs";
 
 const texts = (source, language) => scan(source, language).map((comment) => comment.text);
 
@@ -41,15 +41,18 @@ test("javascript regexes and templates hide comment markers", () => {
     "const url = /https?:\\/\\//;",
     "const t = `${'//'} and ${`/* */`}`;",
     "const ratio = a / b; // half",
-    "if (x) return /[/]/.test(y);",
+    "function f(y) { return /[/]/.test(y); }",
+    "if (ok) /[//]/.test(s);",
+    "i++ / 2; // after a postfix",
   ].join("\n");
-  assert.deepEqual(texts(source, "js"), ["// half"]);
+  assert.deepEqual(texts(source, "js"), ["// half", "// after a postfix"]);
 });
 
 test("rust lifetimes, chars and raw strings", () => {
   const source = [
     `fn f<'a>(s: &'a str) -> char { '"' }`,
     `let r = r#"// not "a" comment"#;`,
+    `let c = cr#"inside " // literal"#;`,
     `let q = '\\''; // quote`,
     `/* a /* nested */ block */`,
   ].join("\n");
@@ -80,9 +83,33 @@ test("removing blocks keeps the code and one blank line", () => {
   assert.equal(codeOnly(removed, "dart"), codeOnly(source, "dart"));
 });
 
-test("same-code accepts dropped imports and refuses code changes", () => {
-  const before = `import 'a.dart';\nimport 'b.dart';\n/// See [B].\nfinal x = 1;\n`;
-  assert.ok(sameCodeBesidesImports(before, `import 'a.dart';\nfinal x = 1;\n`, "dart"));
-  assert.ok(!sameCodeBesidesImports(before, `import 'a.dart';\nimport 'c.dart';\nfinal x = 1;\n`, "dart"));
-  assert.ok(!sameCodeBesidesImports(before, `import 'a.dart';\nimport 'b.dart';\nfinal x = 2;\n`, "dart"));
+test("shell heredocs and powershell here-strings are data", () => {
+  const shell = ["cat <<'EOF'", "# delivered literally", "EOF", "echo done # trailing"].join("\n");
+  assert.deepEqual(texts(shell, "shell"), ["# trailing"]);
+  const powershell = ["$t = @'\r", "This is Icarus's template\r", "# part of the emitted script\r", "'@\r", "$a = 'ends in `' # real\r", ""].join("\n");
+  assert.deepEqual(texts(powershell, "powershell"), ["# real"]);
+});
+
+test("a generated marker counts only inside a header comment", () => {
+  assert.equal(isOurs("tool/x.ts", `export const labels = ["Do not edit"];\n`), true);
+  assert.equal(isOurs("tool/x.ts", `// Do not edit: generated.\nexport const x = 1;\n`), false);
+});
+
+test("removing a comment between tokens never fuses them", () => {
+  const source = "console.log(a+/* split */++b, f(/* none */), g /* both */ (1));";
+  const removed = removeBlocks(source, blocks(source, "js"));
+  assert.equal(removed, "console.log(a+ ++b, f(), g (1));");
+  assert.equal(codeOnly(removed, "js"), codeOnly(source, "js"));
+  assert.notEqual(codeOnly("a+++b", "js"), codeOnly("a+ ++b", "js"));
+});
+
+test("removing a trailing comment keeps CRLF line endings", () => {
+  const source = "final a = 1; // gone\r\nfinal b = 2;\r\n";
+  assert.equal(removeBlocks(source, blocks(source, "dart")), "final a = 1;\r\nfinal b = 2;\r\n");
+});
+
+test("code equality keeps whitespace inside strings and drops it elsewhere", () => {
+  assert.equal(codeOnly("f( 'a b' ,\n  x )", "dart"), codeOnly("f('a b', x)", "dart"));
+  assert.notEqual(codeOnly("f('a b')", "dart"), codeOnly("f('ab')", "dart"));
+  assert.notEqual(codeOnly("return x", "js"), codeOnly("returnx", "js"));
 });

@@ -64,29 +64,60 @@ export function languageOf(path) {
 }
 
 export function isOurs(path, text) {
-  if (!languageOf(path)) return false;
+  const language = languageOf(path);
+  if (!language) return false;
   if (NOT_OURS.some((pattern) => pattern.test(path))) return false;
-  const head = text.split("\n", 5).join("\n");
-  return !GENERATED_HEADER.test(head);
+  const headEnd = text.split("\n", 5).join("\n").length;
+  const header = lex(text, language).comments.filter((comment) => comment.start < headEnd);
+  return !header.some((comment) => GENERATED_HEADER.test(comment.text));
 }
 
 export function scan(text, language) {
-  const hash = ["powershell", "python", "shell"].includes(language);
-  const comments = hash ? scanHash(text, language) : scanSlash(text, language);
-  return comments.map((comment) => ({
+  return lex(text, language).comments.map((comment) => ({
     ...comment,
     directive: DIRECTIVES[language].test(comment.text.replace(/^[/*#!<\s]+/, "")),
   }));
 }
 
-function scanSlash(text, language) {
+export function lex(text, language) {
+  const hash = ["powershell", "python", "shell"].includes(language);
+  return hash ? lexHash(text, language) : lexSlash(text, language);
+}
+
+function lineCommentEnd(text, from) {
+  const newline = text.indexOf("\n", from);
+  const stop = newline === -1 ? text.length : newline;
+  return text[stop - 1] === "\r" ? stop - 1 : stop;
+}
+
+const CONTROL_HEADS = new Set(["if", "while", "for", "with"]);
+
+function lexSlash(text, language) {
   const comments = [];
+  const strings = [];
   const nests = language === "dart" || language === "rust" || language === "swift";
-  const stack = [{ kind: "code", depth: 0 }];
+  const stack = [{ kind: "code" }];
+  const parens = [];
+  let stringStart = -1;
   let i = 0;
-  let lastSignificant = "";
+  let last = "";
+  let beforeLast = "";
+  let closedControlHead = false;
 
   const top = () => stack[stack.length - 1];
+  const significant = (c) => {
+    beforeLast = last;
+    last = c;
+  };
+  const pushString = (mode, at) => {
+    if (stack.length === 1) stringStart = at;
+    stack.push(mode);
+  };
+  const popString = (end) => {
+    stack.pop();
+    if (stack.length === 1) strings.push({ start: stringStart, end });
+    significant("a");
+  };
 
   while (i < text.length) {
     const mode = top();
@@ -94,12 +125,12 @@ function scanSlash(text, language) {
     const next = text[i + 1];
 
     if (mode.kind === "string") {
+      if (language === "swift" && text.startsWith(`\\${mode.hashes}(`, i)) {
+        stack.push({ kind: "code", depth: 1, closer: ")" });
+        i += mode.hashes.length + 2;
+        continue;
+      }
       if (c === "\\" && !mode.raw) {
-        if (language === "swift" && next === "(") {
-          stack.push({ kind: "code", depth: 1, closer: ")" });
-          i += 2;
-          continue;
-        }
         i += 2;
         continue;
       }
@@ -109,13 +140,13 @@ function scanSlash(text, language) {
         continue;
       }
       if (text.startsWith(mode.end, i)) {
-        stack.pop();
         i += mode.end.length;
-        lastSignificant = "a";
+        popString(i);
         continue;
       }
-      if (mode.end.length === 1 && mode.end !== "`" && c === "\n" && language !== "rust") {
-        stack.pop();
+      if (mode.singleLine && c === "\n") {
+        popString(i);
+        continue;
       }
       i += 1;
       continue;
@@ -128,17 +159,18 @@ function scanSlash(text, language) {
       }
       if (c === "[") mode.inClass = true;
       else if (c === "]") mode.inClass = false;
-      else if (c === "/" && !mode.inClass) {
-        stack.pop();
-        lastSignificant = "a";
-      } else if (c === "\n") stack.pop();
+      else if ((c === "/" && !mode.inClass) || c === "\n") {
+        i += c === "/" ? 1 : 0;
+        popString(i);
+        if (c === "\n") i += 1;
+        continue;
+      }
       i += 1;
       continue;
     }
 
     if (c === "/" && next === "/") {
-      const end = text.indexOf("\n", i);
-      const stop = end === -1 ? text.length : end;
+      const stop = lineCommentEnd(text, i);
       comments.push({ start: i, end: stop, text: text.slice(i, stop), block: false });
       i = stop;
       continue;
@@ -178,27 +210,34 @@ function scanSlash(text, language) {
 
     const string = openString(text, i, language);
     if (string) {
-      stack.push(string.mode);
+      pushString(string.mode, i);
       i += string.length;
       continue;
     }
 
     if (language === "rust" && c === "'") {
       i += rustQuote(text, i);
-      lastSignificant = "a";
+      significant("a");
       continue;
     }
 
-    if (language === "js" && c === "/" && regexCanStart(text, i, lastSignificant)) {
-      stack.push({ kind: "regex", inClass: false });
+    if (language === "js" && c === "/" && regexCanStart(text, i, last, beforeLast, closedControlHead)) {
+      pushString({ kind: "regex", inClass: false }, i);
       i += 1;
       continue;
     }
 
-    if (!/\s/.test(c)) lastSignificant = c;
+    if (c === "(") {
+      const word = /([\w$]+)\s*$/.exec(text.slice(Math.max(0, i - 40), i));
+      parens.push(Boolean(word && CONTROL_HEADS.has(word[1])));
+    }
+    if (!/\s/.test(c)) {
+      closedControlHead = c === ")" ? (parens.pop() ?? false) : false;
+      significant(c);
+    }
     i += 1;
   }
-  return comments;
+  return { comments, strings };
 }
 
 function openString(text, i, language) {
@@ -216,33 +255,34 @@ function openString(text, i, language) {
     const end = triple ? q.repeat(3) : q;
     return {
       length: at - i + end.length,
-      mode: { kind: "string", end, raw, interpolates: true },
+      mode: { kind: "string", end, raw, interpolates: true, singleLine: !triple },
     };
   }
   if (language === "js") {
-    if (c === "'" || c === '"') return { length: 1, mode: { kind: "string", end: c, raw: false } };
-    if (c === "`") return { length: 1, mode: { kind: "string", end: "`", raw: false, interpolates: true } };
+    if (c === "'" || c === '"') return { length: 1, mode: { kind: "string", end: c, singleLine: true } };
+    if (c === "`") return { length: 1, mode: { kind: "string", end: "`", interpolates: true } };
     return null;
   }
   if (language === "rust") {
-    const prefix = /^(b?r(#*)")|^(b?")/.exec(text.slice(i, i + 260));
-    if (!prefix || /[\w]/.test(text[i - 1] ?? "")) return null;
+    if (/[\w]/.test(text[i - 1] ?? "")) return null;
+    const prefix = /^([bc]?r(#*)")|^([bc]?")/.exec(text.slice(i, i + 260));
+    if (!prefix) return null;
     if (prefix[1]) {
       return { length: prefix[1].length, mode: { kind: "string", end: `"${prefix[2]}`, raw: true } };
     }
-    return { length: prefix[3].length, mode: { kind: "string", end: '"', raw: false } };
+    return { length: prefix[3].length, mode: { kind: "string", end: '"' } };
   }
   if (language === "swift") {
     const prefix = /^(#*)("""|")/.exec(text.slice(i, i + 40));
-    if (!prefix || (prefix[1] === "" && c !== '"')) return null;
+    if (!prefix) return null;
     const hashes = prefix[1];
     return {
       length: prefix[0].length,
-      mode: { kind: "string", end: `${prefix[2]}${hashes}`, raw: hashes.length > 0 },
+      mode: { kind: "string", end: `${prefix[2]}${hashes}`, raw: hashes.length > 0, hashes },
     };
   }
-  if (c === '"') return { length: 1, mode: { kind: "string", end: '"', raw: false } };
-  if (c === "'") return { length: 1, mode: { kind: "string", end: "'", raw: false } };
+  if (c === '"') return { length: 1, mode: { kind: "string", end: '"', singleLine: true } };
+  if (c === "'") return { length: 1, mode: { kind: "string", end: "'", singleLine: true } };
   return null;
 }
 
@@ -262,38 +302,58 @@ const REGEX_AFTER_WORD = new Set([
   "throw", "case", "do", "else", "yield", "await",
 ]);
 
-function regexCanStart(text, i, lastSignificant) {
-  if (lastSignificant === "" || "(,=:[!&|?{};+-*%<>~^".includes(lastSignificant)) return true;
-  if (/[\w$]/.test(lastSignificant)) {
+function regexCanStart(text, i, last, beforeLast, closedControlHead) {
+  if (last === ")") return closedControlHead;
+  if ((last === "+" || last === "-") && beforeLast === last) return false;
+  if (last === "" || "(,=:[!&|?{};+-*%<>~^".includes(last)) return true;
+  if (/[\w$]/.test(last)) {
     const word = /([\w$]+)\s*$/.exec(text.slice(Math.max(0, i - 40), i));
     return Boolean(word && REGEX_AFTER_WORD.has(word[1]));
   }
   return false;
 }
 
-function scanHash(text, language) {
+function lexHash(text, language) {
   const comments = [];
+  const strings = [];
   let i = 0;
   let quote = null;
+  let quoteStart = -1;
   let lastChar = "\n";
+  const heredocs = [];
+
   while (i < text.length) {
     const c = text[i];
     if (quote) {
-      if (c === "\\" && language !== "powershell") {
-        i += 2;
-        continue;
-      }
-      if (language === "powershell" && c === "`") {
+      const escapes = language === "powershell" ? quote.endsWith('"') || quote === '"' : quote !== "'";
+      if (escapes && c === (language === "powershell" ? "`" : "\\")) {
         i += 2;
         continue;
       }
       if (text.startsWith(quote, i)) {
         i += quote.length;
+        strings.push({ start: quoteStart, end: i });
         quote = null;
         lastChar = "a";
         continue;
       }
       i += 1;
+      continue;
+    }
+    if (c === "\n" && heredocs.length > 0) {
+      const start = i + 1;
+      let at = start;
+      for (const { delimiter, tabs } of heredocs.splice(0)) {
+        for (;;) {
+          const end = text.indexOf("\n", at);
+          const line = text.slice(at, end === -1 ? text.length : end).replace(/\r$/, "");
+          at = end === -1 ? text.length : end + 1;
+          if ((tabs ? line.replace(/^\t+/, "") : line) === delimiter || end === -1) break;
+        }
+      }
+      strings.push({ start, end: at });
+      i = at;
+      lastChar = "\n";
       continue;
     }
     if (language === "powershell" && c === "<" && text[i + 1] === "#") {
@@ -304,31 +364,43 @@ function scanHash(text, language) {
       continue;
     }
     if (c === "#" && /\s|^$/.test(lastChar) && !(i === 0 && text[1] === "!")) {
-      const end = text.indexOf("\n", i);
-      const stop = end === -1 ? text.length : end;
+      const stop = lineCommentEnd(text, i);
       comments.push({ start: i, end: stop, text: text.slice(i, stop), block: false });
       i = stop;
       continue;
     }
-    if (language === "powershell" && c === "@" && (text[i + 1] === '"' || text[i + 1] === "'") && text[i + 2] === "\n") {
-      quote = `\n${text[i + 1]}@`;
-      i += 2;
+    if (language === "shell" && text.startsWith("<<", i) && text[i + 2] !== "<") {
+      const heredoc = /^<<(-?)\s*(['"]?)([\w.-]+)\2/.exec(text.slice(i, i + 80));
+      if (heredoc) {
+        heredocs.push({ delimiter: heredoc[3], tabs: heredoc[1] === "-" });
+        i += heredoc[0].length;
+        lastChar = "a";
+        continue;
+      }
+    }
+    const hereString = language === "powershell" ? /^@(['"])\r?\n/.exec(text.slice(i, i + 4)) : null;
+    if (hereString) {
+      quote = `\n${hereString[1]}@`;
+      quoteStart = i;
+      i += hereString[0].length - 1;
       continue;
     }
     if (language === "python" && (text.startsWith('"""', i) || text.startsWith("'''", i))) {
       quote = text.slice(i, i + 3);
+      quoteStart = i;
       i += 3;
       continue;
     }
     if (c === '"' || c === "'") {
       quote = c;
+      quoteStart = i;
       i += 1;
       continue;
     }
     lastChar = c;
     i += 1;
   }
-  return comments;
+  return { comments, strings };
 }
 
 export function blocks(text, language) {
@@ -399,14 +471,18 @@ export function removeBlocks(text, removed) {
     }
   }
   let out = text;
+  const blank = (c) => c === " " || c === "\t";
   for (const block of [...edits].sort((a, b) => b.start - a.start)) {
     let start = block.start;
     let end = block.end;
-    while (start > 0 && (out[start - 1] === " " || out[start - 1] === "\t")) start -= 1;
-    const lineEnds = out[end] === "\n" || end === out.length;
-    if (!lineEnds && start !== block.start) start += 1;
-    if (!lineEnds) while (out[end] === " " || out[end] === "\t") end += 1;
-    out = out.slice(0, start) + out.slice(end);
+    while (start > 0 && blank(out[start - 1])) start -= 1;
+    while (end < out.length && blank(out[end])) end += 1;
+    const lineEnds = end === out.length || out[end] === "\n" || (out[end] === "\r" && out[end + 1] === "\n");
+    const lineStarts = start === 0 || out[start - 1] === "\n";
+    let joint = "";
+    if (lineStarts) start = block.start;
+    else if (!lineEnds && (start < block.start || end > block.end || fuses(out[start - 1], out[end]))) joint = " ";
+    out = out.slice(0, start) + joint + out.slice(end);
   }
   if (drop.size === 0) return out;
   const kept = [];
@@ -425,15 +501,45 @@ export function removeBlocks(text, removed) {
   return kept.join("\n");
 }
 
+const WORD = /[\w$]/;
+const OPERATOR = /[-+*/%&|^!<>=?:.~#@]/;
+
+export function fuses(left, right) {
+  if (left === undefined || right === undefined) return false;
+  return (WORD.test(left) && WORD.test(right)) || (OPERATOR.test(left) && OPERATOR.test(right));
+}
+
 export function codeOnly(text, language) {
-  let out = "";
+  const { comments, strings } = lex(text, language);
+  const spans = [
+    ...comments.map((span) => ({ ...span, kind: "comment" })),
+    ...strings.map((span) => ({ ...span, kind: "string" })),
+  ].sort((a, b) => a.start - b.start);
+  const parts = [];
   let at = 0;
-  for (const comment of scan(text, language)) {
-    out += text.slice(at, comment.start);
-    at = comment.end;
+  let gap = false;
+  const emit = (piece) => {
+    for (const run of piece.split(/(\s+)/)) {
+      if (run === "") continue;
+      if (/^\s+$/.test(run)) gap = true;
+      else push(run);
+    }
+  };
+  const push = (run) => {
+    const previous = parts[parts.length - 1];
+    if (gap && previous !== undefined && fuses(previous.at(-1), run[0])) parts.push(" ");
+    parts.push(run);
+    gap = false;
+  };
+  for (const span of spans) {
+    if (span.start < at) continue;
+    emit(text.slice(at, span.start));
+    if (span.kind === "comment") gap = true;
+    else push(text.slice(span.start, span.end));
+    at = span.end;
   }
-  out += text.slice(at);
-  return out.replace(/\s+/g, "");
+  emit(text.slice(at));
+  return parts.join("");
 }
 
 function git(...args) {
@@ -491,7 +597,8 @@ function check() {
     console.error(
       "\nNew comments are not allowed. Say it in the code: a name, a type, a test.\n" +
         "A decision that needs its reasons kept goes in docs/adr/.\n" +
-        "List a file's comments with: node tool/comments.mjs list <path>",
+        "List a file's comments with: node tool/comments.mjs list <path>\n" +
+      "A file you renamed keeps its allowance: run node tool/comments.mjs baseline.",
     );
   }
   if (shrank.length > 0) {
@@ -505,8 +612,18 @@ function check() {
   console.log(`Comments: ${total} lines in ${Object.keys(current).length} files, none above the baseline.`);
 }
 
+function renamedSinceBaseline(old) {
+  const since = git("log", "-1", "--format=%H", "--", BASELINE).trim();
+  if (!since) return old;
+  const carried = { ...old };
+  for (const change of changesSince(since)) {
+    if (change.status === "R" && old[change.before] !== undefined) carried[change.after] ??= old[change.before];
+  }
+  return carried;
+}
+
 function baseline() {
-  const old = readBaseline();
+  const old = renamedSinceBaseline(readBaseline());
   const current = counts();
   const raised = Object.entries(current).filter(([path, count]) => count > (old[path] ?? 0));
   if (existsSync(BASELINE) && raised.length > 0) {
@@ -572,38 +689,42 @@ function remove(idsFile) {
   console.log(`Removed ${removedCount} comment blocks from ${wanted.size} files.`);
 }
 
-const DART_IMPORT = /^import\s+'[^']+'[^;]*;/gm;
-
-export function sameCodeBesidesImports(before, after, language) {
-  if (codeOnly(before, language) === codeOnly(after, language)) return true;
-  if (language !== "dart") return false;
-  const importsOf = (text) => new Set(text.match(DART_IMPORT) ?? []);
-  const kept = importsOf(after);
-  if ([...kept].some((line) => !importsOf(before).has(line))) return false;
-  const strip = (text) => codeOnly(text.replace(DART_IMPORT, ""), language);
-  return strip(before) === strip(after);
+function changesSince(ref) {
+  const fields = git("diff", "-M", "--name-status", "-z", ref, "--").split("\0");
+  const changes = [];
+  for (let i = 0; i < fields.length - 1; ) {
+    const status = fields[i];
+    if (status.startsWith("R") || status.startsWith("C")) {
+      changes.push({ status: status[0], before: fields[i + 1], after: fields[i + 2] });
+      i += 3;
+    } else {
+      changes.push({ status, before: fields[i + 1], after: fields[i + 1] });
+      i += 2;
+    }
+  }
+  return changes;
 }
 
 function sameCode(ref) {
-  const changed = git("diff", "--name-only", "-z", ref, "--").split("\0").filter(Boolean);
   const differs = [];
-  for (const path of changed) {
-    const language = languageOf(path);
+  const added = [];
+  for (const change of changesSince(ref)) {
+    const language = languageOf(change.after) ?? languageOf(change.before);
     if (!language) continue;
-    let before;
-    try {
-      before = git("show", `${ref}:${path}`);
-    } catch {
+    if (change.status === "A" || change.status === "C") {
+      added.push(change.after);
       continue;
     }
-    const after = existsSync(path) ? readFileSync(path, "utf8") : "";
-    if (!sameCodeBesidesImports(before, after, language)) differs.push(path);
+    const before = git("show", `${ref}:${change.before}`);
+    const after = change.status === "D" ? "" : readFileSync(change.after, "utf8");
+    if (codeOnly(before, language) !== codeOnly(after, language)) differs.push(change.after);
   }
+  if (added.length > 0) console.log(`New source files, not compared:\n${added.join("\n")}\n`);
   if (differs.length > 0) {
     console.error(`Code changed, not only comments, in:\n${differs.join("\n")}`);
     process.exit(1);
   }
-  console.log(`Only comments, whitespace and unused Dart imports differ from ${ref} in the changed source files.`);
+  console.log(`Every other changed source file differs from ${ref} only in comments and layout.`);
 }
 
 function stats(paths) {
