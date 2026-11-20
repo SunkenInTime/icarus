@@ -6594,5 +6594,19 @@
   "communityKeepLooking": "Keep looking",
   "@communityKeepLooking": {
     "description": "Button: check more of Community for posts matching the filters."
+  },
+  "strategyMsgPageHasUnshownItems": "This page has {count, plural, =1{an item} other{{count} items}} this version of Icarus can't show. {count, plural, =1{It's kept as it is} other{They're kept as they are}}.",
+  "@strategyMsgPageHasUnshownItems": {
+    "description": "Toast when a cloud page holds placed items this build cannot draw, such as ones made in a newer version. They stay on the page and are never deleted by edits here.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "strategyMsgPageHasUnshownSettings": "This version of Icarus can't read this page's settings, so it shows the default sizes. The saved settings are kept unless you change them.",
+  "@strategyMsgPageHasUnshownSettings": {
+    "description": "Toast when a cloud page's settings (agent and ability size, team colours) cannot be read by this build. The canvas shows defaults; the saved settings are only replaced if the user changes a setting."
   }
 }

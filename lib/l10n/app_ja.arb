@@ -1402,5 +1402,7 @@
   "communityReviewQueueFailed": "審査待ちの投稿を読み込めませんでした。",
   "communityPausedTitle": "まだ一致する投稿はありません",
   "communityPausedSubtitle": "コミュニティの一部だけを確認しました。",
-  "communityKeepLooking": "さらに探す"
+  "communityKeepLooking": "さらに探す",
+  "strategyMsgPageHasUnshownItems": "このページには、このバージョンのIcarusでは表示できないアイテムが{count}件あります。アイテムはそのまま保持されます。",
+  "strategyMsgPageHasUnshownSettings": "このバージョンのIcarusではこのページの設定を読み込めないため、既定のサイズで表示しています。保存されている設定は、変更しない限りそのまま保持されます。"
 }

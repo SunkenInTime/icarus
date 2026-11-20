@@ -15,6 +15,7 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/collab/unshown_cloud_content_provider.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
@@ -43,6 +44,7 @@ Future<void> applyStrategyEditorPageData(
   ref.read(placedImageProvider.notifier).fromHive(data.images);
   ref.read(utilityProvider.notifier).fromHive(data.utilities);
   ref.read(lineUpProvider.notifier).fromHive(data.lineUpGraph);
+  ref.read(unshownCloudContentProvider.notifier).state = data.unshown;
   ref
       .read(mapProvider.notifier)
       .fromHive(mapOverride ?? data.map, data.isAttack);
@@ -92,6 +94,13 @@ Set<EntitySyncKey> mergeRemoteStrategyEditorPageData(
   ref.read(textProvider.notifier).mergeRemote(data.texts, keep);
   ref.read(placedImageProvider.notifier).mergeRemote(data.images, keep);
   ref.read(utilityProvider.notifier).mergeRemote(data.utilities, keep);
+  ref.read(unshownCloudContentProvider.notifier).state = UnshownCloudContent(
+    elements: [
+      for (final element in data.unshown.elements)
+        if (!keep(element.publicId)) element,
+    ],
+    settings: data.unshown.settings,
+  );
 
   final liveSync = ref.read(activePageLiveSyncProvider.notifier);
   final (lineUpGraph, heldGroups) = mergeHeldLineups(

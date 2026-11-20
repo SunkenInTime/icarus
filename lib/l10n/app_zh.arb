@@ -1402,5 +1402,7 @@
   "communityReviewQueueFailed": "无法加载待审核的帖子。",
   "communityPausedTitle": "目前没有匹配的帖子",
   "communityPausedSubtitle": "只检查了社区的一部分。",
-  "communityKeepLooking": "继续查找"
+  "communityKeepLooking": "继续查找",
+  "strategyMsgPageHasUnshownItems": "此页面有 {count} 个项目无法在此版本的 Icarus 中显示。它们会原样保留。",
+  "strategyMsgPageHasUnshownSettings": "此版本的 Icarus 无法读取此页面的设置，因此以默认大小显示。除非你更改设置，否则已保存的设置会原样保留。"
 }
