@@ -47,6 +47,29 @@ void main() {
   });
 
   test(
+      'a newer build\'s folder row with an icon id this build lacks reads '
+      'its legacy icon', () {
+    final legacy = StoredFolderIcon.fromIconData(Icons.map);
+    final folder = switch (folderFromRow(
+      FolderRow(
+        publicId: 'f',
+        name: 'F',
+        iconId: 9999,
+        iconCodePoint: legacy.codePoint,
+        iconFontFamily: legacy.fontFamily,
+        iconFontPackage: legacy.fontPackage,
+        color: 'red',
+      ),
+      DateTime.utc(2026),
+    )) {
+      FolderMade(:final folder) => folder,
+      FolderRefused(:final problems) => throw TestFailure('$problems'),
+    };
+    expect(folder.iconId, FolderIconRegistry.idForLegacyIconData(Icons.map));
+    expect(folder.iconId, isNot(FolderIconRegistry.defaultId));
+  });
+
+  test(
       'a folder row with a colour or icon this build does not know is '
       'refused', () {
     final problems = switch (folderFromRow(

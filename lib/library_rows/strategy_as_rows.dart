@@ -331,7 +331,8 @@ StrategyToRows strategyToRows(
         for (final link in data['links'] as List)
           (link as Map<String, dynamic>)['id'] as String,
       ];
-      final groupId = linkIds.contains(row.publicId)
+      final groupId = linkIds.contains(row.publicId) &&
+              !takenGroupIds.contains(row.publicId)
           ? row.publicId
           : _derivedId(
               {...takenGroupIds, ...everyLinkId},

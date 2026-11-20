@@ -494,9 +494,10 @@ void main() {
       expect(problem, isA<CarriedRowOffPage>());
     });
 
-    for (final (name, data) in [
+    for (final (name, kind, data) in [
       (
         'an agent this build has never heard of',
+        ElementKind.agent,
         {
           'id': 'future',
           'type': 'futureAgent',
@@ -505,6 +506,7 @@ void main() {
       ),
       (
         'an agent of a kind this build has never heard of',
+        ElementKind.agent,
         {
           'id': 'future',
           'kind': 'futureCone',
@@ -513,17 +515,18 @@ void main() {
           'position': {'dx': 1, 'dy': 2},
         },
       ),
+      (
+        'a drawing of a type this build has never heard of',
+        ElementKind.drawing,
+        {'id': 'future', 'type': 'futureDrawing', 'colorValue': 1},
+      ),
     ]) {
       test('is carried when it is $name', () {
         final made = rowsOf(strategyWith([pageWith('page')]));
         final future = LiveElement(
           publicId: 'future',
           pagePublicId: 'page',
-          payload: ElementPayload(
-            kind: ElementKind.agent,
-            payloadVersion: 1,
-            data: data,
-          ),
+          payload: ElementPayload(kind: kind, payloadVersion: 1, data: data),
           sortIndex: 99,
           revision: 1,
         );
