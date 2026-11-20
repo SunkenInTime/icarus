@@ -359,6 +359,53 @@ describe("posting", () => {
     await expect(
       as("author").query(getSourceChanged, { postPublicId: postId }),
     ).resolves.toEqual({ sourceExists: true, changed: false });
+
+    const patchSource = async (opId: string, payload: object) => {
+      const revision = await t.run(
+        async (ctx) =>
+          (await ctx.db
+            .query("strategies")
+            .withIndex("by_publicId", (q) => q.eq("publicId", "source"))
+            .unique())!.revision,
+      );
+      await as("author").mutation(applyBatch, {
+        ...protocol,
+        strategyPublicId: "source",
+        clientId: "edit",
+        ops: [
+          {
+            opId,
+            type: "strategy.patch",
+            payload,
+            expectedStrategyRevision: revision,
+          },
+        ],
+      });
+    };
+    const refresh = () =>
+      as("author").mutation(updatePost, {
+        ...protocol,
+        postPublicId: postId,
+        refresh: true,
+      });
+    const sourceChanged = async () =>
+      (await as("author").query(getSourceChanged, { postPublicId: postId }))
+        .changed;
+
+    await patchSource("rename", { name: "Renamed in the library" });
+    expect(await sourceChanged()).toBe(false);
+    await patchSource("map", { mapData: "bind" });
+    expect(await sourceChanged()).toBe(true);
+    await refresh();
+    expect(await sourceChanged()).toBe(false);
+    await patchSource("palette", {
+      themeOverridePalette: { base: "#111111", detail: "#222222", highlight: "#333333" },
+    });
+    expect(await sourceChanged()).toBe(true);
+    await refresh();
+    expect(await sourceChanged()).toBe(false);
+    await patchSource("profile", { themeProfileId: "ember" });
+    expect(await sourceChanged()).toBe(true);
     await settle(harness);
   });
 

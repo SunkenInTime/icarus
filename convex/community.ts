@@ -332,9 +332,9 @@ export const listMine = query({
   },
 });
 
-/// Whether the strategy a post was copied from has changed since the post
-/// was last updated. Its author only; read once when they open the post's
-/// dialog, since it reads the strategy's content version.
+/// Whether the strategy a post was copied from has changed its content, map
+/// or theme since the post was last updated. Its author only; read once when
+/// they open the post's dialog, since it reads the strategy's content version.
 export const getSourceChanged = query({
   args: { postPublicId: v.string() },
   returns: v.object({ sourceExists: v.boolean(), changed: v.boolean() }),
@@ -345,9 +345,30 @@ export const getSourceChanged = query({
     const source = await ctx.db.get(post.sourceStrategyId);
     if (source === null) return { sourceExists: false, changed: false };
     const version = await readContentVersion(ctx, source._id);
-    return { sourceExists: true, changed: version !== post.sourceContentVersion };
+    const snapshot =
+      post.snapshotStrategyId === undefined
+        ? null
+        : await ctx.db.get(post.snapshotStrategyId);
+    return {
+      sourceExists: true,
+      changed:
+        version !== post.sourceContentVersion ||
+        (snapshot !== null && !sameMapAndTheme(source, snapshot)),
+    };
   },
 });
+
+function sameMapAndTheme(a: Doc<"strategies">, b: Doc<"strategies">) {
+  const paletteA = a.themeOverridePalette;
+  const paletteB = b.themeOverridePalette;
+  return (
+    a.mapData === b.mapData &&
+    a.themeProfileId === b.themeProfileId &&
+    paletteA?.base === paletteB?.base &&
+    paletteA?.detail === paletteB?.detail &&
+    paletteA?.highlight === paletteB?.highlight
+  );
+}
 
 /// The caller's own strategies, most recently changed first, to pick one
 /// to post. Read once when the picker opens.
