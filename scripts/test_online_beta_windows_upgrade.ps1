@@ -9,6 +9,7 @@ param(
     [string]$ReleaseCandidateVersion = "",
     [string]$PublicFixtureUrl = "https://raw.githubusercontent.com/SunkenInTime/icarus/fddec2b0b6163cf3962863db18ab0f06ea467773/base-test.ica",
     [string]$PublicFixtureSha256 = "166eb3ad31a19aca418081dc3ba949aedbf12b5049cd007fda410814a03b0b1a",
+    [string]$BackgroundReadAheadResult = "",
     [int]$ReadySeconds = 30,
     [int]$LaunchSeconds = 30
 )
@@ -272,41 +273,6 @@ function Get-LaunchDiagnosis {
     return "$stage The process is $busy. Child processes: $(if ($children.Count -gt 0) { $children -join ', ' } else { 'none' })."
 }
 
-function Read-WebView2Runtime {
-    $runtimeRoot = Join-Path ${env:ProgramFiles(x86)} "Microsoft\EdgeWebView\Application"
-    if (-not (Test-Path $runtimeRoot -PathType Container)) {
-        Write-Host "No WebView2 runtime at $runtimeRoot to read ahead."
-        return $null
-    }
-    $clock = [System.Diagnostics.Stopwatch]::StartNew()
-    $files = @(Get-ChildItem -Path $runtimeRoot -Recurse -File)
-    $bytes = [long]0
-    $unread = 0
-    foreach ($file in $files) {
-        try {
-            $stream = [System.IO.File]::OpenRead($file.FullName)
-            try {
-                $stream.CopyTo([System.IO.Stream]::Null)
-                $bytes += $stream.Length
-            }
-            finally {
-                $stream.Dispose()
-            }
-        }
-        catch {
-            $unread++
-        }
-    }
-    $seconds = [math]::Round($clock.Elapsed.TotalSeconds, 1)
-    Write-Host "Read the WebView2 runtime ahead of the first launch: $($files.Count - $unread) of $($files.Count) files, $([math]::Round($bytes / 1MB)) MB in $seconds s"
-    return [ordered]@{
-        files = $files.Count
-        unreadFiles = $unread
-        megabytes = [math]::Round($bytes / 1MB)
-        seconds = $seconds
-    }
-}
-
 function Start-And-ProveAlive {
     param(
         [Parameter(Mandatory = $true)][string]$Label,
@@ -552,7 +518,20 @@ try {
     Install-Icarus -InstallerPath $publicInstaller -ExpectedVersion $PublicVersion
     $observedPublicInstallPath = $installedExe
     $observedPublicVersion = Assert-InstalledVersion -ExpectedVersion $PublicVersion
-    $webView2ReadAhead = Read-WebView2Runtime
+    $webView2ReadAhead = [ordered]@{
+        background = if (-not [string]::IsNullOrWhiteSpace($BackgroundReadAheadResult) -and
+            (Test-Path $BackgroundReadAheadResult -PathType Leaf)) {
+            Get-Content $BackgroundReadAheadResult -Raw | ConvertFrom-Json
+        } else {
+            $null
+        }
+        beforeFirstLaunch = & (Join-Path $PSScriptRoot "read_webview2_runtime.ps1")
+    }
+    if ($null -eq $webView2ReadAhead.background) {
+        Write-Host "No finished background read of the WebView2 runtime was found."
+    } else {
+        Write-Host "The background read of the WebView2 runtime finished at $($webView2ReadAhead.background.finishedAt) after $($webView2ReadAhead.background.seconds) s."
+    }
     $runningProcess = Start-And-ProveAlive -Label "Public $PublicVersion" -Arguments @($fixtureFullPath)
     Wait-ForStrategyLibrary
     Stop-Icarus -Process $runningProcess
@@ -628,7 +607,7 @@ try {
         launchSecondsPerBuild = $LaunchSeconds
         launches = $launchTimings
     }
-    $evidence | ConvertTo-Json -Depth 4 | Set-Content -Path $evidencePath -Encoding utf8
+    $evidence | ConvertTo-Json -Depth 5 | Set-Content -Path $evidencePath -Encoding utf8
     Write-Host "Windows public-upgrade and rollback smoke passed."
     Write-Host "Evidence: $evidencePath"
 }
