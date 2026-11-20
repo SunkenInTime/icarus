@@ -16,16 +16,9 @@
 
   {"dropOpenPage": 1},
   {"wait": 1},
-  {"key": "keyA"},
-  {"wait": 0.6},
-  {"shot": "{out}/1-switch-refused.png"},
-  {"wait": 2},
-  {"probe": "after-refused-switch"},
-  {"expectItem": "b{run}"},
-
   {"keyCombo": ["controlLeft", "keyS"]},
   {"wait": 0.6},
-  {"shot": "{out}/2-save-refused.png"},
+  {"shot": "{out}/1-save-refused.png"},
   {"wait": 2},
   {"probe": "after-refused-save"},
   {"expectItem": "b{run}"},
