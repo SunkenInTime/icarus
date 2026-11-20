@@ -23,7 +23,9 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -99,6 +101,112 @@ void main() {
     ]);
     expect(ordered[1].agentData.single.id, sourceAgent.id);
     expect(container.read(strategyProvider).activePageId, ordered[1].id);
+  });
+
+  test('a save that cannot write the page on screen leaves the work unsaved',
+      () async {
+    final strategy =
+        _strategy([_page(id: 'page-1', name: 'Page 1', sortIndex: 0)]);
+    await strategyBox.put(strategy.id, strategy);
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    _activatePage(
+      container,
+      strategy,
+      _page(id: 'page-gone', name: 'Page 2', sortIndex: 1),
+    );
+    container.read(agentProvider.notifier).addAgent(_jett('agent-1'));
+    container.read(strategySaveStateProvider.notifier).markDirty();
+
+    await expectLater(
+      container.read(strategyProvider.notifier).saveToHive(strategy.id),
+      throwsStateError,
+    );
+
+    expect(container.read(strategySaveStateProvider).isDirty, isTrue);
+    expect(strategyBox.get(strategy.id)!.pages.single.agentData, isEmpty);
+  });
+
+  test('a page switch whose strategy left the library stays on the page',
+      () async {
+    final pages = [
+      _page(id: 'page-1', name: 'Page 1', sortIndex: 0),
+      _page(id: 'page-2', name: 'Page 2', sortIndex: 1),
+    ];
+    final strategy = _strategy(pages);
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    _activatePage(container, strategy, pages.first);
+    container.read(agentProvider.notifier).addAgent(_jett('agent-1'));
+    container.read(strategySaveStateProvider.notifier).markDirty();
+
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .setActivePage('page-2');
+
+    expect(
+      container.read(strategyPageSessionProvider).activePageId,
+      'page-1',
+    );
+    expect(container.read(agentProvider).map((agent) => agent.id),
+        ['agent-1']);
+    expect(container.read(strategySaveStateProvider).isDirty, isTrue);
+  });
+
+  test('switching pages with autosave off still saves the page left',
+      () async {
+    final pages = [
+      _page(id: 'page-1', name: 'Page 1', sortIndex: 0),
+      _page(id: 'page-2', name: 'Page 2', sortIndex: 1),
+    ];
+    final strategy = _strategy(pages);
+    await strategyBox.put(strategy.id, strategy);
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await container
+        .read(appPreferencesProvider.notifier)
+        .setAutosaveEnabled(false);
+    _activatePage(container, strategy, pages.first);
+    container.read(agentProvider.notifier).addAgent(_jett('agent-1'));
+    container.read(strategySaveStateProvider.notifier).markDirty();
+
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .setActivePage('page-2');
+
+    expect(container.read(strategyPageSessionProvider).activePageId, 'page-2');
+    final saved = strategyBox.get(strategy.id)!.pages;
+    expect(
+      saved.singleWhere((page) => page.id == 'page-1').agentData.map(
+            (agent) => agent.id,
+          ),
+      ['agent-1'],
+    );
+  });
+
+  test('deleting the page on screen with unsaved edits opens the next page',
+      () async {
+    final pages = [
+      _page(id: 'page-1', name: 'Page 1', sortIndex: 0),
+      _page(id: 'page-2', name: 'Page 2', sortIndex: 1),
+    ];
+    final strategy = _strategy(pages);
+    await strategyBox.put(strategy.id, strategy);
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    _activatePage(container, strategy, pages.first);
+    container.read(agentProvider.notifier).addAgent(_jett('agent-1'));
+    container.read(strategySaveStateProvider.notifier).markDirty();
+
+    expect(
+      await container.read(strategyProvider.notifier).deletePage('page-1'),
+      isTrue,
+    );
+
+    expect(container.read(strategyPageSessionProvider).activePageId, 'page-2');
+    final saved = strategyBox.get(strategy.id)!.pages;
+    expect(saved.map((page) => (page.id, page.name)), [('page-2', 'Page 1')]);
+    expect(container.read(agentProvider), isEmpty);
   });
 
   test('reorder renumbers default names and preserves custom names', () async {
@@ -635,3 +743,9 @@ void _activatePage(
     )
     ..activePageID = page.id;
 }
+
+PlacedAgent _jett(String id) => PlacedAgent(
+      id: id,
+      type: AgentType.jett,
+      position: const Offset(40, 40),
+    );

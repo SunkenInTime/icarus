@@ -3,6 +3,7 @@ import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/strategy_page_source.dart';
 
 class StrategySaveState {
   const StrategySaveState({
@@ -161,29 +162,22 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
   bool get canvasHeld => _canvasHeld;
   bool _canvasHeld = false;
 
-  /// Records whether the canvas could be handed to the op queue, by a
-  /// handover that started when [dirtyMarks] was [marksBefore] and the
-  /// strategy was unsaved if [dirtyBefore].
+  /// Records how a handover that started when [dirtyMarks] was
+  /// [marksBefore] ended.
   ///
-  /// A handover that failed holds the canvas when it carried an unsaved mark
-  /// as the handover started or does now: with none, nothing on it is
-  /// unsaved. The queue can empty while the handover waits and clear that
-  /// mark, so the hold puts it back.
+  /// The queue can empty while a handover waits and clear the unsaved mark,
+  /// so a hold puts it back.
   ///
   /// One that ends a hold may queue nothing, and then no queue change comes
   /// to settle the mark the hold kept, so it is settled here, unless
   /// something was marked unsaved since the handover looked.
-  void noteCanvasHandover({
-    required bool handedOver,
-    required int marksBefore,
-    required bool dirtyBefore,
-  }) {
+  void noteCanvasHandover(PageHandover handover, {required int marksBefore}) {
     final wasHeld = _canvasHeld;
-    _canvasHeld = !handedOver && (dirtyBefore || state.isDirty);
+    _canvasHeld = handover is HeldOnCanvas;
     if (_canvasHeld && (!state.isDirty || !state.hasPendingCloudSync)) {
       state = state.copyWith(isDirty: true, hasPendingCloudSync: true);
     }
-    if (wasHeld && handedOver && _dirtyMarks == marksBefore) {
+    if (wasHeld && !_canvasHeld && _dirtyMarks == marksBefore) {
       clearStaleCloudMark();
     }
   }

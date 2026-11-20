@@ -458,6 +458,7 @@
   "icaDropRestoredLibrarySettings": "ライブラリの設定を復元しました。",
   "icaDropNothingImported": "インポートできる作戦やフォルダーはありませんでした。",
   "icaDropSkippedFiles": "{count, plural, other{{count}件のファイルをスキップしました。}}",
+  "icaDropUnreadableDrawing": "「{strategyName}」のページ「{pageName}」にある描画を読み込めなかったため、「{strategyName}」はインポートされていません。",
   "icaDropImportedStrategiesIntoFolders": "{strategyCount, plural, other{{strategyCount}件の作戦}}を{folderCount, plural, other{{folderCount}個のフォルダー}}にインポートしました。",
   "icaDropImportedStrategies": "{count, plural, other{作戦を{count}件インポートしました。}}",
   "icaDropImportedFolders": "{count, plural, other{フォルダーを{count}個インポートしました。}}",
@@ -1053,6 +1054,7 @@
   "strategyMsgMoveFailed": "この作戦を移動できませんでした。もう一度お試しください。",
   "strategyMsgPageUnreachable": "「{pageName}」を開けませんでした。接続を確認して、もう一度お試しください。",
   "strategyMsgPageUnreachableUnnamed": "そのページを開けませんでした。接続を確認して、もう一度お試しください。",
+  "strategyMsgPageEditsNotSaved": "このページの変更を保存できなかったため、このページに留まっています。作業内容はそのまま残っています。",
   "strategyMsgDeletedPageFallbackName": "このページ",
   "prefsMsgSortAlphabetical": "名前順",
   "prefsMsgSortDateCreated": "作成日",
@@ -1113,6 +1115,7 @@
   "moveToCloudOffline": "現在クラウドに接続できないため、「{name}」はこのデバイスに残ります。オンラインになってからもう一度お試しください。",
   "opQueueReplayCaptureFolderGone": "「{strategyName}」はマイライブラリの最上位にあります。キャプチャ先のフォルダーが削除されたか、あなたのものではありません。",
   "importExportCloudUnreadable": "クラウドのライブラリを読み込めなかったため、何もエクスポートされていません。接続を確認して、もう一度お試しください。",
+  "importExportUnreadableDrawing": "「{strategyName}」のページ「{pageName}」にある描画を読み込めなかったため、何もエクスポートされていません。",
   "importExportCloudNotSynced": "まだ同期されていないクラウドの変更があるため、何もエクスポートされていません。同期を待つか、ライブラリで変更を確認してから、もう一度お試しください。",
   "importExportCloudWorkUnreadable": "このデバイスに保存された一部のクラウドの変更を読み込めないため、何もエクスポートされていません。変更を確認してから、もう一度お試しください。",
   "importExportCloudChanged": "エクスポート中にクラウドのライブラリが変更されたため、何もエクスポートされていません。もう一度お試しください。",
@@ -1400,5 +1403,7 @@
   "communityReviewQueueFailed": "審査待ちの投稿を読み込めませんでした。",
   "communityPausedTitle": "まだ一致する投稿はありません",
   "communityPausedSubtitle": "コミュニティの一部だけを確認しました。",
-  "communityKeepLooking": "さらに探す"
+  "communityKeepLooking": "さらに探す",
+  "strategyMsgPageHasUnshownItems": "このページには、このバージョンのIcarusでは表示できないアイテムが{count}件あります。アイテムはそのまま保持されます。",
+  "strategyMsgPageHasUnshownSettings": "このバージョンのIcarusではこのページの設定を読み込めないため、既定のサイズで表示しています。保存されている設定は、変更しない限りそのまま保持されます。"
 }

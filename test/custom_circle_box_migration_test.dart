@@ -205,6 +205,7 @@ void main() {
     final pages = await StrategyPage.listFromJson(
       json: jsonEncode(decoded['pages']),
       strategyID: migrated.id,
+      strategyName: 'Imported',
       isZip: true,
     );
     final restored = await StrategyMigrator.migrateLegacyData(

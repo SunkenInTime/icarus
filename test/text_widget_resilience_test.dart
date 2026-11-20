@@ -31,6 +31,11 @@ import 'package:icarus/widgets/draggable_widgets/text/formatted_text_view.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+class _UnwrittenSaveStrategyProvider extends StrategyProvider {
+  @override
+  Future<void> saveToHive(String id) async {}
+}
+
 class _NoopActionProvider extends ActionProvider {
   @override
   List<UserAction> build() => [];
@@ -46,10 +51,12 @@ void main() {
   CoordinateSystem(playAreaSize: const Size(1920, 1080));
   const abilityInfoAdapterTypeId = 9;
 
-  ProviderContainer createContainer() {
+  ProviderContainer createContainer({bool writesLibrary = true}) {
     final container = ProviderContainer(
       overrides: [
         actionProvider.overrideWith(_NoopActionProvider.new),
+        if (!writesLibrary)
+          strategyProvider.overrideWith(_UnwrittenSaveStrategyProvider.new),
       ],
     );
     addTearDown(container.dispose);
@@ -407,7 +414,7 @@ void main() {
     await tester.runAsync(
       () => openStrategyTestBoxes('icarus-text-widget-typing-'),
     );
-    final container = createContainer();
+    final container = createContainer(writesLibrary: false);
     container.read(textProvider.notifier).fromHive([
       PlacedText(id: 'text-1', position: const Offset(10, 20))..text = '',
     ]);

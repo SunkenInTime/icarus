@@ -1,10 +1,14 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/json_converters.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 
 void main() {
@@ -555,6 +559,80 @@ void main() {
           'message',
           contains('Cloud lineup group lineup-1 could not be read'),
         ),
+      ),
+    );
+  });
+
+  test('cloud export stops at a drawing it cannot read and names its page', () {
+    final now = DateTime.utc(2026, 8, 29);
+    const strategyId = 'strategy-1';
+    const pageId = 'page-1';
+    RemoteElement drawing(String id, Map<String, dynamic> data) =>
+        RemoteElement(
+          publicId: id,
+          strategyPublicId: strategyId,
+          pagePublicId: pageId,
+          elementType: 'drawing',
+          payload: cloudElementPayload(kind: 'drawing', data: data),
+          sortIndex: 0,
+          revision: 1,
+          deleted: false,
+        );
+    final snapshot = RemoteFullStrategySnapshot(
+      header: RemoteStrategyHeader(
+        publicId: strategyId,
+        name: 'Cloud strategy',
+        mapData: 'ascent',
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      pages: [
+        RemoteFullPage(
+          page: RemotePage(
+            publicId: pageId,
+            strategyPublicId: strategyId,
+            name: 'Retake',
+            sortIndex: 0,
+            isAttack: true,
+            revision: 1,
+            createdAt: now,
+            updatedAt: now,
+          ),
+          content: RemotePageContent(
+            revision: 1,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ),
+      ],
+      elementsByPage: {
+        pageId: [
+          drawing(
+            'kept-line',
+            DrawingProvider.elementToJson(Line(
+              lineStart: const Offset(120, 340),
+              lineEnd: const Offset(480, 360),
+              color: Colors.red,
+              isDotted: false,
+              hasArrow: true,
+              id: 'kept-line',
+            )),
+          ),
+          drawing('spray', {'type': 'sprayDrawing', 'id': 'spray'}),
+        ],
+      },
+      lineupsByPage: const <String, List<RemoteLineup>>{},
+      assetsById: const <String, RemoteImageAsset>{},
+    );
+
+    expect(
+      () =>
+          StrategyImportExportService.strategyDataFromRemoteSnapshot(snapshot),
+      throwsA(
+        isA<UnreadableDrawing>()
+            .having((error) => error.strategyName, 'strategy', 'Cloud strategy')
+            .having((error) => error.pageName, 'page', 'Retake'),
       ),
     );
   });

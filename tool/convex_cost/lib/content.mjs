@@ -167,7 +167,41 @@ export function pageKinds(count) {
   return Array.from({ length: count }, (_, i) => cycle[i % cycle.length]);
 }
 
-export function elementAdds(pagePublicId, count, rng) {
+export function freehandPayload(id, pointCount, rng) {
+  const points = [rng.position()];
+  for (let i = 1; i < pointCount; i++) {
+    const last = points[i - 1];
+    points.push({ dx: last.dx + (rng.next() - 0.4) * 6, dy: last.dy + (rng.next() - 0.45) * 6 });
+  }
+  return {
+    kind: "drawing",
+    payloadVersion: 1,
+    data: {
+      boundingBox: freehandBox(points),
+      colorValue: 4280468830,
+      elementType: "drawing",
+      hasArrow: true,
+      id,
+      isDotted: false,
+      listOfPoints: points,
+      showTraversalTime: false,
+      thickness: 5,
+      traversalSpeedProfile: "running",
+      type: "freeDrawing",
+    },
+  };
+}
+
+export function freehandBox(points) {
+  const xs = points.map((point) => point.dx);
+  const ys = points.map((point) => point.dy);
+  return {
+    max: { dx: Math.max(...xs), dy: Math.max(...ys) },
+    min: { dx: Math.min(...xs), dy: Math.min(...ys) },
+  };
+}
+
+export function elementAdds(pagePublicId, count, rng, { freehandPoints } = {}) {
   return pageKinds(count).map((kind, sortIndex) => {
     const id = rng.uuid();
     return {
@@ -175,7 +209,8 @@ export function elementAdds(pagePublicId, count, rng) {
       type: "element.add",
       elementPublicId: id,
       pagePublicId,
-      payload: elementPayload(kind, id, rng),
+      payload:
+        kind === "drawing" && freehandPoints ? freehandPayload(id, freehandPoints, rng) : elementPayload(kind, id, rng),
       sortIndex,
     };
   });

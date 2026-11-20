@@ -65,10 +65,12 @@
 //                                      the id lastImage is the newest picture
 // Library and cloud
 //   {"signIn": true}                   ICARUS_DRIVE_EMAIL / ICARUS_DRIVE_PASSWORD
-//   {"refreshSession": true}           refreshes the sign-in, as Supabase does
-//                                      about once an hour
+//   {"refreshSession": true}           refreshes the sign-in, as Supabase does about once an hour
+//   {"reconnect": true}                drops the cloud connection and dials it again
 //   {"newLocal": map, "name": n}       {"newCloud": name, "map": m?}
 //   {"newCloudFolder": name}           {"openCloudFolder": name}
+//   {"outboxWrites": b}                with false, the outbox refuses writes
+//   {"dropOpenPage": 1}                the open local page leaves the library
 //   {"shareLink": role, "file": path}  makes a link to the open strategy and
 //                                      writes its code to the file
 //   {"openShareLink": path}            opens the link whose code is in the file
@@ -102,8 +104,7 @@
 //   {"logUtilities": tag}              every utility's type, position and door
 //   {"logDoors": tag}                  the map doors changed on the page
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
-//   {"logCaptions": tag}               every placed item's caption
-//   {"logCard": tag}                   the caption card that's open, and where
+//   {"logCaptions": tag}  {"logCard": tag}  every caption; the open card
 //   {"logLineups": tag}                {"logImages": tag}
 //   {"framesStart": 1} / {"framesLog": tag}   frame build and raster times between
 //                                      them: p50, p90, p99, worst, in ms
@@ -114,7 +115,7 @@
 //   {"expectEditing": b}               fails unless a text field has the keyboard,
 //                                      or with false, unless none has
 //   {"logTexts": tag}                  every text box's position, width and text
-//   {"expectAgents": n}                fails unless n agents are on the page
+//   {"expectAgents": n}  {"expectDead": n}  n agents on the page, n dead
 //   {"expectInView": n, "only": id?,   fails unless n items are drawn, all of
 //    "middles": b?}                    them in the map's view; logs their outlines.
 //                                      With only, checks that item, and the page
@@ -129,11 +130,10 @@
 //                                      fails unless the text box or picture's tag
 //                                      is this color, six lowercase hex digits,
 //                                      or gray without one; lastImage as above
-//   {"expectDead": n}                 fails unless n agents on the page are dead
-//   {"expectItem": id, "gone": b?}     fails unless the item is on the page, or
-//                                      with gone, unless it is not
-//   {"expectImages": n, "lineups": m?} fails unless n pictures are on the page,
-//                                      and m in its lineups
+//   {"expectItem": id, "gone": b?}     fails unless the item is on the page; gone flips it
+//   {"expectRow": id, "gone": b?, "copy": b?, "version": n?}  the same for the server's copy of the page; copy: a copy of id
+//   {"sendRow": id, "kind": k, "data": {}, "version": n?}  adds or replaces a row as another build writes it
+//   {"expectImages": n, "lineups": m?} fails unless n pictures are on the page, m in lineups
 //   {"exit": 1}
 import 'dart:async';
 import 'dart:convert';
@@ -149,7 +149,13 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
+import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/page_copy_id.dart';
+import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -931,6 +937,8 @@ String _probe() {
     'unsaved': c.read(strategySaveStateProvider).isDirty,
     'canLeave': c.read(strategySaveStateProvider).canLeaveSafely,
     'deletedPage': c.read(strategyPageSessionProvider).deletedPage?.name,
+    'page': c.read(strategyPageSessionProvider).activePageId,
+    'canvasHeld': c.read(strategySaveStateProvider.notifier).canvasHeld,
   });
 }
 
@@ -1310,6 +1318,8 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _waitFor(() => c.read(authProvider).isConvexUserReady, 60);
     case 'refreshSession':
       await Supabase.instance.client.auth.refreshSession();
+    case 'reconnect':
+      await ConvexClient.instance.reconnect();
     case 'newLocal':
       await c.read(strategyProvider.notifier).createNewStrategy(
             map: MapValue.values.byName(value as String),
@@ -1660,6 +1670,83 @@ Future<void> _run(Map<String, dynamic> step) async {
           throw StateError('$id is out of view: $drawn');
         }
       }
+    case 'sendRow':
+      final id = value as String;
+      final kind = step['kind'] as String;
+      final pageId = c.read(strategyPageSessionProvider).activePageId!;
+      final payload = {
+        ...cloudElementPayload(kind: kind, data: {
+          ...(step['data'] as Map).cast<String, dynamic>(),
+          'id': id,
+          'elementType': kind,
+        }),
+        if (step['version'] case final num version) 'payloadVersion': version,
+      };
+      final existing = c
+          .read(remoteEditorSnapshotProvider)
+          .valueOrNull
+          ?.activePage
+          ?.elements
+          .where((row) => row.publicId == id && !row.deleted)
+          .firstOrNull;
+      final answers = await c.read(convexStrategyRepositoryProvider).applyBatch(
+        strategyPublicId: c.read(strategyProvider).strategyId!,
+        clientId: 'drive-another-build-$id',
+        ops: [
+          if (existing == null)
+            ElementAddOp(
+              opId: const Uuid().v4(),
+              elementPublicId: id,
+              pagePublicId: pageId,
+              payload: payload,
+              sortIndex: 1000,
+            )
+          else
+            ElementPatchOp(
+              opId: const Uuid().v4(),
+              elementPublicId: id,
+              pagePublicId: pageId,
+              expectedElementRevision: existing.revision,
+              payload: payload,
+            ),
+        ],
+      );
+      if (!answers.single.isAck) {
+        throw StateError('the server refused $value: ${answers.single}');
+      }
+    case 'expectRow':
+      final id = value as String;
+      final copy = step['copy'] == true;
+      final version = step['version'] as num?;
+      RemoteElement? row() => c
+          .read(remoteEditorSnapshotProvider)
+          .valueOrNull
+          ?.activePage
+          ?.elements
+          .where(
+            (row) =>
+                !row.deleted &&
+                (copy
+                    ? row.publicId != id && pageCopyRoot(row.publicId) == id
+                    : row.publicId == id),
+          )
+          .firstOrNull;
+      bool held() =>
+          row() != null &&
+          (version == null || row()!.payload['payloadVersion'] == version);
+      final gone = step['gone'] == true;
+      try {
+        await _waitFor(() => held() != gone, 30);
+      } on TimeoutException {
+        throw StateError(
+          gone
+              ? 'the server still holds $value'
+              : 'the server does not hold $value as asked: ${row()?.payload}',
+        );
+      }
+      _log('ROW $value ${copy ? 'copy ' : ''}${row()?.publicId} '
+          'version=${row()?.payload['payloadVersion']} '
+          '${held() ? 'held' : 'gone'}');
     case 'expectItem':
       final id = _itemId(value as String);
       final items = _placedItems().where((item) => item.id == id);
@@ -1731,6 +1818,25 @@ Future<void> _run(Map<String, dynamic> step) async {
       }
     case 'probe':
       _log('PROBE $value ${_probe()}');
+    case 'outboxWrites':
+      if (value == true) {
+        await Hive.openBox<dynamic>(HiveBoxNames.strategyOutboxBox);
+      } else {
+        await Hive.box<dynamic>(HiveBoxNames.strategyOutboxBox).close();
+      }
+    case 'dropOpenPage':
+      final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+      final strategy = box.get(c.read(strategyProvider).strategyId)!;
+      final pageId = c.read(strategyPageSessionProvider).activePageId;
+      await box.put(
+        strategy.id,
+        strategy.copyWith(
+          pages: [
+            for (final page in strategy.pages)
+              if (page.id != pageId) page,
+          ],
+        ),
+      );
     case 'texts':
       final seen = <String>[];
       void visit(Element element) {
