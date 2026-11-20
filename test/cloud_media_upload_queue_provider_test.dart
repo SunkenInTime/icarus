@@ -420,13 +420,14 @@ void main() {
       referenceDurable: false,
       updatedAt: DateTime.utc(2026, 9, 3),
     ));
-    final asked = Completer<void>();
+    var committing = false;
+    final commitAsked = Completer<void>();
     final answer = Completer<Set<String>?>();
     final container = _container(
       store,
       cloudReady: true,
       referenceLoader: (_, ids) {
-        if (!asked.isCompleted) asked.complete();
+        if (committing && !commitAsked.isCompleted) commitAsked.complete();
         return answer.future;
       },
     );
@@ -434,14 +435,15 @@ void main() {
     final queue = container.read(cloudMediaUploadQueueProvider.notifier);
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    final committing = queue.commitStagedMediaReferences(
+    committing = true;
+    final commit = queue.commitStagedMediaReferences(
       strategyPublicId: 'strategy-a',
       assetPublicIds: ['staged-image'],
     );
-    await asked.future;
+    await commitAsked.future;
     await queue.clearJobsForStrategy('strategy-a');
     answer.complete({'staged-image'});
-    await committing;
+    await commit;
 
     expect(store.load().jobs, isEmpty);
     expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
