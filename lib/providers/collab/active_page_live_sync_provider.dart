@@ -21,6 +21,7 @@ import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/collab/unshown_cloud_content_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -1126,9 +1127,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           projectedSettingsPayload = cloudObjectPayloadOrNull(
               _decodeObject(drawn.payload)['settings']);
         case ActivePageOverlayEntityType.element:
-          final elementType =
-              cloudPayloadData(drawn.payload)['elementType'] as String? ??
-                  (drawn.payload as Map?)?['kind'] as String?;
+          final elementType = _elementTypeOf(drawn.payload);
           if (drawn.deleted || elementType == null) {
             remoteElements.remove(key);
           } else {
@@ -1186,9 +1185,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           if (elementId == null || overlay.desiredPayload == null) {
             continue;
           }
-          final decoded = cloudPayloadData(overlay.desiredPayload);
-          final elementType = decoded['elementType'] as String? ??
-              (overlay.desiredPayload as Map?)?['kind'] as String?;
+          final elementType = _elementTypeOf(overlay.desiredPayload);
           if (elementType == null) {
             _debugLog(
               'projected.skip_overlay ${entry.key} reason=missing_element_type',
@@ -1326,9 +1323,16 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       // work: it is drawn as the user had it, whole, and waits in
       // attention, where Keep mine saves that version over the server's
       // and Use cloud drops it. Edits made on top of it are whole too, so
-      // they keep it. Work that can't be read even so is left off the page.
-      noLongerFits[key] = (opId: head.opId, serverRevision: over?.revision);
+      // they keep it. An element that can't be read even so is kept unshown.
       final whole = drawnFrom([for (final op in ops) op.withMerge(null)]);
+      if (whole != null &&
+          !_drawable(whole.drawn) &&
+          whole.drawn.overlayEntityType ==
+              ActivePageOverlayEntityType.element) {
+        work[key] = whole;
+        continue;
+      }
+      noLongerFits[key] = (opId: head.opId, serverRevision: over?.revision);
       if (whole != null && _drawable(whole.drawn)) work[key] = whole;
     }
     if (noLongerFits.isNotEmpty) {
@@ -1354,12 +1358,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           }
           return true;
         case ActivePageOverlayEntityType.element:
-          final payload = cloudObjectPayload(drawn.payload);
-          final data = cloudPayloadData(payload);
-          final elementType =
-              data['elementType'] as String? ?? payload['kind'] as String?;
+          final data = cloudPayloadData(drawn.payload);
+          final elementType = _elementTypeOf(drawn.payload);
           return elementType != null &&
-              decodeCloudElement(elementType, data) != null;
+              readCloudElement(elementType, data) is DrawnCloudElement;
         case ActivePageOverlayEntityType.lineup:
           lineUpGraphFromCloudRows([
             CloudLineupRow(
@@ -1501,6 +1503,15 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     }
   }
 
+  String? _elementTypeOf(Object? payload) => switch ((
+        cloudPayloadData(payload)['elementType'],
+        payload is Map ? payload['kind'] : null,
+      )) {
+        (final String type, _) => type,
+        (_, final String kind) => kind,
+        _ => null,
+      };
+
   Map<String, dynamic> _decodeObject(Object payload) {
     final decoded = payload is String ? jsonDecode(payload) : payload;
     if (decoded is Map<String, dynamic>) {
@@ -1598,12 +1609,19 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       revision: 0,
       deleted: false,
     );
+    final unshown = ref.read(unshownCloudContentProvider);
+    final settings = ref.read(strategySettingsProvider).toJson();
     final contentKey = EntitySyncKey.pageContent(pageId);
     entities[contentKey] = _NormalizedEntity(
       key: contentKey,
       overlayEntityType: ActivePageOverlayEntityType.pageContent,
       payload: <String, dynamic>{
-        'settings': ref.read(strategySettingsProvider).toJson(),
+        'settings': switch (unshown.settings) {
+          (:final payload, :final shownInstead)
+              when cloudJsonEquivalent(settings, shownInstead.toJson()) =>
+            payload,
+          _ => settings,
+        },
       },
       sortIndex: null,
       revision: 0,
@@ -1669,6 +1687,18 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         payload: cloudElementPayload(
             kind: envelope.kind.name, data: envelope.payload),
         sortIndex: stackedSortIndex(key, envelope.kind),
+        revision: 0,
+        deleted: false,
+      );
+    }
+
+    for (final element in unshown.elements) {
+      final key = EntitySyncKey.element(pageId, element.publicId);
+      entities[key] = _NormalizedEntity(
+        key: key,
+        overlayEntityType: ActivePageOverlayEntityType.element,
+        payload: element.payload,
+        sortIndex: element.sortIndex,
         revision: 0,
         deleted: false,
       );

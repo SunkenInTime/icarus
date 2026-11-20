@@ -2208,6 +2208,20 @@
       }
     }
   },
+  "icaDropUnreadableDrawing": "A drawing on page “{pageName}” of “{strategyName}” couldn't be read, so “{strategyName}” wasn't imported.",
+  "@icaDropUnreadableDrawing": {
+    "description": "Sentence in an import summary: one strategy was left out because a drawing on one of its pages could not be read.",
+    "placeholders": {
+      "strategyName": {
+        "type": "String",
+        "example": "Lotus 13-11"
+      },
+      "pageName": {
+        "type": "String",
+        "example": "Retake"
+      }
+    }
+  },
   "icaDropImportedStrategiesIntoFolders": "Imported {strategyCount, plural, =1{1 strategy} other{{strategyCount} strategies}} into {folderCount, plural, =1{1 folder} other{{folderCount} folders}}.",
   "@icaDropImportedStrategiesIntoFolders": {
     "description": "Import summary.",
@@ -5162,6 +5176,20 @@
   "@importExportCloudUnreadable": {
     "description": "Error when a library or folder export stops because the cloud library could not be read."
   },
+  "importExportUnreadableDrawing": "A drawing on page “{pageName}” of “{strategyName}” couldn't be read, so nothing was exported.",
+  "@importExportUnreadableDrawing": {
+    "description": "Error when an export stops because a drawing on one page of a cloud strategy could not be read.",
+    "placeholders": {
+      "strategyName": {
+        "type": "String",
+        "example": "Lotus 13-11"
+      },
+      "pageName": {
+        "type": "String",
+        "example": "Retake"
+      }
+    }
+  },
   "importExportCloudNotSynced": "Some of your cloud changes haven't synced yet, so nothing was exported. Let them sync, or review them in your library, then try again.",
   "@importExportCloudNotSynced": {
     "description": "Error when a library or folder export stops because cloud changes made on this device have not reached the server."
@@ -6566,5 +6594,19 @@
   "communityKeepLooking": "Keep looking",
   "@communityKeepLooking": {
     "description": "Button: check more of Community for posts matching the filters."
+  },
+  "strategyMsgPageHasUnshownItems": "This page has {count, plural, =1{an item} other{{count} items}} this version of Icarus can't show. {count, plural, =1{It's kept as it is} other{They're kept as they are}}.",
+  "@strategyMsgPageHasUnshownItems": {
+    "description": "Toast when a cloud page holds placed items this build cannot draw, such as ones made in a newer version. They stay on the page and are never deleted by edits here.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "strategyMsgPageHasUnshownSettings": "This version of Icarus can't read this page's settings, so it shows the default sizes. The saved settings are kept unless you change them.",
+  "@strategyMsgPageHasUnshownSettings": {
+    "description": "Toast when a cloud page's settings (agent and ability size, team colours) cannot be read by this build. The canvas shows defaults; the saved settings are only replaced if the user changes a setting."
   }
 }

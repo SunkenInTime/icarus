@@ -549,6 +549,7 @@ void main() {
       final restored = await StrategyPage.fromJson(
         json: page.toJson('strategy-id'),
         strategyID: 'strategy-id',
+        strategyName: 'Imported',
         isZip: true,
       );
 
@@ -576,6 +577,7 @@ void main() {
       final restored = await StrategyPage.fromJson(
         json: legacyJson,
         strategyID: 'strategy-id',
+        strategyName: 'Imported',
         isZip: true,
       );
       final oldStrategy = StrategyData(
@@ -619,6 +621,7 @@ void main() {
           StrategyPage.fromJson(
             json: json,
             strategyID: 'strategy-id',
+            strategyName: 'Imported',
             isZip: true,
           ),
           throwsFormatException,

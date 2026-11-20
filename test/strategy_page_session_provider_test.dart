@@ -52,6 +52,7 @@ import 'package:icarus/providers/collab/lineup_conflicts_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/collab/unshown_cloud_content_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
@@ -2205,6 +2206,148 @@ void main() {
       container.read(textProvider).map((text) => text.text),
       ['kept'],
     );
+  });
+
+  group('items on a cloud page this build cannot draw', () {
+    RemoteElement row(String id, String elementType, Map<String, dynamic> data,
+            {int sortIndex = 1}) =>
+        RemoteElement(
+          publicId: id,
+          strategyPublicId: 'cloud-strategy',
+          pagePublicId: 'page-1',
+          elementType: elementType,
+          payload: cloudElementPayload(kind: elementType, data: {
+            ...data,
+            'elementType': elementType,
+          }),
+          sortIndex: sortIndex,
+          revision: 3,
+          deleted: false,
+        );
+
+    final unreadable = row('broken', 'text', {'id': 'broken', 'size': 'wide'});
+    final unknownKind = row('hologram', 'hologram', {
+      'id': 'hologram',
+      'position': {'dx': 5.0, 'dy': 5.0},
+    });
+
+    Future<(ProviderContainer, _FakeStrategyOpQueueNotifier)> open(
+      RemoteElement undrawable, {
+      CloudPayload? settings,
+    }) async {
+      final page = _page('page-1', 0);
+      final queue = _FakeStrategyOpQueueNotifier();
+      final container = await _cloudContainer(
+        remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+          pages: [page],
+          activePage: _pageSnapshot(
+            page,
+            settings: settings ?? StrategySettings().toJson(),
+            elements: [
+              _textElement('page-1', 'kept', 'kept'),
+              undrawable,
+            ],
+          ),
+        )),
+        queue: queue,
+      );
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      await _settle();
+      expect(
+        [for (final text in container.read(textProvider)) text.id],
+        ['kept'],
+      );
+      return (container, queue);
+    }
+
+    Future<Map<EntitySyncKey, QueuedEntityIntent>> editTheOtherItem(
+      ProviderContainer container,
+    ) async {
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'kept');
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .flushCurrentPage();
+      return container.read(strategyOpQueueProvider).queuedByEntityKey;
+    }
+
+    for (final (name, undrawable) in [
+      ('a row that fails to decode', unreadable),
+      ('a row of a kind this build does not know', unknownKind),
+    ]) {
+      test('$name is not deleted by an edit of something else', () async {
+        final (container, _) = await open(undrawable);
+
+        final queued = await editTheOtherItem(container);
+
+        expect(
+          queued.keys,
+          contains(const EntitySyncKey.element('page-1', 'kept')),
+        );
+        expect(
+          queued.keys,
+          isNot(contains(EntitySyncKey.element('page-1', undrawable.publicId))),
+        );
+        expect(
+          [for (final intent in queued.values) intent.pending.op],
+          everyElement(isNot(isA<ElementDeleteOp>())),
+        );
+      });
+
+      test('$name is in a copy of the page', () async {
+        final (container, _) = await open(undrawable);
+
+        final copied = container
+            .read(activePageLiveSyncProvider.notifier)
+            .drawnRows('page-1')!
+            .elements;
+
+        expect(
+          {for (final copy in copied) copy.publicId},
+          {'kept', undrawable.publicId},
+        );
+        final copy = copied.firstWhere(
+          (copy) => copy.publicId == undrawable.publicId,
+        );
+        expect(copy.payload, undrawable.payload);
+        expect(copy.sortIndex, undrawable.sortIndex);
+      });
+
+      test('$name is listed as an item the page cannot show', () async {
+        final (container, _) = await open(undrawable);
+
+        expect(
+          [
+            for (final item
+                in container.read(unshownCloudContentProvider).elements)
+              item.publicId
+          ],
+          [undrawable.publicId],
+        );
+      });
+    }
+
+    test('page settings that fail to read are not rewritten by an edit',
+        () async {
+      final (container, _) = await open(
+        unknownKind,
+        settings: {'agentSize': 'large'},
+      );
+
+      final queued = await editTheOtherItem(container);
+
+      expect(
+        queued.keys,
+        isNot(contains(const EntitySyncKey.pageContent('page-1'))),
+      );
+    });
   });
 
   group('a copied page is drawable exactly when hydration draws it:', () {
@@ -4871,6 +5014,110 @@ void main() {
       // Revision 1, not the teammate's 2: the server rejects it as a
       // conflict instead of the move silently overwriting their edit.
       expect(sent.op.expectedRevision, 1);
+    });
+
+    void teammateMakesHeldUnreadable(
+      _FakeRemoteEditorNotifier remote,
+      RemotePage page,
+    ) =>
+        remote.setSnapshot(_editorSnapshot(
+          pages: [page],
+          activePage: _pageSnapshot(
+            page,
+            contentRevision: 2,
+            elements: [
+              RemoteElement(
+                publicId: 'held',
+                strategyPublicId: 'cloud-strategy',
+                pagePublicId: page.publicId,
+                elementType: 'text',
+                payload: cloudElementPayload(kind: 'text', data: {
+                  'id': 'held',
+                  'elementType': 'text',
+                  'size': 'from a newer build',
+                }),
+                sortIndex: 0,
+                revision: 2,
+                deleted: false,
+              ),
+              _textElement(page.publicId, 'other', 'other v1',
+                  sortIndex: 1, worldSized: true),
+            ],
+          ),
+        ));
+
+    StrategyOp sentFor(ProviderContainer container, String id) => container
+        .read(strategyOpQueueProvider)
+        .pending
+        .singleWhere((item) => item.op.entityPublicId == id)
+        .op;
+
+    test(
+        'an edit committed to it is sent when a teammate made it unreadable '
+        'here', () async {
+      final (container, remote, page) = await open();
+      teammateMakesHeldUnreadable(remote, page);
+      await _settle();
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'held');
+      container.read(editorPointersProvider.notifier).release(1);
+      await _settle();
+
+      final sent = sentFor(container, 'held');
+      expect(sent, isA<ElementPatchOp>());
+      expect(sent.expectedRevision, 1);
+      expect(
+        cloudPayloadData(sent.payload)['position'],
+        {'dx': 300.0, 'dy': 300.0},
+      );
+    });
+
+    test(
+        'let go untouched after a teammate made it unreadable here, it is '
+        'kept unshown and no element op is sent', () async {
+      final (container, remote, page) = await open();
+      teammateMakesHeldUnreadable(remote, page);
+      await _settle();
+      expect(textOf(container, 'held'), 'held v1');
+
+      container.read(editorPointersProvider.notifier).release(1);
+      await _settle();
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .flushCurrentPage();
+
+      expect(container.read(textProvider).map((text) => text.id), ['other']);
+      expect(
+        container
+            .read(unshownCloudContentProvider)
+            .elements
+            .map((element) => element.publicId),
+        ['held'],
+      );
+      expect(
+        [
+          for (final item in container.read(strategyOpQueueProvider).pending)
+            if (item.op.entityType == StrategyOpEntityType.element)
+              '${item.op.runtimeType} ${item.op.entityPublicId}',
+        ],
+        isEmpty,
+      );
+    });
+
+    test(
+        'deleting it is sent when a teammate made it unreadable here, '
+        'checked against the version the user saw', () async {
+      final (container, remote, page) = await open();
+      teammateMakesHeldUnreadable(remote, page);
+      await _settle();
+      container.read(textProvider.notifier).removeText('held');
+      container.read(editorPointersProvider.notifier).release(1);
+      await _settle();
+
+      final sent = sentFor(container, 'held');
+      expect(sent, isA<ElementDeleteOp>());
+      expect(sent.expectedRevision, 1);
     });
 
     test('a teammate deleting it leaves it under the pointer until release',
