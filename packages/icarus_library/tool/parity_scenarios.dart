@@ -78,8 +78,43 @@ Map<String, Object?> _rowsJson(StrategyRowSet rows, List<FolderRow> folders) =>
       'lineupGroups': [for (final row in rows.lineupGroups) row.toJson()],
     };
 
-Map<String, Object?> _outcome(ApplyResult result) => switch (result) {
-  OpApplied() => {'status': 'applied'},
+int? _revisionOf(StrategyRows rows, StrategyOp op) => switch (op) {
+  StrategyPatchOp() ||
+  PageAddOp() ||
+  PageDeleteOp() ||
+  PageReorderOp() => rows.strategy.revision,
+  PagePatchOp(:final pagePublicId) => rows.page(pagePublicId)?.revision,
+  PageSettingsPatchOp(:final pagePublicId) =>
+    rows.settingsOf(pagePublicId)?.revision,
+  ElementAddOp(:final elementPublicId) ||
+  ElementPatchOp(:final elementPublicId) ||
+  ElementDeleteOp(:final elementPublicId) ||
+  ElementReorderOp(:final elementPublicId) => switch (rows.element(
+    elementPublicId,
+  )) {
+    ReadableElementRow(:final revision) => revision,
+    _ => null,
+  },
+  LineupGroupAddOp(:final lineupPublicId) ||
+  LineupGroupPatchOp(:final lineupPublicId) ||
+  LineupGroupDeleteOp(:final lineupPublicId) ||
+  LineupGroupReorderOp(
+    :final lineupPublicId,
+  ) => rows.lineupGroup(lineupPublicId)?.revision,
+};
+
+Map<String, Object?> _outcome(
+  ApplyResult result,
+  StrategyOp op,
+  StrategyRows after,
+) => switch (result) {
+  OpApplied(:final writes)
+      when writes.map((write) => write.key).toSet().length != writes.length =>
+    {'status': 'applyOp wrote one row twice'},
+  OpApplied() => {
+    'status': 'applied',
+    'appliedRevision': _revisionOf(after, op),
+  },
   OpUnchanged() => {'status': 'noop'},
   OpRefused(refusal: Rejected(:final reason)) => {
     'status': 'rejected',
@@ -123,21 +158,36 @@ Map<String, Object?> _replay(Map<String, Object?> recorded) {
         _read(LineupGroupRow.decode(row)),
     ],
   );
-  final ops = [
-    for (final op in _list(recorded['ops'])) _read(StrategyOp.decode(op)),
-  ];
+  final raw = _list(recorded['ops']);
+  if (recorded['steps'] != raw.length) {
+    throw StateError(
+      'the file says ${recorded['steps']} steps but holds ${raw.length} ops',
+    );
+  }
   final predicted = <Map<String, Object?>>[];
-  for (final op in ops) {
+  for (final (step, json) in raw.indexed) {
+    final op = switch (StrategyOp.decode(json)) {
+      Read(:final value) => value,
+      CouldNotRead(:final problem) => throw StateError(
+        'op $step cannot be read: $problem',
+      ),
+    };
+    if (jsonEncode(op.toJson()) != jsonEncode(json)) {
+      throw StateError('op $step does not read back as it was recorded');
+    }
     final result = applyOp(rows, op);
     if (result is OpApplied) rows = rows.withRows(result.rows);
-    predicted.add({..._outcome(result), 'rows': _rowsJson(rows, folders)});
+    predicted.add({
+      ..._outcome(result, op, rows),
+      'rows': _rowsJson(rows, folders),
+    });
   }
   return {
     'seed': recorded['seed'],
-    'steps': ops.length,
+    'steps': raw.length,
     'dartVersion': Platform.version,
     'initial': initial,
-    'ops': [for (final op in ops) op.toJson()],
+    'ops': raw,
     'predicted': predicted,
   };
 }
@@ -287,7 +337,10 @@ final class _Generator {
         }
       }
       ops.add(op.toJson());
-      predicted.add({..._outcome(result), 'rows': _rowsJson(rows, folders)});
+      predicted.add({
+        ..._outcome(result, op, rows),
+        'rows': _rowsJson(rows, folders),
+      });
     }
     return {
       'seed': seed,
@@ -319,7 +372,7 @@ final class _Generator {
     );
   }
 
-  ElementPayload hugeDrawing(String id) {
+  ElementPayload longDrawing(String id, int points) {
     final freehand = [
       for (final sample in samples.ofKind(ElementKind.drawing))
         if (sample.data['listOfPoints'] is List<Object?>) sample,
@@ -331,8 +384,7 @@ final class _Generator {
         ...freehand.data,
         'id': id,
         'listOfPoints': [
-          for (var i = 0; i <= _maxArrayEntries; i++)
-            {'dx': i % 1000, 'dy': i ~/ 1000},
+          for (var i = 0; i < points; i++) {'dx': i % 1000, 'dy': i ~/ 1000},
         ],
       },
     );
@@ -722,7 +774,7 @@ final class _Generator {
         final id = chance(0.4) ? pick(elementIds()) : 's$seed-${newId()}';
         final row = rows.element(id);
         final payload = chance(0.07)
-            ? hugeDrawing(id)
+            ? longDrawing(id, _maxArrayEntries + pick([0, 1]))
             : row is ReadableElementRow && chance(0.5)
             ? row.payload
             : elementPayload(id, pick(ElementKind.values));

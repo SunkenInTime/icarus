@@ -72,6 +72,14 @@ export function corpusProblems(seeds, steps, scenarios) {
   if (JSON.stringify(found) !== JSON.stringify(seeds)) {
     problems.push(`the generator made seeds ${found.join(",")}, not ${seeds.join(",")}`);
   }
+  const sequences = new Map();
+  for (const scenario of scenarios) {
+    const sequence = JSON.stringify(scenario.ops).replaceAll(`s${scenario.seed}-`, "s-");
+    if (sequences.has(sequence)) {
+      problems.push(`seeds ${sequences.get(sequence)} and ${scenario.seed} hold the same ops`);
+    }
+    sequences.set(sequence, scenario.seed);
+  }
   for (const scenario of scenarios) {
     if (scenario.ops.length !== steps || scenario.predicted.length !== steps) {
       problems.push(

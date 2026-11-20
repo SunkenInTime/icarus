@@ -8,6 +8,7 @@ import { CURRENT_CLOUD_PROTOCOL_VERSION } from "../../convex/lib/cloudProtocol";
 import { markAssetReferencesReady } from "../../convex/lib/assetReferences";
 import { syncLineupItems } from "../../convex/lib/lineupItems";
 import {
+  answerProblems,
   canonical,
   outcomeName,
   outcomeOf,
@@ -252,11 +253,27 @@ test("applyOp matches convex/ops.ts", { timeout: 3_600_000 }, async () => {
         };
         break;
       }
+      const answer = answerProblems(op, result);
+      if (answer.length > 0) {
+        entry.difference = { step, op, problem: answer.join("; "), result };
+        break;
+      }
       const server = outcomeOf(result.results[0]);
       const dart = { ...predicted, rows: undefined };
       const name = outcomeName(op.type, server);
       outcomes[name] = (outcomes[name] ?? 0) + 1;
-      const rows = rowDifferences(await dump(t), predictedRows(predicted.rows));
+      const held = await dump(t);
+      const unreadable = unsafeNumbers(held);
+      if (unreadable.length > 0) {
+        entry.difference = {
+          step,
+          op,
+          problem: "the server holds numbers JavaScript cannot compare",
+          paths: unreadable.slice(0, 5),
+        };
+        break;
+      }
+      const rows = rowDifferences(held, predictedRows(predicted.rows));
       if (canonical(server) !== canonical(dart) || rows.length > 0) {
         entry.difference = { step, op, server, dart, rows };
         break;

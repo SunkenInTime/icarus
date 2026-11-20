@@ -3,7 +3,11 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/map_doors.dart';
+import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/strategy/strategy_cloud_migration.dart';
 import 'package:path/path.dart' as path;
@@ -100,6 +104,34 @@ Future<Map<String, Object?>> _samples() async {
           break;
       }
     }
+  }
+  final pages = await _fixturePages();
+  final ability = pages.expand((page) => page.abilityData).first
+    ..wallPath = const [Offset(12, 0), Offset(24, 6)];
+  for (final (kind, data) in [
+    ('utility', mapDoors.first.row(id: 'sample').toJson()),
+    (
+      'utility',
+      PlacedUtility(
+        type: UtilityType.customRectangle,
+        position: const Offset(400, 300),
+        id: 'sample',
+        customWidth: 120,
+        customLength: 80,
+        isZone: true,
+      ).toJson(),
+    ),
+    ('ability', ability.toJson()),
+  ]) {
+    final payload = cloudElementPayload(
+      kind: kind,
+      data: {
+        ...Map<String, dynamic>.from(data),
+        'elementType': kind,
+        'id': 'sample'
+      },
+    );
+    elements.putIfAbsent(_shape(payload), () => payload);
   }
   final shapes = elements.keys.toList()..sort();
   final sizes = groups.keys.toList()..sort();

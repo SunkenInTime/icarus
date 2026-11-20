@@ -43,6 +43,50 @@
      10.0
     ],
     "data": {
+     "index": 0,
+     "type": "jett"
+    },
+    "elementType": "ability",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 0.0,
+    "lineUpID": null,
+    "position": {
+     "dx": 330.0,
+     "dy": 145.0
+    },
+    "rotation": 0.0,
+    "visualState": {
+     "showInnerFill": true,
+     "showInnerOutline": true,
+     "showRangeFill": true,
+     "showRangeOutline": true,
+     "showVisionCone": true
+    },
+    "wallPath": [
+     {
+      "dx": 12.0,
+      "dy": 0.0
+     },
+     {
+      "dx": 24.0,
+      "dy": 6.0
+     }
+    ]
+   },
+   "kind": "ability",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "armLengthsMeters": [
+     10.0,
+     10.0,
+     10.0,
+     10.0
+    ],
+    "data": {
      "index": 1,
      "type": "omen"
     },
@@ -946,6 +990,56 @@
     },
     "rotation": 0.9287989505128276,
     "type": "controller",
+    "visionElevation": null
+   },
+   "kind": "utility",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "angle": 0.0,
+    "customColorValue": null,
+    "customDiameter": null,
+    "customLength": 80.0,
+    "customOpacityPercent": null,
+    "customWidth": 120.0,
+    "elementType": "utility",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "isZone": true,
+    "length": 0.0,
+    "position": {
+     "dx": 400.0,
+     "dy": 300.0
+    },
+    "rotation": 0.0,
+    "type": "customRectangle",
+    "visionElevation": null
+   },
+   "kind": "utility",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "angle": 0.0,
+    "customColorValue": 4289887296,
+    "customDiameter": null,
+    "customLength": 3.29040750675915,
+    "customOpacityPercent": 100,
+    "customWidth": 0.2791682064030637,
+    "elementType": "utility",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 0.0,
+    "mapDoor": "summit-a",
+    "position": {
+     "dx": 1142.5886774723986,
+     "dy": 324.0042283298097
+    },
+    "rotation": 0.0,
+    "type": "customRectangle",
     "visionElevation": null
    },
    "kind": "utility",

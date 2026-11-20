@@ -17,6 +17,7 @@ export function unsafeNumbers(value, path = "$") {
 
 export function canonical(value) {
   if (value === undefined) return "undefined";
+  if (typeof value === "number" && !Number.isFinite(value)) return `#${value}`;
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   const keys = Object.keys(value)
@@ -70,7 +71,21 @@ export function rowDifferences(server, dart) {
 export function outcomeOf(result) {
   if (result.status === "rejected") return { status: "rejected", reason: result.reason };
   if (result.status === "failed") return { status: "failed", code: result.code };
+  if (result.status === "applied") {
+    return { status: "applied", appliedRevision: result.appliedRevision };
+  }
   return { status: result.status };
+}
+
+export function answerProblems(op, answer) {
+  const results = answer?.results;
+  if (!Array.isArray(results) || results.length !== 1) {
+    return [`the server answered ${Array.isArray(results) ? results.length : "no"} results for one op`];
+  }
+  if (results[0].opId !== op.opId) {
+    return [`the server answered for op ${results[0].opId}, not ${op.opId}`];
+  }
+  return unsafeNumbers(answer).map((path) => `the server answered ${path}, a number JavaScript cannot compare`);
 }
 
 export function outcomeName(type, outcome) {

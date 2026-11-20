@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canonical, rowDifferences, unsafeNumbers } from "./compare.mjs";
+import { answerProblems, canonical, outcomeOf, rowDifferences, unsafeNumbers } from "./compare.mjs";
 import { corpusProblems, missingCoverage, mustReach, reportProblems } from "./run.mjs";
 
 const rows = () => ({
@@ -49,7 +49,11 @@ test("the comparison does not depend on key order but does on types", () => {
 });
 
 test("a generator that drops a sequence or shortens one fails", () => {
-  const scenario = (seed, length) => ({ seed, ops: Array(length), predicted: Array(length) });
+  const scenario = (seed, length) => ({
+    seed,
+    ops: Array.from({ length }, (_, step) => ({ type: `op-${seed}-${step}` })),
+    predicted: Array(length),
+  });
   assert.deepEqual(corpusProblems([0, 1], 3, [scenario(0, 3), scenario(1, 3)]), []);
   assert.equal(corpusProblems([0, 1], 3, [scenario(0, 3)]).length, 1);
   assert.equal(corpusProblems([0, 1], 3, [scenario(0, 3), scenario(1, 2)]).length, 1);
@@ -61,7 +65,45 @@ test("a server run that skips a sequence or stops early fails", () => {
   assert.equal(reportProblems([0, 1], 3, [{ seed: 0, compared: 3 }, { seed: 1, compared: 1 }]).length, 1);
 });
 
-test("reaching each required outcome once is not enough coverage", () => {
+test("coverage asks for merge conflicts, trash and the array limit", () => {
+  for (const outcome of [
+    "lineup.patch rejected merge_invalid",
+    "lineup.patch rejected field_conflict",
+    "element.patch rejected field_conflict",
+    "element.patch failed PAGE_DELETED",
+    "page.add failed PAGE_DELETED",
+    "element.add failed INVALID_PAYLOAD",
+  ]) {
+    assert.ok(mustReach[outcome] >= 3, outcome);
+  }
   const once = Object.fromEntries(Object.keys(mustReach).map((outcome) => [outcome, 1]));
   assert.equal(missingCoverage(once).length, Object.keys(mustReach).length);
+});
+
+test("a NaN the server stores is not the null applyOp predicts", () => {
+  assert.notEqual(canonical({ x: Number.NaN }), canonical({ x: null }));
+  assert.deepEqual(unsafeNumbers({ x: Number.NaN }), ["$.x"]);
+});
+
+test("an applied op with the wrong revision is a difference", () => {
+  assert.notEqual(
+    canonical(outcomeOf({ status: "applied", appliedRevision: 102 })),
+    canonical({ status: "applied", appliedRevision: 2 }),
+  );
+});
+
+test("an answer with extra results or another op's id is refused", () => {
+  const op = { opId: "a" };
+  assert.deepEqual(answerProblems(op, { results: [{ opId: "a", status: "noop" }] }), []);
+  assert.equal(answerProblems(op, { results: [{ opId: "a" }, { opId: "a" }] }).length, 1);
+  assert.equal(answerProblems(op, { results: [{ opId: "b" }] }).length, 1);
+});
+
+test("the same sequence under two seed labels is refused", () => {
+  const scenario = (seed) => ({
+    seed,
+    ops: [{ opId: `s${seed}-op0` }],
+    predicted: [{}],
+  });
+  assert.equal(corpusProblems([1, 2], 1, [scenario(1), scenario(2)]).length, 1);
 });
