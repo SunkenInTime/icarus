@@ -177,7 +177,8 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       required double endAbilitySize,
       Map<String, AgentTransitionPath> agentPaths = const {},
       String? sourcePageId,
-      String? targetPageId}) {
+      String? targetPageId,
+      bool fadeInDrawings = false}) {
     state = state.copyWith(
       hideView: true,
       active: true,
@@ -194,6 +195,7 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       sourcePageId: sourcePageId,
       targetPageId: targetPageId,
       agentPaths: agentPaths,
+      fadeInDrawings: fadeInDrawings,
     );
   }
 
