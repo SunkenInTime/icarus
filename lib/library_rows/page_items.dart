@@ -14,6 +14,10 @@ sealed class PageItem {
   static Decoded<PageItem> decode(ElementPayload payload, MapValue map) {
     final upgraded = upgradeCloudPayload(payload.toJson(), map);
     final data = Map<String, dynamic>.from(upgraded['data'] as Map);
+    if (payload.kind == ElementKind.agent &&
+        !_agentKinds.contains(data['kind'] ?? PlacedAgentNode.plainKind)) {
+      return CouldNotRead(payload.toJson(), 'unknown agent kind');
+    }
     try {
       return Read(switch (payload.kind) {
         ElementKind.agent => AgentItem(PlacedAgentNode.fromJson(data)),
@@ -29,6 +33,10 @@ sealed class PageItem {
     } on TypeError catch (error) {
       return CouldNotRead(payload.toJson(), '$error');
     } on ArgumentError catch (error) {
+      return CouldNotRead(payload.toJson(), '$error');
+    } on StateError catch (error) {
+      return CouldNotRead(payload.toJson(), error.message);
+    } on UnsupportedError catch (error) {
       return CouldNotRead(payload.toJson(), '$error');
     }
   }
@@ -58,6 +66,12 @@ sealed class PageItem {
     );
   }
 }
+
+const _agentKinds = {
+  PlacedAgentNode.plainKind,
+  PlacedAgentNode.viewConeKind,
+  PlacedAgentNode.circleKind,
+};
 
 bool canReadElementPayload(ElementPayload payload, MapValue map) =>
     PageItem.decode(payload, map) is Read<PageItem>;

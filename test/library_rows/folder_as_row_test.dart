@@ -23,6 +23,7 @@ void main() {
         FolderIconRegistry.defaultId,
         FolderIconRegistry.sentinelRoleId,
         FolderIconRegistry.premierModeId,
+        9999,
       ])
         for (final color in FolderColor.values)
           Folder(
@@ -49,7 +50,7 @@ void main() {
       'a folder row with a colour or icon this build does not know is '
       'refused', () {
     final problems = switch (folderFromRow(
-      const FolderRow(publicId: 'f', name: 'F', iconId: -5, color: 'teal'),
+      const FolderRow(publicId: 'f', name: 'F', color: 'teal'),
       DateTime.utc(2026),
     )) {
       FolderRefused(:final problems) => problems,

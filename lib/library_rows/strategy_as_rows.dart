@@ -113,6 +113,13 @@ final class LineupIdRepeated extends RowsProblem {
   final String id;
 }
 
+final class LineupNotJson extends RowsProblem {
+  const LineupNotJson(this.pageId, this.problem);
+
+  final String pageId;
+  final String problem;
+}
+
 final class LineupMissingEnd extends RowsProblem {
   const LineupMissingEnd(this.pageId, this.linkId);
 
@@ -240,6 +247,14 @@ StrategyToRows strategyToRows(
   }
 
   final takenElementIds = {for (final row in carriedRows) row.publicId};
+  final everyItemId = {
+    for (final page in strategy.pages)
+      for (final item in pageItemsOf(page)) item.id,
+  };
+  final everyLinkId = {
+    for (final page in strategy.pages)
+      for (final link in page.lineUpLinks) link.id,
+  };
   final takenGroupIds = <String>{};
   final pages = <PageRow>[];
   final settings = <PageSettingsRow>[];
@@ -279,7 +294,7 @@ StrategyToRows strategyToRows(
         case Read(value: final payload):
           final rowId = takenElementIds.contains(item.id)
               ? _derivedId(
-                  takenElementIds,
+                  {...takenElementIds, ...everyItemId},
                   [strategy.id, page.id, item.id, sortIndex],
                 )
               : item.id;
@@ -300,10 +315,16 @@ StrategyToRows strategyToRows(
     final lineupProblems = _lineupProblems(page);
     problems.addAll(lineupProblems);
     if (lineupProblems.isNotEmpty) continue;
-    final made = cloudLineupRows(
-      page.lineUpGraph,
-      takenGroupIds: takenGroupIds,
-    ).rows;
+    final List<CloudLineupRow> made;
+    try {
+      made = cloudLineupRows(
+        page.lineUpGraph,
+        takenGroupIds: takenGroupIds,
+      ).rows;
+    } on JsonUnsupportedObjectError catch (error) {
+      problems.add(LineupNotJson(page.id, '$error'));
+      continue;
+    }
     for (final (sortIndex, row) in made.indexed) {
       final data = Map<String, Object?>.from(row.payload['data'] as Map);
       final linkIds = [
@@ -313,7 +334,7 @@ StrategyToRows strategyToRows(
       final groupId = linkIds.contains(row.publicId)
           ? row.publicId
           : _derivedId(
-              {...takenGroupIds, ...linkIds},
+              {...takenGroupIds, ...everyLinkId},
               [strategy.id, page.id, 'lineups', ...linkIds],
             );
       takenGroupIds.add(groupId);

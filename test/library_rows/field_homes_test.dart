@@ -11,6 +11,8 @@ import 'generated_strategies.dart';
 const _element = 'element row, payload data';
 const _superseded =
     'no home: superseded by pages; not carried, counted as supersededLegacyItems';
+const _supersededValue =
+    'no home: superseded by each page\'s own; not carried and not counted';
 const _legacyLineups = 'no home: rebuilt from the lineup graph on read';
 
 const fieldHomes = <String, Map<String, String>>{
@@ -35,8 +37,8 @@ const fieldHomes = <String, Map<String, String>>{
     'textData': _superseded,
     'imageData': _superseded,
     'utilityData': _superseded,
-    'isAttack': _superseded,
-    'strategySettings': _superseded,
+    'isAttack': _supersededValue,
+    'strategySettings': _supersededValue,
   },
   'StrategyPage': {
     'id': 'page row publicId',
@@ -229,7 +231,7 @@ const fieldHomes = <String, Map<String, String>>{
     'boundingBox': '$_element.boundingBox; none comes back worked out',
   },
   'BoundingBox': {'min': 'boundingBox.min', 'max': 'boundingBox.max'},
-  'Offset': {'dx': 'x', 'dy': 'y'},
+  'Offset': {'dx': 'dx', 'dy': 'dy'},
   'LineUpOrigin': {'id': 'data.origins[].id', 'agent': 'data.origins[].agent'},
   'LineUpLanding': {
     'id': 'data.landings[].id',
@@ -275,33 +277,31 @@ const fieldHomes = <String, Map<String, String>>{
   },
 };
 
-const payloadKeys = <ElementKind, Set<String>>{
-  ElementKind.agent: {
-    'elementType',
-    'kind',
-    'id',
-    'isDeleted',
-    'caption',
-    'position',
-    'type',
-    'isAlly',
-    'state',
-    'weapon',
-    'lineUpID',
+const _placed = {'elementType', 'id', 'isDeleted', 'caption', 'position'};
+const _agent = {..._placed, 'kind', 'type', 'isAlly', 'state', 'weapon'};
+const _stroke = {
+  'elementType',
+  'type',
+  'id',
+  'colorValue',
+  'thickness',
+  'isDotted',
+  'hasArrow',
+  'boundingBox',
+};
+
+const payloadKeys = <String, Set<String>>{
+  'agent plain': {..._agent, 'lineUpID'},
+  'agent viewCone': {
+    ..._agent,
     'presetType',
     'rotation',
     'length',
     'visionElevation',
-    'diameterMeters',
-    'colorValue',
-    'opacityPercent',
   },
-  ElementKind.ability: {
-    'elementType',
-    'id',
-    'isDeleted',
-    'caption',
-    'position',
+  'agent circle': {..._agent, 'diameterMeters', 'colorValue', 'opacityPercent'},
+  'ability': {
+    ..._placed,
     'data',
     'isAlly',
     'rotation',
@@ -311,41 +311,31 @@ const payloadKeys = <ElementKind, Set<String>>{
     'armLengthsMeters',
     'wallPath',
   },
-  ElementKind.drawing: {
-    'elementType',
-    'type',
-    'id',
-    'colorValue',
-    'thickness',
-    'isDotted',
-    'hasArrow',
-    'boundingBox',
+  'drawing freeDrawing': {
+    ..._stroke,
     'listOfPoints',
     'showTraversalTime',
     'traversalSpeedProfile',
+  },
+  'drawing lineDrawing': {
+    ..._stroke,
     'lineStart',
     'lineEnd',
-    'start',
-    'end',
+    'showTraversalTime',
+    'traversalSpeedProfile',
   },
-  ElementKind.text: {
-    'elementType',
-    'id',
-    'isDeleted',
-    'caption',
-    'position',
+  'drawing rectangleDrawing': {..._stroke, 'start', 'end'},
+  'drawing ellipseDrawing': {..._stroke, 'start', 'end'},
+  'text': {
+    ..._placed,
     'text',
     'size',
     'fontSize',
     'sizeVersion',
     'tagColorValue',
   },
-  ElementKind.image: {
-    'elementType',
-    'id',
-    'isDeleted',
-    'caption',
-    'position',
+  'image': {
+    ..._placed,
     'aspectRatio',
     'assetId',
     'fileExtension',
@@ -354,12 +344,8 @@ const payloadKeys = <ElementKind, Set<String>>{
     'tagColorValue',
     'link',
   },
-  ElementKind.utility: {
-    'elementType',
-    'id',
-    'isDeleted',
-    'caption',
-    'position',
+  'utility': {
+    ..._placed,
     'type',
     'rotation',
     'length',
@@ -375,6 +361,12 @@ const payloadKeys = <ElementKind, Set<String>>{
     'isZone',
   },
 };
+
+String variantOf(ElementPayload payload) => switch (payload.kind) {
+      ElementKind.agent => 'agent ${payload.data['kind']}',
+      ElementKind.drawing => 'drawing ${payload.data['type']}',
+      final kind => kind.name,
+    };
 
 Map<String, Set<String>> generatedAdapterFields() {
   final lines = File('lib/hive/hive_adapters.g.yaml').readAsLinesSync();
@@ -448,9 +440,10 @@ void main() {
   test('every key an element payload holds is one the table knows', () {
     final made = strategyToRows(generatedStrategy(Optionals.set));
     final rows = (made as StrategyRowsMade).rows;
-    final seen = <ElementKind, Set<String>>{};
+    final seen = <String, Set<String>>{};
     for (final element in rows.elements.cast<LiveElement>()) {
-      (seen[element.payload.kind] ??= {}).addAll(element.payload.data.keys);
+      final variant = variantOf(element.payload);
+      seen[variant] = {...?seen[variant], ...element.payload.data.keys};
     }
     expect(seen, payloadKeys);
   });

@@ -51,7 +51,7 @@ List<PlacedAgentNode> _agents(String prefix, Optionals optionals) {
       colorValue: full ? 0x803B82F6 : 0xFFFFFFFF,
       opacityPercent: full ? 45 : 100,
       state: full ? AgentState.dead : AgentState.none,
-    ),
+    )..caption = full ? 'Viper wall' : null,
   ];
 }
 

@@ -1,6 +1,5 @@
 import 'dart:ui';
 
-import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -64,10 +63,9 @@ FolderColor? _colorNamed(String? name) {
 }
 
 int? _iconIdOf(FolderRow row) => switch (row) {
-      FolderRow(:final iconId?) when FolderIconRegistry.isKnownId(iconId) =>
-        iconId,
+      FolderRow(:final iconId?) => iconId,
       FolderRow(:final iconCodePoint?) => folderIconIdFromCloud(
-          iconId: row.iconId,
+          iconId: null,
           codePoint: iconCodePoint,
           fontFamily: row.iconFontFamily,
           fontPackage: row.iconFontPackage,

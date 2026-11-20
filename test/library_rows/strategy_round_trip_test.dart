@@ -9,6 +9,7 @@ import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/library_rows/page_items.dart';
 import 'package:icarus/library_rows/round_trip.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_rows/strategy_comparison.dart';
@@ -192,8 +193,8 @@ void main() {
     });
 
     test(
-        'with every optional field ${optionals.name}, desktop 4.6.3 reads '
-        'the same bytes back from Hive', () {
+        'with every optional field ${optionals.name}, this build writes '
+        'the same Hive bytes back', () {
       final current = currentRegistry();
       final strategy = generatedStrategy(optionals);
       final back = dataOf(rowsOf(strategy).rows).strategy;
@@ -311,6 +312,44 @@ void main() {
     );
   });
 
+  test('a lineup group never takes the id a later group keeps', () {
+    LineUpGraph oneLineup(String linkId, String spot) {
+      final graph = sharedSpotLineups(spot);
+      return LineUpGraph(
+        origins: [graph.origins.first],
+        landings: [graph.landings.first],
+        links: [
+          LineUpLink(
+            id: linkId,
+            originId: graph.origins.first.id,
+            landingId: graph.landings.first.id,
+          ),
+        ],
+      );
+    }
+
+    LineUpGraph joined(LineUpGraph a, LineUpGraph b) => LineUpGraph(
+          origins: [...a.origins, ...b.origins],
+          landings: [...a.landings, ...b.landings],
+          links: [...a.links, ...b.links],
+        );
+
+    final strategy = strategyWith([
+      pageWith('page-1', lineups: oneLineup('L', 'first')),
+      pageWith(
+        'page-2',
+        lineups: joined(
+          oneLineup('L', 'second'),
+          oneLineup('92cce1d0-6436-520a-9831-717fb7e04f79', 'third'),
+        ),
+      ).copyWith(sortIndex: 1),
+    ]);
+    final made = rowsOf(strategy);
+    expect(made.summary.lineupCount, 3);
+    expect(made.rows.lineupGroups, hasLength(3));
+    expectSameAfterRoundTrip(strategy);
+  });
+
   group('what cannot become rows is refused, by name and place', () {
     test('a strategy not yet migrated, or written by a newer build', () {
       final older = generatedStrategy(Optionals.unset)
@@ -367,6 +406,15 @@ void main() {
         (problem.pageId, problem.kind, problem.itemId),
         ('page', ElementKind.agent, page.agentData.first.id),
       );
+    });
+
+    test('a lineup whose numbers are not JSON', () {
+      final graph = sharedSpotLineups('page');
+      graph.origins.first.agent.position = const Offset(double.infinity, 100);
+      final problem = refusalsOf(strategyWith([
+        pageWith('page', lineups: graph),
+      ])).single;
+      expect((problem as LineupNotJson).pageId, 'page');
     });
 
     test('a lineup missing an end, a spot nothing aims at, a repeated id', () {
@@ -445,6 +493,45 @@ void main() {
       };
       expect(problem, isA<CarriedRowOffPage>());
     });
+
+    for (final (name, data) in [
+      (
+        'an agent this build has never heard of',
+        {
+          'id': 'future',
+          'type': 'futureAgent',
+          'position': {'dx': 1, 'dy': 2}
+        },
+      ),
+      (
+        'an agent of a kind this build has never heard of',
+        {
+          'id': 'future',
+          'kind': 'futureCone',
+          'type': 'jett',
+          'length': 40,
+          'position': {'dx': 1, 'dy': 2},
+        },
+      ),
+    ]) {
+      test('is carried when it is $name', () {
+        final made = rowsOf(strategyWith([pageWith('page')]));
+        final future = LiveElement(
+          publicId: 'future',
+          pagePublicId: 'page',
+          payload: ElementPayload(
+            kind: ElementKind.agent,
+            payloadVersion: 1,
+            data: data,
+          ),
+          sortIndex: 99,
+          revision: 1,
+        );
+        expect(canReadElementPayload(future.payload, MapValue.ascent), isFalse);
+        final back = dataOf(made.rows.withRows([future]));
+        expect(back.unreadable.single.toJson(), future.toJson());
+      });
+    }
 
     test('is carried when a live row does not decode as its kind', () {
       final made = rowsOf(strategyWith([pageWith('page')]));
