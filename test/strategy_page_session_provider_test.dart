@@ -8305,10 +8305,51 @@ void main() {
       readPage(other.publicId);
       expect(container.read(strategyPageSessionProvider).activePageId,
           other.publicId);
+      final stored = store.load().records.singleWhere((record) =>
+          record.entityKey == EntitySyncKey.element(page.publicId, 'agent-b'));
+      final newest = stored.successorPending ?? stored.pending;
       expect(
-        store.load().records.map((record) => record.entityKey),
-        contains(EntitySyncKey.element(page.publicId, 'agent-b')),
+        jsonEncode(newest.op.payload),
+        contains('"position":{"dx":80.0,"dy":60.0}'),
       );
+    });
+
+    test(
+        'an edit whose outbox write failed and was then undone does not keep '
+        'the user on the page once storage recovers', () async {
+      final page = _page('page-1', 0);
+      final other = _page('page-2', 1);
+      server = _FakeServer(page.publicId);
+      final store = _FailingOutboxStore();
+      final (container, _) =
+          await openOnRealQueue(page, store: store, otherPages: [other]);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      store.failPut = (_) => true;
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            id: 'agent-b',
+            type: AgentType.jett,
+            position: const Offset(40, 40),
+          ));
+      await _until(() =>
+          container.read(strategyOpQueueProvider).hasDurabilityFailure);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      container.read(agentProvider.notifier).removeAgent('agent-b');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      store.failPut = null;
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .switchRelativePage(PageSwitchDirection.next);
+      readPage(other.publicId);
+
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          other.publicId);
     });
 
     /// Opens page 1 with text on it and page 2 after it, copies the text to

@@ -415,7 +415,6 @@ Future<bool> guardUnsavedStrategyExit({
       stackTrace: stackTrace,
       source: source,
     );
-    return false;
   }
 
   if (!context.mounted) {

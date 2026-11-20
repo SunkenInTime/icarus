@@ -127,28 +127,26 @@ void main() {
     expect(strategyBox.get(strategy.id)!.pages.single.agentData, isEmpty);
   });
 
-  test('a page switch that cannot write the page on screen stays on it',
+  test('a page switch whose strategy left the library stays on the page',
       () async {
-    final strategy =
-        _strategy([_page(id: 'page-1', name: 'Page 1', sortIndex: 0)]);
-    await strategyBox.put(strategy.id, strategy);
+    final pages = [
+      _page(id: 'page-1', name: 'Page 1', sortIndex: 0),
+      _page(id: 'page-2', name: 'Page 2', sortIndex: 1),
+    ];
+    final strategy = _strategy(pages);
     final container = ProviderContainer();
     addTearDown(container.dispose);
-    _activatePage(
-      container,
-      strategy,
-      _page(id: 'page-gone', name: 'Page 2', sortIndex: 1),
-    );
+    _activatePage(container, strategy, pages.first);
     container.read(agentProvider.notifier).addAgent(_jett('agent-1'));
     container.read(strategySaveStateProvider.notifier).markDirty();
 
     await container
         .read(strategyPageSessionProvider.notifier)
-        .setActivePage('page-1');
+        .setActivePage('page-2');
 
     expect(
       container.read(strategyPageSessionProvider).activePageId,
-      'page-gone',
+      'page-1',
     );
     expect(container.read(agentProvider).map((agent) => agent.id),
         ['agent-1']);

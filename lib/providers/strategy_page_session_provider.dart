@@ -1138,6 +1138,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final handover = await pageSource.flushCurrentPage();
     if (superseded()) return _PageSwitch.superseded;
     switch (handover) {
+      case HeldOnCanvas(reason: HeldReason.pageMissing)
+          when source == StrategySource.local:
+        break;
       case HeldOnCanvas()
           when source == StrategySource.cloud &&
               leftPageId != null &&
@@ -1470,18 +1473,18 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     _deletedPageHoldsWork();
   }
 
-  /// Whether the canvas is on a page a teammate deleted, holding work the
-  /// server never got. That work can never be sent, so waiting for it would
-  /// wait forever and replacing the page would drop it unseen: the user is
-  /// told first ([StrategyPageSessionState.deletedPage]). Checked before the
-  /// canvas leaves the page, and while a replace of it waits. With nothing
-  /// unsent, the unsaved mark its edits left is stale and is dropped.
   bool _deletedOnThisDevice(String pageId) {
     _notePagesDeletedHere(ref.read(strategyOpQueueProvider));
     return _deletedHere(pageId) ||
         ref.read(strategyOpQueueProvider.notifier).isDeletedHere(pageId);
   }
 
+  /// Whether the canvas is on a page a teammate deleted, holding work the
+  /// server never got. That work can never be sent, so waiting for it would
+  /// wait forever and replacing the page would drop it unseen: the user is
+  /// told first ([StrategyPageSessionState.deletedPage]). Checked before the
+  /// canvas leaves the page, and while a replace of it waits. With nothing
+  /// unsent, the unsaved mark its edits left is stale and is dropped.
   bool _deletedPageHoldsWork() {
     if (state.deletedPage != null) return true;
     final pageId = state.activePageId;

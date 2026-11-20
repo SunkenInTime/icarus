@@ -2100,32 +2100,26 @@ class StrategyProvider extends Notifier<StrategyState> {
     final strategyId = state.strategyId;
     if (strategyId == null) return false;
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    List<StrategyPage>? pagesWithout(StrategyData? strategy) {
-      if (strategy == null || strategy.pages.length <= 1) return null;
-      return [...strategy.pages]
-        ..sortBySortIndex((item) => item.sortIndex)
-        ..removeWhere((page) => page.id == pageId);
-    }
-
-    final remaining = pagesWithout(box.get(strategyId));
-    if (remaining == null) return false;
-    if (ref.read(strategyPageSessionProvider).activePageId == pageId) {
-      await setActivePageAnimated(remaining.first.id);
-      if (ref.read(strategyPageSessionProvider).activePageId == pageId) {
-        return false;
-      }
-    }
-
     final strat = box.get(strategyId);
-    final remainingNow = pagesWithout(strat);
-    if (strat == null || remainingNow == null) return false;
+    if (strat == null || strat.pages.length <= 1) return false;
+
+    final remaining = [...strat.pages]
+      ..sortBySortIndex((item) => item.sortIndex)
+      ..removeWhere((page) => page.id == pageId);
+    final reindexed = reindexPagesAfterStructuralChange(remaining);
+    final activePageId = ref.read(strategyPageSessionProvider).activePageId;
+    final nextActivePageId =
+        activePageId == pageId ? reindexed.first.id : activePageId;
+
     await box.put(
       strat.id,
-      strat.copyWith(
-        pages: reindexPagesAfterStructuralChange(remainingNow),
-        lastEdited: DateTime.now(),
-      ),
+      strat.copyWith(pages: reindexed, lastEdited: DateTime.now()),
     );
+    if (nextActivePageId != null && nextActivePageId != activePageId) {
+      await ref.read(strategyProvider.notifier).setActivePageAnimated(
+            nextActivePageId,
+          );
+    }
     return true;
   }
 

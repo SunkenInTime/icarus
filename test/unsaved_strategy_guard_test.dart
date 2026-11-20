@@ -545,7 +545,8 @@ void main() {
       expect(notifier.forceSaveCalls, 0);
     });
 
-    testWidgets('autosave flush failure reports error and blocks exit',
+    testWidgets(
+        'autosave flush failure reports error and asks before leaving',
         (tester) async {
       notifier = _FakeGuardStrategyProvider(
         initialState: const StrategyState(
@@ -568,7 +569,7 @@ void main() {
       await pumpHarness(tester);
 
       var continueCalls = 0;
-      final result = await guardUnsavedStrategyExit(
+      final guardFuture = guardUnsavedStrategyExit(
         context: context,
         ref: ref,
         source: 'guard-test-error',
@@ -578,9 +579,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(result, isFalse);
+      expect(find.text('Save changes?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(await guardFuture, isFalse);
       expect(continueCalls, 0);
-      expect(find.text('Save changes?'), findsNothing);
       final logs = appProviderContainer.read(inAppDebugProvider);
       expect(logs, isNotEmpty);
       expect(logs.last.message, 'Failed to save strategy before leaving.');

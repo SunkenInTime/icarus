@@ -1212,17 +1212,25 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         heldOpIds: heldOpIds,
         madeLive: madeLive,
       );
-      return write == OutboxWrite.written && _pageHasUnstoredWrite(pageId)
+      return write == OutboxWrite.written &&
+              _hasUnstoredWrite(desiredOpsByEntityKey.keys)
           ? OutboxWrite.failed
           : write;
     });
   }
 
-  bool _pageHasUnstoredWrite(String pageId) =>
-      _uncertainDurableIntents.values.any((record) =>
-          record.accountId == state.accountId &&
-          record.strategyPublicId == state.strategyPublicId &&
-          record.entityKey.pageId == pageId);
+  bool _hasUnstoredWrite(Iterable<EntitySyncKey> keys) {
+    final accountId = state.accountId;
+    final strategyPublicId = state.strategyPublicId;
+    if (accountId == null || strategyPublicId == null) return false;
+    return keys.any((key) => _uncertainDurableIntents.containsKey(
+          DurableOutboxRecord.createStorageKey(
+            accountId: accountId,
+            strategyPublicId: strategyPublicId,
+            entityKey: key,
+          ),
+        ));
+  }
 
   /// [canvasSession] is the canvas's session when the desired ops were
   /// asked for: ops made from them are the canvas's work only if it has not

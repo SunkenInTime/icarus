@@ -63,12 +63,12 @@ enum HeldReason {
   noAccount,
 }
 
-PageHandover _settled(PageHandover handover, {required bool canvasUnsaved}) =>
-    handover is HeldOnCanvas && !canvasUnsaved
+PageHandover _settled(PageHandover handover, {required bool anythingUnsaved}) =>
+    handover is HeldOnCanvas && !anythingUnsaved
         ? const NothingToHandOver()
         : handover;
 
-bool _canvasUnsaved(Ref ref) =>
+bool _anythingUnsaved(Ref ref) =>
     ref.read(strategySaveStateProvider).isDirty ||
     ref.read(textDraftProvider).isNotEmpty;
 
@@ -151,7 +151,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
   @override
   Future<PageHandover> flushCurrentPage() async => _settled(
         await _writeCurrentPage(),
-        canvasUnsaved: _canvasUnsaved(ref),
+        anythingUnsaved: _anythingUnsaved(ref),
       );
 
   Future<PageHandover> _writeCurrentPage() async {
@@ -343,7 +343,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
     final dirtyBefore = ref.read(strategySaveStateProvider).isDirty;
     final handover = _settled(
       await _handOverCanvas(),
-      canvasUnsaved: dirtyBefore || _canvasUnsaved(ref),
+      anythingUnsaved: dirtyBefore || _anythingUnsaved(ref),
     );
     if (ref.read(strategyProvider).strategyId == strategyId) {
       saveState.noteCanvasHandover(handover, marksBefore: marksBefore);
