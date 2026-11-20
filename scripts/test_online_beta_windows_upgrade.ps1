@@ -14,6 +14,7 @@ param(
     [int]$LaunchSeconds = 30
 )
 
+$scriptClock = [System.Diagnostics.Stopwatch]::StartNew()
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
@@ -53,6 +54,7 @@ function Install-Icarus {
         [Parameter(Mandatory = $true)][string]$ExpectedVersion
     )
 
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
     $process = Start-Process -FilePath $InstallerPath -ArgumentList @(
         "/VERYSILENT",
         "/SUPPRESSMSGBOXES",
@@ -64,7 +66,7 @@ function Install-Icarus {
         throw "Installer failed with exit code $($process.ExitCode): $InstallerPath"
     }
     $script:installedExe = Resolve-IcarusExecutable -ExpectedVersion $ExpectedVersion
-    Write-Host "Resolved installed Icarus executable: $script:installedExe"
+    Write-Host "Resolved installed Icarus executable: $script:installedExe ($ExpectedVersion installed in $([math]::Round($clock.Elapsed.TotalSeconds, 1)) s)"
 }
 
 function Resolve-IcarusExecutable {
@@ -502,7 +504,10 @@ if ($hadPreexistingSupport) {
 $runningProcess = $null
 $testError = $null
 try {
+    Write-Host "Test started $([math]::Round($scriptClock.Elapsed.TotalSeconds, 1)) s after PowerShell loaded the script"
+    $downloadClock = [System.Diagnostics.Stopwatch]::StartNew()
     Invoke-WebRequest -Uri $PublicInstallerUrl -OutFile $publicInstaller
+    Write-Host "Downloaded the public installer in $([math]::Round($downloadClock.Elapsed.TotalSeconds, 1)) s"
     $observedPublicInstallerSha256 =
         (Get-FileHash -Path $publicInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($observedPublicInstallerSha256 -ne $PublicInstallerSha256.ToLowerInvariant()) {
