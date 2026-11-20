@@ -14,7 +14,6 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
-import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/view_cone/vision_world_gzip.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
@@ -398,15 +397,9 @@ void main() {
       (tester) async {
     CoordinateSystem(playAreaSize: const Size(1920, 1080));
     final completion = Completer<SplitSvgHeightRuntime?>();
-    var oldGeometryLoads = 0;
     final container = ProviderContainer(overrides: [
       mapProvider.overrideWith(_SplitMap.new),
-      worldGeometryEnabledProvider.overrideWith((ref, map) => true),
       svgHeightRuntimeProvider.overrideWith((ref, map) => completion.future),
-      viewConeGeometryProvider.overrideWith((ref, map) async {
-        oldGeometryLoads++;
-        return null;
-      }),
     ]);
     addTearDown(container.dispose);
     await tester.pumpWidget(UncontrolledProviderScope(
@@ -428,7 +421,6 @@ void main() {
         .whereType<ViewConePainter>()
         .single;
     expect(loadingPainter.visibilityPolygon, hasLength(1));
-    expect(oldGeometryLoads, 0);
 
     final model = SvgHeightVisibility.fromJson(_fixture());
     completion.complete(SplitSvgHeightRuntime(model, model));
@@ -440,7 +432,6 @@ void main() {
             widget is CustomPaint &&
             widget.painter is SvgHeightViewConePainter),
         findsOneWidget);
-    expect(oldGeometryLoads, 0);
   });
 
   testWidgets(

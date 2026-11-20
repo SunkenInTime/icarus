@@ -11,7 +11,6 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
-import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/screenshot/capture_geometry.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/services/app_assets.dart';
@@ -72,16 +71,10 @@ void main() {
       CoordinateSystem(playAreaSize: const Size(1600, 900));
       final completion = Completer<SvgHeightRuntime?>();
       var disposed = false;
-      var legacyLoads = 0;
       final container = ProviderContainer(overrides: [
-        worldGeometryEnabledProvider.overrideWith((ref, map) => true),
         svgHeightRuntimeProvider.overrideWith((ref, map) {
           ref.onDispose(() => disposed = true);
           return completion.future;
-        }),
-        viewConeGeometryProvider.overrideWith((ref, map) {
-          legacyLoads++;
-          return Future.value(null);
         }),
       ]);
       addTearDown(container.dispose);
@@ -100,7 +93,6 @@ void main() {
           Offset(CoordinateSystem.instance.worldNormalizedWidth / 2, 500),
           reason:
               'A live drag keeps its canvas coordinates during cold loading.');
-      expect(legacyLoads, 0);
       completion.complete(_runtime(MapValue.ascent));
       final lease = await preparation;
       expect(ready, isTrue);
@@ -112,7 +104,6 @@ void main() {
               .read(svgHeightRuntimeProvider(MapValue.ascent))
               .requireValue,
           isNotNull);
-      expect(legacyLoads, 0);
       lease!.close();
       await container.pump();
       expect(disposed, isTrue);
@@ -161,24 +152,17 @@ void main() {
         'capture aborts for a ${missing ? 'missing' : 'failed'} SVG runtime and releases the provider',
         () async {
       var disposed = false;
-      var legacyLoads = 0;
       final container = ProviderContainer(overrides: [
-        worldGeometryEnabledProvider.overrideWith((ref, map) => true),
         svgHeightRuntimeProvider.overrideWith((ref, map) async {
           ref.onDispose(() => disposed = true);
           if (missing) return null;
           throw const FormatException('bad asset');
-        }),
-        viewConeGeometryProvider.overrideWith((ref, map) async {
-          legacyLoads++;
-          return null;
         }),
       ]);
       addTearDown(container.dispose);
       await expectLater(
           prepareCaptureGeometry(container, MapValue.ascent, [_conePage()]),
           throwsA(missing ? isA<StateError>() : isA<FormatException>()));
-      expect(legacyLoads, 0);
       await container.pump();
       expect(disposed, isTrue);
     });
@@ -221,14 +205,10 @@ void main() {
   });
 
   test('pages without sightlines do not request geometry', () async {
-    var svgRequested = false, legacyRequested = false;
+    var svgRequested = false;
     final container = ProviderContainer(overrides: [
       svgHeightRuntimeProvider.overrideWith((ref, map) async {
         svgRequested = true;
-        throw StateError('must not load');
-      }),
-      viewConeGeometryProvider.overrideWith((ref, map) async {
-        legacyRequested = true;
         throw StateError('must not load');
       }),
     ]);
@@ -236,7 +216,6 @@ void main() {
     expect(await prepareCaptureGeometry(container, MapValue.ascent, [_page()]),
         isNull);
     expect(svgRequested, isFalse);
-    expect(legacyRequested, isFalse);
   });
 
   test('all cone owners are detected, while a hidden ability cone is ignored',

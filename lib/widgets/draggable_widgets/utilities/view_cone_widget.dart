@@ -11,13 +11,9 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/map_doors_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
-import 'package:icarus/providers/view_cone_debug_provider.dart';
-import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
-import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
@@ -103,14 +99,7 @@ class ViewConeWidget extends ConsumerWidget {
             : placedUtility.position +
                 coord.virtualOffsetToWorld(anchorPointVirtual));
     final resolvedElevation = visionElevation ?? placedUtility?.visionElevation;
-    final debugEnabled = ref.watch(viewConeDebugProvider);
     List<Offset>? visibilityPolygon;
-    List<VisionSegment>? debugMatchedSegments;
-    List<VisionSegment>? debugRiotSegments;
-    List<VisionSegment>? debugRejectedSegments;
-    List<VisionSegment>? debugBoundarySegments;
-    String? debugLabel;
-    VisionGeometryMap? geometry;
     SvgHeightVisibility? svgHeightModel;
     Offset? svgHeightOrigin;
     ShadContextMenuItem? sightlineReportItem;
@@ -122,158 +111,33 @@ class ViewConeWidget extends ConsumerWidget {
         reflectionOffset: Offset.zero,
         isAttack: mapState.isAttack,
       );
-      final worldGeometryEnabled =
-          ref.watch(worldGeometryEnabledProvider(mapState.currentMap));
-      final usesSvgHeight =
-          hasSvgHeightRuntime(mapState.currentMap) && worldGeometryEnabled;
-      if (usesSvgHeight) {
-        // Registered maps only paint results from their reviewed SVG semantic
-        // assets. The icon remains available while loading or after a failure.
-        visibilityPolygon = const [Offset.zero];
-        final runtime = ref
-            .watch(svgHeightRuntimeProvider(mapState.currentMap))
-            .asData
-            ?.value;
-        if (runtime != null) {
-          svgHeightModel = runtime.model(mapState.isAttack);
-          svgHeightOrigin = SvgHeightMapTransform.forMap(mapState.currentMap)
-              .sourceFromSideWorld(
-            sideWorldOrigin,
-            isAttack: mapState.isAttack,
-          );
-          heightCone = SvgHeightViewCone(
-            runtime: runtime,
-            canonicalOrigin: resolvedWorldOrigin,
-            rotation: rotation ??
-                coord.rotationForSide(placedUtility?.rotation ?? 0,
-                    isAttack: mapState.isAttack),
-            range: coord.virtualLengthToWorld(currentLength),
-            angle: angle * pi / 180,
-            isAttack: mapState.isAttack,
-            elevation: resolvedElevation,
-            opacity: opacity,
-            changedDoors: ref.watch(changedMapDoorsProvider),
-          );
-        }
-      } else {
-        geometry = ref
-            .watch(viewConeGeometryProvider(mapState.currentMap))
-            .asData
-            ?.value;
-      }
-      if (!usesSvgHeight && geometry == null && worldGeometryEnabled) {
-        // An enabled world map may only show sightlines from validated data.
-        // Keep the icon visible while loading or reporting an asset failure.
-        visibilityPolygon = const [Offset.zero];
-      }
-      if (!usesSvgHeight && geometry != null) {
-        final inferredHeight = geometry.inferredHeightAt(
+      // Registered maps only paint results from their reviewed SVG semantic
+      // assets. The icon remains available while loading or after a failure.
+      visibilityPolygon = const [Offset.zero];
+      final runtime = ref
+          .watch(svgHeightRuntimeProvider(mapState.currentMap))
+          .asData
+          ?.value;
+      if (runtime != null) {
+        svgHeightModel = runtime.model(mapState.isAttack);
+        svgHeightOrigin = SvgHeightMapTransform.forMap(mapState.currentMap)
+            .sourceFromSideWorld(
+          sideWorldOrigin,
           isAttack: mapState.isAttack,
-          position: sideWorldOrigin,
         );
-        final layer = geometry.layerForPosition(
-          isAttack: mapState.isAttack,
-          position: sideWorldOrigin,
-          elevationOverride: resolvedElevation,
-        );
-        // Placed free cones normally pass their drag-preview rotation directly,
-        // while this provider fallback keeps clipping correct for any caller
-        // that only supplies the persisted utility id.
-        final effectiveRotation = rotation ??
-            coord.rotationForSide(placedUtility?.rotation ?? 0,
-                isAttack: mapState.isAttack);
-        final screenZoom = ref.watch(screenZoomProvider).clamp(1.0, 8.0);
-        final worldPolygon = VisionPolygon.compute(
-          layer: layer,
-          origin: sideWorldOrigin,
-          facingAngle: effectiveRotation - pi / 2,
-          coneAngle: angle * pi / 180,
+        heightCone = SvgHeightViewCone(
+          runtime: runtime,
+          canonicalOrigin: resolvedWorldOrigin,
+          rotation: rotation ??
+              coord.rotationForSide(placedUtility?.rotation ?? 0,
+                  isAttack: mapState.isAttack),
           range: coord.virtualLengthToWorld(currentLength),
-          // Leave half a physical pixel between the antialiased cone clip and
-          // the authored wall surface. This prevents their coverage fringes
-          // from blending without creating a zoom-dependent visible gap.
-          surfaceClearance: coord.screenHeightToWorld(0.5 / screenZoom),
+          angle: angle * pi / 180,
+          isAttack: mapState.isAttack,
+          elevation: resolvedElevation,
+          opacity: opacity,
+          changedDoors: ref.watch(changedMapDoorsProvider),
         );
-        final inverseRotation = -effectiveRotation;
-        final cosine = cos(inverseRotation);
-        final sine = sin(inverseRotation);
-        final apex = Offset(containerWidth / 2, scaledLength);
-        Offset toLocal(Offset point) {
-          final delta = point - sideWorldOrigin;
-          final local = Offset(
-            delta.dx * cosine - delta.dy * sine,
-            delta.dx * sine + delta.dy * cosine,
-          );
-          return apex + coord.worldOffsetToScreen(local);
-        }
-
-        visibilityPolygon = [for (final point in worldPolygon) toLocal(point)];
-        if (debugEnabled) {
-          debugMatchedSegments = [
-            for (final segment in layer.matchedBoundarySegments)
-              VisionSegment(toLocal(segment.start), toLocal(segment.end)),
-          ];
-          debugRiotSegments = [
-            for (final segment in layer.matchedSourceSegments)
-              VisionSegment(toLocal(segment.start), toLocal(segment.end)),
-          ];
-          debugRejectedSegments = [
-            for (final segment in layer.rejectedSegments)
-              VisionSegment(toLocal(segment.start), toLocal(segment.end)),
-          ];
-          debugBoundarySegments = [
-            for (final segment
-                in layer.boundary?.segments ?? const <VisionSegment>[])
-              VisionSegment(toLocal(segment.start), toLocal(segment.end)),
-          ];
-          VisionCollisionGroup? nearestGroup;
-          var nearestGroupIsActive = false;
-          var nearestDistanceSquared = double.infinity;
-          final activeGroupsById = {
-            for (final group in layer.collisionGroups) group.id: group,
-          };
-          final observerGroupsById = {
-            for (final group in layer.observerGroups) group.id: group,
-          };
-          final debugGroups = layer.debugCollisionGroups.isNotEmpty
-              ? layer.debugCollisionGroups
-              : layer.boundary?.collisionGroups ?? layer.collisionGroups;
-          for (final candidate in debugGroups) {
-            final group = activeGroupsById[candidate.id] ??
-                observerGroupsById[candidate.id] ??
-                candidate;
-            if (group.isOuterBoundary) continue;
-            for (final segment in group.segments) {
-              final distanceSquared = visionDistanceSquaredToSegment(
-                sideWorldOrigin,
-                segment,
-              );
-              if (distanceSquared < nearestDistanceSquared) {
-                nearestDistanceSquared = distanceSquared;
-                nearestGroup = group;
-                nearestGroupIsActive = activeGroupsById.containsKey(group.id);
-              }
-            }
-          }
-          final nearestCoverage = nearestGroup == null ||
-                  layer.layerIndex >= nearestGroup.coverageByLayer.length
-              ? null
-              : nearestGroup.coverageByLayer[layer.layerIndex];
-          final summary = inferredHeight == null
-              ? 'fallback ${formatVisionElevation(layer.elevation)}'
-              : 'height ${formatVisionElevation(inferredHeight)}  '
-                  'slice ${formatVisionElevation(layer.elevation)}  '
-                  '${layer.collisionGroups.where((group) => group.hasEvidenceInLayer(layer.layerIndex)).length}/'
-                  '${layer.collisionGroups.length} contours evidenced  '
-                  '${layer.matchedSourceSegments.length}/'
-                  '${layer.matchedSourceSegments.length + layer.rejectedSegments.length} Riot edges aligned';
-          debugLabel = nearestGroup == null
-              ? summary
-              : '$summary\nnearest ${nearestGroup.id}  '
-                  '${nearestGroupIsActive ? 'active' : 'inactive candidate'}  '
-                  '${nearestGroup.confidence.name}  '
-                  '${((nearestCoverage ?? 0) * 100).round()}%';
-        }
       }
       // Only a placed cone carries a context menu; a drag preview has none.
       if (placedUtility != null) {
@@ -341,11 +205,6 @@ class ViewConeWidget extends ConsumerWidget {
                                   angle: angle,
                                   length: scaledLength,
                                   visibilityPolygon: visibilityPolygon,
-                                  debugMatchedSegments: debugMatchedSegments,
-                                  debugRiotSegments: debugRiotSegments,
-                                  debugRejectedSegments: debugRejectedSegments,
-                                  debugBoundarySegments: debugBoundarySegments,
-                                  debugLabel: debugLabel,
                                 ),
                               )),
                     ),
@@ -393,32 +252,15 @@ class ViewConePainter extends CustomPainter {
   final double angle;
   final double length;
   final List<Offset>? visibilityPolygon;
-  final List<VisionSegment>? debugMatchedSegments;
-  final List<VisionSegment>? debugRiotSegments;
-  final List<VisionSegment>? debugRejectedSegments;
-  final List<VisionSegment>? debugBoundarySegments;
-  final String? debugLabel;
 
   ViewConePainter({
     required this.angle,
     required this.length,
     this.visibilityPolygon,
-    this.debugMatchedSegments,
-    this.debugRiotSegments,
-    this.debugRejectedSegments,
-    this.debugBoundarySegments,
-    this.debugLabel,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (debugMatchedSegments != null ||
-        debugRiotSegments != null ||
-        debugRejectedSegments != null ||
-        debugBoundarySegments != null) {
-      _paintDebugGeometry(canvas, size);
-    }
-
     // A non-null result means map clipping was evaluated. If the apex is
     // outside the SVG floor (or the cone otherwise has no visible area), the
     // geometry returns a degenerate polygon and nothing should be painted.
@@ -468,75 +310,11 @@ class ViewConePainter extends CustomPainter {
     canvas.restore();
   }
 
-  void _paintDebugGeometry(Canvas canvas, Size size) {
-    canvas.save();
-    canvas.clipRect(Offset.zero & size);
-    final matchedPaint = Paint()
-      ..color = const Color(0xFF22D3EE).withValues(alpha: 0.85)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    final riotPaint = Paint()
-      ..color = const Color(0xFFA78BFA).withValues(alpha: 0.95)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.25;
-    final boundaryPaint = Paint()
-      ..color = const Color(0xFFF59E0B).withValues(alpha: 0.9)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.25;
-    final rejectedPaint = Paint()
-      ..color = const Color(0xFFFB7185).withValues(alpha: 0.9)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    for (final segment in debugBoundarySegments ?? const <VisionSegment>[]) {
-      canvas.drawLine(segment.start, segment.end, boundaryPaint);
-    }
-    for (final segment in debugMatchedSegments ?? const <VisionSegment>[]) {
-      canvas.drawLine(segment.start, segment.end, matchedPaint);
-    }
-    for (final segment in debugRiotSegments ?? const <VisionSegment>[]) {
-      canvas.drawLine(segment.start, segment.end, riotPaint);
-    }
-    for (final segment in debugRejectedSegments ?? const <VisionSegment>[]) {
-      canvas.drawLine(segment.start, segment.end, rejectedPaint);
-    }
-    canvas.drawCircle(
-      Offset(size.width / 2, length),
-      3,
-      Paint()..color = const Color(0xFF4ADE80),
-    );
-
-    final label = debugLabel;
-    if (label != null) {
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: label,
-          style: const TextStyle(
-            color: Colors.white,
-            backgroundColor: Color(0xCC111827),
-            fontSize: 10,
-            height: 1.2,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: max(0.0, size.width - 12));
-      textPainter.paint(
-        canvas,
-        Offset(6, max(4.0, length - textPainter.height - 8)),
-      );
-    }
-    canvas.restore();
-  }
-
   @override
   bool shouldRepaint(covariant ViewConePainter oldDelegate) {
     return oldDelegate.length != length ||
         oldDelegate.angle != angle ||
-        !listEquals(oldDelegate.visibilityPolygon, visibilityPolygon) ||
-        !listEquals(oldDelegate.debugMatchedSegments, debugMatchedSegments) ||
-        !listEquals(oldDelegate.debugRiotSegments, debugRiotSegments) ||
-        !listEquals(oldDelegate.debugRejectedSegments, debugRejectedSegments) ||
-        !listEquals(oldDelegate.debugBoundarySegments, debugBoundarySegments) ||
-        oldDelegate.debugLabel != debugLabel;
+        !listEquals(oldDelegate.visibilityPolygon, visibilityPolygon);
   }
 }
 
