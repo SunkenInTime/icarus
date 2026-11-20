@@ -24,6 +24,8 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:uuid/uuid.dart';
 
 class StrategyMigrator {
+  static const legacyPageName = 'Page 1';
+
   /// The startup pass over the on-device library. Where [policy] hides that
   /// library, its records stay exactly as their version wrote them; they
   /// migrate when local access returns.
@@ -359,7 +361,7 @@ class StrategyMigrator {
 
     final firstPage = StrategyPage(
       id: const Uuid().v4(),
-      name: 'Page 1',
+      name: legacyPageName,
       isAutoNamed: true,
       // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       drawingData: [...strat.drawingData],

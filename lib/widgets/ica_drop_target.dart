@@ -25,7 +25,12 @@ String buildImportSummaryMessage(
         : l10n.icaDropAllNewerVersion;
   }
 
-  final summary = _countedImportSummary(l10n, result);
+  final summary = [
+    _countedImportSummary(l10n, result),
+    for (final issue in result.issues)
+      if (issue.unreadableDrawing case final drawing?)
+        l10n.icaDropUnreadableDrawing(drawing.strategyName, drawing.pageName),
+  ].join(l10n.commonSentenceSpace);
   if (newerCount == 0) return summary;
   return '$summary${l10n.commonSentenceSpace}'
       '${l10n.icaDropSomeNewerVersion(newerCount)}';
