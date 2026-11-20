@@ -1054,6 +1054,7 @@
   "strategyMsgMoveFailed": "无法移动此战术。请再试一次。",
   "strategyMsgPageUnreachable": "无法打开“{pageName}”。请检查网络后再试。",
   "strategyMsgPageUnreachableUnnamed": "无法打开该页面。请检查网络后再试。",
+  "strategyMsgPageEditsNotSaved": "无法保存此页面的更改，因此仍停留在此页面。你的内容仍在这里。",
   "strategyMsgDeletedPageFallbackName": "此页面",
   "prefsMsgSortAlphabetical": "名称",
   "prefsMsgSortDateCreated": "创建日期",

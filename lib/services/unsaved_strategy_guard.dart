@@ -207,6 +207,7 @@ Future<bool> _guardCloudStrategyExit({
     );
     final hasUnstagedWork = ref.read(textDraftProvider).isNotEmpty ||
         hasUncommittedMediaReferences ||
+        ref.read(strategySaveStateProvider.notifier).canvasHeld ||
         (saveState.isDirty && !hasDurablePendingWork);
     final hasUnreadableSavedWork = queueState.loadIssues.isNotEmpty ||
         mediaQueueState.loadIssues.isNotEmpty;
@@ -414,7 +415,6 @@ Future<bool> guardUnsavedStrategyExit({
       stackTrace: stackTrace,
       source: source,
     );
-    return false;
   }
 
   if (!context.mounted) {

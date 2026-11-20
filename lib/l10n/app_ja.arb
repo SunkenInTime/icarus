@@ -1054,6 +1054,7 @@
   "strategyMsgMoveFailed": "この作戦を移動できませんでした。もう一度お試しください。",
   "strategyMsgPageUnreachable": "「{pageName}」を開けませんでした。接続を確認して、もう一度お試しください。",
   "strategyMsgPageUnreachableUnnamed": "そのページを開けませんでした。接続を確認して、もう一度お試しください。",
+  "strategyMsgPageEditsNotSaved": "このページの変更を保存できなかったため、このページに留まっています。作業内容はそのまま残っています。",
   "strategyMsgDeletedPageFallbackName": "このページ",
   "prefsMsgSortAlphabetical": "名前順",
   "prefsMsgSortDateCreated": "作成日",

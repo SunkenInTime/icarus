@@ -70,6 +70,7 @@ import 'package:icarus/strategy/lineup_group_changes.dart';
 import 'package:icarus/strategy/copied_page_check.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/strategy_page_source.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show User;
 import 'package:uuid/uuid.dart';
@@ -264,7 +265,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   }
 
   @override
-  Future<void> syncDesiredOpsForPage({
+  Future<OutboxWrite> syncDesiredOpsForPage({
     required String pageId,
     required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
     bool clearMissing = true,
@@ -297,6 +298,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
       queuedByEntityKey: queued,
       successorByEntityKey: successors,
     );
+    return OutboxWrite.written;
   }
 
   /// Like the real queue, keeps [desired] behind [key]'s refused op: work
@@ -2274,7 +2276,7 @@ void main() {
           .updatePosition(const Offset(300, 300), 'kept');
       await container
           .read(strategyPageSessionProvider.notifier)
-          .flushCurrentPage();
+          .handOverForSyncStatus();
       return container.read(strategyOpQueueProvider).queuedByEntityKey;
     }
 
@@ -2842,7 +2844,7 @@ void main() {
           type: AgentType.jett,
           position: const Offset(40, 40),
         ));
-    await session.flushCurrentPage();
+    await session.handOverForSyncStatus();
 
     expect(
       container.read(strategyPageSessionProvider).activePageId,
@@ -3133,7 +3135,7 @@ void main() {
       await container
           .read(strategyPageSessionProvider.notifier)
           .flushCurrentPage(),
-      isFalse,
+      isA<HeldOnCanvas>(),
     );
   });
 
@@ -5085,7 +5087,7 @@ void main() {
       await _settle();
       await container
           .read(strategyPageSessionProvider.notifier)
-          .flushCurrentPage();
+          .handOverForSyncStatus();
 
       expect(container.read(textProvider).map((text) => text.id), ['other']);
       expect(
@@ -8218,6 +8220,143 @@ void main() {
       expect(server.elements.map((element) => element.publicId), ['local']);
       expect(container.read(strategySaveStateProvider).canLeaveSafely, isTrue);
       expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.synced);
+    });
+
+    test(
+        'a page switch whose outbox write fails stays on the page with the '
+        'edit still on the canvas', () async {
+      final page = _page('page-1', 0);
+      final other = _page('page-2', 1);
+      server = _FakeServer(page.publicId);
+      final store = _FailingOutboxStore();
+      final (container, _) =
+          await openOnRealQueue(page, store: store, otherPages: [other]);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      final session = container.read(strategyPageSessionProvider.notifier);
+      store.failPut = (_) => true;
+      container.read(textProvider.notifier).fromHive([
+        PlacedText(id: 'local', position: const Offset(5, 5))..text = 'edit',
+      ]);
+      container.read(strategyProvider.notifier)
+        ..setUnsaved()
+        ..consumeScheduledCloudPageSync();
+
+      await session.setActivePage(other.publicId);
+
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          page.publicId);
+      expect(container.read(textProvider).map((text) => text.text), ['edit']);
+      expect(container.read(strategySaveStateProvider).canLeaveSafely, isFalse);
+
+      store.failPut = null;
+      await session.setActivePage(other.publicId);
+      readPage(other.publicId);
+      await _until(() =>
+          server.elements.any((element) => element.publicId == 'local'));
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          other.publicId);
+    });
+
+    test(
+        'a page switch after the edit\'s own outbox write failed stays on the '
+        'page with the edit still on the canvas', () async {
+      final page = _page('page-1', 0);
+      final other = _page('page-2', 1);
+      server = _FakeServer(page.publicId);
+      final store = _FailingOutboxStore();
+      final (container, _) =
+          await openOnRealQueue(page, store: store, otherPages: [other]);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      store.failPut = (_) => true;
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            id: 'agent-b',
+            type: AgentType.jett,
+            position: const Offset(40, 40),
+          ));
+      await _until(() =>
+          container.read(strategyOpQueueProvider).hasDurabilityFailure);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      container
+          .read(agentProvider.notifier)
+          .updatePosition(const Offset(80, 60), 'agent-b');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .switchRelativePage(PageSwitchDirection.next);
+
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          page.publicId);
+      expect(container.read(agentProvider).map((agent) => agent.id),
+          ['agent-b']);
+
+      store.failPut = null;
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .switchRelativePage(PageSwitchDirection.next);
+      readPage(other.publicId);
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          other.publicId);
+      final stored = store.load().records.singleWhere((record) =>
+          record.entityKey == EntitySyncKey.element(page.publicId, 'agent-b'));
+      final newest = stored.successorPending ?? stored.pending;
+      expect(
+        jsonEncode(newest.op.payload),
+        contains('"position":{"dx":80.0,"dy":60.0}'),
+      );
+    });
+
+    test(
+        'an edit whose outbox write failed and was then undone does not keep '
+        'the user on the page once storage recovers', () async {
+      final page = _page('page-1', 0);
+      final other = _page('page-2', 1);
+      server = _FakeServer(page.publicId);
+      final store = _FailingOutboxStore();
+      final (container, _) =
+          await openOnRealQueue(page, store: store, otherPages: [other]);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      store.failPut = (_) => true;
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            id: 'agent-b',
+            type: AgentType.jett,
+            position: const Offset(40, 40),
+          ));
+      await _until(() =>
+          container.read(strategyOpQueueProvider).hasDurabilityFailure);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      container.read(agentProvider.notifier).removeAgent('agent-b');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      store.failPut = null;
+      expect(
+          await container
+              .read(strategyPageSessionProvider.notifier)
+              .useCloudVersionsForRejected(),
+          isTrue);
+      expect(container.read(strategyOpQueueProvider).outboxIsReliable, isTrue);
+      expect(container.read(strategyOpQueueProvider).pending, isEmpty);
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .switchRelativePage(PageSwitchDirection.next);
+      readPage(other.publicId);
+
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          other.publicId);
     });
 
     /// Opens page 1 with text on it and page 2 after it, copies the text to
@@ -13323,17 +13462,22 @@ void main() {
       source: StrategySource.cloud,
       selectFirstPageIfNeeded: true,
     );
-    expect(await session.flushCurrentPage(), isTrue);
+    expect(await session.flushCurrentPage(), isA<QueuedForServer>());
 
     remote.failRead();
     container.read(textProvider.notifier).fromHive([
       PlacedText(id: 'local', position: const Offset(5, 5))..text = 'edit',
     ]);
+    container.read(strategyProvider.notifier).setUnsaved();
 
-    expect(await session.flushCurrentPage(), isFalse);
+    expect(
+      await session.flushCurrentPage(),
+      isA<HeldOnCanvas>()
+          .having((held) => held.reason, 'reason', HeldReason.noServerRead),
+    );
   });
 
-  test('a viewer whose read failed can export once it recovers', () async {
+  test('a viewer whose read fails holds nothing on the canvas', () async {
     final page = _page('page-1', 0);
     final viewerSnapshot = _editorSnapshot(
       pages: [page],
@@ -13351,13 +13495,13 @@ void main() {
       source: StrategySource.cloud,
       selectFirstPageIfNeeded: true,
     );
-    expect(await session.flushCurrentPage(), isTrue);
+    expect(await session.flushCurrentPage(), isA<NothingToHandOver>());
 
     remote.failRead();
-    expect(await session.flushCurrentPage(), isFalse);
+    expect(await session.flushCurrentPage(), isA<NothingToHandOver>());
 
     remote.setSnapshot(viewerSnapshot);
-    expect(await session.flushCurrentPage(), isTrue);
+    expect(await session.flushCurrentPage(), isA<NothingToHandOver>());
   });
 
   test('persisted overlay wins over a late remote active-page base', () async {
@@ -13378,7 +13522,7 @@ void main() {
       PlacedText(id: 'local', position: const Offset(5, 5))
         ..text = 'local-intent',
     ]);
-    await session.flushCurrentPage();
+    await session.handOverForSyncStatus();
 
     remote.setSnapshot(_editorSnapshot(
       pages: [page],
@@ -13464,7 +13608,7 @@ void main() {
       'collaborator-before',
     );
 
-    await session.flushCurrentPage();
+    await session.handOverForSyncStatus();
 
     final elementOps = container
         .read(strategyOpQueueProvider)
