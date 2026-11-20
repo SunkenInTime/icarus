@@ -17,15 +17,24 @@ export function lineupGroupItems(payload: LineupPayload): Set<string> {
     ["landings", "landing"],
     ["links", "link"],
   ] as const) {
-    const entries = payload.data[field];
-    if (!Array.isArray(entries)) continue;
-    for (const entry of entries) {
-      if (isRecord(entry) && typeof entry.id === "string") {
-        items.add(`${kind}:${entry.id}`);
-      }
-    }
+    for (const id of idsIn(payload, field)) items.add(`${kind}:${id}`);
   }
   return items;
+}
+
+export function lineupCountOf(payload: LineupPayload): number {
+  return new Set(idsIn(payload, "links")).size;
+}
+
+function idsIn(
+  payload: LineupPayload,
+  field: "origins" | "landings" | "links",
+): string[] {
+  const entries = payload.data[field];
+  if (!Array.isArray(entries)) return [];
+  return entries.flatMap((entry) =>
+    isRecord(entry) && typeof entry.id === "string" ? [entry.id] : [],
+  );
 }
 
 /// Brings the lineupItems rows of one lineup group in step with it: one per

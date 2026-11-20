@@ -49873,6 +49873,47 @@
     {
       "args": {
         "type": "object",
+        "value": {
+          "progress": {
+            "fieldType": {
+              "type": "object",
+              "value": {
+                "checked": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "corrected": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "cursor": {
+                  "fieldType": {
+                    "type": "string"
+                  },
+                  "optional": false
+                }
+              }
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "maintenance.js:backfillCommunityLineupCounts",
+      "returns": {
+        "type": "null"
+      },
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
         "value": {}
       },
       "functionType": "Mutation",
