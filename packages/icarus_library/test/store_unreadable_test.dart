@@ -12,7 +12,7 @@ const _unreadable = {
 
 void expectUntouched(Contents contents) {
   for (final MapEntry(:key, :value) in _unreadable.entries) {
-    expect(contents[strategyArea]?[key], value, reason: key);
+    expect(contents[sampleArea]?[key], value, reason: key);
   }
 }
 
@@ -60,8 +60,8 @@ void main() {
       expectUntouched(disk.contents);
       expect(
         reason: name,
-        disk.contents[strategyArea]!.length,
-        greaterThanOrEqualTo(seeded[strategyArea]!.length),
+        disk.contents[sampleArea]!.length,
+        greaterThanOrEqualTo(seeded[sampleArea]!.length),
       );
     }
   });
@@ -120,9 +120,10 @@ void main() {
   });
 
   test('a page copy carries an unreadable element as a new row', () async {
-    final area = {...seeded[strategyArea]!}
-      ..remove('content/page-a/element/garbled');
-    final store = await openOn({...seeded, strategyArea: area});
+    final area = {...seeded[sampleArea]!}
+      ..remove('content/page-a/element/garbled')
+      ..remove('content/page-a/pin/pin-1');
+    final store = await openOn({...seeded, sampleArea: area});
     savedValue(
       await store.commit(
         strategyId,

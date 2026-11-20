@@ -1,10 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
+import 'dart:math';
 
 import 'package:collection/collection.dart';
 
 import '../apply.dart';
-import '../derived_id.dart';
 import '../json.dart';
 import '../ops.dart';
 import '../outcome.dart';
@@ -26,9 +25,11 @@ sealed class StoreOpening {
 }
 
 final class StoreOpened extends StoreOpening {
-  const StoreOpened(this.store);
+  StoreOpened(this.store, List<ForeignKey> foreignKeys)
+    : foreignKeys = List.unmodifiable(foreignKeys);
 
   final LibraryStore store;
+  final List<ForeignKey> foreignKeys;
 }
 
 final class StoreNotOpened extends StoreOpening {
@@ -65,7 +66,12 @@ DateTime _now() => DateTime.now().toUtc();
 
 String _stored(Row row) => canonicalJson(row.toJson());
 
-String _id(String segment) => idOf(segment) ?? segment;
+final _random = Random.secure();
+
+String _newAttempt() => [
+  for (var i = 0; i < 16; i++)
+    _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+].join();
 
 final class _WatchedLease implements StorageLease {
   _WatchedLease(this._inner, this._ended);
@@ -82,13 +88,6 @@ final class _WatchedLease implements StorageLease {
   @override
   int get maxKeyLength => _inner.maxKeyLength;
 
-  Future<Stored<String?>> text(String area, String key) async =>
-      switch (await read(area, key)) {
-        KeyHeld(:final value) => Done(value),
-        KeyMissing() => const Done(null),
-        KeyNotRead(:final failure) => StorageFailed(failure),
-      };
-
   @override
   LeaseStatus get status => _inner.status;
 
@@ -100,12 +99,12 @@ final class _WatchedLease implements StorageLease {
   }
 
   @override
-  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
-      _watch(_inner.entries(area, prefix));
-
-  @override
   Future<Stored<List<String>>> keys(String area, String prefix) =>
       _watch(_inner.keys(area, prefix));
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
+      _watch(_inner.entries(area, prefix));
 
   @override
   Future<Stored<void>> write(String area, Map<String, String> values) =>
@@ -118,6 +117,65 @@ final class _WatchedLease implements StorageLease {
   @override
   Future<Releasing> release() => _inner.release();
 }
+
+sealed class _FolderPlace {
+  const _FolderPlace();
+}
+
+final class _Filed extends _FolderPlace {
+  const _Filed(this.chain);
+
+  final List<String> chain;
+}
+
+final class _Looped extends _FolderPlace {
+  const _Looped(this.loop);
+
+  final List<String> loop;
+}
+
+final class _UnderMissing extends _FolderPlace {
+  const _UnderMissing(this.folderPublicId);
+
+  final String folderPublicId;
+}
+
+final class _UnderUnreadable extends _FolderPlace {
+  const _UnderUnreadable(this.folder);
+
+  final UnreadableFolder folder;
+}
+
+_FolderPlace _placeOf(String folderPublicId, Map<String, FolderRow> folders) {
+  final chain = <String>[];
+  final seen = <String>{};
+  String? at = folderPublicId;
+  while (at != null) {
+    if (!seen.add(at)) {
+      return _Looped(chain.sublist(chain.indexOf(at)));
+    }
+    chain.add(at);
+    switch (folders[at]) {
+      case null:
+        return _UnderMissing(at);
+      case final UnreadableFolder folder:
+        return _UnderUnreadable(folder);
+      case ReadableFolder(:final parentFolderPublicId):
+        at = parentFolderPublicId;
+    }
+  }
+  return _Filed(chain);
+}
+
+LibraryEditResult? _folderRefusal(
+  String folderPublicId,
+  Map<String, FolderRow> folders,
+) => switch (_placeOf(folderPublicId, folders)) {
+  _Filed() => null,
+  _Looped(:final loop) => Refused(FolderLoop(loop)),
+  _UnderMissing(:final folderPublicId) => Refused(NoSuchFolder(folderPublicId)),
+  _UnderUnreadable(:final folder) => Refused(UnreadableRowInTheWay(folder)),
+};
 
 final class LibraryStore {
   LibraryStore._(StorageLease lease, this._canRead, this._clock) {
@@ -151,32 +209,46 @@ final class LibraryStore {
     DateTime Function() clock,
   ) async {
     final store = LibraryStore._(lease, canRead, clock);
-    switch (await store._lease.text(journalArea, journalKey)) {
+    final foreign = <ForeignKey>[];
+    final List<StoredEntry> journal;
+    switch (await store._lease.entries(journalArea, '')) {
       case StorageFailed(:final failure):
         return StoreNotOpened(OpenStorageFailed(failure));
-      case Done(value: null):
-        break;
-      case Done(value: final String text):
-        switch (JournalRecord.decode(text)) {
-          case CouldNotRead(:final problem):
-            return StoreNotOpened(SavedEditUnreadable(text, problem));
-          case Read(value: final record):
-            if (await record.recover(store._lease) case StorageFailed(
-              :final failure,
-            )) {
-              return StoreNotOpened(OpenStorageFailed(failure));
-            }
-            if (await JournalRecord.clear(store._lease) case StorageFailed(
-              :final failure,
-            )) {
-              return StoreNotOpened(OpenStorageFailed(failure));
-            }
-        }
+      case Done(:final value):
+        journal = value;
     }
-    if (await store._readLibrary() case final failure?) {
+    final markers = <(String, String)>[];
+    for (final (:key, :value) in journal) {
+      switch (readJournalKey(key)) {
+        case RecordAt():
+          switch (store._admitRecord(value)) {
+            case CouldNotRead(:final problem):
+              return StoreNotOpened(SavedEditUnreadable(value, problem));
+            case Read(value: final record):
+              if (await record.recover(store._lease) case StorageFailed(
+                :final failure,
+              )) {
+                return StoreNotOpened(OpenStorageFailed(failure));
+              }
+              if (await JournalRecord.clear(store._lease) case StorageFailed(
+                :final failure,
+              )) {
+                return StoreNotOpened(OpenStorageFailed(failure));
+              }
+          }
+        case RecoveredAt():
+          markers.add((key, value));
+        case final ForeignKey key:
+          foreign.add(key);
+      }
+    }
+    if (await store._prune(markers) case final failure?) {
       return StoreNotOpened(OpenStorageFailed(failure));
     }
-    return StoreOpened(store);
+    if (await store._readLibrary(foreign) case final failure?) {
+      return StoreNotOpened(OpenStorageFailed(failure));
+    }
+    return StoreOpened(store, foreign);
   }
 
   late final _WatchedLease _lease;
@@ -192,21 +264,29 @@ final class LibraryStore {
 
   Stream<StoreChange> get changes => _changes.stream;
 
-  LibraryList get library => LibraryList(
-    strategies: _summaries.values.toList(),
-    unreadableStrategies: _unreadableStrategies.values.toList(),
-    folders: _folders.values.toList(),
-  );
+  LibraryState get library => switch ((_state, _lease.status)) {
+    (_Closed(), _) => const LibraryShut(StoreClosed()),
+    (_, Ended()) => const LibraryShut(LeaseEnded()),
+    (_Stopped(:final cause), _) => LibraryShut(StoreStopped(cause)),
+    (_Ready() || _Finishing(), Holding()) => LibraryOpen(
+      LibraryList(
+        strategies: _summaries.values.toList(),
+        unreadableStrategies: _unreadableStrategies.values.toList(),
+        folders: _folders.values.toList(),
+      ),
+    ),
+  };
 
   void _leaseEnded() {
     if (_state is! _Closed) _state = const _Stopped(LeaseEnded());
   }
 
-  Future<void> close() => _inTurn(() async {
-    if (_state is _Closed) return;
+  Future<Releasing> close() => _inTurn(() async {
+    if (_state is _Closed) return const Released();
     _state = const _Closed();
-    await _lease.release();
+    final released = await _lease.release();
     unawaited(_changes.close());
+    return released;
   });
 
   Future<T> _inTurn<T>(FutureOr<T> Function() task) async {
@@ -221,6 +301,40 @@ final class LibraryStore {
     }
   }
 
+  Decoded<JournalRecord> _admitRecord(String text) {
+    switch (JournalRecord.decode(admit(text))) {
+      case final CouldNotRead<JournalRecord> unread:
+        return unread;
+      case Read(value: final record):
+        for (final write in record.writes) {
+          if (write.area.length > maxAreaLength ||
+              write.key.length > _lease.maxKeyLength) {
+            return CouldNotRead(
+              text,
+              'it writes ${write.area} ${write.key}, longer than this '
+              'device holds',
+            );
+          }
+        }
+        return Read(record);
+    }
+  }
+
+  Future<StorageFailure?> _prune(List<(String, String)> markers) async {
+    final oldest = _clock().subtract(recoveryAnswerLifetime);
+    final expired = [
+      for (final (key, value) in markers)
+        if (int.tryParse(value) case final millis?
+            when millis < oldest.millisecondsSinceEpoch)
+          key,
+    ];
+    if (expired.isEmpty) return null;
+    return switch (await _lease.delete(journalArea, expired)) {
+      StorageFailed(:final failure) => failure,
+      Done() => null,
+    };
+  }
+
   Future<StorageFailure?> _finish(JournalRecord record) async {
     if (await record.replay(_lease) case StorageFailed(:final failure)) {
       return failure;
@@ -232,6 +346,7 @@ final class LibraryStore {
   }
 
   Future<StorageFailure?> _settle() async {
+    if (_lease.status is Ended) _leaseEnded();
     switch (_state) {
       case _Ready():
         return null;
@@ -246,23 +361,84 @@ final class LibraryStore {
     }
   }
 
+  IdNotStorable? _unstorable(Iterable<(String, Row)> rows) {
+    for (final (area, row) in rows) {
+      for (final id in rowIds(row)) {
+        if (encodeId(id) case NotStorable(:final problem)) {
+          return IdNotStorable(id, problem);
+        }
+      }
+      final key = rowKey(row);
+      if (key.length > _lease.maxKeyLength || area.length > maxAreaLength) {
+        return IdNotStorable(
+          rowIds(row).last,
+          KeyLongerThan(_lease.maxKeyLength),
+        );
+      }
+    }
+    return null;
+  }
+
+  static List<String> _idsNamedBy(StrategyOp op) => switch (op) {
+    StrategyPatchOp() => const [],
+    PageAddOp(:final pagePublicId) ||
+    PagePatchOp(:final pagePublicId) ||
+    PageDeleteOp(:final pagePublicId) ||
+    PageReorderOp(:final pagePublicId) ||
+    PageSettingsPatchOp(:final pagePublicId) => [pagePublicId],
+    ElementAddOp(:final elementPublicId, :final pagePublicId) ||
+    ElementDeleteOp(:final elementPublicId, :final pagePublicId) ||
+    ElementReorderOp(
+      :final elementPublicId,
+      :final pagePublicId,
+    ) => [elementPublicId, pagePublicId],
+    ElementPatchOp(:final elementPublicId, :final pagePublicId) => [
+      elementPublicId,
+      ?pagePublicId,
+    ],
+    LineupGroupAddOp(:final lineupPublicId, :final pagePublicId) ||
+    LineupGroupDeleteOp(:final lineupPublicId, :final pagePublicId) ||
+    LineupGroupReorderOp(
+      :final lineupPublicId,
+      :final pagePublicId,
+    ) => [lineupPublicId, pagePublicId],
+    LineupGroupPatchOp(:final lineupPublicId, :final pagePublicId) => [
+      lineupPublicId,
+      ?pagePublicId,
+    ],
+  };
+
+  IdNotStorable? _unstorableSummary(String strategyPublicId) =>
+      switch (encodeId(strategyPublicId)) {
+        NotStorable(:final problem) => IdNotStorable(strategyPublicId, problem),
+        Storable()
+            when summaryKey(strategyPublicId).length > _lease.maxKeyLength =>
+          IdNotStorable(strategyPublicId, KeyLongerThan(_lease.maxKeyLength)),
+        Storable() => null,
+      };
+
   Future<Saving<S, R>> _save<S, R>(
-    JournalRecord record,
+    Map<String, Object?> edit,
+    List<KeyWrite> writes,
     S Function() take,
   ) async {
     if (await _settle() case final failure?) return NotSaved(failure);
-    for (final write in record.writes) {
-      if (write.key.length > _lease.maxKeyLength) {
-        return NotSaved(KeyTooLong(write.area, write.key));
-      }
-    }
+    final record = JournalRecord(
+      attempt: _newAttempt(),
+      issuedAt: _clock(),
+      edit: edit,
+      writes: writes,
+    );
     switch (await record.save(_lease)) {
       case StorageFailed(failure: final LeaseEnded failure):
         return NotSaved(failure);
       case StorageFailed(:final failure):
         if (await JournalRecord.clear(_lease) case StorageFailed()) {
           if (_state is! _Closed) _state = _Stopped(failure);
-          return SaveInDoubt(failure, SaveReceipt(record.receipt));
+          return SaveInDoubt(
+            failure,
+            SaveReceipt(record.attempt, record.issuedAt),
+          );
         }
         return NotSaved(failure);
       case Done():
@@ -275,50 +451,37 @@ final class LibraryStore {
     return Saved(saved);
   }
 
-  Future<StorageFailure?> _readLibrary() async {
-    final List<String> summaryKeys;
-    switch (await _lease.keys(libraryArea, summaryPrefix)) {
+  Future<StorageFailure?> _readLibrary(List<ForeignKey> foreign) async {
+    final List<StoredEntry> entries;
+    switch (await _lease.entries(libraryArea, '')) {
       case StorageFailed(:final failure):
         return failure;
       case Done(:final value):
-        summaryKeys = value;
+        entries = value;
     }
     final toRebuild = <String>[];
-    for (final key in summaryKeys) {
-      final id = _id(key.substring(summaryPrefix.length));
-      switch (await _lease.text(libraryArea, key)) {
-        case StorageFailed(:final failure):
-          return failure;
-        case Done(value: null):
-          break;
-        case Done(value: final String text):
-          switch (_decodeText(text, StrategySummary.decode)) {
-            case final summary? when summaryKey(summary.publicId) == key:
-              _summaries[summary.publicId] = summary;
-            case _:
-              toRebuild.add(id);
+    for (final (:key, :value) in entries) {
+      switch (readLibraryKey(key)) {
+        case SummaryAt(:final strategyPublicId):
+          switch (admit(value)) {
+            case Admitted(:final json):
+              switch (StrategySummary.decode(json)) {
+                case Read(value: final summary)
+                    when summary.publicId == strategyPublicId:
+                  _summaries[strategyPublicId] = summary;
+                case Read() || CouldNotRead():
+                  toRebuild.add(strategyPublicId);
+              }
+            case NotAdmitted():
+              toRebuild.add(strategyPublicId);
           }
-      }
-    }
-    final List<String> folderKeys;
-    switch (await _lease.keys(libraryArea, folderPrefix)) {
-      case StorageFailed(:final failure):
-        return failure;
-      case Done(:final value):
-        folderKeys = value;
-    }
-    for (final key in folderKeys) {
-      switch (await _lease.text(libraryArea, key)) {
-        case StorageFailed(:final failure):
-          return failure;
-        case Done(value: null):
-          break;
-        case Done(value: final String text):
-          final folder = FolderRow.parse(
-            text,
-            publicId: _id(key.substring(folderPrefix.length)),
+        case FolderAt(:final folderPublicId):
+          _folders[folderPublicId] = FolderRow.parse(
+            admit(value),
+            publicId: folderPublicId,
           );
-          _folders[folder.publicId] = folder;
+        case final ForeignKey key:
+          foreign.add(key);
       }
     }
     for (final id in toRebuild) {
@@ -328,7 +491,7 @@ final class LibraryStore {
         case NotSaved(:final failure) || SaveInDoubt(:final failure):
           return failure;
         case Refused(
-          reason: UnreadableRowInTheWay(:final UnreadableStrategy row),
+          reason: UnreadableRowInTheWay(row: final UnreadableStrategy row),
         ):
           _unreadableStrategies[id] = row;
         case Refused():
@@ -338,99 +501,74 @@ final class LibraryStore {
     return null;
   }
 
-  static T? _decodeText<T>(String text, Decoded<T> Function(Object?) decode) {
-    final Object? json;
-    try {
-      json = jsonDecode(text);
-    } on FormatException {
-      return null;
-    }
-    return switch (decode(json)) {
-      Read(:final value) => value,
-      CouldNotRead() => null,
-    };
-  }
-
   Future<Reading<LoadedStrategy>> _strategy(String strategyPublicId) async {
     if (_strategies[strategyPublicId] case final loaded?) return Found(loaded);
     final area = strategyArea(strategyPublicId);
-    final ReadableStrategy header;
-    switch (await _lease.text(area, headerKey)) {
-      case StorageFailed(:final failure):
+    final StrategyRow header;
+    switch (await _lease.read(area, headerKey)) {
+      case KeyNotRead(:final failure):
         return NotRead(failure);
-      case Done(value: null):
+      case KeyMissing():
         return const NotFound();
-      case Done(value: final String text):
-        switch (StrategyRow.parse(text, publicId: strategyPublicId)) {
-          case final UnreadableStrategy row:
-            return Unreadable(row);
-          case final ReadableStrategy row:
-            header = row;
-        }
+      case KeyHeld(:final value):
+        header = StrategyRow.parse(admit(value), publicId: strategyPublicId);
     }
-    final pages = <PageRow>[];
-    switch (await _texts(area, pagePrefix)) {
+    final List<StrategyAreaKey> keys;
+    switch (await _lease.keys(area, '')) {
       case StorageFailed(:final failure):
         return NotRead(failure);
       case Done(:final value):
-        for (final (key, text) in value) {
-          pages.add(
-            PageRow.parse(
-              text,
-              publicId: _id(key.substring(pagePrefix.length)),
-              strategyPublicId: strategyPublicId,
-            ),
-          );
+        keys = [for (final key in value) readStrategyKey(area, key)];
+    }
+    final pages = <PageRow>[];
+    switch (await _lease.entries(area, pagePrefix)) {
+      case StorageFailed(:final failure):
+        return NotRead(failure);
+      case Done(:final value):
+        for (final (:key, :value) in value) {
+          if (readStrategyKey(area, key) case PageAt(:final pagePublicId)) {
+            pages.add(
+              PageRow.parse(
+                admit(value),
+                publicId: pagePublicId,
+                strategyPublicId: strategyPublicId,
+              ),
+            );
+          }
         }
     }
     final settings = <PageSettingsRow>[];
-    switch (await _texts(area, settingsPrefix)) {
+    switch (await _lease.entries(area, settingsPrefix)) {
       case StorageFailed(:final failure):
         return NotRead(failure);
       case Done(:final value):
-        for (final (key, text) in value) {
-          settings.add(
-            PageSettingsRow.parse(
-              text,
-              pagePublicId: _id(key.substring(settingsPrefix.length)),
-            ),
-          );
+        for (final (:key, :value) in value) {
+          if (readStrategyKey(area, key) case SettingsAt(:final pagePublicId)) {
+            settings.add(
+              PageSettingsRow.parse(admit(value), pagePublicId: pagePublicId),
+            );
+          }
         }
     }
-    final List<String> contentKeys;
-    switch (await _lease.keys(area, contentPrefix)) {
-      case StorageFailed(:final failure):
-        return NotRead(failure);
-      case Done(:final value):
-        contentKeys = value;
-    }
     final loaded = LoadedStrategy(
-      strategy: header,
+      header: header,
       pages: pages,
       settings: settings,
-      contentKeys: contentKeys.map(ContentKey.parse).nonNulls,
+      keys: keys,
     );
     _strategies[strategyPublicId] = loaded;
     return Found(loaded);
   }
 
-  Future<Stored<List<(String, String)>>> _texts(
-    String area,
-    String prefix,
-  ) async => switch (await _lease.entries(area, prefix)) {
-    StorageFailed(:final failure) => StorageFailed(failure),
-    Done(:final value) => Done([
-      for (final (:key, :value) in value) (key, value),
-    ]),
-  };
-
   Future<StorageFailure?> _loadPages(
+    String strategyPublicId,
     LoadedStrategy strategy,
-    Iterable<String> pageSegments,
+    Iterable<String> pageIds,
   ) async {
-    for (final pageSegment in pageSegments) {
-      if (strategy.isLoaded(pageSegment)) continue;
-      if (await _loadPage(strategy, pageSegment) case final failure?) {
+    for (final pageId in pageIds) {
+      if (strategy.isLoaded(pageId)) continue;
+      if (await _loadPage(strategyPublicId, strategy, pageId)
+          case final failure?) {
         return failure;
       }
     }
@@ -438,63 +576,64 @@ final class LibraryStore {
   }
 
   Future<StorageFailure?> _loadPage(
+    String strategyPublicId,
     LoadedStrategy strategy,
-    String pageSegment,
+    String pagePublicId,
   ) async {
-    final List<(String, String)> texts;
-    switch (await _texts(
-      strategyArea(strategy.publicId),
-      '$contentPrefix$pageSegment/',
-    )) {
+    final page = LoadedPage();
+    if (encodeId(pagePublicId) is NotStorable) {
+      strategy.addLoadedPage(pagePublicId, page);
+      return null;
+    }
+    final area = strategyArea(strategyPublicId);
+    switch (await _lease.entries(area, pageContentPrefix(pagePublicId))) {
       case StorageFailed(:final failure):
         return failure;
       case Done(:final value):
-        texts = value;
+        for (final (:key, :value) in value) {
+          switch (readStrategyKey(area, key)) {
+            case ElementAt(:final publicId):
+              page.elements[publicId] = ElementRow.parse(
+                admit(value),
+                publicId: publicId,
+                pagePublicId: pagePublicId,
+                canRead: _canRead,
+              );
+            case LineupAt(:final publicId):
+              page.lineupGroups[publicId] = LineupGroupRow.parse(
+                admit(value),
+                publicId: publicId,
+                strategyPublicId: strategyPublicId,
+                pagePublicId: pagePublicId,
+              );
+            case UnknownKindAt(:final key):
+              page.unknownKinds.add(UnknownKindRow(key: key, text: value));
+            case final ForeignKey key:
+              page.foreignKeys.add(key);
+            case HeaderAt() || PageAt() || SettingsAt():
+              break;
+          }
+        }
     }
-    final page = LoadedPage();
-    for (final (key, text) in texts) {
-      switch (ContentKey.parse(key)) {
-        case ElementContentKey(:final idSegment):
-          page.elements[idSegment] = ElementRow.parse(
-            text,
-            publicId: _id(idSegment),
-            pagePublicId: _id(pageSegment),
-            canRead: _canRead,
-          );
-        case LineupContentKey(:final idSegment):
-          page.lineupGroups[idSegment] = LineupGroupRow.parse(
-            text,
-            publicId: _id(idSegment),
-            strategyPublicId: strategy.publicId,
-            pagePublicId: _id(pageSegment),
-          );
-        case OtherContentKey() || null:
-          page.unknownKinds.add(UnknownKindRow(key: key, text: text));
-      }
-    }
-    strategy.addLoadedPage(pageSegment, page);
+    strategy.addLoadedPage(pagePublicId, page);
     return null;
   }
 
   Future<Reading<StrategyContent>> readStrategy(String strategyPublicId) =>
       _inTurn(() async {
         if (await _settle() case final failure?) return NotRead(failure);
-        switch (await _strategy(strategyPublicId)) {
-          case Found(value: final strategy):
-            return Found(
-              StrategyContent(
-                strategy: strategy.strategy,
-                pages: _ordered(strategy.pages),
-                settings: {...strategy.settings},
-              ),
-            );
-          case NotFound():
-            return const NotFound();
-          case Unreadable(:final row):
-            return Unreadable(row);
-          case NotRead(:final failure):
-            return NotRead(failure);
-        }
+        return switch (await _strategy(strategyPublicId)) {
+          Found(value: final strategy) => Found(
+            StrategyContent(
+              strategy: strategy.header,
+              pages: _ordered(strategy.pages),
+              settings: {...strategy.settings},
+              foreignKeys: strategy.foreignKeys,
+            ),
+          ),
+          NotFound() => const NotFound(),
+          NotRead(:final failure) => NotRead(failure),
+        };
       });
 
   Future<Reading<PageContent>> readPage(
@@ -508,18 +647,16 @@ final class LibraryStore {
         strategy = value;
       case NotFound():
         return const NotFound();
-      case Unreadable(:final row):
-        return Unreadable(row);
       case NotRead(:final failure):
         return NotRead(failure);
     }
     final page = strategy.page(pagePublicId);
     if (page == null) return const NotFound();
-    final pageSegment = segment(pagePublicId);
-    if (await _loadPages(strategy, [pageSegment]) case final failure?) {
+    if (await _loadPages(strategyPublicId, strategy, [pagePublicId])
+        case final failure?) {
       return NotRead(failure);
     }
-    final loaded = strategy.loadedPage(pageSegment)!;
+    final loaded = strategy.loadedPage(pagePublicId)!;
     return Found(
       PageContent(
         page: page,
@@ -527,6 +664,7 @@ final class LibraryStore {
         elements: loaded.elements.values.toList(),
         lineupGroups: loaded.lineupGroups.values.toList(),
         unknownKinds: loaded.unknownKinds,
+        foreignKeys: loaded.foreignKeys,
       ),
     );
   });
@@ -539,21 +677,30 @@ final class LibraryStore {
 
   Future<Recovery> recovered(SaveReceipt receipt) => _inTurn(() async {
     if (await _settle() case final failure?) return RecoveryNotRead(failure);
-    return switch (await _lease.text(journalArea, recoveredKey(receipt.id))) {
-      StorageFailed(:final failure) => RecoveryNotRead(failure),
-      Done(value: null) => const EditNotRecovered(),
-      Done(value: String()) => const EditRecovered(),
+    if (readJournalKey(recoveredKey(receipt.attempt)) is! RecoveredAt) {
+      return const EditNotRecovered();
+    }
+    return switch (await _lease.read(
+      journalArea,
+      recoveredKey(receipt.attempt),
+    )) {
+      KeyNotRead(:final failure) => RecoveryNotRead(failure),
+      KeyHeld() => const EditRecovered(),
+      KeyMissing()
+          when _clock().difference(receipt.issuedAt) > recoveryAnswerLifetime =>
+        const RecoveryForgotten(),
+      KeyMissing() => const EditNotRecovered(),
     };
   });
 
   static List<PageRow> _ordered(Iterable<PageRow> pages) => pages.sorted(
-    (a, b) => switch ((_placeOf(a), _placeOf(b))) {
+    (a, b) => switch ((_sortOf(a), _sortOf(b))) {
       (final x, final y) when x != y => x.compareTo(y),
       _ => a.publicId.compareTo(b.publicId),
     },
   );
 
-  static int _placeOf(PageRow page) => switch (page) {
+  static int _sortOf(PageRow page) => switch (page) {
     ReadablePageRow(:final sortIndex) => sortIndex,
     UnreadablePage(:final sortIndex) => sortIndex ?? 1 << 31,
   };
@@ -566,18 +713,15 @@ final class LibraryStore {
         PageReorderOp() ||
         PageSettingsPatchOp() => const [],
         PageAddOp(copyContentFromPagePublicId: null, :final pagePublicId) => [
-          segment(pagePublicId),
+          pagePublicId,
         ],
-        PageAddOp(:final pagePublicId) => {
-          ...strategy.pageSegments,
-          segment(pagePublicId),
-        },
+        PageAddOp(:final pagePublicId) => {...strategy.pageIds, pagePublicId},
         ElementAddOp(:final pagePublicId, :final elementPublicId) => [
-          segment(pagePublicId),
+          pagePublicId,
           ?strategy.pageOfElement(elementPublicId),
         ],
         ElementPatchOp(:final pagePublicId, :final elementPublicId) => [
-          if (pagePublicId != null) segment(pagePublicId),
+          ?pagePublicId,
           ?strategy.pageOfElement(elementPublicId),
         ],
         ElementDeleteOp(:final elementPublicId) ||
@@ -585,11 +729,11 @@ final class LibraryStore {
           :final elementPublicId,
         ) => [?strategy.pageOfElement(elementPublicId)],
         LineupGroupAddOp(:final pagePublicId, :final lineupPublicId) => [
-          segment(pagePublicId),
+          pagePublicId,
           ?strategy.pageOfLineupGroup(lineupPublicId),
         ],
         LineupGroupPatchOp(:final pagePublicId, :final lineupPublicId) => [
-          if (pagePublicId != null) segment(pagePublicId),
+          ?pagePublicId,
           ?strategy.pageOfLineupGroup(lineupPublicId),
         ],
         LineupGroupDeleteOp(:final lineupPublicId) ||
@@ -648,79 +792,98 @@ final class LibraryStore {
     return stamped;
   }
 
-  Future<CommitResult> commit(String strategyPublicId, StrategyOp op) =>
-      _inTurn(() async {
-        if (await _settle() case final failure?) return NotSaved(failure);
-        final LoadedStrategy strategy;
-        switch (await _strategy(strategyPublicId)) {
-          case Found(:final value):
-            strategy = value;
-          case NotFound():
-            return Refused(NoSuchStrategy(strategyPublicId));
-          case Unreadable(:final row):
-            return Refused(UnreadableRowInTheWay(row));
-          case NotRead(:final failure):
-            return NotSaved(failure);
-        }
-        final summary = _summaries[strategyPublicId];
-        if (summary == null) return Refused(NoSuchStrategy(strategyPublicId));
-        if (await _loadPages(strategy, _pagesFor(op, strategy))
-            case final failure?) {
-          return NotSaved(failure);
-        }
-        final OpApplied applied;
-        switch (applyOp(strategy, op)) {
-          case OpUnchanged():
-            return const NothingToSave();
-          case OpRefused(:final refusal):
-            return Refused(OpRefusal(refusal));
-          case final OpApplied result:
-            applied = result;
-        }
-        final writes = _stamped(strategy.strategy, applied.writes, _clock());
-        final area = strategyArea(strategyPublicId);
-        final keys = KeyWrites();
-        for (final write in writes) {
-          if (_isUnreadable(strategy.current(write.after))) {
-            return Refused(OpRefusal(UnreadableTarget(write.after.key)));
-          }
-          final key = rowKey(write.after);
-          keys.put(area, key, _stored(write.after));
-          if (write case RowChanged(:final before) when rowKey(before) != key) {
-            keys.delete(area, rowKey(before));
-          }
-        }
-        final (header, pages) = strategy.headerAfter(writes);
-        final summaryAfter = summary.after(header, pages, writes);
-        keys.put(
-          libraryArea,
-          summaryKey(strategyPublicId),
-          canonicalJson(summaryAfter.toJson()),
-        );
-        final CommitResult result = await _save(
-          JournalRecord(
-            receipt: op.opId,
-            edit: {'strategyPublicId': strategyPublicId, 'op': op.toJson()},
-            writes: keys.writes,
+  Future<CommitResult> commit(
+    String strategyPublicId,
+    StrategyOp op,
+  ) => _inTurn(() async {
+    if (await _settle() case final failure?) return NotSaved(failure);
+    for (final id in _idsNamedBy(op)) {
+      if (encodeId(id) case NotStorable(:final problem)) {
+        return Refused(IdNotStorable(id, problem));
+      }
+    }
+    final LoadedStrategy strategy;
+    switch (await _strategy(strategyPublicId)) {
+      case Found(:final value):
+        strategy = value;
+      case NotFound():
+        return Refused(NoSuchStrategy(strategyPublicId));
+      case NotRead(:final failure):
+        return NotSaved(failure);
+    }
+    final ReadableStrategy header;
+    switch (strategy.header) {
+      case final UnreadableStrategy row:
+        return Refused(UnreadableRowInTheWay(row));
+      case final ReadableStrategy row:
+        header = row;
+    }
+    final summary = _summaries[strategyPublicId];
+    if (summary == null) return Refused(NoSuchStrategy(strategyPublicId));
+    if (await _loadPages(strategyPublicId, strategy, _pagesFor(op, strategy))
+        case final failure?) {
+      return NotSaved(failure);
+    }
+    if (op case PageAddOp(copyContentFromPagePublicId: final source?)) {
+      if (strategy.loadedPage(source) case final page?
+          when page.unknownKinds.isNotEmpty || page.foreignKeys.isNotEmpty) {
+        return Refused(CopyLeavesRowsBehind(source));
+      }
+    }
+    final OpApplied applied;
+    switch (applyOp(strategy.rowsUnder(header), op)) {
+      case OpUnchanged():
+        return const NothingToSave();
+      case OpRefused(:final refusal):
+        return Refused(OpRefusal(refusal));
+      case final OpApplied result:
+        applied = result;
+    }
+    final writes = _stamped(header, applied.writes, _clock());
+    final area = strategyArea(strategyPublicId);
+    if (_unstorable([for (final write in writes) (area, write.after)])
+        case final refusal?) {
+      return Refused(refusal);
+    }
+    final keys = KeyWrites();
+    for (final write in writes) {
+      if (_isUnreadable(strategy.current(write.after))) {
+        return Refused(OpRefusal(UnreadableTarget(write.after.key)));
+      }
+      final key = rowKey(write.after);
+      keys.put(area, key, _stored(write.after));
+      if (write case RowChanged(:final before) when rowKey(before) != key) {
+        keys.delete(area, rowKey(before));
+      }
+    }
+    final (after, pages) = strategy.headerAfter(header, writes);
+    final summaryAfter = summary.after(after, pages, writes);
+    keys.put(
+      libraryArea,
+      summaryKey(strategyPublicId),
+      canonicalJson(summaryAfter.toJson()),
+    );
+    final CommitResult result = await _save(
+      {'strategyPublicId': strategyPublicId, 'op': op.toJson()},
+      keys.writes,
+      () {
+        strategy.take(writes);
+        _summaries[strategyPublicId] = summaryAfter;
+        return Committed(
+          change: StrategyEdited(
+            strategyPublicId: strategyPublicId,
+            opId: op.opId,
+            writes: writes,
+            removed: const [],
+            summary: summaryAfter,
           ),
-          () {
-            strategy.take(writes);
-            _summaries[strategyPublicId] = summaryAfter;
-            return Committed(
-              change: StrategyEdited(
-                strategyPublicId: strategyPublicId,
-                opId: op.opId,
-                writes: writes,
-                removed: const [],
-                summary: summaryAfter,
-              ),
-              undo: applied.undo,
-            );
-          },
+          undo: applied.undo,
         );
-        if (result case Saved(:final value)) _changes.add(value.change);
-        return result;
-      });
+      },
+    );
+    if (result case Saved(:final value)) _changes.add(value.change);
+    return result;
+  });
 
   Future<RebuildResult> rebuildSummary(String strategyPublicId) =>
       _inTurn(() async {
@@ -738,9 +901,6 @@ final class LibraryStore {
         return result;
       });
 
-  String _receipt(Object? what) =>
-      derivedId(jsonEncode([what, _clock().microsecondsSinceEpoch]));
-
   Future<RebuildResult> _rebuild(String strategyPublicId) async {
     if (await _settle() case final failure?) return NotSaved(failure);
     final LoadedStrategy strategy;
@@ -749,15 +909,21 @@ final class LibraryStore {
         strategy = value;
       case NotFound():
         return Refused(NoSuchStrategy(strategyPublicId));
-      case Unreadable(:final row):
-        return Refused(UnreadableRowInTheWay(row));
       case NotRead(:final failure):
         return NotSaved(failure);
     }
-    if (await _loadPages(strategy, strategy.pageSegments) case final failure?) {
+    final ReadableStrategy header;
+    switch (strategy.header) {
+      case final UnreadableStrategy row:
+        return Refused(UnreadableRowInTheWay(row));
+      case final ReadableStrategy row:
+        header = row;
+    }
+    if (await _loadPages(strategyPublicId, strategy, strategy.pageIds)
+        case final failure?) {
       return NotSaved(failure);
     }
-    final rebuilt = _summaryOf(strategy);
+    final rebuilt = _summaryOf(header, strategy);
     if (rebuilt == _summaries[strategyPublicId]) return const NothingToSave();
     final keys = KeyWrites()
       ..put(
@@ -765,30 +931,23 @@ final class LibraryStore {
         summaryKey(strategyPublicId),
         canonicalJson(rebuilt.toJson()),
       );
-    return _save(
-      JournalRecord(
-        receipt: _receipt(['rebuildSummary', strategyPublicId]),
-        edit: {'rebuildSummary': strategyPublicId},
-        writes: keys.writes,
-      ),
-      () {
-        _summaries[strategyPublicId] = rebuilt;
-        _unreadableStrategies.remove(strategyPublicId);
-        return rebuilt;
-      },
-    );
+    return _save({'rebuildSummary': strategyPublicId}, keys.writes, () {
+      _summaries[strategyPublicId] = rebuilt;
+      _unreadableStrategies.remove(strategyPublicId);
+      return rebuilt;
+    });
   }
 
-  StrategySummary _summaryOf(LoadedStrategy strategy) {
+  StrategySummary _summaryOf(ReadableStrategy header, LoadedStrategy strategy) {
     final tallies = <String, PageTally>{};
-    for (final pageSegment in strategy.pageSegments) {
-      for (final row in strategy.elementsOnSegment(pageSegment)) {
+    for (final pageId in strategy.pageIds) {
+      for (final row in strategy.elementsOn(pageId)) {
         tallies[row.pagePublicId] =
             (tallies[row.pagePublicId] ?? PageTally.empty).plus(row, 1);
       }
     }
     return StrategySummary.of(
-      strategy: strategy.strategy,
+      strategy: header,
       pages: strategy.pages,
       tallies: tallies,
     );
@@ -804,11 +963,8 @@ final class LibraryStore {
         }
         if (edit.isEmpty) return const NothingToSave();
         final result = await _save<LibraryEdited, LibraryRefusal>(
-          JournalRecord(
-            receipt: _receipt(['library', edit.described]),
-            edit: {'library': edit.described},
-            writes: edit.writes,
-          ),
+          {'library': edit.described},
+          edit.writes,
           edit.take,
         );
         if (result case Saved(:final value)) _changes.add(value);
@@ -864,17 +1020,25 @@ final class _LibraryEdit {
     switch (change) {
       case AddStrategy(:final rows):
         final id = rows.strategy.publicId;
+        if (_store._unstorableSummary(id) case final refusal?) {
+          return Refused(refusal);
+        }
         if (_hasStrategy(id) || _removedStrategies.contains(id)) {
           return Refused(StrategyAlreadyInStore(id));
         }
         if (_outside(rows) case final key?) {
           return Refused(RowOutsideStrategy(key));
         }
-        if (rows.strategy.folderPublicId case final folder?
-            when _folders[folder] is! ReadableFolder) {
-          return Refused(NoSuchFolder(folder));
-        }
         final area = strategyArea(id);
+        if (_store._unstorable([for (final row in rows.rows) (area, row)])
+            case final refusal?) {
+          return Refused(refusal);
+        }
+        if (rows.strategy.folderPublicId case final folder?) {
+          if (_folderRefusal(folder, _folders) case final refused?) {
+            return refused;
+          }
+        }
         switch (await _store._lease.keys(area, '')) {
           case StorageFailed(:final failure):
             return NotSaved(failure);
@@ -923,18 +1087,19 @@ final class _LibraryEdit {
       case MoveStrategy(:final strategyPublicId, :final folderPublicId):
         final summary = _summaries[strategyPublicId];
         if (summary == null) return Refused(NoSuchStrategy(strategyPublicId));
-        if (folderPublicId != null &&
-            _folders[folderPublicId] is! ReadableFolder) {
-          return Refused(NoSuchFolder(folderPublicId));
+        if (folderPublicId != null) {
+          if (_folderRefusal(folderPublicId, _folders) case final refused?) {
+            return refused;
+          }
         }
         final ReadableStrategy current;
         switch (await _header(strategyPublicId)) {
-          case Found(:final value):
+          case Found(value: final ReadableStrategy value):
             current = value;
+          case Found(value: final UnreadableStrategy row):
+            return Refused(UnreadableRowInTheWay(row));
           case NotFound():
             return Refused(NoSuchStrategy(strategyPublicId));
-          case Unreadable(:final row):
-            return Refused(UnreadableRowInTheWay(row));
           case NotRead(:final failure):
             return NotSaved(failure);
         }
@@ -956,23 +1121,24 @@ final class _LibraryEdit {
         });
       case PutFolder(:final folder):
         final id = folder.publicId;
+        if (_store._unstorable([(libraryArea, folder)]) case final refusal?) {
+          return Refused(refusal);
+        }
         if (_folders[id] case final UnreadableFolder row) {
           return Refused(UnreadableRowInTheWay(row));
         }
         if (folder.parentFolderPublicId case final parent?) {
-          if (_folders[parent] is! ReadableFolder) {
-            return Refused(NoSuchFolder(parent));
-          }
-          for (
-            String? at = parent;
-            at != null;
-            at = switch (_folders[at]) {
-              ReadableFolder(:final parentFolderPublicId) =>
-                parentFolderPublicId,
-              _ => null,
-            }
-          ) {
-            if (at == id) return Refused(FolderInsideItself(id));
+          switch (_placeOf(parent, _folders)) {
+            case _Filed(:final chain) when chain.contains(id):
+              return Refused(FolderInsideItself(id));
+            case _Filed():
+              break;
+            case _Looped(:final loop):
+              return Refused(FolderLoop(loop));
+            case _UnderMissing(:final folderPublicId):
+              return Refused(NoSuchFolder(folderPublicId));
+            case _UnderUnreadable(:final folder):
+              return Refused(UnreadableRowInTheWay(folder));
           }
         }
         if (_folders[id] == folder) return null;
@@ -1010,12 +1176,11 @@ final class _LibraryEdit {
     return null;
   }
 
-  Future<Reading<ReadableStrategy>> _header(String strategyPublicId) async {
+  Future<Reading<StrategyRow>> _header(String strategyPublicId) async {
     if (_headers[strategyPublicId] case final header?) return Found(header);
     return switch (await _store._strategy(strategyPublicId)) {
-      Found(:final value) => Found(value.strategy),
+      Found(:final value) => Found(value.header),
       NotFound() => const NotFound(),
-      Unreadable(:final row) => Unreadable(row),
       NotRead(:final failure) => NotRead(failure),
     };
   }
@@ -1041,7 +1206,7 @@ final class _LibraryEdit {
       _store._summaries[key] = value;
     }
     for (final MapEntry(:key, :value) in _headers.entries) {
-      _store._strategies[key]?.strategy = value;
+      _store._strategies[key]?.header = value;
     }
     for (final id in _removedFolders) {
       _store._folders.remove(id);

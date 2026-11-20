@@ -2,6 +2,8 @@ import 'json.dart';
 
 const latestTime = 8640000000000000;
 
+const largestSafeWhole = 9007199254740991;
+
 sealed class Decoded<T> {
   const Decoded();
 }
@@ -59,9 +61,13 @@ final class JsonFields {
   String? optionalString(String key) => has(key) ? string(key) : null;
 
   int whole(String key) => switch (json[key]) {
-    final num value when value.isFinite && value == value.truncate() =>
+    final num value
+        when value.isFinite &&
+            value == value.truncate() &&
+            value >= -largestSafeWhole &&
+            value <= largestSafeWhole =>
       value.toInt(),
-    _ => _expected(key, 'a whole number', 0),
+    _ => _expected(key, 'a whole number JavaScript holds exactly', 0),
   };
 
   int? optionalWhole(String key) => has(key) ? whole(key) : null;

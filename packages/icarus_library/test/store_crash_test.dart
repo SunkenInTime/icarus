@@ -13,6 +13,7 @@ void expectHonest(
   Contents after,
   String where,
 ) {
+  expect(reopened['journal']?['edit'], isNull, reason: '$where: record left');
   final isBefore = sameContents(
     withoutJournal(reopened),
     withoutJournal(before),
@@ -144,8 +145,8 @@ void main() {
   test('every cut while a summary is rebuilt leaves it before or after', () {
     final stale = {
       ...seeded,
-      strategyArea: {
-        ...seeded[strategyArea]!,
+      sampleArea: {
+        ...seeded[sampleArea]!,
         'content/page-b/element/neon': canonicalRow(
           agent('neon', type: 'neon', pageId: 'page-b'),
         ),

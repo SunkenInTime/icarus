@@ -40,19 +40,22 @@ final class KeyWrites {
 
 final class JournalRecord {
   JournalRecord({
-    required this.receipt,
+    required this.attempt,
+    required this.issuedAt,
     required Map<String, Object?> edit,
     required List<KeyWrite> writes,
   }) : edit = frozenJsonObject(edit),
        writes = List.unmodifiable(writes);
 
-  final String receipt;
+  final String attempt;
+  final DateTime issuedAt;
   final Map<String, Object?> edit;
   final List<KeyWrite> writes;
 
   String encode() => jsonEncode({
     'journalVersion': journalVersion,
-    'receipt': receipt,
+    'attempt': attempt,
+    'issuedAt': issuedAt.millisecondsSinceEpoch,
     'edit': edit,
     'writes': [
       for (final write in writes)
@@ -71,46 +74,53 @@ final class JournalRecord {
     ],
   });
 
-  static Decoded<JournalRecord> decode(String text) {
-    final Object? json;
-    try {
-      json = jsonDecode(text);
-    } on FormatException catch (error) {
-      return CouldNotRead(text, 'the saved edit is not JSON: ${error.message}');
-    }
-    return JsonFields.read(json, 'saved edit', (fields) {
-      if (fields.whole('journalVersion') != journalVersion) {
-        fields.reject('a saved edit from a newer build');
-      }
-      final receipt = fields.string('receipt');
-      final edit = fields.object('edit');
-      final writes = <KeyWrite>[];
-      switch (fields.json['writes']) {
-        case final List<Object?> entries:
-          for (final entry in entries) {
-            switch (entry) {
-              case {
-                'area': final String area,
-                'key': final String key,
-                'value': final String value,
-              }:
-                writes.add(PutKey(area, key, value));
-              case {
-                'area': final String area,
-                'key': final String key,
-                'delete': true,
-              }:
-                writes.add(DeleteKey(area, key));
-              case _:
-                fields.reject('expected a key write');
+  static Decoded<JournalRecord> decode(Admission stored) => switch (stored) {
+    NotAdmitted(:final text, :final problem) => CouldNotRead(text, problem),
+    Admitted(:final json) => _decode(json),
+  };
+
+  static Decoded<JournalRecord> _decode(Object? json) =>
+      JsonFields.read(json, 'saved edit', (fields) {
+        if (fields.whole('journalVersion') != journalVersion) {
+          fields.reject('a saved edit from a newer build');
+        }
+        final attempt = fields.string('attempt');
+        if (readJournalKey(recoveredKey(attempt)) is! RecoveredAt) {
+          fields.reject('an attempt id this build does not issue');
+        }
+        final issuedAt = fields.time('issuedAt');
+        final edit = fields.object('edit');
+        final writes = <KeyWrite>[];
+        switch (fields.json['writes']) {
+          case final List<Object?> entries:
+            for (final entry in entries) {
+              switch (entry) {
+                case {
+                  'area': final String area,
+                  'key': final String key,
+                  'value': final String value,
+                }:
+                  writes.add(PutKey(area, key, value));
+                case {
+                  'area': final String area,
+                  'key': final String key,
+                  'delete': true,
+                }:
+                  writes.add(DeleteKey(area, key));
+                case _:
+                  fields.reject('expected a key write');
+              }
             }
-          }
-        case _:
-          fields.reject('expected writes');
-      }
-      return () => JournalRecord(receipt: receipt, edit: edit, writes: writes);
-    });
-  }
+          case _:
+            fields.reject('expected writes');
+        }
+        return () => JournalRecord(
+          attempt: attempt,
+          issuedAt: issuedAt,
+          edit: edit,
+          writes: writes,
+        );
+      });
 
   Future<Stored<void>> replay(StorageLease lease) async {
     final puts = <String, Map<String, String>>{};
@@ -143,7 +153,9 @@ final class JournalRecord {
     if (await replay(lease) case StorageFailed(:final failure)) {
       return StorageFailed(failure);
     }
-    return lease.write(journalArea, {recoveredKey(receipt): receipt});
+    return lease.write(journalArea, {
+      recoveredKey(attempt): '${issuedAt.millisecondsSinceEpoch}',
+    });
   }
 
   static Future<Stored<void>> clear(StorageLease lease) =>

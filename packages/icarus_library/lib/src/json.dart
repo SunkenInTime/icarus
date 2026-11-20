@@ -15,25 +15,27 @@ final class _NotJson {
 
 const _notJson = _NotJson();
 
-Object? _freeze(Object? value) {
+const maxJsonDepth = 128;
+
+Object? _freeze(Object? value, [int depth = 0]) {
   switch (value) {
     case null || bool() || String() || _FrozenMap() || _FrozenList():
       return value;
     case num():
       return value.isFinite ? value : _notJson;
-    case List<Object?>():
+    case List<Object?>() when depth < maxJsonDepth:
       final items = List<Object?>.filled(value.length, null);
       for (var i = 0; i < value.length; i++) {
-        final item = _freeze(value[i]);
+        final item = _freeze(value[i], depth + 1);
         if (identical(item, _notJson)) return _notJson;
         items[i] = item;
       }
       return _FrozenList(items);
-    case Map<Object?, Object?>():
+    case Map<Object?, Object?>() when depth < maxJsonDepth:
       final entries = <String, Object?>{};
       for (final MapEntry(:key, :value) in value.entries) {
         if (key is! String) return _notJson;
-        final item = _freeze(value);
+        final item = _freeze(value, depth + 1);
         if (identical(item, _notJson)) return _notJson;
         entries[key] = item;
       }
@@ -41,6 +43,39 @@ Object? _freeze(Object? value) {
     case _:
       return _notJson;
   }
+}
+
+sealed class Admission {
+  const Admission();
+}
+
+final class Admitted extends Admission {
+  const Admitted(this.json);
+
+  final Object? json;
+}
+
+final class NotAdmitted extends Admission {
+  const NotAdmitted(this.text, this.problem);
+
+  final String text;
+  final String problem;
+}
+
+Admission admit(String text) {
+  final Object? parsed;
+  try {
+    parsed = jsonDecode(text);
+  } on FormatException catch (error) {
+    return NotAdmitted(text, 'not JSON: ${error.message}');
+  }
+  return switch (_freeze(parsed)) {
+    _NotJson() => NotAdmitted(
+      text,
+      'holds a number that is not finite, or nests deeper than $maxJsonDepth',
+    ),
+    final json => Admitted(json),
+  };
 }
 
 Object? frozenJson(Object? value) => switch (_freeze(value)) {

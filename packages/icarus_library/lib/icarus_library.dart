@@ -34,7 +34,17 @@ export 'src/payloads.dart';
 export 'src/rows.dart';
 export 'src/strategy_rows.dart';
 export 'src/wire.dart' show CouldNotRead, Decoded, Read;
+export 'src/json.dart'
+    show Admission, Admitted, NotAdmitted, admit, maxJsonDepth;
 export 'src/store/engine.dart' hide done;
+export 'src/store/layout.dart'
+    show
+        EmptyId,
+        ForeignKey,
+        IdProblem,
+        KeyLongerThan,
+        LoneSurrogate,
+        strategyArea;
 export 'src/store/memory_engine.dart';
 export 'src/store/results.dart';
 export 'src/store/store.dart'

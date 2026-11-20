@@ -52,11 +52,22 @@ decodes a payload into a typed item at the edge of the editor.
   with every key the edit writes (the rows in `OpApplied.writes` and the
   strategy's summary), then writes those keys, then clears the record. A
   record found at startup has its writes written again before anything is
-  read. Writing the same keys twice gives the same rows, so a crash at any
-  point leaves the rows from before the edit or after it, never half.
-  Applying the op again was the first plan and does not work: a page copy cut
-  short leaves some copied rows behind, and applying the copy to those rows
-  gives different rows than applying it once.
+  read. Writing the same keys twice gives the same rows, so once the next
+  open has finished any record it found, the rows are those from before the
+  edit or after it, never half; until then the disk may hold part of the
+  edit, and nothing reads it. Applying the op again was the first plan and
+  does not work: a page copy cut short leaves some copied rows behind, and
+  applying the copy to those rows gives different rows than applying it
+  once.
+- A save whose record write failed and could not be cleared is in doubt: the
+  device may or may not hold the record. The caller holds a receipt, the
+  attempt id the store issued for that one save (random, so it does not
+  repeat on a storage) and when it was issued, and the store that gave it
+  stops. The next open finishes the record if it landed and leaves a marker
+  under the attempt id. From then on any open store answers the receipt:
+  recovered when the marker is there, not recovered when it is not. Markers
+  live 30 days; each open deletes older ones, and a receipt older than that
+  is answered forgotten.
 - A row this build cannot read is carried untouched. It is never dropped,
   rewritten or inferred as deleted, whether it failed to decode or is a kind
   from a newer build, except when the user deletes the page or strategy that

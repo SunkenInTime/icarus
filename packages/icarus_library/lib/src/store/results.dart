@@ -2,6 +2,7 @@ import '../outcome.dart';
 import '../rows.dart';
 import '../strategy_rows.dart';
 import 'engine.dart';
+import 'layout.dart';
 import 'summary.dart';
 
 sealed class Saving<S, R> {
@@ -38,16 +39,20 @@ final class SaveInDoubt<S, R> extends Saving<S, R> {
 }
 
 final class SaveReceipt {
-  const SaveReceipt(this.id);
+  const SaveReceipt(this.attempt, this.issuedAt);
 
-  final String id;
-
-  @override
-  bool operator ==(Object other) => other is SaveReceipt && other.id == id;
+  final String attempt;
+  final DateTime issuedAt;
 
   @override
-  int get hashCode => id.hashCode;
+  bool operator ==(Object other) =>
+      other is SaveReceipt && other.attempt == attempt;
+
+  @override
+  int get hashCode => attempt.hashCode;
 }
+
+const recoveryAnswerLifetime = Duration(days: 30);
 
 sealed class Recovery {
   const Recovery();
@@ -59,6 +64,10 @@ final class EditRecovered extends Recovery {
 
 final class EditNotRecovered extends Recovery {
   const EditNotRecovered();
+}
+
+final class RecoveryForgotten extends Recovery {
+  const RecoveryForgotten();
 }
 
 final class RecoveryNotRead extends Recovery {
@@ -113,6 +122,34 @@ final class UnreadableRowInTheWay implements CommitRefusal, LibraryRefusal {
 
   @override
   String toString() => 'UnreadableRowInTheWay(${row.key})';
+}
+
+final class IdNotStorable implements CommitRefusal, LibraryRefusal {
+  const IdNotStorable(this.id, this.problem);
+
+  final String id;
+  final IdProblem problem;
+
+  @override
+  String toString() => 'IdNotStorable($id, $problem)';
+}
+
+final class CopyLeavesRowsBehind extends CommitRefusal {
+  const CopyLeavesRowsBehind(this.pagePublicId);
+
+  final String pagePublicId;
+
+  @override
+  String toString() => 'CopyLeavesRowsBehind($pagePublicId)';
+}
+
+final class FolderLoop extends LibraryRefusal {
+  FolderLoop(List<String> folders) : folders = List.unmodifiable(folders);
+
+  final List<String> folders;
+
+  @override
+  String toString() => 'FolderLoop($folders)';
 }
 
 final class StrategyAlreadyInStore extends LibraryRefusal {
@@ -212,12 +249,6 @@ final class NotFound<T> extends Reading<T> {
   const NotFound();
 }
 
-final class Unreadable<T> extends Reading<T> {
-  const Unreadable(this.row);
-
-  final UnreadableStrategy row;
-}
-
 final class NotRead<T> extends Reading<T> {
   const NotRead(this.failure);
 
@@ -250,12 +281,15 @@ final class StrategyContent {
     required this.strategy,
     required List<PageRow> pages,
     required Map<String, PageSettingsRow> settings,
+    required List<ForeignKey> foreignKeys,
   }) : pages = List.unmodifiable(pages),
-       settings = Map.unmodifiable(settings);
+       settings = Map.unmodifiable(settings),
+       foreignKeys = List.unmodifiable(foreignKeys);
 
-  final ReadableStrategy strategy;
+  final StrategyRow strategy;
   final List<PageRow> pages;
   final Map<String, PageSettingsRow> settings;
+  final List<ForeignKey> foreignKeys;
 }
 
 final class PageContent {
@@ -265,15 +299,34 @@ final class PageContent {
     required List<ElementRow> elements,
     required List<LineupGroupRow> lineupGroups,
     required List<UnknownKindRow> unknownKinds,
+    required List<ForeignKey> foreignKeys,
   }) : elements = List.unmodifiable(elements),
        lineupGroups = List.unmodifiable(lineupGroups),
-       unknownKinds = List.unmodifiable(unknownKinds);
+       unknownKinds = List.unmodifiable(unknownKinds),
+       foreignKeys = List.unmodifiable(foreignKeys);
 
   final PageRow page;
   final PageSettingsRow? settings;
   final List<ElementRow> elements;
   final List<LineupGroupRow> lineupGroups;
   final List<UnknownKindRow> unknownKinds;
+  final List<ForeignKey> foreignKeys;
+}
+
+sealed class LibraryState {
+  const LibraryState();
+}
+
+final class LibraryOpen extends LibraryState {
+  const LibraryOpen(this.list);
+
+  final LibraryList list;
+}
+
+final class LibraryShut extends LibraryState {
+  const LibraryShut(this.failure);
+
+  final StorageFailure failure;
 }
 
 final class LibraryList {

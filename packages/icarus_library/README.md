@@ -41,17 +41,35 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   server's failure code, or `UnreadableTarget` with the key of the row this
   build cannot read. Nothing a user, the server or the disk can cause throws.
   An exception means a programmer error.
-- **JSON is read once, at the edge.** Every `decode` returns `Read` with a
-  typed value or `CouldNotRead` with the JSON it was given. Each row kind's
-  `parse` takes the stored text and the ids its key gives, and always returns
-  a row: readable, or the unreadable case holding what was stored (the JSON,
-  or the text when it is not JSON) and why it could not be read. Times are
-  read only when they fit a `DateTime`.
-- **Fields this build does not know are kept.** Every readable row, and the
-  objects inside it (payload envelopes, page settings, the theme palette),
-  keeps the fields it did not read in `unknownFields` and writes them back on
-  every rewrite. A row written by a newer build loses nothing when this build
-  renames, moves, reorders or deletes it.
+- **JSON is read once, at the edge.** Stored text goes through `admit`,
+  which never throws: it returns `Admitted` with frozen JSON, or
+  `NotAdmitted` with the text kept and why (not JSON, a number that is not
+  finite, or nesting deeper than `maxJsonDepth`). Each row kind's `parse`
+  takes an `Admission` and the ids the key gives, and always returns a row:
+  readable, or its unreadable case holding what was stored. Every `decode`
+  returns `Read` or `CouldNotRead`. Whole numbers must fit what JavaScript
+  holds exactly, and times must fit a `DateTime`. `null` for an optional
+  field means the field is absent.
+- **Fields this build does not know, and the rule for keeping them.**
+  Readable rows and the objects inside them (payload envelopes, page
+  settings, the theme palette) keep the fields they did not read, and a row
+  is rewritten from what was stored plus the fields the op changes
+  (`rewritten`, `withData`), never rebuilt from typed fields alone:
+  - An op that replaces a whole value replaces it, exactly as the server
+    does: a page settings patch, a theme palette change, a payload written
+    whole, a lineup item a merge names. The parity harness is the proof.
+  - An op that merges fields keeps everything it does not name, at the row,
+    the payload envelope and inside `data`.
+  - Any write that is not the op's own target keeps the stored value as it
+    was: the strategy row's `updatedAt` stamp, the rows a reorder renumbers,
+    a summary rebuild, a page copy.
+  - Summaries are disposable and rebuilt from rows, so they keep nothing.
+
+  `test/store_fields_test.dart` checks the rule: for every op type it puts a
+  probe field in every map of every stored row, runs the op, and compares
+  each probe with a table of what is kept and what is replaced. For a whole
+  element write, the fields `field_rules.dart` keeps (`assetId`, the later
+  fields) must survive.
 - **A row this build cannot read is carried, never touched.** An element
   whose kind is unknown, whose payload version is newer than
   `newestElementPayloadVersion`, whose data is not an object, or that the
@@ -285,17 +303,38 @@ the app stops without closing). Each check returns `Passed` or
 | Area | Keys |
 | --- | --- |
 | `library` | `summary/<strategy>`, `folder/<folder>` |
-| `journal` | `edit` (the edit being saved), `recovered/<receipt>` |
-| `strategy/<strategy>` | `strategy`, `page/<page>`, `settings/<page>`, `content/<page>/element/<id>`, `content/<page>/lineup/<id>` |
+| `journal` | `edit` (the edit being saved), `recovered/<attempt>` |
+| `strategy/<sha1 of the strategy id>` | `strategy`, `page/<page>`, `settings/<page>`, `content/<page>/element/<id>`, `content/<page>/lineup/<id>` |
 
-Ids are URI-encoded inside keys. Opening the store reads the record of an
-unfinished edit, the summaries and the folders, and nothing of any strategy.
-Reading a strategy reads its row, its page rows and its page settings, and
-lists the keys under `content/` so the store knows which page each element
-is on; that listing returns every content key of the strategy, without
-reading any. Reading a page reads only the keys under `content/<page>/`. A
-read page stays in memory until the store closes or `unload(strategy)`
-drops the strategy.
+**Keys.** An id becomes a key segment by `encodeId`: unreserved ASCII
+(`A-Z a-z 0-9 - . _ ~`) stays, everything else is its UTF-8 bytes as
+uppercase `%XX`. An empty id or one holding a lone surrogate is not
+storable. Reading a key back gives a typed meaning (`PageAt`, `ElementAt`,
+`SummaryAt` and so on) only when every segment is canonical: it decodes as
+strict UTF-8 (a leading U+FEFF stays) and encodes back to the same text.
+Anything else is a `ForeignKey`, kept as its raw text. A foreign key is
+never read as any row and never taken as an id. Foreign keys in the library
+and journal areas are reported in `StoreOpened.foreignKeys`; those in a
+strategy's area are reported in `StrategyContent.foreignKeys` and
+`PageContent.foreignKeys`. Removing a strategy deletes everything in its
+area, foreign keys included; foreign keys elsewhere stay where they are.
+
+**Admission.** Before anything is written, every id an op names and every
+row an edit writes is checked: an id that is not storable, or a key longer
+than the lease's `maxKeyLength`, is refused with `IdNotStorable` and nothing
+is written. The only keys the store writes that do not come from those ids
+are fixed ones (`edit`, `strategy`, `recovered/` plus 32 hex characters), so
+no save and no recovery can write a key the engine cannot hold. A saved
+record whose writes name a key longer than the engine holds is refused at
+open as `SavedEditUnreadable`.
+
+**What a read costs.** Opening the store reads the journal area and the
+library area with one `entries` call each, and nothing of any strategy.
+Reading a strategy reads its row, lists every key of its area (so it knows
+which page each element is on, and which keys are foreign), and reads its
+pages and settings with one `entries` call each. Reading a page is one
+`entries` call under `content/<page>/`. A read page stays in memory until
+the store closes or `unload(strategy)` drops the strategy.
 
 ### Saving an edit
 
@@ -335,23 +374,43 @@ Every save returns a `Saving`, which the caller has to handle:
   has stopped (`StoreStopped`) or closed (`StoreClosed`).
 - `SaveInDoubt`: the record's write failed and clearing it failed too, so
   the device may or may not hold it. The store stops. The result carries a
-  `SaveReceipt` (a commit's receipt is its op id). The next store to open
-  finishes the record if it landed, and `recovered(receipt)` on that store
-  answers `EditRecovered` or `EditNotRecovered`.
+  `SaveReceipt`: the attempt id the store issued for this one save (128
+  random bits, so it does not repeat on a storage) and when it was issued.
+  The next store to open finishes the record if it landed and writes
+  `recovered/<attempt>`. `recovered(receipt)` on that store, or any later
+  one, answers `EditRecovered`, `EditNotRecovered`, or `RecoveryForgotten`
+  once the receipt is older than `recoveryAnswerLifetime` (30 days); each
+  open deletes markers older than that.
 
 Saves and reads run one at a time, in the order they were called. `close`
-releases the lease at once, whatever the `changes` listeners are doing;
-afterwards saves are `NotSaved(StoreClosed)` and reads `NotRead(StoreClosed)`.
+releases the lease at once, whatever the `changes` listeners are doing, and
+returns what the release returned; afterwards saves are
+`NotSaved(StoreClosed)` and reads `NotRead(StoreClosed)`. A store whose lease
+ended stops, and every later save and read says so.
+
+**Folders.** Every walk over stored parent folders remembers where it has
+been, so it ends on any data. A folder that would be filed, or a strategy
+moved, under a stored loop is refused with `FolderLoop` naming the folders
+in it; under a missing folder, `NoSuchFolder`; under a folder this build
+cannot read, `UnreadableRowInTheWay`. Opening reads a loop as it is and
+lists its folders.
 
 ### Reading
 
-`readStrategy` and `readPage` return a `Reading`: `Found`, `NotFound`,
-`Unreadable` when the strategy's own row cannot be read, or `NotRead` when
-the device failed. Unreadable pages, settings, elements and lineup groups
-come back in the same lists as readable ones; a key under `content/<page>/`
-of a kind this build does not know comes back as an `UnknownKindRow` with
-its text as stored. `library` is the list in memory: one `StrategySummary`
-per strategy, the strategies whose own row cannot be read, and the folders.
+`readStrategy` and `readPage` return a `Reading`: `Found`, `NotFound`, or
+`NotRead` when the device failed. A strategy whose own row cannot be read
+still reads: `StrategyContent.strategy` is its `UnreadableStrategy`, and its
+pages read as usual; edits to it are refused. Unreadable pages, settings,
+elements and lineup groups come back in the same lists as readable ones; a
+key under `content/<page>/` of a kind this build does not know comes back as
+an `UnknownKindRow` with its text as stored. `library` is `LibraryOpen` with
+the list (summaries, strategies whose own row cannot be read, folders), or
+`LibraryShut` once the store has closed, stopped or lost its lease, so a
+closed store never hands out data that looks current.
+
+A page copy whose source page cannot be read, or holds a row of a kind this
+build does not know or under a foreign key, is refused (`UnreadableTarget`,
+`CopyLeavesRowsBehind`) rather than copied without them.
 
 ### Deleting
 
@@ -392,7 +451,9 @@ ops is one more kind of record.
 ### Measuring it
 
 `dart run tool/store_benchmark.dart` times opening the store and a
-500-strategy library list, opening a 300-item page where half the items are
+700-strategy library list, opening a 300-item page where half the items are
 1000-point drawings (in a strategy not yet read, and in one already read),
-and two commits on that page. `test/store_budget_test.dart` counts the keys
-each of those reads, lists and writes, and fails when a count grows.
+and two commits on that page. `test/store_budget_test.dart` counts what each
+of those asks the engine to read, list and write, and how many keys each
+listing returns, and fails when a count grows; it includes a strategy of 20
+pages with 300 items each.

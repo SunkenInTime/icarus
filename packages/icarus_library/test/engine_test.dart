@@ -98,4 +98,17 @@ void main() {
       isA<Broke>(),
     );
   });
+
+  test(
+    'a lease asked for while the engine closes does not break the close',
+    () async {
+      final engine = MemoryEngine(MemoryStorage());
+      await engine.lease();
+      final closing = engine.close();
+      final leasing = engine.lease();
+      await closing;
+      expect(await leasing, isA<Leasing>());
+      await engine.close();
+    },
+  );
 }

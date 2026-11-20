@@ -77,6 +77,17 @@ StrategyContent strategyOf(Reading<StrategyContent> reading) =>
       final other => fail('expected the strategy, got $other'),
     };
 
+LibraryList listOf(LibraryStore store) => switch (store.library) {
+  LibraryOpen(:final list) => list,
+  LibraryShut(:final failure) => fail('the library is shut: $failure'),
+};
+
+ReadableStrategy headerOf(StrategyContent content) =>
+    switch (content.strategy) {
+      final ReadableStrategy header => header,
+      final other => fail('the strategy row is unreadable: $other'),
+    };
+
 ElementRow elementOn(PageContent page, String id) =>
     page.elements.firstWhere((row) => row.publicId == id);
 
@@ -427,7 +438,7 @@ StrategyRowSet sampleStrategy({String id = strategyId, String prefix = ''}) =>
       ],
     );
 
-const strategyArea = 'strategy/$strategyId';
+final sampleArea = strategyArea(strategyId);
 
 Future<Contents> seededContents() async {
   final storage = MemoryStorage();
@@ -437,8 +448,8 @@ Future<Contents> seededContents() async {
   await store.close();
   final withRaw = {
     ...storage.contents,
-    strategyArea: {
-      ...storage.contents[strategyArea]!,
+    sampleArea: {
+      ...storage.contents[sampleArea]!,
       'content/page-a/element/smoke': unreadableElementJson,
       'content/page-a/pin/pin-1': unknownRowJson,
       'content/page-a/element/garbled': garbledJson,

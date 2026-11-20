@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'json.dart';
 import 'ops.dart';
 import 'payloads.dart';
@@ -73,37 +71,13 @@ sealed class Row {
   int get hashCode => canonicalJson(toJson()).hashCode;
 }
 
-sealed class _Parsed {
-  const _Parsed();
-}
-
-final class _Json extends _Parsed {
-  const _Json(this.value);
-
-  final Object? value;
-}
-
-final class _NotJson extends _Parsed {
-  const _NotJson(this.problem);
-
-  final String problem;
-}
-
-_Parsed _parse(String text) {
-  try {
-    return _Json(frozenJson(jsonDecode(text)));
-  } on FormatException catch (error) {
-    return _NotJson('not JSON: ${error.message}');
-  }
-}
-
-T _fromText<T>(
-  String text,
+T _fromAdmission<T>(
+  Admission stored,
   T Function(Object? json) read,
   T Function(Object? stored, String problem) unreadable,
-) => switch (_parse(text)) {
-  _Json(:final value) => read(value),
-  _NotJson(:final problem) => unreadable(text, problem),
+) => switch (stored) {
+  Admitted(:final json) => read(json),
+  NotAdmitted(:final text, :final problem) => unreadable(text, problem),
 };
 
 Map<String, Object?>? _object(Object? json) => switch (json) {
@@ -173,9 +147,9 @@ sealed class StrategyRow extends Row {
         );
       });
 
-  static StrategyRow parse(String text, {required String publicId}) =>
-      _fromText(
-        text,
+  static StrategyRow parse(Admission stored, {required String publicId}) =>
+      _fromAdmission(
+        stored,
         (json) => switch (decode(json)) {
           Read(:final value) when value.publicId == publicId => value,
           Read() => UnreadableStrategy(
@@ -323,24 +297,28 @@ sealed class FolderRow extends Row {
         );
       });
 
-  static FolderRow parse(String text, {required String publicId}) => _fromText(
-    text,
-    (json) => switch (decode(json)) {
-      Read(:final value) when value.publicId == publicId => value,
-      Read() => UnreadableFolder(
-        publicId: publicId,
-        stored: json,
-        problem: _misplaced,
-      ),
-      CouldNotRead(:final problem) => UnreadableFolder(
-        publicId: publicId,
-        stored: json,
-        problem: problem,
-      ),
-    },
-    (stored, problem) =>
-        UnreadableFolder(publicId: publicId, stored: stored, problem: problem),
-  );
+  static FolderRow parse(Admission stored, {required String publicId}) =>
+      _fromAdmission(
+        stored,
+        (json) => switch (decode(json)) {
+          Read(:final value) when value.publicId == publicId => value,
+          Read() => UnreadableFolder(
+            publicId: publicId,
+            stored: json,
+            problem: _misplaced,
+          ),
+          CouldNotRead(:final problem) => UnreadableFolder(
+            publicId: publicId,
+            stored: json,
+            problem: problem,
+          ),
+        },
+        (stored, problem) => UnreadableFolder(
+          publicId: publicId,
+          stored: stored,
+          problem: problem,
+        ),
+      );
 }
 
 final class ReadableFolder extends FolderRow {
@@ -479,7 +457,7 @@ sealed class PageRow extends Row {
       });
 
   static PageRow parse(
-    String text, {
+    Admission stored, {
     required String publicId,
     required String strategyPublicId,
   }) {
@@ -491,8 +469,8 @@ sealed class PageRow extends Row {
       stored: stored,
       problem: problem,
     );
-    return _fromText(
-      text,
+    return _fromAdmission(
+      stored,
       (json) => switch (decode(json)) {
         Read(:final value)
             when value.publicId == publicId &&
@@ -721,28 +699,30 @@ sealed class PageSettingsRow extends Row {
     );
   });
 
-  static PageSettingsRow parse(String text, {required String pagePublicId}) =>
-      _fromText(
-        text,
-        (json) => switch (decode(json)) {
-          Read(:final value) when value.pagePublicId == pagePublicId => value,
-          Read() => UnreadablePageSettings(
-            pagePublicId: pagePublicId,
-            stored: json,
-            problem: _misplaced,
-          ),
-          CouldNotRead(:final problem) => UnreadablePageSettings(
-            pagePublicId: pagePublicId,
-            stored: json,
-            problem: problem,
-          ),
-        },
-        (stored, problem) => UnreadablePageSettings(
-          pagePublicId: pagePublicId,
-          stored: stored,
-          problem: problem,
-        ),
-      );
+  static PageSettingsRow parse(
+    Admission stored, {
+    required String pagePublicId,
+  }) => _fromAdmission(
+    stored,
+    (json) => switch (decode(json)) {
+      Read(:final value) when value.pagePublicId == pagePublicId => value,
+      Read() => UnreadablePageSettings(
+        pagePublicId: pagePublicId,
+        stored: json,
+        problem: _misplaced,
+      ),
+      CouldNotRead(:final problem) => UnreadablePageSettings(
+        pagePublicId: pagePublicId,
+        stored: json,
+        problem: problem,
+      ),
+    },
+    (stored, problem) => UnreadablePageSettings(
+      pagePublicId: pagePublicId,
+      stored: stored,
+      problem: problem,
+    ),
+  );
 }
 
 final class ReadablePageSettings extends PageSettingsRow {
@@ -868,12 +848,12 @@ sealed class ElementRow extends Row {
   }
 
   static ElementRow parse(
-    String text, {
+    Admission stored, {
     required String publicId,
     required String pagePublicId,
     required bool Function(ElementPayload payload) canRead,
-  }) => _fromText(
-    text,
+  }) => _fromAdmission(
+    stored,
     (json) => switch (decode(json, canRead: canRead)) {
       Read(:final value)
           when value.publicId == publicId &&
@@ -930,6 +910,50 @@ sealed class ReadableElementRow extends ElementRow {
   final int sortIndex;
   final int revision;
   final Map<String, Object?> unknownFields;
+
+  ElementRow rewritten({
+    required bool deleted,
+    String? pagePublicId,
+    ElementPayload? payload,
+    int? sortIndex,
+  }) {
+    final page = pagePublicId ?? this.pagePublicId;
+    final written = payload ?? this.payload;
+    final place = sortIndex ?? this.sortIndex;
+    if (!written.isReadable) {
+      return UnreadableElement(
+        publicId: publicId,
+        pagePublicId: page,
+        stored: {
+          ...unknownFields,
+          'publicId': publicId,
+          'pagePublicId': page,
+          'payload': written.toJson(),
+          'sortIndex': place,
+          'revision': revision + 1,
+          'deleted': deleted,
+        },
+        problem: 'a payload version from a newer build',
+      );
+    }
+    return deleted
+        ? DeletedElement(
+            publicId: publicId,
+            pagePublicId: page,
+            payload: written,
+            sortIndex: place,
+            revision: revision + 1,
+            unknownFields: unknownFields,
+          )
+        : LiveElement(
+            publicId: publicId,
+            pagePublicId: page,
+            payload: written,
+            sortIndex: place,
+            revision: revision + 1,
+            unknownFields: unknownFields,
+          );
+  }
 
   @override
   Map<String, Object?> toJson() => {
@@ -1032,7 +1056,7 @@ sealed class LineupGroupRow extends Row {
       });
 
   static LineupGroupRow parse(
-    String text, {
+    Admission stored, {
     required String publicId,
     required String strategyPublicId,
     required String pagePublicId,
@@ -1045,8 +1069,8 @@ sealed class LineupGroupRow extends Row {
           stored: stored,
           problem: problem,
         );
-    return _fromText(
-      text,
+    return _fromAdmission(
+      stored,
       (json) => switch (decode(json)) {
         Read(:final value)
             when value.publicId == publicId &&
@@ -1084,6 +1108,36 @@ sealed class ReadableLineupGroupRow extends LineupGroupRow {
   final int sortIndex;
   final int revision;
   final Map<String, Object?> unknownFields;
+
+  ReadableLineupGroupRow rewritten({
+    required bool deleted,
+    String? pagePublicId,
+    LineupGroupPayload? payload,
+    int? sortIndex,
+  }) {
+    final page = pagePublicId ?? this.pagePublicId;
+    final written = payload ?? this.payload;
+    final place = sortIndex ?? this.sortIndex;
+    return deleted
+        ? DeletedLineupGroup(
+            publicId: publicId,
+            strategyPublicId: strategyPublicId,
+            pagePublicId: page,
+            payload: written,
+            sortIndex: place,
+            revision: revision + 1,
+            unknownFields: unknownFields,
+          )
+        : LiveLineupGroup(
+            publicId: publicId,
+            strategyPublicId: strategyPublicId,
+            pagePublicId: page,
+            payload: written,
+            sortIndex: place,
+            revision: revision + 1,
+            unknownFields: unknownFields,
+          );
+  }
 
   @override
   Map<String, Object?> toJson() => {

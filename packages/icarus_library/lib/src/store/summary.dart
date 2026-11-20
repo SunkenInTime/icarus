@@ -80,10 +80,11 @@ final class StrategySummary {
     required this.updatedAt,
     required this.pageCount,
     required this.sides,
-    required this.agents,
+    required List<String> agents,
     required this.itemCount,
     required Map<String, PageTally> tallies,
-  }) : tallies = Map.unmodifiable(tallies);
+  }) : agents = List.unmodifiable(agents),
+       tallies = Map.unmodifiable(tallies);
 
   factory StrategySummary.of({
     required ReadableStrategy strategy,

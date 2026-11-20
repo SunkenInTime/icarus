@@ -4,7 +4,7 @@ import 'package:icarus_library/icarus_library.dart';
 
 const _items = 300;
 const _drawingPoints = 1000;
-const _strategies = 500;
+const _strategies = 700;
 const _runs = 60;
 
 bool _readsAll(ElementPayload payload) => true;
@@ -135,7 +135,9 @@ Future<void> main() async {
   final warmPage = _Times();
   for (var run = 0; run < 10; run++) {
     final store = await listing.time(() => _open(storage));
-    if (store.library.strategies.length != _strategies) {
+    if (store.library case LibraryOpen(
+      :final list,
+    ) when list.strategies.length != _strategies) {
       throw StateError('list');
     }
     final cold = await coldPage.time(() => store.readPage('big', 'big-a'));
