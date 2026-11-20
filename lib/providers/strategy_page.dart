@@ -187,34 +187,26 @@ class StrategyPage extends HiveObject {
   }
 
   Map<String, dynamic> toJson(String strategyID) {
-    String fetchedImageData =
-        kIsWeb ? "[]" : PlacedImageProvider.objectToJson(imageData, strategyID);
     final lineUpJson = lineUpGraph.toJson();
-    String data = '''
-               {
-               "id": "$id",
-               "sortIndex": "$sortIndex",
-               "name": "$name",
-               "isAutoNamed": $isAutoNamed,
-               "drawingData": ${DrawingProvider.objectToJson(drawingData)},
-               "agentData": ${AgentProvider.objectToJson(agentData)},
-               "abilityData": ${AbilityProvider.objectToJson(abilityData)},
-               "textData": ${TextProvider.objectToJson(textData)},
-               "imageData":$fetchedImageData,
-               "utilityData": ${UtilityProvider.objectToJson(utilityData)},
-               "isAttack": "${isAttack.toString()}",
-               "settings": ${StrategySettingsProvider.objectToJson(settings)},
-               "lineUpOrigins": ${jsonEncode(lineUpJson['lineUpOrigins'])},
-               "lineUpLandings": ${jsonEncode(lineUpJson['lineUpLandings'])},
-               "lineUpLinks": ${jsonEncode(lineUpJson['lineUpLinks'])}
-               }
-             ''';
-
-    final result = jsonDecode(data) as Map<String, dynamic>;
-    if (isAutoNamed == null) {
-      result.remove('isAutoNamed');
-    }
-    return result;
+    return {
+      'id': id,
+      'sortIndex': '$sortIndex',
+      'name': name,
+      if (isAutoNamed != null) 'isAutoNamed': isAutoNamed,
+      'drawingData': jsonDecode(DrawingProvider.objectToJson(drawingData)),
+      'agentData': jsonDecode(AgentProvider.objectToJson(agentData)),
+      'abilityData': jsonDecode(AbilityProvider.objectToJson(abilityData)),
+      'textData': jsonDecode(TextProvider.objectToJson(textData)),
+      'imageData': kIsWeb
+          ? []
+          : jsonDecode(PlacedImageProvider.objectToJson(imageData, strategyID)),
+      'utilityData': jsonDecode(UtilityProvider.objectToJson(utilityData)),
+      'isAttack': '$isAttack',
+      'settings': jsonDecode(StrategySettingsProvider.objectToJson(settings)),
+      'lineUpOrigins': jsonDecode(jsonEncode(lineUpJson['lineUpOrigins'])),
+      'lineUpLandings': jsonDecode(jsonEncode(lineUpJson['lineUpLandings'])),
+      'lineUpLinks': jsonDecode(jsonEncode(lineUpJson['lineUpLinks'])),
+    };
   }
 
   static Future<List<StrategyPage>> listFromJson(
