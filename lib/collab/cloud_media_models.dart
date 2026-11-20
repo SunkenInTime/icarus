@@ -1,4 +1,3 @@
-import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 
 enum CloudMediaJobState { pendingUpload, pendingAttach, failed }
@@ -164,30 +163,6 @@ class CloudImageUploadIntent {
 
 Map<String, dynamic> cloudImagePayloadFromPlacedImage(PlacedImage image) {
   return Map<String, dynamic>.from(image.toJson())..remove('link');
-}
-
-Set<String> collectStrategyImageAssetIds(StrategyDataLike strategy) {
-  final assetIds = <String>{};
-  for (final page in strategy.pages) {
-    for (final image in page.imageData) {
-      assetIds.add(image.pictureId);
-    }
-    for (final link in page.lineUpLinks) {
-      for (final image in link.images) {
-        assetIds.add(image.id);
-      }
-    }
-  }
-  return assetIds;
-}
-
-abstract class StrategyDataLike {
-  Iterable<StrategyPageLike> get pages;
-}
-
-abstract class StrategyPageLike {
-  Iterable<PlacedImage> get imageData;
-  Iterable<LineUpLink> get lineUpLinks;
 }
 
 const _noChange = Object();

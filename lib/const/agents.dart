@@ -63,8 +63,6 @@ class AbilityInfo extends HiveObject implements DraggableData {
   final String name;
   final String iconPath;
   Ability? abilityData;
-  bool isTransformable = false;
-  Offset? centerPoint;
 
   AbilityInfo({
     required this.name,
@@ -88,10 +86,6 @@ class AbilityInfo extends HiveObject implements DraggableData {
       index: index ?? this.index,
       abilityData: abilityData ?? this.abilityData,
     );
-  }
-
-  void updateCenterPoint(Offset centerPoint) {
-    this.centerPoint = centerPoint;
   }
 
   static Ability? _lookupAbility(AgentType type, int index) {
