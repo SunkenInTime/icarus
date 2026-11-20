@@ -10,6 +10,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 class CustomCircleWidget extends ConsumerWidget {
   const CustomCircleWidget({
     super.key,
+    this.forcedAbilitySize,
     required this.iconPath,
     required this.size,
     double? boxSize,
@@ -46,6 +47,8 @@ class CustomCircleWidget extends ConsumerWidget {
   final List<ShadContextMenuItem>? contextMenuItems;
 
   bool get hasInnerRange => innerRangeSize != null;
+
+  final double? forcedAbilitySize;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -223,6 +226,7 @@ class CustomCircleWidget extends ConsumerWidget {
       child: Align(
         alignment: Alignment.center,
         child: AbilityWidget(
+          forcedAbilitySize: forcedAbilitySize,
           landingId: landingId,
           iconPath: iconPath,
           id: id,

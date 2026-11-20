@@ -90,6 +90,7 @@ sealed class Ability {
     String? landingId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    double? forcedAbilitySize,
   });
 }
 
@@ -110,6 +111,7 @@ class BaseAbility extends Ability {
     String? landingId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    double? forcedAbilitySize,
   }) {
     return AbilityWidget(
       isAlly: isAlly,
@@ -119,6 +121,7 @@ class BaseAbility extends Ability {
       landingId: landingId,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      forcedAbilitySize: forcedAbilitySize,
     );
   }
 
@@ -177,6 +180,7 @@ class ImageAbility extends Ability {
     String? landingId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    double? forcedAbilitySize,
   }) {
     return SimpleImageAbilityWidget(
       landingId: landingId,
@@ -272,6 +276,7 @@ class CircleAbility extends Ability {
     String? landingId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    double? forcedAbilitySize,
   }) {
     return CustomCircleWidget(
       iconPath: iconPath,
@@ -290,6 +295,7 @@ class CircleAbility extends Ability {
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      forcedAbilitySize: forcedAbilitySize,
     );
   }
 }
@@ -361,6 +367,7 @@ class SectorCircleAbility extends Ability {
     String? landingId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    double? forcedAbilitySize,
   }) {
     return SectorCircleWidget(
       iconPath: iconPath,
@@ -380,6 +387,7 @@ class SectorCircleAbility extends Ability {
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      forcedAbilitySize: forcedAbilitySize,
     );
   }
 }
@@ -470,6 +478,7 @@ class SquareAbility extends Ability {
     String? landingId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    double? forcedAbilitySize,
   }) {
     return CustomSquareWidget(
       landingId: landingId,
@@ -489,6 +498,7 @@ class SquareAbility extends Ability {
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      forcedAbilitySize: forcedAbilitySize,
     );
   }
 }
@@ -534,6 +544,7 @@ class CenterSquareAbility extends Ability {
     String? landingId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    double? forcedAbilitySize,
   }) {
     return CenterSquareWidget(
       color: color,
@@ -547,6 +558,7 @@ class CenterSquareAbility extends Ability {
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      forcedAbilitySize: forcedAbilitySize,
     );
   }
 }
@@ -586,6 +598,7 @@ class RotatableImageAbility extends Ability {
     String? landingId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    double? forcedAbilitySize,
   }) {
     return RotatableImageWidget(
       landingId: landingId,
@@ -636,6 +649,7 @@ class ResizableSquareAbility extends SquareAbility {
     String? landingId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    double? forcedAbilitySize,
   }) {
     return ResizableSquareWidget(
       isWall: isWall,
@@ -656,6 +670,7 @@ class ResizableSquareAbility extends SquareAbility {
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      forcedAbilitySize: forcedAbilitySize,
     );
   }
 
@@ -765,6 +780,7 @@ class DeadlockBarrierMeshAbility extends Ability {
     String? landingId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    double? forcedAbilitySize,
   }) {
     return DeadlockBarrierMeshWidget(
       landingId: landingId,
@@ -777,6 +793,7 @@ class DeadlockBarrierMeshAbility extends Ability {
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      forcedAbilitySize: forcedAbilitySize,
     );
   }
 }

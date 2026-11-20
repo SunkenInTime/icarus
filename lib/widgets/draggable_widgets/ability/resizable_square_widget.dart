@@ -11,6 +11,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 class ResizableSquareWidget extends ConsumerWidget {
   const ResizableSquareWidget({
     super.key,
+    this.forcedAbilitySize,
     required this.color,
     required this.width,
     required this.maxLength,
@@ -50,11 +51,14 @@ class ResizableSquareWidget extends ConsumerWidget {
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
 
+  final double? forcedAbilitySize;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final rangeOpacity = AbilityRangeOpacity.of(context);
     final coordinateSystem = CoordinateSystem.instance;
-    final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+    final abilitySize =
+        forcedAbilitySize ?? ref.watch(strategySettingsProvider).abilitySize;
     final double scaledWidth;
 
     if (isWall) {
@@ -123,6 +127,7 @@ class ResizableSquareWidget extends ConsumerWidget {
               angle: -(rotation ?? 0),
               alignment: Alignment.center,
               child: AbilityWidget(
+                forcedAbilitySize: forcedAbilitySize,
                 landingId: landingId,
                 iconPath: iconPath,
                 id: id,

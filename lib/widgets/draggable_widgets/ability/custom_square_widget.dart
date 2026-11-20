@@ -13,6 +13,7 @@ import 'package:icarus/const/settings.dart';
 class CustomSquareWidget extends ConsumerWidget {
   const CustomSquareWidget({
     super.key,
+    this.forcedAbilitySize,
     required this.color,
     required this.width,
     required this.height,
@@ -49,13 +50,16 @@ class CustomSquareWidget extends ConsumerWidget {
   final AbilityVisualState? visualState;
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
+  final double? forcedAbilitySize;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final rangeOpacity = AbilityRangeOpacity.of(context);
     final coordinateSystem = CoordinateSystem.instance;
 
     final double scaledWidth;
-    final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+    final abilitySize =
+        forcedAbilitySize ?? ref.watch(strategySettingsProvider).abilitySize;
     if (isWall) {
       scaledWidth = coordinateSystem.scale(abilitySize * 2);
     } else {
@@ -161,6 +165,7 @@ class CustomSquareWidget extends ConsumerWidget {
               angle: -(rotation ?? 0),
               alignment: Alignment.center,
               child: AbilityWidget(
+                forcedAbilitySize: forcedAbilitySize,
                 landingId: landingId,
                 iconPath: iconPath,
                 id: id,

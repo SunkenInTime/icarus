@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
@@ -14,6 +15,7 @@ import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/shared/framed_ability_icon_shell.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/role_icon_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
@@ -200,6 +202,77 @@ void main() {
           ),
     );
 
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const SizedBox.shrink(),
+      ),
+    );
+    await tester.pump();
+  });
+
+  testWidgets(
+      'every ability icon in a transition is drawn at the size it is placed for',
+      (tester) async {
+    final container = _createContainer();
+    addTearDown(container.dispose);
+    const drawnSize = Settings.abilitySize / 2;
+    final oneOfEachKind = <Type, AbilityInfo>{
+      for (final agent in AgentData.agents.values)
+        for (final ability in agent.abilities)
+          if (ability.abilityData != null)
+            ability.abilityData!.runtimeType: ability,
+    };
+    final kindsWithIcons = <Type>{};
+
+    for (final MapEntry(key: kind, value: info) in oneOfEachKind.entries) {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: ShadApp(
+            home: Scaffold(
+              body: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    child: PlacedWidgetPreview.build(
+                      PlacedAbility(
+                        id: 'ability-$kind',
+                        data: info,
+                        position: Offset.zero,
+                      ),
+                      1,
+                      agentSize: Settings.agentSize,
+                      abilitySize: drawnSize,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      for (final icon in find.byType(FramedAbilityIconShell).evaluate()) {
+        kindsWithIcons.add(kind);
+        expect(
+          tester.getSize(find.byWidget(icon.widget)),
+          Size.square(CoordinateSystem.instance.scale(drawnSize)),
+          reason: '$kind',
+        );
+      }
+    }
+
+    expect(kindsWithIcons, containsAll(<Type>[
+      BaseAbility,
+      CircleAbility,
+      SectorCircleAbility,
+      SquareAbility,
+      CenterSquareAbility,
+      ResizableSquareAbility,
+      DeadlockBarrierMeshAbility,
+    ]));
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
