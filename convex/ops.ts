@@ -108,6 +108,17 @@ type OperationResult = {
 };
 
 type CurrentTarget = StrategyOp["entityType"];
+type ContentRow = Doc<"elements"> | Doc<"lineups">;
+type WrittenRow<T extends "elements" | "lineups"> = Omit<
+  Doc<T>,
+  "_creationTime"
+>;
+type WrittenContentRow = WrittenRow<"elements"> | WrittenRow<"lineups">;
+type ContentOpOutcome = {
+  result: OperationResult;
+  before: ContentRow | null;
+  after: WrittenContentRow | null;
+};
 type PublicOperationResult = Infer<typeof operationResultValidator>;
 
 function normalizeOp(op: WireStrategyOp): StrategyOp {
@@ -738,6 +749,21 @@ async function getTargetSnapshot(
   return { revision: lineup.revision, payload: lineup.payload };
 }
 
+async function replayedRejection(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  op: StrategyOp,
+  reason: string | undefined,
+): Promise<OperationResult> {
+  const latest = await getTargetSnapshot(ctx, strategy, op);
+  return {
+    status: "reject",
+    reason: replayedReason(reason, op),
+    latestRevision: latest?.revision,
+    latestPayload: latest?.payload,
+  };
+}
+
 function rejected(
   reason: string,
   snapshot?: TargetSnapshot | null,
@@ -1293,12 +1319,19 @@ async function applyElementOp(
   strategy: Doc<"strategies">,
   op: StrategyOp,
   checkTrashedPageDeletes: boolean,
-): Promise<OperationResult> {
+): Promise<ContentOpOutcome> {
   const publicId = op.entityPublicId;
   if (publicId === undefined) {
     throw errorWithCode("MISSING_ENTITY_PUBLIC_ID", "Missing entityPublicId");
   }
   const existing = await getElementByPublicIdOrNull(ctx, publicId);
+  const before =
+    existing !== null && existing.strategyId === strategy._id ? existing : null;
+  const unchanged = (result: OperationResult): ContentOpOutcome => ({
+    result,
+    before,
+    after: before,
+  });
 
   if (op.kind === "add") {
     if (op.pagePublicId === undefined) {
@@ -1310,20 +1343,22 @@ async function applyElementOp(
       existing === null ? sent : keepStoredFields(existing.payload, sent);
     if (existing !== null) {
       if (existing.strategyId !== strategy._id) {
-        return rejected("element_strategy_mismatch");
+        return unchanged(rejected("element_strategy_mismatch"));
       }
       await assertContentPageLive(ctx, existing.pageId);
       if (existing.deleted) {
         const mismatch = requireExpectedRevision(op, existing.revision);
         if (mismatch !== null) {
-          return rejected(
-            mismatch.reason,
-            { revision: existing.revision, payload: existing.payload },
-            existing.pageId,
+          return unchanged(
+            rejected(
+              mismatch.reason,
+              { revision: existing.revision, payload: existing.payload },
+              existing.pageId,
+            ),
           );
         }
         const revision = existing.revision + 1;
-        await ctx.db.patch(existing._id, {
+        const restored = {
           pageId: page._id,
           elementType: payload.kind,
           payloadKind: payload.kind,
@@ -1333,11 +1368,16 @@ async function applyElementOp(
           revision,
           deleted: false,
           updatedAt: Date.now(),
-        });
+        };
+        await ctx.db.patch(existing._id, restored);
         return {
-          status: "ack",
-          appliedRevision: revision,
-          eventPageId: page._id,
+          result: {
+            status: "ack",
+            appliedRevision: revision,
+            eventPageId: page._id,
+          },
+          before,
+          after: { ...existing, ...restored },
         };
       }
       const identical =
@@ -1346,15 +1386,17 @@ async function applyElementOp(
         valuesEqual(existing.payload, payload) &&
         existing.sortIndex === (op.sortIndex ?? 0) &&
         existing.deleted === false;
-      if (identical) return noop(existing.revision, existing.pageId);
-      return rejected(
-        "already_exists",
-        { revision: existing.revision, payload: existing.payload },
-        existing.pageId,
+      if (identical) return unchanged(noop(existing.revision, existing.pageId));
+      return unchanged(
+        rejected(
+          "already_exists",
+          { revision: existing.revision, payload: existing.payload },
+          existing.pageId,
+        ),
       );
     }
     const now = Date.now();
-    await ctx.db.insert("elements", {
+    const inserted = {
       publicId,
       strategyId: strategy._id,
       pageId: page._id,
@@ -1367,49 +1409,58 @@ async function applyElementOp(
       deleted: false,
       createdAt: now,
       updatedAt: now,
-    });
-    return { status: "ack", appliedRevision: 1, eventPageId: page._id };
+    };
+    const id = await ctx.db.insert("elements", inserted);
+    return {
+      result: { status: "ack", appliedRevision: 1, eventPageId: page._id },
+      before,
+      after: { _id: id, ...inserted },
+    };
   }
 
   if (op.kind === "delete") {
     if (existing === null || existing.strategyId !== strategy._id)
-      return noop();
-    if (existing.deleted) return noop(existing.revision, existing.pageId);
+      return unchanged(noop());
+    if (existing.deleted)
+      return unchanged(noop(existing.revision, existing.pageId));
     const offLivePage = await refuseDeleteOffLivePage(
       ctx,
       existing,
       checkTrashedPageDeletes,
     );
-    if (offLivePage !== null) return offLivePage;
+    if (offLivePage !== null) return unchanged(offLivePage);
     const mismatch = op.lastWriterWins
       ? null
       : requireExpectedRevision(op, existing.revision);
     if (mismatch !== null) {
-      return rejected(
-        mismatch.reason,
-        { revision: existing.revision, payload: existing.payload },
-        existing.pageId,
+      return unchanged(
+        rejected(
+          mismatch.reason,
+          { revision: existing.revision, payload: existing.payload },
+          existing.pageId,
+        ),
       );
     }
     const revision = existing.revision + 1;
-    await ctx.db.patch(existing._id, {
-      deleted: true,
-      revision,
-      updatedAt: Date.now(),
-    });
+    const tombstone = { deleted: true, revision, updatedAt: Date.now() };
+    await ctx.db.patch(existing._id, tombstone);
     return {
-      status: "ack",
-      appliedRevision: revision,
-      eventPageId: existing.pageId,
+      result: {
+        status: "ack",
+        appliedRevision: revision,
+        eventPageId: existing.pageId,
+      },
+      before,
+      after: { ...existing, ...tombstone },
     };
   }
 
   if (existing === null || existing.strategyId !== strategy._id) {
-    return rejected("not_found");
+    return unchanged(rejected("not_found"));
   }
   await assertContentPageLive(ctx, existing.pageId);
   const deleted = refuseChangeToDeleted(existing);
-  if (deleted !== null) return deleted;
+  if (deleted !== null) return unchanged(deleted);
   const patch: Record<string, unknown> = {};
   let eventPageId = existing.pageId;
   // A patch merged by field writes over whatever the row holds now, so its
@@ -1442,10 +1493,12 @@ async function applyElementOp(
       if (merge !== undefined) {
         const outcome = mergeElementPayload(existing.payload, payload, merge);
         if (outcome.status === "conflict") {
-          return rejected(
-            "field_conflict",
-            { revision: existing.revision, payload: existing.payload },
-            existing.pageId,
+          return unchanged(
+            rejected(
+              "field_conflict",
+              { revision: existing.revision, payload: existing.payload },
+              existing.pageId,
+            ),
           );
         }
         assertMergedSize(outcome);
@@ -1466,10 +1519,12 @@ async function applyElementOp(
       );
     }
     if (!checkRevision && placeChanged(merge, existing.sortIndex, op.sortIndex)) {
-      return rejected(
-        "field_conflict",
-        { revision: existing.revision, payload: existing.payload },
-        existing.pageId,
+      return unchanged(
+        rejected(
+          "field_conflict",
+          { revision: existing.revision, payload: existing.payload },
+          existing.pageId,
+        ),
       );
     }
     // A merged patch carries its place but moves there only when it names
@@ -1497,25 +1552,28 @@ async function applyElementOp(
     throw errorWithCode("UNSUPPORTED_OP", "Unsupported element op");
   }
   if (Object.keys(patch).length === 0) {
-    return noop(existing.revision, eventPageId);
+    return unchanged(noop(existing.revision, eventPageId));
   }
   const mismatch = checkRevision
     ? requireExpectedRevision(op, existing.revision)
     : null;
   if (mismatch !== null) {
-    return rejected(
-      mismatch.reason,
-      { revision: existing.revision, payload: existing.payload },
-      existing.pageId,
+    return unchanged(
+      rejected(
+        mismatch.reason,
+        { revision: existing.revision, payload: existing.payload },
+        existing.pageId,
+      ),
     );
   }
   const revision = existing.revision + 1;
-  await ctx.db.patch(existing._id, {
-    ...patch,
-    revision,
-    updatedAt: Date.now(),
-  });
-  return { status: "ack", appliedRevision: revision, eventPageId };
+  const changes = { ...patch, revision, updatedAt: Date.now() };
+  await ctx.db.patch(existing._id, changes);
+  return {
+    result: { status: "ack", appliedRevision: revision, eventPageId },
+    before,
+    after: { ...existing, ...changes } as Doc<"elements">,
+  };
 }
 
 async function applyLineupOp(
@@ -1523,7 +1581,7 @@ async function applyLineupOp(
   strategy: Doc<"strategies">,
   op: StrategyOp,
   checkTrashedPageDeletes: boolean,
-): Promise<OperationResult> {
+): Promise<ContentOpOutcome> {
   const publicId = op.entityPublicId;
   if (publicId === undefined) {
     throw errorWithCode("MISSING_ENTITY_PUBLIC_ID", "Missing entityPublicId");
@@ -1533,6 +1591,11 @@ async function applyLineupOp(
     strategy._id,
     publicId,
   );
+  const unchanged = (result: OperationResult): ContentOpOutcome => ({
+    result,
+    before: existing,
+    after: existing,
+  });
 
   if (op.kind === "add") {
     if (op.pagePublicId === undefined) {
@@ -1545,15 +1608,17 @@ async function applyLineupOp(
       if (existing.deleted) {
         const mismatch = requireExpectedRevision(op, existing.revision);
         if (mismatch !== null) {
-          return rejected(
-            mismatch.reason,
-            { revision: existing.revision, payload: existing.payload },
-            existing.pageId,
+          return unchanged(
+            rejected(
+              mismatch.reason,
+              { revision: existing.revision, payload: existing.payload },
+              existing.pageId,
+            ),
           );
         }
         await assertLineupGroupAlone(ctx, page._id, existing._id, payload);
         const revision = existing.revision + 1;
-        await ctx.db.patch(existing._id, {
+        const restored = {
           pageId: page._id,
           payloadKind: payload.kind,
           payloadVersion: payload.payloadVersion,
@@ -1562,11 +1627,16 @@ async function applyLineupOp(
           revision,
           deleted: false,
           updatedAt: Date.now(),
-        });
+        };
+        await ctx.db.patch(existing._id, restored);
         return {
-          status: "ack",
-          appliedRevision: revision,
-          eventPageId: page._id,
+          result: {
+            status: "ack",
+            appliedRevision: revision,
+            eventPageId: page._id,
+          },
+          before: existing,
+          after: { ...existing, ...restored },
         };
       }
       // The row already holds exactly this lineup: a retry landed twice, or
@@ -1575,16 +1645,18 @@ async function applyLineupOp(
       // knows), so a different sortIndex alone is still the same add.
       const identical =
         existing.pageId === page._id && valuesEqual(existing.payload, payload);
-      if (identical) return noop(existing.revision, existing.pageId);
-      return rejected(
-        "already_exists",
-        { revision: existing.revision, payload: existing.payload },
-        existing.pageId,
+      if (identical) return unchanged(noop(existing.revision, existing.pageId));
+      return unchanged(
+        rejected(
+          "already_exists",
+          { revision: existing.revision, payload: existing.payload },
+          existing.pageId,
+        ),
       );
     }
     await assertLineupGroupAlone(ctx, page._id, null, payload);
     const now = Date.now();
-    await ctx.db.insert("lineups", {
+    const inserted = {
       publicId,
       strategyId: strategy._id,
       pageId: page._id,
@@ -1596,49 +1668,58 @@ async function applyLineupOp(
       deleted: false,
       createdAt: now,
       updatedAt: now,
-    });
-    return { status: "ack", appliedRevision: 1, eventPageId: page._id };
+    };
+    const id = await ctx.db.insert("lineups", inserted);
+    return {
+      result: { status: "ack", appliedRevision: 1, eventPageId: page._id },
+      before: existing,
+      after: { _id: id, ...inserted },
+    };
   }
 
   if (op.kind === "delete") {
     if (existing === null || existing.strategyId !== strategy._id)
-      return noop();
-    if (existing.deleted) return noop(existing.revision, existing.pageId);
+      return unchanged(noop());
+    if (existing.deleted)
+      return unchanged(noop(existing.revision, existing.pageId));
     const offLivePage = await refuseDeleteOffLivePage(
       ctx,
       existing,
       checkTrashedPageDeletes,
     );
-    if (offLivePage !== null) return offLivePage;
+    if (offLivePage !== null) return unchanged(offLivePage);
     const mismatch = op.lastWriterWins
       ? null
       : requireExpectedRevision(op, existing.revision);
     if (mismatch !== null) {
-      return rejected(
-        mismatch.reason,
-        { revision: existing.revision, payload: existing.payload },
-        existing.pageId,
+      return unchanged(
+        rejected(
+          mismatch.reason,
+          { revision: existing.revision, payload: existing.payload },
+          existing.pageId,
+        ),
       );
     }
     const revision = existing.revision + 1;
-    await ctx.db.patch(existing._id, {
-      deleted: true,
-      revision,
-      updatedAt: Date.now(),
-    });
+    const tombstone = { deleted: true, revision, updatedAt: Date.now() };
+    await ctx.db.patch(existing._id, tombstone);
     return {
-      status: "ack",
-      appliedRevision: revision,
-      eventPageId: existing.pageId,
+      result: {
+        status: "ack",
+        appliedRevision: revision,
+        eventPageId: existing.pageId,
+      },
+      before: existing,
+      after: { ...existing, ...tombstone },
     };
   }
 
   if (existing === null || existing.strategyId !== strategy._id) {
-    return rejected("not_found");
+    return unchanged(rejected("not_found"));
   }
   await assertContentPageLive(ctx, existing.pageId);
   const deleted = refuseChangeToDeleted(existing);
-  if (deleted !== null) return deleted;
+  if (deleted !== null) return unchanged(deleted);
   const patch: Record<string, unknown> = {};
   let eventPageId = existing.pageId;
   let checkRevision = true;
@@ -1650,14 +1731,15 @@ async function applyLineupOp(
     if (op.payload !== undefined) {
       let payload = assertLineupPayload(op.payload, publicId);
       if (op.merge !== undefined) {
-        const current = { revision: existing.revision, payload: existing.payload };
-        const outcome = mergeLineupPayload(
-          existing.payload,
-          payload,
-          op.merge,
-        );
+        const current = {
+          revision: existing.revision,
+          payload: existing.payload,
+        };
+        const outcome = mergeLineupPayload(existing.payload, payload, op.merge);
         if (outcome.status === "conflict") {
-          return rejected("field_conflict", current, existing.pageId);
+          return unchanged(
+            rejected("field_conflict", current, existing.pageId),
+          );
         }
         assertMergedSize(outcome);
         if (outcome.status === "merged") {
@@ -1667,7 +1749,9 @@ async function applyLineupOp(
             payload = assertLineupPayload(outcome.value, publicId);
           } catch (error) {
             if (error instanceof ConvexError) {
-              return rejected("merge_invalid", current, existing.pageId);
+              return unchanged(
+                rejected("merge_invalid", current, existing.pageId),
+              );
             }
             throw error;
           }
@@ -1688,10 +1772,12 @@ async function applyLineupOp(
       !checkRevision &&
       placeChanged(op.merge, existing.sortIndex, op.sortIndex)
     ) {
-      return rejected(
-        "field_conflict",
-        { revision: existing.revision, payload: existing.payload },
-        existing.pageId,
+      return unchanged(
+        rejected(
+          "field_conflict",
+          { revision: existing.revision, payload: existing.payload },
+          existing.pageId,
+        ),
       );
     }
     if (
@@ -1728,16 +1814,18 @@ async function applyLineupOp(
     throw errorWithCode("UNSUPPORTED_OP", "Unsupported lineup op");
   }
   if (Object.keys(patch).length === 0) {
-    return noop(existing.revision, eventPageId);
+    return unchanged(noop(existing.revision, eventPageId));
   }
   const mismatch = checkRevision
     ? requireExpectedRevision(op, existing.revision)
     : null;
   if (mismatch !== null) {
-    return rejected(
-      mismatch.reason,
-      { revision: existing.revision, payload: existing.payload },
-      existing.pageId,
+    return unchanged(
+      rejected(
+        mismatch.reason,
+        { revision: existing.revision, payload: existing.payload },
+        existing.pageId,
+      ),
     );
   }
   if (patch.payload !== undefined) {
@@ -1749,51 +1837,23 @@ async function applyLineupOp(
     );
   }
   const revision = existing.revision + 1;
-  await ctx.db.patch(existing._id, {
-    ...patch,
-    revision,
-    updatedAt: Date.now(),
-  });
-  return { status: "ack", appliedRevision: revision, eventPageId };
+  const changes = { ...patch, revision, updatedAt: Date.now() };
+  await ctx.db.patch(existing._id, changes);
+  return {
+    result: { status: "ack", appliedRevision: revision, eventPageId },
+    before: existing,
+    after: { ...existing, ...changes } as Doc<"lineups">,
+  };
 }
 
 /// Whether an accepted element op may have changed the strategy's agent
 /// summary: it added, deleted or restored an agent, changed which agent it
 /// is, or moved it to another page. Rebuilding the summary reads every agent
 /// in the strategy, and most agent ops are moves that change none of that.
-async function elementOpChangedAgents(
-  ctx: MutationCtx,
-  strategy: Doc<"strategies">,
-  op: StrategyOp,
-  rowBefore: Doc<"elements"> | Doc<"lineups"> | null,
-): Promise<boolean> {
-  const wasAgent =
-    rowBefore !== null &&
-    "elementType" in rowBefore &&
-    rowBefore.elementType === "agent";
-  const sentAgent =
-    (op.payload as { kind?: unknown } | undefined)?.kind === "agent";
-  if (!wasAgent && !sentAgent) return false;
-  const rowAfter = await contentRowForOp(ctx, strategy, op);
-  const keyOf = (row: Doc<"elements"> | Doc<"lineups"> | null) =>
+function elementOpChangedAgents({ before, after }: ContentOpOutcome): boolean {
+  const keyOf = (row: WrittenContentRow | null) =>
     row !== null && "elementType" in row ? agentSummaryKeyOf(row) : null;
-  return keyOf(rowBefore) !== keyOf(rowAfter);
-}
-
-async function contentRowForOp(
-  ctx: MutationCtx,
-  strategy: Doc<"strategies">,
-  op: StrategyOp,
-): Promise<Doc<"elements"> | Doc<"lineups"> | null> {
-  const publicId = op.entityPublicId;
-  if (publicId === undefined) return null;
-  const row =
-    op.entityType === "element"
-      ? await getElementByPublicIdOrNull(ctx, publicId)
-      : op.entityType === "lineup"
-        ? await getLineupByPublicIdOrNull(ctx, strategy._id, publicId)
-        : null;
-  return row !== null && row.strategyId === strategy._id ? row : null;
+  return keyOf(before) !== keyOf(after);
 }
 
 /// Keeps asset rows in step with an accepted content op. An image the row
@@ -1814,10 +1874,9 @@ async function reconcileExpectedAssets(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
   op: StrategyOp,
-  rowBefore: Doc<"elements"> | Doc<"lineups"> | null,
+  { before: rowBefore, after: row }: ContentOpOutcome,
   placeholderCandidates: Set<string>,
 ): Promise<void> {
-  const row = await contentRowForOp(ctx, strategy, op);
   if (row === null) return;
   // Keep the row's image references in step with it (media cleanup reads
   // those, not the content).
@@ -1932,7 +1991,6 @@ export const applyBatch = mutation({
         )
         .first();
       if (existingEvent !== null) {
-        const latest = await getTargetSnapshot(ctx, strategy, op);
         // An accepted op replays at the revision it landed at, not the
         // row's latest: a successor rebased onto a teammate's later edit
         // would overwrite that edit unseen. An event that recorded no
@@ -1947,12 +2005,7 @@ export const applyBatch = mutation({
                 message: existingEvent.message,
               }
             : existingEvent.status === "rejected"
-              ? {
-                  status: "reject",
-                  reason: replayedReason(existingEvent.reason, op),
-                  latestRevision: latest?.revision,
-                  latestPayload: latest?.payload,
-                }
+              ? await replayedRejection(ctx, strategy, op, existingEvent.reason)
               : noop(existingEvent.appliedRevision);
         const replayed = toPublicResult(
           op,
@@ -1986,8 +2039,6 @@ export const applyBatch = mutation({
         op = { ...op, expectedRevision: strategy.revision };
       }
 
-      const rowBefore = await contentRowForOp(ctx, strategy, op);
-
       let result: OperationResult;
       if (cloudOperationExceedsPolicy(rawOp)) {
         result = {
@@ -2012,40 +2063,40 @@ export const applyBatch = mutation({
             );
             strategy = applied.strategy;
             result = applied.result;
+            if (result.status === "ack") agentsMayHaveChanged = true;
           } else if (op.entityType === "pageContent") {
             result = await applyPageContentOp(ctx, strategy, op);
-          } else if (op.entityType === "element") {
-            result = await applyElementOp(
-              ctx,
-              strategy,
-              op,
-              args.checkTrashedPageDeletes === true,
-            );
           } else {
-            result = await applyLineupOp(
-              ctx,
-              strategy,
-              op,
-              args.checkTrashedPageDeletes === true,
-            );
-          }
-          if (
-            result.status === "ack" &&
-            (op.entityType === "page" ||
-              op.entityType === "lineup" ||
-              (op.entityType === "element" &&
-                (await elementOpChangedAgents(ctx, strategy, op, rowBefore))))
-          ) {
-            agentsMayHaveChanged = true;
-          }
-          if (result.status === "ack") {
-            await reconcileExpectedAssets(
-              ctx,
-              strategy,
-              op,
-              rowBefore,
-              placeholderCandidates,
-            );
+            const applied =
+              op.entityType === "element"
+                ? await applyElementOp(
+                    ctx,
+                    strategy,
+                    op,
+                    args.checkTrashedPageDeletes === true,
+                  )
+                : await applyLineupOp(
+                    ctx,
+                    strategy,
+                    op,
+                    args.checkTrashedPageDeletes === true,
+                  );
+            result = applied.result;
+            if (result.status === "ack") {
+              if (
+                op.entityType === "lineup" ||
+                elementOpChangedAgents(applied)
+              ) {
+                agentsMayHaveChanged = true;
+              }
+              await reconcileExpectedAssets(
+                ctx,
+                strategy,
+                op,
+                applied,
+                placeholderCandidates,
+              );
+            }
           }
         } catch (error) {
           if (!(error instanceof ConvexError)) throw error;
