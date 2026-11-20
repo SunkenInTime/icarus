@@ -21,14 +21,14 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/drawing_provider.dart';
-import 'package:icarus/providers/strategy_page.dart';
-import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -776,6 +776,91 @@ void main() {
           .where((strategy) => strategy.name == 'future'),
       isEmpty,
     );
+  });
+
+  group('page names come home exactly as typed', () {
+    const names = [
+      'A "split"',
+      r'C:\new plan',
+      r'back\slash',
+      'Line one\nLine two',
+    ];
+    final pages = [
+      for (var i = 0; i < names.length; i++)
+        StrategyPage(
+          id: 'page-$i',
+          name: names[i],
+          drawingData: const [],
+          agentData: const [],
+          abilityData: const [],
+          textData: const [],
+          imageData: const [],
+          utilityData: const [],
+          sortIndex: i,
+          isAttack: true,
+          settings: StrategySettings(),
+        ),
+    ];
+    List<String> pageNames(StrategyData strategy) => [
+          for (final page in [
+            ...strategy.pages
+          ]..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)))
+            page.name,
+        ];
+
+    for (final page in pages) {
+      test('${jsonEncode(page.name)} through an .ica', () async {
+        await _storeStrategy(name: 'Quoted', folderID: null, pages: [page]);
+        final file = File(path.join(tempDir.path, 'Exported.ica'));
+        await StrategyImportExportService(container).zipStrategyData(
+          strategy: _strategyByName('Quoted'),
+          outputFilePath: file.path,
+        );
+
+        final result =
+            await StrategyImportExportService(container).loadFromFilePath(
+          file.path,
+        );
+
+        expect(result.issues, isEmpty);
+        expect(pageNames(_strategyByName('Exported')), [page.name]);
+      });
+    }
+
+    test('in the form every shipped Icarus reads', () {
+      final page = pages.last.copyWith(name: 'Retake');
+      final json = page.toJson('strategy-1');
+
+      expect(json['sortIndex'], '3');
+      expect(json['isAttack'], 'true');
+      expect(json.containsKey('isAutoNamed'), isFalse);
+      expect(
+        page.copyWith(isAutoNamed: false).toJson('strategy-1'),
+        containsPair('isAutoNamed', false),
+      );
+    });
+
+    test('through a library backup', () async {
+      await _storeStrategy(name: 'Quoted', folderID: null, pages: pages);
+      final exportDirectory = await StrategyImportExportService(container)
+          .buildLibraryExportDirectoryForTest();
+      final backup = await _zipDirectory(
+        sourceDirectory: Directory(
+          path.join(exportDirectory.path, libraryBackupRootDirectoryName),
+        ),
+        zipPath: path.join(tempDir.path, 'library-backup.zip'),
+      );
+      await exportDirectory.delete(recursive: true);
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
+
+      final result =
+          await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(backup.path)],
+      );
+
+      expect(result.issues, isEmpty);
+      expect(pageNames(_strategyByName('Quoted')), names);
+    });
   });
 
   group('a drawing that cannot be read', () {
@@ -1860,6 +1945,7 @@ Future<void> _storeStrategy({
   required String name,
   required String? folderID,
   String? themeProfileId,
+  List<StrategyPage> pages = const [],
 }) async {
   final strategy = StrategyData(
     id: 'strategy-$name-${DateTime.now().microsecondsSinceEpoch}',
@@ -1868,7 +1954,7 @@ Future<void> _storeStrategy({
     versionNumber: Settings.versionNumber,
     lastEdited: DateTime.utc(2026, 1, 1),
     folderID: folderID,
-    pages: const [],
+    pages: pages,
     themeProfileId: themeProfileId,
   );
   await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
