@@ -31,6 +31,10 @@ final class FileHarness implements EngineHarness {
 
   @override
   Future<void> crash(StorageEngine engine) => (engine as SqliteEngine).close();
+
+  @override
+  PendingWrite holdNextWrite(StorageEngine engine) =>
+      (engine as SqliteEngine).holdNextCommit();
 }
 
 Future<String> _refusal(String path) async {
@@ -48,6 +52,32 @@ Future<Process> _start(String mode, String path) => Process.start(
   Platform.resolvedExecutable,
   ['run', 'test/sqlite/library_process.dart', mode, path],
 );
+
+Future<int> _probeGeneration(StorageLease lease, String where) async {
+  final generations = <String>{};
+  for (final area in probeAreas.take(2)) {
+    final entries = stored(await lease.entries(area, ''));
+    expect(
+      entries.length,
+      anyOf(0, probeAreaKeys),
+      reason: '$where: $area holds part of a commit',
+    );
+    generations.addAll(entries.map((entry) => entry.value.split('-').first));
+  }
+  if (generations.isEmpty) {
+    expect(stored(await lease.keys('probe/c', '')), isEmpty, reason: where);
+    return 0;
+  }
+  expect(generations, hasLength(1), reason: '$where: areas from two commits');
+  final generation = generations.single;
+  expect(
+    stored(await lease.keys('probe/c', '')),
+    [for (var key = 0; key < probeAreaKeys; key++) 'c-$generation-$key']
+      ..sort(),
+    reason: '$where: the area clear did not land with its puts',
+  );
+  return int.parse(generation);
+}
 
 void main() {
   late Directory directory;
@@ -194,12 +224,14 @@ void main() {
     );
   });
 
-  test('a process killed at random points loses no saved edit, and the write '
-      'in flight is wholly there or wholly absent', () async {
+  test('a process killed at random points loses no saved edit, and a commit '
+      'across three areas with an area clear in flight is wholly there or '
+      'wholly absent', () async {
     final seeding = await _start('seed', path);
     expect(await seeding.exitCode, 0);
     final random = Random(7);
     var kills = 0;
+    var probeBefore = 0;
     for (var run = 0; run < 24; run++) {
       final writer = await _start('write', path);
       final lines = <String>[];
@@ -235,17 +267,14 @@ void main() {
       expect(x, lessThanOrEqualTo(last('moving')), reason: 'run $run');
       await store.close();
       final lease = await leaseOf(engine);
-      final generations = <String>{};
-      for (var key = 0; key < probeKeys; key++) {
-        final value = valueOf(await lease.read(probeArea, 'k$key'));
-        generations.add((value ?? '0').split('-').first);
-      }
-      expect(generations, hasLength(1), reason: 'run $run: a torn write');
+      final probe = await _probeGeneration(lease, 'run $run');
+      final acknowledged = max(probeBefore, last('wrote'));
       expect(
-        [last('wrote'), last('wrote') + 1],
-        contains(int.parse(generations.single)),
+        [acknowledged, acknowledged + 1],
+        contains(probe),
         reason: 'run $run',
       );
+      probeBefore = probe;
       await engine.close();
     }
     expect(kills, 24);

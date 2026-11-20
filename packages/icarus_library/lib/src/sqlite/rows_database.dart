@@ -1,6 +1,6 @@
 import 'package:sqlite3/sqlite3.dart';
 
-import '../engines/commit.dart';
+import '../engines/names.dart';
 import '../store/engine.dart';
 
 const libraryApplicationId = 0x49434c42;
@@ -221,10 +221,9 @@ final class RowsDatabase {
   static const _notText = StorageFailed<Never>(_notTextFailure);
 
   KeyRead read(String area, String key) =>
-      switch (readTooLong(area, key, rowsMaxKeyLength)) {
-        final failure? => KeyNotRead(failure),
-        null => _read(area, key),
-      };
+      pastLimit(area, key, rowsMaxKeyLength)
+      ? const KeyMissing()
+      : _read(area, key);
 
   KeyRead _read(String area, String key) => switch (_guarded(
     () => Done(_get.select([area, key]).firstOrNull?.columnAt(0)),
@@ -285,7 +284,7 @@ final class RowsDatabase {
     if (_connection case _Unusable(:final failure)) {
       return CommitRefused(failure);
     }
-    if (nameTooLong(changes, rowsMaxKeyLength) case final failure?) {
+    if (putPastLimit(changes, rowsMaxKeyLength) case final failure?) {
       return CommitRefused(failure);
     }
     var committing = false;
@@ -293,11 +292,11 @@ final class RowsDatabase {
       _db.execute('BEGIN IMMEDIATE');
       for (final change in changes) {
         switch (change) {
-          case ChangePut(:final area, :final key, :final value):
+          case Put(:final area, :final key, :final value):
             _put.execute([area, key, value]);
-          case ChangeDelete(:final area, :final key):
+          case Delete(:final area, :final key):
             _remove.execute([area, key]);
-          case ChangeClearArea(:final area):
+          case ClearArea(:final area):
             _clearArea.execute([area]);
         }
       }
@@ -319,7 +318,7 @@ final class RowsDatabase {
   Committing _failedCommit(StorageFailure failure, {required bool committing}) {
     if (committing) _connection = const _AfterFailedWrite();
     if (!_db.autocommit) _rollBack(failure);
-    return committing ? CommitInDoubt(failure) : CommitRefused(failure);
+    return committing ? CommitUnknown(failure) : CommitRefused(failure);
   }
 
   void _rollBack(StorageFailure cause) {

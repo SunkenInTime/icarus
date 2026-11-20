@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:isolate';
 
-import '../engines/commit.dart';
+import '../store/engine_contract.dart';
 import '../store/engine.dart';
 import 'library_file.dart';
 import 'rows_database.dart';
@@ -43,6 +43,18 @@ final class _Release extends _Request {
   const _Release(super.id);
 }
 
+final class _HoldNextCommit {
+  const _HoldNextCommit();
+}
+
+final class _LetGo {
+  const _LetGo();
+}
+
+final class _Reached {
+  const _Reached();
+}
+
 final class _Ready {
   const _Ready(this.requests);
 
@@ -66,16 +78,43 @@ void _serve((String, SendPort) start) {
     case RowsOpened(:final rows):
       final requests = ReceivePort();
       replies.send(_Ready(requests.sendPort));
+      final waiting = <_Request>[];
+      var holding = false;
+      var busy = false;
+      Completer<void>? letGo;
+      Future<void> answer() async {
+        if (busy) return;
+        busy = true;
+        while (waiting.isNotEmpty) {
+          final request = waiting.removeAt(0);
+          if (request is _Commit && holding) {
+            holding = false;
+            final gate = letGo = Completer<void>();
+            replies.send(const _Reached());
+            await gate.future;
+          }
+          final Object result = switch (request) {
+            _Read(:final area, :final key) => rows.read(area, key),
+            _Keys(:final area, :final prefix) => rows.keys(area, prefix),
+            _Entries(:final area, :final prefix) => rows.entries(area, prefix),
+            _Commit(:final changes) => rows.commit(changes),
+            _Release() => _released(rows, requests),
+          };
+          replies.send(_Reply(request.id, result));
+        }
+        busy = false;
+      }
+
       requests.listen((message) {
-        final request = message as _Request;
-        final Object result = switch (request) {
-          _Read(:final area, :final key) => rows.read(area, key),
-          _Keys(:final area, :final prefix) => rows.keys(area, prefix),
-          _Entries(:final area, :final prefix) => rows.entries(area, prefix),
-          _Commit(:final changes) => rows.commit(changes),
-          _Release() => _released(rows, requests),
-        };
-        replies.send(_Reply(request.id, result));
+        switch (message) {
+          case _HoldNextCommit():
+            holding = true;
+          case _LetGo():
+            letGo?.complete();
+          case final _Request request:
+            waiting.add(request);
+            unawaited(answer());
+        }
       });
   }
 }
@@ -95,7 +134,7 @@ final class SqliteEngine implements StorageEngine {
 
   @override
   Future<Leasing> lease() async {
-    if (_closed) return const LeaseFailed(StoreClosed());
+    if (_closed) return const LeaseFailed(EngineClosed());
     final replies = ReceivePort();
     final first = Completer<Leasing>();
     SqliteLease? granted;
@@ -110,6 +149,8 @@ final class SqliteEngine implements StorageEngine {
           first.complete(refused);
         case _Reply(:final id, :final result):
           granted!._pending.remove(id)!.$1.complete(result);
+        case _Reached():
+          granted!._held?._reached.complete();
         case [final error, final stack]:
           final failure = DeviceFailure(
             'the library worker failed: $error\n$stack',
@@ -134,6 +175,8 @@ final class SqliteEngine implements StorageEngine {
     );
     return first.future;
   }
+
+  PendingWrite holdNextCommit() => _granted.last._holdNextCommit();
 
   Future<void> close() async {
     _closed = true;
@@ -168,9 +211,17 @@ final class SqliteLease implements StorageLease {
   SqliteLease._(SendPort requests) : _worker = _Running(requests);
 
   _Worker _worker;
+  _HeldCommit? _held;
   var _next = 0;
   final _pending =
       <int, (Completer<Object>, Object Function(StorageFailure))>{};
+
+  PendingWrite _holdNextCommit() => switch (_worker) {
+    _Running(:final requests) => _held = _HeldCommit(
+      requests..send(const _HoldNextCommit()),
+    ),
+    _Ended() || _Gone() => throw StateError('no running lease to hold'),
+  };
 
   void _stop(StorageFailure failure) {
     _worker = _Gone(failure);
@@ -228,24 +279,12 @@ final class SqliteLease implements StorageLease {
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
       _ask((id) => _Entries(id, area, prefix), ended: _ended, gone: _failed);
 
+  @override
   Future<Committing> commit(List<Change> changes) => _ask(
     (id) => _Commit(id, changes),
     ended: const CommitRefused(LeaseEnded()),
-    gone: CommitInDoubt.new,
+    gone: CommitUnknown.new,
   );
-
-  @override
-  Future<Stored<void>> write(String area, Map<String, String> values) async =>
-      storedOf(
-        await commit([
-          for (final MapEntry(:key, :value) in values.entries)
-            ChangePut(area, key, value),
-        ]),
-      );
-
-  @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) async =>
-      storedOf(await commit([for (final key in keys) ChangeDelete(area, key)]));
 
   @override
   Future<Releasing> release() async {
@@ -261,4 +300,17 @@ final class SqliteLease implements StorageLease {
       StorageFailed(:final failure) => ReleaseFailed(failure),
     };
   }
+}
+
+final class _HeldCommit implements PendingWrite {
+  _HeldCommit(this._requests);
+
+  final SendPort _requests;
+  final _reached = Completer<void>();
+
+  @override
+  Future<void> get reached => _reached.future;
+
+  @override
+  void letGo() => _requests.send(const _LetGo());
 }

@@ -144,7 +144,8 @@ final class IndexedDbCrashHarness implements CrashHarness {
     await deleteDatabase(_name);
     final lease = await openIndexedDb(_name);
     for (final MapEntry(key: area, value: values) in seed.entries) {
-      if (await lease.write(area, values) case StorageFailed(:final failure)) {
+      if (await put(lease, area, values)
+          case CommitRefused(:final failure) || CommitUnknown(:final failure)) {
         throw StateError('seed not written: $failure');
       }
     }
@@ -229,25 +230,19 @@ final class _AbortingLease extends ForwardingLease {
       _harness._crashed ? _stopped : await inner.keys(area, prefix);
 
   @override
-  Future<Stored<void>> write(String area, Map<String, String> values) async {
-    if (_harness._crashed) return _stopped;
+  Future<Committing> commit(List<Change> changes) async {
+    if (_harness._crashed) {
+      return const CommitRefused(DeviceFailure('the tab stopped'));
+    }
     final crashing = !_harness._step() || _harness._crashed;
-    final result = await inner.write(area, values);
-    return crashing ? _expectAborted(result) : result;
+    final result = await inner.commit(changes);
+    return switch (result) {
+      CommitApplied() when crashing => throw StateError(
+        'the transaction was not aborted',
+      ),
+      _ => result,
+    };
   }
-
-  @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) async {
-    if (_harness._crashed) return _stopped;
-    final crashing = !_harness._step() || _harness._crashed;
-    final result = await inner.delete(area, keys);
-    return crashing ? _expectAborted(result) : result;
-  }
-
-  Stored<void> _expectAborted(Stored<void> result) => switch (result) {
-    StorageFailed() => result,
-    Done() => throw StateError('the transaction was not aborted'),
-  };
 }
 
 final class IndexedDbContractHarness implements EngineHarness {
@@ -265,4 +260,8 @@ final class IndexedDbContractHarness implements EngineHarness {
   @override
   Future<void> crash(StorageEngine engine) =>
       (engine as IndexedDbEngine).close();
+
+  @override
+  PendingWrite holdNextWrite(StorageEngine engine) =>
+      (engine as IndexedDbEngine).holdNextCommit();
 }

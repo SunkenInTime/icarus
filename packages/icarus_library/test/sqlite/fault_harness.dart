@@ -1,8 +1,8 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:icarus_library/engine_contract.dart';
 import 'package:icarus_library/icarus_library.dart';
-import 'package:icarus_library/src/engines/commit.dart';
 import 'package:icarus_library/src/sqlite/library_file.dart';
 import 'package:icarus_library/src/sqlite/rows_database.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -26,6 +26,7 @@ final class FaultDrive {
   final FaultDisk disk;
   late final FaultVfs vfs;
   final _open = <InlineLease>[];
+  _HeldCommit? _hold;
 
   RowsOpening open() =>
       openLibraryFile(libraryPath, FaultLibraryFiles(disk, vfs));
@@ -50,15 +51,19 @@ final class FaultEngine implements StorageEngine {
   FaultEngine(this.drive);
 
   final FaultDrive drive;
+  var _closed = false;
 
   @override
-  Future<Leasing> lease() async => switch (drive.open()) {
-    RowsOpened(:final rows) => Leased(InlineLease(drive, rows, this)),
-    RowsHeld() => const HeldByAnotherWriter(),
-    RowsRefused(:final failure) => LeaseFailed(failure),
-  };
+  Future<Leasing> lease() async => _closed
+      ? const LeaseFailed(EngineClosed())
+      : switch (drive.open()) {
+          RowsOpened(:final rows) => Leased(InlineLease(drive, rows, this)),
+          RowsHeld() => const HeldByAnotherWriter(),
+          RowsRefused(:final failure) => LeaseFailed(failure),
+        };
 
   Future<void> close() async {
+    _closed = true;
     for (final lease in [...drive._open]) {
       if (identical(lease.engine, this)) lease.end();
     }
@@ -92,21 +97,17 @@ final class InlineLease implements StorageLease {
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
       _ended ? const StorageFailed(LeaseEnded()) : rows.entries(area, prefix);
 
-  Future<Committing> commit(List<Change> changes) async =>
-      _ended ? const CommitRefused(LeaseEnded()) : rows.commit(changes);
-
   @override
-  Future<Stored<void>> write(String area, Map<String, String> values) async =>
-      storedOf(
-        await commit([
-          for (final MapEntry(:key, :value) in values.entries)
-            ChangePut(area, key, value),
-        ]),
-      );
-
-  @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) async =>
-      storedOf(await commit([for (final key in keys) ChangeDelete(area, key)]));
+  Future<Committing> commit(List<Change> changes) async {
+    if (_ended) return const CommitRefused(LeaseEnded());
+    if (_drive._hold case final hold?) {
+      _drive._hold = null;
+      hold._reached.complete();
+      await hold._letGo.future;
+      if (_ended) return const CommitRefused(LeaseEnded());
+    }
+    return rows.commit(changes);
+  }
 
   var _ended = false;
 
@@ -162,9 +163,9 @@ final class SqliteCrashHarness implements CrashHarness {
     for (final MapEntry(key: area, value: values) in seed.entries) {
       if (rows.commit([
             for (final MapEntry(:key, :value) in values.entries)
-              ChangePut(area, key, value),
+              Put(area, key, value),
           ])
-          case CommitRefused(:final failure) || CommitInDoubt(:final failure)) {
+          case CommitRefused(:final failure) || CommitUnknown(:final failure)) {
         throw StateError('seed not written: $failure');
       }
     }
@@ -216,4 +217,19 @@ final class FaultContractHarness implements EngineHarness {
 
   @override
   Future<void> crash(StorageEngine engine) async => drive.crash(loss);
+
+  @override
+  PendingWrite holdNextWrite(StorageEngine engine) =>
+      drive._hold = _HeldCommit();
+}
+
+final class _HeldCommit implements PendingWrite {
+  final _reached = Completer<void>();
+  final _letGo = Completer<void>();
+
+  @override
+  Future<void> get reached => _reached.future;
+
+  @override
+  void letGo() => _letGo.complete();
 }

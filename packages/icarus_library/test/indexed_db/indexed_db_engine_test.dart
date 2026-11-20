@@ -24,21 +24,21 @@ void main() {
     'reads what it wrote, by area, and lists keys by prefix in order',
     () async {
       final engine = await openIndexedDb(name);
-      stored(
-        await engine.write('a', {
+      committed(
+        await put(engine, 'a', {
           'page/2': 'two',
           'page/1': 'one',
           'other': 'x',
         }),
       );
-      stored(await engine.write('b', {'page/1': 'elsewhere'}));
-      stored(
-        await engine.write('a', {'pagf': 'after the prefix', 'page': 'before'}),
+      committed(await put(engine, 'b', {'page/1': 'elsewhere'}));
+      committed(
+        await put(engine, 'a', {'pagf': 'after the prefix', 'page': 'before'}),
       );
       expect(valueOf(await engine.read('a', 'page/1')), 'one');
       expect(valueOf(await engine.read('a', 'missing')), isNull);
       expect(stored(await engine.keys('a', 'page/')), ['page/1', 'page/2']);
-      stored(await engine.delete('a', ['page/1']));
+      committed(await remove(engine, 'a', ['page/1']));
       expect(stored(await engine.keys('a', '')), [
         'other',
         'page',
@@ -86,36 +86,56 @@ void main() {
         'k$key': '$generation-${'x' * (key * 211)}',
     };
     final lease = await openIndexedDb(name);
-    stored(await lease.write('probe', batch(0)));
+    committed(await put(lease, 'probe', batch(0)));
     final second = readFromAnotherContext(name, 'probe');
     await Future<void>.delayed(const Duration(milliseconds: 50));
     final writes = [
       for (var generation = 1; generation <= 20; generation++)
-        lease.write('probe', batch(generation)),
+        put(lease, 'probe', batch(generation)),
     ];
     await lease.release();
-    expect(await Future.wait(writes), everyElement(isA<Done<void>>()));
+    expect(await Future.wait(writes), everyElement(isA<CommitApplied>()));
     final (refusals, values) = await second;
     expect(refusals, greaterThan(0));
     expect(values, hasLength(24));
     expect(values.map((value) => value.split('-').first).toSet(), {'20'});
   });
 
-  test('a transaction aborted after its first request succeeded is a failure '
-      'the caller receives, and none of its keys land', () async {
-    final engine = await openIndexedDb(name);
-    stored(await engine.write('a', {'k1': 'old', 'k2': 'old'}));
-    abortNextAfterItsFirstRequest();
-    expect(
-      await engine.write('a', {'k1': 'new', 'k2': 'new', 'k3': 'new'}),
-      isA<StorageFailed<void>>(),
-    );
-    abortNextAfterItsFirstRequest();
-    expect(await engine.delete('a', ['k1', 'k2']), isA<StorageFailed<void>>());
-    expect(stored(await engine.keys('a', '')), ['k1', 'k2']);
-    expect(valueOf(await engine.read('a', 'k1')), 'old');
-    await engine.release();
-  });
+  test(
+    'a commit across three areas with an area clear, aborted after its '
+    'first request succeeded, is refused and leaves every area as it was',
+    () async {
+      final engine = await openIndexedDb(name);
+      committed(
+        await engine.commit(const [
+          Put('a', 'k1', 'old'),
+          Put('b', 'k1', 'old'),
+          Put('c', 'k1', 'old'),
+          Put('c', 'k2', 'old'),
+        ]),
+      );
+      abortNextAfterItsFirstRequest();
+      expect(
+        await engine.commit(const [
+          Put('a', 'k1', 'new'),
+          Delete('b', 'k1'),
+          ClearArea('c'),
+          Put('c', 'k3', 'new'),
+        ]),
+        isA<CommitRefused>(),
+      );
+      for (final area in ['a', 'b']) {
+        expect(stored(await engine.entries(area, '')), [
+          (key: 'k1', value: 'old'),
+        ], reason: area);
+      }
+      expect(stored(await engine.entries('c', '')), [
+        (key: 'k1', value: 'old'),
+        (key: 'k2', value: 'old'),
+      ]);
+      await engine.release();
+    },
+  );
 
   test('a quota error is a failure the caller receives, the write does not '
       'land, and the store saves again afterwards', () async {

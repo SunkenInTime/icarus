@@ -4,8 +4,9 @@ import 'dart:js_interop_unsafe';
 
 import 'package:web/web.dart';
 
-import '../engines/commit.dart';
+import '../engines/names.dart';
 import '../store/engine.dart';
+import '../store/engine_contract.dart';
 
 const _rows = 'rows';
 
@@ -103,7 +104,7 @@ final class IndexedDbEngine implements StorageEngine {
 
   @override
   Future<Leasing> lease() async {
-    if (_closed) return const LeaseFailed(StoreClosed());
+    if (_closed) return const LeaseFailed(EngineClosed());
     final navigator = window.navigator;
     if (!navigator.has('locks')) {
       return const LeaseFailed(
@@ -142,6 +143,8 @@ final class IndexedDbEngine implements StorageEngine {
     }
   }
 
+  PendingWrite holdNextCommit() => _granted.last._held = _HeldCommit();
+
   Future<void> close() async {
     _closed = true;
     for (final lease in _granted) {
@@ -158,6 +161,7 @@ final class IndexedDbLease implements StorageLease {
   final Completer<void> _release;
   final Future<JSAny?> _released;
   final _writing = <Future<Committing>>{};
+  _HeldCommit? _held;
   var _ended = false;
 
   @override
@@ -188,9 +192,8 @@ final class IndexedDbLease implements StorageLease {
 
   @override
   Future<KeyRead> read(String area, String key) async {
-    if (readTooLong(area, key, indexedDbMaxKeyLength) case final failure?) {
-      return KeyNotRead(failure);
-    }
+    if (_ended) return const KeyNotRead(LeaseEnded());
+    if (pastLimit(area, key, indexedDbMaxKeyLength)) return const KeyMissing();
     switch (_transaction('readonly')) {
       case StorageFailed(:final failure):
         return KeyNotRead(failure);
@@ -268,9 +271,22 @@ final class IndexedDbLease implements StorageLease {
     }
   }
 
-  Future<Committing> commit(List<Change> changes) async {
-    if (nameTooLong(changes, indexedDbMaxKeyLength) case final failure?) {
-      return CommitRefused(failure);
+  @override
+  Future<Committing> commit(List<Change> changes) {
+    if (_ended) return Future.value(const CommitRefused(LeaseEnded()));
+    if (putPastLimit(changes, indexedDbMaxKeyLength) case final failure?) {
+      return Future.value(CommitRefused(failure));
+    }
+    final committing = _committed(changes);
+    _writing.add(committing);
+    return committing.whenComplete(() => _writing.remove(committing));
+  }
+
+  Future<Committing> _committed(List<Change> changes) async {
+    if (_held case final held?) {
+      _held = null;
+      held._reached.complete();
+      await held._letGo.future;
     }
     switch (_transaction('readwrite')) {
       case StorageFailed(:final failure):
@@ -287,34 +303,17 @@ final class IndexedDbLease implements StorageLease {
         final rows = transaction.objectStore(_rows);
         for (final change in changes) {
           switch (change) {
-            case ChangePut(:final area, :final key, :final value):
+            case Put(:final area, :final key, :final value):
               rows.put(value.toJS, _key(area, key));
-            case ChangeDelete(:final area, :final key):
+            case Delete(:final area, :final key):
               rows.delete(_key(area, key));
-            case ChangeClearArea(:final area):
+            case ClearArea(:final area):
               rows.delete(_under(area, ''));
           }
         }
-        final committing = finished.future;
-        _writing.add(committing);
-        final result = await committing;
-        _writing.remove(committing);
-        return result;
+        return finished.future;
     }
   }
-
-  @override
-  Future<Stored<void>> write(String area, Map<String, String> values) async =>
-      storedOf(
-        await commit([
-          for (final MapEntry(:key, :value) in values.entries)
-            ChangePut(area, key, value),
-        ]),
-      );
-
-  @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) async =>
-      storedOf(await commit([for (final key in keys) ChangeDelete(area, key)]));
 
   @override
   Future<Releasing> release() async {
@@ -326,4 +325,15 @@ final class IndexedDbLease implements StorageLease {
     await _released;
     return const Released();
   }
+}
+
+final class _HeldCommit implements PendingWrite {
+  final _reached = Completer<void>();
+  final _letGo = Completer<void>();
+
+  @override
+  Future<void> get reached => _reached.future;
+
+  @override
+  void letGo() => _letGo.complete();
 }

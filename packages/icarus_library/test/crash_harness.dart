@@ -112,13 +112,30 @@ final class _SteppedLease extends ForwardingLease {
       _harness._crashed ? _stopped : await inner.keys(area, prefix);
 
   @override
-  Future<Stored<void>> write(String area, Map<String, String> values) async =>
-      _harness._step() ? await inner.write(area, values) : _stopped;
-
-  @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) async =>
-      _harness._step() ? await inner.delete(area, keys) : _stopped;
+  Future<Committing> commit(List<Change> changes) async => _harness._step()
+      ? await inner.commit(changes)
+      : const CommitRefused(DeviceFailure('the app stopped'));
 }
+
+Future<Committing> put(
+  StorageLease lease,
+  String area,
+  Map<String, String> values,
+) => lease.commit([
+  for (final MapEntry(:key, :value) in values.entries) Put(area, key, value),
+]);
+
+Future<Committing> remove(
+  StorageLease lease,
+  String area,
+  Iterable<String> keys,
+) => lease.commit([for (final key in keys) Delete(area, key)]);
+
+void committed(Committing committing) => switch (committing) {
+  CommitApplied() => null,
+  CommitRefused(:final failure) => fail('the commit was refused: $failure'),
+  CommitUnknown(:final failure) => fail('the commit is unknown: $failure'),
+};
 
 Future<StorageLease> leaseOf(StorageEngine engine) async =>
     switch (await engine.lease()) {
@@ -254,8 +271,9 @@ void _engineCrashContract(CrashHarness Function() makeHarness) {
 
   tearDown(() => harness.finish());
 
-  test('after a crash at any step of random writes, every acknowledged '
-      'write is there, the write in flight is wholly there or wholly '
+  test('after a crash at any step of random commits across areas, with '
+      'puts, deletes and area clears, every applied commit is there, a '
+      'refused one left nothing, an unknown one is wholly there or wholly '
       'absent, and no other row changed', () async {
     const areas = ['library', 'strategy/a', 'strategy/b'];
     for (var seed = 0; seed < 40; seed++) {
@@ -269,33 +287,41 @@ void _engineCrashContract(CrashHarness Function() makeHarness) {
       harness.arm(1 + random.nextInt(60));
       Map<String, Map<String, String>>? inFlight;
       for (var write = 0; !harness.crashed && write < 40; write++) {
-        final area = areas[random.nextInt(areas.length)];
-        final keys = {
-          for (var i = 0; i < 1 + random.nextInt(12); i++)
-            'k${random.nextInt(16)}',
-        };
-        final deleting = random.nextInt(4) == 0;
         final next = {
           for (final MapEntry(:key, :value) in model.entries) key: {...value},
         };
-        final Stored<void> result;
-        if (deleting) {
-          next[area]!.removeWhere((key, _) => keys.contains(key));
-          result = await engine.delete(area, keys);
-        } else {
-          final values = {
-            for (final key in keys)
-              key: 'w$write-$key-${'x' * random.nextInt(3000)}',
-          };
-          next[area]!.addAll(values);
-          result = await engine.write(area, values);
+        final changes = <Change>[];
+        for (final area in {
+          for (var i = 0; i < 1 + random.nextInt(3); i++)
+            areas[random.nextInt(areas.length)],
+        }) {
+          switch (random.nextInt(5)) {
+            case 0:
+              changes.add(ClearArea(area));
+              next[area]!.clear();
+            case 1:
+              for (var i = 0; i < 1 + random.nextInt(6); i++) {
+                final key = 'k${random.nextInt(16)}';
+                changes.add(Delete(area, key));
+                next[area]!.remove(key);
+              }
+            case _:
+              for (var i = 0; i < 1 + random.nextInt(10); i++) {
+                final key = 'k${random.nextInt(16)}';
+                final value = 'w$write-$key-${'x' * random.nextInt(3000)}';
+                changes.add(Put(area, key, value));
+                next[area]![key] = value;
+              }
+          }
         }
-        switch (result) {
-          case Done():
+        switch (await engine.commit(changes)) {
+          case CommitApplied():
             model
               ..clear()
               ..addAll(next);
-          case StorageFailed():
+          case CommitRefused():
+            break;
+          case CommitUnknown():
             inFlight = next;
         }
       }

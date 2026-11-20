@@ -3,12 +3,26 @@ import 'dart:io';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/sqlite_storage.dart';
 
+import '../crash_harness.dart';
 import '../store_support.dart';
 import '../support.dart';
 
 const probeArea = 'probe';
 
 const probeKeys = 24;
+
+const probeAreas = ['probe/a', 'probe/b', 'probe/c'];
+
+const probeAreaKeys = 8;
+
+List<Change> probeCommit(int generation) => [
+  const ClearArea('probe/c'),
+  for (final area in probeAreas.take(2))
+    for (var key = 0; key < probeAreaKeys; key++)
+      Put(area, 'k$key', '$generation-${'x' * (key * 409)}'),
+  for (var key = 0; key < probeAreaKeys; key++)
+    Put('probe/c', 'c-$generation-$key', '$generation'),
+];
 
 const handoffBatches = 20;
 
@@ -69,17 +83,17 @@ Future<void> main(List<String> arguments) async {
       Leased(:final lease) => lease,
       final other => throw StateError('$other'),
     };
-    await lease.write(probeArea, handoffBatch(0));
+    committed(await put(lease, probeArea, handoffBatch(0)));
     stdout.writeln('ready');
     stdin.readLineSync();
     final writes = [
       for (var batch = 1; batch <= handoffBatches; batch++)
-        lease.write(probeArea, handoffBatch(batch)),
+        put(lease, probeArea, handoffBatch(batch)),
     ];
     await lease.release();
     final results = await Future.wait(writes);
     stdout.writeln(
-      'released ${results.whereType<Done<void>>().length} written',
+      'released ${results.whereType<CommitApplied>().length} written',
     );
     while (stdin.readLineSync() != null) {}
     return;
@@ -91,7 +105,7 @@ Future<void> main(List<String> arguments) async {
     };
     for (final MapEntry(key: area, value: values)
         in (await seededContents()).entries) {
-      await lease.write(area, values);
+      committed(await put(lease, area, values));
     }
     await engine.close();
     stdout.writeln('seeded');
@@ -101,7 +115,7 @@ Future<void> main(List<String> arguments) async {
   final store = await openStore(probing);
   var (move, revision) = await jettPosition(store);
   final lease = probing.granted!;
-  var probe = switch (await lease.read(probeArea, 'k0')) {
+  var probe = switch (await lease.read('probe/a', 'k0')) {
     KeyHeld(:final value) => int.parse(value.split('-').first),
     KeyMissing() || KeyNotRead() => 0,
   };
@@ -117,14 +131,11 @@ Future<void> main(List<String> arguments) async {
     }
     probe++;
     stdout.writeln('writing $probe');
-    switch (await lease.write(probeArea, {
-      for (var key = 0; key < probeKeys; key++)
-        'k$key': '$probe-${'x' * (key * 211)}',
-    })) {
-      case Done():
+    switch (await lease.commit(probeCommit(probe))) {
+      case CommitApplied():
         stdout.writeln('wrote $probe');
-      case StorageFailed(:final failure):
-        throw StateError('not written: $failure');
+      case final other:
+        throw StateError('not written: $other');
     }
   }
 }
