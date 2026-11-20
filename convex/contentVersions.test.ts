@@ -382,6 +382,32 @@ describe("folding content changes", () => {
     });
   });
 
+  test("the hourly sweep starts folding a young row nothing is folding", async () => {
+    const { t, owner } = await createHarness();
+    await create(owner, "s");
+    await t.run(async (ctx) => {
+      for (const chain of await ctx.db.query("foldChains").collect()) {
+        await ctx.db.delete(chain._id);
+      }
+      const [run] = await ctx.db.query("foldChainRuns").collect();
+      await ctx.scheduler.cancel(run!.next);
+    });
+    await t.mutation(foldContentChanges, {});
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 1,
+      waiting: 1,
+      unfolded: 1,
+      version: 1,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await folding(t, owner, "s")).toEqual({
+      chains: 0,
+      waiting: 0,
+      unfolded: 0,
+      version: 1,
+    });
+  });
+
   test("the hourly sweep folds change rows nothing is folding", async () => {
     const { t, owner } = await createHarness();
     await create(owner, "s");

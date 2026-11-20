@@ -1053,7 +1053,9 @@ async function recordCountChange(
 /// Folds stars, unstars and copies into their posts' counts. Runs minutes
 /// after the first change it folds, so a busy post is written once per run
 /// instead of once per star, and the feed's cached pages stay valid between.
-async function foldCountBatch(ctx: MutationCtx): Promise<FoldLeft> {
+async function foldCountBatch(
+  ctx: MutationCtx,
+): Promise<Extract<FoldLeft, "fullBatch" | "nothing">> {
   const changes = await ctx.db.query("communityCountChanges").take(FOLD_BATCH);
   const byPost = new Map<Id<"communityPosts">, { stars: number; copies: number }>();
   for (const change of changes) {

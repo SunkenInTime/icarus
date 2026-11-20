@@ -579,6 +579,12 @@ async function check(identifier: string, scenario: Scenario) {
   }
   await scenario.did?.(w);
   await settle(w);
+  const failedFolds = await w.t.run(async (ctx) =>
+    (await ctx.db.system.query("_scheduled_functions").collect()).filter(
+      (job) => job.name.includes("Fold") && job.state.kind === "failed",
+    ),
+  );
+  expect(failedFolds).toEqual([]);
 }
 
 function foldingOldChangeRows(as: "sweep" | "chainRun"): Scenario {

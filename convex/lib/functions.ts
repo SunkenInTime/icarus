@@ -232,7 +232,7 @@ class ContentWrites {
 
   /// One change row for each strategy written, in the same transaction as
   /// the writes. Inserts, and reads only the fold chain's row, which changes
-  /// only when folding starts or stops, so edits collide only at those two.
+  /// only when folding starts or stops: edits collide on it only then.
   async record(ctx: MutationCtx) {
     for (const strategyId of this.strategies) {
       await this.raw.insert("strategyContentChanges", { strategyId });
