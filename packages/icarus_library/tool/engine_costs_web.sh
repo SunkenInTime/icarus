@@ -21,4 +21,4 @@ for _ in $(seq 1 600); do
 done
 kill "$chrome" 2>/dev/null || true
 wait "$chrome" 2>/dev/null || true
-grep -o 'CONSOLE([0-9]*)\] "[^"]*"' "$log" | sed 's/^CONSOLE([0-9]*)\] "//; s/"$//'
+grep -o 'CONSOLE:[0-9]*\] "[^"]*"' "$log" | sed 's/^CONSOLE:[0-9]*\] "//; s/"$//'

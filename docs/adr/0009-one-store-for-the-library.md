@@ -110,11 +110,65 @@ store shares, so it is sent as before.
 - **One in-memory page model over both storage systems.** It gives the open
   page one owner and leaves the 141 branch points, the offline copy and the
   move-to-cloud copy in place.
-- **SQLite.** Better transactions and queries, at the cost of a new native
-  dependency on three desktop platforms and WebAssembly on the web. Access
-  here is by key, per strategy and page, and because every edit is saved as
-  its op first, the store does not need a transaction across keys. Hive
-  already ships on every platform and holds the outbox.
+- **Hive for the store's rows.** This was the first choice, because Hive
+  already shipped on every platform. A study of `hive_ce` 2.19.3 (#643) found
+  it gives none of the guarantees the store needs: a desktop write is never
+  synced to disk, compaction renames an unsynced file over the box, the web
+  backend reports a write done before IndexedDB commits it, recovery
+  truncates every frame after a damaged one, and a write of several keys is
+  not all or nothing. Patching it would make us the maintainers of a storage
+  format.
+- **SQLite on the web, through WebAssembly.** It would give one engine
+  everywhere, at the cost of a 750 KB `sqlite3.wasm` download and a file
+  system emulated over IndexedDB or OPFS, which brings back the durability
+  question one layer down. IndexedDB used directly already has what the store
+  needs: one transaction per write, a `complete` event after the commit, and
+  strict durability.
+- **A storage format of our own.** Nothing measured below needs one.
+
+## Where the store's rows live
+
+SQLite on Windows, macOS and Linux, and IndexedDB used directly on the web.
+Both sit behind the store's engine interface, and both pass its conformance
+suite. The package README says how each keeps its promises and what each
+test layer can and cannot show.
+
+What decided it:
+
+- **Faults survived.** On a SQLite file system that loses unsynced writes,
+  tears them in 512-byte pieces and drops directory changes, a crash at every
+  step of every op type leaves the rows from before the edit or after it, and
+  no saved edit is lost. Turning `synchronous` down to `NORMAL` loses 48 saved
+  edits in the same tests, which is how we know the tests can see the
+  difference. A writer process killed at 24 random points lost nothing.
+  IndexedDB in Chrome survives aborted transactions and a quota error the same
+  way. The tests found two engine bugs, both fixed: a commit that failed after
+  its log frames were written came back on the next open, and SQLite's quick
+  check let a damaged file open with strategies missing.
+- **Costs**, on release builds (`bin/engine_costs.dart` ahead of time, and
+  `dart compile js -O4` in headless Chrome 157), a 500-strategy library of
+  85 MiB, medians of three runs of 15 or 60 on a Ryzen 7 5700U with a
+  Kingston NVMe drive, under load from other agents (load average 4 to 12):
+
+  | | Memory (floor) | SQLite, XFS | SQLite, ext4 | Memory in Chrome | IndexedDB, Chrome |
+  | --- | --- | --- | --- | --- | --- |
+  | Cold start, list 500 strategies | 4.9 ms | 29.5 ms | 34.5 ms | 9.4 ms | 117 ms |
+  | Open a 300-item page | 153 ms | 163 ms | 187 ms | 173 ms | 214 ms |
+  | Save one moved item | 0.1 ms | 21.1 ms | 6.6 ms | 0.3 ms | 8.7 ms |
+  | Save a 1000-point drawing | 9.3 ms | 32.3 ms | 19.7 ms | 8.7 ms | 17.9 ms |
+
+  Opening a page costs the same on every engine because decoding 150
+  drawings dominates it. A save is the store's four engine calls (the saved
+  record, two areas of rows, clearing the record), each one synced
+  transaction; on SQLite the time is the syncs. Saves happen behind the
+  canvas, so none of this delays an edit on screen. The ext4 numbers are one
+  run; macOS, where `fullfsync` makes each sync slower, is not measured.
+- **Size.** On Linux the release bundle grows by 1,801,745 bytes, the SQLite
+  library itself, and the engine's Dart code adds 98,304 bytes to `libapp.so`
+  once the app uses it. The Windows library is 1,709,056 bytes, and macOS
+  ships the arm64 and x64 libraries (1,713,824 and 1,718,616 bytes). On the
+  web the engine adds 6,133 bytes of JavaScript (1,920 gzipped) and no
+  download.
 
 ## Consequences
 
