@@ -12,54 +12,54 @@ StorageEngine _engine(String path) =>
     _usesMemory ? MemoryEngine(_memory) : SqliteEngine(path);
 
 Future<void> _close(StorageEngine engine) => switch (engine) {
-  final SqliteEngine sqlite => sqlite.close(),
-  final MemoryEngine memory => memory.close(),
-  _ => throw StateError('unknown engine $engine'),
-};
+      final SqliteEngine sqlite => sqlite.close(),
+      final MemoryEngine memory => memory.close(),
+      _ => throw StateError('unknown engine $engine'),
+    };
 
 bool _readsAll(ElementPayload payload) => true;
 
 ElementPayload _agent(double x) => ElementPayload(
-  kind: ElementKind.agent,
-  payloadVersion: 1,
-  data: {
-    'id': 'probe-jett',
-    'elementType': 'agent',
-    'type': 'jett',
-    'position': {'dx': x, 'dy': 20.0},
-    'isAlly': true,
-  },
-);
+      kind: ElementKind.agent,
+      payloadVersion: 1,
+      data: {
+        'id': 'probe-jett',
+        'elementType': 'agent',
+        'type': 'jett',
+        'position': {'dx': x, 'dy': 20.0},
+        'isAlly': true,
+      },
+    );
 
 StrategyRowSet _strategy() => StrategyRowSet(
-  strategy: ReadableStrategy(
-    publicId: 'probe',
-    name: 'Store probe',
-    mapData: 'ascent',
-    revision: 1,
-    createdAt: DateTime.utc(2026),
-    updatedAt: DateTime.utc(2026),
-  ),
-  pages: [
-    LivePage(
-      publicId: 'probe-page',
-      strategyPublicId: 'probe',
-      name: 'Page 1',
-      sortIndex: 0,
-      isAttack: true,
-      revision: 1,
-    ),
-  ],
-  elements: [
-    LiveElement(
-      publicId: 'probe-jett',
-      pagePublicId: 'probe-page',
-      payload: _agent(10),
-      sortIndex: 0,
-      revision: 1,
-    ),
-  ],
-);
+      strategy: ReadableStrategy(
+        publicId: 'probe',
+        name: 'Store probe',
+        mapData: 'ascent',
+        revision: 1,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      ),
+      pages: [
+        LivePage(
+          publicId: 'probe-page',
+          strategyPublicId: 'probe',
+          name: 'Page 1',
+          sortIndex: 0,
+          isAttack: true,
+          revision: 1,
+        ),
+      ],
+      elements: [
+        LiveElement(
+          publicId: 'probe-jett',
+          pagePublicId: 'probe-page',
+          payload: _agent(10),
+          sortIndex: 0,
+          revision: 1,
+        ),
+      ],
+    );
 
 Future<LibraryStore> _open(StorageEngine engine) async =>
     switch (await LibraryStore.open(engine, canRead: _readsAll)) {
@@ -67,10 +67,16 @@ Future<LibraryStore> _open(StorageEngine engine) async =>
       StoreNotOpened(:final problem) => throw StateError('$problem'),
     };
 
+LibraryList _list(LibraryStore store) => switch (store.library) {
+      LibraryOpen(:final list) => list,
+      LibraryShut(:final failure) =>
+        throw StateError('the library is shut: $failure'),
+    };
+
 Future<String> _probe(String path) async {
   final first = _engine(path);
   final store = await _open(first);
-  if (store.library.strategies.isEmpty) {
+  if (_list(store).strategies.isEmpty) {
     if (await store.editLibrary([AddStrategy(_strategy())]) is! Saved) {
       throw StateError('the strategy was not saved');
     }
@@ -99,18 +105,18 @@ Future<String> _probe(String path) async {
     Found(:final value) => value.elements.whereType<LiveElement>().single,
     final other => throw StateError('$other'),
   };
+  final listed = _list(reopened).strategies.length;
   await reopened.close();
   await _close(second);
   final position = read.payload.data['position'];
   return 'store opened on ${_usesMemory ? 'memory' : 'SQLite'} at $path: '
-      '${reopened.library.strategies.length} strategy, '
+      '$listed strategy, '
       'revision ${read.revision}, position $position';
 }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final folder =
-      Platform.environment['ICARUS_STORE_PROBE_DIR'] ??
+  final folder = Platform.environment['ICARUS_STORE_PROBE_DIR'] ??
       Directory.systemTemp.createTempSync('icarus-store-probe-').path;
   final report = File('$folder/probe.txt');
   final String outcome;

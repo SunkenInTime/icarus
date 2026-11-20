@@ -200,7 +200,7 @@ void main() {
             AddStrategy(sampleStrategy(id: 'extra-$i', prefix: 'extra-$i-')),
         ]),
       );
-      final strategies = seeding.library.strategies.length;
+      final strategies = listOf(seeding).strategies.length;
       await seeding.close();
       final pristine = harness.disk.bytesOf(libraryPath);
       expect(pristine.length, greaterThan(8 * 4096));
@@ -242,7 +242,7 @@ void main() {
               reason: damage,
             );
           case StoreOpened(:final store):
-            final library = store.library;
+            final library = listOf(store);
             expect(
               library.strategies.length + library.unreadableStrategies.length,
               greaterThanOrEqualTo(strategies),

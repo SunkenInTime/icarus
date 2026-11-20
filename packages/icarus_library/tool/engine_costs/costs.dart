@@ -1,6 +1,7 @@
 import 'package:icarus_library/icarus_library.dart';
 
-const strategies = 500;
+const strategies = 700;
+const bigPages = 20;
 const pageItems = 300;
 const drawingPoints = 1000;
 const coldRuns = 15;
@@ -34,7 +35,12 @@ ElementPayload _drawing(String id, double shift) => ElementPayload(
   },
 );
 
-StrategyRowSet _strategy(String id, {required int pages, required int items}) {
+StrategyRowSet _strategy(
+  String id, {
+  required int pages,
+  required int items,
+  int drawingPages = 1 << 30,
+}) {
   final pageIds = [for (var page = 0; page < pages; page++) '$id-p$page'];
   return StrategyRowSet(
     strategy: ReadableStrategy(
@@ -57,12 +63,12 @@ StrategyRowSet _strategy(String id, {required int pages, required int items}) {
         ),
     ],
     elements: [
-      for (final page in pageIds)
+      for (final (index, page) in pageIds.indexed)
         for (var i = 0; i < items; i++)
           LiveElement(
             publicId: '$page-$i',
             pagePublicId: page,
-            payload: i.isOdd
+            payload: i.isOdd && index < drawingPages
                 ? _drawing('$page-$i', 0)
                 : _agent('$page-$i', i * 1.0),
             sortIndex: i,
@@ -116,39 +122,58 @@ Future<List<String>> measure(EngineOpener open, EngineCloser close) async {
   final setup = await _open(seeding);
   _saved(
     await setup.editLibrary([
-      AddStrategy(_strategy('big', pages: 2, items: pageItems)),
-      for (var i = 1; i < strategies; i++)
-        AddStrategy(_strategy('s$i', pages: 2, items: 3)),
+      AddStrategy(
+        _strategy('big', pages: bigPages, items: pageItems, drawingPages: 1),
+      ),
     ]),
   );
+  for (var first = 1; first < strategies; first += 50) {
+    _saved(
+      await setup.editLibrary([
+        for (var i = first; i < first + 50 && i < strategies; i++)
+          AddStrategy(_strategy('s$i', pages: 2, items: 3)),
+      ]),
+    );
+  }
   await setup.close();
   await close(seeding);
 
   final cold = Times(
     'cold start: open the store and list $strategies strategies',
   );
+  final strategy = Times(
+    'open a $bigPages-page strategy of $pageItems items a page',
+  );
   final page = Times(
-    'open a $pageItems-item page, half $drawingPoints-point drawings',
+    'cold read of a $pageItems-item page, half $drawingPoints-point drawings',
   );
   for (var run = 0; run < coldRuns; run++) {
     final engine = open();
     final store = await cold.time(() async {
       final store = await _open(engine);
-      if (store.library.strategies.length != strategies) {
-        throw StateError('list');
+      switch (store.library) {
+        case LibraryOpen(:final list) when list.strategies.length == strategies:
+          return store;
+        case final other:
+          throw StateError('the library list: $other');
       }
-      return store;
     });
-    await store.readStrategy('big');
-    final opened = await page.time(() => store.readPage('big', 'big-p0'));
-    if (opened case Found(
+    switch (await strategy.time(() => store.readStrategy('big'))) {
+      case Found(value: StrategyContent(:final pages))
+          when pages.length == bigPages:
+        break;
+      case final other:
+        throw StateError('strategy: $other');
+    }
+    final read = await page.time(() => store.readPage('big', 'big-p0'));
+    if (read case Found(
       value: PageContent(:final elements),
     ) when elements.length == pageItems) {
       await store.close();
       await close(engine);
       continue;
     }
-    throw StateError('page');
+    throw StateError('page: $read');
   }
 
   final engine = open();
@@ -186,5 +211,11 @@ Future<List<String>> measure(EngineOpener open, EngineCloser close) async {
   }
   await store.close();
   await close(engine);
-  return [cold.summary, page.summary, move.summary, redraw.summary];
+  return [
+    cold.summary,
+    strategy.summary,
+    page.summary,
+    move.summary,
+    redraw.summary,
+  ];
 }

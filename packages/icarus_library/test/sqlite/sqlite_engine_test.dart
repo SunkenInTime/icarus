@@ -83,7 +83,7 @@ void main() {
     await engine.close();
 
     final reopened = await openStore(SqliteEngine(path));
-    expect(reopened.library.strategies.single, moved.change.summary);
+    expect(listOf(reopened).strategies.single, moved.change.summary);
     final pageB = pageOf(await reopened.readPage(strategyId, 'page-b'));
     expect(elementOn(pageB, 'jett').pagePublicId, 'page-b');
     await reopened.close();

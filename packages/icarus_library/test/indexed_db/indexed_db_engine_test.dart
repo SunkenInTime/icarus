@@ -65,7 +65,7 @@ void main() {
 
     final reopenedEngine = IndexedDbEngine(name);
     final reopened = await openStore(reopenedEngine);
-    expect(reopened.library.strategies.single, moved.change.summary);
+    expect(listOf(reopened).strategies.single, moved.change.summary);
     final pageB = pageOf(await reopened.readPage(strategyId, 'page-b'));
     expect(elementOn(pageB, 'jett').pagePublicId, 'page-b');
     await reopenedEngine.close();
