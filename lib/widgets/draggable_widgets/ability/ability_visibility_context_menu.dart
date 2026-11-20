@@ -22,15 +22,6 @@ import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-bool supportsAbilityVisibilityMenu(Ability? ability) {
-  return supportsAbilityInactiveState(ability) ||
-      ability is SquareAbility ||
-      ability is CenterSquareAbility ||
-      ability is CircleAbility ||
-      ability is SectorCircleAbility ||
-      ability is DeadlockBarrierMeshAbility;
-}
-
 bool supportsAbilityInactiveState(Ability? ability) {
   return switch (ability) {
     ImageAbility() => ability.supportsInactiveState,

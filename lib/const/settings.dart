@@ -179,65 +179,6 @@ class Settings {
   /// under downloads/ on Pages stopped at 4.6.1.
   static final Uri stableWindowsInstallerLink = Uri.parse(
       "https://github.com/SunkenInTime/icarus/releases/latest/download/icarus-setup.exe");
-  static ThemeData appTheme = ThemeData(
-      colorScheme: const ColorScheme.dark(
-        primary: Colors.deepPurpleAccent,
-        secondary: Colors.teal,
-        error: Colors.red,
-        surface: Color(0xFF1B1B1B),
-      ),
-      dividerColor: Colors.transparent,
-      useMaterial3: true,
-      expansionTileTheme: const ExpansionTileThemeData(),
-      textButtonTheme: TextButtonThemeData(
-        style: ButtonStyle(
-          foregroundColor: WidgetStateProperty.all<Color>(Colors.white),
-        ),
-      ),
-      menuTheme: MenuThemeData(
-        style: MenuStyle(
-          backgroundColor:
-              const WidgetStatePropertyAll<Color>(Settings.sideBarColor),
-          padding: const WidgetStatePropertyAll<EdgeInsets>(EdgeInsets.all(8)),
-          shape: WidgetStatePropertyAll<OutlinedBorder>(
-            RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: const BorderSide(color: Settings.highlightColor, width: 2),
-            ),
-          ),
-        ),
-      ),
-      menuButtonTheme: MenuButtonThemeData(
-        style: ButtonStyle(
-          shape: WidgetStateProperty.resolveWith<OutlinedBorder?>(
-            (Set<WidgetState> states) {
-              if (states.contains(WidgetState.hovered)) {
-                return RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: const BorderSide(
-                      color: Settings.highlightColor, width: 2),
-                );
-              }
-              return RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: BorderSide.none,
-              );
-            },
-          ),
-        ),
-      ),
-      dialogTheme: DialogThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
-          side: const BorderSide(color: Settings.highlightColor, width: 2),
-        ),
-        backgroundColor: Settings.sideBarColor,
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ButtonStyle(
-          foregroundColor: WidgetStateProperty.all<Color>(Colors.white),
-        ),
-      ));
 
   /// Violet for lines, glyphs, text, and strokes on dark surfaces: two
   /// steps lighter than [tacticalVioletTheme.primary], which is the fill

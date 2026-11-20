@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -86,18 +84,5 @@ class StrategyFilterProvider extends Notifier<StrategyFilterState> {
           .read(appPreferencesProvider.notifier)
           .setLibrarySort(sortOrderName: sortOrder.name),
     );
-  }
-
-  ({IconData icon, String label}) getCurrentSortBy() {
-    final label = sortByLabel(state.sortBy, ref.read(l10nProvider));
-
-    switch (state.sortBy) {
-      case SortBy.alphabetical:
-        return (icon: LucideIcons.arrowDownAZ, label: label);
-      case SortBy.dateCreated:
-        return (icon: LucideIcons.calendarPlus, label: label);
-      case SortBy.dateUpdated:
-        return (icon: LucideIcons.history, label: label);
-    }
   }
 }

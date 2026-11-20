@@ -1,2 +1,5 @@
-export 'src/convex_transport_native.dart'
-    if (dart.library.js_interop) 'src/convex_transport_web.dart';
+import 'package:icarus/collab/transport/src/normalized_convex_transport.dart';
+
+final class PlatformConvexTransport extends NormalizedConvexTransport {
+  const PlatformConvexTransport(super.client);
+}
