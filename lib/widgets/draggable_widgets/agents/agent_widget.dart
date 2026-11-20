@@ -22,7 +22,6 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
-import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/widgets/delete_helpers.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
@@ -244,8 +243,7 @@ class AgentWidget extends ConsumerWidget {
     final svgHeightMap = mapState?.currentMap;
     final svgHeightRuntime = viewConeAgent != null &&
             svgHeightMap != null &&
-            hasSvgHeightRuntime(svgHeightMap) &&
-            ref.watch(worldGeometryEnabledProvider(svgHeightMap))
+            hasSvgHeightRuntime(svgHeightMap)
         ? ref.watch(svgHeightRuntimeProvider(svgHeightMap)).asData?.value
         : null;
     final svgHeightModel = svgHeightRuntime?.model(mapState!.isAttack);

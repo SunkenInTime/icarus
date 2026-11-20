@@ -7,9 +7,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/page_transition/navigation_geometry.dart';
 import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/world_geometry_source_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
-import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/view_cone/navigation_catalog.dart';
 import 'package:icarus/view_cone/vision_world_gzip.dart';
 
@@ -18,7 +16,6 @@ final navigationGeometryBundleProvider =
 
 final navigationGeometryProvider = FutureProvider.autoDispose
     .family<NavigationGeometryMap?, MapValue>((ref, map) async {
-  if (!ref.watch(worldGeometryEnabledProvider(map))) return null;
   final retain = ref.keepAlive();
   var loaded = false;
   var disposed = false;
@@ -78,7 +75,7 @@ Future<NavigationGeometryMap> _decodeNavigation(
     throw const FormatException('Invalid navigation standing-height defaults.');
   }
   final geometry = NavigationGeometry.fromJson(decoded,
-      projectUv: (uv) => VisionGeometryMap.projectUv(source.map, uv));
+      projectUv: (uv) => Maps.projectUv(source.map, uv));
   // Every map ships one ground chart; a reference beyond it is corrupt data.
   if (geometry.maximumGroundChartId > 0) {
     throw const FormatException(

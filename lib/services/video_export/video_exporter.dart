@@ -26,7 +26,6 @@ import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
 import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:icarus/services/video_export/video_frame_sink.dart';
-import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/map_door_layer.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 
@@ -39,7 +38,6 @@ class VideoExporter {
     required this.strategyState,
     required this.mapState,
     required this.backgroundDotOpacity,
-    required this.geometry,
     this.transparentBackground = false,
     this.includeCaptions = false,
     this.imageSources = const {},
@@ -52,7 +50,6 @@ class VideoExporter {
   final StrategyState strategyState;
   final MapState mapState;
   final double backgroundDotOpacity;
-  final VisionGeometryMap? geometry;
 
   /// Leaves the backdrop out of every frame (see
   /// [ScreenshotView.transparentBackground]). The sink must keep alpha.
@@ -115,9 +112,7 @@ class VideoExporter {
     if (pages.isEmpty) {
       throw VideoExportException(l10n.videoExportNoPagesSelected);
     }
-    if (requireNavigation &&
-        navigation == null &&
-        geometry?.navigationGeometry == null) {
+    if (requireNavigation && navigation == null) {
       for (var i = 1; i < pages.length; i++) {
         final entries = TransitionPlanner.diff(
           TransitionPlanner.placedWidgetMapForPage(
@@ -238,10 +233,7 @@ class VideoExporter {
         );
         final agentPaths = AgentTransitionPathPlanner.plan(
           entries: entries,
-          geometry: geometry,
           navigation: navigation,
-          startAgentSize: page.settings.agentSize,
-          endAgentSize: nextPage.settings.agentSize,
           coordinateSystem: CoordinateSystem.instance,
         );
         final nextView = _stillView(nextPage);

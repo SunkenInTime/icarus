@@ -60,7 +60,6 @@ void main() {
             storageDirectory: null),
         mapState: MapState(currentMap: MapValue.split, isAttack: true),
         backgroundDotOpacity: 1,
-        geometry: null,
         requireNavigation: requireNavigation,
       );
       var startedPreparing = false;

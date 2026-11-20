@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:icarus/const/coordinate_system.dart';
 
 enum MapValue {
   ascent,
@@ -167,6 +170,54 @@ class Maps {
     MapValue.split: 1,
   };
 
-  static bool hasVisionGeometry(MapValue map) =>
-      visionGeometryPadding.containsKey(map);
+  static Offset projectUv(MapValue map, Offset uv) {
+    final viewBox = mapViewBox[map];
+    final padding = visionGeometryPadding[map];
+    if (viewBox == null || padding == null) {
+      throw StateError('Missing vision projection metadata for ${map.name}.');
+    }
+
+    final rotated = _rotateUv(uv, visionGeometryCwQuarterTurns[map] ?? 0);
+    final paddedWidth = viewBox.width + padding.horizontal;
+    final paddedHeight = viewBox.height + padding.vertical;
+    final svgPoint = Offset(
+      rotated.dx * paddedWidth - padding.left,
+      rotated.dy * paddedHeight - padding.top,
+    );
+
+    const normalizedHeight = 1000.0;
+    const mapWidth = normalizedHeight * CoordinateSystem.defaultMapAspectRatio;
+    const worldWidth = normalizedHeight * (16 / 9);
+    const mapLeft = (worldWidth - mapWidth) / 2;
+    final scale = math.min(
+      mapWidth / viewBox.width,
+      normalizedHeight / viewBox.height,
+    );
+    final renderedWidth = viewBox.width * scale;
+    final renderedHeight = viewBox.height * scale;
+    final svgOffset = Offset(
+      (mapWidth - renderedWidth) / 2,
+      (normalizedHeight - renderedHeight) / 2,
+    );
+    final projected = Offset(
+      mapLeft + svgOffset.dx + svgPoint.dx * scale,
+      svgOffset.dy + svgPoint.dy * scale,
+    );
+    final alignment = visionGeometryAlignment[map];
+    if (alignment == null) return projected;
+    const center = Offset(worldWidth / 2, normalizedHeight / 2);
+    final centered = projected - center;
+    return center +
+        Offset(centered.dx * alignment.scaleX, centered.dy * alignment.scaleY) +
+        alignment.offset;
+  }
+
+  static Offset _rotateUv(Offset point, int clockwiseQuarterTurns) {
+    return switch (clockwiseQuarterTurns % 4) {
+      1 => Offset(1 - point.dy, point.dx),
+      2 => Offset(1 - point.dx, 1 - point.dy),
+      3 => Offset(point.dy, 1 - point.dx),
+      _ => point,
+    };
+  }
 }
