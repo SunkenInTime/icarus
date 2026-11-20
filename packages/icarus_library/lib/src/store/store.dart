@@ -106,13 +106,23 @@ final class _WatchedLease implements StorageLease {
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
       _watch(_inner.entries(area, prefix));
 
-  @override
-  Future<Stored<void>> write(String area, Map<String, String> values) =>
-      _watch(_inner.write(area, values));
+  Future<Writing> _watchWriting(Future<Writing> writing) async {
+    final result = await writing;
+    if (result
+        case DidNotWrite(failure: LeaseEnded()) ||
+            MayHaveWritten(failure: LeaseEnded())) {
+      _ended();
+    }
+    return result;
+  }
 
   @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) =>
-      _watch(_inner.delete(area, keys));
+  Future<Writing> write(String area, Map<String, String> values) =>
+      _watchWriting(_inner.write(area, values));
+
+  @override
+  Future<Writing> delete(String area, Iterable<String> keys) =>
+      _watchWriting(_inner.delete(area, keys));
 
   @override
   Future<Releasing> release() => _inner.release();
@@ -329,7 +339,7 @@ final class LibraryStore {
           key,
     ];
     if (expired.isEmpty) return null;
-    return switch (await _lease.delete(journalArea, expired)) {
+    return switch (asStored(await _lease.delete(journalArea, expired))) {
       StorageFailed(:final failure) => failure,
       Done() => null,
     };

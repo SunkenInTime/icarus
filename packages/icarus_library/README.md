@@ -261,42 +261,50 @@ A `StorageEngine` grants a `StorageLease`; the store does all its reading
 and writing through the lease it holds. An engine keeps these promises, and
 `package:icarus_library/engine_contract.dart` checks them: `engineContract`
 is a list of checks any engine runs against an `EngineHarness` it supplies
-(`open` an engine on the harness's one storage, `close` it, or `crash` it, so
-the app stops without closing). Each check returns `Passed` or
-`Broke(what)`. This package runs them on `MemoryEngine` in
-`test/engine_test.dart`, along with two broken engines the checks catch.
+(`open` an engine on the harness's one storage, `close` it, `crash` it so the
+app stops without closing, and `holdNextWrite`, which keeps the engine's next
+write pending until `letGo`). Each check returns `Passed` or `Broke(what)`.
+This package runs them on `MemoryEngine` in `test/engine_test.dart`, along
+with three broken engines the checks catch: one that loses writes in a
+crash, one that grants everyone a lease, and one whose prefixes match like
+SQL `LIKE`.
 
-- **Keys** are ASCII strings inside a named area of at most `maxAreaLength`
-  (64) ASCII characters. A lease holds any key up to its `maxKeyLength`,
-  which is at least 255, and a write naming a longer key returns
-  `StorageFailed(KeyTooLong)` and writes none of its keys.
+- **Names.** Areas and keys use only `nameAlphabet` (`a-z`, `0-9`, `-`, `.`,
+  `/`, `_`); areas are at most `maxAreaLength` (64) characters. Names are
+  compared exactly, a prefix matches exactly (no wildcards, no folding), and
+  listings are in ascending code unit order. A lease's `maxKeyLength` is at
+  least 255 and never changes for a given storage.
+- **Names past the limit.** Writing one returns `DidNotWrite(KeyTooLong)` and
+  writes nothing; reading one is `KeyMissing`; deleting one is `Wrote`, since
+  no such name can be stored.
 - **Reading.** `read(area, key)` is `KeyHeld(value)`, `KeyMissing` or
-  `KeyNotRead(failure)`. `keys(area, prefix)` lists the keys that start with
-  the prefix, and `entries(area, prefix)` lists them with their values, both
-  in ascending order. The store reads a page, the summaries and the folders
-  with one `entries` call each.
-- **A write or delete is whole.** Each call writes or deletes all of its keys
-  or none of them, also across a crash.
-- **A call that returned `Done` survives a crash**, including the device
-  losing power.
-- **A call that returned `StorageFailed` landed whole or not at all**; the
-  engine may not know which. The store treats that as in doubt (below).
+  `KeyNotRead(failure)`. `keys(area, prefix)` lists names, `entries` lists
+  them with their values.
+- **Writing says whether it had an effect, in its type.** `write` and
+  `delete` return `Wrote`; `DidNotWrite(failure)`, when the engine knows
+  nothing changed; or `MayHaveWritten(failure)`, when it cannot know. Each
+  call writes or deletes all of its names or none of them, also across a
+  crash, and a call that returned `Wrote` survives a crash, including power
+  loss.
 - **One writer at a time, for its whole life.** An engine grants one lease at
   a time for the storage under it, whichever engine object, process or tab
   asks: a second `lease()` is `HeldByAnotherWriter` until the first is
-  released, also while the first holder's write is in flight. A lease's
-  `status` is `Holding` or `Ended`. It ends when its holder calls
-  `release()` or its engine closes, and once ended it never works again:
-  every call through it returns `LeaseEnded` and changes nothing, even after
-  another writer has come and gone. A write in flight when its lease ends
-  either lands whole before the next lease is granted, or does not land.
+  released, also while the first holder's write is pending. A lease's
+  `status` is `Holding` or `Ended`. It ends when its holder calls `release()`
+  or its engine closes, and once ended it never works again: every call
+  through it returns `LeaseEnded`, as `DidNotWrite` for writes, and changes
+  nothing, even after another writer has come and gone, and even for a name
+  past the limit. A write pending when its lease ends either lands whole
+  before the next lease is granted, or does not land; if the engine cannot
+  tell which, it returns `MayHaveWritten`.
+- **Closing.** A lease asked for after `close` is `LeaseFailed(EngineClosed)`;
+  one asked for during `close` is either refused that way or granted and then
+  ended by the close.
 - **Releasing** returns `Released`, or `ReleaseFailed(failure)` when the
   device failed while letting go. Either way the lease is ended for its
   holder; after `ReleaseFailed` the storage may still refuse a new lease
   until the engine closes or its process ends.
-- **Failures are values.** A call returns `StorageFailed` (or `KeyNotRead`)
-  with a `DeviceFailure`, `KeyTooLong` or `LeaseEnded`; nothing the device
-  does throws.
+- **Failures are values.** Nothing the device does throws.
 
 ### Where rows are kept
 

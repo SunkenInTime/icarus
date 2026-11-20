@@ -1,6 +1,19 @@
+import 'dart:async';
 import 'dart:collection';
 
 import 'engine.dart';
+import 'engine_contract.dart';
+
+final class WriteHold implements PendingWrite {
+  final _reached = Completer<void>();
+  final _letGo = Completer<void>();
+
+  @override
+  Future<void> get reached => _reached.future;
+
+  @override
+  void letGo() => _letGo.complete();
+}
 
 final class MemoryStorage {
   MemoryStorage([Map<String, Map<String, String>> contents = const {}]) {
@@ -11,11 +24,14 @@ final class MemoryStorage {
 
   final _areas = <String, SplayTreeMap<String, String>>{};
   _MemoryLease? _holder;
+  WriteHold? _hold;
 
   Map<String, Map<String, String>> get contents => {
     for (final MapEntry(:key, :value) in _areas.entries)
       if (value.isNotEmpty) key: Map.unmodifiable(value),
   };
+
+  WriteHold holdNextWrite() => _hold = WriteHold();
 
   SplayTreeMap<String, String> _area(String area) =>
       _areas.putIfAbsent(area, SplayTreeMap.new);
@@ -27,9 +43,11 @@ final class MemoryEngine implements StorageEngine {
   final MemoryStorage storage;
   final int maxKeyLength;
   final _granted = <_MemoryLease>[];
+  var _closed = false;
 
   @override
   Future<Leasing> lease() async {
+    if (_closed) return const LeaseFailed(EngineClosed());
     if (storage._holder case final holder? when holder.status is Holding) {
       return const HeldByAnotherWriter();
     }
@@ -40,6 +58,7 @@ final class MemoryEngine implements StorageEngine {
   }
 
   Future<void> close() async {
+    _closed = true;
     final granted = [..._granted];
     _granted.clear();
     for (final lease in granted) {
@@ -91,19 +110,34 @@ final class _MemoryLease implements StorageLease {
         ],
       );
 
-  @override
-  Future<Stored<void>> write(String area, Map<String, String> values) async {
-    for (final key in values.keys) {
-      if (key.length > maxKeyLength) {
-        return StorageFailed(KeyTooLong(area, key));
-      }
+  Future<Writing> _writing(void Function() task) async {
+    if (_status is Ended) return const DidNotWrite(LeaseEnded());
+    if (_storage._hold case final hold?) {
+      _storage._hold = null;
+      hold._reached.complete();
+      await hold._letGo.future;
+      if (_status is Ended) return const DidNotWrite(LeaseEnded());
     }
-    return _held(() => _storage._area(area).addAll(values));
+    task();
+    return const Wrote();
   }
 
   @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) async =>
-      _held(() => keys.toList().forEach(_storage._area(area).remove));
+  Future<Writing> write(String area, Map<String, String> values) async {
+    if (_status is Ended) return const DidNotWrite(LeaseEnded());
+    for (final key in values.keys) {
+      if (key.length > maxKeyLength) {
+        return DidNotWrite(KeyTooLong(area, key));
+      }
+    }
+    return _writing(() => _storage._area(area).addAll(values));
+  }
+
+  @override
+  Future<Writing> delete(String area, Iterable<String> keys) {
+    final named = keys.toList();
+    return _writing(() => named.forEach(_storage._area(area).remove));
+  }
 
   @override
   Future<Releasing> release() async {

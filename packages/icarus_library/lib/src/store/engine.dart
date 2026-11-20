@@ -37,6 +37,13 @@ final class KeyTooLong extends StorageFailure {
   String toString() => 'KeyTooLong($area, $key)';
 }
 
+final class EngineClosed extends StorageFailure {
+  const EngineClosed();
+
+  @override
+  String toString() => 'EngineClosed()';
+}
+
 final class LeaseEnded extends StorageFailure {
   const LeaseEnded();
 
@@ -95,14 +102,40 @@ abstract interface class StorageLease {
 
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix);
 
-  Future<Stored<void>> write(String area, Map<String, String> values);
+  Future<Writing> write(String area, Map<String, String> values);
 
-  Future<Stored<void>> delete(String area, Iterable<String> keys);
+  Future<Writing> delete(String area, Iterable<String> keys);
 
   Future<Releasing> release();
 }
 
 typedef StoredEntry = ({String key, String value});
+
+sealed class Writing {
+  const Writing();
+}
+
+final class Wrote extends Writing {
+  const Wrote();
+}
+
+final class DidNotWrite extends Writing {
+  const DidNotWrite(this.failure);
+
+  final StorageFailure failure;
+
+  @override
+  String toString() => 'DidNotWrite($failure)';
+}
+
+final class MayHaveWritten extends Writing {
+  const MayHaveWritten(this.failure);
+
+  final StorageFailure failure;
+
+  @override
+  String toString() => 'MayHaveWritten($failure)';
+}
 
 sealed class KeyRead {
   const KeyRead();
@@ -152,4 +185,15 @@ final class ReleaseFailed extends Releasing {
 
 const maxAreaLength = 64;
 
+const nameAlphabet = 'abcdefghijklmnopqrstuvwxyz0123456789-./_';
+
+bool isName(String name) =>
+    name.codeUnits.every((unit) => nameAlphabet.codeUnits.contains(unit));
+
 const done = Done<void>(null);
+
+Stored<void> asStored(Writing writing) => switch (writing) {
+  Wrote() => done,
+  DidNotWrite(:final failure) ||
+  MayHaveWritten(:final failure) => StorageFailed(failure),
+};

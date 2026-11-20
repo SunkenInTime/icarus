@@ -127,11 +127,11 @@ abstract base class ForwardingLease implements StorageLease {
       inner.entries(area, prefix);
 
   @override
-  Future<Stored<void>> write(String area, Map<String, String> values) =>
+  Future<Writing> write(String area, Map<String, String> values) =>
       inner.write(area, values);
 
   @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) =>
+  Future<Writing> delete(String area, Iterable<String> keys) =>
       inner.delete(area, keys);
 
   @override
@@ -189,14 +189,14 @@ final class CountingLease extends ForwardingLease {
   }
 
   @override
-  Future<Stored<void>> write(String area, Map<String, String> values) {
+  Future<Writing> write(String area, Map<String, String> values) {
     counts.calls++;
     counts.written.addAll([for (final key in values.keys) (area, key)]);
     return super.write(area, values);
   }
 
   @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) {
+  Future<Writing> delete(String area, Iterable<String> keys) {
     final all = keys.toList();
     counts.calls++;
     counts.deleted.addAll([for (final key in all) (area, key)]);
@@ -229,10 +229,10 @@ final class CrashingLease extends ForwardingLease {
 
   final Cut cut;
 
-  Future<Stored<T>> _gate<T>(Future<Stored<T>> Function() call) async {
+  Future<Writing> _gate(Future<Writing> Function() call) async {
     if (!cut.allows) {
       cut.cut = true;
-      return const StorageFailed(crashed);
+      return const DidNotWrite(crashed);
     }
     cut.landed++;
     return call();
@@ -254,11 +254,11 @@ final class CrashingLease extends ForwardingLease {
       : super.keys(area, prefix);
 
   @override
-  Future<Stored<void>> write(String area, Map<String, String> values) =>
+  Future<Writing> write(String area, Map<String, String> values) =>
       _gate(() => super.write(area, values));
 
   @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) =>
+  Future<Writing> delete(String area, Iterable<String> keys) =>
       _gate(() => super.delete(area, keys));
 }
 
@@ -273,25 +273,25 @@ final class FlakyLease extends ForwardingLease {
   final Map<int, Failing> failing;
   int calls = 0;
 
-  Future<Stored<void>> _maybe(Future<Stored<void>> Function() call) async {
+  Future<Writing> _maybe(Future<Writing> Function() call) async {
     final how = failing[calls++];
     switch (how) {
       case null:
         return call();
       case Failing.refused:
-        return const StorageFailed(DeviceFailure('disk full'));
+        return const DidNotWrite(DeviceFailure('disk full'));
       case Failing.landed:
         await call();
-        return const StorageFailed(DeviceFailure('lost the reply'));
+        return const MayHaveWritten(DeviceFailure('lost the reply'));
     }
   }
 
   @override
-  Future<Stored<void>> write(String area, Map<String, String> values) =>
+  Future<Writing> write(String area, Map<String, String> values) =>
       _maybe(() => super.write(area, values));
 
   @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) =>
+  Future<Writing> delete(String area, Iterable<String> keys) =>
       _maybe(() => super.delete(area, keys));
 }
 

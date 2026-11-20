@@ -134,12 +134,16 @@ final class JournalRecord {
       }
     }
     for (final MapEntry(key: area, value: values) in puts.entries) {
-      if (await lease.write(area, values) case StorageFailed(:final failure)) {
+      if (asStored(await lease.write(area, values)) case StorageFailed(
+        :final failure,
+      )) {
         return StorageFailed(failure);
       }
     }
     for (final MapEntry(key: area, value: keys) in deletes.entries) {
-      if (await lease.delete(area, keys) case StorageFailed(:final failure)) {
+      if (asStored(await lease.delete(area, keys)) case StorageFailed(
+        :final failure,
+      )) {
         return StorageFailed(failure);
       }
     }
@@ -147,17 +151,19 @@ final class JournalRecord {
   }
 
   Future<Stored<void>> save(StorageLease lease) =>
-      lease.write(journalArea, {journalKey: encode()});
+      lease.write(journalArea, {journalKey: encode()}).then(asStored);
 
   Future<Stored<void>> recover(StorageLease lease) async {
     if (await replay(lease) case StorageFailed(:final failure)) {
       return StorageFailed(failure);
     }
-    return lease.write(journalArea, {
-      recoveredKey(attempt): '${issuedAt.millisecondsSinceEpoch}',
-    });
+    return asStored(
+      await lease.write(journalArea, {
+        recoveredKey(attempt): '${issuedAt.millisecondsSinceEpoch}',
+      }),
+    );
   }
 
   static Future<Stored<void>> clear(StorageLease lease) =>
-      lease.delete(journalArea, const [journalKey]);
+      lease.delete(journalArea, const [journalKey]).then(asStored);
 }
