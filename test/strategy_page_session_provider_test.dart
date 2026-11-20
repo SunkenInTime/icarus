@@ -8343,6 +8343,13 @@ void main() {
       }
 
       store.failPut = null;
+      expect(
+          await container
+              .read(strategyPageSessionProvider.notifier)
+              .useCloudVersionsForRejected(),
+          isTrue);
+      expect(container.read(strategyOpQueueProvider).outboxIsReliable, isTrue);
+      expect(container.read(strategyOpQueueProvider).pending, isEmpty);
       await container
           .read(strategyPageSessionProvider.notifier)
           .switchRelativePage(PageSwitchDirection.next);
