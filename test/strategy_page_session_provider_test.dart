@@ -2276,7 +2276,7 @@ void main() {
           .updatePosition(const Offset(300, 300), 'kept');
       await container
           .read(strategyPageSessionProvider.notifier)
-          .flushCurrentPage();
+          .handOverForSyncStatus();
       return container.read(strategyOpQueueProvider).queuedByEntityKey;
     }
 
@@ -5087,7 +5087,7 @@ void main() {
       await _settle();
       await container
           .read(strategyPageSessionProvider.notifier)
-          .flushCurrentPage();
+          .handOverForSyncStatus();
 
       expect(container.read(textProvider).map((text) => text.id), ['other']);
       expect(
