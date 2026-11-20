@@ -88,7 +88,7 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
       child: RepaintBoundary(
         child: MouseRegion(
           cursor: currentInteractionState == InteractionState.drawing
-              ? penState.drawingCursor!
+              ? penState.drawingCursor ?? SystemMouseCursors.precise
               : currentInteractionState == InteractionState.erasing
                   ? SystemMouseCursors.none
                   : SystemMouseCursors.basic,

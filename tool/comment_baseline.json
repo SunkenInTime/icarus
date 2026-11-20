@@ -551,7 +551,7 @@
   "scripts/publish_installer_release.ps1": 1,
   "scripts/publish_pages_branch.ps1": 3,
   "scripts/release_desktop.ps1": 2,
-  "scripts/test_online_beta_windows_upgrade.ps1": 9,
+  "scripts/test_online_beta_windows_upgrade.ps1": 6,
   "scripts/test_release_safety.ps1": 2,
   "scripts/test_release_signing.ps1": 3,
   "test/ability_anchor_scaling_test.dart": 2,
