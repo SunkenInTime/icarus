@@ -277,6 +277,13 @@ final class OpenStorageFailed extends OpenProblem {
   String toString() => 'OpenStorageFailed($failure)';
 }
 
+final class StoreAlreadyOpen extends OpenProblem {
+  const StoreAlreadyOpen();
+
+  @override
+  String toString() => 'StoreAlreadyOpen()';
+}
+
 final class SavedEditUnreadable extends OpenProblem {
   const SavedEditUnreadable(this.text, this.problem);
 

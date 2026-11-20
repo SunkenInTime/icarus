@@ -11,6 +11,9 @@ final class MemoryEngine implements StorageEngine {
 
   final _areas = <String, SplayTreeMap<String, String>>{};
 
+  @override
+  int get maxKeyLength => 1 << 20;
+
   Map<String, Map<String, String>> get contents => {
     for (final MapEntry(:key, :value) in _areas.entries)
       if (value.isNotEmpty) key: Map.unmodifiable(value),

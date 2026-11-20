@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:collection/collection.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:test/test.dart';
@@ -18,6 +20,22 @@ const _contentsEqual = DeepCollectionEquality();
 
 bool sameContents(Contents left, Contents right) =>
     _contentsEqual.equals(left, right);
+
+String canonicalRow(Row row) => jsonEncode(sortedJson(row.toJson()));
+
+Object? sortedJson(Object? value) => switch (value) {
+  final Map<String, Object?> map => {
+    for (final key in map.keys.toList()..sort()) key: sortedJson(map[key]),
+  },
+  final List<Object?> list => [for (final item in list) sortedJson(item)],
+  _ => value,
+};
+
+Future<Contents> settledContentsOf(Contents disk) async {
+  final engine = MemoryEngine(disk);
+  await (await openStore(engine)).close();
+  return engine.contents;
+}
 
 Contents withoutJournal(Contents contents) => {
   for (final MapEntry(:key, :value) in contents.entries)
@@ -77,6 +95,9 @@ final class CountingEngine implements StorageEngine {
   }
 
   @override
+  int get maxKeyLength => inner.maxKeyLength;
+
+  @override
   Future<Stored<String?>> read(String area, String key) {
     reads.add((area, key));
     return inner.read(area, key);
@@ -111,6 +132,9 @@ final class CrashingEngine implements StorageEngine {
   int _left;
 
   bool get hasCrashed => _left < 0;
+
+  @override
+  int get maxKeyLength => inner.maxKeyLength;
 
   @override
   Future<Stored<String?>> read(String area, String key) => hasCrashed
@@ -153,16 +177,13 @@ final class CrashingEngine implements StorageEngine {
   }
 }
 
-final class FlakyEngine implements StorageEngine {
-  FlakyEngine(this.inner);
+final class LimitedEngine implements StorageEngine {
+  LimitedEngine(this.inner, {required this.maxKeyLength});
 
   final StorageEngine inner;
-  final failing = <int>{};
-  int _calls = 0;
 
-  int get calls => _calls;
-
-  bool _fails() => failing.contains(_calls++);
+  @override
+  final int maxKeyLength;
 
   @override
   Future<Stored<String?>> read(String area, String key) =>
@@ -174,9 +195,44 @@ final class FlakyEngine implements StorageEngine {
 
   @override
   Future<Stored<void>> write(String area, Map<String, String> values) =>
-      _fails()
-      ? Future.value(const StorageFailed(DeviceFailure('disk full')))
-      : inner.write(area, values);
+      inner.write(area, values);
+
+  @override
+  Future<Stored<void>> delete(String area, Iterable<String> keys) =>
+      inner.delete(area, keys);
+}
+
+final class FlakyEngine implements StorageEngine {
+  FlakyEngine(this.inner);
+
+  final StorageEngine inner;
+  final failing = <int>{};
+  final landing = <int>{};
+  int _calls = 0;
+
+  int get calls => _calls;
+
+  bool _fails() => failing.contains(_calls++);
+
+  bool _lands() => landing.contains(_calls - 1);
+
+  @override
+  int get maxKeyLength => inner.maxKeyLength;
+
+  @override
+  Future<Stored<String?>> read(String area, String key) =>
+      inner.read(area, key);
+
+  @override
+  Future<Stored<List<String>>> keys(String area, String prefix) =>
+      inner.keys(area, prefix);
+
+  @override
+  Future<Stored<void>> write(String area, Map<String, String> values) async {
+    if (!_fails()) return inner.write(area, values);
+    if (_lands()) await inner.write(area, values);
+    return const StorageFailed(DeviceFailure('disk full'));
+  }
 
   @override
   Future<Stored<void>> delete(String area, Iterable<String> keys) => _fails()
@@ -301,12 +357,15 @@ Future<MemoryEngine> seededEngine() async {
       AddStrategy(sampleStrategy(), createdAt: createdAt, updatedAt: createdAt),
     ]),
   );
+  await store.close();
   await engine.write('strategy/$strategyId', {
     'content/page-a/element/smoke': unreadableElementJson,
     'content/page-a/pin/pin-1': unknownRowJson,
     'content/page-a/element/garbled': garbledJson,
   });
-  savedValue(await (await openStore(engine)).rebuildSummary(strategyId));
+  final rebuilding = await openStore(engine);
+  savedValue(await rebuilding.rebuildSummary(strategyId));
+  await rebuilding.close();
   return engine;
 }
 

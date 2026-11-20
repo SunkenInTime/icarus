@@ -67,6 +67,20 @@ final class LibraryStore {
     required CanRead canRead,
     DateTime Function() clock = _now,
   }) async {
+    if (_held[engine] != null) return const StoreNotOpened(StoreAlreadyOpen());
+    _held[engine] = true;
+    final opening = await _open(engine, canRead, clock);
+    if (opening is StoreNotOpened) _held[engine] = null;
+    return opening;
+  }
+
+  static final _held = Expando<bool>();
+
+  static Future<StoreOpening> _open(
+    StorageEngine engine,
+    CanRead canRead,
+    DateTime Function() clock,
+  ) async {
     switch (await engine.read(journalArea, journalKey)) {
       case StorageFailed(:final failure):
         return StoreNotOpened(OpenStorageFailed(failure));
@@ -108,7 +122,10 @@ final class LibraryStore {
     unreadable: _unreadable.values.toList(),
   );
 
-  Future<void> close() => _inTurn(_changes.close);
+  Future<void> close() => _inTurn(() async {
+    await _changes.close();
+    _held[_engine] = null;
+  });
 
   Future<T> _inTurn<T>(FutureOr<T> Function() task) async {
     final previous = _tail;
@@ -546,6 +563,11 @@ final class LibraryStore {
     JournalRecord record,
     S Function() take,
   ) async {
+    for (final write in record.writes) {
+      if (write.key.length > _engine.maxKeyLength) {
+        return NotSaved(KeyTooLong(write.area, write.key));
+      }
+    }
     if (await record.save(_engine) case StorageFailed(:final failure)) {
       if (await JournalRecord.clear(_engine) case StorageFailed()) {
         _state = _Stopped(failure);
@@ -665,27 +687,47 @@ final class LibraryStore {
     if (await _loadPages(strategy, strategy.pageSegments) case final failure?) {
       return NotSaved(failure);
     }
-    final (createdAt, updatedAt) = switch (_summaries[strategyPublicId]) {
-      final summary? => (summary.createdAt, summary.updatedAt),
-      null => switch (await _engine.read(
-        libraryArea,
-        summaryKey(strategyPublicId),
-      )) {
-        Done(value: final String text) => _salvagedTimes(text) ?? _times(),
-        _ => _times(),
-      },
-    };
+    final (DateTime, DateTime) times;
+    switch (await _timesOf(strategyPublicId)) {
+      case Done(:final value):
+        times = value;
+      case StorageFailed(:final failure):
+        return NotSaved(failure);
+    }
+    final (createdAt, updatedAt) = times;
     final rebuilt = _summaryOf(strategy, createdAt, updatedAt);
     if (rebuilt == _summaries[strategyPublicId]) return const NothingToSave();
-    if (await _engine.write(libraryArea, {
-          summaryKey(strategyPublicId): canonicalJson(rebuilt.toJson()),
-        })
-        case StorageFailed(:final failure)) {
-      return NotSaved(failure);
+    final writes = KeyWrites()
+      ..put(
+        libraryArea,
+        summaryKey(strategyPublicId),
+        canonicalJson(rebuilt.toJson()),
+      );
+    return _save(
+      JournalRecord(
+        edit: {'rebuildSummary': strategyPublicId},
+        writes: writes.writes,
+      ),
+      () {
+        _summaries[strategyPublicId] = rebuilt;
+        _unreadable.remove(summaryKey(strategyPublicId));
+        return rebuilt;
+      },
+    );
+  }
+
+  Future<Stored<(DateTime, DateTime)>> _timesOf(String strategyPublicId) async {
+    if (_summaries[strategyPublicId] case final summary?) {
+      return Done((summary.createdAt, summary.updatedAt));
     }
-    _summaries[strategyPublicId] = rebuilt;
-    _unreadable.remove(summaryKey(strategyPublicId));
-    return Saved(rebuilt);
+    return switch (await _engine.read(
+      libraryArea,
+      summaryKey(strategyPublicId),
+    )) {
+      StorageFailed(:final failure) => StorageFailed(failure),
+      Done(value: final String text) => Done(_salvagedTimes(text) ?? _times()),
+      Done(value: null) => Done(_times()),
+    };
   }
 
   (DateTime, DateTime) _times() {
@@ -795,6 +837,14 @@ final class _LibraryEdit {
           return Refused(NoSuchFolder(folder));
         }
         final area = strategyArea(id);
+        switch (await _store._engine.keys(area, '')) {
+          case StorageFailed(:final failure):
+            return NotSaved(failure);
+          case Done(value: final keys) when keys.isNotEmpty:
+            return Refused(StrategyAlreadyInStore(id));
+          case Done():
+            break;
+        }
         _headers[id] = rows.strategy;
         for (final row in rows.rows) {
           _keys.put(area, rowKey(row), _stored(row));

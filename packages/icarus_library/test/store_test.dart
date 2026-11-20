@@ -494,16 +494,163 @@ void main() {
           final store = await openStore(
             CrashingEngine(disk, afterWrites: allowed),
           );
-          await store.editLibrary(edit);
+          final result = await store.editLibrary(edit);
           final reopened = MemoryEngine(disk.contents);
           await openStore(reopened);
           final rows = withoutJournal(reopened.contents);
-          expect(
-            sameContents(rows, withoutJournal(seeded)) ||
-                sameContents(rows, after),
-            isTrue,
-            reason: 'crash after $allowed',
+          final isBefore = sameContents(rows, withoutJournal(seeded));
+          final isAfter = sameContents(rows, after);
+          expect(isBefore || isAfter, isTrue, reason: 'crash after $allowed');
+          switch (result) {
+            case Saved():
+              expect(isAfter, isTrue, reason: 'saved, then lost at $allowed');
+            case NotSaved():
+              expect(isBefore, isTrue, reason: 'kept at $allowed');
+            case SaveInDoubt():
+              break;
+            case NothingToSave() || Refused():
+              fail('unexpected ${describeSaving(result)}');
+          }
+        }
+      },
+    );
+  });
+
+  group('Guards', () {
+    test('a second store on the same engine does not open', () async {
+      final disk = MemoryEngine(seeded);
+      final first = await openStore(disk);
+      expect(
+        await LibraryStore.open(disk, canRead: readsKnownKinds),
+        isA<StoreNotOpened>().having(
+          (opening) => opening.problem,
+          'problem',
+          isA<StoreAlreadyOpen>(),
+        ),
+      );
+      await first.close();
+      await (await openStore(disk)).close();
+    });
+
+    test('an edit whose keys the engine cannot hold is not saved', () async {
+      final disk = MemoryEngine(seeded);
+      final store = await openStore(LimitedEngine(disk, maxKeyLength: 60));
+      final result = await store.commit(
+        strategyId,
+        const PageAddOp(
+          opId: 'long',
+          pagePublicId:
+              'a-page-id-long-enough-to-pass-the-limit-of-this-engine',
+          sortIndex: 0,
+          expectedStrategyRevision: 1,
+          settings: defaultSettings,
+        ),
+      );
+      expect(
+        result,
+        isA<NotSaved<StrategyEdited, CommitRefusal>>().having(
+          (notSaved) => notSaved.failure,
+          'failure',
+          isA<KeyTooLong>(),
+        ),
+      );
+      expect(sameContents(disk.contents, seeded), isTrue);
+      expect(describeSaving(await store.commit(strategyId, moveJett)), 'saved');
+    });
+
+    test(
+      'a strategy cannot be added over rows already stored for it',
+      () async {
+        final disk = MemoryEngine({
+          'strategy/$strategyId': {'strategy': '{"publicId":"newer'},
+        });
+        final store = await openStore(disk);
+        expect(
+          await store.editLibrary([
+            AddStrategy(
+              sampleStrategy(),
+              createdAt: createdAt,
+              updatedAt: createdAt,
+            ),
+          ]),
+          isA<Refused<LibraryEdited, LibraryRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            isA<StrategyAlreadyInStore>(),
+          ),
+        );
+        expect(disk.contents['strategy/$strategyId'], {
+          'strategy': '{"publicId":"newer',
+        });
+      },
+    );
+
+    test(
+      'a rebuild whose write lands but fails is not shown after reopening',
+      () async {
+        final stale = {
+          ...seeded,
+          'strategy/$strategyId': {
+            ...seeded['strategy/$strategyId']!,
+            'content/page-b/element/neon': canonicalRow(
+              agent('neon', type: 'neon', pageId: 'page-b'),
+            ),
+          },
+        };
+        final disk = MemoryEngine(stale);
+        final flaky = FlakyEngine(disk);
+        final store = await openStore(flaky);
+        flaky.failing.add(flaky.calls);
+        flaky.landing.add(flaky.calls);
+        expect(
+          await store.rebuildSummary(strategyId),
+          isA<NotSaved<StrategySummary, CommitRefusal>>(),
+        );
+        final reopened = withoutJournal(await settledContentsOf(disk.contents));
+        expect(
+          reopened['library']!['summary/$strategyId'],
+          stale['library']!['summary/$strategyId'],
+        );
+      },
+    );
+
+    test(
+      'a crash while a summary is rebuilt leaves it before or after',
+      () async {
+        final stale = {
+          ...seeded,
+          'strategy/$strategyId': {
+            ...seeded['strategy/$strategyId']!,
+            'content/page-b/element/neon': canonicalRow(
+              agent('neon', type: 'neon', pageId: 'page-b'),
+            ),
+          },
+        };
+        final before = stale['library']!['summary/$strategyId'];
+        for (var allowed = 0; allowed < 3; allowed++) {
+          final cut = MemoryEngine(stale);
+          final store = await openStore(
+            CrashingEngine(cut, afterWrites: allowed),
           );
+          final result = await store.rebuildSummary(strategyId);
+          final stored = withoutJournal(
+            (await settledContentsOf(cut.contents)),
+          )['library']!['summary/$strategyId'];
+          switch (result) {
+            case Saved(:final value):
+              expect(value.agents, contains('neon'));
+              expect(
+                stored,
+                isNot(before),
+                reason: 'saved, then lost at $allowed',
+              );
+            case NotSaved():
+              expect(stored, before, reason: 'not saved, yet kept at $allowed');
+            case SaveInDoubt():
+              break;
+            case NothingToSave() || Refused():
+              fail('unexpected ${describeSaving(result)}');
+          }
         }
       },
     );

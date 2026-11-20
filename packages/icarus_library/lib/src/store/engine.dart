@@ -47,6 +47,8 @@ final class StoreStopped extends StorageFailure {
 }
 
 abstract interface class StorageEngine {
+  int get maxKeyLength;
+
   Future<Stored<String?>> read(String area, String key);
 
   Future<Stored<List<String>>> keys(String area, String prefix);

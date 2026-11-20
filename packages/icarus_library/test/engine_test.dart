@@ -150,4 +150,26 @@ void main() {
       await reopenedEngine.close();
     },
   );
+
+  test('a second hive engine on another directory is refused', () async {
+    final other = await Directory.systemTemp.createTemp('icarus-store-other-');
+    final first = HiveEngine(directory.path);
+    done(await first.write('library', {'a': 'b'}));
+    final second = HiveEngine(other.path);
+    expect(await second.read('library', 'a'), isA<StorageFailed<String?>>());
+    await first.close();
+    expect(done(await second.read('library', 'a')), isNull);
+    await second.close();
+    await other.delete(recursive: true);
+  });
+
+  test('a box that failed to open is opened again on the next call', () async {
+    final blocker = Directory('${directory.path}/icarus_store_library.hive');
+    await blocker.create();
+    final engine = HiveEngine(directory.path);
+    expect(await engine.read('library', 'a'), isA<StorageFailed<String?>>());
+    await blocker.delete();
+    expect(done(await engine.read('library', 'a')), isNull);
+    await engine.close();
+  });
 }

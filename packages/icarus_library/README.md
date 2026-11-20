@@ -156,7 +156,14 @@ Every save returns a `Saving`, which the caller has to handle:
   land is finished, so the edit is there; one that did not leaves the rows as
   they were.
 
-Saves and reads run one at a time, in the order they were called.
+Saves and reads run one at a time, in the order they were called. Only one
+`LibraryStore` can be open on an engine at a time; a second `open` returns
+`StoreNotOpened(StoreAlreadyOpen)` until the first is closed. Hive names its
+boxes without the directory, so one process can use only one `HiveEngine`
+directory at a time; an engine on a second directory gets `StorageFailed`.
+Before a record is saved, every key in it is checked against the engine's
+`maxKeyLength` (255 for Hive), and an edit with a longer key is `NotSaved`
+with `KeyTooLong`, so a record the engine can never replay is never written.
 
 ### Reading
 
@@ -172,8 +179,10 @@ another key, or whose kind under `content/<page>/` is unknown is carried as an
 `UnreadableRow`: its area, key, text exactly as stored, and why. An element
 that decodes as an `UnreadableElement` stays in `PageContent.elements`. The
 store never writes a key that holds a row it cannot read: an edit that would
-is refused with `UnreadableRowInTheWay`. Rows are written as canonical JSON
-of `toJson()`.
+is refused with `UnreadableRowInTheWay`, and `AddStrategy` is refused when
+any key is already stored for that strategy. The one exception is
+`RemoveStrategy`: the user deleting a strategy deletes every key it has,
+these rows included. Rows are written as canonical JSON of `toJson()`.
 
 ### Summaries
 
@@ -182,7 +191,8 @@ live page count, `Sides` (attack, defend or mixed), the agents placed on live
 pages, and how many items they hold. It also keeps a tally per page, so
 trashing a page updates the counts without reading that page. Every commit
 writes the new summary in the same record as its rows. `rebuildSummary`
-recomputes it from the rows and keeps the times, since no row holds them.
+recomputes it from the rows, keeps the times since no row holds them, and
+saves it through a record like any edit.
 When the store opens and cannot read a summary, it rebuilds it, taking
 `createdAt` and `updatedAt` from the unreadable summary when they are whole
 milliseconds. A later summary version must keep those two fields.

@@ -40,7 +40,36 @@ final class _LazyBox extends _Box {
 final class HiveEngine implements StorageEngine {
   HiveEngine(this.directory);
 
+  static String? _directoryInUse;
+  static var _enginesOpen = 0;
+
   final String? directory;
+  var _holdsDirectory = false;
+
+  @override
+  int get maxKeyLength => _maxKeyLength;
+
+  Future<Stored<_Box>> _box(String area) async {
+    if (!_holdsDirectory) {
+      if (_enginesOpen > 0 && _directoryInUse != directory) {
+        return StorageFailed(
+          DeviceFailure(
+            'Hive already holds the store boxes for $_directoryInUse',
+          ),
+        );
+      }
+      _directoryInUse = directory;
+      _enginesOpen++;
+      _holdsDirectory = true;
+    }
+    final opening = _boxes[area] ??= _openBox(area);
+    final opened = await opening;
+    if (opened is StorageFailed<_Box>) {
+      _boxes.removeWhere((_, value) => identical(value, opening));
+    }
+    return opened;
+  }
+
   final _boxes = <String, Future<Stored<_Box>>>{};
 
   static String boxName(String area) => switch (area) {
@@ -48,7 +77,7 @@ final class HiveEngine implements StorageEngine {
     _ => 'icarus_store_${sha1.convert(utf8.encode(area))}',
   };
 
-  Future<Stored<_Box>> _box(String area) => _boxes[area] ??= guarded(
+  Future<Stored<_Box>> _openBox(String area) => guarded(
     () async => switch (area) {
       journalArea => _HeldBox(
         await Hive.openBox<String>(
@@ -112,5 +141,9 @@ final class HiveEngine implements StorageEngine {
       if (await opening case Done(value: final box)) await box.box.close();
     }
     _boxes.clear();
+    if (_holdsDirectory) {
+      _holdsDirectory = false;
+      _enginesOpen--;
+    }
   }
 }
