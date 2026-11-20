@@ -384,32 +384,44 @@ and `CommitUnknown` all or none, never part.
 | Web | `IndexedDbEngine(name)` | `package:icarus_library/indexed_db_storage.dart` |
 | Tests | `MemoryEngine(storage)` | `package:icarus_library/icarus_library.dart` |
 
-Both real engines pass `engineContract` (`test/sqlite/sqlite_engine_test.dart`
-on real files, `test/sqlite/sqlite_fault_test.dart` on a disk that loses
-power, `test/indexed_db/indexed_db_engine_test.dart` in Chrome).
+Both real engines pass `engineContract`: `test/sqlite/sqlite_engine_test.dart`
+runs it on real files, `test/sqlite/sqlite_fault_test.dart` on a disk that
+loses power, and `test/indexed_db/indexed_db_engine_test.dart` in Chrome.
+Each engine keeps every area in one table or object store keyed by area and
+key, so one commit can change any number of areas inside a single database
+transaction. That transaction is what makes a save all or nothing.
 
 #### SQLite
 
 The library is one file holding one table, `rows (area, key, value)`, keyed by
-area and key, plus a one-row table `generation`. The engine runs no other
-SQL: no domain logic, no ORM. It uses `package:sqlite3`, which bundles
-SQLite as a native library through build hooks, so the app needs no build
-step of its own. The version is held below 3.6 because later ones need a
-`hooks` package newer than Flutter 3.44.4 allows.
+area and key, plus a one-row table `generation`. The key column uses SQLite's
+default binary collation, so names compare exactly and case-sensitively, and a
+prefix is the range from the prefix up to the next string after it. The engine
+runs no other SQL: no domain logic, no ORM. It uses `package:sqlite3`, which
+bundles SQLite as a native library through build hooks, so the app needs no
+build step of its own. The version is held below 3.6 because later ones need
+a `hooks` package newer than Flutter 3.44.4 allows.
 
+- **A commit is one transaction.** `BEGIN IMMEDIATE`, every put, delete and
+  area clear, then `COMMIT`. A failure before `COMMIT` rolls back and is
+  `CommitRefused`: nothing reached the log with a commit mark, so nothing can
+  come back. A failure at or after `COMMIT` is `CommitUnknown`, because the
+  log may hold the transaction.
 - **Durability.** The file is in write-ahead log mode with
-  `synchronous = FULL`: SQLite syncs the log before a commit returns, so a
-  write that returned `Done` survives a power cut (in `NORMAL` it can roll
-  back). On macOS `fullfsync` is on, because a plain sync there does not
-  flush the drive's cache. Each `write` or `delete` call is one transaction.
+  `synchronous = FULL`: SQLite syncs the log before `COMMIT` returns, so a
+  commit that returned `CommitApplied` survives a power cut (in `NORMAL` it
+  can roll back). On macOS `fullfsync` is on, because a plain sync there does
+  not flush the drive's cache.
 - **One writer.** The connection takes an exclusive lock on the file and holds
   it until the lease is released (`locking_mode = EXCLUSIVE`). Another
   connection in any isolate or process gets `SQLITE_BUSY` at once, which the
   engine returns as `HeldByAnotherWriter`. Exclusive mode also means SQLite
-  keeps the log's index in memory instead of a shared `-shm` file.
+  keeps the log's index in memory, not in a shared `-shm` file.
 - **Off the UI thread.** SQLite's API blocks, so each lease runs it on its own
   isolate and answers one request at a time, in order. A release is queued
-  behind the writes already sent, so they land before the lock is let go.
+  behind the commits already sent, so they land before the lock is let go. If
+  that isolate dies, every call waiting on it gets a value: a commit is
+  `CommitUnknown`, a read is a failure.
 - **Opening checks the whole file.** `PRAGMA integrity_check` runs on every
   open. The quicker `quick_check` let a library with flipped bits open with
   8 of 41 strategies missing and no error; `integrity_check` also compares
@@ -420,16 +432,20 @@ step of its own. The version is held below 3.6 because later ones need a
   program's database or from a newer build is refused, and so is a missing
   file whose `-wal` log is still there. Nothing is ever opened as a new, empty
   library in place of one that existed.
-- **After a failed write** the log can still hold that transaction's frames,
-  and they would come back on the next open. So the next transaction that
-  succeeds also bumps `generation`; it writes over those frames, and from
-  then on the failed write can never return. Without this the store reported
-  an edit as not saved that came back after a restart.
+- **After an unknown commit** the log can still hold that transaction's
+  frames, and they would come back on the next open. So the next transaction
+  that succeeds also bumps `generation`; it writes over those frames, and from
+  then on the unknown commit can never return.
 - **Failures.** A full disk, an I/O error, a locked or unreadable file is a
-  `StorageFailed(DeviceFailure)` naming SQLite's error code. SQLite can
-  describe damage with bytes that are not UTF-8; `package:sqlite3` throws a
-  `FormatException` for that, and the engine returns it as a failure too.
-- **Keys** are at most 1024 characters.
+  `DeviceFailure` naming SQLite's error code. SQLite can describe damage with
+  bytes that are not UTF-8; `package:sqlite3` throws a `FormatException` for
+  that, and the engine returns it as a failure too.
+- **Keys** are at most 1024 characters. A commit that puts a longer name is
+  `CommitRefused(KeyTooLong)`; reading one is `KeyMissing`.
+- **Closing** ends every lease the engine granted, and the engine grants no
+  more (`LeaseFailed(EngineClosed)`).
+- `SqliteEngine.holdNextCommit()` parks the next commit on the worker isolate
+  until it is let go, for the contract's pending-write checks.
 - Switching a checkout between a branch with `sqlite3` and one without can
   leave Flutter's hook cache pointing at a deleted download
   (`install_code_assets failed`). Deleting `.dart_tool/hooks_runner` and
@@ -438,32 +454,36 @@ step of its own. The version is held below 3.6 because later ones need a
 #### IndexedDB
 
 The library is one database named by the caller, with one object store,
-`rows`, whose keys are `[area, key]`. There is no SQLite and no WebAssembly
-on the web.
+`rows`, whose keys are `[area, key]`. IndexedDB compares those arrays by code
+unit, exactly, and a prefix is a key range from `[area, prefix]` up to the
+next string after the prefix. There is no SQLite and no WebAssembly on the
+web.
 
-- **A write resolves when its transaction fires `complete`**, never on a
-  request's `success`; an `abort` is a `StorageFailed` naming the browser's
-  error (`QuotaExceededError` for a full quota). Transactions ask for
-  `durability: 'strict'`, which Chrome (83+), Firefox (126+) and Safari (15+)
-  honour by flushing to disk before `complete`.
+- **A commit is one `readwrite` transaction** holding every put, delete and
+  area clear (a delete over the area's key range). It is `CommitApplied` when
+  the transaction fires `complete`, never on a request's `success`. An
+  `abort` rolls the whole transaction back, so it is `CommitRefused` naming
+  the browser's error (`QuotaExceededError` for a full quota).
+- **Durability.** Transactions ask for `durability: 'strict'`. The spec lets a
+  browser report a strict transaction complete only after verifying its
+  changes reached persistent storage. Chrome (83+) flushes before `complete`,
+  Firefox (129+) runs its SQLite store with `synchronous = EXTRA` for strict
+  transactions, and Safari (15+) checkpoints its SQLite log after the commit.
+  The default, without `strict`, flushes in none of them.
 - **One writer per origin.** A lease holds a Web Lock named after the
   database, taken with `ifAvailable`, so another tab, frame or worker gets
   `HeldByAnotherWriter` at once. The lock is released when the lease is, or
   when the tab closes or crashes. A page without Web Locks (a plain `http`
   origin that is not `localhost`) cannot hold the library and gets
   `LeaseFailed`.
-- **Release waits for writes in flight**, then closes the database and lets
+- **Release waits for commits in flight**, then closes the database and lets
   go of the lock. The browser would order them anyway: a transaction started
   by the next holder waits for every overlapping transaction created before
   it.
-- **Keys** are at most 1024 characters.
-
-#### Reading a range in one call
-
-Both leases also have `entries(area, prefix)`, which returns every key under
-a prefix with its value: one SQL query, or one IndexedDB transaction with
-`getAllKeys` and `getAll` over the same range. It is not in `StorageLease`
-yet.
+- **Keys** are at most 1024 characters, with the same rules as SQLite.
+- **Closing** ends every lease and grants no more.
+- `IndexedDbEngine.holdNextCommit()` parks the next commit before its
+  transaction starts, counted as a commit in flight.
 
 #### What the tests simulate, and what they cannot
 
@@ -478,26 +498,31 @@ yet.
   unsynced, or keeping a random part of it in 512-byte pieces and a random
   prefix of directory changes (writes reordered and torn). It cannot show a
   drive that reports a sync it did not do, a torn write inside one 512-byte
-  piece, or how a real file system orders its metadata.
+  piece, or how a real file system orders its metadata. Power loss is tested
+  only on this model, never on real files.
 - `test/sqlite/sqlite_engine_test.dart` uses real files and real processes:
-  a second isolate and a second process are refused the lease, writes in
+  a second isolate and a second process are refused the lease, commits in
   flight when one process releases land before another process gets the
   lease, and a writer process is killed at 24 random points and the library
-  reopened in this one. A killed process is not a power cut: the operating
-  system still writes what the process had written.
+  reopened in this one. Each kill checks that a commit across three areas,
+  including an area clear, is wholly there or wholly absent. A killed process
+  is not a power cut: the operating system still writes what the process had
+  written.
 - `test/indexed_db/indexed_db_engine_test.dart` runs in Chrome. It aborts a
-  transaction after its first request succeeded, reports a quota error the
-  way Chrome does (by patching `IDBObjectStore`), refuses a second lease on
-  the origin, and hands the library to a worker while writes are in flight.
-  It cannot crash the browser, cut its power, or test Firefox or Safari.
+  transaction after its first request succeeded, including a commit across
+  three areas with an area clear, reports a quota error the way Chrome does
+  (by patching `IDBObjectStore`), refuses a second lease on the origin, and
+  hands the library to a worker while commits are in flight. It cannot crash
+  the browser, cut its power, or test Firefox or Safari.
 - `test/memory_crash_test.dart` runs the same crash checks on `MemoryEngine`.
 
-The crash checks are in `test/crash_harness.dart`: after a crash at every
-step of every op type, the rows are those from before the edit or after it,
-a `Saved` edit is never lost, a `NotSaved` one never appears, and reopening
-can be cut short again and again; and for raw writes, every acknowledged
-write is there, the one in flight is wholly there or wholly absent, and no
-other row changed.
+The crash checks are in `test/crash_harness.dart`. For the store: after a
+crash at every step of every op type, the rows are those from before the edit
+or after it, a `Saved` edit is never lost, a `NotSaved` one never appears, and
+reopening can be cut short again and again. For the engine: random commits
+across areas with puts, deletes and area clears, crashed at a random step;
+every applied commit is there, a refused one left nothing, an unknown one is
+wholly there or wholly absent, and no other row changed.
 
 ### Where rows are kept
 

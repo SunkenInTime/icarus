@@ -116,14 +116,23 @@ store shares, so it is sent as before.
   synced to disk, compaction renames an unsynced file over the box, the web
   backend reports a write done before IndexedDB commits it, recovery
   truncates every frame after a damaged one, and a write of several keys is
-  not all or nothing. Patching it would make us the maintainers of a storage
-  format.
+  not all or nothing. The last one decides it: the store saves an edit as
+  one commit across areas and relies on the engine to apply it whole or not
+  at all. Patching Hive would make us the maintainers of a storage format.
+- **SQLite on the desktop and IndexedDB on the web, chosen.** Each keeps all
+  of the library in one table or object store keyed by area and key, so one
+  database transaction holds every change an edit makes, in any number of
+  areas. That transaction is what makes a save all or nothing, and its
+  commit is the one sync a save waits for: SQLite in write-ahead log mode
+  with `synchronous = FULL`, IndexedDB with `durability: 'strict'`. Single
+  ownership comes from the same place: SQLite's exclusive file lock, and a
+  Web Lock per origin.
 - **SQLite on the web, through WebAssembly.** It would give one engine
   everywhere, at the cost of a 750 KB `sqlite3.wasm` download and a file
   system emulated over IndexedDB or OPFS, which brings back the durability
   question one layer down. IndexedDB used directly already has what the store
-  needs: one transaction per write, a `complete` event after the commit, and
-  strict durability.
+  needs: one transaction for a whole commit, a `complete` event after it is
+  stored, and strict durability.
 - **A storage format of our own.** Nothing measured below needs one.
 
 ## Where the store's rows live
@@ -147,31 +156,27 @@ What decided it:
   check let a damaged file open with strategies missing.
 - **Costs**, on release builds (`bin/engine_costs.dart` ahead of time, and
   `dart compile js -O4` in headless Chrome 157). The library holds 700
-  strategies (55 MiB on disk), one of them with 20 pages of 300 items whose
+  strategies (57 MiB on disk), one of them with 20 pages of 300 items whose
   first page is half 1000-point drawings. Figures are medians of three runs
-  (each of 15 opens, 60 saves or 200 moves) on a Ryzen 7 5700U with a Kingston
-  NVMe drive, under load from other agents (load average 5 to 10):
+  (each of 15 opens, 60 saves or 200 commits) on a Ryzen 7 5700U with a
+  Kingston NVMe drive, with other agents using it (load average 3 to 5); the
+  ext4 column is one run:
 
   | | Memory (floor) | SQLite, XFS | SQLite, ext4 | Memory in Chrome | IndexedDB, Chrome |
   | --- | --- | --- | --- | --- | --- |
-  | Cold start, list 700 strategies | 8.8 ms | 41.3 ms | 48.5 ms | 11.9 ms | 24.5 ms |
-  | Open the 20-page strategy | 24.4 ms | 25.3 ms | 25.2 ms | 14.8 ms | 53.5 ms |
-  | Cold read of a 300-item page | 174 ms | 165 ms | 198 ms | 165 ms | 199 ms |
-  | Save one moved item | 0.2 ms | 23.3 ms | 6.3 ms | 0.5 ms | 9.1 ms |
-  | Save a 1000-point drawing | 9.5 ms | 36.5 ms | 19.3 ms | 11.2 ms | 20.8 ms |
-  | 200 moves, each awaited: p50 / p95 | 0.15 / 0.19 ms | 24.6 / 35.4 ms | 6.2 / 9.4 ms | 0.2 / 0.4 ms | 8.2 / 11.0 ms |
-  | 200 moves issued at once, issue to saved: p50 / p95 | 16 / 32 ms | 2.5 / 5.2 s | 0.63 / 1.2 s | 38 / 64 ms | 0.87 / 1.6 s |
-  | One engine write of one small key | — | 5.6 ms | 1.3 ms | — | 1.7 ms |
+  | Cold start, list 700 strategies | 13.6 ms | 35.7 ms | 40.5 ms | 12.8 ms | 22.3 ms |
+  | Open the 20-page strategy | 21.3 ms | 20.7 ms | 21.2 ms | 15.6 ms | 49.3 ms |
+  | Cold read of a 300-item page | 163 ms | 159 ms | 176 ms | 168 ms | 195 ms |
+  | One commit shaped like a save (an element row and a summary, two areas): p50 / p95 | 0 ms | 5.3 / 6.6 ms | 1.8 / 2.3 ms | 0 ms | 2.1 / 2.8 ms |
+  | 200 such commits, each awaited: p50 / p95 | 0 ms | 5.4 / 7.9 ms | 1.4 / 2.1 ms | 0 ms | 2.0 / 4.2 ms |
+  | 200 such commits issued at once, all applied after | 1.1 ms | 1.18 s | 0.32 s | 2.0 ms | 0.40 s |
+  | Remove a 20-page, 6,000-item strategy in one commit | 0.01 ms | 14.8 ms | 7.8 ms | 0.1 ms | 50.2 ms |
 
-  A page read costs the same on every engine because decoding 150 drawings
-  dominates it. A save is the store's four engine calls (the saved record,
-  two areas of rows, clearing the record), each one synced transaction, so
-  on SQLite a save costs about four single writes. Saves happen behind the
-  canvas and never delay an edit on screen, but they do bound how fast the
-  saved state can keep up: on the loaded XFS disk SQLite saves about 40 edits
-  a second, so a burst of 200 moves takes 5.5 seconds to be saved. The ext4
-  numbers are one run; macOS, where `fullfsync` makes each sync slower, is
-  not measured.
+  A page read costs about the same on every engine because decoding 150
+  drawings dominates it. A save is one commit and one sync, so a save costs
+  one synced transaction; commits issued faster than that queue behind each
+  other, about 190 a second on the loaded XFS disk. macOS, where `fullfsync`
+  makes each sync slower, is not measured.
 - **Size.** On Linux the release bundle grows by 1,801,745 bytes, the SQLite
   library itself, and the engine's Dart code adds 98,304 bytes to `libapp.so`
   once the app uses it. The Windows library is 1,709,056 bytes, and macOS
