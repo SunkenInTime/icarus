@@ -1,10 +1,8 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/const/weapons.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 PlacedAbility _tide() => PlacedAbility(
@@ -39,9 +37,15 @@ void main() {
     expect(read.wallPath?.isNotEmpty ?? false, isFalse);
   });
 
-  test('a missing weapon reads as the app\'s no weapon', () {
+  test('an agent saved without a weapon reads as the table\'s default', () {
     final rule = fieldDefaults.whereType<DefaultBeside>().single;
-    expect((rule.sibling, rule.field, rule.value),
-        ('state', 'weapon', WeaponType.none.name));
+    final json = jsonDecode(jsonEncode(PlacedAgent(
+      id: 'jett',
+      type: AgentType.jett,
+      position: const Offset(1, 1),
+    ).toJson())) as Map<String, dynamic>;
+    expect(json.containsKey(rule.sibling), isTrue);
+    json.remove(rule.field);
+    expect(PlacedAgent.fromJson(json).weapon.name, rule.value);
   });
 }

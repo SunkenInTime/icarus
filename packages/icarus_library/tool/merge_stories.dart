@@ -114,6 +114,26 @@ final _zone = _element('zone', ElementKind.utility, {
   'isZone': true,
 });
 
+final _photo = _element('photo', ElementKind.image, {
+  'position': {'x': 10, 'y': 10},
+  'scale': 1,
+  'sizeVersion': 1,
+});
+
+final _raze = _element('raze', ElementKind.agent, {
+  'type': 'raze',
+  'position': {'x': 11, 'y': 11},
+  'rotation': 0,
+  'length': 30,
+});
+
+final _smoke = _element('smoke', ElementKind.ability, {
+  'type': 'cloudburst',
+  'position': {'x': 12, 'y': 12},
+  'rotation': 0,
+  'length': 30,
+});
+
 final _line = _element('line', ElementKind.drawing, {
   'listOfPoints': [
     {'x': 0, 'y': 0},
@@ -199,6 +219,9 @@ final storyRows = StrategyRowSet(
     _wall,
     _door,
     _zone,
+    _photo,
+    _raze,
+    _smoke,
   ],
   lineupGroups: [_group],
 );
@@ -238,6 +261,7 @@ ElementPatchOp _edit(
 }) => elementEditOp(
   opId: opId,
   base: base,
+  drawnRevision: base.revision,
   payload: _with(base, changes),
   sortIndex: sortIndex ?? base.sortIndex,
   connection: connection,
@@ -319,6 +343,7 @@ LineupGroupPatchOp _groupEdit(
 }) => lineupEditOp(
   opId: opId,
   base: _group,
+  drawnRevision: _group.revision,
   payload: payload,
   sortIndex: sortIndex ?? _group.sortIndex,
   connection: connection,
@@ -487,6 +512,77 @@ List<MergeStory> mergeStories() {
         'zone': {
           'position': {'x': 1, 'y': 5},
           'isZone': true,
+        },
+      },
+    ),
+    MergeStory(
+      'scaling an image keeps its position with its scale over a teammate\'s '
+      'move',
+      ops: [
+        _edit('move', _photo, {
+          'position': {'x': 1, 'y': 1},
+        }),
+        _edit('scale', _photo, {'scale': 2}),
+      ],
+      outcomes: [_applied, _applied],
+      expected: {
+        'photo': {
+          'position': {'x': 10, 'y': 10},
+          'scale': 2,
+        },
+      },
+    ),
+    MergeStory(
+      'turning an agent\'s view cone keeps its length with the turn',
+      ops: [
+        _edit('lengthen', _raze, {'length': 60}),
+        _edit('turn', _raze, {'rotation': 90}),
+      ],
+      outcomes: [_applied, _applied],
+      expected: {
+        'raze': {'rotation': 90, 'length': 30},
+      },
+    ),
+    MergeStory(
+      'turning an ability keeps its length with the turn',
+      ops: [
+        _edit('lengthen', _smoke, {'length': 60}),
+        _edit('turn', _smoke, {'rotation': 90}),
+      ],
+      outcomes: [_applied, _applied],
+      expected: {
+        'smoke': {'rotation': 90, 'length': 30},
+      },
+    ),
+    MergeStory(
+      'turning a view cone keeps its length with the turn',
+      ops: [
+        _edit('lengthen', _cone, {'length': 60}),
+        _edit('turn', _cone, {'rotation': 90}),
+      ],
+      outcomes: [_applied, _applied],
+      expected: {
+        'cone': {'rotation': 90, 'length': 30},
+      },
+    ),
+    MergeStory(
+      'a lineup note edited offline after a teammate edited it waits for the '
+      'user',
+      ops: [
+        _groupEdit('note-online', _groupWith(notes: {'k0': 'jump throw'})),
+        _groupEdit(
+          'note-offline',
+          _groupWith(notes: {'k0': 'run throw'}),
+          connection: Connection.offline,
+        ),
+      ],
+      outcomes: [_applied, _rejected('field_conflict')],
+      expected: {
+        'g0': {
+          'links': [
+            _link('k0', 'o0', 'l0', 'jump throw'),
+            _link('k1', 'o1', 'l1', ''),
+          ],
         },
       },
     ),

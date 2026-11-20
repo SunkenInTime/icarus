@@ -601,6 +601,7 @@ final class _Apply {
     final restored = <String, Object?>{...before.payload.data};
     for (final field in write.dataFields) {
       if (before.payload.data.containsKey(field)) continue;
+      if (field == pictureIdField) return const UndoUnavailable();
       switch (laterField(before.payload.kind, field)?.empty) {
         case null:
           break;

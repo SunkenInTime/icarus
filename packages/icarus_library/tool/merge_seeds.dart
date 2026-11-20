@@ -97,6 +97,7 @@ Map<String, Object?> _scenario(
         op = elementEditOp(
           opId: opId,
           base: row,
+          drawnRevision: row.revision,
           payload: changed(row, pick(fieldsOf(row, sideOnly: false))),
           sortIndex: rng.nextInt(5) == 0 ? rng.nextInt(4) : row.sortIndex,
           connection: Connection.live,
@@ -108,6 +109,7 @@ Map<String, Object?> _scenario(
         op = elementEditOp(
           opId: opId,
           base: base,
+          drawnRevision: base.revision,
           payload: changed(base, pick(fieldsOf(base, sideOnly: true))),
           sortIndex: base.sortIndex,
           connection: Connection.offline,
@@ -123,6 +125,7 @@ Map<String, Object?> _scenario(
         op = elementEditOp(
           opId: opId,
           base: base,
+          drawnRevision: base.revision,
           payload: base.payload,
           sortIndex: base.sortIndex + 1 + rng.nextInt(2),
           connection: Connection.offline,
@@ -135,6 +138,7 @@ Map<String, Object?> _scenario(
         op = lineupEditOp(
           opId: opId,
           base: base,
+          drawnRevision: base.revision,
           payload: base.payload,
           sortIndex: base.sortIndex + 1 + rng.nextInt(2),
           connection: offline ? Connection.offline : Connection.live,

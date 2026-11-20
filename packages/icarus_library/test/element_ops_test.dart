@@ -419,6 +419,15 @@ void main() {
     expect(session.dataOf('tide')['wallPath'], isEmpty);
   });
 
+  test('undo of a first picture id is not offered, since a write that '
+      'leaves it out keeps it', () {
+    final session = Session(strategyRows(elements: [jett]));
+    final pictured = session.apply(
+      moveAgent('picture', jett, {'assetId': 'asset-1'}, merged: ['assetId']),
+    );
+    expect(pictured.undo, isA<UndoUnavailable>());
+  });
+
   test('undo of a first map door is not offered, since a door is never '
       'cleared', () {
     final shape = LiveElement(

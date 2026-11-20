@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'field_rules.dart';
 import 'json.dart';
 import 'ops.dart';
@@ -219,50 +221,67 @@ FieldMerge _editMerge(
 ElementPatchOp elementEditOp({
   required String opId,
   required LiveElement base,
+  required int drawnRevision,
   required ElementPayload payload,
   required int sortIndex,
   required Connection connection,
-}) => ElementPatchOp(
-  opId: opId,
-  elementPublicId: base.publicId,
-  expectedElementRevision: base.revision,
-  payload: payload,
-  sortIndex: sortIndex,
-  merge: switch (elementEdit(base.payload, payload)) {
-    WholeEdit() => null,
-    FieldEdit(:final fields) => _editMerge(
-      fields,
-      _elementReader(base.payload.data),
-      baseSortIndex: base.sortIndex,
-      sortIndex: sortIndex,
-      connection: connection,
+}) {
+  ElementPatchOp patch(FieldMerge? merge, int expected) => ElementPatchOp(
+    opId: opId,
+    elementPublicId: base.publicId,
+    pagePublicId: base.pagePublicId,
+    expectedElementRevision: expected,
+    payload: payload,
+    sortIndex: sortIndex,
+    merge: merge,
+  );
+  return switch (elementEdit(base.payload, payload)) {
+    WholeEdit() => patch(null, math.min(base.revision, drawnRevision)),
+    FieldEdit(:final fields) => patch(
+      _editMerge(
+        fields,
+        _elementReader(base.payload.data),
+        baseSortIndex: base.sortIndex,
+        sortIndex: sortIndex,
+        connection: connection,
+      ),
+      base.revision,
     ),
-  },
-);
+  };
+}
 
 LineupGroupPatchOp lineupEditOp({
   required String opId,
   required LiveLineupGroup base,
+  required int drawnRevision,
   required LineupGroupPayload payload,
   required int sortIndex,
   required Connection connection,
-}) => LineupGroupPatchOp(
-  opId: opId,
-  lineupPublicId: base.publicId,
-  expectedLineupRevision: base.revision,
-  payload: payload,
-  sortIndex: sortIndex,
-  merge: switch (lineupEdit(base.payload, payload)) {
-    WholeEdit() => null,
-    FieldEdit(:final fields) => _editMerge(
-      fields,
-      _lineupBaseReader(base.payload.data),
-      baseSortIndex: base.sortIndex,
-      sortIndex: sortIndex,
-      connection: connection,
+}) {
+  LineupGroupPatchOp patch(FieldMerge? merge, int expected) =>
+      LineupGroupPatchOp(
+        opId: opId,
+        lineupPublicId: base.publicId,
+        pagePublicId: base.pagePublicId,
+        expectedLineupRevision: expected,
+        payload: payload,
+        sortIndex: sortIndex,
+        merge: merge,
+      );
+  return switch (lineupEdit(base.payload, payload)) {
+    WholeEdit() => patch(null, math.min(base.revision, drawnRevision)),
+    FieldEdit(:final fields) => patch(
+      _editMerge(
+        fields,
+        _lineupBaseReader(base.payload.data),
+        baseSortIndex: base.sortIndex,
+        sortIndex: sortIndex,
+        connection: connection,
+      ),
+      base.revision,
     ),
-  },
-);
+  };
+}
 
 MergeOutcome<ElementPayload> mergeElementPayload(
   ElementPayload current,
