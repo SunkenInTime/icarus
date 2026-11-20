@@ -44,12 +44,37 @@ decodes a payload into a typed item at the edge of the editor.
 
 ## Rules the store keeps
 
+- An edit is saved as its op before anything else is written. In a cloud
+  strategy the pending op is the only saved form of the edit: the rows the
+  user sees are worked out by applying pending ops to the base, and the base
+  changes only when the server confirms. In a local strategy the op is saved,
+  then applied to the rows, then cleared, and an op found at startup is
+  applied again. Applying an op twice gives the same rows as applying it
+  once. So a crash can never leave a changed row without the op that changed
+  it.
 - A row this build cannot read is carried untouched. It is never dropped,
   rewritten or inferred as deleted, whether it failed to decode or is a kind
   from a newer build.
 - The library list reads summaries, never page content. Opening a page reads
   that page's rows. Saving an edit writes the rows it changed.
-- Sync status is derived from the store: synced means no pending op remains.
+- Sync status is derived from the store: a cloud strategy is synced when it
+  has no pending op. A local strategy has nothing to send and no sync status.
+
+## Coming back from an older build
+
+A user can install an older build over a newer one, edit there, and update
+again. The older build writes only the Hive boxes. The store remembers, for
+each local strategy, the Hive record it last wrote or read. At startup:
+
+- Hive record unchanged: nothing to do. If the store is ahead because a
+  write to Hive was cut short, Hive is written again.
+- Hive record changed and the store has nothing newer: the older build's
+  edits are taken into the store.
+- Both changed: neither is discarded. The store keeps its strategy, the Hive
+  record comes in beside it as a copy, and the user is told which is which.
+
+Cloud work an older build queued is in outbox records, whose format the
+store shares, so it is sent as before.
 
 ## Considered options
 
@@ -66,9 +91,9 @@ decodes a payload into a typed item at the edge of the editor.
   move-to-cloud copy in place.
 - **SQLite.** Better transactions and queries, at the cost of a new native
   dependency on three desktop platforms and WebAssembly on the web. Access
-  here is by key, per strategy and page, and ops are idempotent, so the store
-  does not need a transaction across keys. Hive already ships on every
-  platform and holds the outbox.
+  here is by key, per strategy and page, and because every edit is saved as
+  its op first, the store does not need a transaction across keys. Hive
+  already ships on every platform and holds the outbox.
 
 ## Consequences
 

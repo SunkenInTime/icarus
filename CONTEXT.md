@@ -128,6 +128,7 @@ A cloud strategy's rows as the server last confirmed them.
 _Avoid_: snapshot, server copy
 
 **Pending op**:
-An op the store holds that the server has not accepted yet. What the user
-sees is the base with the pending ops applied.
+In a cloud strategy, an op the store holds that the server has not accepted
+yet. What the user sees is the base with the pending ops applied. A local
+strategy has no pending ops.
 _Avoid_: overlay, unsynced change
