@@ -4,6 +4,9 @@ import 'dart:math';
 
 import 'package:icarus_library/icarus_library.dart';
 
+import 'merge_seeds.dart';
+import 'merge_stories.dart';
+
 const _strategyId = 's1';
 const _largestSafeInteger = 9007199254740991;
 const _maxArrayEntries = 8000;
@@ -26,6 +29,13 @@ void main(List<String> args) {
         for (var seed = from; seed < from + count; seed++)
           _Generator(seed, corpus).scenario(length),
       ]);
+    case ['stories', final out]:
+      Map<String, Object?> rowsJson(StrategyRowSet rows) =>
+          _rowsJson(rows, const []);
+      _write(out, [
+        for (final story in mergeStories()) _story(story),
+        ...mergeSeedScenarios(rowsJson, _outcome),
+      ]);
     case ['replay', final input, final out]:
       final recorded = jsonDecode(File(input).readAsStringSync());
       if (recorded is! Map<String, Object?>) {
@@ -38,7 +48,8 @@ void main(List<String> args) {
       stderr.writeln(
         'usage: parity_scenarios generate <samples> <first seed> <seeds> '
         '<steps> <out>\n'
-        '       parity_scenarios replay <recorded sequence> <out>',
+        '       parity_scenarios replay <recorded sequence> <out>\n'
+        '       parity_scenarios stories <out>',
       );
       exitCode = 64;
   }
@@ -46,7 +57,10 @@ void main(List<String> args) {
 
 void _write(String out, List<Map<String, Object?>> scenarios) {
   for (final scenario in scenarios) {
-    _assertSafeNumbers(scenario, 'seed ${scenario['seed']}');
+    _assertSafeNumbers(
+      scenario,
+      '${scenario['name'] ?? 'seed ${scenario['seed']}'}',
+    );
   }
   File(out).writeAsStringSync(jsonEncode(scenarios));
 }
@@ -909,4 +923,25 @@ final class _Generator {
         return staleLineupMerge(opId);
     }
   }
+}
+
+Map<String, Object?> _story(MergeStory story) {
+  var rows = storyRows;
+  final predicted = <Map<String, Object?>>[];
+  for (final op in story.ops) {
+    final result = applyOp(rows, op);
+    if (result is OpApplied) rows = rows.withRows(result.rows);
+    predicted.add({
+      ..._outcome(result, op, rows),
+      'rows': _rowsJson(rows, const []),
+    });
+  }
+  return {
+    'name': story.name,
+    'initial': _rowsJson(storyRows, const []),
+    'ops': [for (final op in story.ops) op.toJson()],
+    'predicted': predicted,
+    'outcomes': story.outcomes,
+    'expected': story.expected,
+  };
 }

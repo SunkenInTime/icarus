@@ -83,15 +83,82 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 - Pages that share a place are ordered by `publicId` with Dart's string
   order. The server uses `localeCompare`, which can order punctuation
   differently.
-- An edit that first sets a later field (`caption`, `wallPath`, `mapDoor`,
-  `isZone`) has `UndoUnavailable`. The server keeps a later field that a write
-  leaves out, so the undo would have to write the field's empty value, and
-  this package does not know those yet.
+- An edit that first sets `mapDoor`, `isZone` or a picture id (`assetId`)
+  has `UndoUnavailable`. Those fields are never cleared (a door goes back to
+  rest by deleting its row, a zone stays a zone, and the server keeps a
+  picture id that a write leaves out), so there is no value an undo could
+  write.
 - Whole numbers of 9.2e18 or more that arrive as decimals compare and measure
   as Dart writes them, not as JavaScript does.
 - Each op is applied alone. The server also lets several page ops queued from
   the same strategy revision land in one batch; that belongs to whoever sends
   batches.
+
+## Merging an edit
+
+Two people's edits to one item combine field by field, as
+[collaborative-editing.md](../../docs/collaborative-editing.md) describes.
+The package holds both halves:
+
+- **The client's half.** `elementEdit` and `lineupEdit` say which fields an
+  edit changed, as `FieldEdit`, or why it has to be written whole, as
+  `WholeEdit` with a `WholeReason`. They compare payloads with each field's
+  default filled in and treat a missing field and `null` as the same, so
+  opening an old item never counts as an edit of it. `elementEditOp` and
+  `lineupEditOp` build the patch: the item's page, field names, the place
+  when it moved, and, for work that waited offline (`Connection.offline`),
+  each field's value in the base. `drawn` says what the client drew:
+  `DrawnAt(revision)`, the newest revision whose content it drew, which a
+  whole write claims when it is older than the base's (once the client's own
+  merge has landed, the row's newer revision also holds a teammate's fields
+  the client has not drawn), or `BehindWholeWrite(revision)`, when a whole
+  write of the item is still pending, so every edit after it is whole too and
+  claims the same revision.
+- **The server's half.** `mergeElementPayload` and `mergeLineupPayload` give
+  the payload the server would hold, `Merged`, or say why it will not merge:
+  `WriteWhole` with a `WholeReason`, or `MergeConflict` naming the field that
+  changed since the base. `applyOp` uses them, then checks a merged lineup
+  group the way the server checks any group.
+- **The payload at the base.** `elementPayloadAtMergeBase` and
+  `lineupPayloadAtMergeBase` give a payload with the merged fields set back
+  to their base values: what the user's edit was drawn over.
+
+## Field rules
+
+`lib/src/field_rules.dart` is the one table of what the merge needs to know
+about each element kind. The app's live sync reads it too.
+
+| Rule | Kinds | Fields |
+| --- | --- | --- |
+| Identity keys: a merge never writes them, and an edit that changes one is written whole | every kind | `id`, `elementType`, `kind`, `type`, `data` |
+| Moves together | agent, ability | `rotation`, `length` |
+| Moves together | drawing | `listOfPoints`, `lineStart`, `lineEnd`, `start`, `end`, `boundingBox` |
+| Moves together | text | `position`, `size`, `fontSize`, `sizeVersion` |
+| Moves together | image | `position`, `scale`, `sizeVersion` |
+| Moves together | utility of type `customRectangle` | `position`, `rotation`, `customWidth`, `customLength` |
+| Moves together | any other utility | `rotation`, `length` |
+| Kept when a write leaves it out, never cleared | every kind | `assetId` (the picture id), when it is a string |
+| Later field, level 1, cleared by `""` | agent, ability, text, image, utility | `caption` |
+| Later field, level 2, cleared by `[]` | ability | `wallPath` |
+| Later field, level 3, never cleared | utility | `mapDoor` |
+| Later field, level 4, never cleared | utility | `isZone` |
+| Default when missing, inside `visualState` | any | `showVisionCone`: `true` |
+| Default when missing, beside `state` | any | `weapon`: `"none"` |
+
+A group is named whole when any field in it changes, so a teammate's half of
+it never mixes with this edit's half. An undo names groups the same way. Only the fields the item holds are
+named. A later field is one added after its kind shipped: the server hides it
+from clients below its level and keeps it when a write leaves it out, so
+clearing it means writing its empty value. That is also what undoing the edit
+that first set it writes.
+
+The server keeps its own copies of the identity keys
+(`ELEMENT_IDENTITY_KEYS` in `convex/lib/fieldMerge.ts`) and the later fields
+(`LATER_ELEMENT_FIELDS` in `convex/lib/elementFields.ts`) and the picture
+id (`keepPictureId` in `convex/lib/imageAssets.ts`), because
+`convex/` deploys on merge and has to keep reading the files it reads now.
+`tool/library_parity/field_rules.test.ts` fails when either copy differs
+from this table. Groups, empty values and defaults exist only on the client.
 
 ## Checked against the server
 
@@ -121,3 +188,29 @@ twice, a number JavaScript cannot hold exactly, or a server exception.
   (CI uses `fvm dart`).
 - **Left out:** page copies, because their ids differ from the server's on
   purpose.
+
+After the seeds, the run plays the merge stories in
+`tool/merge_stories.dart` (`parity_scenarios.dart stories`), in their own
+test: two people editing different fields, the same field online and after
+one was offline, grouped fields, a later field set, cleared and undone,
+edits that fall back to a whole write, and lineup group merges that end
+valid and invalid. Each story's ops are built with `elementEditOp` and
+`lineupEditOp`, and each says what the user should end up with. The run
+fails when the server's outcome or rows differ from `applyOp`'s, and when
+either differs from the story, and when a story is missing from the
+report. `--replay` skips them. `test/merge_stories_test.dart` plays the same
+stories through `applyOp` alone.
+
+`tool/merge_seeds.dart` adds 12 seeded sequences on the stories' strategy,
+weighted toward the cases a field merge exists for: offline edits of one
+field sent with the rest of the payload as it was then, offline moves in the
+stack from a place a teammate has since changed, for elements and lineup
+groups, and whole writes from older builds that leave out the picture id
+and the later fields. Generating fails when a seed run never produces one of
+those (`mustGenerate`).
+
+Default-aware comparison happens only on the client, so the server never
+sees it. `tool/library_parity/cases/field_defaults.json` holds cases of it:
+`test/field_defaults_cases_test.dart` checks which fields the client names,
+and `tool/library_parity/field_defaults.test.ts` checks that the server
+merges those fields into the expected payload.

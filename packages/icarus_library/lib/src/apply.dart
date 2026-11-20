@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 
 import 'derived_id.dart';
 import 'field_merge.dart';
+import 'field_rules.dart';
 import 'json.dart';
 import 'ops.dart';
 import 'outcome.dart';
@@ -380,7 +381,7 @@ final class _Apply {
       case UnreadableElement():
         return OpRefused(UnreadableTarget(existing.publicId));
       case DeletedElement(:final payload, :final revision):
-        final kept = _keptStoredFields(payload, op.payload);
+        final kept = keepStoredFields(payload, op.payload);
         if (kept != op.payload && exceedsSizePolicy(kept.toJson())) {
           return _failed(FailureCode.invalidPayload);
         }
@@ -400,7 +401,7 @@ final class _Apply {
           undo: _undoAdd(restored, revision + 1),
         );
       case LiveElement(:final payload, :final sortIndex):
-        final kept = _keptStoredFields(payload, op.payload);
+        final kept = keepStoredFields(payload, op.payload);
         if (kept != op.payload && exceedsSizePolicy(kept.toJson())) {
           return _failed(FailureCode.invalidPayload);
         }
@@ -560,7 +561,7 @@ final class _Apply {
             checkRevision = true;
         }
       }
-      payload = _keptStoredFields(stored, written);
+      payload = keepStoredFields(stored, written);
       if (payload != written && exceedsSizePolicy(payload.toJson())) {
         return _failed(FailureCode.invalidPayload);
       }
@@ -597,12 +598,18 @@ final class _Apply {
   }
 
   Undo _undoElementPatch(LiveElement before, RowChanged write) {
-    if (write.dataFields.any(
-      (field) =>
-          _isLaterField(before.payload.kind, field) &&
-          !before.payload.data.containsKey(field),
-    )) {
-      return const UndoUnavailable();
+    final restored = <String, Object?>{...before.payload.data};
+    for (final field in write.dataFields) {
+      if (before.payload.data.containsKey(field)) continue;
+      if (field == pictureIdField) return const UndoUnavailable();
+      switch (laterField(before.payload.kind, field)?.empty) {
+        case null:
+          break;
+        case NeverCleared():
+          return const UndoUnavailable();
+        case ClearedBy(:final value):
+          restored[field] = value;
+      }
     }
     final fields = write.fields;
     final movedPlace = fields.contains(RowField.sortIndex);
@@ -611,7 +618,16 @@ final class _Apply {
         fields.contains(RowField.payloadVersion) ||
         fields.contains(RowField.kind);
     final mergeFields = [
-      if (payloadChanged) ...write.dataFields.toList()..sort(),
+      if (payloadChanged)
+        ...groupedFields(
+          before.payload.kind,
+          switch (write.after) {
+            ReadableElementRow(:final payload) => payload.data,
+            _ => const {},
+          },
+          restored,
+          write.dataFields,
+        ),
       if (movedPlace) placeField,
     ];
     return UndoWithOp(
@@ -622,7 +638,13 @@ final class _Apply {
         pagePublicId: fields.contains(RowField.page)
             ? before.pagePublicId
             : null,
-        payload: payloadChanged ? before.payload : null,
+        payload: payloadChanged
+            ? ElementPayload(
+                kind: before.payload.kind,
+                payloadVersion: before.payload.payloadVersion,
+                data: restored,
+              )
+            : null,
         sortIndex: movedPlace ? before.sortIndex : null,
         merge: mergeFields.isEmpty ? null : FieldMerge(fields: mergeFields),
       ),
@@ -950,46 +972,6 @@ OpRefused? _elementTypeRefusal(ElementPayload payload) {
     return _failed(FailureCode.elementTypePayloadKindMismatch);
   }
   return null;
-}
-
-const _placedKinds = {
-  ElementKind.agent,
-  ElementKind.ability,
-  ElementKind.text,
-  ElementKind.image,
-  ElementKind.utility,
-};
-
-const _laterElementFields = <(String, Set<ElementKind>)>[
-  ('caption', _placedKinds),
-  ('wallPath', {ElementKind.ability}),
-  ('mapDoor', {ElementKind.utility}),
-  ('isZone', {ElementKind.utility}),
-];
-
-bool _isLaterField(ElementKind kind, String field) => _laterElementFields.any(
-  (entry) => entry.$1 == field && entry.$2.contains(kind),
-);
-
-ElementPayload _keptStoredFields(ElementPayload stored, ElementPayload next) {
-  final data = {...next.data};
-  final assetId = stored.data['assetId'];
-  if (assetId is String && !next.data.containsKey('assetId')) {
-    data['assetId'] = assetId;
-  }
-  for (final (field, kinds) in _laterElementFields) {
-    if (kinds.contains(next.kind) &&
-        stored.data.containsKey(field) &&
-        !data.containsKey(field)) {
-      data[field] = stored.data[field];
-    }
-  }
-  if (data.length == next.data.length) return next;
-  return ElementPayload(
-    kind: next.kind,
-    payloadVersion: next.payloadVersion,
-    data: data,
-  );
 }
 
 OpRefused? _lineupPayloadRefusal(

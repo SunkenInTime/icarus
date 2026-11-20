@@ -86,6 +86,11 @@ names every field in a group whenever any one of them changes:
 Everything else is an independent field. A point (`position`) is one field,
 not two.
 
+These groups, the identity keys and the later fields below are one table,
+`packages/icarus_library/lib/src/field_rules.dart`. The server keeps its own
+copy of the parts it uses, and a CI check fails when the two differ (see the
+package README).
+
 ## What the client promises
 
 - **Its base after an acknowledged edit is the payload it sent, never the
