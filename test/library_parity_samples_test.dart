@@ -150,6 +150,6 @@ void main() {
     if (Platform.environment['UPDATE_PARITY_SAMPLES'] == '1') {
       file.writeAsStringSync('$encoded\n');
     }
-    expect(file.readAsStringSync(), '$encoded\n');
+    expect(file.readAsStringSync().replaceAll('\r\n', '\n'), '$encoded\n');
   });
 }
