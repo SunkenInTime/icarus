@@ -100,6 +100,11 @@ test("shell heredocs and powershell here-strings are data", () => {
   assert.deepEqual(texts(powershell, "powershell"), ["# real"]);
 });
 
+test("the library package is ours and vendored packages are not", () => {
+  assert.equal(isOurs("packages/icarus_library/lib/src/rows.dart", "final a = 1;\n"), true);
+  assert.equal(isOurs("packages/shadcn_ui/lib/button.dart", "final a = 1;\n"), false);
+});
+
 test("a generated marker counts only inside a header comment", () => {
   assert.equal(isOurs("tool/x.ts", `export const labels = ["Do not edit"];\n`), true);
   assert.equal(isOurs("tool/x.ts", `// Do not edit: generated.\nexport const x = 1;\n`), false);

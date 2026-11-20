@@ -50,6 +50,8 @@ dependencies:
   cryptography_plus: ^2.7.1
   convex_flutter:
     path: third_party/convex_flutter
+  icarus_library:
+    path: packages/icarus_library
   supabase: ^2.10.2
   supabase_flutter: ^2.12.0
   shared_preferences: ^2.5.5

@@ -1,0 +1,13 @@
+name: icarus_library
+description: The rows of an Icarus library, the ops that change them, and what an op does.
+publish_to: none
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+
+dependencies:
+  collection: ^1.18.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.0

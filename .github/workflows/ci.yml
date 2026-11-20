@@ -86,13 +86,13 @@ jobs:
   #   ci: all
   #
   # Lanes: analyze, test, web, replay, convex, cost, presence, contract,
-  # bridge, gauntlet, desktop, separated by spaces or commas, unquoted. "skip"
-  # runs none of them. A word that is not a lane runs every lane. Lanes that
-  # guard production or the library (convex, cost, presence, contract,
-  # gauntlet, desktop) still run when the PR changes their files, whatever the
-  # line says. Without the line, a PR runs analyze, test and web plus the lanes
-  # its changed files reach. The line is read when the run starts, so after
-  # editing it, rerun the run.
+  # bridge, gauntlet, desktop, library, separated by spaces or commas,
+  # unquoted. "skip" runs none of them. A word that is not a lane runs every
+  # lane. Lanes that guard production or the library (convex, cost, presence,
+  # contract, gauntlet, desktop, library) still run when the PR changes their
+  # files, whatever the line says. Without the line, a PR runs analyze, test
+  # and web plus the lanes its changed files reach. The line is read when the
+  # run starts, so after editing it, rerun the run.
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -110,6 +110,7 @@ jobs:
       bridge: ${{ steps.lanes.outputs.bridge }}
       gauntlet: ${{ steps.lanes.outputs.gauntlet }}
       desktop: ${{ steps.lanes.outputs.desktop }}
+      library: ${{ steps.lanes.outputs.library }}
     steps:
       - name: Pick lanes
         id: lanes
@@ -149,14 +150,14 @@ jobs:
               unknown=0
               for word in "${words[@]}"; do
                 case "$word" in
-                  analyze|test|web|replay|convex|cost|presence|contract|bridge|gauntlet|desktop|skip) named+="$word " ;;
+                  analyze|test|web|replay|convex|cost|presence|contract|bridge|gauntlet|desktop|library|skip) named+="$word " ;;
                   all) named+="all "; full=true ;;
                   *) unknown=$((unknown + 1)) ;;
                 esac
               done
               printf 'The description names:%s\n' "$named"
               if (( unknown > 0 )); then
-                printf '::warning::The ci: line has %d word(s) that are not lanes; running every lane. Lanes: analyze test web replay convex cost presence contract bridge gauntlet desktop skip all.\n' "$unknown"
+                printf '::warning::The ci: line has %d word(s) that are not lanes; running every lane. Lanes: analyze test web replay convex cost presence contract bridge gauntlet desktop library skip all.\n' "$unknown"
                 full=true
               fi
             fi
@@ -217,6 +218,7 @@ jobs:
           # release scripts, or the test itself. The release runs the same
           # test on every signed installer; this catches a break on its PR.
           lane desktop '^(installer/|scripts/|lib/migrations/|test/windows_online_beta_library_probe_test\.dart$)|\.g\.dart$' guarded
+          lane library '^packages/icarus_library/' guarded
 
   # Runs on every PR and push, whatever the ci: line names: no PR adds a
   # comment to a file beyond tool/comment_baseline.json.
@@ -261,6 +263,25 @@ jobs:
 
       - name: Check Bundled Wall Heights
         run: fvm dart run tool/check_bundled_wall_heights.dart
+
+  library:
+    needs: changes
+    if: needs.changes.outputs.library == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - uses: ./.github/actions/setup-flutter
+
+      - name: Analyze And Test The Library Package
+        working-directory: packages/icarus_library
+        run: |
+          fvm dart pub get
+          fvm dart analyze --fatal-infos
+          fvm dart test
 
   # Flutter compiles test files one after another, and that takes longer than
   # running them, so the suite's time falls with the number of files a runner

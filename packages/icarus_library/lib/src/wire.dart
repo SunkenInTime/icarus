@@ -1,0 +1,95 @@
+import 'json.dart';
+
+sealed class Decoded<T> {
+  const Decoded();
+}
+
+final class Read<T> extends Decoded<T> {
+  const Read(this.value);
+
+  final T value;
+}
+
+final class CouldNotRead<T> extends Decoded<T> {
+  const CouldNotRead(this.json, this.problem);
+
+  final Object? json;
+  final String problem;
+}
+
+final class JsonFields {
+  JsonFields._(this.json);
+
+  final Map<String, Object?> json;
+  String? _problem;
+
+  static Decoded<T> read<T>(
+    Object? raw,
+    String what,
+    T Function() Function(JsonFields fields) read,
+  ) {
+    if (raw is! Map<Object?, Object?> || !isJson(raw)) {
+      return CouldNotRead(raw, 'Expected $what to be a JSON object');
+    }
+    final fields = JsonFields._(frozenJsonObject(raw));
+    final build = read(fields);
+    return switch (fields._problem) {
+      final problem? => CouldNotRead(raw, '$what: $problem'),
+      null => Read(build()),
+    };
+  }
+
+  void reject(String problem) => _problem ??= problem;
+
+  T _expected<T>(String key, String kind, T fallback) {
+    reject('expected "$key" to be $kind');
+    return fallback;
+  }
+
+  bool has(String key) => json[key] != null;
+
+  String string(String key) => switch (json[key]) {
+    final String value => value,
+    _ => _expected(key, 'a string', ''),
+  };
+
+  String? optionalString(String key) => has(key) ? string(key) : null;
+
+  int whole(String key) => switch (json[key]) {
+    final num value when value.isFinite && value == value.truncate() =>
+      value.toInt(),
+    _ => _expected(key, 'a whole number', 0),
+  };
+
+  int? optionalWhole(String key) => has(key) ? whole(key) : null;
+
+  double number(String key) => switch (json[key]) {
+    final num value when value.isFinite => value.toDouble(),
+    _ => _expected(key, 'a number', 0),
+  };
+
+  bool boolean(String key) => switch (json[key]) {
+    final bool value => value,
+    _ => _expected(key, 'true or false', false),
+  };
+
+  bool? optionalBoolean(String key) => has(key) ? boolean(key) : null;
+
+  Map<String, Object?> object(String key) => switch (json[key]) {
+    final Map<String, Object?> value => value,
+    _ => _expected(key, 'an object', const {}),
+  };
+
+  T? decoded<T>(String key, Decoded<T> Function(Object? json) decode) =>
+      switch (decode(json[key])) {
+        Read(:final value) => value,
+        CouldNotRead(:final problem) => _expected(
+          key,
+          'readable: $problem',
+          null,
+        ),
+      };
+
+  T? optionalDecoded<T>(String key, Decoded<T> Function(Object? json) decode) =>
+      has(key) ? decoded(key, decode) : null;
+}

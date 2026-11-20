@@ -32,7 +32,7 @@ const HASH_LANGUAGES = {
 
 const NOT_OURS = [
   /^third_party\//,
-  /^packages\//,
+  /^packages\/(?!icarus_library\/)/,
   /^native\/[^/]+\/src\/vendor\//,
   /^web\/convex\.browser\.bundle\.js$/,
   /^convex\/_generated\//,
