@@ -90,24 +90,22 @@ void main() {
       );
     });
 
-    testWidgets('closing the dialog mid-wait posts nothing', (tester) async {
+    testWidgets(
+        'Cancel mid-wait posts nothing, even when the edit lands as it closes',
+        (tester) async {
       final repository = _Repository();
       final ops = _Ops(_unsent(queued: 1));
-      final shown = ValueNotifier(true);
-      await _openDialog(
-        tester,
-        repository: repository,
-        ops: ops,
-        shown: shown,
-      );
+      await _openDialog(tester, repository: repository, ops: ops);
 
       await tester.tap(find.byKey(_postButton));
       await tester.pump(const Duration(seconds: 1));
-      shown.value = false;
+      await tester.tap(find.text('Cancel'));
       await tester.pump();
       ops.land();
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pumpAndSettle();
 
+      expect(find.byType(PostToCommunityDialog), findsNothing);
       expect(repository.published, isEmpty);
     });
 
@@ -176,7 +174,7 @@ void main() {
 
       ops.land();
       await tester.pump(const Duration(milliseconds: 200));
-      expect(repository.updated, ['post-1']);
+      expect(repository.updated, [('post-1', refresh: true)]);
     });
   });
 }
@@ -188,7 +186,6 @@ Future<void> _openDialog(
   _Auth? auth,
   List<CloudMediaUploadJob> images = const [],
   bool posted = false,
-  ValueNotifier<bool>? shown,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1400, 1000));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -211,22 +208,25 @@ Future<void> _openDialog(
         ),
       ],
       child: ShadApp(
-        home: MediaQuery.withClampedTextScaling(
+        builder: (context, app) => MediaQuery.withClampedTextScaling(
           maxScaleFactor: 0.5,
-          child: Scaffold(
-            body: ValueListenableBuilder(
-              valueListenable: shown ?? ValueNotifier(true),
-              builder: (context, show, _) => show
-                  ? const PostToCommunityDialog(strategyPublicId: _strategyId)
-                  : const SizedBox.shrink(),
+          child: app!,
+        ),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ShadButton(
+              onPressed: () => showPostToCommunityDialog(context, _strategyId),
+              child: const Text('Open'),
             ),
           ),
         ),
       ),
     ),
   );
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 300));
+  await tester.tap(find.text('Open'));
+  for (var frame = 0; frame < 5; frame++) {
+    await tester.pump(const Duration(milliseconds: 200));
+  }
   expect(find.byKey(posted ? _updateButton : _postButton), findsOneWidget);
 }
 
@@ -270,7 +270,7 @@ class _Repository extends CommunityRepository {
   _Repository() : super(IcarusConvexApi(_NoTransport()));
 
   final published = <String>[];
-  final updated = <String>[];
+  final updated = <(String, {bool refresh})>[];
 
   @override
   Future<CommunityPostPreview?> fetchPostPreview(
@@ -302,7 +302,7 @@ class _Repository extends CommunityRepository {
     String? title,
     bool refresh = false,
   }) async {
-    if (refresh) updated.add(postPublicId);
+    updated.add((postPublicId, refresh: refresh));
   }
 }
 

@@ -153,6 +153,7 @@ class _PostFormState extends ConsumerState<_PostForm> {
     // Read before the wait: the dialog may be closed while it posts.
     final feed = ref.read(communityFeedProvider.notifier);
     final container = ProviderScope.containerOf(context, listen: false);
+    final dialog = ModalRoute.of(context)!;
     switch (await sendStrategyWork(
       container.read,
       strategyId: widget.strategyPublicId,
@@ -165,7 +166,7 @@ class _PostFormState extends ConsumerState<_PostForm> {
         });
         return;
       case StrategyWorkOnServer():
-        if (!mounted) return;
+        if (!dialog.isCurrent) return;
     }
     try {
       await container.read(communityRepositoryProvider).publish(
@@ -363,6 +364,7 @@ class _PostedViewState extends ConsumerState<_PostedView> {
     });
     final feed = ref.read(communityFeedProvider.notifier);
     final container = ProviderScope.containerOf(context, listen: false);
+    final dialog = ModalRoute.of(context)!;
     switch (await sendStrategyWork(
       container.read,
       strategyId: widget.mine.sourceStrategyPublicId,
@@ -375,7 +377,7 @@ class _PostedViewState extends ConsumerState<_PostedView> {
         });
         return;
       case StrategyWorkOnServer():
-        if (!mounted) return;
+        if (!dialog.isCurrent) return;
     }
     try {
       await container
