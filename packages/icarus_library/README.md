@@ -376,6 +376,129 @@ and `CommitUnknown` all or none, never part.
   until the engine closes or its process ends.
 - **Failures are values.** Nothing the device does throws.
 
+### The engines
+
+| Where | Engine | Import |
+| --- | --- | --- |
+| Windows, macOS, Linux | `SqliteEngine(path)` | `package:icarus_library/sqlite_storage.dart` |
+| Web | `IndexedDbEngine(name)` | `package:icarus_library/indexed_db_storage.dart` |
+| Tests | `MemoryEngine(storage)` | `package:icarus_library/icarus_library.dart` |
+
+Both real engines pass `engineContract` (`test/sqlite/sqlite_engine_test.dart`
+on real files, `test/sqlite/sqlite_fault_test.dart` on a disk that loses
+power, `test/indexed_db/indexed_db_engine_test.dart` in Chrome).
+
+#### SQLite
+
+The library is one file holding one table, `rows (area, key, value)`, keyed by
+area and key, plus a one-row table `generation`. The engine runs no other
+SQL: no domain logic, no ORM. It uses `package:sqlite3`, which bundles
+SQLite as a native library through build hooks, so the app needs no build
+step of its own. The version is held below 3.6 because later ones need a
+`hooks` package newer than Flutter 3.44.4 allows.
+
+- **Durability.** The file is in write-ahead log mode with
+  `synchronous = FULL`: SQLite syncs the log before a commit returns, so a
+  write that returned `Done` survives a power cut (in `NORMAL` it can roll
+  back). On macOS `fullfsync` is on, because a plain sync there does not
+  flush the drive's cache. Each `write` or `delete` call is one transaction.
+- **One writer.** The connection takes an exclusive lock on the file and holds
+  it until the lease is released (`locking_mode = EXCLUSIVE`). Another
+  connection in any isolate or process gets `SQLITE_BUSY` at once, which the
+  engine returns as `HeldByAnotherWriter`. Exclusive mode also means SQLite
+  keeps the log's index in memory instead of a shared `-shm` file.
+- **Off the UI thread.** SQLite's API blocks, so each lease runs it on its own
+  isolate and answers one request at a time, in order. A release is queued
+  behind the writes already sent, so they land before the lock is let go.
+- **Opening checks the whole file.** `PRAGMA integrity_check` runs on every
+  open. The quicker `quick_check` let a library with flipped bits open with
+  8 of 41 strategies missing and no error; `integrity_check` also compares
+  each index with its table and refuses that file.
+- **Creating a library** happens under `<path>.creating`, which is renamed to
+  the library path once its tables exist, so a file at the library path is
+  always a whole library. A file there that is empty, not SQLite, another
+  program's database or from a newer build is refused, and so is a missing
+  file whose `-wal` log is still there. Nothing is ever opened as a new, empty
+  library in place of one that existed.
+- **After a failed write** the log can still hold that transaction's frames,
+  and they would come back on the next open. So the next transaction that
+  succeeds also bumps `generation`; it writes over those frames, and from
+  then on the failed write can never return. Without this the store reported
+  an edit as not saved that came back after a restart.
+- **Failures.** A full disk, an I/O error, a locked or unreadable file is a
+  `StorageFailed(DeviceFailure)` naming SQLite's error code. SQLite can
+  describe damage with bytes that are not UTF-8; `package:sqlite3` throws a
+  `FormatException` for that, and the engine returns it as a failure too.
+- **Keys** are at most 1024 characters.
+- Switching a checkout between a branch with `sqlite3` and one without can
+  leave Flutter's hook cache pointing at a deleted download
+  (`install_code_assets failed`). Deleting `.dart_tool/hooks_runner` and
+  `.dart_tool/flutter_build` fixes it.
+
+#### IndexedDB
+
+The library is one database named by the caller, with one object store,
+`rows`, whose keys are `[area, key]`. There is no SQLite and no WebAssembly
+on the web.
+
+- **A write resolves when its transaction fires `complete`**, never on a
+  request's `success`; an `abort` is a `StorageFailed` naming the browser's
+  error (`QuotaExceededError` for a full quota). Transactions ask for
+  `durability: 'strict'`, which Chrome (83+), Firefox (126+) and Safari (15+)
+  honour by flushing to disk before `complete`.
+- **One writer per origin.** A lease holds a Web Lock named after the
+  database, taken with `ifAvailable`, so another tab, frame or worker gets
+  `HeldByAnotherWriter` at once. The lock is released when the lease is, or
+  when the tab closes or crashes. A page without Web Locks (a plain `http`
+  origin that is not `localhost`) cannot hold the library and gets
+  `LeaseFailed`.
+- **Release waits for writes in flight**, then closes the database and lets
+  go of the lock. The browser would order them anyway: a transaction started
+  by the next holder waits for every overlapping transaction created before
+  it.
+- **Keys** are at most 1024 characters.
+
+#### Reading a range in one call
+
+Both leases also have `entries(area, prefix)`, which returns every key under
+a prefix with its value: one SQL query, or one IndexedDB transaction with
+`getAllKeys` and `getAll` over the same range. It is not in `StorageLease`
+yet.
+
+#### What the tests simulate, and what they cannot
+
+- `test/sqlite/fault_disk.dart` is a SQLite virtual file system over a disk
+  held in memory. It keeps what reached the disk apart from what was only
+  written: a sync makes a file durable, and creating, deleting or renaming a
+  file is durable only after a directory sync (SQLite asks for one when it
+  creates a log). It can stop the app at any step, fail a sync and drop what
+  that sync was for, fill the disk, fail a rename, and lock a file against a
+  second connection. A crash then loses power in one of three ways: keeping
+  everything written (the app died, the OS did not), dropping everything
+  unsynced, or keeping a random part of it in 512-byte pieces and a random
+  prefix of directory changes (writes reordered and torn). It cannot show a
+  drive that reports a sync it did not do, a torn write inside one 512-byte
+  piece, or how a real file system orders its metadata.
+- `test/sqlite/sqlite_engine_test.dart` uses real files and real processes:
+  a second isolate and a second process are refused the lease, writes in
+  flight when one process releases land before another process gets the
+  lease, and a writer process is killed at 24 random points and the library
+  reopened in this one. A killed process is not a power cut: the operating
+  system still writes what the process had written.
+- `test/indexed_db/indexed_db_engine_test.dart` runs in Chrome. It aborts a
+  transaction after its first request succeeded, reports a quota error the
+  way Chrome does (by patching `IDBObjectStore`), refuses a second lease on
+  the origin, and hands the library to a worker while writes are in flight.
+  It cannot crash the browser, cut its power, or test Firefox or Safari.
+- `test/memory_crash_test.dart` runs the same crash checks on `MemoryEngine`.
+
+The crash checks are in `test/crash_harness.dart`: after a crash at every
+step of every op type, the rows are those from before the edit or after it,
+a `Saved` edit is never lost, a `NotSaved` one never appears, and reopening
+can be cut short again and again; and for raw writes, every acknowledged
+write is there, the one in flight is wholly there or wholly absent, and no
+other row changed.
+
 ### Where rows are kept
 
 | Area | Names |
@@ -595,6 +718,14 @@ at once, so advancing the base and removing the acknowledged ops is one more
 commit.
 
 ### Measuring it
+
+`dart build cli -t bin/engine_costs.dart -o build/engine_costs` builds the
+engine cost tool ahead of time, and `build/engine_costs/bundle/bin/engine_costs
+<folder>` times, on the memory engine and on SQLite in `<folder>`: opening the
+store and listing a 500-strategy library, opening a 300-item page, and saving
+a moved item and a 1000-point drawing. `tool/engine_costs_web.sh` does the same
+for the memory engine and IndexedDB in headless Chrome, compiled with
+`dart compile js -O4`.
 
 `dart run tool/store_benchmark.dart` times opening the store and a
 700-strategy library list, opening a 300-item page where half the items are
