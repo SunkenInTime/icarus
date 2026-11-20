@@ -240,7 +240,7 @@ jobs:
           # and cloud copy kept in Hive, moving a library to the cloud, the
           # packages (Hive among them), and the fixtures and tests that hold
           # old data. The test list is the integrity job's.
-          lane integrity '^(lib/hive/|lib/migrations/|lib/strategy/|lib/domain/|lib/main\.dart$|lib/startup/hive_store_launch\.dart$|lib/services/(archive_manifest|strategy_folders|image_file_name)\.dart$|lib/collab/(cloud_library_copy|pending_media_bytes_store)\.dart$|lib/providers/collab/move_to_cloud_provider\.dart$|pubspec\.(yaml|lock)$|lib/providers/(strategy_provider|strategy_page|strategy_page_session_provider|strategy_settings_provider|folder_provider|user_preferences_provider|agent_provider|ability_provider|drawing_provider|image_provider|text_provider|utility_provider)\.dart$|lib/const/(placed_classes|drawing_element|bounding_box|line_provider|json_converters|hive_boxes)\.dart$|lib/collab/durable_[a-z_]*outbox\.dart$|test/fixtures/strategy_integrity/|test/(strategy_integrity|canvas_compatibility_fixture|strategy_folder_import|strategy_import_version_guard|strategy_folders|image_file_name)_test\.dart$|test/hive_[a-z_]*_test\.dart$|test/[a-z_]*_migration_test\.dart$|test/durable_[a-z_]*_version_test\.dart$|test/desktop_[a-z0-9_]*_test_support\.dart$|test/providers/move_to_cloud_provider_test\.dart$|tool/generate_canvas_compatibility_fixture\.dart$)|\.g\.dart$' guarded
+          lane integrity '^(lib/hive/|lib/migrations/|lib/strategy/|lib/domain/|lib/library_rows/|packages/icarus_library/lib/|lib/collab/(cloud_lineup_rows|cloud_payload_upgrade|collab_models)\.dart$|test/library_rows/|tool/check_library_rows\.mjs$|lib/main\.dart$|lib/startup/hive_store_launch\.dart$|lib/services/(archive_manifest|strategy_folders|image_file_name)\.dart$|lib/collab/(cloud_library_copy|pending_media_bytes_store)\.dart$|lib/providers/collab/move_to_cloud_provider\.dart$|pubspec\.(yaml|lock)$|lib/providers/(strategy_provider|strategy_page|strategy_page_session_provider|strategy_settings_provider|folder_provider|user_preferences_provider|agent_provider|ability_provider|drawing_provider|image_provider|text_provider|utility_provider)\.dart$|lib/const/(placed_classes|drawing_element|bounding_box|line_provider|json_converters|hive_boxes)\.dart$|lib/collab/durable_[a-z_]*outbox\.dart$|test/fixtures/strategy_integrity/|test/(strategy_integrity|canvas_compatibility_fixture|strategy_folder_import|strategy_import_version_guard|strategy_folders|image_file_name)_test\.dart$|test/hive_[a-z_]*_test\.dart$|test/[a-z_]*_migration_test\.dart$|test/durable_[a-z_]*_version_test\.dart$|test/desktop_[a-z0-9_]*_test_support\.dart$|test/providers/move_to_cloud_provider_test\.dart$|tool/generate_canvas_compatibility_fixture\.dart$)|\.g\.dart$' guarded
           lane library '^packages/icarus_library/' guarded
 
   # Runs on every PR and push, whatever the ci: line names: no PR adds a
@@ -676,7 +676,8 @@ jobs:
             test/providers/move_to_cloud_provider_test.dart \
             test/hive_*_test.dart \
             test/*_migration_test.dart \
-            test/durable_*_version_test.dart
+            test/durable_*_version_test.dart \
+            test/library_rows/*_test.dart
 
   # Desktop builds cut view cones with native/height (C++), the web build with
   # the Dart code in lib/view_cone/. The tests below compare the two and skip

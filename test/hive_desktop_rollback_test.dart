@@ -5,190 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/src/binary/binary_reader_impl.dart';
 import 'package:hive_ce/src/binary/binary_writer_impl.dart';
-import 'package:hive_ce/src/hive_impl.dart';
-import 'package:hive_ce/src/util/logger.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/folder_icons.dart';
-import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/const/utilities.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/hive/hive_adapters.dart';
-import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/strategy_page.dart';
-import 'package:icarus/providers/strategy_settings_provider.dart';
 
 import 'desktop_4_6_3_adapters_test_support.dart';
-
-HiveImpl _currentRegistry() {
-  final registry = HiveImpl();
-  registerIcarusAdapters(registry);
-  return registry;
-}
-
-/// What desktop 4.6.3 registers: this build's adapters, which are unchanged
-/// since that release, except the eight this build writes by hand, the
-/// weapon list, which gained the Warden, and the agent list, which gained
-/// Hush.
-HiveImpl _desktop463Registry() {
-  final registry = _currentRegistry();
-  // hive_ce warns on every override, which is the point here.
-  final previousLevel = Logger.level;
-  Logger.level = LoggerLevel.error;
-  try {
-    return registry
-      ..registerAdapter(Desktop463PlacedAgentAdapter(), override: true)
-      ..registerAdapter(Desktop463PlacedAbilityAdapter(), override: true)
-      ..registerAdapter(Desktop463StrategyPageAdapter(), override: true)
-      ..registerAdapter(Desktop463FolderAdapter(), override: true)
-      ..registerAdapter(Desktop463FreeDrawingAdapter(), override: true)
-      ..registerAdapter(Desktop463LineAdapter(), override: true)
-      ..registerAdapter(Desktop463RectangleDrawingAdapter(), override: true)
-      ..registerAdapter(Desktop463EllipseDrawingAdapter(), override: true)
-      ..registerAdapter(Desktop463WeaponTypeAdapter(), override: true)
-      ..registerAdapter(Desktop463AgentTypeAdapter(), override: true);
-  } finally {
-    Logger.level = previousLevel;
-  }
-}
-
-Uint8List _write(HiveImpl registry, Object value) {
-  final writer = BinaryWriterImpl(registry)..write(value);
-  return Uint8List.fromList(writer.toBytes());
-}
-
-T _read<T>(HiveImpl registry, Uint8List bytes) =>
-    BinaryReaderImpl(bytes, registry).read() as T;
-
-T _across<T extends Object>(HiveImpl from, HiveImpl to, T value) =>
-    _read<T>(to, _write(from, value));
-
-PlacedAbility _ability(
-  String id, {
-  AbilityVisualState visualState = const AbilityVisualState(),
-}) {
-  return PlacedAbility(
-    id: id,
-    data: AgentData.agents[AgentType.breach]!.abilities.first,
-    position: const Offset(30, 40),
-    visualState: visualState,
-  );
-}
-
-/// A page holding each of [types] and every one of its abilities, with ids by
-/// position so pages of different agents compare.
-StrategyPage _rosterPage(List<AgentType> types) {
-  return StrategyPage(
-    id: 'page-roster',
-    name: 'Roster',
-    drawingData: const [],
-    agentData: [
-      for (var a = 0; a < types.length; a++)
-        PlacedAgent(
-          id: 'agent-$a',
-          type: types[a],
-          position: const Offset(1, 1),
-        ),
-    ],
-    abilityData: [
-      for (var a = 0; a < types.length; a++)
-        for (final (i, info) in AgentData.agents[types[a]]!.abilities.indexed)
-          PlacedAbility(
-            id: 'ability-$a-$i',
-            data: info,
-            position: const Offset(5, 5),
-          ),
-    ],
-    textData: const [],
-    imageData: const [],
-    utilityData: const [],
-    sortIndex: 0,
-    isAttack: true,
-    settings: StrategySettings(),
-  );
-}
-
-StrategyPage _richPage() {
-  const hidden = AbilityVisualState(showRangeFill: false);
-  return StrategyPage(
-    id: 'page-1',
-    name: 'Page 1',
-    drawingData: [
-      Line(
-        id: 'line-1',
-        lineStart: const Offset(1, 2),
-        lineEnd: const Offset(3, 4),
-        colorValue: 0xFFFFFFFF,
-        isDotted: false,
-        hasArrow: false,
-      ),
-      EllipseDrawing(
-        id: 'ellipse-1',
-        start: const Offset(5, 6),
-        end: const Offset(7, 8),
-        colorValue: 0xFF22C55E,
-        isDotted: true,
-        hasArrow: false,
-      ),
-    ],
-    agentData: [
-      PlacedAgent(
-        id: 'agent-plain',
-        type: AgentType.breach,
-        position: const Offset(10, 20),
-        weapon: WeaponType.vandal,
-      ),
-      PlacedViewConeAgent(
-        id: 'agent-cone',
-        type: AgentType.killjoy,
-        position: const Offset(30, 40),
-        presetType: UtilityType.viewCone90,
-        rotation: 1.2,
-        length: 50,
-        visionElevation: 1,
-        weapon: WeaponType.operator,
-      ),
-      PlacedCircleAgent(
-        id: 'agent-circle',
-        type: AgentType.viper,
-        position: const Offset(50, 60),
-        diameterMeters: 12,
-        colorValue: 0xFF3B82F6,
-        opacityPercent: 45,
-      ),
-    ],
-    abilityData: [_ability('ability-map', visualState: hidden)],
-    textData: const [],
-    imageData: const [],
-    utilityData: const [],
-    sortIndex: 0,
-    isAttack: true,
-    settings: StrategySettings(),
-    lineUpGroups: [
-      LineUpGroup(
-        id: 'group-1',
-        agent: PlacedAgent(
-          id: 'lineup-agent',
-          type: AgentType.breach,
-          position: const Offset(70, 80),
-          weapon: WeaponType.sheriff,
-        ),
-        items: [
-          LineUpItem(
-            id: 'item-1',
-            ability: _ability('lineup-ability-1', visualState: hidden),
-          ),
-          LineUpItem(
-            id: 'item-2',
-            ability: _ability('lineup-ability-2'),
-          ),
-        ],
-      ),
-    ],
-  );
-}
 
 Object? _plain(Object? json) => jsonDecode(jsonEncode(json));
 
@@ -202,17 +28,17 @@ void _expectSamePage(StrategyPage actual, StrategyPage expected) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  final current = _currentRegistry();
-  final desktop463 = _desktop463Registry();
+  final current = currentRegistry();
+  final desktop463 = desktop463Registry();
 
   test('a page is saved byte for byte as desktop 4.6.3 saves it', () {
-    final page = _richPage();
-    expect(_write(current, page), _write(desktop463, page));
+    final page = desktop463RichPage();
+    expect(writeRecord(current, page), writeRecord(desktop463, page));
   });
 
   test('desktop 4.6.3 opens a page this build saved, whole', () {
-    final page = _richPage();
-    final opened = _across(current, desktop463, page);
+    final page = desktop463RichPage();
+    final opened = across(current, desktop463, page);
 
     _expectSamePage(opened, page);
     expect(opened.drawingData.last, isA<EllipseDrawing>());
@@ -227,10 +53,10 @@ void main() {
   });
 
   test('desktop 4.6.3 opens a Warden this build saved as no weapon', () {
-    final page = _richPage();
+    final page = desktop463RichPage();
     page.agentData.first.weapon = WeaponType.warden;
     page.lineUpOrigins.single.agent.weapon = WeaponType.warden;
-    final opened = _across(current, desktop463, page);
+    final opened = across(current, desktop463, page);
 
     expect(
       opened.agentData.map((agent) => agent.weapon),
@@ -243,26 +69,26 @@ void main() {
   });
 
   test('what desktop 4.6.3 saves back, this build opens whole', () {
-    final page = _richPage();
-    final rolledBack = _across(current, desktop463, page);
-    _expectSamePage(_across(desktop463, current, rolledBack), page);
+    final page = desktop463RichPage();
+    final rolledBack = across(current, desktop463, page);
+    _expectSamePage(across(desktop463, current, rolledBack), page);
   });
 
   test('every agent 4.6.3 knows, and its abilities, survives a rollback', () {
-    final page = _rosterPage([
+    final page = desktop463RosterPage([
       for (final type in AgentType.values)
         if (type != AgentType.hush) type,
     ]);
 
-    _expectSamePage(_across(current, desktop463, page), page);
+    _expectSamePage(across(current, desktop463, page), page);
   });
 
   test('desktop 4.6.3 opens a Hush this build saved as Jett', () {
     // 4.6.3 reads an agent index it doesn't know as Jett, and an ability by
     // its agent and index, so Hush's four abilities open as Jett's.
-    final opened = _across(current, desktop463, _rosterPage([AgentType.hush]));
+    final opened = across(current, desktop463, desktop463RosterPage([AgentType.hush]));
 
-    _expectSamePage(opened, _rosterPage([AgentType.jett]));
+    _expectSamePage(opened, desktop463RosterPage([AgentType.jett]));
   });
 
   test('folders keep their exact icon and color through a rollback', () {
@@ -279,8 +105,8 @@ void main() {
         color: FolderColor.custom,
         customColor: const Color(0xFF22C55E),
       );
-      expect(_write(current, folder), _write(desktop463, folder));
-      final opened = _across(current, desktop463, folder);
+      expect(writeRecord(current, folder), writeRecord(desktop463, folder));
+      final opened = across(current, desktop463, folder);
       expect(opened.iconId, iconId);
       expect(opened.customColor, const Color(0xFF22C55E));
     }
@@ -298,7 +124,7 @@ void main() {
     }
 
     test('ability visual state as primitives in fields 10-14', () {
-      final ability = _ability('ability-old-cloud');
+      final ability = desktop463Ability('ability-old-cloud');
       final restored = PlacedAbilityAdapter().read(
         fieldBag({
           0: ability.data,
