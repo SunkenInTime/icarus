@@ -16,6 +16,7 @@ dependencies:
   intl: any
 
   collection: ^1.19.1
+  meta: any
   flutter_svg: ^2.0.14
   flutter_riverpod: ^2.6.1
   json_annotation: ^4.9.0

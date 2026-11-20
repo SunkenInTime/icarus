@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:meta/meta.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -23,6 +24,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -30,15 +32,56 @@ import 'package:icarus/strategy/cloud_element_decoding.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
+sealed class PageHandover {
+  const PageHandover();
+}
+
+final class SavedToLibrary extends PageHandover {
+  const SavedToLibrary();
+}
+
+final class QueuedForServer extends PageHandover {
+  const QueuedForServer();
+}
+
+final class NothingToHandOver extends PageHandover {
+  const NothingToHandOver();
+}
+
+final class HeldOnCanvas extends PageHandover {
+  const HeldOnCanvas(this.reason);
+
+  final HeldReason reason;
+}
+
+enum HeldReason {
+  strategyMissing,
+  pageMissing,
+  libraryWriteFailed,
+  noServerRead,
+  outboxWriteFailed,
+  noAccount,
+}
+
+PageHandover _settled(PageHandover handover, {required bool canvasUnsaved}) =>
+    handover is HeldOnCanvas && !canvasUnsaved
+        ? const NothingToHandOver()
+        : handover;
+
+bool _canvasUnsaved(Ref ref) =>
+    ref.read(strategySaveStateProvider).isDirty ||
+    ref.read(textDraftProvider).isNotEmpty;
+
 abstract class StrategyPageSource {
   RemoteEditorSnapshot? get loadedRemoteSnapshot;
   Future<List<String>> listPageIds();
   Future<StrategyEditorPageData> loadPage(String pageId);
 
   /// Hands the page on screen to its store: the library, or the op queue.
-  /// False when it could not, so what the canvas shows may be held nowhere
-  /// else.
-  Future<bool> flushCurrentPage();
+  /// [HeldOnCanvas] when it could not and the canvas has unsaved edits:
+  /// they may be held nowhere else.
+  @useResult
+  Future<PageHandover> flushCurrentPage();
 }
 
 class LocalStrategyPageSource implements StrategyPageSource {
@@ -106,17 +149,22 @@ class LocalStrategyPageSource implements StrategyPageSource {
   }
 
   @override
-  Future<bool> flushCurrentPage() async {
+  Future<PageHandover> flushCurrentPage() async => _settled(
+        await _writeCurrentPage(),
+        canvasUnsaved: _canvasUnsaved(ref),
+      );
+
+  Future<PageHandover> _writeCurrentPage() async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strategy = box.get(strategyId);
-    if (strategy == null || strategy.pages.isEmpty) {
-      return false;
+    if (strategy == null) {
+      return const HeldOnCanvas(HeldReason.strategyMissing);
     }
 
-    final pageId = activePageId() ?? strategy.pages.first.id;
+    final pageId = activePageId() ?? strategy.pages.firstOrNull?.id;
     final index = strategy.pages.indexWhere((page) => page.id == pageId);
     if (index < 0) {
-      return false;
+      return const HeldOnCanvas(HeldReason.pageMissing);
     }
 
     final updatedPage = strategy.pages[index].copyWith(
@@ -142,8 +190,18 @@ class LocalStrategyPageSource implements StrategyPageSource {
       clearThemeOverridePalette: strategyTheme.overridePalette == null,
       lastEdited: DateTime.now(),
     );
-    await box.put(updated.id, updated);
-    return true;
+    try {
+      await box.put(updated.id, updated);
+    } on Object catch (error, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'The page on screen could not be written to the library.',
+        source: 'strategy_page_source',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return const HeldOnCanvas(HeldReason.libraryWriteFailed);
+    }
+    return const SavedToLibrary();
   }
 }
 
@@ -276,25 +334,24 @@ class CloudStrategyPageSource implements StrategyPageSource {
   /// The canvas can only be diffed against the server's version of the
   /// page it was drawn from. Without that version (a read failed or is
   /// reloading, the page is still loading, or a teammate deleted it) nothing
-  /// is queued and this is false: edits on screen may be held nowhere else,
-  /// so the save state keeps them unsaved until a handover works.
+  /// is queued ([HeldReason.noServerRead]) and the save state keeps the
+  /// edits on screen unsaved until a handover works.
   @override
-  Future<bool> flushCurrentPage() async {
+  Future<PageHandover> flushCurrentPage() async {
     final saveState = ref.read(strategySaveStateProvider.notifier);
     final marksBefore = saveState.dirtyMarks;
     final dirtyBefore = ref.read(strategySaveStateProvider).isDirty;
-    final handedOver = await _handOverCanvas();
+    final handover = _settled(
+      await _handOverCanvas(),
+      canvasUnsaved: dirtyBefore || _canvasUnsaved(ref),
+    );
     if (ref.read(strategyProvider).strategyId == strategyId) {
-      saveState.noteCanvasHandover(
-        handedOver: handedOver,
-        marksBefore: marksBefore,
-        dirtyBefore: dirtyBefore,
-      );
+      saveState.noteCanvasHandover(handover, marksBefore: marksBefore);
     }
-    return handedOver;
+    return handover;
   }
 
-  Future<bool> _handOverCanvas() async {
+  Future<PageHandover> _handOverCanvas() async {
     // Whether this work is made live is judged as the canvas hands it over,
     // before it waits on anything (see StrategyOpQueueNotifier.liveStamp).
     final pageId = activePageId();
@@ -305,14 +362,14 @@ class CloudStrategyPageSource implements StrategyPageSource {
             .liveStampForEdits(pageId);
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
     if (snapshot == null || snapshot.header.publicId != strategyId) {
-      return false;
+      return const HeldOnCanvas(HeldReason.noServerRead);
     }
     if (!StrategyCapabilities.fromCloudRole(snapshot.header.role)
         .canEditPages) {
-      return true;
+      return const NothingToHandOver();
     }
     if (pageId == null) {
-      return false;
+      return const HeldOnCanvas(HeldReason.pageMissing);
     }
 
     await ref.read(strategyProvider.notifier).syncStrategyMetadata();
@@ -323,15 +380,19 @@ class CloudStrategyPageSource implements StrategyPageSource {
               pageId: pageId,
             );
     if (desiredOpsByEntityKey == null) {
-      return false;
+      return const HeldOnCanvas(HeldReason.noServerRead);
     }
-    await ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
-          pageId: pageId,
-          desiredOpsByEntityKey: desiredOpsByEntityKey,
-          flushImmediately: false,
-          madeLive: madeLive,
-        );
-    return true;
+    return switch (
+        await ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
+              pageId: pageId,
+              desiredOpsByEntityKey: desiredOpsByEntityKey,
+              flushImmediately: false,
+              madeLive: madeLive,
+            )) {
+      OutboxWrite.written => const QueuedForServer(),
+      OutboxWrite.failed => const HeldOnCanvas(HeldReason.outboxWriteFailed),
+      OutboxWrite.noAccount => const HeldOnCanvas(HeldReason.noAccount),
+    };
   }
 
   StrategyEditorPageData _hydrateProjectedPage(

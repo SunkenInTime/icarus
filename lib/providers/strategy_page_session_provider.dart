@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart' show listEquals, setEquals;
+import 'package:meta/meta.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/strategy/open_attempt.dart';
@@ -230,7 +231,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
                   !ref.read(strategySaveStateProvider.notifier).canvasHeld) {
                 return;
               }
-              unawaited(flushCurrentPage());
+              unawaited(handOverForSyncStatus());
             });
           }
         }
@@ -609,12 +610,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
   /// Hands the page on screen to its store (see
   /// [StrategyPageSource.flushCurrentPage]); with [flushImmediately], a
-  /// cloud page's ops are sent too. False when the canvas could not be
-  /// handed over. With no strategy open there is nothing to hand over.
-  Future<bool> flushCurrentPage({bool flushImmediately = false}) async {
+  /// cloud page's ops are sent too. With no strategy open there is nothing
+  /// to hand over.
+  @useResult
+  Future<PageHandover> flushCurrentPage({bool flushImmediately = false}) async {
     final strategyState = ref.read(strategyProvider);
     if (!strategyState.isOpen || strategyState.strategyId == null) {
-      return true;
+      return const NothingToHandOver();
     }
 
     final source = _resolvePageSource(
@@ -624,11 +626,22 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (strategyState.source == StrategySource.cloud) {
       ref.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
     }
-    final handedOver = await source.flushCurrentPage();
+    final handover = await source.flushCurrentPage();
     if (flushImmediately && strategyState.source == StrategySource.cloud) {
       await ref.read(strategyOpQueueProvider.notifier).flushNow();
     }
-    return handedOver;
+    return handover;
+  }
+
+  Future<void> handOverForSyncStatus({bool flushImmediately = false}) async {
+    switch (await flushCurrentPage(flushImmediately: flushImmediately)) {
+      case HeldOnCanvas(:final reason):
+        AppErrorReporter.reportInfo(
+          'The canvas of page ${state.activePageId} is held: ${reason.name}.',
+          source: 'strategy_page_session',
+        );
+      case SavedToLibrary() || QueuedForServer() || NothingToHandOver():
+    }
   }
 
   /// Keeps both versions of every conflicting lineup group: the cloud's
@@ -705,8 +718,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     // Edits made while the cloud's version loaded are saved first; one to
     // a conflicting group is newer than the copy, so nothing goes ahead.
     final pageSource = _resolvePageSource(strategyId, StrategySource.cloud);
-    await pageSource.flushCurrentPage();
-    if (!unchangedSince()) return KeepBothOutcome.unchanged;
+    final handover = await pageSource.flushCurrentPage();
+    if (handover is HeldOnCanvas || !unchangedSince()) {
+      return KeepBothOutcome.unchanged;
+    }
 
     final lineUps = ref.read(lineUpProvider.notifier);
     for (final copy in copies) {
@@ -723,7 +738,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             orElse: () => ids.first,
           ),
     ];
-    await pageSource.flushCurrentPage();
+    final copyHandover = await pageSource.flushCurrentPage();
     // A copy that could not be saved leaves the outbox failing (and waits in
     // attention itself): nothing may be discarded on its behalf.
     final afterCopy = ref.read(strategyOpQueueProvider);
@@ -742,6 +757,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       return queuedKeys.contains(key) || liveSync.hydratedBase(key) != null;
     });
     final saved = copiesQueued &&
+        copyHandover is! HeldOnCanvas &&
         !afterCopy.hasDurabilityFailure &&
         afterCopy.attentionByEntityKey.keys.every(waiting.containsKey);
     if (!saved || !unchangedSince()) return KeepBothOutcome.copiesOnly;
@@ -793,6 +809,18 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         waiting.entries.every((entry) => now[entry.key] == entry.value);
   }
 
+  bool _outboxRefused(PageHandover handover) => switch (handover) {
+        HeldOnCanvas(
+          reason: HeldReason.outboxWriteFailed || HeldReason.noAccount
+        ) =>
+          true,
+        HeldOnCanvas() ||
+        SavedToLibrary() ||
+        QueuedForServer() ||
+        NothingToHandOver() =>
+          false,
+      };
+
   /// Adopts the cloud version for every current conflict in this strategy.
   ///
   /// The authoritative page is loaded before any local intent is discarded.
@@ -830,7 +858,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       }..removeAll(held);
       final currentPageSource =
           _resolvePageSource(strategyId, StrategySource.cloud);
-      await currentPageSource.flushCurrentPage();
+      final firstHandover = await currentPageSource.flushCurrentPage();
+      if (_outboxRefused(firstHandover)) return false;
       final strategyNotifier = ref.read(strategyProvider.notifier);
       strategyNotifier.consumeScheduledCloudPageSync();
       strategyNotifier.consumeScheduledCloudStrategySync();
@@ -861,17 +890,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       // replace that edit on screen. The canvas is noted before that save,
       // so an edit made while it is being written counts as a change too.
       final savedCanvas = _canvasStates();
-      final queueNotifier = ref.read(strategyOpQueueProvider.notifier);
-      final failuresBefore = queueNotifier.persistenceFailureCount;
-      await currentPageSource.flushCurrentPage();
+      final handover = await currentPageSource.flushCurrentPage();
       // A save that failed just now may have dropped a newer edit the queue
       // never recorded; nothing is discarded or redrawn over it. (A failure
       // left from before, say a discard that did not finish, does not stop
       // the discard that can clear it.)
-      if (waitingChanged() ||
-          queueNotifier.persistenceFailureCount != failuresBefore) {
-        return false;
-      }
+      if (waitingChanged() || _outboxRefused(handover)) return false;
       final targetPageId = _resolveHydrationTargetPage(snapshot);
       final localMetadata = _unsentLocalMetadata();
       if (targetPageId != null) {
@@ -1087,9 +1111,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         UnshownCloudContent.none;
   }
 
-  /// Stays on the page on screen ([_PageSwitch.stayed]) if a teammate
-  /// deleted it while its work was being flushed, or if the server can't
-  /// send the cloud page asked for.
+  /// Stays on the page on screen ([_PageSwitch.stayed]) if its edits could
+  /// not be handed over, if a teammate deleted it while its work was being
+  /// flushed, or if the server can't send the cloud page asked for.
   Future<_PageSwitch> _switchToPage(
     String pageId, {
     required bool animated,
@@ -1107,7 +1131,29 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (source == StrategySource.cloud) {
       ref.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
     }
-    await pageSource.flushCurrentPage();
+    bool superseded() =>
+        generation != _pageSessionGeneration ||
+        ref.read(strategyProvider).strategyId != strategyId;
+    final leftPageId = state.activePageId;
+    final handover = await pageSource.flushCurrentPage();
+    if (superseded()) return _PageSwitch.superseded;
+    switch (handover) {
+      case HeldOnCanvas()
+          when source == StrategySource.cloud &&
+              leftPageId != null &&
+              _deletedOnThisDevice(leftPageId):
+        break;
+      case HeldOnCanvas(:final reason):
+        AppErrorReporter.reportInfo(
+          'The edits on page $leftPageId could not be saved '
+          '(${reason.name}); staying on it.',
+          source: 'strategy_page_session',
+        );
+        _showToast(ref.read(l10nProvider).strategyMsgPageEditsNotSaved);
+        return _PageSwitch.stayed;
+      case SavedToLibrary() || QueuedForServer() || NothingToHandOver():
+        break;
+    }
     if (source == StrategySource.cloud) {
       await ref
           .read(strategyOpQueueProvider.notifier)
@@ -1119,9 +1165,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       // page's server copy, and with it every later edit's way into the
       // queue, whenever the read then failed (offline, say).
       final remote = ref.read(remoteEditorSnapshotProvider.notifier);
-      bool superseded() =>
-          generation != _pageSessionGeneration ||
-          ref.read(strategyProvider).strategyId != strategyId;
       final RemotePageSnapshot target;
       try {
         target = await remote.fetchPage(pageId);
@@ -1165,11 +1208,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   /// differently.
   void _showPageUnreachable(String pageId) {
     final name = ref.read(drawnCloudPagesProvider)?.byId(pageId)?.name;
+    _showToast(name == null
+        ? ref.read(l10nProvider).strategyMsgPageUnreachableUnnamed
+        : ref.read(l10nProvider).strategyMsgPageUnreachable(name));
+  }
+
+  void _showToast(String message) {
     try {
       Settings.showToast(
-        message: name == null
-            ? ref.read(l10nProvider).strategyMsgPageUnreachableUnnamed
-            : ref.read(l10nProvider).strategyMsgPageUnreachable(name),
+        message: message,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     } catch (error) {}
@@ -1429,6 +1476,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   /// told first ([StrategyPageSessionState.deletedPage]). Checked before the
   /// canvas leaves the page, and while a replace of it waits. With nothing
   /// unsent, the unsaved mark its edits left is stale and is dropped.
+  bool _deletedOnThisDevice(String pageId) {
+    _notePagesDeletedHere(ref.read(strategyOpQueueProvider));
+    return _deletedHere(pageId) ||
+        ref.read(strategyOpQueueProvider.notifier).isDeletedHere(pageId);
+  }
+
   bool _deletedPageHoldsWork() {
     if (state.deletedPage != null) return true;
     final pageId = state.activePageId;
@@ -1445,12 +1498,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
     // The user deleted it here: their delete landed, or is still on its way.
     // Work on it the server paused or refused stays in the sync status.
-    final queue = ref.read(strategyOpQueueProvider);
-    _notePagesDeletedHere(queue);
-    if (_deletedHere(pageId)) return false;
-    if (ref.read(strategyOpQueueProvider.notifier).isDeletedHere(pageId)) {
-      return false;
-    }
+    if (_deletedOnThisDevice(pageId)) return false;
     if (!ref.read(activePageLiveSyncProvider.notifier).hasUnsentWork(pageId)) {
       ref.read(strategySaveStateProvider.notifier).clearStaleCloudMark();
       return false;
@@ -1590,7 +1638,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     await ref
         .read(strategyOpQueueProvider.notifier)
         .retryRestoredPage(deleted.pageId);
-    await flushCurrentPage(flushImmediately: true);
+    await handOverForSyncStatus(flushImmediately: true);
     // A send whose answer was lost replays under its own op id, and may be
     // answered with the refusal the server recorded while the page was in
     // the trash: once the page's sends are answered, those go again too.

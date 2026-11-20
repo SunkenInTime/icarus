@@ -29,6 +29,7 @@ import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/strategy_page_source.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 bool _adaptersRegistered = false;
@@ -38,11 +39,13 @@ class _FakeGuardStrategyProvider extends StrategyProvider {
     required this.initialState,
     required this.flushResult,
     this.flushError,
+    this.holdsCanvas = false,
   });
 
   final StrategyState initialState;
   final bool flushResult;
   final Object? flushError;
+  final bool holdsCanvas;
 
   int flushCalls = 0;
   int forceSaveCalls = 0;
@@ -63,7 +66,15 @@ class _FakeGuardStrategyProvider extends StrategyProvider {
   @override
   Future<void> forceSaveNow(String id) async {
     forceSaveCalls++;
-    ref.read(strategySaveStateProvider.notifier).markPersisted();
+    final saveState = ref.read(strategySaveStateProvider.notifier);
+    if (holdsCanvas) {
+      saveState.noteCanvasHandover(
+        const HeldOnCanvas(HeldReason.outboxWriteFailed),
+        marksBefore: saveState.dirtyMarks,
+      );
+      return;
+    }
+    saveState.markPersisted();
   }
 
   @override
@@ -682,6 +693,61 @@ void main() {
       expect(await guardFuture, isTrue);
       expect(continueCalls, 1);
       expect(opQueue.currentState.pending, hasLength(1));
+    });
+
+    testWidgets(
+        'an edit held only on the canvas cannot leave beside unrelated '
+        'durable work', (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+        holdsCanvas: true,
+      );
+      final opQueue = _GuardOpQueue(
+        StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'guard-client',
+          queuedByEntityKey: {_guardEntityKey: _guardPendingIntent},
+          durableLoaded: true,
+          lastError: 'Cloud connection is offline.',
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(() => opQueue),
+          cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+      container.read(strategySaveStateProvider.notifier).markDirty();
+
+      var continueCalls = 0;
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-canvas-held',
+        onContinue: () async {
+          continueCalls++;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      expect(notifier.forceSaveCalls, 1);
+      expect(find.text('Leave anyway'), findsNothing);
+      await tester.tap(find.text('Stay here'));
+      await tester.pumpAndSettle();
+      expect(await guardFuture, isFalse);
+      expect(continueCalls, 0);
     });
 
     testWidgets('leave anyway checks again what changed while it was asked',

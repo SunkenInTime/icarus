@@ -1,0 +1,33 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"newLocal": "ascent", "name": "Handover {run}"},
+  {"wait": 3},
+  {"tapText": "Handover {run}", "optional": true},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"addAgent": "a{run}", "at": [600, 450]},
+  {"tapAt": [33, 857]},
+  {"wait": 3},
+  {"addAgent": "b{run}", "at": [900, 450]},
+  {"wait": 1},
+  {"probe": "edit-on-page-2"},
+
+  {"dropOpenPage": 1},
+  {"wait": 1},
+  {"tapText": "Page 1"},
+  {"wait": 0.6},
+  {"shot": "{out}/1-switch-refused.png"},
+  {"wait": 2},
+  {"probe": "after-refused-switch"},
+  {"expectItem": "b{run}"},
+
+  {"keyCombo": ["controlLeft", "keyS"]},
+  {"wait": 0.6},
+  {"shot": "{out}/2-save-refused.png"},
+  {"wait": 2},
+  {"probe": "after-refused-save"},
+  {"expectItem": "b{run}"},
+  {"exit": 1}
+]
