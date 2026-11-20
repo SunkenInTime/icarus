@@ -7,7 +7,17 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -138,7 +148,28 @@ export async function startBackend({ port, keep = false }) {
 
 /// Pushes the functions and schema in [projectDir]/convex to the backend.
 /// Codegen is off, so convex/_generated is left as committed.
+function projectWithoutCrons(projectDir) {
+  const dir = mkdtempSync(join(tmpdir(), "icarus-convex-cost-project-"));
+  const crons = join(projectDir, "convex", "crons.ts");
+  cpSync(join(projectDir, "convex"), join(dir, "convex"), { recursive: true, filter: (source) => source !== crons });
+  for (const entry of readdirSync(projectDir)) {
+    if (entry === "convex" || entry === ".git") continue;
+    const source = join(projectDir, entry);
+    symlinkSync(source, join(dir, entry), statSync(source).isDirectory() ? "junction" : "file");
+  }
+  return dir;
+}
+
 export function deploy({ url, adminKey, projectDir }) {
+  const deployed = projectWithoutCrons(projectDir);
+  try {
+    deployFrom({ url, adminKey, projectDir, deployed });
+  } finally {
+    rmSync(deployed, { recursive: true, force: true });
+  }
+}
+
+function deployFrom({ url, adminKey, projectDir, deployed }) {
   const env = { ...process.env, CONVEX_SELF_HOSTED_URL: url, CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey };
   // A deploy key or a selected deployment would win over the self-hosted
   // backend; CI's convex lane has one in its environment.
@@ -148,7 +179,7 @@ export function deploy({ url, adminKey, projectDir }) {
   const result = spawnSync(
     process.execPath,
     [cli, "deploy", "--typecheck", "disable", "--codegen", "disable", "--yes"],
-    { cwd: projectDir, env, encoding: "utf8" },
+    { cwd: deployed, env, encoding: "utf8" },
   );
   if (result.status !== 0) {
     throw new Error(`convex deploy failed:\n${result.stdout}\n${result.stderr}`);

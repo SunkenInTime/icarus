@@ -21,7 +21,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BACKEND_RELEASE, deploy, startBackend } from "./lib/backend.mjs";
 import { LogStream } from "./lib/logs.mjs";
-import { runScenarios, SCENARIOS } from "./lib/scenarios.mjs";
+import { runScenarios, SCENARIOS as CORE } from "./lib/scenarios.mjs";
+import { seedTeam, SESSIONS } from "./lib/sessions.mjs";
+
+const SCENARIOS = { ...CORE, ...SESSIONS };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..", "..");
@@ -58,6 +61,15 @@ const METRICS = {
   pageReadBytes: { label: "bytes read by page part re-runs", unit: "B", headroom: 0.25 },
   otherReruns: { label: "other live query re-runs", unit: "", headroom: 0 },
   conflictRetries: { label: "write-conflict retries", unit: "", headroom: 0 },
+  functionCalls: { label: "function calls", unit: "", headroom: 0.2 },
+  writeBytes: { label: "bytes written in all", unit: "B", headroom: 0.25 },
+  sentBytes: { label: "bytes the client sent", unit: "B", headroom: 0.25 },
+  returnBytes: { label: "bytes the functions returned", unit: "B", headroom: 0.25 },
+  queryReruns: { label: "query re-runs", unit: "", headroom: 0.2 },
+  callsPerHour: { label: "function calls an hour", unit: "", headroom: 0.2 },
+  readBytesPerHour: { label: "bytes read an hour", unit: "B", headroom: 0.25 },
+  writeBytesPerHour: { label: "bytes written an hour", unit: "B", headroom: 0.25 },
+  sentBytesPerHour: { label: "bytes the client sent an hour", unit: "B", headroom: 0.25 },
 };
 
 function budgetFor(metric, today) {
@@ -73,10 +85,10 @@ const format = (metric, value) =>
 
 function printDetail(name, result) {
   const rows = [...result.summary.byFunction.entries()].sort((a, b) => b[1].readBytes - a[1].readBytes);
-  console.log(`  ${"function".padEnd(32)} ${"runs".padStart(5)} ${"cached".padStart(6)} ${"read".padStart(10)} ${"written".padStart(10)} ${"retries".padStart(7)}`);
+  console.log(`  ${"function".padEnd(32)} ${"runs".padStart(5)} ${"cached".padStart(6)} ${"read".padStart(10)} ${"written".padStart(10)} ${"returned".padStart(10)} ${"retries".padStart(7)}`);
   for (const [fn, row] of rows) {
     console.log(
-      `  ${fn.padEnd(32)} ${String(row.runs).padStart(5)} ${String(row.cachedRuns).padStart(6)} ${format("readBytes", row.readBytes).padStart(10)} ${format("readBytes", row.writeBytes).padStart(10)} ${String(row.conflictRetries).padStart(7)}`,
+      `  ${fn.padEnd(32)} ${String(row.runs).padStart(5)} ${String(row.cachedRuns).padStart(6)} ${format("readBytes", row.readBytes).padStart(10)} ${format("readBytes", row.writeBytes).padStart(10)} ${format("readBytes", row.returnBytes).padStart(10)} ${String(row.conflictRetries).padStart(7)}`,
     );
   }
 }
@@ -104,7 +116,15 @@ async function main() {
       console.log(`Deployed ${options.project === repoRoot ? "this checkout" : options.project} in ${((Date.now() - at) / 1000).toFixed(1)} s`);
     }
     logs.start();
-    results = await runScenarios({ url, adminKey, projectDir: options.project, logs, names });
+    results = await runScenarios({
+      url,
+      adminKey,
+      projectDir: options.project,
+      logs,
+      names,
+      scenarios: SCENARIOS,
+      worlds: { team: seedTeam },
+    });
   } finally {
     logs.stop();
     await backend?.stop();
@@ -126,6 +146,7 @@ async function main() {
     const scenario = SCENARIOS[name];
     console.log(`\n${scenario.title} (${name}, ${result.seconds.toFixed(1)} s)`);
     printDetail(name, result);
+    for (const note of result.notes ?? []) console.log(`  ${note}`);
     for (const problem of result.problems) {
       console.log(`  FAILED ${problem}`);
       failures.push(`${scenario.title}: ${problem}`);

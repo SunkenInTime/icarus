@@ -93,16 +93,35 @@ async function mark(logs, http) {
 
 export function summarize(entries) {
   const byFunction = new Map();
-  const total = { runs: 0, cachedRuns: 0, readBytes: 0, writeBytes: 0, readDocuments: 0, writeDocuments: 0, conflictRetries: 0, failures: 0 };
+  const total = {
+    runs: 0,
+    cachedRuns: 0,
+    queryRuns: 0,
+    readBytes: 0,
+    writeBytes: 0,
+    ioReadBytes: 0,
+    ioWriteBytes: 0,
+    returnBytes: 0,
+    readDocuments: 0,
+    writeDocuments: 0,
+    actionMbSeconds: 0,
+    conflictRetries: 0,
+    failures: 0,
+  };
   for (const entry of entries) {
     if (entry.kind !== "Completion") continue;
     const row = byFunction.get(entry.identifier) ?? {
       udfType: entry.udfType,
       runs: 0,
       cachedRuns: 0,
+      queryRuns: 0,
       readBytes: 0,
       writeBytes: 0,
+      ioReadBytes: 0,
+      ioWriteBytes: 0,
+      returnBytes: 0,
       readDocuments: 0,
+      actionMbSeconds: 0,
       writeDocuments: 0,
       conflictRetries: 0,
       failures: 0,
@@ -118,6 +137,11 @@ export function summarize(entries) {
     } else {
       add("runs", 1);
     }
+    if (entry.udfType === "Query") add("queryRuns", 1);
+    if (entry.udfType === "Action") add("actionMbSeconds", (usage.memoryUsedMb ?? 0) * (entry.executionTime ?? 0));
+    add("ioReadBytes", usage.databaseIoReadBytes ?? 0);
+    add("ioWriteBytes", usage.databaseIoWriteBytes ?? 0);
+    add("returnBytes", entry.returnBytes ?? 0);
     add("readBytes", usage.databaseReadBytes ?? 0);
     add("writeBytes", usage.databaseWriteBytes ?? 0);
     add("readDocuments", usage.databaseReadDocuments ?? 0);

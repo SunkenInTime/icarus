@@ -68,6 +68,444 @@
           "budget": 0
         }
       }
+    },
+    "libraryOpen": {
+      "title": "Open the library",
+      "about": "A signed-in user with 150 strategies in 20 folders (five with three subfolders each) opens the library: the folder tree with its per-folder summaries (scope all) and My Library's top level, live; then Shared, which swaps the strategy list for strategies:listSharedWithMe while the tree stays. This is all the web build reads; a desktop launch also walks the library (launchUnchanged).",
+      "metrics": {
+        "functionCalls": {
+          "today": 3,
+          "budget": 5
+        },
+        "readBytes": {
+          "today": 145412,
+          "budget": 181765
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 83,
+          "budget": 104
+        },
+        "returnBytes": {
+          "today": 19797,
+          "budget": 24747
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "launchUnchanged": {
+      "title": "Desktop launch, nothing changed",
+      "about": "The desktop app connects and refreshes the copy it keeps of every strategy it can open, each copy a day to a week old and none changed: listInventory, listSharedWithMe, the shared folder tree and each shared folder's list (strategy_copy_provider.dart _listStrategies), then strategy:listContentVersions in batches of 100. No strategy is read again.",
+      "metrics": {
+        "functionCalls": {
+          "today": 6,
+          "budget": 8
+        },
+        "readBytes": {
+          "today": 229239,
+          "budget": 286549
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 6561,
+          "budget": 8202
+        },
+        "returnBytes": {
+          "today": 74236,
+          "budget": 92795
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "launchOneChanged": {
+      "title": "Desktop launch, one strategy changed",
+      "about": "The same launch after a teammate moved one agent in a 4-page, 240-item strategy: the walk and the version check, then strategy:getFullSnapshot of the one that changed.",
+      "metrics": {
+        "functionCalls": {
+          "today": 7,
+          "budget": 9
+        },
+        "readBytes": {
+          "today": 414843,
+          "budget": 518554
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 6756,
+          "budget": 8445
+        },
+        "returnBytes": {
+          "today": 244480,
+          "budget": 305600
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "launchWeekly": {
+      "title": "Desktop launch, copies a week old",
+      "about": "The launch once every copy is older than a week (strategyCopyFullReadMaxAge), when the desktop app reads every strategy whole again, changed or not: the walk, then strategy:getFullSnapshot for each. The library holds the 150 small strategies, the 4-page and 20-page strategies and the ones shared with the user.",
+      "metrics": {
+        "functionCalls": {
+          "today": 166,
+          "budget": 200
+        },
+        "readBytes": {
+          "today": 10353518,
+          "budget": 12941898
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 31735,
+          "budget": 39669
+        },
+        "returnBytes": {
+          "today": 13025197,
+          "budget": 16281497
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "openTypical": {
+      "title": "Open a typical strategy cold",
+      "about": "Desktop opens a strategy of 4 pages and 60 items a page that nothing has read since it last changed: getShell and page:getSnapshot of the first page read once, then both watched (the page whole until it changes), presence:issueRoomPass, pages:listTrashed for the pages bar, and strategy:getFullSnapshot for the copy desktop keeps (StrategyCopyRefresher.keepOpenedStrategy). The web build makes the same calls but the last.",
+      "metrics": {
+        "functionCalls": {
+          "today": 7,
+          "budget": 9
+        },
+        "readBytes": {
+          "today": 235195,
+          "budget": 293994
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 881,
+          "budget": 1102
+        },
+        "returnBytes": {
+          "today": 257776,
+          "budget": 322220
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "openLarge": {
+      "title": "Open a large strategy cold",
+      "about": "The same open on a strategy of 20 pages and 300 items a page, one item in ten a freehand drawing of 250 points.",
+      "metrics": {
+        "functionCalls": {
+          "today": 7,
+          "budget": 9
+        },
+        "readBytes": {
+          "today": 8863671,
+          "budget": 11079589
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 881,
+          "budget": 1102
+        },
+        "returnBytes": {
+          "today": 12602080,
+          "budget": 15752600
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "pageSwitchNew": {
+      "title": "Switch to a page not yet read",
+      "about": "With a typical strategy open on its third page, the user goes to the fourth: the page watch stops, page:getSnapshot is read once, then watched whole (RemoteEditorSnapshotNotifier.setActivePage).",
+      "metrics": {
+        "functionCalls": {
+          "today": 2,
+          "budget": 4
+        },
+        "readBytes": {
+          "today": 46685,
+          "budget": 58357
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 372,
+          "budget": 465
+        },
+        "returnBytes": {
+          "today": 85034,
+          "budget": 106293
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "pageSwitchBack": {
+      "title": "Switch back to a page already read",
+      "about": "Then back to the third page, unchanged since it was read seconds earlier: the same two calls. The server answers both from its query cache, so they read nothing; neither client keeps the page it left.",
+      "metrics": {
+        "functionCalls": {
+          "today": 2,
+          "budget": 4
+        },
+        "readBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 372,
+          "budget": 465
+        },
+        "returnBytes": {
+          "today": 85024,
+          "budget": 106280
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "reopenDesktop": {
+      "title": "Reopen an unchanged strategy on desktop",
+      "about": "Desktop closes a typical strategy and opens it again with nothing changed. It reads the shell and page from the server as on a cold open, and reads the whole strategy again for its copy without checking its content version first. Measured within seconds of the first open, so the server answers unchanged queries from its cache; once the cache has dropped them a reopen costs what a cold open does.",
+      "metrics": {
+        "functionCalls": {
+          "today": 7,
+          "budget": 9
+        },
+        "readBytes": {
+          "today": 569,
+          "budget": 712
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 881,
+          "budget": 1102
+        },
+        "returnBytes": {
+          "today": 257779,
+          "budget": 322224
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "reopenWeb": {
+      "title": "Reopen an unchanged strategy on the web",
+      "about": "The same reopen on the web build, which keeps no copy and so makes no full read.",
+      "metrics": {
+        "functionCalls": {
+          "today": 6,
+          "budget": 8
+        },
+        "readBytes": {
+          "today": 569,
+          "budget": 712
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 686,
+          "budget": 858
+        },
+        "returnBytes": {
+          "today": 87534,
+          "budget": 109418
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "soloSession": {
+      "title": "Edit alone: 50 moves on one page",
+      "about": "A typical strategy open on its first page with My Library's tree and top-level list live behind the editor. The user moves 50 different items one at a time, each sent alone as the op queue sends an edit made more than 180 ms after the last: one live element.patch carrying the whole payload and the names of the moved fields. The first edit re-runs the whole page and the editor switches to watching it in slices, as watchPageSnapshot does.",
+      "metrics": {
+        "functionCalls": {
+          "today": 105,
+          "budget": 126
+        },
+        "readBytes": {
+          "today": 971572,
+          "budget": 1214465
+        },
+        "writeBytes": {
+          "today": 115698,
+          "budget": 144623
+        },
+        "sentBytes": {
+          "today": 48254,
+          "budget": 60318
+        },
+        "returnBytes": {
+          "today": 635223,
+          "budget": 794029
+        },
+        "queryReruns": {
+          "today": 50,
+          "budget": 60
+        },
+        "listReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "drawingMove": {
+      "title": "Move a 2,000-point freehand drawing",
+      "about": "One live element.patch moving a freehand drawing of 2,000 points on a 60-item page the editor already watches in slices. A move shifts every point, so its fields are listOfPoints and boundingBox and the patch carries the whole drawing: sending only changed fields would send the same points.",
+      "metrics": {
+        "functionCalls": {
+          "today": 2,
+          "budget": 4
+        },
+        "readBytes": {
+          "today": 272236,
+          "budget": 340295
+        },
+        "writeBytes": {
+          "today": 54312,
+          "budget": 67890
+        },
+        "sentBytes": {
+          "today": 98489,
+          "budget": 123112
+        },
+        "returnBytes": {
+          "today": 104049,
+          "budget": 130062
+        },
+        "queryReruns": {
+          "today": 1,
+          "budget": 3
+        }
+      }
+    },
+    "twoPeople": {
+      "title": "Two people on one page",
+      "about": "A teammate with edit access has the typical strategy's first page open, with Shared's lists live behind their editor, while its owner moves 20 items one at a time. The owner's device holds no live queries here, so every re-run counted is the teammate's; the owner's own are soloSession's. Each edit waits until the teammate's page shows it.",
+      "metrics": {
+        "functionCalls": {
+          "today": 45,
+          "budget": 54
+        },
+        "readBytes": {
+          "today": 445791,
+          "budget": 557239
+        },
+        "writeBytes": {
+          "today": 46275,
+          "budget": 57844
+        },
+        "sentBytes": {
+          "today": 19821,
+          "budget": 24777
+        },
+        "returnBytes": {
+          "today": 294305,
+          "budget": 367882
+        },
+        "queryReruns": {
+          "today": 20,
+          "budget": 24
+        }
+      }
+    },
+    "editorIdleHour": {
+      "title": "An editor left open for an hour",
+      "about": "A typical strategy open with My Library behind it and no edits for an hour. The only call it makes is presence:issueRoomPass, renewed every 60 s (half the 2-minute pass, presence_room.dart _scheduleRenewal): one renewal is measured and counted 60 times. Its live queries re-run only when something they read changes.",
+      "metrics": {
+        "callsPerHour": {
+          "today": 60,
+          "budget": 72
+        },
+        "readBytesPerHour": {
+          "today": 34140,
+          "budget": 42675
+        },
+        "writeBytesPerHour": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytesPerHour": {
+          "today": 5100,
+          "budget": 6375
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "idleHour": {
+      "title": "Nobody uses the app for an hour",
+      "about": "What the deployment's scheduled jobs (convex/crons.ts) cost in an hour with nothing for them to do: each job is run once with nothing waiting for it, and counted as many times as its interval runs it in an hour (fold-content-changes 30, fold-community-counts 12, the hourly ones once, the daily ones 1/24). A job's calls include the functions it calls.",
+      "metrics": {
+        "callsPerHour": {
+          "today": 47,
+          "budget": 57
+        },
+        "readBytesPerHour": {
+          "today": 0,
+          "budget": 0
+        },
+        "writeBytesPerHour": {
+          "today": 0,
+          "budget": 0
+        }
+      }
     }
   }
 }
