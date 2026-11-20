@@ -340,6 +340,9 @@ export default defineSchema({
     strategyId: v.id("strategies"),
     version: v.number(),
   }).index("by_strategyId", ["strategyId"]),
+  foldChains: defineTable({
+    chain: v.union(v.literal("contentChanges"), v.literal("communityCounts")),
+  }).index("by_chain", ["chain"]),
   // Community: strategies their authors posted for anyone to open and copy.
   // A post shows a frozen copy of the author's strategy (the snapshot), a
   // strategy owned by the community account so it sits in nobody's library;

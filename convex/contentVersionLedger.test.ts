@@ -581,6 +581,40 @@ async function check(identifier: string, scenario: Scenario) {
   await settle(w);
 }
 
+function foldingOldChangeRows(): Scenario {
+  return {
+    name: "folding old change rows, a young one left, changes no answer",
+    changesRead: false,
+    answersUnchanged: true,
+    settleSetup: false,
+    setup: async (w) => {
+      await seedShared("editor")(w);
+      // A deleted strategy's rows fold away with its count.
+      await createStrategy(w.owner, "doomed");
+      await w.owner.mutation(mutationRef("strategies:delete"), {
+        ...protocol,
+        strategyPublicId: "doomed",
+        expectedRevision: await strategyRevision(w, "doomed"),
+      });
+      await w.t.finishAllScheduledFunctions(() => vi.advanceTimersByTime(0));
+      vi.advanceTimersByTime(90 * 1000);
+      // Younger than a minute: left for a later fold.
+      await apply(w.owner, S, [addElement("s-late", P2, agent("s-late"), 1)]);
+    },
+    run: (w, mutate) => mutate(w.t, {}),
+    did: async (w) => {
+      const rows = await w.t.run(async (ctx) => ({
+        folded: (await ctx.db.query("strategyContentVersions").collect())
+          .length,
+        unfolded: (await ctx.db.query("strategyContentChanges").collect())
+          .length,
+      }));
+      expect(rows.folded).toBeGreaterThan(0);
+      expect(rows.unfolded).toBeGreaterThan(0);
+    },
+  };
+}
+
 function rejectedStalePatch(): Scenario {
   return {
     name: "a batch whose only op is refused writes nothing anyone reads",
@@ -1079,6 +1113,9 @@ const ledger: Record<string, LedgerEntry> = {
   "community.js:foldCountChanges": {
     exempt: "writes only posts' star and save counts, which no full read carries",
   },
+  "community.js:scheduledCountFold": {
+    exempt: "writes only posts' star and save counts, which no full read carries",
+  },
   "community.js:publish": {
     exempt:
       "copies the strategy into a new snapshot owned by the community account, which nobody's full read or content versions include",
@@ -1510,37 +1547,7 @@ const ledger: Record<string, LedgerEntry> = {
     exempt: "writes only strategyAgentSummaries rows, which no full read reads",
   },
   "maintenance.js:foldContentChanges": {
-    scenarios: [
-      {
-        name: "folding old change rows, a young one left, changes no answer",
-        changesRead: false,
-        answersUnchanged: true,
-        setup: async (w) => {
-          await seedShared("editor")(w);
-          vi.advanceTimersByTime(2 * 60 * 1000);
-          // Younger than a minute: left for a later fold.
-          await apply(w.owner, S, [addElement("s-late", P2, agent("s-late"), 1)]);
-          // A deleted strategy's rows fold away with its count.
-          await createStrategy(w.owner, "doomed");
-          await w.owner.mutation(mutationRef("strategies:delete"), {
-            ...protocol,
-            strategyPublicId: "doomed",
-            expectedRevision: await strategyRevision(w, "doomed"),
-          });
-        },
-        run: (w, mutate) => mutate(w.t, {}),
-        did: async (w) => {
-          const rows = await w.t.run(async (ctx) => ({
-            folded: (await ctx.db.query("strategyContentVersions").collect())
-              .length,
-            unfolded: (await ctx.db.query("strategyContentChanges").collect())
-              .length,
-          }));
-          expect(rows.folded).toBeGreaterThan(0);
-          expect(rows.unfolded).toBeGreaterThan(0);
-        },
-      },
-    ],
+    scenarios: [foldingOldChangeRows()],
   },
   "maintenance.js:purgeDeletedPageOrphans": {
     scenarios: [
@@ -1655,6 +1662,9 @@ const ledger: Record<string, LedgerEntry> = {
     ],
   },
 
+  "maintenance.js:scheduledContentFold": {
+    scenarios: [foldingOldChangeRows()],
+  },
   "ops.js:applyBatch": { scenarios: applyBatch },
 
   "pages.js:add": {

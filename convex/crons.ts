@@ -16,7 +16,7 @@ const crons = cronJobs();
 
 crons.interval(
   "fold-content-changes",
-  { minutes: 2 },
+  { hours: 1 },
   foldContentChangesRef,
   {},
 );
@@ -56,7 +56,7 @@ crons.interval(
 // feed's cached pages stay valid between runs.
 crons.interval(
   "fold-community-counts",
-  { minutes: 5 },
+  { hours: 1 },
   foldCountChangesRef,
   {},
 );

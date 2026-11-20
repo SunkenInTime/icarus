@@ -791,7 +791,7 @@ export const SESSIONS = {
     about:
       "What the deployment's scheduled jobs (convex/crons.ts) cost in an hour with nothing for them to do: each job is " +
       "run once with nothing waiting for it, and counted as many times as its interval runs it in an hour " +
-      "(fold-content-changes 30, fold-community-counts 12, the hourly ones once, the daily ones 1/24). A job's calls " +
+      "(the hourly ones once, the daily ones 1/24). A job's calls " +
       "include the functions it calls.",
     world: "team",
     async run({ env, projectDir }) {

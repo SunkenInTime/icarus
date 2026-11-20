@@ -14,8 +14,8 @@
           "budget": 1489052
         },
         "readBytes": {
-          "today": 4704701,
-          "budget": 5880877
+          "today": 4719101,
+          "budget": 5898877
         }
       }
     },
@@ -24,8 +24,8 @@
       "about": "One element.patch of an agent's position through ops:applyBatch, on a page of 60 items watched in slices, with the library lists live behind the editor. Oct 19: the drag re-read every agent of the strategy to rebuild its agent summary (75 KB, #348).",
       "metrics": {
         "applyBatchReadBytes": {
-          "today": 4343,
-          "budget": 5429
+          "today": 4487,
+          "budget": 5609
         },
         "applyBatchWriteBytes": {
           "today": 2198,
@@ -36,8 +36,8 @@
           "budget": 1
         },
         "readBytes": {
-          "today": 12487,
-          "budget": 15609
+          "today": 12631,
+          "budget": 15789
         }
       }
     },
@@ -378,8 +378,8 @@
           "budget": 126
         },
         "readBytes": {
-          "today": 971572,
-          "budget": 1214465
+          "today": 978772,
+          "budget": 1223465
         },
         "writeBytes": {
           "today": 115698,
@@ -412,8 +412,8 @@
           "budget": 4
         },
         "readBytes": {
-          "today": 272236,
-          "budget": 340295
+          "today": 272380,
+          "budget": 340475
         },
         "writeBytes": {
           "today": 54312,
@@ -442,8 +442,8 @@
           "budget": 54
         },
         "readBytes": {
-          "today": 445791,
-          "budget": 557239
+          "today": 448671,
+          "budget": 560839
         },
         "writeBytes": {
           "today": 46275,
@@ -491,11 +491,11 @@
     },
     "idleHour": {
       "title": "Nobody uses the app for an hour",
-      "about": "What the deployment's scheduled jobs (convex/crons.ts) cost in an hour with nothing for them to do: each job is run once with nothing waiting for it, and counted as many times as its interval runs it in an hour (fold-content-changes 30, fold-community-counts 12, the hourly ones once, the daily ones 1/24). A job's calls include the functions it calls.",
+      "about": "What the deployment's scheduled jobs (convex/crons.ts) cost in an hour with nothing for them to do: each job is run once with nothing waiting for it, and counted as many times as its interval runs it in an hour (the hourly ones once, the daily ones 1/24). A job's calls include the functions it calls.",
       "metrics": {
         "callsPerHour": {
-          "today": 47,
-          "budget": 57
+          "today": 7,
+          "budget": 9
         },
         "readBytesPerHour": {
           "today": 0,

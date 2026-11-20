@@ -4,6 +4,7 @@ import {
 } from "../_generated/server";
 import type { DatabaseWriter, MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
+import { startFolding } from "./foldChains";
 
 /// Every mutation is defined here, not with the generated builders: these
 /// record each strategy's content writes (see lib/contentVersions.ts), so
@@ -47,7 +48,7 @@ export function countingContentWrites(definition: MutationDefinition) {
   const counted: Handler = async (ctx, args) => {
     const writes = new ContentWrites(ctx.db);
     const result = await handler({ ...ctx, db: writes.db }, args);
-    await writes.record();
+    await writes.record(ctx);
     return result;
   };
   return typeof definition === "function"
@@ -230,12 +231,13 @@ class ContentWrites {
   }
 
   /// One change row for each strategy written, in the same transaction as
-  /// the writes. Only an insert: reading anything here would make edits to
-  /// one strategy from two devices collide.
-  async record() {
+  /// the writes. Inserts, and reads only the fold chain's row, which changes
+  /// when folding starts or stops: edits from two devices never collide.
+  async record(ctx: MutationCtx) {
     for (const strategyId of this.strategies) {
       await this.raw.insert("strategyContentChanges", { strategyId });
     }
+    if (this.strategies.size > 0) await startFolding(ctx, "contentChanges");
   }
 }
 

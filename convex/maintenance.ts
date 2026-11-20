@@ -19,6 +19,11 @@ import {
 import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
 import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
 import { foldOldContentChanges } from "./lib/contentVersions";
+import {
+  continueFolding,
+  startFolding,
+  type FoldLeft,
+} from "./lib/foldChains";
 
 const MAINTENANCE_BATCH_SIZE = 200;
 // Content rows can each hold up to ~900 KB (the op size cap), so passes
@@ -246,10 +251,24 @@ export const foldContentChanges = internalMutation({
   handler: async (ctx) => {
     const read = await foldOldContentChanges(ctx, MAINTENANCE_BATCH_SIZE);
     if (read === MAINTENANCE_BATCH_SIZE) {
-      await ctx.scheduler.runAfter(0, foldContentChangesRef, {});
+      await startFolding(ctx, "contentChanges");
     }
   },
 });
+
+export const scheduledContentFold = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const read = await foldOldContentChanges(ctx, MAINTENANCE_BATCH_SIZE);
+    await continueFolding(ctx, "contentChanges", await contentLeft(ctx, read));
+  },
+});
+
+async function contentLeft(ctx: MutationCtx, read: number): Promise<FoldLeft> {
+  if (read === MAINTENANCE_BATCH_SIZE) return "fullBatch";
+  const waiting = await ctx.db.query("strategyContentChanges").first();
+  return waiting === null ? "nothing" : "rowsWaiting";
+}
 
 export const purgeOldOperationEvents = internalMutation({
   args: {},
