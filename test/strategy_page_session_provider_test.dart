@@ -2774,6 +2774,69 @@ void main() {
     expect(container.read(utilityProvider), isEmpty);
   });
 
+  test('a cloud page with other drawings fades them in, as the video does',
+      () async {
+    final pageOne = _page('page-1', 0);
+    final pageTwo = _page('page-2', 1);
+    final stroke = FreeDrawing(
+      id: 'stroke',
+      listOfPoints: const [Offset(10, 20), Offset(40, 50)],
+      color: Colors.white,
+      isDotted: false,
+      hasArrow: false,
+    );
+    final strokeJson =
+        (jsonDecode(DrawingProvider.objectToJson([stroke])) as List).single
+            as Map<String, dynamic>;
+    final pageOneSnapshot = _pageSnapshot(pageOne, elements: const []);
+    final pageTwoSnapshot = _pageSnapshot(pageTwo, elements: [
+      RemoteElement(
+        publicId: stroke.id,
+        strategyPublicId: 'cloud-strategy',
+        pagePublicId: pageTwo.publicId,
+        elementType: 'drawing',
+        payload: cloudElementPayload(
+          kind: 'drawing',
+          data: {...strokeJson, 'elementType': 'drawing'},
+        ),
+        sortIndex: 0,
+        revision: 1,
+        deleted: false,
+      ),
+    ]);
+    final remote = _FakeRemoteEditorNotifier(
+      _editorSnapshot(pages: [pageOne, pageTwo], activePage: pageOneSnapshot),
+      pageCatalog: {
+        pageOne.publicId: pageOneSnapshot,
+        pageTwo.publicId: pageTwoSnapshot,
+      },
+    );
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    expect(container.read(drawingProvider).elements, isEmpty);
+
+    await session.setActivePageAnimated(
+      pageTwo.publicId,
+      direction: PageTransitionDirection.forward,
+    );
+    expect(container.read(drawingProvider).elements.single.id, stroke.id);
+    expect(container.read(drawingsTransitionOpacityProvider), 0);
+    await _drawFrame();
+
+    final transition = container.read(transitionProvider);
+    expect(transition.active, isTrue);
+    expect(transition.fadeInDrawings, isTrue);
+    expect(container.read(drawingsTransitionOpacityProvider), 0);
+  });
+
   test('two pages with the same doors and nothing else do not animate',
       () async {
     final pageOne = _page('page-1', 0);
