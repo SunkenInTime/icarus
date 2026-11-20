@@ -81,13 +81,17 @@ ElementAddOp _copiedElement(String pageId, DrawnRow element, String id) {
     opId: const Uuid().v4(),
     elementPublicId: id,
     pagePublicId: pageId,
-    payload: cloudElementPayload(kind: kind, data: {
-      ...data,
-      'id': id,
-      // A copied image shows its original's picture (see
-      // PlacedImage.assetId): nothing is copied or uploaded.
-      if (kind == 'image') 'assetId': data['assetId'] ?? element.publicId,
-    }),
+    payload: {
+      ...cloudElementPayload(kind: kind, data: {
+        ...data,
+        'id': id,
+        // A copied image shows its original's picture (see
+        // PlacedImage.assetId): nothing is copied or uploaded.
+        if (kind == 'image') 'assetId': data['assetId'] ?? element.publicId,
+      }),
+      if (element.payload['payloadVersion'] case final num version)
+        'payloadVersion': version,
+    },
     sortIndex: element.sortIndex,
   );
 }

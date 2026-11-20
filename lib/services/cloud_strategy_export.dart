@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -23,6 +24,14 @@ Future<CloudLibraryActionResult> runCloudStrategyExport(
             l10n,
             error,
             CloudStrategyCopy.export,
+          ),
+        );
+        return false;
+      } on UnreadableDrawing catch (error) {
+        reporter.showMessage(
+          l10n.importExportUnreadableDrawing(
+            error.strategyName,
+            error.pageName,
           ),
         );
         return false;

@@ -54,6 +54,7 @@ void main() {
       final imported = await StrategyPage.fromJson(
         json: page,
         strategyID: 'canvas-compatibility-import',
+        strategyName: 'Imported',
         isZip: true,
       );
       expect(imported.name, page['name']);

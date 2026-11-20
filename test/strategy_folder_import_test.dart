@@ -16,18 +16,24 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/l10n/l10n.dart';
+import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:path/path.dart' as path;
 
 bool _adaptersRegistered = false;
@@ -770,6 +776,206 @@ void main() {
           .where((strategy) => strategy.name == 'future'),
       isEmpty,
     );
+  });
+
+  group('page names come home exactly as typed', () {
+    const names = [
+      'A "split"',
+      r'C:\new plan',
+      r'back\slash',
+      'Line one\nLine two',
+    ];
+    final pages = [
+      for (var i = 0; i < names.length; i++)
+        StrategyPage(
+          id: 'page-$i',
+          name: names[i],
+          drawingData: const [],
+          agentData: const [],
+          abilityData: const [],
+          textData: const [],
+          imageData: const [],
+          utilityData: const [],
+          sortIndex: i,
+          isAttack: true,
+          settings: StrategySettings(),
+        ),
+    ];
+    List<String> pageNames(StrategyData strategy) => [
+          for (final page in [
+            ...strategy.pages
+          ]..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)))
+            page.name,
+        ];
+
+    for (final page in pages) {
+      test('${jsonEncode(page.name)} through an .ica', () async {
+        await _storeStrategy(name: 'Quoted', folderID: null, pages: [page]);
+        final file = File(path.join(tempDir.path, 'Exported.ica'));
+        await StrategyImportExportService(container).zipStrategyData(
+          strategy: _strategyByName('Quoted'),
+          outputFilePath: file.path,
+        );
+
+        final result =
+            await StrategyImportExportService(container).loadFromFilePath(
+          file.path,
+        );
+
+        expect(result.issues, isEmpty);
+        expect(pageNames(_strategyByName('Exported')), [page.name]);
+      });
+    }
+
+    test('in the form every shipped Icarus reads', () {
+      final page = pages.last.copyWith(name: 'Retake');
+      final json = page.toJson('strategy-1');
+
+      expect(json['sortIndex'], '3');
+      expect(json['isAttack'], 'true');
+      expect(json.containsKey('isAutoNamed'), isFalse);
+      expect(
+        page.copyWith(isAutoNamed: false).toJson('strategy-1'),
+        containsPair('isAutoNamed', false),
+      );
+    });
+
+    test('through a library backup', () async {
+      await _storeStrategy(name: 'Quoted', folderID: null, pages: pages);
+      final exportDirectory = await StrategyImportExportService(container)
+          .buildLibraryExportDirectoryForTest();
+      final backup = await _zipDirectory(
+        sourceDirectory: Directory(
+          path.join(exportDirectory.path, libraryBackupRootDirectoryName),
+        ),
+        zipPath: path.join(tempDir.path, 'library-backup.zip'),
+      );
+      await exportDirectory.delete(recursive: true);
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
+
+      final result =
+          await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(backup.path)],
+      );
+
+      expect(result.issues, isEmpty);
+      expect(pageNames(_strategyByName('Quoted')), names);
+    });
+  });
+
+  group('a drawing that cannot be read', () {
+    final damagedDrawings = <String, Map<String, dynamic>>{
+      'of a kind this Icarus does not know': {
+        'type': 'sprayDrawing',
+        'id': 'spray',
+      },
+      'missing its end': Map<String, dynamic>.from(_line('broken-line'))
+        ..remove('lineEnd'),
+      'drawn freehand without its points': DrawingProvider.elementToJson(
+        FreeDrawing(
+          listOfPoints: const [Offset(120, 340), Offset(480, 360)],
+          color: Colors.red,
+          isDotted: false,
+          hasArrow: false,
+          id: 'broken-stroke',
+        ),
+      )..remove('listOfPoints'),
+    };
+
+    for (final MapEntry(key: description, value: damaged)
+        in damagedDrawings.entries) {
+      test('$description stops the import and names the page', () async {
+        final file = File(path.join(tempDir.path, 'Damaged.ica'));
+        await file.writeAsString(_strategyWithPageDrawings(
+          pageName: 'Retake',
+          drawings: [_line('kept-line'), damaged],
+        ));
+        FilePicker.platform = _PickedFile(file.path);
+
+        final result =
+            await StrategyImportExportService(container).importFromFilePicker();
+
+        expect(result.hasImports, isFalse);
+        expect(
+          Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values,
+          isEmpty,
+        );
+        expect(result.issues.single.code, ImportIssueCode.unreadableDrawing);
+        final message = buildImportSummaryMessage(
+          lookupAppLocalizations(const Locale('en')),
+          result,
+        );
+        expect(message, contains('“Retake”'));
+        expect(message, contains('“Damaged”'));
+      });
+    }
+
+    test('before pages existed stops the import', () async {
+      final file = File(path.join(tempDir.path, 'Old.ica'));
+      await file.writeAsString(jsonEncode({
+        ...jsonDecode(_strategyJson(versionNumber: 15)) as Map,
+        'drawingData': [_line('kept-line'), damagedDrawings.values.first],
+      }));
+
+      final result =
+          await StrategyImportExportService(container).loadFromFilePath(
+        file.path,
+      );
+
+      expect(result.hasImports, isFalse);
+      expect(result.issues.single.code, ImportIssueCode.unreadableDrawing);
+      expect(
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values,
+        isEmpty,
+      );
+    });
+
+    test('in a dropped folder skips that strategy and keeps the rest',
+        () async {
+      final sourceRoot =
+          await Directory(path.join(tempDir.path, 'source', 'Retakes'))
+              .create(recursive: true);
+      await _writeStrategyFile(File(path.join(sourceRoot.path, 'valid.ica')));
+      await File(path.join(sourceRoot.path, 'Damaged.ica'))
+          .writeAsString(_strategyWithPageDrawings(
+        pageName: 'Retake',
+        drawings: [_line('kept-line'), damagedDrawings.values.first],
+      ));
+
+      final result =
+          await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(sourceRoot.path)],
+      );
+
+      expect(result.strategiesImported, 1);
+      expect(result.issues.single.code, ImportIssueCode.unreadableDrawing);
+      expect(_strategyByName('valid').folderID, _folderByName('Retakes').id);
+      expect(
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+            .values
+            .where((strategy) => strategy.name == 'Damaged'),
+        isEmpty,
+      );
+    });
+
+    test('a page whose drawings all read imports every one', () async {
+      final file = File(path.join(tempDir.path, 'Whole.ica'));
+      await file.writeAsString(_strategyWithPageDrawings(
+        pageName: 'Retake',
+        drawings: [_line('first-line'), _line('second-line')],
+      ));
+
+      final result =
+          await StrategyImportExportService(container).loadFromFilePath(
+        file.path,
+      );
+
+      expect(result.issues, isEmpty);
+      expect(
+        _strategyByName('Whole').pages.single.drawingData.map((d) => d.id),
+        ['first-line', 'second-line'],
+      );
+    });
   });
 
   test('a shared .ica keeps its colors when the receiver lacks the profile',
@@ -1560,6 +1766,40 @@ String _strategyJson({int? versionNumber}) => jsonEncode({
       'pages': const [],
     });
 
+Map<String, dynamic> _line(String id) => DrawingProvider.elementToJson(Line(
+      lineStart: const Offset(120, 340),
+      lineEnd: const Offset(480, 360),
+      color: Colors.red,
+      isDotted: false,
+      hasArrow: true,
+      id: id,
+    ));
+
+String _strategyWithPageDrawings({
+  required String pageName,
+  required List<Map<String, dynamic>> drawings,
+}) {
+  final page = StrategyPage(
+    id: 'page-1',
+    name: pageName,
+    drawingData: const [],
+    agentData: const [],
+    abilityData: const [],
+    textData: const [],
+    imageData: const [],
+    utilityData: const [],
+    sortIndex: 0,
+    isAttack: true,
+    settings: StrategySettings(),
+  ).toJson('strategy-1');
+  return jsonEncode({
+    ...jsonDecode(_strategyJson()) as Map,
+    'pages': [
+      {...page, 'drawingData': drawings},
+    ],
+  });
+}
+
 Future<void> _writeStrategyFile(
   File file, {
   int? versionNumber,
@@ -1705,6 +1945,7 @@ Future<void> _storeStrategy({
   required String name,
   required String? folderID,
   String? themeProfileId,
+  List<StrategyPage> pages = const [],
 }) async {
   final strategy = StrategyData(
     id: 'strategy-$name-${DateTime.now().microsecondsSinceEpoch}',
@@ -1713,7 +1954,7 @@ Future<void> _storeStrategy({
     versionNumber: Settings.versionNumber,
     lastEdited: DateTime.utc(2026, 1, 1),
     folderID: folderID,
-    pages: const [],
+    pages: pages,
     themeProfileId: themeProfileId,
   );
   await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)

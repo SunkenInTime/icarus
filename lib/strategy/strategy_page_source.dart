@@ -25,6 +25,7 @@ import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/cloud_element_decoding.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -100,6 +101,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
       images: page.imageData,
       utilities: page.utilityData,
       lineUpGraph: page.lineUpGraph,
+      unshown: UnshownCloudContent.none,
     );
   }
 
@@ -235,44 +237,16 @@ class CloudStrategyPageSource implements StrategyPageSource {
     final elements = pageSnapshot.elements;
     final lineups = pageSnapshot.lineups;
 
-    final agents = <PlacedAgentNode>[];
-    final abilities = <PlacedAbility>[];
-    final drawings = <DrawingElement>[];
-    final texts = <PlacedText>[];
-    final images = <PlacedImage>[];
-    final utilities = <PlacedUtility>[];
-
-    for (final element in elements) {
-      if (element.deleted) {
-        continue;
-      }
-      final payload = element.decodedPayload();
-      try {
-        switch (decodeCloudElement(element.elementType, payload)) {
-          case final PlacedAgentNode agent:
-            agents.add(agent);
-          case final PlacedAbility ability:
-            abilities.add(ability);
-          case final DrawingElement drawing:
-            drawings.add(drawing);
-          case final PlacedText text:
-            texts.add(text);
-          case final PlacedImage hydrated:
-            final remoteAsset = snapshot.assetsById[hydrated.pictureId];
-            images.add(hydrated);
-            if (remoteAsset != null) {
-              ref.read(cloudMediaCacheProvider.notifier).ensureAssetCached(
-                    strategyId: strategyId,
-                    strategyPublicId: strategyId,
-                    asset: remoteAsset,
-                  );
-            }
-          case final PlacedUtility utility:
-            utilities.add(utility);
-        }
-      } catch (_) {
-      }
-    }
+    final canvas = _readElements(snapshot, [
+      for (final element in elements)
+        if (!element.deleted)
+          ProjectedPageElement(
+            publicId: element.publicId,
+            elementType: element.elementType,
+            payload: element.payload,
+            sortIndex: element.sortIndex,
+          ),
+    ]);
 
     final cloudLineups = lineUpGraphFromCloudRows([
       for (final lineup in lineups)
@@ -287,28 +261,14 @@ class CloudStrategyPageSource implements StrategyPageSource {
       orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
     );
 
-    StrategySettings pageSettings = StrategySettings();
-    final settingsPayload = pageSnapshot.content.settings;
-    if (settingsPayload != null && settingsPayload.isNotEmpty) {
-      try {
-        pageSettings = StrategySettings.fromJson(settingsPayload);
-      } catch (_) {
-        pageSettings = StrategySettings();
-      }
-    }
+    final settings = _readPageSettings(pageSnapshot.content.settings);
 
-    return StrategyEditorPageData(
+    return canvas.pageData(
       pageId: page.publicId,
       pageName: page.name,
       isAttack: page.isAttack,
       map: mapValue.key,
-      settings: pageSettings,
-      agents: agents,
-      abilities: abilities,
-      drawings: drawings,
-      texts: texts,
-      images: images,
-      utilities: utilities,
+      settings: settings,
       lineUpGraph: cloudLineups.graph,
     );
   }
@@ -379,41 +339,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
     RemotePage page,
     ActivePageProjectedState projected,
   ) {
-    final agents = <PlacedAgentNode>[];
-    final abilities = <PlacedAbility>[];
-    final drawings = <DrawingElement>[];
-    final texts = <PlacedText>[];
-    final images = <PlacedImage>[];
-    final utilities = <PlacedUtility>[];
-
-    for (final element in projected.elements) {
-      final payload = cloudPayloadData(element.payload);
-      try {
-        switch (decodeCloudElement(element.elementType, payload)) {
-          case final PlacedAgentNode agent:
-            agents.add(agent);
-          case final PlacedAbility ability:
-            abilities.add(ability);
-          case final DrawingElement drawing:
-            drawings.add(drawing);
-          case final PlacedText text:
-            texts.add(text);
-          case final PlacedImage hydrated:
-            final remoteAsset = snapshot.assetsById[hydrated.pictureId];
-            images.add(hydrated);
-            if (remoteAsset != null) {
-              ref.read(cloudMediaCacheProvider.notifier).ensureAssetCached(
-                    strategyId: strategyId,
-                    strategyPublicId: strategyId,
-                    asset: remoteAsset,
-                  );
-            }
-          case final PlacedUtility utility:
-            utilities.add(utility);
-        }
-      } catch (_) {
-      }
-    }
+    final canvas = _readElements(snapshot, projected.elements);
 
     final cloudLineups = lineUpGraphFromCloudRows([
       for (final lineup in projected.lineups)
@@ -429,32 +355,119 @@ class CloudStrategyPageSource implements StrategyPageSource {
       orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
     );
 
-    final settings = _parsePageSettings(projected.settingsPayload);
-
-    return StrategyEditorPageData(
+    return canvas.pageData(
       pageId: projected.pageId,
       pageName: page.name,
       isAttack: projected.isAttack,
       map: mapValue.key,
-      settings: settings,
-      agents: agents,
-      abilities: abilities,
-      drawings: drawings,
-      texts: texts,
-      images: images,
-      utilities: utilities,
+      settings: _readPageSettings(projected.settingsPayload),
       lineUpGraph: cloudLineups.graph,
     );
   }
 
-  StrategySettings _parsePageSettings(Map<String, dynamic>? settingsPayload) {
-    if (settingsPayload == null) {
-      return StrategySettings();
+  _CanvasElements _readElements(
+    RemoteEditorSnapshot snapshot,
+    Iterable<ProjectedPageElement> rows,
+  ) {
+    final canvas = _CanvasElements();
+    for (final row in rows) {
+      final reading =
+          readCloudElement(row.elementType, cloudPayloadData(row.payload));
+      switch (reading) {
+        case DrawnCloudElement(item: final PlacedAgentNode agent):
+          canvas.agents.add(agent);
+        case DrawnCloudElement(item: final PlacedAbility ability):
+          canvas.abilities.add(ability);
+        case DrawnCloudElement(item: final DrawingElement drawing):
+          canvas.drawings.add(drawing);
+        case DrawnCloudElement(item: final PlacedText text):
+          canvas.texts.add(text);
+        case DrawnCloudElement(item: final PlacedImage image):
+          canvas.images.add(image);
+          final remoteAsset = snapshot.assetsById[image.pictureId];
+          if (remoteAsset != null) {
+            ref.read(cloudMediaCacheProvider.notifier).ensureAssetCached(
+                  strategyId: strategyId,
+                  strategyPublicId: strategyId,
+                  asset: remoteAsset,
+                );
+          }
+        case DrawnCloudElement(item: final PlacedUtility utility):
+          canvas.utilities.add(utility);
+        case DrawnCloudElement() ||
+              UnreadableCloudElement() ||
+              UnknownKindCloudElement():
+          if (reading case UnreadableCloudElement(:final error)) {
+            AppErrorReporter.reportWarning(
+              'Cloud element ${row.publicId} (${row.elementType}) '
+              'could not be read.',
+              source: 'strategy:cloud_hydration',
+              error: error,
+            );
+          }
+          canvas.unshown.add(UnshownCloudElement(
+            publicId: row.publicId,
+            payload: row.payload,
+            sortIndex: row.sortIndex,
+          ));
+      }
+    }
+    return canvas;
+  }
+
+  ({StrategySettings shown, UnshownSettings? unshown}) _readPageSettings(
+    CloudPayload? payload,
+  ) {
+    if (payload == null || payload.isEmpty) {
+      return (shown: StrategySettings(), unshown: null);
     }
     try {
-      return StrategySettings.fromJson(settingsPayload);
-    } catch (_) {
-      return StrategySettings();
+      return (shown: StrategySettings.fromJson(payload), unshown: null);
+    } on Object catch (error) {
+      AppErrorReporter.reportWarning(
+        'Cloud page settings could not be read.',
+        source: 'strategy:cloud_hydration',
+        error: error,
+      );
+      final shown = StrategySettings();
+      return (shown: shown, unshown: (payload: payload, shownInstead: shown));
     }
   }
+}
+
+class _CanvasElements {
+  final agents = <PlacedAgentNode>[];
+  final abilities = <PlacedAbility>[];
+  final drawings = <DrawingElement>[];
+  final texts = <PlacedText>[];
+  final images = <PlacedImage>[];
+  final utilities = <PlacedUtility>[];
+  final unshown = <UnshownCloudElement>[];
+
+  StrategyEditorPageData pageData({
+    required String pageId,
+    required String pageName,
+    required bool isAttack,
+    required MapValue map,
+    required ({StrategySettings shown, UnshownSettings? unshown}) settings,
+    required LineUpGraph lineUpGraph,
+  }) =>
+      StrategyEditorPageData(
+        pageId: pageId,
+        pageName: pageName,
+        isAttack: isAttack,
+        map: map,
+        settings: settings.shown,
+        agents: agents,
+        abilities: abilities,
+        drawings: drawings,
+        texts: texts,
+        images: images,
+        utilities: utilities,
+        lineUpGraph: lineUpGraph,
+        unshown: UnshownCloudContent(
+          elements: unshown,
+          settings: settings.unshown,
+        ),
+      );
 }
