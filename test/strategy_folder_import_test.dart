@@ -23,6 +23,7 @@ import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -583,6 +584,101 @@ void main() {
             ?.backgroundDotOpacity,
         0.6,
       );
+    } finally {
+      if (await exportDirectory.exists()) {
+        await exportDirectory.delete(recursive: true);
+      }
+    }
+  });
+
+  test('colours restored from a backup survive the next colour edit', () async {
+    final colors = container.read(colorLibraryControllerProvider.notifier);
+    await colors.addColor(const Color(0xFF22C55E));
+    await colors.addColor(const Color(0xFF38BDF8));
+    await _storeStrategy(name: 'Colour Backup', folderID: null);
+
+    final exportDirectory = await StrategyImportExportService(container)
+        .buildLibraryExportDirectoryForTest();
+
+    try {
+      final zipFile = await _zipDirectory(
+        sourceDirectory: Directory(
+          path.join(exportDirectory.path, libraryBackupRootDirectoryName),
+        ),
+        zipPath: path.join(tempDir.path, 'colour-backup.zip'),
+      );
+
+      await colors.deleteColor(1);
+      await colors.updateColor(0, const Color(0xFFABCDEF));
+      expect(container.read(colorLibraryControllerProvider), [0xFFABCDEF]);
+
+      final result =
+          await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(zipFile.path)],
+      );
+      expect(result.globalStateRestored, isTrue);
+      expect(
+        container.read(customColorLibraryProvider),
+        const [Color(0xFF22C55E), Color(0xFF38BDF8)],
+      );
+
+      await container
+          .read(colorLibraryControllerProvider.notifier)
+          .updateColor(0, const Color(0xFFF97316));
+      await container
+          .read(appPreferencesProvider.notifier)
+          .flushPendingWrites();
+      await Hive.close();
+      await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
+
+      final reopened = ProviderContainer();
+      addTearDown(reopened.dispose);
+      expect(
+        reopened.read(customColorLibraryProvider),
+        const [Color(0xFFF97316), Color(0xFF38BDF8)],
+      );
+    } finally {
+      if (await exportDirectory.exists()) {
+        await exportDirectory.delete(recursive: true);
+      }
+    }
+  });
+
+  test('map layers restored from a backup show without moving the map',
+      () async {
+    await container
+        .read(appPreferencesProvider.notifier)
+        .setShowSpawnBarrier(true);
+    await container.read(appPreferencesProvider.notifier).setShowUltOrbs(true);
+    await _storeStrategy(name: 'Layers Backup', folderID: null);
+
+    final exportDirectory = await StrategyImportExportService(container)
+        .buildLibraryExportDirectoryForTest();
+
+    try {
+      final zipFile = await _zipDirectory(
+        sourceDirectory: Directory(
+          path.join(exportDirectory.path, libraryBackupRootDirectoryName),
+        ),
+        zipPath: path.join(tempDir.path, 'layers-backup.zip'),
+      );
+
+      final map = container.read(mapProvider.notifier);
+      map.fromHive(MapValue.split, false);
+      await map.updateSpawnBarrier(false);
+      await map.updateUltOrbs(false);
+      await map.updateRegionNames(true);
+
+      await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(zipFile.path)],
+      );
+
+      final mapState = container.read(mapProvider);
+      expect(mapState.showSpawnBarrier, isTrue);
+      expect(mapState.showUltOrbs, isTrue);
+      expect(mapState.showRegionNames, isFalse);
+      expect(mapState.currentMap, MapValue.split);
+      expect(mapState.isAttack, isFalse);
     } finally {
       if (await exportDirectory.exists()) {
         await exportDirectory.delete(recursive: true);

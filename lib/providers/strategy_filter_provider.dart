@@ -55,21 +55,25 @@ class StrategyFilterProvider extends Notifier<StrategyFilterState> {
 
   @override
   StrategyFilterState build() {
-    final preferences = ref.read(appPreferencesProvider);
+    final (sortByName, sortOrderName) = ref.watch(
+      appPreferencesProvider.select(
+        (preferences) =>
+            (preferences.librarySortByName, preferences.librarySortOrderName),
+      ),
+    );
     return StrategyFilterState(
       sortBy: SortBy.values.firstWhere(
-        (value) => value.name == preferences.librarySortByName,
+        (value) => value.name == sortByName,
         orElse: () => SortBy.dateCreated,
       ),
       sortOrder: SortOrder.values.firstWhere(
-        (value) => value.name == preferences.librarySortOrderName,
+        (value) => value.name == sortOrderName,
         orElse: () => SortOrder.ascending,
       ),
     );
   }
 
   void setSortBy(SortBy sortBy) {
-    state = state.copyWith(sortBy: sortBy);
     unawaited(
       ref
           .read(appPreferencesProvider.notifier)
@@ -78,7 +82,6 @@ class StrategyFilterProvider extends Notifier<StrategyFilterState> {
   }
 
   void setSortOrder(SortOrder sortOrder) {
-    state = state.copyWith(sortOrder: sortOrder);
     unawaited(
       ref
           .read(appPreferencesProvider.notifier)

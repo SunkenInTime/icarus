@@ -1,0 +1,14 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"newLocal": "ascent", "name": "Reopened"},
+  {"wait": 3},
+  {"tapText": "Reopened"},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"tapIcon": "pencil"},
+  {"wait": 2},
+  {"hoverAt": [700, 800]},
+  {"shot": "{out}/5-after-restart.png"},
+  {"exit": 1}
+]
