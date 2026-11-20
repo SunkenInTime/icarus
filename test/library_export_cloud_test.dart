@@ -245,6 +245,24 @@ void main() {
     );
   });
 
+  test('a cloud drawing that cannot be read stops the backup and says where',
+      () async {
+    repository.damagedDrawingIn.add('cloud-deep');
+    final container = signedIn();
+
+    await expectLater(
+      StrategyImportExportService(container)
+          .buildLibraryExportDirectoryForTest(),
+      throwsA(
+        isA<LibraryExportIncomplete>().having(
+          (error) => error.userMessage,
+          'userMessage',
+          allOf(contains('“Cloud Deep”'), contains('“Page 1”')),
+        ),
+      ),
+    );
+  });
+
   test('a cloud image that cannot be downloaded stops the backup', () async {
     mediaCache = _MediaCache({'cloud-picture': _png});
     final container = signedIn();
@@ -735,6 +753,7 @@ class _CloudRepository extends Fake implements ConvexStrategyRepository {
 
   void Function()? onSnapshotRead;
   final unreadable = <String>{};
+  final damagedDrawingIn = <String>{};
   var listingFails = false;
 
   /// The folders the user owns, and so their inventory holds; any other is
@@ -890,7 +909,24 @@ class _CloudRepository extends Fake implements ConvexStrategyRepository {
       return RemoteFullStrategySnapshot(
         header: _header(strategyPublicId, name),
         pages: [page('$strategyPublicId-page', 'Page 1', 0)],
-        elementsByPage: const {},
+        elementsByPage: {
+          if (damagedDrawingIn.contains(strategyPublicId))
+            '$strategyPublicId-page': [
+              RemoteElement(
+                publicId: 'spray',
+                strategyPublicId: strategyPublicId,
+                pagePublicId: '$strategyPublicId-page',
+                elementType: 'drawing',
+                payload: cloudElementPayload(
+                  kind: 'drawing',
+                  data: {'type': 'sprayDrawing', 'id': 'spray'},
+                ),
+                sortIndex: 0,
+                revision: 1,
+                deleted: false,
+              ),
+            ],
+        },
         lineupsByPage: const {},
         assetsById: const {},
       );

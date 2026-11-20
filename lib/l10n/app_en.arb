@@ -2208,6 +2208,20 @@
       }
     }
   },
+  "icaDropUnreadableDrawing": "A drawing on page “{pageName}” of “{strategyName}” couldn't be read, so “{strategyName}” wasn't imported.",
+  "@icaDropUnreadableDrawing": {
+    "description": "Sentence in an import summary: one strategy was left out because a drawing on one of its pages could not be read.",
+    "placeholders": {
+      "strategyName": {
+        "type": "String",
+        "example": "Lotus 13-11"
+      },
+      "pageName": {
+        "type": "String",
+        "example": "Retake"
+      }
+    }
+  },
   "icaDropImportedStrategiesIntoFolders": "Imported {strategyCount, plural, =1{1 strategy} other{{strategyCount} strategies}} into {folderCount, plural, =1{1 folder} other{{folderCount} folders}}.",
   "@icaDropImportedStrategiesIntoFolders": {
     "description": "Import summary.",
@@ -5161,6 +5175,20 @@
   "importExportCloudUnreadable": "Couldn't read your cloud library, so nothing was exported. Check your connection and try again.",
   "@importExportCloudUnreadable": {
     "description": "Error when a library or folder export stops because the cloud library could not be read."
+  },
+  "importExportUnreadableDrawing": "A drawing on page “{pageName}” of “{strategyName}” couldn't be read, so nothing was exported.",
+  "@importExportUnreadableDrawing": {
+    "description": "Error when an export stops because a drawing on one page of a cloud strategy could not be read.",
+    "placeholders": {
+      "strategyName": {
+        "type": "String",
+        "example": "Lotus 13-11"
+      },
+      "pageName": {
+        "type": "String",
+        "example": "Retake"
+      }
+    }
   },
   "importExportCloudNotSynced": "Some of your cloud changes haven't synced yet, so nothing was exported. Let them sync, or review them in your library, then try again.",
   "@importExportCloudNotSynced": {

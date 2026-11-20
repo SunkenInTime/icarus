@@ -24,7 +24,6 @@ import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
-import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -90,6 +89,14 @@ class LibraryExportIncomplete implements Exception {
   LibraryExportIncomplete.cloudChanged(AppLocalizations l10n, {this.cause})
       : userMessage = l10n.importExportCloudChanged;
 
+  LibraryExportIncomplete.unreadableDrawing(
+    AppLocalizations l10n,
+    UnreadableDrawing this.cause,
+  ) : userMessage = l10n.importExportUnreadableDrawing(
+          cause.strategyName,
+          cause.pageName,
+        );
+
   final String userMessage;
   final Object? cause;
 
@@ -121,6 +128,7 @@ class NewerVersionImportException implements Exception {
 enum ImportIssueCode {
   newerVersion,
   invalidStrategy,
+  unreadableDrawing,
   invalidArchiveMetadata,
   unsupportedFile,
   ioError,
@@ -130,10 +138,18 @@ class ImportIssue {
   const ImportIssue({
     required this.path,
     required this.code,
+    this.unreadableDrawing,
   });
+
+  ImportIssue.strategyNotImported(this.path, Object error)
+      : code = error is UnreadableDrawing
+            ? ImportIssueCode.unreadableDrawing
+            : ImportIssueCode.invalidStrategy,
+        unreadableDrawing = error is UnreadableDrawing ? error : null;
 
   final String path;
   final ImportIssueCode code;
+  final UnreadableDrawing? unreadableDrawing;
 }
 
 class ImportBatchResult {
@@ -566,10 +582,18 @@ class StrategyImportExportService {
     final ImportBatchResult result;
     switch (await _importFileKind(localFile)) {
       case _ImportFileKind.strategy:
-        await _importStrategyFile(
-          file: file,
-          targetFolderId: targetFolderId,
-        );
+        try {
+          await _importStrategyFile(
+            file: file,
+            targetFolderId: targetFolderId,
+          );
+        } on UnreadableDrawing catch (error) {
+          return ImportBatchResult(
+            strategiesImported: 0,
+            foldersCreated: 0,
+            issues: [ImportIssue.strategyNotImported(file.path, error)],
+          );
+        }
         result = const ImportBatchResult(
           strategiesImported: 1,
           foldersCreated: 0,
@@ -841,10 +865,7 @@ class StrategyImportExportService {
               themeProfilesImported: 0,
               globalStateRestored: false,
               issues: [
-                ImportIssue(
-                  path: entity.path,
-                  code: ImportIssueCode.invalidStrategy,
-                ),
+                ImportIssue.strategyNotImported(entity.path, error),
               ],
             ),
           );
@@ -1245,10 +1266,7 @@ class StrategyImportExportService {
               themeProfilesImported: 0,
               globalStateRestored: false,
               issues: [
-                ImportIssue(
-                  path: archivePath,
-                  code: ImportIssueCode.invalidStrategy,
-                ),
+                ImportIssue.strategyNotImported(archivePath, error),
               ],
             ),
           );
@@ -1580,10 +1598,7 @@ class StrategyImportExportService {
               themeProfilesImported: 0,
               globalStateRestored: false,
               issues: [
-                ImportIssue(
-                  path: archivePath,
-                  code: ImportIssueCode.invalidStrategy,
-                ),
+                ImportIssue.strategyNotImported(archivePath, error),
               ],
             ),
           );
@@ -1755,10 +1770,7 @@ class StrategyImportExportService {
             themeProfilesImported: 0,
             globalStateRestored: false,
             issues: [
-              ImportIssue(
-                path: strategyEntry.archivePath,
-                code: ImportIssueCode.invalidStrategy,
-              ),
+              ImportIssue.strategyNotImported(strategyEntry.archivePath, error),
             ],
           ),
         );
@@ -2107,8 +2119,12 @@ class StrategyImportExportService {
           Settings.versionNumber;
       _throwIfImportedVersionIsTooNew(versionNumber);
 
-      final drawingData =
-          DrawingProvider.fromJson(jsonEncode(json['drawingData'] ?? []));
+      final strategyName = displayNameOverride ?? _importedName(file.name);
+      final drawingData = StrategyPage.drawingsFromJson(
+        json['drawingData'] ?? [],
+        strategyName: strategyName,
+        pageName: StrategyMigrator.legacyPageName,
+      );
       final agentData =
           AgentProvider.fromJson(jsonEncode(json['agentData'] ?? []))
               .whereType<PlacedAgent>()
@@ -2192,6 +2208,7 @@ class StrategyImportExportService {
           ? await StrategyPage.listFromJson(
               json: jsonEncode(json['pages']),
               strategyID: newID,
+              strategyName: strategyName,
               isZip: isZip,
             )
           : <StrategyPage>[];
@@ -2215,7 +2232,7 @@ class StrategyImportExportService {
         strategySettings: settingsData,
         pages: pages,
         id: newID,
-        name: displayNameOverride ?? _importedName(file.name),
+        name: strategyName,
         mapData: mapData,
         versionNumber: versionNumber,
         lastEdited: DateTime.now(),
@@ -2597,10 +2614,15 @@ class StrategyImportExportService {
           );
         } catch (error, stackTrace) {
           Error.throwWithStackTrace(
-            LibraryExportIncomplete.cloudUnreadable(
-              ref.read(l10nProvider),
-              cause: error,
-            ),
+            error is UnreadableDrawing
+                ? LibraryExportIncomplete.unreadableDrawing(
+                    ref.read(l10nProvider),
+                    error,
+                  )
+                : LibraryExportIncomplete.cloudUnreadable(
+                    ref.read(l10nProvider),
+                    cause: error,
+                  ),
             stackTrace,
           );
         }
@@ -3050,8 +3072,11 @@ class StrategyImportExportService {
         try {
           switch (element.elementType) {
             case 'drawing':
-              final decoded = DrawingProvider.fromJson(jsonEncode([payload]));
-              if (decoded.isNotEmpty) drawingData.add(decoded.first);
+              drawingData.addAll(StrategyPage.drawingsFromJson(
+                [payload],
+                strategyName: snapshot.header.name,
+                pageName: remotePage.name,
+              ));
               break;
             case 'agent':
               agentData.add(PlacedAgentNode.fromJson(payload));
@@ -3073,6 +3098,8 @@ class StrategyImportExportService {
                 'Unsupported cloud element type: ${element.elementType}',
               );
           }
+        } on UnreadableDrawing {
+          rethrow;
         } catch (error, stackTrace) {
           Error.throwWithStackTrace(
             FormatException(

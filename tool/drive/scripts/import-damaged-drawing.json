@@ -1,0 +1,20 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"wait": 2},
+  {"shot": "{out}/1-library-before.png"},
+  {"fakePick": "{here}/../../../test/fixtures/damaged_drawing/damaged-drawing.ica"},
+  {"tapKey": "library-new-menu"},
+  {"wait": 1},
+  {"tapText": "Import .ica"},
+  {"wait": 2},
+  {"shot": "{out}/2-after-import.png"},
+  {"wait": 6},
+  {"shot": "{out}/3-library-after.png"},
+  {"tapText": "damaged-drawing", "optional": true},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"logPage": "opened", "optional": true},
+  {"shot": "{out}/4-opened.png"},
+  {"exit": 1}
+]

@@ -16,8 +16,13 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/l10n/l10n.dart';
+import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
@@ -27,6 +32,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:path/path.dart' as path;
 
 bool _adaptersRegistered = false;
@@ -674,6 +680,112 @@ void main() {
           .where((strategy) => strategy.name == 'future'),
       isEmpty,
     );
+  });
+
+  group('a drawing that cannot be read', () {
+    final damagedDrawings = <String, Map<String, dynamic>>{
+      'of a kind this Icarus does not know': {
+        'type': 'sprayDrawing',
+        'id': 'spray',
+      },
+      'missing its end': Map<String, dynamic>.from(_line('broken-line'))
+        ..remove('lineEnd'),
+    };
+
+    for (final MapEntry(key: description, value: damaged)
+        in damagedDrawings.entries) {
+      test('$description stops the import and names the page', () async {
+        final file = File(path.join(tempDir.path, 'Damaged.ica'));
+        await file.writeAsString(_strategyWithPageDrawings(
+          pageName: 'Retake',
+          drawings: [_line('kept-line'), damaged],
+        ));
+        FilePicker.platform = _PickedFile(file.path);
+
+        final result =
+            await StrategyImportExportService(container).importFromFilePicker();
+
+        expect(result.hasImports, isFalse);
+        expect(
+          Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values,
+          isEmpty,
+        );
+        expect(result.issues.single.code, ImportIssueCode.unreadableDrawing);
+        final message = buildImportSummaryMessage(
+          lookupAppLocalizations(const Locale('en')),
+          result,
+        );
+        expect(message, contains('“Retake”'));
+        expect(message, contains('“Damaged”'));
+      });
+    }
+
+    test('before pages existed stops the import', () async {
+      final file = File(path.join(tempDir.path, 'Old.ica'));
+      await file.writeAsString(jsonEncode({
+        ...jsonDecode(_strategyJson(versionNumber: 15)) as Map,
+        'drawingData': [_line('kept-line'), damagedDrawings.values.first],
+      }));
+
+      final result =
+          await StrategyImportExportService(container).loadFromFilePath(
+        file.path,
+      );
+
+      expect(result.hasImports, isFalse);
+      expect(result.issues.single.code, ImportIssueCode.unreadableDrawing);
+      expect(
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values,
+        isEmpty,
+      );
+    });
+
+    test('in a dropped folder skips that strategy and keeps the rest',
+        () async {
+      final sourceRoot =
+          await Directory(path.join(tempDir.path, 'source', 'Retakes'))
+              .create(recursive: true);
+      await _writeStrategyFile(File(path.join(sourceRoot.path, 'valid.ica')));
+      await File(path.join(sourceRoot.path, 'Damaged.ica'))
+          .writeAsString(_strategyWithPageDrawings(
+        pageName: 'Retake',
+        drawings: [_line('kept-line'), damagedDrawings.values.first],
+      ));
+
+      final result =
+          await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(sourceRoot.path)],
+      );
+
+      expect(result.strategiesImported, 1);
+      expect(result.issues.single.code, ImportIssueCode.unreadableDrawing);
+      expect(_strategyByName('valid').folderID, _folderByName('Retakes').id);
+      expect(
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+            .values
+            .where((strategy) => strategy.name == 'Damaged'),
+        isEmpty,
+      );
+    });
+
+    test('a page whose drawings all read imports every one', () async {
+      final file = File(path.join(tempDir.path, 'Whole.ica'));
+      await file.writeAsString(_strategyWithPageDrawings(
+        pageName: 'Retake',
+        drawings: [_line('first-line'), _line('second-line')],
+      ));
+
+      final result =
+          await StrategyImportExportService(container).loadFromFilePath(
+        file.path,
+      );
+
+      expect(result.issues, isEmpty);
+      expect(
+        _strategyByName('Whole').pages.single.drawingData.map((d) => d.id),
+        ['first-line', 'second-line'],
+      );
+    });
   });
 
   test('a shared .ica keeps its colors when the receiver lacks the profile',
@@ -1463,6 +1575,40 @@ String _strategyJson({int? versionNumber}) => jsonEncode({
       'utilityData': const [],
       'pages': const [],
     });
+
+Map<String, dynamic> _line(String id) => DrawingProvider.elementToJson(Line(
+      lineStart: const Offset(120, 340),
+      lineEnd: const Offset(480, 360),
+      color: Colors.red,
+      isDotted: false,
+      hasArrow: true,
+      id: id,
+    ));
+
+String _strategyWithPageDrawings({
+  required String pageName,
+  required List<Map<String, dynamic>> drawings,
+}) {
+  final page = StrategyPage(
+    id: 'page-1',
+    name: pageName,
+    drawingData: const [],
+    agentData: const [],
+    abilityData: const [],
+    textData: const [],
+    imageData: const [],
+    utilityData: const [],
+    sortIndex: 0,
+    isAttack: true,
+    settings: StrategySettings(),
+  ).toJson('strategy-1');
+  return jsonEncode({
+    ...jsonDecode(_strategyJson()) as Map,
+    'pages': [
+      {...page, 'drawingData': drawings},
+    ],
+  });
+}
 
 Future<void> _writeStrategyFile(
   File file, {
