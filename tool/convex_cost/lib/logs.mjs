@@ -122,6 +122,7 @@ export function summarize(entries) {
       returnBytes: 0,
       readDocuments: 0,
       actionMbSeconds: 0,
+      slowestSeconds: 0,
       writeDocuments: 0,
       conflictRetries: 0,
       failures: 0,
@@ -137,6 +138,7 @@ export function summarize(entries) {
     } else {
       add("runs", 1);
     }
+    row.slowestSeconds = Math.max(row.slowestSeconds, entry.executionTime ?? 0);
     if (entry.udfType === "Query") add("queryRuns", 1);
     if (entry.udfType === "Action") add("actionMbSeconds", (usage.memoryUsedMb ?? 0) * (entry.executionTime ?? 0));
     add("ioReadBytes", usage.databaseIoReadBytes ?? 0);

@@ -160,7 +160,8 @@ function projectWithoutCrons(projectDir) {
   return dir;
 }
 
-export function deploy({ url, adminKey, projectDir }) {
+export function deploy({ url, adminKey, projectDir, withoutCrons = false }) {
+  if (!withoutCrons) return deployFrom({ url, adminKey, projectDir, deployed: projectDir });
   const deployed = projectWithoutCrons(projectDir);
   try {
     deployFrom({ url, adminKey, projectDir, deployed });

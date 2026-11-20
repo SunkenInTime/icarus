@@ -112,7 +112,7 @@ async function main() {
   try {
     if (backend) {
       const at = Date.now();
-      deploy({ url, adminKey, projectDir: options.project });
+      deploy({ url, adminKey, projectDir: options.project, withoutCrons: true });
       console.log(`Deployed ${options.project === repoRoot ? "this checkout" : options.project} in ${((Date.now() - at) / 1000).toFixed(1)} s`);
     }
     logs.start();

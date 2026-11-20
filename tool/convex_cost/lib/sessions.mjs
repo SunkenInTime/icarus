@@ -414,6 +414,10 @@ function openScenario(key, title, about) {
       const editor = new Editor(world.coach, strategy, { desktop: true });
       const result = await metered([world.coach], env, () => editor.open());
       editor.close();
+      const fullRead = result.summary.byFunction.get("strategy:getFullSnapshot");
+      result.notes = [
+        `strategy:getFullSnapshot ran for ${Math.round((fullRead?.slowestSeconds ?? 0) * 1000)} ms of the 1 s a query may run (not budgeted: run time follows the machine)`,
+      ];
       return result;
     },
   };
