@@ -35,7 +35,8 @@ test("applyOp matches convex/ops.ts", { timeout: 1_800_000 }, async () => {
   const outcomes: Record<string, number> = {};
   for (const scenario of scenarios) {
     const t = convexTest(schema, modules);
-    const subject = `parity-${scenario.seed}`;
+    const name = scenario.story ?? `seed ${scenario.seed}`;
+    const subject = `parity-${scenario.seed ?? scenario.story.length}`;
     const asUser = t.withIdentity({
       issuer: "https://parity.test",
       subject,
@@ -179,6 +180,7 @@ test("applyOp matches convex/ops.ts", { timeout: 1_800_000 }, async () => {
     };
 
     let mismatches = 0;
+    const actualOutcomes: Json[] = [];
     for (let i = 0; i < scenario.ops.length; i++) {
       const op = scenario.ops[i];
       const predicted = scenario.predicted[i];
@@ -203,6 +205,7 @@ test("applyOp matches convex/ops.ts", { timeout: 1_800_000 }, async () => {
       } catch (error) {
         actual = { status: "threw", message: String(error).slice(0, 200) };
       }
+      actualOutcomes.push(actual);
       const outcome = [op.type, actual.status, actual.reason ?? actual.code]
         .filter((part) => part !== undefined)
         .join(" ");
@@ -216,11 +219,35 @@ test("applyOp matches convex/ops.ts", { timeout: 1_800_000 }, async () => {
         .map((k) => ({ key: k, server: rowsNow[k], dart: rowsWant[k] }));
       if (canon(actual) !== canon(want) || rowDiff.length > 0) {
         mismatches++;
-        report.push({ seed: scenario.seed, step: i, op, server: actual, dart: want, rowDiff });
+        report.push({ name, seed: scenario.seed, step: i, op, server: actual, dart: want, rowDiff });
         break;
       }
     }
-    if (mismatches === 0) report.push({ seed: scenario.seed, ok: scenario.ops.length });
+    if (mismatches === 0 && scenario.story !== undefined) {
+      const final = await dump();
+      const rows = [...final.elements, ...final.lineupGroups];
+      const unmet = Object.entries(scenario.expected).flatMap(([id, fields]) =>
+        Object.entries(fields as Record<string, Json>)
+          .filter(([key, value]) => {
+            const row = rows.find((r) => r.publicId === id);
+            return canon(row?.payload.data[key]) !== canon(value);
+          })
+          .map(([key, value]) => {
+            const row = rows.find((r) => r.publicId === id);
+            return { key: `${id}.${key}`, server: row?.payload.data[key], story: value };
+          }),
+      );
+      if (canon(actualOutcomes) !== canon(scenario.outcomes) || unmet.length > 0) {
+        mismatches++;
+        report.push({
+          name,
+          story: { outcomes: scenario.outcomes },
+          server: { outcomes: actualOutcomes },
+          unmet,
+        });
+      }
+    }
+    if (mismatches === 0) report.push({ name, ok: scenario.ops.length });
   }
   writeFileSync(
     process.env.PARITY_OUT!,

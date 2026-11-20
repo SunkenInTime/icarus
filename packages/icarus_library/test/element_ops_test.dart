@@ -368,12 +368,79 @@ void main() {
     );
   });
 
-  test('undo of the first caption on an agent is not offered', () {
+  test('undo of a caption added together with a move restores both', () {
     final session = Session(strategyRows(elements: [jett]));
     final captioned = session.apply(
-      moveAgent('caption', jett, {'caption': 'entry'}, merged: ['caption']),
+      moveAgent(
+        'caption',
+        jett,
+        {
+          'caption': 'entry',
+          'position': {'x': 7, 'y': 7},
+        },
+        merged: ['caption', 'position'],
+      ),
     );
-    expect(captioned.undo, isA<UndoUnavailable>());
+    session.apply(undoOp(captioned));
+    expect(session.dataOf('jett')['caption'], '');
+    expect(session.dataOf('jett')['position'], {'x': 1, 'y': 1});
+  });
+
+  test('undo of a first wall path writes the wall removed', () {
+    final tide = LiveElement(
+      publicId: 'tide',
+      pagePublicId: 'page-a',
+      payload: ElementPayload(
+        kind: ElementKind.ability,
+        payloadVersion: 1,
+        data: {
+          'id': 'tide',
+          'elementType': 'ability',
+          'position': {'x': 1, 'y': 1},
+        },
+      ),
+      sortIndex: 0,
+      revision: 1,
+    );
+    final session = Session(strategyRows(elements: [tide]));
+    final walled = session.apply(
+      moveAgent(
+        'wall',
+        tide,
+        {
+          'wallPath': [
+            {'x': 3, 'y': 0},
+          ],
+        },
+        merged: ['wallPath'],
+      ),
+    );
+    session.apply(undoOp(walled));
+    expect(session.dataOf('tide')['wallPath'], isEmpty);
+  });
+
+  test('undo of a first map door is not offered, since a door is never '
+      'cleared', () {
+    final shape = LiveElement(
+      publicId: 'door',
+      pagePublicId: 'page-a',
+      payload: ElementPayload(
+        kind: ElementKind.utility,
+        payloadVersion: 1,
+        data: {
+          'id': 'door',
+          'elementType': 'utility',
+          'type': 'customRectangle',
+        },
+      ),
+      sortIndex: 0,
+      revision: 1,
+    );
+    final session = Session(strategyRows(elements: [shape]));
+    final doored = session.apply(
+      moveAgent('door', shape, {'mapDoor': 'summit-a'}, merged: ['mapDoor']),
+    );
+    expect(doored.undo, isA<UndoUnavailable>());
   });
 
   test('undo of a changed caption puts the old caption back', () {

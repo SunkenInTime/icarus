@@ -47,6 +47,7 @@ function main() {
   const work = mkdtempSync(join(tmpdir(), "library-parity-"));
   const scenarios = join(work, "scenarios.json");
   const report = join(work, "report.json");
+  const rules = join(work, "field_rules.json");
   try {
     execFileSync(
       dart[0],
@@ -61,13 +62,23 @@ function main() {
       ],
       { cwd: join(root, "packages/icarus_library"), stdio: "inherit" },
     );
+    execFileSync(
+      dart[0],
+      [...dart.slice(1), "run", "tool/field_rules.dart", rules],
+      { cwd: join(root, "packages/icarus_library"), stdio: "inherit" },
+    );
     const vitest = spawnSync(
       "npx",
       ["vitest", "run", "--config", "tool/library_parity/vitest.config.ts"],
       {
         cwd: root,
         stdio: "inherit",
-        env: { ...process.env, PARITY_IN: scenarios, PARITY_OUT: report },
+        env: {
+          ...process.env,
+          PARITY_IN: scenarios,
+          PARITY_OUT: report,
+          FIELD_RULES: rules,
+        },
       },
     );
     const { scenarios: results, outcomes } = JSON.parse(
@@ -76,14 +87,21 @@ function main() {
     const differences = results.filter((result) => result.ok === undefined);
     for (const difference of differences) {
       console.error(
-        `Seed ${difference.seed}, step ${difference.step}: ${difference.op.type} ` +
-          `differs. Replay with: node tool/library_parity/run.mjs --seed ${difference.seed}`,
+        difference.step === undefined
+          ? `${difference.name}: the server did not do what the story expects`
+          : `${difference.name}, step ${difference.step}: ${difference.op.type} differs` +
+            (difference.seed === undefined
+              ? ""
+              : `. Replay with: node tool/library_parity/run.mjs --seed ${difference.seed}`),
       );
       console.error(JSON.stringify(difference, null, 1));
     }
+    const stories = results.filter(
+      (result) => !result.name.startsWith("seed "),
+    ).length;
     const ops = results.reduce((total, result) => total + (result.ok ?? 0), 0);
     console.log(
-      `${ops} ops in ${results.length} sequences matched convex/ops.ts` +
+      `${ops} ops in ${results.length} sequences, ${stories} of them merge stories, matched convex/ops.ts` +
         (differences.length > 0 ? `; ${differences.length} sequences differ` : ""),
     );
     const missing = run.replay ? [] : missingCoverage(outcomes);

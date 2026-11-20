@@ -91,7 +91,7 @@ function unsafeKey(key: string): boolean {
 /// and the server agree on them: a client that turned an agent into a view
 /// cone, or drew on a payload version the server has moved past, writes the
 /// whole item instead.
-const ELEMENT_IDENTITY_KEYS = ["id", "elementType", "kind", "type", "data"];
+export const ELEMENT_IDENTITY_KEYS = ["id", "elementType", "kind", "type", "data"];
 
 /// [merge]'s fields of [desired] written onto [current] (both element
 /// payloads).

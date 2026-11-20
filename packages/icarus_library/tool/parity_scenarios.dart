@@ -4,6 +4,8 @@ import 'dart:math';
 
 import 'package:icarus_library/icarus_library.dart';
 
+import 'merge_stories.dart';
+
 const strategyId = 's1';
 
 void main(List<String> args) {
@@ -19,6 +21,7 @@ void main(List<String> args) {
   final steps = int.parse(args[2]);
   final scenarios = [
     for (var seed = first; seed < first + seeds; seed++) _scenario(seed, steps),
+    for (final story in mergeStories()) _story(story),
   ];
   File(args[3]).writeAsStringSync(jsonEncode(scenarios));
 }
@@ -31,19 +34,23 @@ Map<String, Object?> _rowsJson(StrategyRowSet rows) => {
   'lineupGroups': [for (final r in rows.lineupGroups) r.toJson()],
 };
 
-Map<String, Object?> _outcome(ApplyResult result) => switch (result) {
-  OpApplied() => {'status': 'applied'},
-  OpUnchanged() => {'status': 'noop'},
-  OpRefused(refusal: Rejected(:final reason)) => {
-    'status': 'rejected',
-    'reason': reason.wireName,
-  },
-  OpRefused(refusal: Failed(:final code)) => {
-    'status': 'failed',
-    'code': code.wireName,
-  },
-  OpRefused(refusal: UnreadableTarget()) => {'status': 'unreadable'},
-};
+Map<String, Object?> _story(MergeStory story) {
+  var rows = storyRows;
+  final predicted = <Map<String, Object?>>[];
+  for (final op in story.ops) {
+    final result = applyOp(rows, op);
+    if (result is OpApplied) rows = rows.withRows(result.rows);
+    predicted.add({...outcomeJson(result), 'rows': _rowsJson(rows)});
+  }
+  return {
+    'story': story.name,
+    'initial': _rowsJson(storyRows),
+    'ops': [for (final op in story.ops) op.toJson()],
+    'predicted': predicted,
+    'outcomes': story.outcomes,
+    'expected': story.expected,
+  };
+}
 
 List<Map<String, Object?>> _items(Map<String, Object?> data, String key) => [
   for (final item in data[key] as List<Object?>? ?? const [])
@@ -571,7 +578,7 @@ Map<String, Object?> _scenario(int seed, int steps) {
       }
     }
     ops.add(op.toJson());
-    predicted.add({..._outcome(result), 'rows': _rowsJson(rows)});
+    predicted.add({...outcomeJson(result), 'rows': _rowsJson(rows)});
   }
   return {'seed': seed, 'initial': initial, 'ops': ops, 'predicted': predicted};
 }
