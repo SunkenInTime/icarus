@@ -1121,8 +1121,6 @@ class _HeldStrategy extends StrategyProvider {
   }
 }
 
-/// Holds queued pictures until the test lets them upload, or uploads them
-/// at once.
 class _CloudModeOn extends CloudCollabModeNotifier {
   @override
   CloudCollabModeState build() => const CloudCollabModeState(
@@ -1131,6 +1129,8 @@ class _CloudModeOn extends CloudCollabModeNotifier {
       );
 }
 
+/// Holds queued pictures until the test lets them upload, or uploads them
+/// at once.
 class _HeldUploads extends CloudMediaUploadQueueNotifier {
   _HeldUploads(this.cloud);
 

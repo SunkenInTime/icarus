@@ -132,22 +132,25 @@ final class CloudMediaDeadlines {
       answer + Duration(milliseconds: byteSize * 1000 ~/ uploadBytesPerSecond);
 }
 
-enum _AttemptEnd { answered, stalled, stopped }
+enum _Stop { stalled, stopped }
 
 final class _Attempt {
   _Attempt(this.job);
 
   final CloudMediaUploadJob job;
-  final _ended = Completer<_AttemptEnd>();
-  _AttemptEnd? end;
+  final _stopped = Completer<_Stop>();
+  _Stop? stop;
+  bool _answered = false;
 
-  Future<_AttemptEnd> get ended => _ended.future;
+  Future<_Stop> get stopped => _stopped.future;
 
-  void finish(_AttemptEnd why) {
-    if (end != null) return;
-    end = why;
-    _ended.complete(why);
+  void halt(_Stop why) {
+    if (_answered || stop != null) return;
+    stop = why;
+    _stopped.complete(why);
   }
+
+  void answered() => _answered = true;
 }
 
 sealed class _Reply<T> {
@@ -171,10 +174,15 @@ final class _Refused<T> extends _Unanswered<T> {
 }
 
 final class _NoAnswer<T> extends _Unanswered<T> {
-  const _NoAnswer(this.step, this.within, this.end);
+  const _NoAnswer(this.step, this.within, this.stop);
   final String step;
   final Duration within;
-  final _AttemptEnd end;
+  final _Stop stop;
+}
+
+final class _OutboxNotSaved extends StateError {
+  _OutboxNotSaved(Object cause)
+      : super('The media outbox could not save: $cause');
 }
 
 sealed class _Outcome {
@@ -276,7 +284,7 @@ class CloudMediaUploadQueueNotifier
     }
     ref.onDispose(() {
       _disposed = true;
-      _attempt?.finish(_AttemptEnd.stopped);
+      _attempt?.halt(_Stop.stopped);
       _retryTimer?.cancel();
       _uploadCompletionDismissTimer?.cancel();
       final toast = _uploadProgressToast;
@@ -299,7 +307,7 @@ class CloudMediaUploadQueueNotifier
     ref.listen<String?>(cloudMediaAccountIdProvider, (previous, next) {
       if (previous == next) return;
       if (_attempt case final attempt? when attempt.job.accountId != next) {
-        attempt.finish(_AttemptEnd.stopped);
+        attempt.halt(_Stop.stopped);
       }
       _refreshState();
       if (next != null && next.isNotEmpty) {
@@ -308,7 +316,7 @@ class CloudMediaUploadQueueNotifier
     });
 
     ref.listen<AsyncValue<bool>>(convexConnectionProvider, (previous, next) {
-      if (next.valueOrNull == false) _attempt?.finish(_AttemptEnd.stopped);
+      if (next.valueOrNull == false) _attempt?.halt(_Stop.stopped);
       final reconnected =
           previous?.valueOrNull != true && next.valueOrNull == true;
       if (reconnected) {
@@ -527,13 +535,17 @@ class CloudMediaUploadQueueNotifier
       throw StateError('The active account changed before media was queued.');
     }
 
-    await _putJobsAtomically([
-      for (final job in staged)
-        job.copyWith(
-          referenceDurable: true,
-          updatedAt: DateTime.now(),
-        ),
-    ]);
+    for (final job in staged) {
+      final promoted = job.copyWith(
+        referenceDurable: true,
+        updatedAt: DateTime.now(),
+      );
+      await _writeJobs(
+        [promoted],
+        () => _store.put(promoted),
+        onlyIf: () => _isCurrent(job),
+      );
+    }
     _refreshState();
     await retryNow(ignoreBackoff: true);
   }
@@ -803,6 +815,7 @@ class CloudMediaUploadQueueNotifier
     final attempt = _attempt = _Attempt(job);
     _refreshState();
     _logMedia('process.start ${_describeJob(job)}');
+    var saved = true;
     try {
       final outcome = await switch (job.phase) {
         MediaWaitingToUpload() ||
@@ -812,16 +825,22 @@ class CloudMediaUploadQueueNotifier
         MediaUploadFailed(:final media?) =>
           _attach(attempt, media),
       };
-      attempt.finish(_AttemptEnd.answered);
+      attempt.answered();
       await _settle(attempt, outcome);
+    } on _OutboxNotSaved {
+      saved = false;
     } finally {
-      attempt.finish(_AttemptEnd.stopped);
+      attempt.halt(_Stop.stopped);
       _attempt = null;
       _refreshState();
     }
 
     if (_disposed) return;
-    _logMedia('process.finish jobs=${state.jobs.length}');
+    _logMedia('process.finish saved=$saved jobs=${state.jobs.length}');
+    if (!saved) {
+      _scheduleRetryForNextEligibleJob(minimumDelay: _blockedRetryDelay);
+      return;
+    }
     if (_readJobs().isNotEmpty) {
       // Only bypass backoff for the initial user-triggered kick. Follow-up
       // attempts must honor retry timing so transient attach failures do not
@@ -888,8 +907,8 @@ class CloudMediaUploadQueueNotifier
     Duration within,
     Future<T> Function() call,
   ) async {
-    if (attempt.end case final end?) return _NoAnswer<T>(step, within, end);
-    final stall = Timer(within, () => attempt.finish(_AttemptEnd.stalled));
+    if (attempt.stop case final stop?) return _NoAnswer<T>(step, within, stop);
+    final stall = Timer(within, () => attempt.halt(_Stop.stalled));
     try {
       return await Future.any<_Reply<T>>([
         Future.sync(call).then<_Reply<T>>(
@@ -897,7 +916,7 @@ class CloudMediaUploadQueueNotifier
           onError: (Object error, StackTrace stackTrace) =>
               _Refused<T>(step, error, stackTrace),
         ),
-        attempt.ended.then((end) => _NoAnswer<T>(step, within, end)),
+        attempt.stopped.then((stop) => _NoAnswer<T>(step, within, stop)),
       ]);
     } finally {
       stall.cancel();
@@ -1020,7 +1039,7 @@ class CloudMediaUploadQueueNotifier
         case _Answer(value: final references?)
             when !references.contains(job.assetPublicId):
           return const _Unreferenced();
-        case _NoAnswer(end: _AttemptEnd.stopped):
+        case _NoAnswer(stop: _Stop.stopped):
           return const _Stopped();
         case _:
       }
@@ -1036,7 +1055,7 @@ class CloudMediaUploadQueueNotifier
     )) {
       case _Answer(value: final url?) when url.isNotEmpty:
         return const _AlreadyServed();
-      case _NoAnswer(end: _AttemptEnd.stopped):
+      case _NoAnswer(stop: _Stop.stopped):
         return const _Stopped();
       case _:
         return const _Failed('Local media file is missing.');
@@ -1046,25 +1065,42 @@ class CloudMediaUploadQueueNotifier
   Future<_Outcome> _attach(_Attempt attempt, UploadedMedia media) async {
     final job = attempt.job;
     _logMedia('attach.start ${_describeJob(job)}');
-    final r2 = media is R2UploadedMedia ? media : null;
+    Future<void> complete({
+      String? provider,
+      String? uploadId,
+      String? objectKey,
+      String? storageId,
+      String? etag,
+      int? byteSize,
+    }) =>
+        _repo.completeImageUpload(
+          strategyPublicId: job.strategyPublicId,
+          assetPublicId: job.assetPublicId,
+          provider: provider,
+          uploadId: uploadId,
+          objectKey: objectKey,
+          storageId: storageId,
+          etag: etag,
+          mimeType: job.mimeType,
+          fileExtension: job.fileExtension,
+          byteSize: byteSize,
+          width: job.width,
+          height: job.height,
+        );
     switch (await _step(
       attempt,
       'attaching the picture',
       deadlines.answer,
-      () => _repo.completeImageUpload(
-        strategyPublicId: job.strategyPublicId,
-        assetPublicId: job.assetPublicId,
-        provider: r2 == null ? null : 'r2',
-        uploadId: r2?.uploadId,
-        objectKey: r2?.objectKey,
-        storageId: media is ConvexStoredMedia ? media.storageId : null,
-        etag: r2?.etag,
-        mimeType: job.mimeType,
-        fileExtension: job.fileExtension,
-        byteSize: r2?.byteSize,
-        width: job.width,
-        height: job.height,
-      ),
+      () => switch (media) {
+        R2UploadedMedia() => complete(
+            provider: 'r2',
+            uploadId: media.uploadId,
+            objectKey: media.objectKey,
+            etag: media.etag,
+            byteSize: media.byteSize,
+          ),
+        ConvexStoredMedia() => complete(storageId: media.storageId),
+      },
     )) {
       case _Answer():
         return const _Attached();
@@ -1079,7 +1115,7 @@ class CloudMediaUploadQueueNotifier
     UploadedMedia? media,
   }) async {
     switch (unanswered) {
-      case _NoAnswer(end: _AttemptEnd.stalled, :final step, :final within):
+      case _NoAnswer(stop: _Stop.stalled, :final step, :final within):
         return _Failed(
           'The upload stalled: no answer from $step in '
           '${within.inSeconds} s.',
@@ -1169,7 +1205,7 @@ class CloudMediaUploadQueueNotifier
   }
 
   bool _owns(_Attempt attempt) =>
-      attempt.end != _AttemptEnd.stopped && _isCurrent(attempt.job);
+      attempt.stop != _Stop.stopped && _isCurrent(attempt.job);
 
   bool _isCurrent(CloudMediaUploadJob job) =>
       identical(_getJob(job.jobId), job);
@@ -1285,7 +1321,7 @@ class CloudMediaUploadQueueNotifier
     final request = http.AbortableStreamedRequest(
       'PUT',
       Uri.parse(uploadUrl),
-      abortTrigger: attempt.ended,
+      abortTrigger: attempt.stopped,
     );
     request.headers.addAll(headers);
     if (!request.headers.containsKey('Content-Type')) {
@@ -1657,7 +1693,7 @@ class CloudMediaUploadQueueNotifier
             _unverifiedByStorageKey[key] = _MediaOutboxMutation.write;
           }
           _recordDurabilityFailure(error, stackTrace);
-          rethrow;
+          throw _OutboxNotSaved(error);
         }
       });
 
@@ -1694,7 +1730,7 @@ class CloudMediaUploadQueueNotifier
         } catch (error, stackTrace) {
           _unverifiedByStorageKey[key] = _MediaOutboxMutation.remove;
           _recordDurabilityFailure(error, stackTrace);
-          rethrow;
+          throw _OutboxNotSaved(error);
         }
       });
 
@@ -1703,7 +1739,7 @@ class CloudMediaUploadQueueNotifier
     if (attempt == null) return;
     final key = durableCloudMediaOutboxStorageKey(attempt.job);
     if (!identical(_jobsByStorageKey[key], attempt.job)) {
-      attempt.finish(_AttemptEnd.stopped);
+      attempt.halt(_Stop.stopped);
     }
   }
 

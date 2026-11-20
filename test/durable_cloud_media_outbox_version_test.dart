@@ -140,7 +140,9 @@ void main() {
       );
     });
 
-    test('are written back exactly as shipped builds wrote them', () async {
+    test(
+        'are written back as shipped builds wrote them, less the unread URL expiry',
+        () async {
       final store = MemoryDurableCloudMediaOutboxStore({
         for (final record in shipped)
           key(record): {

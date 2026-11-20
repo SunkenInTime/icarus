@@ -181,6 +181,19 @@ class _R2Repository implements ConvexStrategyRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _FailOncePutStore extends MemoryDurableCloudMediaOutboxStore {
+  bool failNextPut = false;
+
+  @override
+  Future<void> put(CloudMediaUploadJob job) async {
+    if (failNextPut) {
+      failNextPut = false;
+      throw StateError('disk full');
+    }
+    await super.put(job);
+  }
+}
+
 class _HeldAttachRepository extends _R2Repository {
   final List<String?> attachedUploadIds = [];
   final Completer<void> _gate = Completer<void>();
@@ -1605,10 +1618,12 @@ void main() {
           strategyPublicId: 'strategy-a',
           images: [(assetPublicId: _imageId, fileExtension: '.png')],
         );
+        await tester.pump(const Duration(seconds: 1));
+        expect(bodies, hasLength(2), reason: 'the old PUT was let go at once');
+        expect(bodies.last, newBytes);
+
         firstPut.complete();
         await tester.pump(const Duration(minutes: 2));
-
-        expect(bodies.last, newBytes);
         expect(repository.completedAssetIds, [_imageId]);
         expect(mediaStore.values, isEmpty);
         container.dispose();
@@ -1681,10 +1696,12 @@ void main() {
             strategyPublicId: 'strategy-a',
             images: [(assetPublicId: _imageId, fileExtension: '.png')],
           );
+          await tester.pump(const Duration(seconds: 1));
+          expect(bodies, [newBytes],
+              reason: 'the old attach was let go at once');
+
           repository.answer();
           await tester.pump(const Duration(minutes: 2));
-
-          expect(bodies, [newBytes]);
           expect(repository.attachedUploadIds, [
             'upload-1',
             'upload-$_imageId',
@@ -1695,6 +1712,43 @@ void main() {
         await clearToasts(tester);
       },
     );
+
+    testWidgets(
+        'an answer the outbox fails to save leaves the queue running and '
+        'the job to retry', (tester) async {
+      await pumpToasts(tester);
+      final mediaStore = _FailOncePutStore();
+      await mediaStore.putAll([
+        _job('unsaved-image'),
+        _job('next-image').copyWith(updatedAt: DateTime.utc(2026, 9, 24, 0, 1)),
+      ]);
+      mediaStore.failNextPut = true;
+      final bytesStore = MemoryPendingMediaBytesStore(
+        [_record('unsaved-image'), _record('next-image')],
+      );
+      final repository = _R2Repository();
+      final puts = <String>[];
+      final client = MockClient((request) async {
+        puts.add(assetOf(request));
+        return http.Response('', 200, headers: {'etag': '"etag"'});
+      });
+
+      await http.runWithClient(() async {
+        final container = session(mediaStore, bytesStore, repository);
+        final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+        unawaited(queue.retryNow(ignoreBackoff: true));
+        await tester.pump(const Duration(seconds: 5));
+        expect(puts, ['unsaved-image'], reason: 'no PUT again at once');
+        expect(mediaStore.load().jobs, hasLength(2));
+
+        await tester.pump(const Duration(seconds: 30));
+        expect(puts, ['unsaved-image', 'unsaved-image', 'next-image']);
+        expect(repository.completedAssetIds, ['unsaved-image', 'next-image']);
+        expect(mediaStore.values, isEmpty);
+        container.dispose();
+      }, () => client);
+      await clearToasts(tester);
+    });
 
     testWidgets(
       'signing out during an upload lets the next account upload, and the '

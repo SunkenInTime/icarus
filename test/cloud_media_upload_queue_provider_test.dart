@@ -402,8 +402,49 @@ void main() {
 
       expect(repository.shellChecks, ['strategy-a']);
       final kept = store.load().jobs.single;
-      expect(kept.isFailed, isTrue);
+      expect(kept.failedAttempts, 2);
     });
+  });
+
+  test(
+      'a staging promotion whose server answer comes after a discard writes '
+      'nothing back', () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    await store.put(CloudMediaUploadJob(
+      jobId: 'staged-image',
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-a',
+      assetPublicId: 'staged-image',
+      fileExtension: '.png',
+      mimeType: 'image/png',
+      referenceDurable: false,
+      updatedAt: DateTime.utc(2026, 9, 3),
+    ));
+    final asked = Completer<void>();
+    final answer = Completer<Set<String>?>();
+    final container = _container(
+      store,
+      cloudReady: true,
+      referenceLoader: (_, ids) {
+        if (!asked.isCompleted) asked.complete();
+        return answer.future;
+      },
+    );
+    addTearDown(container.dispose);
+    final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    final committing = queue.commitStagedMediaReferences(
+      strategyPublicId: 'strategy-a',
+      assetPublicIds: ['staged-image'],
+    );
+    await asked.future;
+    await queue.clearJobsForStrategy('strategy-a');
+    answer.complete({'staged-image'});
+    await committing;
+
+    expect(store.load().jobs, isEmpty);
+    expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
   });
 
   test(
