@@ -102,17 +102,42 @@ jobs:
       - name: Run Convex Tests
         run: npm run test:convex
 
-      - name: Deploy Convex Production Backend
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PRODUCTION_DEPLOY_KEY }}
-        run: npx convex deploy --typecheck enable --message "Deploy Server $(git rev-parse HEAD)"
+      # Each desktop-stable-v* tag is a build we shipped; the contract check
+      # reads its function spec.
+      - name: Fetch Shipped Client Tags
+        run: git fetch --no-tags --depth=1 origin '+refs/tags/desktop-stable-v*:refs/tags/desktop-stable-v*'
+
+      # On this checkout, the one deployed next: pushes convex/ to a local
+      # backend on the runner, compares the function spec it serves with the
+      # committed snapshot, then checks that snapshot against every shipped
+      # client. Nothing deploys if it fails. CI runs the same check, but a
+      # merge does not wait for CI.
+      - name: Check Convex Contract Against Shipped Clients
+        timeout-minutes: 10
+        run: node tool/check_convex_deploy.mjs
 
       # Live presence (who is on a strategy, their cursors) runs in its own
       # Worker. It pairs with production Convex through PRESENCE_URL and
       # PRESENCE_PASS_SECRET, set once on both sides (presence/README.md).
+      # Its checks run here, before anything deploys, so a Worker that fails
+      # its tests doesn't leave production with a new Convex and an old
+      # Worker.
       - name: Install Presence Worker Dependencies
         working-directory: presence
         run: npm ci
+
+      - name: Typecheck Presence Worker
+        working-directory: presence
+        run: npm run typecheck
+
+      - name: Test Presence Worker
+        working-directory: presence
+        run: npm test
+
+      - name: Deploy Convex Production Backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PRODUCTION_DEPLOY_KEY }}
+        run: npx convex deploy --typecheck enable --message "Deploy Server $(git rev-parse HEAD)"
 
       - name: Deploy Presence Worker
         uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3

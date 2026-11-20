@@ -52,13 +52,12 @@ Run only the integrity suite:
 
 - `flutter test test/strategy_integrity_test.dart`
 
-## CI recommendation
+## CI
 
-Run this test file on all PRs that touch:
-
-- `lib/providers/strategy_provider.dart`
-- `lib/providers/strategy_page.dart`
-- `lib/migrations/**`
-- import/export code paths
+The `integrity` job in `.github/workflows/ci.yml` runs this file with the other
+fixture, Hive, migration and outbox tests. It runs on every PR that touches
+code reading or writing the library, whatever the PR's `ci:` line says; the
+`integrity` lane in the `changes` job lists those paths. A new test that loads
+old data belongs in that job's list too.
 
 Treat failures as merge-blocking for compatibility-sensitive changes.
