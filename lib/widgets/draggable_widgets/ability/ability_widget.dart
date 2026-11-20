@@ -10,6 +10,7 @@ import 'package:icarus/widgets/editor_operation_scope.dart';
 class AbilityWidget extends ConsumerWidget {
   const AbilityWidget({
     super.key,
+    this.forcedAbilitySize,
     required this.iconPath,
     required this.id,
     required this.isAlly,
@@ -32,9 +33,12 @@ class AbilityWidget extends ConsumerWidget {
   final List<ShadContextMenuItem>? contextMenuItems;
   final VoidCallback? onTapOverride;
 
+  final double? forcedAbilitySize;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+    final abilitySize =
+        forcedAbilitySize ?? ref.watch(strategySettingsProvider).abilitySize;
     final deleteTarget = landingId != null
         ? HoveredDeleteTarget.lineup(id: landingId!, ownerToken: Object())
         : (id?.isNotEmpty ?? false)

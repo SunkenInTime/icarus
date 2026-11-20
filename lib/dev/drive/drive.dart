@@ -98,8 +98,8 @@
 //                                      gap between two of them
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?,
-//                                       "during": step?}  shots while step runs,
-//                                      to catch what it sets moving
+//                                       "during": step?}  shots while step runs, each logged with the page transition's progress
+//   {"slowMotion": k}                  animations run k times slower; 1 is real speed
 //   {"logWalls": tag}                  every ability's position and wall path
 //   {"logUtilities": tag}              every utility's type, position and door
 //   {"logDoors": tag}                  the map doors changed on the page
@@ -195,10 +195,12 @@ import 'package:icarus/widgets/replay/replay_library_content.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
-import 'package:icarus/providers/strategy_page_session_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart'
+    hide PageTransitionState;
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -350,6 +352,22 @@ Future<void> _checkItems() async {
   for (final line in misplacedItems(appProviderContainer)) {
     if (_misplaced.add(line)) _log('MISPLACED $line');
   }
+}
+
+Future<PageTransitionState> _shot(String path) async {
+  await _frames();
+  final transition = appProviderContainer.read(transitionProvider);
+  final view = RendererBinding.instance.renderViews.first;
+  final layer =
+      // The root layer is what the window shows.
+      // ignore: invalid_use_of_protected_member
+      view.debugLayer as OffsetLayer? ?? (view.layer as OffsetLayer);
+  final image = await layer.toImage(
+    Offset.zero & (view.size * view.flutterView.devicePixelRatio),
+  );
+  final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+  await File(path).writeAsBytes(bytes!.buffer.asUint8List());
+  return transition;
 }
 
 Future<void> _frames([int count = 3]) async {
@@ -1457,17 +1475,7 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'logImages':
       await _logImages(value as String);
     case 'shot':
-      await _frames();
-      final view = RendererBinding.instance.renderViews.first;
-      final layer =
-          // The root layer is what the window shows.
-          // ignore: invalid_use_of_protected_member
-          view.debugLayer as OffsetLayer? ?? (view.layer as OffsetLayer);
-      final image = await layer.toImage(
-        Offset.zero & (view.size * view.flutterView.devicePixelRatio),
-      );
-      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-      await File(value as String).writeAsBytes(bytes!.buffer.asUint8List());
+      await _shot(value as String);
     case 'framesStart':
       _frameTimings.clear();
       SchedulerBinding.instance.addTimingsCallback(_frameTimings.addAll);
@@ -1490,12 +1498,17 @@ Future<void> _run(Map<String, dynamic> step) async {
           : _run((step['during'] as Map).cast<String, dynamic>())
               .then<Object?>((_) => null, onError: (Object error) => error);
       for (var i = 0; i < ((step['count'] ?? 10) as int); i++) {
-        await _run({'shot': '$value-${i.toString().padLeft(3, '0')}.png'});
+        final file = '$value-${i.toString().padLeft(3, '0')}.png';
+        final transition = await _shot(file);
+        _log('BURST $file ${transition.phase.name} '
+            '${transition.progress.toStringAsFixed(3)}');
         await Future<void>.delayed(
           Duration(milliseconds: (step['every'] ?? 100) as int),
         );
       }
       if (await during case final Object failure) throw failure;
+    case 'slowMotion':
+      timeDilation = (value as num).toDouble();
     case 'logLineups':
       final lineUps = c.read(lineUpProvider);
       String at(Offset? p) => p == null

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
@@ -12,8 +13,10 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/shared/framed_ability_icon_shell.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/role_icon_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
@@ -200,6 +203,99 @@ void main() {
           ),
     );
 
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const SizedBox.shrink(),
+      ),
+    );
+    await tester.pump();
+  });
+
+  testWidgets(
+      'a transition draws every ability as a page with its marker size does',
+      (tester) async {
+    final container = _createContainer();
+    addTearDown(container.dispose);
+    const drawnSize = Settings.abilitySize / 2;
+    final oneOfEachKind = <Type, AbilityInfo>{
+      for (final agent in AgentData.agents.values)
+        for (final ability in agent.abilities)
+          if (ability.abilityData != null)
+            ability.abilityData!.runtimeType: ability,
+    };
+
+    Future<(Size, List<Size>)> drawn(AbilityInfo info) async {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: ShadApp(
+            home: Scaffold(
+              body: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    child: KeyedSubtree(
+                      key: const ValueKey('preview'),
+                      child: PlacedWidgetPreview.build(
+                        PlacedAbility(
+                          id: 'ability',
+                          data: info,
+                          position: Offset.zero,
+                        ),
+                        1,
+                        agentSize: Settings.agentSize,
+                        abilitySize: drawnSize,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      return (
+        tester.getSize(find.byKey(const ValueKey('preview'))),
+        [
+          for (final icon in find.byType(FramedAbilityIconShell).evaluate())
+            tester.getSize(find.byWidget(icon.widget)),
+        ],
+      );
+    }
+
+    final inTransition = {
+      for (final MapEntry(key: kind, value: info) in oneOfEachKind.entries)
+        kind: await drawn(info),
+    };
+    container.read(strategySettingsProvider.notifier).updateAbilitySize(
+          drawnSize,
+        );
+    for (final MapEntry(key: kind, value: info) in oneOfEachKind.entries) {
+      final (box, icons) = inTransition[kind]!;
+      final (boxAtRest, iconsAtRest) = await drawn(info);
+      expect(box, boxAtRest, reason: '$kind');
+      expect(icons, iconsAtRest, reason: '$kind');
+    }
+
+    expect(
+      [
+        for (final MapEntry(key: kind, value: (_, icons))
+            in inTransition.entries)
+          if (icons.isNotEmpty) kind,
+      ],
+      containsAll(<Type>[
+        BaseAbility,
+        CircleAbility,
+        SectorCircleAbility,
+        SquareAbility,
+        CenterSquareAbility,
+        ResizableSquareAbility,
+        DeadlockBarrierMeshAbility,
+      ]),
+    );
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,

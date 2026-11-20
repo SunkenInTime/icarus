@@ -762,6 +762,7 @@ class PlacedWidgetPreview {
           armLengthsMeters: armLengthsMeters ?? w.armLengthsMeters,
           visualState: w.visualState,
           watchMouse: false,
+          forcedAbilitySize: abilitySize,
         );
         return AbilityVisionConeComposite(
           ability: w,
@@ -784,6 +785,7 @@ class PlacedWidgetPreview {
             rotation: visionSpec == null ? rotation ?? w.rotation : null,
             visualState: w.visualState,
             watchMouse: false,
+            forcedAbilitySize: abilitySize,
           );
         case ImageAbility():
           return ability.createWidget(
@@ -793,6 +795,7 @@ class PlacedWidgetPreview {
             rotation: visionSpec == null ? rotation ?? w.rotation : null,
             visualState: w.visualState,
             watchMouse: false,
+            forcedAbilitySize: abilitySize,
           );
         case CircleAbility():
           return ability.createWidget(
@@ -801,6 +804,7 @@ class PlacedWidgetPreview {
             mapScale: mapScale,
             visualState: w.visualState,
             watchMouse: false,
+            forcedAbilitySize: abilitySize,
           );
         case SectorCircleAbility():
           return ability.createWidget(
@@ -810,6 +814,7 @@ class PlacedWidgetPreview {
             rotation: rotation ?? w.rotation,
             visualState: w.visualState,
             watchMouse: false,
+            forcedAbilitySize: abilitySize,
           );
         case DeadlockBarrierMeshAbility():
           return ability.createWidget(
@@ -819,6 +824,7 @@ class PlacedWidgetPreview {
             armLengthsMeters: armLengthsMeters ?? w.armLengthsMeters,
             visualState: w.visualState,
             watchMouse: false,
+            forcedAbilitySize: abilitySize,
           );
         case SquareAbility():
           return ability.createWidget(
@@ -829,6 +835,7 @@ class PlacedWidgetPreview {
             length: length ?? w.length,
             visualState: w.visualState,
             watchMouse: false,
+            forcedAbilitySize: abilitySize,
           );
         case CenterSquareAbility():
           return ability.createWidget(
@@ -839,6 +846,7 @@ class PlacedWidgetPreview {
             length: length ?? w.length,
             visualState: w.visualState,
             watchMouse: false,
+            forcedAbilitySize: abilitySize,
           );
         case RotatableImageAbility():
           return ability.createWidget(
@@ -848,6 +856,7 @@ class PlacedWidgetPreview {
             length: length ?? w.length,
             visualState: w.visualState,
             watchMouse: false,
+            forcedAbilitySize: abilitySize,
           );
       }
     }
