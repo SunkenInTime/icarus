@@ -138,7 +138,7 @@ void main() {
         for (final op in aimedAtIt) {
           expect(
             refused(session.attempt(op)),
-            const UnreadableTarget('smoke'),
+            const UnreadableTarget(ElementKey('smoke')),
             reason: op.opId,
           );
         }
@@ -162,7 +162,9 @@ void main() {
     );
     final copy = session.rows.elementsOn('page-copy').single;
     expect(copy, isA<UnreadableElement>());
-    final payload = copy.toJson()['payload']! as Map<String, Object?>;
+    final payload =
+        (copy.toJson()! as Map<String, Object?>)['payload']!
+            as Map<String, Object?>;
     expect(payload['kind'], 'hologram');
     expect((payload['data']! as Map<String, Object?>)['flicker'], [1, 2, 3]);
     expect(session.rows.element('smoke'), row);
@@ -221,7 +223,7 @@ void main() {
             ),
           ),
         ),
-        const UnreadableTarget('jett'),
+        const UnreadableTarget(ElementKey('jett')),
       );
     },
   );

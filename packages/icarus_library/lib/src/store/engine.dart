@@ -37,6 +37,13 @@ final class KeyTooLong extends StorageFailure {
   String toString() => 'KeyTooLong($area, $key)';
 }
 
+final class LeaseEnded extends StorageFailure {
+  const LeaseEnded();
+
+  @override
+  String toString() => 'LeaseEnded()';
+}
+
 final class StoreStopped extends StorageFailure {
   const StoreStopped(this.cause);
 
@@ -54,6 +61,30 @@ final class StoreClosed extends StorageFailure {
 }
 
 abstract interface class StorageEngine {
+  Future<Leasing> lease();
+}
+
+sealed class Leasing {
+  const Leasing();
+}
+
+final class Leased extends Leasing {
+  const Leased(this.lease);
+
+  final StorageLease lease;
+}
+
+final class HeldByAnotherWriter extends Leasing {
+  const HeldByAnotherWriter();
+}
+
+final class LeaseFailed extends Leasing {
+  const LeaseFailed(this.failure);
+
+  final StorageFailure failure;
+}
+
+abstract interface class StorageLease {
   int get maxKeyLength;
 
   Future<Stored<String?>> read(String area, String key);
@@ -63,6 +94,8 @@ abstract interface class StorageEngine {
   Future<Stored<void>> write(String area, Map<String, String> values);
 
   Future<Stored<void>> delete(String area, Iterable<String> keys);
+
+  Future<void> release();
 }
 
 const done = Done<void>(null);

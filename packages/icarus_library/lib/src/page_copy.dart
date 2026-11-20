@@ -63,7 +63,7 @@ final class PageCopy {
   bool _isLive(ElementRow element) => switch (element) {
     LiveElement() => true,
     DeletedElement() => false,
-    UnreadableElement(:final json) => json['deleted'] == false,
+    UnreadableElement(:final deleted) => deleted == false,
   };
 
   ElementRow _element(ElementRow source, String pagePublicId) {
@@ -74,7 +74,7 @@ final class PageCopy {
           'source',
           'a deleted row is not copied',
         );
-      case LiveElement(:final payload, :final sortIndex):
+      case LiveElement(:final payload, :final sortIndex, :final unknownFields):
         final publicId = _elementId(source.publicId);
         return LiveElement(
           publicId: publicId,
@@ -83,16 +83,26 @@ final class PageCopy {
             kind: payload.kind,
             payloadVersion: payload.payloadVersion,
             data: _copiedData(payload.kind.name, payload.data, publicId),
+            unknownFields: payload.unknownFields,
           ),
           sortIndex: sortIndex,
           revision: 1,
+          unknownFields: unknownFields,
         );
-      case UnreadableElement(:final json):
+      case UnreadableElement(:final stored, :final problem):
         final publicId = _elementId(source.publicId);
+        final json = switch (stored) {
+          final Map<String, Object?> json => json,
+          _ => throw ArgumentError.value(
+            source,
+            'source',
+            'an element that is not a JSON object is not copied',
+          ),
+        };
         return UnreadableElement(
           publicId: publicId,
           pagePublicId: pagePublicId,
-          json: {
+          stored: {
             ...json,
             'publicId': publicId,
             'pagePublicId': pagePublicId,
@@ -107,6 +117,7 @@ final class PageCopy {
             },
             'revision': 1,
           },
+          problem: problem,
         );
     }
   }
@@ -167,8 +178,10 @@ final class PageCopy {
       strategyPublicId: source.strategyPublicId,
       publicId: id,
       pagePublicId: pagePublicId,
+      unknownFields: source.unknownFields,
       payload: LineupGroupPayload(
         payloadVersion: source.payload.payloadVersion,
+        unknownFields: source.payload.unknownFields,
         data: {
           ...data,
           'id': id,

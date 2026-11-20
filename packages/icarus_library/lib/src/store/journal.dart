@@ -40,16 +40,19 @@ final class KeyWrites {
 
 final class JournalRecord {
   JournalRecord({
+    required this.receipt,
     required Map<String, Object?> edit,
     required List<KeyWrite> writes,
   }) : edit = frozenJsonObject(edit),
        writes = List.unmodifiable(writes);
 
+  final String receipt;
   final Map<String, Object?> edit;
   final List<KeyWrite> writes;
 
   String encode() => jsonEncode({
     'journalVersion': journalVersion,
+    'receipt': receipt,
     'edit': edit,
     'writes': [
       for (final write in writes)
@@ -79,6 +82,7 @@ final class JournalRecord {
       if (fields.whole('journalVersion') != journalVersion) {
         fields.reject('a saved edit from a newer build');
       }
+      final receipt = fields.string('receipt');
       final edit = fields.object('edit');
       final writes = <KeyWrite>[];
       switch (fields.json['writes']) {
@@ -104,11 +108,11 @@ final class JournalRecord {
         case _:
           fields.reject('expected writes');
       }
-      return () => JournalRecord(edit: edit, writes: writes);
+      return () => JournalRecord(receipt: receipt, edit: edit, writes: writes);
     });
   }
 
-  Future<Stored<void>> replay(StorageEngine engine) async {
+  Future<Stored<void>> replay(StorageLease lease) async {
     final puts = <String, Map<String, String>>{};
     final deletes = <String, List<String>>{};
     for (final write in writes) {
@@ -120,21 +124,28 @@ final class JournalRecord {
       }
     }
     for (final MapEntry(key: area, value: values) in puts.entries) {
-      if (await engine.write(area, values) case StorageFailed(:final failure)) {
+      if (await lease.write(area, values) case StorageFailed(:final failure)) {
         return StorageFailed(failure);
       }
     }
     for (final MapEntry(key: area, value: keys) in deletes.entries) {
-      if (await engine.delete(area, keys) case StorageFailed(:final failure)) {
+      if (await lease.delete(area, keys) case StorageFailed(:final failure)) {
         return StorageFailed(failure);
       }
     }
     return done;
   }
 
-  Future<Stored<void>> save(StorageEngine engine) =>
-      engine.write(journalArea, {journalKey: encode()});
+  Future<Stored<void>> save(StorageLease lease) =>
+      lease.write(journalArea, {journalKey: encode()});
 
-  static Future<Stored<void>> clear(StorageEngine engine) =>
-      engine.delete(journalArea, const [journalKey]);
+  Future<Stored<void>> recover(StorageLease lease) async {
+    if (await replay(lease) case StorageFailed(:final failure)) {
+      return StorageFailed(failure);
+    }
+    return lease.write(journalArea, {recoveredKey(receipt): receipt});
+  }
+
+  static Future<Stored<void>> clear(StorageLease lease) =>
+      lease.delete(journalArea, const [journalKey]);
 }

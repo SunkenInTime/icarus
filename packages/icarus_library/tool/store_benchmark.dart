@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:icarus_library/hive_storage.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 const _items = 300;
@@ -9,6 +8,8 @@ const _strategies = 500;
 const _runs = 60;
 
 bool _readsAll(ElementPayload payload) => true;
+
+final _created = DateTime.utc(2026);
 
 ElementPayload _agent(String id, double x) => ElementPayload(
   kind: ElementKind.agent,
@@ -39,11 +40,13 @@ ElementPayload _drawing(String id, double shift) => ElementPayload(
 StrategyRowSet _strategy(String id, {required int items}) {
   final pages = ['$id-a', '$id-b'];
   return StrategyRowSet(
-    strategy: StrategyRow(
+    strategy: ReadableStrategy(
       publicId: id,
       name: id,
       mapData: 'lotus',
       revision: 1,
+      createdAt: _created,
+      updatedAt: _created,
     ),
     pages: [
       for (final (index, page) in pages.indexed)
@@ -58,7 +61,7 @@ StrategyRowSet _strategy(String id, {required int items}) {
     ],
     settings: [
       for (final page in pages)
-        PageSettingsRow(
+        ReadablePageSettings(
           pagePublicId: page,
           settings: const PageSettings(
             agentSize: 1,
@@ -84,8 +87,11 @@ StrategyRowSet _strategy(String id, {required int items}) {
   );
 }
 
-Future<LibraryStore> _open(StorageEngine engine) async =>
-    switch (await LibraryStore.open(engine, canRead: _readsAll)) {
+Future<LibraryStore> _open(MemoryStorage storage) async =>
+    switch (await LibraryStore.open(
+      MemoryEngine(storage),
+      canRead: _readsAll,
+    )) {
       StoreOpened(:final store) => store,
       StoreNotOpened(:final problem) => throw StateError('$problem'),
     };
@@ -108,58 +114,46 @@ final class _Times {
     final sorted = [..._micros]..sort();
     String ms(int micros) => (micros / 1000).toStringAsFixed(2);
     final p95 = sorted[((sorted.length - 1) * 0.95).round()];
-    return 'median ${ms(sorted[sorted.length ~/ 2])} ms, p95 ${ms(p95)} ms, n=${sorted.length}';
+    return 'median ${ms(sorted[sorted.length ~/ 2])} ms, '
+        'p95 ${ms(p95)} ms, n=${sorted.length}';
   }
 }
 
-Future<void> _measure(
-  String name,
-  Future<StorageEngine> Function() engine,
-  Future<void> Function(StorageEngine engine) close,
-) async {
-  final setup = await engine();
-  final store = await _open(setup);
-  final added = await store.editLibrary([
-    AddStrategy(
-      _strategy('big', items: _items),
-      createdAt: DateTime.utc(2026),
-      updatedAt: DateTime.utc(2026),
-    ),
+Future<void> main() async {
+  final storage = MemoryStorage();
+  final setup = await _open(storage);
+  final added = await setup.editLibrary([
+    AddStrategy(_strategy('big', items: _items)),
     for (var i = 0; i < _strategies - 1; i++)
-      AddStrategy(
-        _strategy('s$i', items: 6),
-        createdAt: DateTime.utc(2026),
-        updatedAt: DateTime.utc(2026),
-      ),
+      AddStrategy(_strategy('s$i', items: 6)),
   ]);
   if (added is! Saved) throw StateError('library not added: $added');
-  await close(setup);
+  await setup.close();
 
   final listing = _Times();
+  final coldPage = _Times();
+  final warmPage = _Times();
   for (var run = 0; run < 10; run++) {
-    final opened = await engine();
-    final list = await listing.time(() async => (await _open(opened)).library);
-    if (list.strategies.length != _strategies) throw StateError('list');
-    await close(opened);
-  }
-
-  final pageOpen = _Times();
-  for (var run = 0; run < 10; run++) {
-    final opened = await engine();
-    final fresh = await _open(opened);
-    await fresh.readStrategy('big');
-    final page = await pageOpen.time(() => fresh.readPage('big', 'big-a'));
-    if (page case Found(
-      value: PageContent(:final elements),
-    ) when elements.length == _items) {
-      await close(opened);
-      continue;
+    final store = await listing.time(() => _open(storage));
+    if (store.library.strategies.length != _strategies) {
+      throw StateError('list');
     }
-    throw StateError('page');
+    final cold = await coldPage.time(() => store.readPage('big', 'big-a'));
+    await store.unload('big');
+    await store.readStrategy('big');
+    final warm = await warmPage.time(() => store.readPage('big', 'big-b'));
+    for (final page in [cold, warm]) {
+      if (page case Found(
+        value: PageContent(:final elements),
+      ) when elements.length == _items) {
+        continue;
+      }
+      throw StateError('page');
+    }
+    await store.close();
   }
 
-  final working = await engine();
-  final editing = await _open(working);
+  final editing = await _open(storage);
   await editing.readPage('big', 'big-a');
   final move = _Times();
   final redraw = _Times();
@@ -191,35 +185,22 @@ Future<void> _measure(
       ),
     );
   }
-  await close(working);
+  await editing.close();
 
   stdout
-    ..writeln('$name engine')
+    ..writeln('Memory engine')
     ..writeln(
-      '  open the library list ($_strategies strategies): ${listing.summary}',
+      '  open the store and its library list ($_strategies strategies): '
+      '${listing.summary}',
     )
     ..writeln(
-      '  open a page ($_items items, half of them $_drawingPoints-point drawings): ${pageOpen.summary}',
+      '  open a page in a strategy not yet read ($_items items, half of '
+      'them $_drawingPoints-point drawings): ${coldPage.summary}',
     )
+    ..writeln('  open a page in a strategy already read: ${warmPage.summary}')
     ..writeln('  commit: move one agent on that page: ${move.summary}')
     ..writeln(
-      '  commit: rewrite one $_drawingPoints-point drawing on that page: ${redraw.summary}',
+      '  commit: rewrite one $_drawingPoints-point drawing on that page: '
+      '${redraw.summary}',
     );
-}
-
-Future<void> main() async {
-  final memory = MemoryEngine();
-  await _measure('Memory', () async => memory, (_) async {});
-  final directory = await Directory.systemTemp.createTemp(
-    'icarus-store-bench-',
-  );
-  try {
-    await _measure(
-      'Hive CE (files in ${directory.path})',
-      () async => HiveEngine(directory.path),
-      (engine) => (engine as HiveEngine).close(),
-    );
-  } finally {
-    await directory.delete(recursive: true);
-  }
 }

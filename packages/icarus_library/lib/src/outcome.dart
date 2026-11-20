@@ -69,6 +69,7 @@ enum RowField {
   page,
   kind,
   payloadVersion,
+  updatedAt,
 }
 
 sealed class Undo {
@@ -139,19 +140,19 @@ final class Failed extends Refusal {
 }
 
 final class UnreadableTarget extends Refusal {
-  const UnreadableTarget(this.elementPublicId);
+  const UnreadableTarget(this.key);
 
-  final String elementPublicId;
+  final RowKey key;
 
   @override
   bool operator ==(Object other) =>
-      other is UnreadableTarget && other.elementPublicId == elementPublicId;
+      other is UnreadableTarget && other.key == key;
 
   @override
-  int get hashCode => elementPublicId.hashCode;
+  int get hashCode => key.hashCode;
 
   @override
-  String toString() => 'UnreadableTarget($elementPublicId)';
+  String toString() => 'UnreadableTarget($key)';
 }
 
 enum RejectionReason {

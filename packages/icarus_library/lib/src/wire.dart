@@ -1,5 +1,7 @@
 import 'json.dart';
 
+const latestTime = 8640000000000000;
+
 sealed class Decoded<T> {
   const Decoded();
 }
@@ -75,6 +77,23 @@ final class JsonFields {
   };
 
   bool? optionalBoolean(String key) => has(key) ? boolean(key) : null;
+
+  DateTime time(String key) => switch (json[key]) {
+    final num value
+        when value.isFinite &&
+            value == value.truncate() &&
+            value >= -latestTime &&
+            value <= latestTime =>
+      DateTime.fromMillisecondsSinceEpoch(value.toInt(), isUtc: true),
+    _ => _expected(key, 'a time in milliseconds', DateTime.utc(1970)),
+  };
+
+  DateTime? optionalTime(String key) => has(key) ? time(key) : null;
+
+  Map<String, Object?> rest(Set<String> known) => frozenJsonObject({
+    for (final MapEntry(:key, :value) in json.entries)
+      if (!known.contains(key)) key: value,
+  });
 
   Map<String, Object?> object(String key) => switch (json[key]) {
     final Map<String, Object?> value => value,

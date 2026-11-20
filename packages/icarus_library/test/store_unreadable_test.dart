@@ -4,8 +4,6 @@ import 'package:test/test.dart';
 import 'store_support.dart';
 import 'support.dart';
 
-const _area = 'strategy/$strategyId';
-
 const _unreadable = {
   'content/page-a/element/smoke': unreadableElementJson,
   'content/page-a/pin/pin-1': unknownRowJson,
@@ -14,7 +12,7 @@ const _unreadable = {
 
 void expectUntouched(Contents contents) {
   for (final MapEntry(:key, :value) in _unreadable.entries) {
-    expect(contents[_area]?[key], value, reason: key);
+    expect(contents[strategyArea]?[key], value, reason: key);
   }
 }
 
@@ -22,19 +20,19 @@ void main() {
   late Contents seeded;
 
   setUpAll(() async {
-    seeded = (await seededEngine()).contents;
+    seeded = await seededContents();
   });
 
   test(
-    'every op on the page leaves the rows this build cannot read as stored',
+    'every op in turn leaves the rows this build cannot read as stored',
     () async {
-      final disk = MemoryEngine(seeded);
-      final store = await openStore(disk);
+      final disk = MemoryStorage(seeded);
+      final store = await openStore(MemoryEngine(disk));
       for (final MapEntry(key: name, value: op) in everyOpType().entries) {
         final result = await store.commit(strategyId, op);
         expect(
           result,
-          isNot(isA<NotSaved<StrategyEdited, CommitRefusal>>()),
+          isNot(isA<NotSaved<Committed, CommitRefusal>>()),
           reason: name,
         );
         expectUntouched(disk.contents);
@@ -43,8 +41,9 @@ void main() {
         await store.rebuildSummary(strategyId),
         isA<NothingToSave<StrategySummary, CommitRefusal>>(),
       );
+      await store.close();
       expectUntouched(disk.contents);
-      final reopened = await openStore(MemoryEngine(disk.contents));
+      final reopened = await openOn(disk.contents);
       expect(
         await reopened.rebuildSummary(strategyId),
         isA<NothingToSave<StrategySummary, CommitRefusal>>(),
@@ -55,20 +54,20 @@ void main() {
 
   test('each op type on its own leaves them as stored', () async {
     for (final MapEntry(key: name, value: op) in everyOpType().entries) {
-      final disk = MemoryEngine(seeded);
-      final store = await openStore(disk);
+      final disk = MemoryStorage(seeded);
+      final store = await openStore(MemoryEngine(disk));
       savedValue(await store.commit(strategyId, op));
       expectUntouched(disk.contents);
       expect(
         reason: name,
-        disk.contents[_area]!.length,
-        greaterThanOrEqualTo(seeded[_area]!.length),
+        disk.contents[strategyArea]!.length,
+        greaterThanOrEqualTo(seeded[strategyArea]!.length),
       );
     }
   });
 
   test('an op aimed at an element this build cannot read is refused', () async {
-    final store = await openStore(MemoryEngine(seeded));
+    final store = await openOn(seeded);
     final result = await store.commit(
       strategyId,
       const ElementDeleteOp(
@@ -80,21 +79,21 @@ void main() {
     );
     expect(
       result,
-      isA<Refused<StrategyEdited, CommitRefusal>>().having(
+      isA<Refused<Committed, CommitRefusal>>().having(
         (refused) => refused.reason,
         'reason',
         isA<OpRefusal>().having(
           (reason) => reason.refusal,
           'refusal',
-          const UnreadableTarget('smoke'),
+          const UnreadableTarget(ElementKey('smoke')),
         ),
       ),
     );
   });
 
-  test('an add over a stored row this build cannot read is refused', () async {
-    final disk = MemoryEngine(seeded);
-    final store = await openStore(disk);
+  test('an add over a stored row that is not JSON is refused', () async {
+    final disk = MemoryStorage(seeded);
+    final store = await openStore(MemoryEngine(disk));
     final result = await store.commit(
       strategyId,
       ElementAddOp(
@@ -107,13 +106,13 @@ void main() {
     );
     expect(
       result,
-      isA<Refused<StrategyEdited, CommitRefusal>>().having(
+      isA<Refused<Committed, CommitRefusal>>().having(
         (refused) => refused.reason,
         'reason',
-        isA<UnreadableRowInTheWay>().having(
-          (reason) => reason.row.text,
-          'text',
-          garbledJson,
+        isA<OpRefusal>().having(
+          (reason) => reason.refusal,
+          'refusal',
+          const UnreadableTarget(ElementKey('garbled')),
         ),
       ),
     );
@@ -121,13 +120,26 @@ void main() {
   });
 
   test('a page copy carries an unreadable element as a new row', () async {
-    final store = await openStore(MemoryEngine(seeded));
+    final area = {...seeded[strategyArea]!}
+      ..remove('content/page-a/element/garbled');
+    final store = await openOn({...seeded, strategyArea: area});
     savedValue(
-      await store.commit(strategyId, everyOpType()['page.add copying a page']!),
+      await store.commit(
+        strategyId,
+        const PageAddOp(
+          opId: 'copy-a',
+          pagePublicId: 'page-copy',
+          sortIndex: 3,
+          expectedStrategyRevision: 1,
+          settings: defaultSettings,
+          copyContentFromPagePublicId: 'page-a',
+        ),
+      ),
     );
     final copy = pageOf(await store.readPage(strategyId, 'page-copy'));
     final carried = copy.elements.whereType<UnreadableElement>().single;
-    expect(carried.json['newRowField'], 'kept');
-    expect(carried.json['payload'], isA<Map<String, Object?>>());
+    final stored = carried.stored! as Map<String, Object?>;
+    expect(stored['newRowField'], 'kept');
+    expect(stored['publicId'], carried.publicId);
   });
 }

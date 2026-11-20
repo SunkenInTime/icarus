@@ -2,7 +2,6 @@ import '../outcome.dart';
 import '../rows.dart';
 import '../strategy_rows.dart';
 import 'engine.dart';
-import 'stored_row.dart';
 import 'summary.dart';
 
 sealed class Saving<S, R> {
@@ -32,16 +31,54 @@ final class NotSaved<S, R> extends Saving<S, R> {
 }
 
 final class SaveInDoubt<S, R> extends Saving<S, R> {
-  const SaveInDoubt(this.failure);
+  const SaveInDoubt(this.failure, this.receipt);
+
+  final StorageFailure failure;
+  final SaveReceipt receipt;
+}
+
+final class SaveReceipt {
+  const SaveReceipt(this.id);
+
+  final String id;
+
+  @override
+  bool operator ==(Object other) => other is SaveReceipt && other.id == id;
+
+  @override
+  int get hashCode => id.hashCode;
+}
+
+sealed class Recovery {
+  const Recovery();
+}
+
+final class EditRecovered extends Recovery {
+  const EditRecovered();
+}
+
+final class EditNotRecovered extends Recovery {
+  const EditNotRecovered();
+}
+
+final class RecoveryNotRead extends Recovery {
+  const RecoveryNotRead(this.failure);
 
   final StorageFailure failure;
 }
 
-typedef CommitResult = Saving<StrategyEdited, CommitRefusal>;
+typedef CommitResult = Saving<Committed, CommitRefusal>;
 
 typedef LibraryEditResult = Saving<LibraryEdited, LibraryRefusal>;
 
 typedef RebuildResult = Saving<StrategySummary, CommitRefusal>;
+
+final class Committed {
+  const Committed({required this.change, required this.undo});
+
+  final StrategyEdited change;
+  final Undo undo;
+}
 
 sealed class CommitRefusal {
   const CommitRefusal();
@@ -72,10 +109,10 @@ final class NoSuchStrategy implements CommitRefusal, LibraryRefusal {
 final class UnreadableRowInTheWay implements CommitRefusal, LibraryRefusal {
   const UnreadableRowInTheWay(this.row);
 
-  final UnreadableRow row;
+  final Row row;
 
   @override
-  String toString() => 'UnreadableRowInTheWay(${row.area} ${row.key})';
+  String toString() => 'UnreadableRowInTheWay(${row.key})';
 }
 
 final class StrategyAlreadyInStore extends LibraryRefusal {
@@ -85,6 +122,15 @@ final class StrategyAlreadyInStore extends LibraryRefusal {
 
   @override
   String toString() => 'StrategyAlreadyInStore($strategyPublicId)';
+}
+
+final class RowOutsideStrategy extends LibraryRefusal {
+  const RowOutsideStrategy(this.key);
+
+  final RowKey key;
+
+  @override
+  String toString() => 'RowOutsideStrategy($key)';
 }
 
 final class NoSuchFolder extends LibraryRefusal {
@@ -121,14 +167,17 @@ sealed class StoreChange {
 final class StrategyEdited extends StoreChange {
   StrategyEdited({
     required this.strategyPublicId,
+    required this.opId,
     required List<RowWrite> writes,
-    required this.undo,
+    required List<RowKey> removed,
     required this.summary,
-  }) : writes = List.unmodifiable(writes);
+  }) : writes = List.unmodifiable(writes),
+       removed = List.unmodifiable(removed);
 
   final String strategyPublicId;
+  final String opId;
   final List<RowWrite> writes;
-  final Undo undo;
+  final List<RowKey> removed;
   final StrategySummary summary;
 }
 
@@ -166,7 +215,7 @@ final class NotFound<T> extends Reading<T> {
 final class Unreadable<T> extends Reading<T> {
   const Unreadable(this.row);
 
-  final UnreadableRow row;
+  final UnreadableStrategy row;
 }
 
 final class NotRead<T> extends Reading<T> {
@@ -175,20 +224,38 @@ final class NotRead<T> extends Reading<T> {
   final StorageFailure failure;
 }
 
+sealed class Unloading {
+  const Unloading();
+}
+
+final class Unloaded extends Unloading {
+  const Unloaded();
+}
+
+final class NotUnloaded extends Unloading {
+  const NotUnloaded(this.failure);
+
+  final StorageFailure failure;
+}
+
+final class UnknownKindRow {
+  const UnknownKindRow({required this.key, required this.text});
+
+  final String key;
+  final String text;
+}
+
 final class StrategyContent {
   StrategyContent({
     required this.strategy,
     required List<PageRow> pages,
     required Map<String, PageSettingsRow> settings,
-    required List<UnreadableRow> unreadable,
   }) : pages = List.unmodifiable(pages),
-       settings = Map.unmodifiable(settings),
-       unreadable = List.unmodifiable(unreadable);
+       settings = Map.unmodifiable(settings);
 
-  final StrategyRow strategy;
+  final ReadableStrategy strategy;
   final List<PageRow> pages;
   final Map<String, PageSettingsRow> settings;
-  final List<UnreadableRow> unreadable;
 }
 
 final class PageContent {
@@ -197,30 +264,30 @@ final class PageContent {
     required this.settings,
     required List<ElementRow> elements,
     required List<LineupGroupRow> lineupGroups,
-    required List<UnreadableRow> unreadable,
+    required List<UnknownKindRow> unknownKinds,
   }) : elements = List.unmodifiable(elements),
        lineupGroups = List.unmodifiable(lineupGroups),
-       unreadable = List.unmodifiable(unreadable);
+       unknownKinds = List.unmodifiable(unknownKinds);
 
   final PageRow page;
   final PageSettingsRow? settings;
   final List<ElementRow> elements;
   final List<LineupGroupRow> lineupGroups;
-  final List<UnreadableRow> unreadable;
+  final List<UnknownKindRow> unknownKinds;
 }
 
 final class LibraryList {
   LibraryList({
     required List<StrategySummary> strategies,
+    required List<UnreadableStrategy> unreadableStrategies,
     required List<FolderRow> folders,
-    required List<UnreadableRow> unreadable,
   }) : strategies = List.unmodifiable(strategies),
-       folders = List.unmodifiable(folders),
-       unreadable = List.unmodifiable(unreadable);
+       unreadableStrategies = List.unmodifiable(unreadableStrategies),
+       folders = List.unmodifiable(folders);
 
   final List<StrategySummary> strategies;
+  final List<UnreadableStrategy> unreadableStrategies;
   final List<FolderRow> folders;
-  final List<UnreadableRow> unreadable;
 }
 
 sealed class LibraryChange {
@@ -228,15 +295,9 @@ sealed class LibraryChange {
 }
 
 final class AddStrategy extends LibraryChange {
-  const AddStrategy(
-    this.rows, {
-    required this.createdAt,
-    required this.updatedAt,
-  });
+  const AddStrategy(this.rows);
 
   final StrategyRowSet rows;
-  final DateTime createdAt;
-  final DateTime updatedAt;
 }
 
 final class RemoveStrategy extends LibraryChange {
@@ -255,7 +316,7 @@ final class MoveStrategy extends LibraryChange {
 final class PutFolder extends LibraryChange {
   const PutFolder(this.folder);
 
-  final FolderRow folder;
+  final ReadableFolder folder;
 }
 
 final class RemoveFolder extends LibraryChange {

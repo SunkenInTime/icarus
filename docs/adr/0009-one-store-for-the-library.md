@@ -59,7 +59,9 @@ decodes a payload into a typed item at the edge of the editor.
   gives different rows than applying it once.
 - A row this build cannot read is carried untouched. It is never dropped,
   rewritten or inferred as deleted, whether it failed to decode or is a kind
-  from a newer build.
+  from a newer build, except when the user deletes the page or strategy that
+  holds it: that is the user's own action, and it takes every row of what
+  they deleted.
 - The library list reads summaries, never page content. Opening a page reads
   that page's rows. Saving an edit writes the rows it changed.
 - Sync status is derived from the store: a cloud strategy is synced when it

@@ -7,7 +7,7 @@ import 'support.dart';
 StrategyRowSet strategyWith(String id, {required int items, int pages = 3}) {
   final pageIds = [for (var i = 0; i < pages; i++) '$id-page-$i'];
   return StrategyRowSet(
-    strategy: StrategyRow(publicId: id, name: id, mapData: 'bind', revision: 1),
+    strategy: strategyRow(publicId: id, name: id, mapData: 'bind'),
     pages: [
       for (final (index, pageId) in pageIds.indexed)
         LivePage(
@@ -19,47 +19,31 @@ StrategyRowSet strategyWith(String id, {required int items, int pages = 3}) {
           revision: 1,
         ),
     ],
-    settings: [
-      for (final pageId in pageIds)
-        PageSettingsRow(
-          pagePublicId: pageId,
-          settings: defaultSettings,
-          revision: 1,
-        ),
-    ],
+    settings: [for (final pageId in pageIds) settings(pageId)],
     elements: [
       for (final pageId in pageIds)
         for (var i = 0; i < items; i++)
           i.isEven
-              ? LiveElement(
-                  publicId: '$pageId-agent-$i',
-                  pagePublicId: pageId,
-                  payload: agent('$pageId-agent-$i').payload,
-                  sortIndex: i,
-                  revision: 1,
-                )
+              ? agent('$pageId-agent-$i', pageId: pageId, sortIndex: i)
               : drawing('$pageId-drawing-$i', pageId: pageId, points: 200),
     ],
   );
 }
 
-Future<MemoryEngine> library({
+Future<MemoryStorage> library({
   required int strategies,
   required int items,
 }) async {
-  final engine = MemoryEngine();
-  final store = await openStore(engine);
+  final storage = MemoryStorage();
+  final store = await openStore(MemoryEngine(storage));
   savedValue(
     await store.editLibrary([
       for (var i = 0; i < strategies; i++)
-        AddStrategy(
-          strategyWith('s$i', items: i < 4 ? items : 2),
-          createdAt: createdAt,
-          updatedAt: createdAt,
-        ),
+        AddStrategy(strategyWith('s$i', items: i < 4 ? items : 2)),
     ]),
   );
-  return engine;
+  await store.close();
+  return storage;
 }
 
 ElementPatchOp moveOne(String strategy) => ElementPatchOp(
@@ -76,56 +60,68 @@ ElementPatchOp moveOne(String strategy) => ElementPatchOp(
 void main() {
   for (final (strategies, items) in [(5, 10), (60, 300)]) {
     group('With $strategies strategies of $items items a page', () {
-      late MemoryEngine disk;
+      late Contents disk;
 
       setUpAll(() async {
-        disk = await library(strategies: strategies, items: items);
+        disk = (await library(strategies: strategies, items: items)).contents;
       });
 
-      test('moving one item writes four keys and reads nothing', () async {
-        final counting = CountingEngine(MemoryEngine(disk.contents));
-        final store = await openStore(counting);
-        pageOf(await store.readPage('s1', 's1-page-1'));
-        counting.reset();
-        savedValue(await store.commit('s1', moveOne('s1')));
-        expect(counting.written, [
-          ('journal', 'edit'),
-          ('strategy/s1', 'content/s1-page-1/element/s1-page-1-agent-0'),
-          ('library', 'summary/s1'),
-        ]);
-        expect(counting.deleted, [('journal', 'edit')]);
-        expect(counting.reads, isEmpty);
-        expect(counting.listings, isEmpty);
-      });
+      Future<(LibraryStore, Counts)> opened() async {
+        final (engine, counts) = counting(MemoryEngine(MemoryStorage(disk)));
+        return (await openStore(engine), counts);
+      }
+
+      test(
+        'moving one item writes five keys in four calls, reading nothing',
+        () async {
+          final (store, counts) = await opened();
+          pageOf(await store.readPage('s1', 's1-page-1'));
+          counts.reset();
+          savedValue(await store.commit('s1', moveOne('s1')));
+          expect(
+            counts.written,
+            unorderedEquals([
+              ('journal', 'edit'),
+              ('strategy/s1', 'content/s1-page-1/element/s1-page-1-agent-0'),
+              ('strategy/s1', 'strategy'),
+              ('library', 'summary/s1'),
+            ]),
+          );
+          expect(counts.deleted, [('journal', 'edit')]);
+          expect(counts.calls, 4);
+          expect(counts.reads, isEmpty);
+          expect(counts.listings, isEmpty);
+        },
+      );
 
       test(
         'moving one item on a page not yet open reads only that page',
         () async {
-          final counting = CountingEngine(MemoryEngine(disk.contents));
-          final store = await openStore(counting);
+          final (store, counts) = await opened();
           strategyOf(await store.readStrategy('s1'));
-          counting.reset();
+          counts.reset();
           savedValue(await store.commit('s1', moveOne('s1')));
-          expect(counting.keyWrites, 4);
+          expect(counts.keyWrites, 5);
+          expect(counts.listings, [('strategy/s1', 'content/s1-page-1/')]);
           expect(
-            counting.reads.map((read) => read.$2),
+            counts.reads.map((read) => read.$2),
             everyElement(startsWith('content/s1-page-1/')),
           );
-          expect(counting.reads, hasLength(items));
+          expect(counts.reads, hasLength(items));
         },
       );
 
-      test('opening a page reads only that page\'s keys', () async {
-        final counting = CountingEngine(MemoryEngine(disk.contents));
-        final store = await openStore(counting);
+      test('opening a page lists and reads only that page', () async {
+        final (store, counts) = await opened();
         strategyOf(await store.readStrategy('s2'));
-        counting.reset();
+        counts.reset();
         final page = pageOf(await store.readPage('s2', 's2-page-2'));
         expect(page.elements, hasLength(items));
-        expect(counting.listings, [('strategy/s2', 'content/s2-page-2/')]);
-        expect(counting.reads, hasLength(items));
+        expect(counts.listings, [('strategy/s2', 'content/s2-page-2/')]);
+        expect(counts.listed, items);
+        expect(counts.reads, hasLength(items));
         expect(
-          counting.reads,
+          counts.reads,
           everyElement(
             isA<(String, String)>()
                 .having((read) => read.$1, 'area', 'strategy/s2')
@@ -141,33 +137,37 @@ void main() {
       test(
         'opening a strategy reads its row, pages and settings only',
         () async {
-          final counting = CountingEngine(MemoryEngine(disk.contents));
-          final store = await openStore(counting);
-          counting.reset();
+          final (store, counts) = await opened();
+          counts.reset();
           strategyOf(await store.readStrategy('s3'));
           expect(
-            counting.reads.map((read) => read.$2),
+            counts.reads.map((read) => read.$2),
             everyElement(
               anyOf('strategy', startsWith('page/'), startsWith('settings/')),
             ),
           );
-          expect(counting.reads, hasLength(1 + 3 + 3));
+          expect(counts.reads, hasLength(1 + 3 + 3));
+          expect(counts.listings, [
+            ('strategy/s3', 'page/'),
+            ('strategy/s3', 'settings/'),
+            ('strategy/s3', 'content/'),
+          ]);
+          expect(counts.listed, 3 + 3 + 3 * items);
         },
       );
 
       test('opening the library list reads only summaries', () async {
-        final counting = CountingEngine(MemoryEngine(disk.contents));
-        final store = await openStore(counting);
+        final (store, counts) = await opened();
         expect(store.library.strategies, hasLength(strategies));
-        expect(counting.reads.toSet(), {
+        expect(counts.reads.toSet(), {
           ('journal', 'edit'),
           for (var i = 0; i < strategies; i++) ('library', 'summary/s$i'),
         });
-        expect(counting.listings, [
+        expect(counts.listings, [
           ('library', 'summary/'),
           ('library', 'folder/'),
         ]);
-        expect(counting.keyWrites, 0);
+        expect(counts.calls, 0);
       });
     });
   }

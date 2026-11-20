@@ -10,5 +10,4 @@ export 'src/store/memory_engine.dart';
 export 'src/store/results.dart';
 export 'src/store/store.dart'
     show CanRead, LibraryStore, StoreNotOpened, StoreOpened, StoreOpening;
-export 'src/store/stored_row.dart' show UnreadableRow;
 export 'src/store/summary.dart' show Sides, StrategySummary;

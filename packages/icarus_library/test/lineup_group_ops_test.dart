@@ -85,7 +85,7 @@ void main() {
         ['links/k1'],
       ),
     );
-    final data = session.rows.lineupGroup('g1')!.payload.data;
+    final data = session.groupAt('g1').payload.data;
     expect(data['links'], [
       link('k1', 'o1', 'l1', notes: 'jump throw'),
       link('k2', 'o2', 'l1'),
@@ -206,7 +206,7 @@ void main() {
       ),
     );
     session.apply(undoOp(edited));
-    final data = session.rows.lineupGroup('g1')!.payload.data;
+    final data = session.groupAt('g1').payload.data;
     expect(data['links'], [link('k1', 'o1', 'l1'), link('k2', 'o2', 'l1')]);
   });
 
@@ -244,14 +244,13 @@ void main() {
         ),
       ),
     );
-    final links =
-        session.rows.lineupGroup('g1')!.payload.data['links']! as List<Object?>;
+    final links = session.groupAt('g1').payload.data['links']! as List<Object?>;
     expect(
       [for (final link in links.cast<Map<String, Object?>>()) link['id']],
       ['b', 'a'],
     );
     session.apply(undoOp(reordered));
-    expect(session.rows.lineupGroup('g1')!.payload, twoLinks);
+    expect(session.groupAt('g1').payload, twoLinks);
   });
 
   test('the same lineup group id in two strategies names two rows', () {

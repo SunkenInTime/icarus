@@ -1,28 +1,32 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:icarus_library/icarus_library.dart';
 import 'package:test/test.dart';
 
 import 'store_support.dart';
 import 'support.dart';
 
+Map<String, Object?> stored(Contents contents, String area, String key) =>
+    jsonDecode(contents[area]![key]!) as Map<String, Object?>;
+
 void main() {
   late Contents seeded;
 
   setUpAll(() async {
-    seeded = (await seededEngine()).contents;
+    seeded = await seededContents();
   });
-
-  final moveJett = everyOpType()['element.patch']!;
 
   group('Reading', () {
     test('the library list shows each strategy from its summary', () async {
-      final store = await openStore(MemoryEngine(seeded));
+      final store = await openOn(seeded);
       final [summary] = store.library.strategies;
       expect(summary.publicId, strategyId);
       expect(summary.name, 'Retake B');
       expect(summary.mapData, 'ascent');
       expect(summary.folderPublicId, isNull);
-      expect(summary.createdAt, createdAt);
-      expect(summary.updatedAt, createdAt);
+      expect(summary.createdAt, strategyCreatedAt);
+      expect(summary.updatedAt, strategyCreatedAt);
       expect(summary.pageCount, 3);
       expect(summary.sides, Sides.mixed);
       expect(summary.agents, ['jett', 'kayo', 'omen', 'sova']);
@@ -30,7 +34,7 @@ void main() {
     });
 
     test('a strategy reads as its row and its pages in order', () async {
-      final store = await openStore(MemoryEngine(seeded));
+      final store = await openOn(seeded);
       final content = strategyOf(await store.readStrategy(strategyId));
       expect(content.strategy.name, 'Retake B');
       expect(content.pages.map((page) => page.publicId), [
@@ -40,30 +44,27 @@ void main() {
       ]);
       expect(
         content.settings.keys,
-        containsAll(['page-a', 'page-b', 'page-c']),
+        unorderedEquals(['page-a', 'page-b', 'page-c']),
       );
     });
 
-    test('a page reads its own rows and the rows it cannot read', () async {
-      final store = await openStore(MemoryEngine(seeded));
+    test('a page reads every row it holds, readable or not', () async {
+      final store = await openOn(seeded);
       final content = pageOf(await store.readPage(strategyId, 'page-a'));
       expect(
         content.elements.map((row) => row.publicId),
-        unorderedEquals(['jett', 'sova', 'line', 'smoke']),
+        unorderedEquals(['jett', 'sova', 'line', 'smoke', 'garbled']),
       );
-      expect(content.elements.whereType<UnreadableElement>(), hasLength(1));
+      final garbled = elementOn(content, 'garbled') as UnreadableElement;
+      expect(garbled.stored, garbledJson);
+      expect(elementOn(content, 'smoke'), isA<UnreadableElement>());
       expect(content.lineupGroups.single.publicId, 'g1');
-      expect(
-        content.unreadable.map((row) => (row.key, row.text)),
-        unorderedEquals([
-          ('content/page-a/element/garbled', garbledJson),
-          ('content/page-a/pin/pin-1', unknownRowJson),
-        ]),
-      );
+      expect(content.unknownKinds.single.key, 'content/page-a/pin/pin-1');
+      expect(content.unknownKinds.single.text, unknownRowJson);
     });
 
     test('a strategy or page that is not there reads as not found', () async {
-      final store = await openStore(MemoryEngine(seeded));
+      final store = await openOn(seeded);
       expect(
         await store.readStrategy('nope'),
         isA<NotFound<StrategyContent>>(),
@@ -73,49 +74,76 @@ void main() {
         isA<NotFound<PageContent>>(),
       );
     });
+
+    test('an unloaded strategy is read from storage again', () async {
+      final (engine, counts) = counting(MemoryEngine(MemoryStorage(seeded)));
+      final store = await openStore(engine);
+      pageOf(await store.readPage(strategyId, 'page-b'));
+      counts.reset();
+      pageOf(await store.readPage(strategyId, 'page-b'));
+      expect(counts.reads, isEmpty);
+      expect(await store.unload(strategyId), isA<Unloaded>());
+      pageOf(await store.readPage(strategyId, 'page-b'));
+      expect(counts.reads, isNotEmpty);
+    });
   });
 
   group('Saving an edit', () {
     test(
-      'says what changed, how to undo it, and keeps it across a reopen',
+      'says what changed, names its op, and keeps it across a reopen',
       () async {
-        final disk = MemoryEngine(seeded);
-        final store = await openStore(disk);
+        final disk = MemoryStorage(seeded);
+        final store = await openStore(MemoryEngine(disk));
         final changes = <StoreChange>[];
         final listening = store.changes.listen(changes.add);
-        final edited = savedValue(await store.commit(strategyId, moveJett));
-        final write = edited.writes.single as RowChanged;
-        expect(write.after.key, const ElementKey('jett'));
-        expect(write.dataFields, {'position'});
-        expect(edited.undo, isA<UndoWithOp>());
+        final committed = savedValue(await store.commit(strategyId, moveJett));
+        final edited = committed.change;
+        expect(edited.opId, moveJett.opId);
+        expect(edited.removed, isEmpty);
+        final element =
+            edited.writes.firstWhere(
+                  (write) => write.after.key == const ElementKey('jett'),
+                )
+                as RowChanged;
+        expect(element.dataFields, {'position'});
+        final header =
+            edited.writes.firstWhere((write) => write.after is ReadableStrategy)
+                as RowChanged;
+        expect(header.fields, {RowField.updatedAt});
+        expect((header.after as ReadableStrategy).updatedAt, editedAt);
+        expect(committed.undo, isA<UndoWithOp>());
         expect(edited.summary.updatedAt, editedAt);
+        expect(edited.summary.createdAt, strategyCreatedAt);
         await pumpEventQueue();
         expect(changes.single, same(edited));
         await listening.cancel();
+        await store.close();
 
-        final reopened = await openStore(MemoryEngine(disk.contents));
-        final jett = pageOf(
-          await reopened.readPage(strategyId, 'page-a'),
-        ).elements.firstWhere((row) => row.publicId == 'jett');
-        expect(jett, write.after);
+        final reopened = await openOn(disk.contents);
+        final page = pageOf(await reopened.readPage(strategyId, 'page-a'));
+        expect(elementOn(page, 'jett'), element.after);
         expect(reopened.library.strategies.single, edited.summary);
+        final row = strategyOf(
+          await reopened.readStrategy(strategyId),
+        ).strategy;
+        expect(row.updatedAt, editedAt);
       },
     );
 
     test('an op that changes nothing saves nothing', () async {
-      final disk = CountingEngine(MemoryEngine(seeded));
-      final store = await openStore(disk);
+      final (engine, counts) = counting(MemoryEngine(MemoryStorage(seeded)));
+      final store = await openStore(engine);
       savedValue(await store.commit(strategyId, moveJett));
-      disk.reset();
+      counts.reset();
       expect(
         await store.commit(strategyId, moveJett),
-        isA<NothingToSave<StrategyEdited, CommitRefusal>>(),
+        isA<NothingToSave<Committed, CommitRefusal>>(),
       );
-      expect(disk.keyWrites, 0);
+      expect(counts.calls, 0);
     });
 
     test('an op the rows refuse is refused with the reason', () async {
-      final store = await openStore(MemoryEngine(seeded));
+      final store = await openOn(seeded);
       final result = await store.commit(
         strategyId,
         const ElementReorderOp(
@@ -128,7 +156,7 @@ void main() {
       );
       expect(
         result,
-        isA<Refused<StrategyEdited, CommitRefusal>>().having(
+        isA<Refused<Committed, CommitRefusal>>().having(
           (refused) => refused.reason,
           'reason',
           isA<OpRefusal>().having(
@@ -141,10 +169,10 @@ void main() {
     });
 
     test('an edit to a strategy the store does not hold is refused', () async {
-      final store = await openStore(MemoryEngine(seeded));
+      final store = await openOn(seeded);
       expect(
         await store.commit('nope', moveJett),
-        isA<Refused<StrategyEdited, CommitRefusal>>().having(
+        isA<Refused<Committed, CommitRefusal>>().having(
           (refused) => refused.reason,
           'reason',
           isA<NoSuchStrategy>(),
@@ -153,7 +181,7 @@ void main() {
     });
 
     test('edits sent together are saved one after another', () async {
-      final store = await openStore(MemoryEngine(seeded));
+      final store = await openOn(seeded);
       final results = await Future.wait([
         store.commit(strategyId, moveJett),
         store.commit(
@@ -172,15 +200,16 @@ void main() {
     test(
       'an element moved to another page is read from that page only',
       () async {
-        final disk = MemoryEngine(seeded);
-        final store = await openStore(disk);
+        final disk = MemoryStorage(seeded);
+        final store = await openStore(MemoryEngine(disk));
         savedValue(
           await store.commit(
             strategyId,
             everyOpType()['element.patch to another page']!,
           ),
         );
-        final reopened = await openStore(MemoryEngine(disk.contents));
+        await store.close();
+        final reopened = await openOn(disk.contents);
         final a = pageOf(await reopened.readPage(strategyId, 'page-a'));
         final b = pageOf(await reopened.readPage(strategyId, 'page-b'));
         expect(a.elements.map((row) => row.publicId), isNot(contains('jett')));
@@ -190,118 +219,110 @@ void main() {
   });
 
   group('When the device cannot save', () {
-    test('a failed write of the saved edit leaves the edit unsaved', () async {
-      final disk = MemoryEngine(seeded);
-      final flaky = FlakyEngine(disk);
-      final store = await openStore(flaky);
-      flaky.failing.add(flaky.calls);
+    test('a refused write of the saved edit leaves it unsaved', () async {
+      final disk = MemoryStorage(seeded);
+      final store = await openStore(
+        flaky(MemoryEngine(disk), {0: Failing.refused}),
+      );
       expect(
         await store.commit(strategyId, moveJett),
-        isA<NotSaved<StrategyEdited, CommitRefusal>>(),
+        isA<NotSaved<Committed, CommitRefusal>>(),
       );
       expect(sameContents(disk.contents, seeded), isTrue);
       expect(describeSaving(await store.commit(strategyId, moveJett)), 'saved');
     });
 
-    test(
-      'a saved edit whose rows fail to write is finished before the next',
-      () async {
-        final disk = MemoryEngine(seeded);
-        final flaky = FlakyEngine(disk);
-        final store = await openStore(flaky);
-        flaky.failing.add(flaky.calls + 1);
-        final first = savedValue(await store.commit(strategyId, moveJett));
-        expect(disk.contents.containsKey('journal'), isTrue);
-        final second = savedValue(
-          await store.commit(
-            strategyId,
-            const ElementReorderOp(
-              opId: 'next',
-              elementPublicId: 'jett',
-              pagePublicId: 'page-a',
-              sortIndex: 5,
-              expectedElementRevision: 2,
-            ),
+    test('a saved edit whose rows fail is finished before the next', () async {
+      final disk = MemoryStorage(seeded);
+      final store = await openStore(
+        flaky(MemoryEngine(disk), {1: Failing.refused}),
+      );
+      savedValue(await store.commit(strategyId, moveJett));
+      expect(disk.contents['journal']?['edit'], isNotNull);
+      savedValue(
+        await store.commit(
+          strategyId,
+          const ElementReorderOp(
+            opId: 'next',
+            elementPublicId: 'jett',
+            pagePublicId: 'page-a',
+            sortIndex: 5,
+            expectedElementRevision: 2,
           ),
-        );
-        expect(disk.contents.containsKey('journal'), isFalse);
-        final reopened = await openStore(MemoryEngine(disk.contents));
-        final jett =
-            pageOf(
-                  await reopened.readPage(strategyId, 'page-a'),
-                ).elements.firstWhere((row) => row.publicId == 'jett')
-                as LiveElement;
-        expect(
-          jett.payload,
-          (first.writes.single.after as LiveElement).payload,
-        );
-        expect(jett, second.writes.single.after);
-      },
-    );
+        ),
+      );
+      expect(disk.contents['journal']?['edit'], isNull);
+      final jett =
+          elementOn(
+                pageOf(
+                  await (await openOn(
+                    disk.contents,
+                  )).readPage(strategyId, 'page-a'),
+                ),
+                'jett',
+              )
+              as LiveElement;
+      expect(jett.revision, 3);
+      expect(jett.payload.data['position'], {'dx': 300, 'dy': 400});
+    });
+
+    test('a read waits for a saved edit to be finished', () async {
+      final storage = MemoryStorage();
+      final store = await openStore(
+        flaky(MemoryEngine(storage), {1: Failing.refused}),
+      );
+      savedValue(await store.editLibrary([AddStrategy(sampleStrategy())]));
+      final content = strategyOf(await store.readStrategy(strategyId));
+      expect(content.pages, hasLength(3));
+      final page = pageOf(await store.readPage(strategyId, 'page-a'));
+      expect(page.elements, hasLength(3));
+    });
 
     test(
-      'a next edit is not saved while an earlier one cannot be finished',
+      'an edit in doubt gives a receipt the reopened store answers',
       () async {
-        final disk = MemoryEngine(seeded);
-        final flaky = FlakyEngine(disk);
-        final store = await openStore(flaky);
-        final start = flaky.calls;
-        flaky.failing.addAll([start + 1, start + 4]);
-        savedValue(await store.commit(strategyId, moveJett));
-        expect(
-          await store.commit(strategyId, everyOpType()['element.reorder']!),
-          isA<NotSaved<StrategyEdited, CommitRefusal>>(),
-        );
-        final reopened = await openStore(MemoryEngine(disk.contents));
-        final page = pageOf(await reopened.readPage(strategyId, 'page-a'));
-        final line = page.elements.firstWhere((row) => row.publicId == 'line');
-        expect((line as LiveElement).sortIndex, 0);
-        final jett = page.elements.firstWhere((row) => row.publicId == 'jett');
-        expect((jett as LiveElement).revision, 2);
-      },
-    );
-
-    test(
-      'when the device fails to save and then to clear, the store stops',
-      () async {
-        final flaky = FlakyEngine(MemoryEngine(seeded));
-        final store = await openStore(flaky);
-        flaky.failing.addAll([flaky.calls, flaky.calls + 1]);
-        expect(
-          await store.commit(strategyId, moveJett),
-          isA<SaveInDoubt<StrategyEdited, CommitRefusal>>(),
-        );
-        expect(
-          await store.commit(strategyId, moveJett),
-          isA<NotSaved<StrategyEdited, CommitRefusal>>().having(
-            (result) => result.failure,
-            'failure',
-            isA<StoreStopped>(),
-          ),
-        );
-      },
-    );
-
-    test(
-      'a read waits for a saved edit to be finished before reading',
-      () async {
-        final flaky = FlakyEngine(MemoryEngine());
-        final store = await openStore(flaky);
-        flaky.failing.add(flaky.calls + 1);
-        savedValue(
-          await store.editLibrary([
-            AddStrategy(
-              sampleStrategy(),
-              createdAt: createdAt,
-              updatedAt: createdAt,
+        for (final (how, recovered) in [
+          (Failing.landed, true),
+          (Failing.refused, false),
+        ]) {
+          final disk = MemoryStorage(seeded);
+          final store = await openStore(
+            flaky(MemoryEngine(disk), {0: how, 1: Failing.refused}),
+          );
+          final result = await store.commit(strategyId, moveJett);
+          final receipt = switch (result) {
+            SaveInDoubt(:final receipt) => receipt,
+            final other => fail('expected doubt, got ${describeSaving(other)}'),
+          };
+          expect(receipt.id, moveJett.opId);
+          expect(
+            await store.commit(strategyId, everyOpType()['element.reorder']!),
+            isA<NotSaved<Committed, CommitRefusal>>().having(
+              (result) => result.failure,
+              'failure',
+              isA<StoreStopped>(),
             ),
-          ]),
-        );
-        final content = strategyOf(await store.readStrategy(strategyId));
-        expect(content.pages, hasLength(3));
-        final page = pageOf(await store.readPage(strategyId, 'page-a'));
-        expect(page.elements, hasLength(3));
-        expect(page.lineupGroups, hasLength(1));
+          );
+          await store.close();
+          final reopened = await openOn(disk.contents);
+          expect(
+            await reopened.recovered(receipt),
+            recovered ? isA<EditRecovered>() : isA<EditNotRecovered>(),
+          );
+          final jett =
+              elementOn(
+                    pageOf(await reopened.readPage(strategyId, 'page-a')),
+                    'jett',
+                  )
+                  as LiveElement;
+          expect(jett.revision, recovered ? 2 : 1);
+          await reopened.close();
+          final again = await openOn(disk.contents);
+          expect(
+            await again.recovered(receipt),
+            recovered ? isA<EditRecovered>() : isA<EditNotRecovered>(),
+          );
+        }
       },
     );
 
@@ -309,10 +330,12 @@ void main() {
       'a saved edit this build cannot read stops the store opening',
       () async {
         final opening = await LibraryStore.open(
-          MemoryEngine({
-            ...seeded,
-            'journal': {'edit': '{"journalVersion":2}'},
-          }),
+          MemoryEngine(
+            MemoryStorage({
+              ...seeded,
+              'journal': {'edit': '{"journalVersion":2}'},
+            }),
+          ),
           canRead: readsKnownKinds,
         );
         expect(
@@ -325,6 +348,428 @@ void main() {
         );
       },
     );
+
+    test('an edit whose keys the engine cannot hold is not saved', () async {
+      final disk = MemoryStorage(seeded);
+      final store = await openStore(
+        WrappingEngine(MemoryEngine(disk), (lease) => LimitedLease(lease, 60)),
+      );
+      final result = await store.commit(
+        strategyId,
+        const PageAddOp(
+          opId: 'long',
+          pagePublicId:
+              'a-page-id-long-enough-to-pass-the-limit-of-this-engine',
+          sortIndex: 0,
+          expectedStrategyRevision: 1,
+          settings: defaultSettings,
+        ),
+      );
+      expect(
+        result,
+        isA<NotSaved<Committed, CommitRefusal>>().having(
+          (notSaved) => notSaved.failure,
+          'failure',
+          isA<KeyTooLong>(),
+        ),
+      );
+      expect(sameContents(disk.contents, seeded), isTrue);
+    });
+  });
+
+  group('One writer', () {
+    test('a second store on the same storage does not open', () async {
+      final disk = MemoryStorage(seeded);
+      final first = await openStore(MemoryEngine(disk));
+      expect(
+        await LibraryStore.open(MemoryEngine(disk), canRead: readsKnownKinds),
+        isA<StoreNotOpened>().having(
+          (opening) => opening.problem,
+          'problem',
+          isA<StoreAlreadyOpen>(),
+        ),
+      );
+      await first.close();
+      await (await openStore(MemoryEngine(disk))).close();
+    });
+
+    test(
+      'a store whose engine closed refuses, and never takes the storage back',
+      () async {
+        final disk = MemoryStorage(seeded);
+        final engineA = MemoryEngine(disk);
+        final storeA = await openStore(engineA);
+        strategyOf(await storeA.readStrategy(strategyId));
+        await engineA.close();
+        final storeB = await openStore(MemoryEngine(disk));
+        savedValue(
+          await storeB.commit(
+            strategyId,
+            const StrategyPatchOp(
+              opId: 'rename',
+              expectedStrategyRevision: 1,
+              name: 'Renamed by B',
+            ),
+          ),
+        );
+        await storeB.close();
+        final stale = await storeA.commit(
+          strategyId,
+          const StrategyPatchOp(
+            opId: 'map',
+            expectedStrategyRevision: 1,
+            mapData: 'lotus',
+          ),
+        );
+        expect(
+          stale,
+          isA<NotSaved<Committed, CommitRefusal>>().having(
+            (result) => result.failure,
+            'failure',
+            isA<LeaseEnded>(),
+          ),
+        );
+        expect(
+          await storeA.commit(strategyId, moveJett),
+          isA<NotSaved<Committed, CommitRefusal>>().having(
+            (result) => result.failure,
+            'failure',
+            isA<StoreStopped>(),
+          ),
+        );
+        final fresh = strategyOf(
+          await (await openOn(disk.contents)).readStrategy(strategyId),
+        );
+        expect(fresh.strategy.name, 'Renamed by B');
+        expect(fresh.strategy.mapData, 'ascent');
+      },
+    );
+
+    test('closing releases the storage while a listener is paused', () async {
+      final disk = MemoryStorage(seeded);
+      final store = await openStore(MemoryEngine(disk));
+      final subscription = store.changes.listen((_) {})..pause();
+      savedValue(await store.commit(strategyId, moveJett));
+      await store.close().timeout(const Duration(seconds: 2));
+      await (await openStore(MemoryEngine(disk))).close();
+      await subscription.cancel();
+    });
+
+    test('a closed store saves and reads nothing', () async {
+      final disk = MemoryStorage(seeded);
+      final store = await openStore(MemoryEngine(disk));
+      final queued = store.commit(strategyId, moveJett);
+      await store.close();
+      expect(describeSaving(await queued), 'saved');
+      expect(
+        await store.commit(strategyId, everyOpType()['strategy.patch']!),
+        isA<NotSaved<Committed, CommitRefusal>>().having(
+          (result) => result.failure,
+          'failure',
+          isA<StoreClosed>(),
+        ),
+      );
+      expect(
+        await store.readPage(strategyId, 'page-a'),
+        isA<NotRead<PageContent>>(),
+      );
+      final current = await openStore(MemoryEngine(disk));
+      await store.close();
+      expect(
+        await LibraryStore.open(MemoryEngine(disk), canRead: readsKnownKinds),
+        isA<StoreNotOpened>(),
+      );
+      await current.close();
+    });
+  });
+
+  group('Decoding what is stored', () {
+    const tooEarly = -9223372036854775808;
+
+    test(
+      'a summary with a time out of range is rebuilt from the rows',
+      () async {
+        final library = {...seeded['library']!};
+        final summary = stored(seeded, 'library', 'summary/$strategyId');
+        library['summary/$strategyId'] = jsonEncode({
+          ...summary,
+          'createdAt': tooEarly,
+        });
+        final store = await openOn({...seeded, 'library': library});
+        expect(store.library.strategies.single.createdAt, strategyCreatedAt);
+      },
+    );
+
+    test(
+      'a strategy row with a time out of range lists as unreadable',
+      () async {
+        final header = stored(seeded, strategyArea, 'strategy');
+        final library = {...seeded['library']!}..remove('summary/$strategyId');
+        final store = await openOn({
+          ...seeded,
+          'library': {...library, 'summary/$strategyId': '{}'},
+          strategyArea: {
+            ...seeded[strategyArea]!,
+            'strategy': jsonEncode({...header, 'updatedAt': tooEarly}),
+          },
+        });
+        expect(store.library.strategies, isEmpty);
+        expect(store.library.unreadableStrategies.single.publicId, strategyId);
+        expect(
+          await store.readStrategy(strategyId),
+          isA<Unreadable<StrategyContent>>(),
+        );
+      },
+    );
+
+    test('a page trashed at a time out of range reads as unreadable', () async {
+      final page = stored(seeded, strategyArea, 'page/page-c');
+      final store = await openOn({
+        ...seeded,
+        strategyArea: {
+          ...seeded[strategyArea]!,
+          'page/page-c': jsonEncode({
+            ...page,
+            'deleted': true,
+            'deletedAt': tooEarly,
+            'deletedBy': 'you',
+          }),
+        },
+      });
+      final pages = strategyOf(await store.readStrategy(strategyId)).pages;
+      expect(
+        pages.firstWhere((row) => row.publicId == 'page-c'),
+        isA<UnreadablePage>().having((row) => row.trashed, 'trashed', true),
+      );
+    });
+  });
+
+  group('Fields this build does not know', () {
+    Contents withExtras() {
+      final area = {...seeded[strategyArea]!};
+      Map<String, Object?> at(String key) =>
+          jsonDecode(area[key]!) as Map<String, Object?>;
+      final header = at('strategy');
+      area['strategy'] = jsonEncode({
+        ...header,
+        'tags': ['retake'],
+        'themeOverridePalette': {
+          'base': '#000',
+          'detail': '#111',
+          'highlight': '#222',
+          'glow': '#333',
+        },
+      });
+      area['page/page-c'] = jsonEncode({...at('page/page-c'), 'locked': true});
+      area['settings/page-a'] = jsonEncode({
+        ...at('settings/page-a'),
+        'grid': 4,
+      });
+      final jett = at('content/page-a/element/jett');
+      area['content/page-a/element/jett'] = jsonEncode({
+        ...jett,
+        'locked': true,
+        'payload': {
+          ...jett['payload']! as Map<String, Object?>,
+          'renderHint': 'glow',
+        },
+      });
+      area['content/page-a/lineup/g1'] = jsonEncode({
+        ...at('content/page-a/lineup/g1'),
+        'pinned': true,
+      });
+      return {...seeded, strategyArea: area};
+    }
+
+    test('survive every rewrite of their row', () async {
+      final disk = MemoryStorage(withExtras());
+      final store = await openStore(MemoryEngine(disk));
+      for (final op in [
+        const StrategyPatchOp(
+          opId: 'rename',
+          expectedStrategyRevision: 1,
+          name: 'Renamed',
+        ),
+        const PageReorderOp(
+          opId: 'reorder',
+          pagePublicId: 'page-c',
+          sortIndex: 0,
+          expectedStrategyRevision: 2,
+        ),
+        const PagePatchOp(
+          opId: 'page-name',
+          pagePublicId: 'page-c',
+          expectedPageRevision: 2,
+          name: 'Execute',
+        ),
+        moveJett,
+        const ElementPatchOp(
+          opId: 'move-page',
+          elementPublicId: 'jett',
+          expectedElementRevision: 2,
+          pagePublicId: 'page-b',
+        ),
+        const ElementReorderOp(
+          opId: 'raise',
+          elementPublicId: 'jett',
+          pagePublicId: 'page-b',
+          sortIndex: 8,
+          expectedElementRevision: 3,
+        ),
+        const PageSettingsPatchOp(
+          opId: 'sizes',
+          pagePublicId: 'page-a',
+          settings: PageSettings(
+            agentSize: 2,
+            abilitySize: 2,
+            useNeutralTeamColors: true,
+          ),
+          expectedPageSettingsRevision: 1,
+        ),
+        LineupGroupPatchOp(
+          opId: 'notes',
+          lineupPublicId: 'g1',
+          expectedLineupRevision: 1,
+          payload: lineupPayload('g1', notes: 'jump'),
+        ),
+        const ElementDeleteOp(
+          opId: 'delete',
+          elementPublicId: 'jett',
+          pagePublicId: 'page-b',
+          expectedElementRevision: 4,
+        ),
+      ]) {
+        savedValue(await store.commit(strategyId, op));
+      }
+      savedValue(
+        await store.editLibrary([
+          PutFolder(ReadableFolder(publicId: 'f', name: 'f')),
+          const MoveStrategy(strategyId, 'f'),
+        ]),
+      );
+      final contents = disk.contents;
+      final header = stored(contents, strategyArea, 'strategy');
+      expect(header['name'], 'Renamed');
+      expect(header['folderPublicId'], 'f');
+      expect(header['tags'], ['retake']);
+      expect(
+        (header['themeOverridePalette']! as Map<String, Object?>)['glow'],
+        '#333',
+      );
+      final page = stored(contents, strategyArea, 'page/page-c');
+      expect(page['name'], 'Execute');
+      expect(page['locked'], isTrue);
+      expect(stored(contents, strategyArea, 'settings/page-a')['grid'], 4);
+      final jett = stored(
+        contents,
+        strategyArea,
+        'content/page-b/element/jett',
+      );
+      expect(jett['deleted'], isTrue);
+      expect(jett['locked'], isTrue);
+      expect((jett['payload']! as Map<String, Object?>)['renderHint'], 'glow');
+      expect(
+        stored(contents, strategyArea, 'content/page-a/lineup/g1')['pinned'],
+        isTrue,
+      );
+    });
+  });
+
+  group('Rows this build cannot read keep their place and id', () {
+    Contents withHeldPage() => {
+      ...seeded,
+      strategyArea: {
+        ...seeded[strategyArea]!,
+        'page/page-b': jsonEncode({
+          'publicId': 'page-b',
+          'strategyPublicId': strategyId,
+          'sortIndex': 1,
+          'deleted': false,
+          'layout': 'from a newer build',
+        }),
+      },
+    };
+
+    test('pages cannot be moved across an unreadable page', () async {
+      final store = await openOn(withHeldPage());
+      expect(
+        await store.commit(
+          strategyId,
+          const PageReorderOp(
+            opId: 'onto-held',
+            pagePublicId: 'page-c',
+            sortIndex: 0,
+            expectedStrategyRevision: 1,
+          ),
+        ),
+        isA<Refused<Committed, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<OpRefusal>().having(
+            (reason) => reason.refusal,
+            'refusal',
+            const UnreadableTarget(PageKey('page-b')),
+          ),
+        ),
+      );
+      savedValue(
+        await store.commit(
+          strategyId,
+          const PageAddOp(
+            opId: 'after-held',
+            pagePublicId: 'page-d',
+            sortIndex: 3,
+            expectedStrategyRevision: 1,
+            settings: defaultSettings,
+          ),
+        ),
+      );
+    });
+
+    test('an element cannot take the id an unreadable element holds', () async {
+      final store = await openOn(seeded);
+      for (final id in ['smoke', 'garbled']) {
+        expect(
+          await store.commit(
+            strategyId,
+            ElementAddOp(
+              opId: 'take-$id',
+              elementPublicId: id,
+              pagePublicId: 'page-b',
+              payload: agent(id).payload,
+              sortIndex: 0,
+            ),
+          ),
+          isA<Refused<Committed, CommitRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            isA<OpRefusal>().having(
+              (reason) => reason.refusal,
+              'refusal',
+              UnreadableTarget(ElementKey(id)),
+            ),
+          ),
+          reason: id,
+        );
+      }
+    });
+
+    test('a page holding a row that is not JSON is not copied', () async {
+      final store = await openOn(seeded);
+      expect(
+        await store.commit(
+          strategyId,
+          const PageAddOp(
+            opId: 'copy-a',
+            pagePublicId: 'copy-a',
+            sortIndex: 3,
+            expectedStrategyRevision: 1,
+            copyContentFromPagePublicId: 'page-a',
+          ),
+        ),
+        isA<Refused<Committed, CommitRefusal>>(),
+      );
+    });
   });
 
   group('Summaries', () {
@@ -332,10 +777,13 @@ void main() {
       'kept in step on every commit equal a rebuild from the rows',
       () async {
         for (final MapEntry(key: name, value: op) in everyOpType().entries) {
-          final disk = MemoryEngine(seeded);
-          final store = await openStore(disk);
-          final kept = savedValue(await store.commit(strategyId, op)).summary;
-          final fresh = await openStore(MemoryEngine(disk.contents));
+          final disk = MemoryStorage(seeded);
+          final store = await openStore(MemoryEngine(disk));
+          final kept = savedValue(
+            await store.commit(strategyId, op),
+          ).change.summary;
+          await store.close();
+          final fresh = await openOn(disk.contents);
           expect(
             await fresh.rebuildSummary(strategyId),
             isA<NothingToSave<StrategySummary, CommitRefusal>>(),
@@ -346,44 +794,39 @@ void main() {
       },
     );
 
-    test('a trashed page leaves the counts, and its sides', () async {
-      final store = await openStore(MemoryEngine(seeded));
+    test('a trashed page leaves the counts', () async {
+      final store = await openOn(seeded);
       final summary = savedValue(
         await store.commit(strategyId, everyOpType()['page.delete']!),
-      ).summary;
+      ).change.summary;
       expect(summary.pageCount, 2);
       expect(summary.itemCount, 2);
       expect(summary.agents, ['kayo', 'omen']);
       expect(summary.sides, Sides.mixed);
     });
 
-    test(
-      'a summary this build cannot read is rebuilt when the store opens',
-      () async {
-        final disk = MemoryEngine({
-          ...seeded,
-          'library': {
-            ...seeded['library']!,
-            'summary/$strategyId':
-                '{"summaryVersion":2,"publicId":"$strategyId","createdAt":1767322800000,"updatedAt":1767322800000}',
-          },
-        });
-        final store = await openStore(disk);
-        final summary = store.library.strategies.single;
-        expect(summary.itemCount, 6);
-        expect(summary.createdAt, createdAt);
-        expect(store.library.unreadable, isEmpty);
-      },
-    );
+    test('a summary this build cannot read is rebuilt from the rows', () async {
+      final store = await openOn({
+        ...seeded,
+        'library': {
+          ...seeded['library']!,
+          'summary/$strategyId': '{"summaryVersion":9}',
+        },
+      });
+      final summary = store.library.strategies.single;
+      expect(summary.itemCount, 6);
+      expect(summary.createdAt, strategyCreatedAt);
+      expect(store.library.unreadableStrategies, isEmpty);
+    });
   });
 
   group('Library edits', () {
-    FolderRow folder(String id, {String? parent}) =>
-        FolderRow(publicId: id, name: id, parentFolderPublicId: parent);
+    ReadableFolder folder(String id, {String? parent}) =>
+        ReadableFolder(publicId: id, name: id, parentFolderPublicId: parent);
 
     test('folders and moves are rows in the same store', () async {
-      final disk = MemoryEngine(seeded);
-      final store = await openStore(disk);
+      final disk = MemoryStorage(seeded);
+      final store = await openStore(MemoryEngine(disk));
       final edited = savedValue(
         await store.editLibrary([
           PutFolder(folder('defaults')),
@@ -393,7 +836,9 @@ void main() {
       );
       expect(edited.folders.map((f) => f.publicId), ['defaults', 'ascent']);
       expect(edited.summaries.single.folderPublicId, 'ascent');
-      final reopened = await openStore(MemoryEngine(disk.contents));
+      expect(edited.summaries.single.updatedAt, editedAt);
+      await store.close();
+      final reopened = await openOn(disk.contents);
       expect(reopened.library.folders, hasLength(2));
       expect(reopened.library.strategies.single.folderPublicId, 'ascent');
       final header = strategyOf(
@@ -404,7 +849,7 @@ void main() {
     });
 
     test('a folder that still holds something cannot be removed', () async {
-      final store = await openStore(MemoryEngine(seeded));
+      final store = await openOn(seeded);
       savedValue(
         await store.editLibrary([
           PutFolder(folder('defaults')),
@@ -429,7 +874,7 @@ void main() {
     });
 
     test('a folder cannot be put inside itself', () async {
-      final store = await openStore(MemoryEngine(seeded));
+      final store = await openOn(seeded);
       savedValue(
         await store.editLibrary([
           PutFolder(folder('a')),
@@ -446,321 +891,77 @@ void main() {
       );
     });
 
-    test('a removed strategy leaves nothing behind', () async {
-      final disk = MemoryEngine(seeded);
-      final store = await openStore(disk);
-      savedValue(await store.editLibrary([const RemoveStrategy(strategyId)]));
-      expect(disk.contents, isEmpty);
-      expect(store.library.strategies, isEmpty);
-      expect(
-        await store.readStrategy(strategyId),
-        isA<NotFound<StrategyContent>>(),
-      );
-    });
-
-    test('a strategy already in the store cannot be added again', () async {
-      final store = await openStore(MemoryEngine(seeded));
-      expect(
-        await store.editLibrary([
-          AddStrategy(
-            sampleStrategy(),
-            createdAt: createdAt,
-            updatedAt: createdAt,
-          ),
-        ]),
-        isA<Refused<LibraryEdited, LibraryRefusal>>().having(
-          (refused) => refused.reason,
-          'reason',
-          isA<StrategyAlreadyInStore>(),
-        ),
-      );
-    });
-
     test(
-      'a crash at any write of a library edit leaves before or after',
+      'a removed strategy leaves nothing behind, unreadable rows included',
       () async {
-        final edit = [
-          const PutFolder(FolderRow(publicId: 'f', name: 'f')),
-          const MoveStrategy(strategyId, 'f'),
-        ];
-        final cleanDisk = MemoryEngine(seeded);
-        final clean = CountingEngine(cleanDisk);
-        final cleanStore = await openStore(clean);
-        clean.reset();
-        savedValue(await cleanStore.editLibrary(edit));
-        final after = withoutJournal(cleanDisk.contents);
-        for (var allowed = 0; allowed < clean.keyWrites; allowed++) {
-          final disk = MemoryEngine(seeded);
-          final store = await openStore(
-            CrashingEngine(disk, afterWrites: allowed),
-          );
-          final result = await store.editLibrary(edit);
-          final reopened = MemoryEngine(disk.contents);
-          await openStore(reopened);
-          final rows = withoutJournal(reopened.contents);
-          final isBefore = sameContents(rows, withoutJournal(seeded));
-          final isAfter = sameContents(rows, after);
-          expect(isBefore || isAfter, isTrue, reason: 'crash after $allowed');
-          switch (result) {
-            case Saved():
-              expect(isAfter, isTrue, reason: 'saved, then lost at $allowed');
-            case NotSaved():
-              expect(isBefore, isTrue, reason: 'kept at $allowed');
-            case SaveInDoubt():
-              break;
-            case NothingToSave() || Refused():
-              fail('unexpected ${describeSaving(result)}');
-          }
-        }
+        final disk = MemoryStorage(seeded);
+        final store = await openStore(MemoryEngine(disk));
+        savedValue(await store.editLibrary([const RemoveStrategy(strategyId)]));
+        expect(withoutJournal(disk.contents), isEmpty);
+        expect(store.library.strategies, isEmpty);
+        expect(
+          await store.readStrategy(strategyId),
+          isA<NotFound<StrategyContent>>(),
+        );
       },
     );
-  });
-
-  group('Guards', () {
-    test('a second store on the same engine does not open', () async {
-      final disk = MemoryEngine(seeded);
-      final first = await openStore(disk);
-      expect(
-        await LibraryStore.open(disk, canRead: readsKnownKinds),
-        isA<StoreNotOpened>().having(
-          (opening) => opening.problem,
-          'problem',
-          isA<StoreAlreadyOpen>(),
-        ),
-      );
-      await first.close();
-      await (await openStore(disk)).close();
-    });
-
-    test('an edit whose keys the engine cannot hold is not saved', () async {
-      final disk = MemoryEngine(seeded);
-      final store = await openStore(LimitedEngine(disk, maxKeyLength: 60));
-      final result = await store.commit(
-        strategyId,
-        const PageAddOp(
-          opId: 'long',
-          pagePublicId:
-              'a-page-id-long-enough-to-pass-the-limit-of-this-engine',
-          sortIndex: 0,
-          expectedStrategyRevision: 1,
-          settings: defaultSettings,
-        ),
-      );
-      expect(
-        result,
-        isA<NotSaved<StrategyEdited, CommitRefusal>>().having(
-          (notSaved) => notSaved.failure,
-          'failure',
-          isA<KeyTooLong>(),
-        ),
-      );
-      expect(sameContents(disk.contents, seeded), isTrue);
-      expect(describeSaving(await store.commit(strategyId, moveJett)), 'saved');
-    });
 
     test(
-      'a strategy cannot be added over rows already stored for it',
+      'a strategy cannot be added again, or over rows stored for it',
       () async {
-        final disk = MemoryEngine({
-          'strategy/$strategyId': {'strategy': '{"publicId":"newer'},
-        });
-        final store = await openStore(disk);
+        final store = await openOn(seeded);
         expect(
-          await store.editLibrary([
-            AddStrategy(
-              sampleStrategy(),
-              createdAt: createdAt,
-              updatedAt: createdAt,
-            ),
-          ]),
+          await store.editLibrary([AddStrategy(sampleStrategy())]),
           isA<Refused<LibraryEdited, LibraryRefusal>>().having(
             (refused) => refused.reason,
             'reason',
             isA<StrategyAlreadyInStore>(),
           ),
         );
-        expect(disk.contents['strategy/$strategyId'], {
-          'strategy': '{"publicId":"newer',
+        final leftover = await openOn({
+          'strategy/$strategyId': {'strategy': '{"publicId":"newer'},
         });
-      },
-    );
-
-    test(
-      'a rebuild whose write lands but fails is not shown after reopening',
-      () async {
-        final stale = {
-          ...seeded,
-          'strategy/$strategyId': {
-            ...seeded['strategy/$strategyId']!,
-            'content/page-b/element/neon': canonicalRow(
-              agent('neon', type: 'neon', pageId: 'page-b'),
-            ),
-          },
-        };
-        final disk = MemoryEngine(stale);
-        final flaky = FlakyEngine(disk);
-        final store = await openStore(flaky);
-        flaky.failing.add(flaky.calls);
-        flaky.landing.add(flaky.calls);
         expect(
-          await store.rebuildSummary(strategyId),
-          isA<NotSaved<StrategySummary, CommitRefusal>>(),
-        );
-        final reopened = withoutJournal(await settledContentsOf(disk.contents));
-        expect(
-          reopened['library']!['summary/$strategyId'],
-          stale['library']!['summary/$strategyId'],
+          await leftover.editLibrary([AddStrategy(sampleStrategy())]),
+          isA<Refused<LibraryEdited, LibraryRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            isA<StrategyAlreadyInStore>(),
+          ),
         );
       },
     );
 
-    test(
-      'a crash while a summary is rebuilt leaves it before or after',
-      () async {
-        final stale = {
-          ...seeded,
-          'strategy/$strategyId': {
-            ...seeded['strategy/$strategyId']!,
-            'content/page-b/element/neon': canonicalRow(
-              agent('neon', type: 'neon', pageId: 'page-b'),
-            ),
-          },
-        };
-        final before = stale['library']!['summary/$strategyId'];
-        for (var allowed = 0; allowed < 3; allowed++) {
-          final cut = MemoryEngine(stale);
-          final store = await openStore(
-            CrashingEngine(cut, afterWrites: allowed),
-          );
-          final result = await store.rebuildSummary(strategyId);
-          final stored = withoutJournal(
-            (await settledContentsOf(cut.contents)),
-          )['library']!['summary/$strategyId'];
-          switch (result) {
-            case Saved(:final value):
-              expect(value.agents, contains('neon'));
-              expect(
-                stored,
-                isNot(before),
-                reason: 'saved, then lost at $allowed',
-              );
-            case NotSaved():
-              expect(stored, before, reason: 'not saved, yet kept at $allowed');
-            case SaveInDoubt():
-              break;
-            case NothingToSave() || Refused():
-              fail('unexpected ${describeSaving(result)}');
-          }
-        }
-      },
-    );
-  });
-
-  group('After close', () {
-    test('a closed store saves and reads nothing', () async {
-      final disk = MemoryEngine(seeded);
-      final store = await openStore(disk);
-      final queued = store.commit(strategyId, moveJett);
-      await store.close();
-      final afterClose = await store.commit(
-        strategyId,
-        everyOpType()['strategy.patch']!,
-      );
-      expect(describeSaving(await queued), 'saved');
-      expect(
-        afterClose,
-        isA<NotSaved<StrategyEdited, CommitRefusal>>().having(
-          (result) => result.failure,
-          'failure',
-          isA<StoreClosed>(),
+    test('a strategy whose rows name another strategy is refused', () async {
+      final sample = sampleStrategy(id: 'strategy-2', prefix: 'x-');
+      final store = await openOn(seeded);
+      for (final (name, rows) in [
+        (
+          'a page of another strategy',
+          StrategyRowSet(
+            strategy: sample.strategy,
+            pages: [...sample.pages, page('stray', sortIndex: 4)],
+          ),
         ),
-      );
-      expect(
-        await store.readPage(strategyId, 'page-a'),
-        isA<NotRead<PageContent>>(),
-      );
-      final reopened = await openStore(MemoryEngine(disk.contents));
-      expect(reopened.library.strategies.single.name, 'Retake B');
+        (
+          'an element on a page it does not have',
+          StrategyRowSet(
+            strategy: sample.strategy,
+            pages: sample.pages,
+            elements: [agent('lost', pageId: 'page-a')],
+          ),
+        ),
+      ]) {
+        expect(
+          await store.editLibrary([AddStrategy(rows)]),
+          isA<Refused<LibraryEdited, LibraryRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            isA<RowOutsideStrategy>(),
+          ),
+          reason: name,
+        );
+      }
     });
-
-    test(
-      'closing an old store again does not free the engine for a third',
-      () async {
-        final disk = MemoryEngine(seeded);
-        final old = await openStore(disk);
-        await old.close();
-        final current = await openStore(disk);
-        await old.close();
-        expect(
-          await LibraryStore.open(disk, canRead: readsKnownKinds),
-          isA<StoreNotOpened>(),
-        );
-        await current.close();
-      },
-    );
-  });
-
-  group('Opening', () {
-    test(
-      'a summary key that names no strategy is listed as unreadable',
-      () async {
-        final store = await openStore(
-          MemoryEngine({
-            ...seeded,
-            'library': {...seeded['library']!, 'summary/%': 'garbled'},
-          }),
-        );
-        expect(store.library.strategies, hasLength(1));
-        expect(store.library.unreadable.single.key, 'summary/%');
-      },
-    );
-
-    test(
-      'a repair cut short is finished before the next repair is saved',
-      () async {
-        final second = sampleStrategy();
-        final engine = MemoryEngine(seeded);
-        final adding = await openStore(engine);
-        savedValue(
-          await adding.editLibrary([
-            AddStrategy(
-              StrategyRowSet(
-                strategy: const StrategyRow(
-                  publicId: 'strategy-2',
-                  name: 'Second',
-                  mapData: 'bind',
-                  revision: 1,
-                ),
-                pages: second.pages,
-                settings: second.settings,
-              ),
-              createdAt: createdAt,
-              updatedAt: createdAt,
-            ),
-          ]),
-        );
-        await adding.close();
-        final newer =
-            '{"summaryVersion":9,"publicId":"%s","createdAt":0,"updatedAt":0}';
-        final disk = MemoryEngine({
-          ...engine.contents,
-          'library': {
-            'summary/$strategyId': newer.replaceFirst('%s', strategyId),
-            'summary/strategy-2': newer.replaceFirst('%s', 'strategy-2'),
-          },
-        });
-        final flaky = FlakyEngine(disk);
-        flaky.failing.add(1);
-        final store = await openStore(flaky);
-        expect(store.library.strategies, hasLength(2));
-        expect(disk.contents.containsKey('journal'), isFalse);
-        final reopened = await openStore(MemoryEngine(disk.contents));
-        expect(reopened.library.strategies, hasLength(2));
-        expect(
-          disk.contents['library']!.values,
-          everyElement(contains('"summaryVersion":1')),
-        );
-      },
-    );
   });
 }

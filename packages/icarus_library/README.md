@@ -8,15 +8,18 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 
 ## What it holds
 
-- **Rows**, in the server's shape with public ids: `StrategyRow`,
-  `FolderRow`, `PageRow`, `PageSettingsRow`, `ElementRow` and
-  `LineupGroupRow`. A row's state is its type: a page is a `LivePage` or a
-  `TrashedPage`, and a trashed page is either a `PendingTrashedPage`, deleted
-  by an op the server has not confirmed, or a `ConfirmedTrashedPage` with the
-  time and who deleted it (`DeletedByYou`, `DeletedByName`, or
-  `DeleterUnknown` when the server has no name for them); an element is a `LiveElement`, a `DeletedElement` or an
-  `UnreadableElement`; a lineup group is a `LiveLineupGroup` or a
-  `DeletedLineupGroup`.
+- **Rows**, in the server's shape with public ids. Every kind is a sealed
+  type with a case for a row this build can read and one for a row it
+  cannot: `StrategyRow` is a `ReadableStrategy` or an `UnreadableStrategy`;
+  `FolderRow` a `ReadableFolder` or `UnreadableFolder`; `PageSettingsRow` a
+  `ReadablePageSettings` or `UnreadablePageSettings`; `PageRow` a
+  `LivePage`, a `TrashedPage` (`PendingTrashedPage`, deleted by an op the
+  server has not confirmed, or `ConfirmedTrashedPage` with the time and who
+  deleted it: `DeletedByYou`, `DeletedByName` or `DeleterUnknown`) or an
+  `UnreadablePage`; `ElementRow` a `LiveElement`, `DeletedElement` or
+  `UnreadableElement`; `LineupGroupRow` a `LiveLineupGroup`,
+  `DeletedLineupGroup` or `UnreadableLineupGroup`. A `ReadableStrategy` has
+  `createdAt` and `updatedAt`, as the server's row has.
 - **Payloads**: an element or lineup group payload stays canonical JSON
   (`{kind, payloadVersion, data}`). The app turns it into a drawn item at the
   edge of the editor.
@@ -26,37 +29,49 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   hold after accepting it, the op that undoes it, and which rows and fields
   changed. It is a pure function of the two: the same rows and op always give
   the same result, ids included.
-
 - **The store** (`LibraryStore`): where a library's rows live on the device,
-  and the one way to save an edit. It runs on a `StorageEngine`, which is
-  `MemoryEngine` in tests and `HiveEngine` (from `hive_storage.dart`) in the
-  app.
+  and the one way to save an edit. It runs on a `StorageEngine`.
+  `MemoryEngine` is the one in this package; the engines for the app come
+  separately and are held to the contract below.
 
 ## Rules it keeps
 
 - **Every outcome is a value.** `applyOp` returns `OpApplied`, `OpUnchanged`
   or `OpRefused`, and a refusal says why: the server's rejection reason, the
-  server's failure code, or `UnreadableTarget`. Nothing a user or the server
-  can cause throws. An exception means a programmer error.
+  server's failure code, or `UnreadableTarget` with the key of the row this
+  build cannot read. Nothing a user, the server or the disk can cause throws.
+  An exception means a programmer error.
 - **JSON is read once, at the edge.** Every `decode` returns `Read` with a
-  typed value or `CouldNotRead` with the JSON it was given, untouched.
+  typed value or `CouldNotRead` with the JSON it was given. Each row kind's
+  `parse` takes the stored text and the ids its key gives, and always returns
+  a row: readable, or the unreadable case holding what was stored (the JSON,
+  or the text when it is not JSON) and why it could not be read. Times are
+  read only when they fit a `DateTime`.
+- **Fields this build does not know are kept.** Every readable row, and the
+  objects inside it (payload envelopes, page settings, the theme palette),
+  keeps the fields it did not read in `unknownFields` and writes them back on
+  every rewrite. A row written by a newer build loses nothing when this build
+  renames, moves, reorders or deletes it.
 - **A row this build cannot read is carried, never touched.** An element
   whose kind is unknown, whose payload version is newer than
   `newestElementPayloadVersion`, whose data is not an object, or that the
-  app's `canRead` check refuses decodes as an `UnreadableElement` holding its
-  row's JSON exactly. `ElementRow.decode` requires `canRead`, so the app's own
-  decoder decides what it can draw; `canRead` answers and never throws. It is saved back byte for
-  byte. Every op aimed at it is refused with `UnreadableTarget`, including a
-  delete; deleting its page keeps it, as it keeps every row on the page.
+  app's `canRead` check refuses is an `UnreadableElement`; any other row that
+  does not decode is its kind's unreadable case. `canRead` answers and never
+  throws. Every op aimed at one is refused with `UnreadableTarget`, including
+  a delete. It keeps its id: an add under the id of an unreadable element on
+  another page is refused. A page that cannot be read keeps its place when
+  its `sortIndex` can be read: a page op that would have to move it is
+  refused, and when its place cannot be read at all, every op that moves
+  pages is refused. Deleting a page keeps its rows, as it keeps every row on
+  the page; a page copy that would have to copy a lineup group or a non-JSON
+  element this build cannot read is refused.
 - **Applying an op predicts the server.** The meaning comes from
   `convex/ops.ts` and `convex/lib/fieldMerge.ts`: a patch with a `merge`
   writes only the named fields onto the row as it is now; a delete leaves a
   tombstone, and a deleted page keeps its content and its place; each
   accepted write raises that row's revision by one.
 - **Applying an op twice gives the rows that applying it once gave.** The
-  second time it is `OpUnchanged`. The store saves an op together with its
-  `OpApplied.writes` and, after a crash, writes those again; an op that is
-  also applied again changes nothing.
+  second time it is `OpUnchanged`.
 - **Ids come from the op.** The undo op's id and the ids of rows a page copy
   creates are derived from the op's id (and, for a copy, the source row's
   id), so recomputing the base with its pending ops never renames anything.
@@ -67,8 +82,8 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 
 ## Where it differs from the server on purpose
 
-- An op aimed at an `UnreadableElement` is refused here. The server would
-  accept it, since it reads every kind.
+- An op aimed at a row this build cannot read is refused here. The server
+  would accept it, since it reads every kind.
 - `copyContentFromPagePublicId` is read because shipped builds queued ops
   that carry it, but the store never writes it. A copy made on this device is
   a `page.add` followed by adds whose ids were chosen once, when the user
@@ -100,42 +115,74 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 
 ## The store
 
+### The engine contract
+
+A `StorageEngine` grants a `StorageLease`; the store does all its reading
+and writing through the lease it holds. An engine keeps these promises, and
+`package:icarus_library/engine_contract.dart` checks them: `engineContract`
+is a list of checks any engine runs against an `EngineHarness` it supplies
+(`open` an engine on the harness's one storage, `close` it, or `crash` it, so
+the app stops without closing). Each check returns `Passed` or
+`Broke(what)`. This package runs them on `MemoryEngine` in
+`test/engine_test.dart`, along with two broken engines the checks catch.
+
+- **Keys** are ASCII strings inside a named area. `keys(area, prefix)` lists
+  the keys that start with the prefix, in ascending order. A lease holds any
+  key up to its `maxKeyLength`, which is at least 255.
+- **A write or delete is whole.** Each call writes or deletes all of its keys
+  or none of them, also across a crash.
+- **A call that returned `Done` survives a crash**, including the device
+  losing power.
+- **A call that returned `StorageFailed` landed whole or not at all**; the
+  engine may not know which. The store treats that as in doubt (below).
+- **One writer at a time, for its whole life.** An engine grants one lease at
+  a time for the storage under it, whichever engine object, process or tab
+  asks: a second `lease()` is `HeldByAnotherWriter` until the first is
+  released. A lease ends when its holder releases it or its engine closes,
+  and once ended it never works again: every call through it returns
+  `StorageFailed(LeaseEnded)` and changes nothing, even after another writer
+  has come and gone. A store whose lease ends stops (`StoreStopped`); it
+  never takes the storage back.
+- **Failures are values.** A call returns `StorageFailed` with a
+  `DeviceFailure`, `KeyTooLong` or `LeaseEnded`; nothing the device does
+  throws.
+
 ### Where rows are kept
 
-A `StorageEngine` reads, writes, deletes and lists string keys inside a
-named area. A write that returns `Done` is on disk; a write that fails may
-have written some of its keys. Engines never throw for what the disk does:
-they return `StorageFailed`. `HiveEngine` keeps each area in its own Hive box
-in the directory the app passes (IndexedDB on the web):
+| Area | Keys |
+| --- | --- |
+| `library` | `summary/<strategy>`, `folder/<folder>` |
+| `journal` | `edit` (the edit being saved), `recovered/<receipt>` |
+| `strategy/<strategy>` | `strategy`, `page/<page>`, `settings/<page>`, `content/<page>/element/<id>`, `content/<page>/lineup/<id>` |
 
-| Area | Box | Keys |
-| --- | --- | --- |
-| `library` | held in memory | `summary/<strategy>`, `folder/<folder>` |
-| `journal` | held in memory, compacted after every clear | `edit` |
-| `strategy/<strategy>` | lazy: only keys are held | `strategy`, `page/<page>`, `settings/<page>`, `content/<page>/element/<id>`, `content/<page>/lineup/<id>` |
-
-Ids are URI-encoded inside keys. Opening the store reads the journal, the
-summaries and the folders, and nothing of any strategy. Reading a strategy
-reads its row, its page rows and its page settings, and lists the keys under
-`content/` so the store knows which page each element is on. Reading a page
-reads only the keys under `content/<page>/`. A page read stays in memory for
-as long as the store is open.
+Ids are URI-encoded inside keys. Opening the store reads the record of an
+unfinished edit, the summaries and the folders, and nothing of any strategy.
+Reading a strategy reads its row, its page rows and its page settings, and
+lists the keys under `content/` so the store knows which page each element
+is on; that listing returns every content key of the strategy, without
+reading any. Reading a page reads only the keys under `content/<page>/`. A
+read page stays in memory until the store closes or `unload(strategy)`
+drops the strategy.
 
 ### Saving an edit
 
 `commit(strategyPublicId, op)` loads the pages the op can look at, runs
-`applyOp`, and then:
+`applyOp`, sets the strategy row's `updatedAt` to now, and then:
 
 1. saves one record in `journal/edit` holding the op and every key the edit
-   writes: each row in `OpApplied.writes`, a delete of the old key when an
-   element moves page, and the strategy's new summary;
+   writes: each row it changed, the strategy row, a delete of the old key
+   when an element moves page, and the strategy's new summary;
 2. writes those keys;
 3. clears the record.
 
-When the store opens and finds a record, it writes the record's keys again
-and clears it before reading anything. Writing the same keys twice gives the
-same rows, so a crash at any step leaves the rows from before the edit or the
-rows after it. Library edits (`editLibrary`) are saved the same way.
+When the store opens and finds a record, it writes the record's keys again,
+writes `recovered/<receipt>`, and clears the record before reading anything.
+Writing the same keys twice gives the same rows, so a crash at any step
+leaves the rows from before the edit or the rows after it. Applying the op
+again would not do: a page copy cut short leaves some copied rows behind,
+and the copy applied to those rows gives different ids. Library edits
+(`editLibrary`) and summary rebuilds are saved the same way, and a record is
+never saved while an earlier one is unfinished.
 
 Every save returns a `Saving`, which the caller has to handle:
 
@@ -144,72 +191,75 @@ Every save returns a `Saving`, which the caller has to handle:
   next read or save, and again when it next opens.
 - `NothingToSave`: the op changes nothing.
 - `Refused`: `OpRefusal` when `applyOp` refused it, `NoSuchStrategy`, or
-  `UnreadableRowInTheWay` when the edit would write over a row this build
-  cannot read. For library edits: `StrategyAlreadyInStore`, `NoSuchFolder`,
+  `UnreadableRowInTheWay` when the strategy's own row cannot be read. For
+  library edits: `StrategyAlreadyInStore` (also when any key is already
+  stored for that strategy), `RowOutsideStrategy` (a row of an added strategy
+  names another strategy or a page it does not have), `NoSuchFolder`,
   `FolderNotEmpty`, `FolderInsideItself`.
-- `NotSaved`: the record could not be saved and nothing changed. Also
-  returned for later saves while an earlier record cannot be finished, or
-  after the store has stopped (`StoreStopped`).
-- `SaveInDoubt`: the record could not be saved and could not be cleared
-  either, so the disk may or may not hold it. The store stops: every later
-  save is `NotSaved(StoreStopped)`. Reopening settles it: a record that did
-  land is finished, so the edit is there; one that did not leaves the rows as
-  they were.
+- `NotSaved`: nothing changed. The record could not be saved; or an earlier
+  record could not be finished; or a key is longer than the lease's
+  `maxKeyLength`, which is checked before anything is written; or the store
+  has stopped (`StoreStopped`) or closed (`StoreClosed`).
+- `SaveInDoubt`: the record's write failed and clearing it failed too, so
+  the device may or may not hold it. The store stops. The result carries a
+  `SaveReceipt` (a commit's receipt is its op id). The next store to open
+  finishes the record if it landed, and `recovered(receipt)` on that store
+  answers `EditRecovered` or `EditNotRecovered`.
 
-Saves and reads run one at a time, in the order they were called. Only one
-`LibraryStore` can be open on an engine at a time; a second `open` returns
-`StoreNotOpened(StoreAlreadyOpen)` until the first is closed. After `close`,
-saves are `NotSaved(StoreClosed)` and reads are `NotRead(StoreClosed)`. Hive
-names its boxes without the directory, so only one `HiveEngine` can hold the
-store's boxes in a process; any other gets `StorageFailed` until it closes.
-Before a record is saved, every key in it is checked against the engine's
-`maxKeyLength` (255 for Hive), and an edit with a longer key is `NotSaved`
-with `KeyTooLong`, so a record the engine can never replay is never written.
+Saves and reads run one at a time, in the order they were called. `close`
+releases the lease at once, whatever the `changes` listeners are doing;
+afterwards saves are `NotSaved(StoreClosed)` and reads `NotRead(StoreClosed)`.
 
 ### Reading
 
 `readStrategy` and `readPage` return a `Reading`: `Found`, `NotFound`,
 `Unreadable` when the strategy's own row cannot be read, or `NotRead` when
-the device failed. `library` is the list in memory: one `StrategySummary` per
-strategy, the folders, and any summary or folder row this build cannot read.
+the device failed. Unreadable pages, settings, elements and lineup groups
+come back in the same lists as readable ones; a key under `content/<page>/`
+of a kind this build does not know comes back as an `UnknownKindRow` with
+its text as stored. `library` is the list in memory: one `StrategySummary`
+per strategy, the strategies whose own row cannot be read, and the folders.
 
-### Rows this build cannot read
+### Deleting
 
-A key whose text is not JSON, whose row does not decode, whose row names
-another key, or whose kind under `content/<page>/` is unknown is carried as an
-`UnreadableRow`: its area, key, text exactly as stored, and why. An element
-that decodes as an `UnreadableElement` stays in `PageContent.elements`. The
-store never writes a key that holds a row it cannot read: an edit that would
-is refused with `UnreadableRowInTheWay`, and `AddStrategy` is refused when
-any key is already stored for that strategy. The one exception is
-`RemoveStrategy`: the user deleting a strategy deletes every key it has,
-these rows included. Rows are written as canonical JSON of `toJson()`.
+The store writes no key whose row it cannot read, with one exception:
+`RemoveStrategy` deletes every key of the strategy, these rows included,
+because the user asked for the whole strategy to go.
 
 ### Summaries
 
-A `StrategySummary` holds the name, map, folder, created and updated times,
-live page count, `Sides` (attack, defend or mixed), the agents placed on live
-pages, and how many items they hold. It also keeps a tally per page, so
-trashing a page updates the counts without reading that page. Every commit
-writes the new summary in the same record as its rows. `rebuildSummary`
-recomputes it from the rows, keeps the times since no row holds them, and
-saves it through a record like any edit.
-When the store opens and cannot read a summary, it rebuilds it from the
-strategy named by the summary's `publicId`, taking `createdAt` and
-`updatedAt` from it when they are whole milliseconds. A later summary version
-must keep those three fields; a summary without them is listed as
-unreadable. A record is never saved while an earlier one is unfinished.
+A `StrategySummary` holds the name, map, folder, created and updated times
+(from the strategy row), live page count, `Sides` (attack, defend or mixed),
+the agents placed on live pages, and how many items they hold. It also keeps
+a tally per page, so trashing a page updates the counts without reading that
+page. Every commit writes the new summary in the same record as its rows.
+`rebuildSummary` recomputes it from the rows alone. When the store opens and
+cannot read a summary, it rebuilds it; when the strategy's own row cannot be
+read either, the strategy is listed in `unreadableStrategies`.
 
 ### Telling the editor what changed
 
-`changes` is a stream of `StrategyEdited` (the strategy, the `RowWrite`s with
-their changed fields and data fields, the undo, the new summary) and
-`LibraryEdited`. It fires after the save, once per `Saved`.
+`changes` is a stream of `StrategyEdited` (the strategy, the op id, the
+`RowWrite`s with their changed fields and data fields, the rows removed, the
+new summary) and `LibraryEdited`. It fires after the save, once per `Saved`.
+A local commit never removes a row; `removed` is there for cloud strategies,
+where the server rejecting a pending op can take a row away.
+
+### Room for cloud strategies
+
+Nothing for them is built here. What a local strategy reads and saves
+through does not have to change for them: a cloud strategy's base can live
+under the same `strategy/<strategy>` keys and its pending ops under their own
+keys, read through a new call; `commit` keeps its signature and saves the op
+as a pending op instead of clearing it; a change already names its op and
+can name rows that are gone; and the record already saves any set of keys
+across areas at once, so advancing the base and removing the acknowledged
+ops is one more kind of record.
 
 ### Measuring it
 
-`dart run tool/store_benchmark.dart` times opening a 500-strategy library
-list, opening a 300-item page where half the items are 1000-point drawings,
-and two commits on that page, on both engines. `test/store_budget_test.dart`
-counts the keys each of those touches and fails when the count grows.
-
+`dart run tool/store_benchmark.dart` times opening the store and a
+500-strategy library list, opening a 300-item page where half the items are
+1000-point drawings (in a strategy not yet read, and in one already read),
+and two commits on that page. `test/store_budget_test.dart` counts the keys
+each of those reads, lists and writes, and fails when a count grows.

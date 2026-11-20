@@ -6,9 +6,7 @@ import '../payloads.dart';
 import '../rows.dart';
 import '../wire.dart';
 
-const summaryVersion = 1;
-
-const _latestTime = 8640000000000000;
+const summaryVersion = 2;
 
 enum Sides { attack, defend, mixed }
 
@@ -22,7 +20,12 @@ final class PageTally {
   final Map<String, int> agents;
 
   PageTally plus(ElementRow row, int sign) {
-    if (!_isLive(row)) return this;
+    final live = switch (row) {
+      LiveElement() => true,
+      DeletedElement() => false,
+      UnreadableElement(:final deleted) => deleted == false,
+    };
+    if (!live) return this;
     final agent = switch (row) {
       LiveElement(:final payload) when payload.kind == ElementKind.agent =>
         switch (payload.data['type']) {
@@ -42,12 +45,6 @@ final class PageTally {
     }
     return PageTally(items: items + sign, agents: counts);
   }
-
-  static bool _isLive(ElementRow row) => switch (row) {
-    LiveElement() => true,
-    DeletedElement() => false,
-    UnreadableElement(:final json) => json['deleted'] == false,
-  };
 
   Map<String, Object?> toJson() => {
     'items': items,
@@ -89,11 +86,9 @@ final class StrategySummary {
   }) : tallies = Map.unmodifiable(tallies);
 
   factory StrategySummary.of({
-    required StrategyRow strategy,
+    required ReadableStrategy strategy,
     required Iterable<PageRow> pages,
     required Map<String, PageTally> tallies,
-    required DateTime createdAt,
-    required DateTime updatedAt,
   }) {
     final live = pages.whereType<LivePage>().toList();
     final liveTallies = [
@@ -105,8 +100,8 @@ final class StrategySummary {
       name: strategy.name,
       mapData: strategy.mapData,
       folderPublicId: strategy.folderPublicId,
-      createdAt: createdAt,
-      updatedAt: updatedAt,
+      createdAt: strategy.createdAt,
+      updatedAt: strategy.updatedAt,
       pageCount: live.length,
       sides: switch (attack) {
         0 => Sides.defend,
@@ -132,10 +127,9 @@ final class StrategySummary {
   final Map<String, PageTally> tallies;
 
   StrategySummary after(
-    StrategyRow strategy,
+    ReadableStrategy strategy,
     Iterable<PageRow> pages,
     Iterable<RowWrite> writes,
-    DateTime updatedAt,
   ) {
     final tallies = {...this.tallies};
     for (final write in writes) {
@@ -152,25 +146,22 @@ final class StrategySummary {
       strategy: strategy,
       pages: pages,
       tallies: tallies,
-      createdAt: createdAt,
-      updatedAt: updatedAt,
     );
   }
 
-  StrategySummary withHeader(StrategyRow strategy, DateTime updatedAt) =>
-      StrategySummary._(
-        publicId: publicId,
-        name: strategy.name,
-        mapData: strategy.mapData,
-        folderPublicId: strategy.folderPublicId,
-        createdAt: createdAt,
-        updatedAt: updatedAt,
-        pageCount: pageCount,
-        sides: sides,
-        agents: agents,
-        itemCount: itemCount,
-        tallies: tallies,
-      );
+  StrategySummary withHeader(ReadableStrategy strategy) => StrategySummary._(
+    publicId: publicId,
+    name: strategy.name,
+    mapData: strategy.mapData,
+    folderPublicId: strategy.folderPublicId,
+    createdAt: strategy.createdAt,
+    updatedAt: strategy.updatedAt,
+    pageCount: pageCount,
+    sides: sides,
+    agents: agents,
+    itemCount: itemCount,
+    tallies: tallies,
+  );
 
   Map<String, Object?> toJson() => {
     'summaryVersion': summaryVersion,
@@ -189,54 +180,48 @@ final class StrategySummary {
     },
   };
 
-  static Decoded<StrategySummary> decode(Object? json) => JsonFields.read(
-    json,
-    'strategy summary',
-    (fields) {
-      if (fields.whole('summaryVersion') != summaryVersion) {
-        fields.reject('a summary version this build does not read');
-      }
-      final publicId = fields.string('publicId');
-      final name = fields.string('name');
-      final mapData = fields.string('mapData');
-      final folderPublicId = fields.optionalString('folderPublicId');
-      final createdAt = fields.whole('createdAt');
-      final updatedAt = fields.whole('updatedAt');
-      if (createdAt.abs() > _latestTime || updatedAt.abs() > _latestTime) {
-        fields.reject('expected times');
-      }
-      final pageCount = fields.whole('pageCount');
-      final sides = Sides.values.asNameMap()[fields.json['sides']];
-      if (sides == null) fields.reject('expected sides');
-      final agents = fields.json['agents'];
-      if (agents is! List<Object?> || agents.any((a) => a is! String)) {
-        fields.reject('expected agents');
-      }
-      final itemCount = fields.whole('itemCount');
-      final tallies = <String, PageTally>{};
-      for (final MapEntry(:key, :value) in fields.object('tallies').entries) {
-        switch (PageTally.decode(value)) {
-          case Read(value: final tally):
-            tallies[key] = tally;
-          case CouldNotRead(:final problem):
-            fields.reject(problem);
+  static Decoded<StrategySummary> decode(Object? json) =>
+      JsonFields.read(json, 'strategy summary', (fields) {
+        if (fields.whole('summaryVersion') != summaryVersion) {
+          fields.reject('a summary version this build does not read');
         }
-      }
-      return () => StrategySummary._(
-        publicId: publicId,
-        name: name,
-        mapData: mapData,
-        folderPublicId: folderPublicId,
-        createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt, isUtc: true),
-        updatedAt: DateTime.fromMillisecondsSinceEpoch(updatedAt, isUtc: true),
-        pageCount: pageCount,
-        sides: sides!,
-        agents: (agents! as List<Object?>).cast<String>(),
-        itemCount: itemCount,
-        tallies: tallies,
-      );
-    },
-  );
+        final publicId = fields.string('publicId');
+        final name = fields.string('name');
+        final mapData = fields.string('mapData');
+        final folderPublicId = fields.optionalString('folderPublicId');
+        final createdAt = fields.time('createdAt');
+        final updatedAt = fields.time('updatedAt');
+        final pageCount = fields.whole('pageCount');
+        final sides = Sides.values.asNameMap()[fields.json['sides']];
+        if (sides == null) fields.reject('expected sides');
+        final agents = fields.json['agents'];
+        if (agents is! List<Object?> || agents.any((a) => a is! String)) {
+          fields.reject('expected agents');
+        }
+        final itemCount = fields.whole('itemCount');
+        final tallies = <String, PageTally>{};
+        for (final MapEntry(:key, :value) in fields.object('tallies').entries) {
+          switch (PageTally.decode(value)) {
+            case Read(value: final tally):
+              tallies[key] = tally;
+            case CouldNotRead(:final problem):
+              fields.reject(problem);
+          }
+        }
+        return () => StrategySummary._(
+          publicId: publicId,
+          name: name,
+          mapData: mapData,
+          folderPublicId: folderPublicId,
+          createdAt: createdAt,
+          updatedAt: updatedAt,
+          pageCount: pageCount,
+          sides: sides!,
+          agents: (agents! as List<Object?>).cast<String>(),
+          itemCount: itemCount,
+          tallies: tallies,
+        );
+      });
 
   @override
   bool operator ==(Object other) =>

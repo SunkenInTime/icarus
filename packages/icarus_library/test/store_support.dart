@@ -8,8 +8,6 @@ import 'support.dart';
 
 bool readsKnownKinds(ElementPayload payload) => true;
 
-final createdAt = DateTime.utc(2026, 1, 2, 3);
-
 final editedAt = DateTime.utc(2026, 11, 20, 12);
 
 DateTime fixedClock() => editedAt;
@@ -21,6 +19,11 @@ const _contentsEqual = DeepCollectionEquality();
 bool sameContents(Contents left, Contents right) =>
     _contentsEqual.equals(left, right);
 
+Contents withoutJournal(Contents contents) => {
+  for (final MapEntry(:key, :value) in contents.entries)
+    if (key != 'journal') key: value,
+};
+
 String canonicalRow(Row row) => jsonEncode(sortedJson(row.toJson()));
 
 Object? sortedJson(Object? value) => switch (value) {
@@ -29,17 +32,6 @@ Object? sortedJson(Object? value) => switch (value) {
   },
   final List<Object?> list => [for (final item in list) sortedJson(item)],
   _ => value,
-};
-
-Future<Contents> settledContentsOf(Contents disk) async {
-  final engine = MemoryEngine(disk);
-  await (await openStore(engine)).close();
-  return engine.contents;
-}
-
-Contents withoutJournal(Contents contents) => {
-  for (final MapEntry(:key, :value) in contents.entries)
-    if (key != 'journal') key: value,
 };
 
 Future<LibraryStore> openStore(StorageEngine engine) async =>
@@ -51,6 +43,15 @@ Future<LibraryStore> openStore(StorageEngine engine) async =>
       StoreOpened(:final store) => store,
       StoreNotOpened(:final problem) => fail('store did not open: $problem'),
     };
+
+Future<LibraryStore> openOn(Contents contents) =>
+    openStore(MemoryEngine(MemoryStorage(contents)));
+
+Future<Contents> settled(Contents disk) async {
+  final storage = MemoryStorage(disk);
+  await (await openStore(MemoryEngine(storage))).close();
+  return storage.contents;
+}
 
 T savedValue<T, R>(Saving<T, R> result) => switch (result) {
   Saved(:final value) => value,
@@ -76,114 +77,29 @@ StrategyContent strategyOf(Reading<StrategyContent> reading) =>
       final other => fail('expected the strategy, got $other'),
     };
 
-final class CountingEngine implements StorageEngine {
-  CountingEngine(this.inner);
+ElementRow elementOn(PageContent page, String id) =>
+    page.elements.firstWhere((row) => row.publicId == id);
+
+final class WrappingEngine implements StorageEngine {
+  WrappingEngine(this.inner, this.wrap);
 
   final StorageEngine inner;
-  final reads = <(String, String)>[];
-  final listings = <(String, String)>[];
-  final written = <(String, String)>[];
-  final deleted = <(String, String)>[];
+  final StorageLease Function(StorageLease lease) wrap;
 
-  int get keyWrites => written.length + deleted.length;
+  @override
+  Future<Leasing> lease() async => switch (await inner.lease()) {
+    Leased(:final lease) => Leased(wrap(lease)),
+    final other => other,
+  };
+}
 
-  void reset() {
-    reads.clear();
-    listings.clear();
-    written.clear();
-    deleted.clear();
-  }
+abstract base class ForwardingLease implements StorageLease {
+  ForwardingLease(this.inner);
+
+  final StorageLease inner;
 
   @override
   int get maxKeyLength => inner.maxKeyLength;
-
-  @override
-  Future<Stored<String?>> read(String area, String key) {
-    reads.add((area, key));
-    return inner.read(area, key);
-  }
-
-  @override
-  Future<Stored<List<String>>> keys(String area, String prefix) {
-    listings.add((area, prefix));
-    return inner.keys(area, prefix);
-  }
-
-  @override
-  Future<Stored<void>> write(String area, Map<String, String> values) {
-    written.addAll([for (final key in values.keys) (area, key)]);
-    return inner.write(area, values);
-  }
-
-  @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) {
-    final all = keys.toList();
-    deleted.addAll([for (final key in all) (area, key)]);
-    return inner.delete(area, all);
-  }
-}
-
-const crashed = DeviceFailure('the app stopped');
-
-final class CrashingEngine implements StorageEngine {
-  CrashingEngine(this.inner, {required int afterWrites}) : _left = afterWrites;
-
-  final StorageEngine inner;
-  int _left;
-
-  bool get hasCrashed => _left < 0;
-
-  @override
-  int get maxKeyLength => inner.maxKeyLength;
-
-  @override
-  Future<Stored<String?>> read(String area, String key) => hasCrashed
-      ? Future.value(const StorageFailed(crashed))
-      : inner.read(area, key);
-
-  @override
-  Future<Stored<List<String>>> keys(String area, String prefix) => hasCrashed
-      ? Future.value(const StorageFailed(crashed))
-      : inner.keys(area, prefix);
-
-  @override
-  Future<Stored<void>> write(String area, Map<String, String> values) async {
-    final allowed = Map.fromEntries(values.entries.take(_spend(values.length)));
-    if (allowed.isNotEmpty) await inner.write(area, allowed);
-    return allowed.length == values.length
-        ? const Done(null)
-        : const StorageFailed(crashed);
-  }
-
-  @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) async {
-    final all = keys.toList();
-    final allowed = all.take(_spend(all.length)).toList();
-    if (allowed.isNotEmpty) await inner.delete(area, allowed);
-    return allowed.length == all.length
-        ? const Done(null)
-        : const StorageFailed(crashed);
-  }
-
-  int _spend(int wanted) {
-    if (hasCrashed) return 0;
-    if (wanted <= _left) {
-      _left -= wanted;
-      return wanted;
-    }
-    final spent = _left;
-    _left = -1;
-    return spent;
-  }
-}
-
-final class LimitedEngine implements StorageEngine {
-  LimitedEngine(this.inner, {required this.maxKeyLength});
-
-  final StorageEngine inner;
-
-  @override
-  final int maxKeyLength;
 
   @override
   Future<Stored<String?>> read(String area, String key) =>
@@ -200,44 +116,160 @@ final class LimitedEngine implements StorageEngine {
   @override
   Future<Stored<void>> delete(String area, Iterable<String> keys) =>
       inner.delete(area, keys);
+
+  @override
+  Future<void> release() => inner.release();
 }
 
-final class FlakyEngine implements StorageEngine {
-  FlakyEngine(this.inner);
+final class Counts {
+  final reads = <(String, String)>[];
+  final listings = <(String, String)>[];
+  final written = <(String, String)>[];
+  final deleted = <(String, String)>[];
+  int listed = 0;
+  int calls = 0;
 
-  final StorageEngine inner;
-  final failing = <int>{};
-  final landing = <int>{};
-  int _calls = 0;
+  int get keyWrites => written.length + deleted.length;
 
-  int get calls => _calls;
+  void reset() {
+    reads.clear();
+    listings.clear();
+    written.clear();
+    deleted.clear();
+    listed = 0;
+    calls = 0;
+  }
+}
 
-  bool _fails() => failing.contains(_calls++);
+final class CountingLease extends ForwardingLease {
+  CountingLease(super.inner, this.counts);
 
-  bool _lands() => landing.contains(_calls - 1);
+  final Counts counts;
 
   @override
-  int get maxKeyLength => inner.maxKeyLength;
-
-  @override
-  Future<Stored<String?>> read(String area, String key) =>
-      inner.read(area, key);
-
-  @override
-  Future<Stored<List<String>>> keys(String area, String prefix) =>
-      inner.keys(area, prefix);
-
-  @override
-  Future<Stored<void>> write(String area, Map<String, String> values) async {
-    if (!_fails()) return inner.write(area, values);
-    if (_lands()) await inner.write(area, values);
-    return const StorageFailed(DeviceFailure('disk full'));
+  Future<Stored<String?>> read(String area, String key) {
+    counts.reads.add((area, key));
+    return super.read(area, key);
   }
 
   @override
-  Future<Stored<void>> delete(String area, Iterable<String> keys) => _fails()
-      ? Future.value(const StorageFailed(DeviceFailure('disk full')))
-      : inner.delete(area, keys);
+  Future<Stored<List<String>>> keys(String area, String prefix) async {
+    counts.listings.add((area, prefix));
+    final result = await super.keys(area, prefix);
+    if (result case Done(:final value)) counts.listed += value.length;
+    return result;
+  }
+
+  @override
+  Future<Stored<void>> write(String area, Map<String, String> values) {
+    counts.calls++;
+    counts.written.addAll([for (final key in values.keys) (area, key)]);
+    return super.write(area, values);
+  }
+
+  @override
+  Future<Stored<void>> delete(String area, Iterable<String> keys) {
+    final all = keys.toList();
+    counts.calls++;
+    counts.deleted.addAll([for (final key in all) (area, key)]);
+    return super.delete(area, all);
+  }
+}
+
+(StorageEngine, Counts) counting(StorageEngine inner) {
+  final counts = Counts();
+  return (
+    WrappingEngine(inner, (lease) => CountingLease(lease, counts)),
+    counts,
+  );
+}
+
+const crashed = DeviceFailure('the app stopped');
+
+final class Cut {
+  Cut(this.afterCalls);
+
+  final int afterCalls;
+  int landed = 0;
+  bool cut = false;
+
+  bool get allows => !cut && landed < afterCalls;
+}
+
+final class CrashingLease extends ForwardingLease {
+  CrashingLease(super.inner, this.cut);
+
+  final Cut cut;
+
+  Future<Stored<T>> _gate<T>(Future<Stored<T>> Function() call) async {
+    if (!cut.allows) {
+      cut.cut = true;
+      return const StorageFailed(crashed);
+    }
+    cut.landed++;
+    return call();
+  }
+
+  @override
+  Future<Stored<String?>> read(String area, String key) => cut.cut
+      ? Future.value(const StorageFailed(crashed))
+      : super.read(area, key);
+
+  @override
+  Future<Stored<List<String>>> keys(String area, String prefix) => cut.cut
+      ? Future.value(const StorageFailed(crashed))
+      : super.keys(area, prefix);
+
+  @override
+  Future<Stored<void>> write(String area, Map<String, String> values) =>
+      _gate(() => super.write(area, values));
+
+  @override
+  Future<Stored<void>> delete(String area, Iterable<String> keys) =>
+      _gate(() => super.delete(area, keys));
+}
+
+StorageEngine crashing(StorageEngine inner, Cut cut) =>
+    WrappingEngine(inner, (lease) => CrashingLease(lease, cut));
+
+enum Failing { refused, landed }
+
+final class FlakyLease extends ForwardingLease {
+  FlakyLease(super.inner, this.failing);
+
+  final Map<int, Failing> failing;
+  int calls = 0;
+
+  Future<Stored<void>> _maybe(Future<Stored<void>> Function() call) async {
+    final how = failing[calls++];
+    switch (how) {
+      case null:
+        return call();
+      case Failing.refused:
+        return const StorageFailed(DeviceFailure('disk full'));
+      case Failing.landed:
+        await call();
+        return const StorageFailed(DeviceFailure('lost the reply'));
+    }
+  }
+
+  @override
+  Future<Stored<void>> write(String area, Map<String, String> values) =>
+      _maybe(() => super.write(area, values));
+
+  @override
+  Future<Stored<void>> delete(String area, Iterable<String> keys) =>
+      _maybe(() => super.delete(area, keys));
+}
+
+StorageEngine flaky(StorageEngine inner, Map<int, Failing> failing) =>
+    WrappingEngine(inner, (lease) => FlakyLease(lease, failing));
+
+final class LimitedLease extends ForwardingLease {
+  LimitedLease(super.inner, this.maxKeyLength);
+
+  @override
+  final int maxKeyLength;
 }
 
 Map<String, Object?> origin(String id) => {
@@ -268,15 +300,18 @@ LineupGroupPayload lineupPayload(String id, {String notes = ''}) =>
       },
     );
 
-LiveLineupGroup lineupGroup(String id, {String pageId = 'page-a'}) =>
-    LiveLineupGroup(
-      strategyPublicId: strategyId,
-      publicId: id,
-      pagePublicId: pageId,
-      payload: lineupPayload(id),
-      sortIndex: 0,
-      revision: 1,
-    );
+LiveLineupGroup lineupGroup(
+  String id, {
+  String pageId = 'page-a',
+  String strategy = strategyId,
+}) => LiveLineupGroup(
+  strategyPublicId: strategy,
+  publicId: id,
+  pagePublicId: pageId,
+  payload: lineupPayload(id),
+  sortIndex: 0,
+  revision: 1,
+);
 
 LiveElement agent(
   String id, {
@@ -319,54 +354,79 @@ const unknownRowJson = '{"publicId":"pin-1","pinned":true}';
 
 const garbledJson = '{"publicId": "half';
 
-StrategyRowSet sampleStrategy() => StrategyRowSet(
-  strategy: const StrategyRow(
-    publicId: strategyId,
-    name: 'Retake B',
-    mapData: 'ascent',
-    revision: 1,
-  ),
-  pages: [
-    page('page-a', sortIndex: 0),
-    page('page-b', sortIndex: 1),
-    LivePage(
-      publicId: 'page-c',
-      strategyPublicId: strategyId,
-      name: 'Page 3',
-      sortIndex: 2,
-      isAttack: false,
-      revision: 1,
-    ),
-  ],
-  settings: [settings('page-a'), settings('page-b'), settings('page-c')],
-  elements: [
-    agent('jett'),
-    agent('sova', type: 'sova', sortIndex: 1),
-    drawing('line'),
-    agent('omen', type: 'omen', pageId: 'page-b'),
-    agent('kayo', type: 'kayo', pageId: 'page-c'),
-  ],
-  lineupGroups: [lineupGroup('g1')],
-);
+StrategyRowSet sampleStrategy({String id = strategyId, String prefix = ''}) =>
+    StrategyRowSet(
+      strategy: strategyRow(publicId: id),
+      pages: [
+        LivePage(
+          publicId: '${prefix}page-a',
+          strategyPublicId: id,
+          name: 'Page 1',
+          sortIndex: 0,
+          isAttack: true,
+          revision: 1,
+        ),
+        LivePage(
+          publicId: '${prefix}page-b',
+          strategyPublicId: id,
+          name: 'Page 2',
+          sortIndex: 1,
+          isAttack: true,
+          revision: 1,
+        ),
+        LivePage(
+          publicId: '${prefix}page-c',
+          strategyPublicId: id,
+          name: 'Page 3',
+          sortIndex: 2,
+          isAttack: false,
+          revision: 1,
+        ),
+      ],
+      settings: [
+        settings('${prefix}page-a'),
+        settings('${prefix}page-b'),
+        settings('${prefix}page-c'),
+      ],
+      elements: [
+        agent('${prefix}jett', pageId: '${prefix}page-a'),
+        agent(
+          '${prefix}sova',
+          type: 'sova',
+          sortIndex: 1,
+          pageId: '${prefix}page-a',
+        ),
+        drawing('${prefix}line', pageId: '${prefix}page-a'),
+        agent('${prefix}omen', type: 'omen', pageId: '${prefix}page-b'),
+        agent('${prefix}kayo', type: 'kayo', pageId: '${prefix}page-c'),
+      ],
+      lineupGroups: [
+        lineupGroup('${prefix}g1', pageId: '${prefix}page-a', strategy: id),
+      ],
+    );
 
-Future<MemoryEngine> seededEngine() async {
-  final engine = MemoryEngine();
+const strategyArea = 'strategy/$strategyId';
+
+Future<Contents> seededContents() async {
+  final storage = MemoryStorage();
+  final engine = MemoryEngine(storage);
   final store = await openStore(engine);
-  savedValue(
-    await store.editLibrary([
-      AddStrategy(sampleStrategy(), createdAt: createdAt, updatedAt: createdAt),
-    ]),
-  );
+  savedValue(await store.editLibrary([AddStrategy(sampleStrategy())]));
   await store.close();
-  await engine.write('strategy/$strategyId', {
-    'content/page-a/element/smoke': unreadableElementJson,
-    'content/page-a/pin/pin-1': unknownRowJson,
-    'content/page-a/element/garbled': garbledJson,
-  });
-  final rebuilding = await openStore(engine);
-  savedValue(await rebuilding.rebuildSummary(strategyId));
-  await rebuilding.close();
-  return engine;
+  final withRaw = {
+    ...storage.contents,
+    strategyArea: {
+      ...storage.contents[strategyArea]!,
+      'content/page-a/element/smoke': unreadableElementJson,
+      'content/page-a/pin/pin-1': unknownRowJson,
+      'content/page-a/element/garbled': garbledJson,
+    },
+  };
+  final rebuilding = MemoryStorage(withRaw);
+  final store2 = await openStore(MemoryEngine(rebuilding));
+  savedValue(await store2.rebuildSummary(strategyId));
+  await store2.close();
+  return rebuilding.contents;
 }
 
 Map<String, StrategyOp> everyOpType() => {
@@ -390,7 +450,7 @@ Map<String, StrategyOp> everyOpType() => {
     expectedStrategyRevision: 1,
     name: 'Copy',
     settings: defaultSettings,
-    copyContentFromPagePublicId: 'page-a',
+    copyContentFromPagePublicId: 'page-b',
   ),
   'page.patch': const PagePatchOp(
     opId: 'op-page-patch',
@@ -483,3 +543,5 @@ Map<String, StrategyOp> everyOpType() => {
     expectedLineupRevision: 1,
   ),
 };
+
+final moveJett = everyOpType()['element.patch']!;

@@ -2,11 +2,12 @@ import '../outcome.dart';
 import '../rows.dart';
 import '../strategy_rows.dart';
 import 'layout.dart';
-import 'stored_row.dart';
+import 'results.dart';
 
 final class LoadedPage {
   final elements = <String, ElementRow>{};
   final lineupGroups = <String, LineupGroupRow>{};
+  final unknownKinds = <UnknownKindRow>[];
 }
 
 final class LoadedStrategy implements StrategyRows {
@@ -14,7 +15,6 @@ final class LoadedStrategy implements StrategyRows {
     required this.strategy,
     required Iterable<PageRow> pages,
     required Iterable<PageSettingsRow> settings,
-    required Iterable<UnreadableRow> unreadable,
     required Iterable<ContentKey> contentKeys,
   }) {
     for (final page in pages) {
@@ -22,9 +22,6 @@ final class LoadedStrategy implements StrategyRows {
     }
     for (final row in settings) {
       _settings[row.pagePublicId] = row;
-    }
-    for (final row in unreadable) {
-      this.unreadable[row.key] = row;
     }
     for (final key in contentKeys) {
       switch (key) {
@@ -39,10 +36,9 @@ final class LoadedStrategy implements StrategyRows {
   }
 
   @override
-  StrategyRow strategy;
+  ReadableStrategy strategy;
   final _pages = <String, PageRow>{};
   final _settings = <String, PageSettingsRow>{};
-  final unreadable = <String, UnreadableRow>{};
   final _elementPages = <String, String>{};
   final _lineupPages = <String, String>{};
   final _loaded = <String, LoadedPage>{};
@@ -60,20 +56,12 @@ final class LoadedStrategy implements StrategyRows {
   @override
   PageSettingsRow? settingsOf(String pagePublicId) => _settings[pagePublicId];
 
-  LoadedPage? loadedPage(String pagePublicId) => _loaded[segment(pagePublicId)];
+  LoadedPage? loadedPage(String pageSegment) => _loaded[pageSegment];
 
   bool isLoaded(String pageSegment) => _loaded.containsKey(pageSegment);
 
-  void addLoadedPage(
-    String pageSegment,
-    LoadedPage page,
-    Iterable<UnreadableRow> unreadable,
-  ) {
-    _loaded[pageSegment] = page;
-    for (final row in unreadable) {
-      this.unreadable[row.key] = row;
-    }
-  }
+  void addLoadedPage(String pageSegment, LoadedPage page) =>
+      _loaded[pageSegment] = page;
 
   Set<String> get pageSegments => {
     for (final page in _pages.keys) segment(page),
@@ -92,36 +80,51 @@ final class LoadedStrategy implements StrategyRows {
       (throw StateError('page $pageSegment was not loaded before applying'));
 
   @override
-  ElementRow? element(String elementPublicId) =>
-      switch (_elementPages[segment(elementPublicId)]) {
-        null => null,
-        final page => _mustBeLoaded(page).elements[elementPublicId],
-      };
+  ElementRow? element(String elementPublicId) {
+    final id = segment(elementPublicId);
+    return switch (_elementPages[id]) {
+      null => null,
+      final page => _mustBeLoaded(page).elements[id],
+    };
+  }
 
   @override
-  LineupGroupRow? lineupGroup(String lineupPublicId) =>
-      switch (_lineupPages[segment(lineupPublicId)]) {
-        null => null,
-        final page => _mustBeLoaded(page).lineupGroups[lineupPublicId],
-      };
+  LineupGroupRow? lineupGroup(String lineupPublicId) {
+    final id = segment(lineupPublicId);
+    return switch (_lineupPages[id]) {
+      null => null,
+      final page => _mustBeLoaded(page).lineupGroups[id],
+    };
+  }
 
   Iterable<ElementRow> elementsOnSegment(String pageSegment) =>
       _mustBeLoaded(pageSegment).elements.values;
 
   @override
   Iterable<ElementRow> elementsOn(String pagePublicId) =>
-      _mustBeLoaded(segment(pagePublicId)).elements.values;
+      elementsOnSegment(segment(pagePublicId));
 
   @override
   Iterable<LineupGroupRow> lineupGroupsOn(String pagePublicId) =>
       _mustBeLoaded(segment(pagePublicId)).lineupGroups.values;
 
-  (StrategyRow, List<PageRow>) headerAfter(Iterable<RowWrite> writes) {
+  Row? current(Row row) => switch (row) {
+    StrategyRow() => strategy,
+    FolderRow() => null,
+    PageRow(:final publicId) => _pages[publicId],
+    PageSettingsRow(:final pagePublicId) => _settings[pagePublicId],
+    ElementRow(:final pagePublicId, :final publicId) =>
+      _loaded[segment(pagePublicId)]?.elements[segment(publicId)],
+    LineupGroupRow(:final pagePublicId, :final publicId) =>
+      _loaded[segment(pagePublicId)]?.lineupGroups[segment(publicId)],
+  };
+
+  (ReadableStrategy, List<PageRow>) headerAfter(Iterable<RowWrite> writes) {
     var strategy = this.strategy;
     final pages = {..._pages};
     for (final write in writes) {
       switch (write.after) {
-        case final StrategyRow row:
+        case final ReadableStrategy row:
           strategy = row;
         case final PageRow row:
           pages[row.publicId] = row;
@@ -146,10 +149,10 @@ final class LoadedStrategy implements StrategyRows {
   void _forget(Row row) {
     switch (row) {
       case ElementRow(:final pagePublicId, :final publicId):
-        _loaded[segment(pagePublicId)]?.elements.remove(publicId);
+        _loaded[segment(pagePublicId)]?.elements.remove(segment(publicId));
         _elementPages.remove(segment(publicId));
       case LineupGroupRow(:final pagePublicId, :final publicId):
-        _loaded[segment(pagePublicId)]?.lineupGroups.remove(publicId);
+        _loaded[segment(pagePublicId)]?.lineupGroups.remove(segment(publicId));
         _lineupPages.remove(segment(publicId));
       case StrategyRow() || FolderRow() || PageRow() || PageSettingsRow():
         throw StateError('$row does not change key');
@@ -158,20 +161,21 @@ final class LoadedStrategy implements StrategyRows {
 
   void _keep(Row row) {
     switch (row) {
-      case StrategyRow():
+      case ReadableStrategy():
         strategy = row;
       case PageRow(:final publicId):
         _pages[publicId] = row;
       case PageSettingsRow(:final pagePublicId):
         _settings[pagePublicId] = row;
       case ElementRow(:final pagePublicId, :final publicId):
-        _mustBeLoaded(segment(pagePublicId)).elements[publicId] = row;
+        _mustBeLoaded(segment(pagePublicId)).elements[segment(publicId)] = row;
         _elementPages[segment(publicId)] = segment(pagePublicId);
       case LineupGroupRow(:final pagePublicId, :final publicId):
-        _mustBeLoaded(segment(pagePublicId)).lineupGroups[publicId] = row;
+        _mustBeLoaded(segment(pagePublicId)).lineupGroups[segment(publicId)] =
+            row;
         _lineupPages[segment(publicId)] = segment(pagePublicId);
-      case FolderRow():
-        throw StateError('a folder is not a row of a strategy');
+      case UnreadableStrategy() || FolderRow():
+        throw StateError('$row is not written as a row of a strategy');
     }
   }
 }

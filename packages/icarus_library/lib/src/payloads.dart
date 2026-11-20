@@ -28,7 +28,9 @@ final class ElementPayload {
     required this.kind,
     required this.payloadVersion,
     required Map<String, Object?> data,
-  }) : data = frozenJsonObject(data);
+    Map<String, Object?> unknownFields = const {},
+  }) : data = frozenJsonObject(data),
+       unknownFields = frozenJsonObject(unknownFields);
 
   static Decoded<ElementPayload> decode(Object? json) =>
       JsonFields.read(json, 'element payload', (fields) {
@@ -36,20 +38,24 @@ final class ElementPayload {
         if (kind == null) fields.reject('unknown kind ${fields.json['kind']}');
         final payloadVersion = fields.whole('payloadVersion');
         final data = fields.object('data');
+        final unknown = fields.rest(const {'kind', 'payloadVersion', 'data'});
         return () => ElementPayload(
           kind: kind!,
           payloadVersion: payloadVersion,
           data: data,
+          unknownFields: unknown,
         );
       });
 
   final ElementKind kind;
   final int payloadVersion;
   final Map<String, Object?> data;
+  final Map<String, Object?> unknownFields;
 
   bool get isReadable => payloadVersion <= newestElementPayloadVersion;
 
   Map<String, Object?> toJson() => {
+    ...unknownFields,
     'kind': kind.name,
     'payloadVersion': payloadVersion,
     'data': data,
@@ -67,7 +73,9 @@ final class LineupGroupPayload {
   LineupGroupPayload({
     required this.payloadVersion,
     required Map<String, Object?> data,
-  }) : data = frozenJsonObject(data);
+    Map<String, Object?> unknownFields = const {},
+  }) : data = frozenJsonObject(data),
+       unknownFields = frozenJsonObject(unknownFields);
 
   static Decoded<LineupGroupPayload> decode(Object? json) =>
       JsonFields.read(json, 'lineup group payload', (fields) {
@@ -81,14 +89,20 @@ final class LineupGroupPayload {
           );
         }
         final data = fields.object('data');
-        return () =>
-            LineupGroupPayload(payloadVersion: payloadVersion, data: data);
+        final unknown = fields.rest(const {'kind', 'payloadVersion', 'data'});
+        return () => LineupGroupPayload(
+          payloadVersion: payloadVersion,
+          data: data,
+          unknownFields: unknown,
+        );
       });
 
   final int payloadVersion;
   final Map<String, Object?> data;
+  final Map<String, Object?> unknownFields;
 
   Map<String, Object?> toJson() => {
+    ...unknownFields,
     'kind': lineupGroupPayloadKind,
     'payloadVersion': payloadVersion,
     'data': data,
@@ -107,6 +121,7 @@ final class PageSettings {
     required this.agentSize,
     required this.abilitySize,
     required this.useNeutralTeamColors,
+    this.unknownFields = const {},
   });
 
   static Decoded<PageSettings> decode(Object? json) =>
@@ -114,18 +129,26 @@ final class PageSettings {
         final agentSize = fields.number('agentSize');
         final abilitySize = fields.number('abilitySize');
         final neutral = fields.boolean('useNeutralTeamColors');
+        final unknown = fields.rest(const {
+          'agentSize',
+          'abilitySize',
+          'useNeutralTeamColors',
+        });
         return () => PageSettings(
           agentSize: agentSize,
           abilitySize: abilitySize,
           useNeutralTeamColors: neutral,
+          unknownFields: unknown,
         );
       });
 
   final double agentSize;
   final double abilitySize;
   final bool useNeutralTeamColors;
+  final Map<String, Object?> unknownFields;
 
   Map<String, Object?> toJson() => {
+    ...unknownFields,
     'agentSize': agentSize,
     'abilitySize': abilitySize,
     'useNeutralTeamColors': useNeutralTeamColors,
@@ -133,13 +156,10 @@ final class PageSettings {
 
   @override
   bool operator ==(Object other) =>
-      other is PageSettings &&
-      other.agentSize == agentSize &&
-      other.abilitySize == abilitySize &&
-      other.useNeutralTeamColors == useNeutralTeamColors;
+      other is PageSettings && sameJson(toJson(), other.toJson());
 
   @override
-  int get hashCode => Object.hash(agentSize, abilitySize, useNeutralTeamColors);
+  int get hashCode => canonicalJson(toJson()).hashCode;
 }
 
 final class ThemePalette {
@@ -147,6 +167,7 @@ final class ThemePalette {
     required this.base,
     required this.detail,
     required this.highlight,
+    this.unknownFields = const {},
   });
 
   static Decoded<ThemePalette> decode(Object? json) =>
@@ -154,15 +175,22 @@ final class ThemePalette {
         final base = fields.string('base');
         final detail = fields.string('detail');
         final highlight = fields.string('highlight');
-        return () =>
-            ThemePalette(base: base, detail: detail, highlight: highlight);
+        final unknown = fields.rest(const {'base', 'detail', 'highlight'});
+        return () => ThemePalette(
+          base: base,
+          detail: detail,
+          highlight: highlight,
+          unknownFields: unknown,
+        );
       });
 
   final String base;
   final String detail;
   final String highlight;
+  final Map<String, Object?> unknownFields;
 
   Map<String, Object?> toJson() => {
+    ...unknownFields,
     'base': base,
     'detail': detail,
     'highlight': highlight,
@@ -170,11 +198,8 @@ final class ThemePalette {
 
   @override
   bool operator ==(Object other) =>
-      other is ThemePalette &&
-      other.base == base &&
-      other.detail == detail &&
-      other.highlight == highlight;
+      other is ThemePalette && sameJson(toJson(), other.toJson());
 
   @override
-  int get hashCode => Object.hash(base, detail, highlight);
+  int get hashCode => canonicalJson(toJson()).hashCode;
 }

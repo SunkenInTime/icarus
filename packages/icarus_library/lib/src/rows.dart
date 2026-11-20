@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'json.dart';
+import 'ops.dart';
 import 'payloads.dart';
 import 'wire.dart';
 
@@ -13,6 +16,9 @@ sealed class RowKey {
 
   @override
   int get hashCode => Object.hash(runtimeType, id);
+
+  @override
+  String toString() => '$runtimeType($id)';
 }
 
 final class StrategyKey extends RowKey {
@@ -55,7 +61,7 @@ sealed class Row {
 
   RowKey get key;
 
-  Map<String, Object?> toJson();
+  Object? toJson();
 
   @override
   bool operator ==(Object other) =>
@@ -67,18 +73,78 @@ sealed class Row {
   int get hashCode => canonicalJson(toJson()).hashCode;
 }
 
-final class StrategyRow extends Row {
-  const StrategyRow({
-    required this.publicId,
-    required this.name,
-    required this.mapData,
-    required this.revision,
-    this.folderPublicId,
-    this.themeProfileId,
-    this.themeOverridePalette,
-  });
+sealed class _Parsed {
+  const _Parsed();
+}
 
-  static Decoded<StrategyRow> decode(Object? json) =>
+final class _Json extends _Parsed {
+  const _Json(this.value);
+
+  final Object? value;
+}
+
+final class _NotJson extends _Parsed {
+  const _NotJson(this.problem);
+
+  final String problem;
+}
+
+_Parsed _parse(String text) {
+  try {
+    return _Json(frozenJson(jsonDecode(text)));
+  } on FormatException catch (error) {
+    return _NotJson('not JSON: ${error.message}');
+  }
+}
+
+T _fromText<T>(
+  String text,
+  T Function(Object? json) read,
+  T Function(Object? stored, String problem) unreadable,
+) => switch (_parse(text)) {
+  _Json(:final value) => read(value),
+  _NotJson(:final problem) => unreadable(text, problem),
+};
+
+Map<String, Object?>? _object(Object? json) => switch (json) {
+  final Map<String, Object?> map => map,
+  _ => null,
+};
+
+int? _wholeAt(Object? json, String key) => switch (_object(json)?[key]) {
+  final num value when value.isFinite && value == value.truncate() =>
+    value.toInt(),
+  _ => null,
+};
+
+bool? _booleanAt(Object? json, String key) => switch (_object(json)?[key]) {
+  final bool value => value,
+  _ => null,
+};
+
+const _misplaced = 'stored under the key of another row';
+
+sealed class StrategyRow extends Row {
+  const StrategyRow._(this.publicId);
+
+  final String publicId;
+
+  @override
+  StrategyKey get key => StrategyKey(publicId);
+
+  static const _known = {
+    'publicId',
+    'folderPublicId',
+    'name',
+    'mapData',
+    'themeProfileId',
+    'themeOverridePalette',
+    'revision',
+    'createdAt',
+    'updatedAt',
+  };
+
+  static Decoded<ReadableStrategy> decode(Object? json) =>
       JsonFields.read(json, 'strategy row', (fields) {
         final publicId = fields.string('publicId');
         final folderPublicId = fields.optionalString('folderPublicId');
@@ -90,7 +156,10 @@ final class StrategyRow extends Row {
           ThemePalette.decode,
         );
         final revision = fields.whole('revision');
-        return () => StrategyRow(
+        final createdAt = fields.time('createdAt');
+        final updatedAt = fields.time('updatedAt');
+        final unknown = fields.rest(_known);
+        return () => ReadableStrategy(
           publicId: publicId,
           folderPublicId: folderPublicId,
           name: name,
@@ -98,22 +167,88 @@ final class StrategyRow extends Row {
           themeProfileId: themeProfileId,
           themeOverridePalette: palette,
           revision: revision,
+          createdAt: createdAt,
+          updatedAt: updatedAt,
+          unknownFields: unknown,
         );
       });
 
-  final String publicId;
+  static StrategyRow parse(String text, {required String publicId}) =>
+      _fromText(
+        text,
+        (json) => switch (decode(json)) {
+          Read(:final value) when value.publicId == publicId => value,
+          Read() => UnreadableStrategy(
+            publicId: publicId,
+            stored: json,
+            problem: _misplaced,
+          ),
+          CouldNotRead(:final problem) => UnreadableStrategy(
+            publicId: publicId,
+            stored: json,
+            problem: problem,
+          ),
+        },
+        (stored, problem) => UnreadableStrategy(
+          publicId: publicId,
+          stored: stored,
+          problem: problem,
+        ),
+      );
+}
+
+final class ReadableStrategy extends StrategyRow {
+  ReadableStrategy({
+    required String publicId,
+    required this.name,
+    required this.mapData,
+    required this.revision,
+    required this.createdAt,
+    required this.updatedAt,
+    this.folderPublicId,
+    this.themeProfileId,
+    this.themeOverridePalette,
+    Map<String, Object?> unknownFields = const {},
+  }) : unknownFields = frozenJsonObject(unknownFields),
+       super._(publicId);
+
   final String? folderPublicId;
   final String name;
   final String mapData;
   final String? themeProfileId;
   final ThemePalette? themeOverridePalette;
   final int revision;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final Map<String, Object?> unknownFields;
 
-  @override
-  StrategyKey get key => StrategyKey(publicId);
+  ReadableStrategy rewritten({
+    String? name,
+    String? mapData,
+    ValueEdit<String> folder = const KeepValue(),
+    ValueEdit<String> themeProfileId = const KeepValue(),
+    ValueEdit<ThemePalette> themeOverridePalette = const KeepValue(),
+    int? revision,
+    DateTime? updatedAt,
+  }) => ReadableStrategy(
+    publicId: publicId,
+    folderPublicId: edited(folder, folderPublicId),
+    name: name ?? this.name,
+    mapData: mapData ?? this.mapData,
+    themeProfileId: edited(themeProfileId, this.themeProfileId),
+    themeOverridePalette: edited(
+      themeOverridePalette,
+      this.themeOverridePalette,
+    ),
+    revision: revision ?? this.revision,
+    createdAt: createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    unknownFields: unknownFields,
+  );
 
   @override
   Map<String, Object?> toJson() => {
+    ...unknownFields,
     'publicId': publicId,
     if (folderPublicId != null) 'folderPublicId': folderPublicId,
     'name': name,
@@ -122,23 +257,47 @@ final class StrategyRow extends Row {
     if (themeOverridePalette case final palette?)
       'themeOverridePalette': palette.toJson(),
     'revision': revision,
+    'createdAt': createdAt.millisecondsSinceEpoch,
+    'updatedAt': updatedAt.millisecondsSinceEpoch,
   };
 }
 
-final class FolderRow extends Row {
-  const FolderRow({
-    required this.publicId,
-    required this.name,
-    this.parentFolderPublicId,
-    this.iconId,
-    this.iconCodePoint,
-    this.iconFontFamily,
-    this.iconFontPackage,
-    this.color,
-    this.customColorValue,
-  });
+final class UnreadableStrategy extends StrategyRow {
+  UnreadableStrategy({
+    required String publicId,
+    required Object? stored,
+    required this.problem,
+  }) : stored = frozenJson(stored),
+       super._(publicId);
 
-  static Decoded<FolderRow> decode(Object? json) =>
+  final Object? stored;
+  final String problem;
+
+  @override
+  Object? toJson() => stored;
+}
+
+sealed class FolderRow extends Row {
+  const FolderRow._(this.publicId);
+
+  final String publicId;
+
+  @override
+  FolderKey get key => FolderKey(publicId);
+
+  static const _known = {
+    'publicId',
+    'name',
+    'parentFolderPublicId',
+    'iconId',
+    'iconCodePoint',
+    'iconFontFamily',
+    'iconFontPackage',
+    'color',
+    'customColorValue',
+  };
+
+  static Decoded<ReadableFolder> decode(Object? json) =>
       JsonFields.read(json, 'folder row', (fields) {
         final publicId = fields.string('publicId');
         final name = fields.string('name');
@@ -149,7 +308,8 @@ final class FolderRow extends Row {
         final iconFontPackage = fields.optionalString('iconFontPackage');
         final color = fields.optionalString('color');
         final customColorValue = fields.optionalWhole('customColorValue');
-        return () => FolderRow(
+        final unknown = fields.rest(_known);
+        return () => ReadableFolder(
           publicId: publicId,
           name: name,
           parentFolderPublicId: parent,
@@ -159,10 +319,45 @@ final class FolderRow extends Row {
           iconFontPackage: iconFontPackage,
           color: color,
           customColorValue: customColorValue,
+          unknownFields: unknown,
         );
       });
 
-  final String publicId;
+  static FolderRow parse(String text, {required String publicId}) => _fromText(
+    text,
+    (json) => switch (decode(json)) {
+      Read(:final value) when value.publicId == publicId => value,
+      Read() => UnreadableFolder(
+        publicId: publicId,
+        stored: json,
+        problem: _misplaced,
+      ),
+      CouldNotRead(:final problem) => UnreadableFolder(
+        publicId: publicId,
+        stored: json,
+        problem: problem,
+      ),
+    },
+    (stored, problem) =>
+        UnreadableFolder(publicId: publicId, stored: stored, problem: problem),
+  );
+}
+
+final class ReadableFolder extends FolderRow {
+  ReadableFolder({
+    required String publicId,
+    required this.name,
+    this.parentFolderPublicId,
+    this.iconId,
+    this.iconCodePoint,
+    this.iconFontFamily,
+    this.iconFontPackage,
+    this.color,
+    this.customColorValue,
+    Map<String, Object?> unknownFields = const {},
+  }) : unknownFields = frozenJsonObject(unknownFields),
+       super._(publicId);
+
   final String name;
   final String? parentFolderPublicId;
   final int? iconId;
@@ -171,12 +366,11 @@ final class FolderRow extends Row {
   final String? iconFontPackage;
   final String? color;
   final int? customColorValue;
-
-  @override
-  FolderKey get key => FolderKey(publicId);
+  final Map<String, Object?> unknownFields;
 
   @override
   Map<String, Object?> toJson() => {
+    ...unknownFields,
     'publicId': publicId,
     'name': name,
     if (parentFolderPublicId != null)
@@ -190,20 +384,44 @@ final class FolderRow extends Row {
   };
 }
 
-const _latestTime = 8640000000000000;
+final class UnreadableFolder extends FolderRow {
+  UnreadableFolder({
+    required String publicId,
+    required Object? stored,
+    required this.problem,
+  }) : stored = frozenJson(stored),
+       super._(publicId);
+
+  final Object? stored;
+  final String problem;
+
+  @override
+  Object? toJson() => stored;
+}
 
 sealed class PageRow extends Row {
-  const PageRow._({
-    required this.publicId,
-    required this.strategyPublicId,
-    required this.name,
-    required this.sortIndex,
-    required this.isAttack,
-    required this.revision,
-    required this.isAutoNamed,
-  });
+  const PageRow._({required this.publicId, required this.strategyPublicId});
 
-  static Decoded<PageRow> decode(Object? json) =>
+  final String publicId;
+  final String strategyPublicId;
+
+  @override
+  PageKey get key => PageKey(publicId);
+
+  static const _known = {
+    'publicId',
+    'strategyPublicId',
+    'name',
+    'isAutoNamed',
+    'sortIndex',
+    'isAttack',
+    'revision',
+    'deleted',
+    'deletedAt',
+    'deletedBy',
+  };
+
+  static Decoded<ReadablePageRow> decode(Object? json) =>
       JsonFields.read(json, 'page row', (fields) {
         final publicId = fields.string('publicId');
         final strategyPublicId = fields.string('strategyPublicId');
@@ -213,7 +431,7 @@ sealed class PageRow extends Row {
         final isAttack = fields.boolean('isAttack');
         final revision = fields.whole('revision');
         final deleted = fields.boolean('deleted');
-        final deletedAt = fields.optionalWhole('deletedAt');
+        final deletedAt = fields.optionalTime('deletedAt');
         final deletedBy = deletedAt == null
             ? null
             : fields.decoded('deletedBy', PageDeleter.decode);
@@ -223,9 +441,7 @@ sealed class PageRow extends Row {
         if (deletedAt == null && fields.has('deletedBy')) {
           fields.reject('who deleted a page comes with when');
         }
-        if (deletedAt != null && deletedAt.abs() > _latestTime) {
-          fields.reject('deletedAt is not a time');
-        }
+        final unknown = fields.rest(_known);
         return () => switch ((deleted, deletedAt)) {
           (false, _) => LivePage(
             publicId: publicId,
@@ -235,6 +451,7 @@ sealed class PageRow extends Row {
             sortIndex: sortIndex,
             isAttack: isAttack,
             revision: revision,
+            unknownFields: unknown,
           ),
           (true, null) => PendingTrashedPage(
             publicId: publicId,
@@ -244,8 +461,9 @@ sealed class PageRow extends Row {
             sortIndex: sortIndex,
             isAttack: isAttack,
             revision: revision,
+            unknownFields: unknown,
           ),
-          (true, final int deletedAt) => ConfirmedTrashedPage(
+          (true, final DateTime deletedAt) => ConfirmedTrashedPage(
             publicId: publicId,
             strategyPublicId: strategyPublicId,
             name: name,
@@ -253,28 +471,64 @@ sealed class PageRow extends Row {
             sortIndex: sortIndex,
             isAttack: isAttack,
             revision: revision,
-            deletedAt: DateTime.fromMillisecondsSinceEpoch(
-              deletedAt,
-              isUtc: true,
-            ),
+            deletedAt: deletedAt,
             deletedBy: deletedBy!,
+            unknownFields: unknown,
           ),
         };
       });
 
-  final String publicId;
-  final String strategyPublicId;
+  static PageRow parse(
+    String text, {
+    required String publicId,
+    required String strategyPublicId,
+  }) {
+    UnreadablePage unreadable(Object? stored, String problem) => UnreadablePage(
+      publicId: publicId,
+      strategyPublicId: strategyPublicId,
+      sortIndex: _wholeAt(stored, 'sortIndex'),
+      trashed: _booleanAt(stored, 'deleted'),
+      stored: stored,
+      problem: problem,
+    );
+    return _fromText(
+      text,
+      (json) => switch (decode(json)) {
+        Read(:final value)
+            when value.publicId == publicId &&
+                value.strategyPublicId == strategyPublicId =>
+          value,
+        Read() => unreadable(json, _misplaced),
+        CouldNotRead(:final problem) => unreadable(json, problem),
+      },
+      unreadable,
+    );
+  }
+}
+
+sealed class ReadablePageRow extends PageRow {
+  ReadablePageRow._({
+    required super.publicId,
+    required super.strategyPublicId,
+    required this.name,
+    required this.sortIndex,
+    required this.isAttack,
+    required this.revision,
+    required this.isAutoNamed,
+    required Map<String, Object?> unknownFields,
+  }) : unknownFields = frozenJsonObject(unknownFields),
+       super._();
+
   final String name;
   final bool? isAutoNamed;
   final int sortIndex;
   final bool isAttack;
   final int revision;
-
-  @override
-  PageKey get key => PageKey(publicId);
+  final Map<String, Object?> unknownFields;
 
   @override
   Map<String, Object?> toJson() => {
+    ...unknownFields,
     'publicId': publicId,
     'strategyPublicId': strategyPublicId,
     'name': name,
@@ -290,8 +544,8 @@ sealed class PageRow extends Row {
   };
 }
 
-final class LivePage extends PageRow {
-  const LivePage({
+final class LivePage extends ReadablePageRow {
+  LivePage({
     required super.publicId,
     required super.strategyPublicId,
     required super.name,
@@ -299,6 +553,7 @@ final class LivePage extends PageRow {
     required super.isAttack,
     required super.revision,
     super.isAutoNamed,
+    super.unknownFields = const {},
   }) : super._();
 
   LivePage placed({required String name, required int sortIndex}) => LivePage(
@@ -309,7 +564,20 @@ final class LivePage extends PageRow {
     sortIndex: sortIndex,
     isAttack: isAttack,
     revision: revision + 1,
+    unknownFields: unknownFields,
   );
+
+  LivePage patched({String? name, bool? isAutoNamed, bool? isAttack}) =>
+      LivePage(
+        publicId: publicId,
+        strategyPublicId: strategyPublicId,
+        name: name ?? this.name,
+        isAutoNamed: isAutoNamed ?? this.isAutoNamed,
+        sortIndex: sortIndex,
+        isAttack: isAttack ?? this.isAttack,
+        revision: revision + 1,
+        unknownFields: unknownFields,
+      );
 
   PendingTrashedPage trashed() => PendingTrashedPage(
     publicId: publicId,
@@ -319,11 +587,12 @@ final class LivePage extends PageRow {
     sortIndex: sortIndex,
     isAttack: isAttack,
     revision: revision,
+    unknownFields: unknownFields,
   );
 }
 
-sealed class TrashedPage extends PageRow {
-  const TrashedPage._({
+sealed class TrashedPage extends ReadablePageRow {
+  TrashedPage._({
     required super.publicId,
     required super.strategyPublicId,
     required super.name,
@@ -331,11 +600,12 @@ sealed class TrashedPage extends PageRow {
     required super.isAttack,
     required super.revision,
     required super.isAutoNamed,
+    required super.unknownFields,
   }) : super._();
 }
 
 final class PendingTrashedPage extends TrashedPage {
-  const PendingTrashedPage({
+  PendingTrashedPage({
     required super.publicId,
     required super.strategyPublicId,
     required super.name,
@@ -343,11 +613,12 @@ final class PendingTrashedPage extends TrashedPage {
     required super.isAttack,
     required super.revision,
     super.isAutoNamed,
+    super.unknownFields = const {},
   }) : super._();
 }
 
 final class ConfirmedTrashedPage extends TrashedPage {
-  const ConfirmedTrashedPage({
+  ConfirmedTrashedPage({
     required super.publicId,
     required super.strategyPublicId,
     required super.name,
@@ -357,10 +628,31 @@ final class ConfirmedTrashedPage extends TrashedPage {
     required this.deletedAt,
     required this.deletedBy,
     super.isAutoNamed,
+    super.unknownFields = const {},
   }) : super._();
 
   final DateTime deletedAt;
   final PageDeleter deletedBy;
+}
+
+final class UnreadablePage extends PageRow {
+  UnreadablePage({
+    required super.publicId,
+    required super.strategyPublicId,
+    required this.sortIndex,
+    required this.trashed,
+    required Object? stored,
+    required this.problem,
+  }) : stored = frozenJson(stored),
+       super._();
+
+  final int? sortIndex;
+  final bool? trashed;
+  final Object? stored;
+  final String problem;
+
+  @override
+  Object? toJson() => stored;
 }
 
 sealed class PageDeleter {
@@ -406,45 +698,109 @@ final class DeleterUnknown extends PageDeleter {
   Object toJson() => 'unknown';
 }
 
-final class PageSettingsRow extends Row {
-  const PageSettingsRow({
-    required this.pagePublicId,
-    required this.revision,
-    this.settings,
-  });
-
-  static Decoded<PageSettingsRow> decode(Object? json) => JsonFields.read(
-    json,
-    'page settings row',
-    (fields) {
-      final pagePublicId = fields.string('pagePublicId');
-      final settings = fields.optionalDecoded('settings', PageSettings.decode);
-      final revision = fields.whole('revision');
-      return () => PageSettingsRow(
-        pagePublicId: pagePublicId,
-        settings: settings,
-        revision: revision,
-      );
-    },
-  );
+sealed class PageSettingsRow extends Row {
+  const PageSettingsRow._(this.pagePublicId);
 
   final String pagePublicId;
-  final PageSettings? settings;
-  final int revision;
 
   @override
   PageSettingsKey get key => PageSettingsKey(pagePublicId);
 
+  static Decoded<ReadablePageSettings> decode(
+    Object? json,
+  ) => JsonFields.read(json, 'page settings row', (fields) {
+    final pagePublicId = fields.string('pagePublicId');
+    final settings = fields.optionalDecoded('settings', PageSettings.decode);
+    final revision = fields.whole('revision');
+    final unknown = fields.rest(const {'pagePublicId', 'settings', 'revision'});
+    return () => ReadablePageSettings(
+      pagePublicId: pagePublicId,
+      settings: settings,
+      revision: revision,
+      unknownFields: unknown,
+    );
+  });
+
+  static PageSettingsRow parse(String text, {required String pagePublicId}) =>
+      _fromText(
+        text,
+        (json) => switch (decode(json)) {
+          Read(:final value) when value.pagePublicId == pagePublicId => value,
+          Read() => UnreadablePageSettings(
+            pagePublicId: pagePublicId,
+            stored: json,
+            problem: _misplaced,
+          ),
+          CouldNotRead(:final problem) => UnreadablePageSettings(
+            pagePublicId: pagePublicId,
+            stored: json,
+            problem: problem,
+          ),
+        },
+        (stored, problem) => UnreadablePageSettings(
+          pagePublicId: pagePublicId,
+          stored: stored,
+          problem: problem,
+        ),
+      );
+}
+
+final class ReadablePageSettings extends PageSettingsRow {
+  ReadablePageSettings({
+    required String pagePublicId,
+    required this.revision,
+    this.settings,
+    Map<String, Object?> unknownFields = const {},
+  }) : unknownFields = frozenJsonObject(unknownFields),
+       super._(pagePublicId);
+
+  final PageSettings? settings;
+  final int revision;
+  final Map<String, Object?> unknownFields;
+
+  ReadablePageSettings withSettings(PageSettings settings) =>
+      ReadablePageSettings(
+        pagePublicId: pagePublicId,
+        settings: settings,
+        revision: revision + 1,
+        unknownFields: unknownFields,
+      );
+
   @override
   Map<String, Object?> toJson() => {
+    ...unknownFields,
     'pagePublicId': pagePublicId,
     if (settings case final settings?) 'settings': settings.toJson(),
     'revision': revision,
   };
 }
 
+final class UnreadablePageSettings extends PageSettingsRow {
+  UnreadablePageSettings({
+    required String pagePublicId,
+    required Object? stored,
+    required this.problem,
+  }) : stored = frozenJson(stored),
+       super._(pagePublicId);
+
+  final Object? stored;
+  final String problem;
+
+  @override
+  Object? toJson() => stored;
+}
+
 sealed class ElementRow extends Row {
   const ElementRow._({required this.publicId, required this.pagePublicId});
+
+  static const _known = {
+    'publicId',
+    'pagePublicId',
+    'payload',
+    'sortIndex',
+    'revision',
+    'deleted',
+  };
 
   static Decoded<ElementRow> decode(
     Object? json, {
@@ -464,6 +820,15 @@ sealed class ElementRow extends Row {
       CouldNotRead(:final problem) => (null, problem),
     };
     if (publicId == null) return CouldNotRead(json, pagePublicId);
+    return Read(_readable(frozen, publicId, pagePublicId, canRead));
+  }
+
+  static ElementRow _readable(
+    Map<String, Object?> frozen,
+    String publicId,
+    String pagePublicId,
+    bool Function(ElementPayload payload) canRead,
+  ) {
     final readable = JsonFields.read(frozen, 'element row', (fields) {
       final payload = fields.decoded('payload', ElementPayload.decode);
       if (payload != null && (!payload.isReadable || !canRead(payload))) {
@@ -472,6 +837,7 @@ sealed class ElementRow extends Row {
       final sortIndex = fields.whole('sortIndex');
       final revision = fields.whole('revision');
       final deleted = fields.boolean('deleted');
+      final unknown = fields.rest(_known);
       return () => deleted
           ? DeletedElement(
               publicId: publicId,
@@ -479,6 +845,7 @@ sealed class ElementRow extends Row {
               payload: payload!,
               sortIndex: sortIndex,
               revision: revision,
+              unknownFields: unknown,
             )
           : LiveElement(
               publicId: publicId,
@@ -486,17 +853,52 @@ sealed class ElementRow extends Row {
               payload: payload!,
               sortIndex: sortIndex,
               revision: revision,
+              unknownFields: unknown,
             );
     });
-    return Read(switch (readable) {
+    return switch (readable) {
       Read(:final value) => value,
-      CouldNotRead() => UnreadableElement(
+      CouldNotRead(:final problem) => UnreadableElement(
         publicId: publicId,
         pagePublicId: pagePublicId,
-        json: frozen,
+        stored: frozen,
+        problem: problem,
       ),
-    });
+    };
   }
+
+  static ElementRow parse(
+    String text, {
+    required String publicId,
+    required String pagePublicId,
+    required bool Function(ElementPayload payload) canRead,
+  }) => _fromText(
+    text,
+    (json) => switch (decode(json, canRead: canRead)) {
+      Read(:final value)
+          when value.publicId == publicId &&
+              value.pagePublicId == pagePublicId =>
+        value,
+      Read() => UnreadableElement(
+        publicId: publicId,
+        pagePublicId: pagePublicId,
+        stored: json,
+        problem: _misplaced,
+      ),
+      CouldNotRead(:final problem) => UnreadableElement(
+        publicId: publicId,
+        pagePublicId: pagePublicId,
+        stored: json,
+        problem: problem,
+      ),
+    },
+    (stored, problem) => UnreadableElement(
+      publicId: publicId,
+      pagePublicId: pagePublicId,
+      stored: stored,
+      problem: problem,
+    ),
+  );
 
   final String publicId;
   final String pagePublicId;
@@ -512,7 +914,9 @@ sealed class ReadableElementRow extends ElementRow {
     required this.payload,
     required this.sortIndex,
     required this.revision,
-  }) : super._() {
+    required Map<String, Object?> unknownFields,
+  }) : unknownFields = frozenJsonObject(unknownFields),
+       super._() {
     if (!payload.isReadable) {
       throw ArgumentError.value(
         payload.payloadVersion,
@@ -525,9 +929,11 @@ sealed class ReadableElementRow extends ElementRow {
   final ElementPayload payload;
   final int sortIndex;
   final int revision;
+  final Map<String, Object?> unknownFields;
 
   @override
   Map<String, Object?> toJson() => {
+    ...unknownFields,
     'publicId': publicId,
     'pagePublicId': pagePublicId,
     'payload': payload.toJson(),
@@ -544,6 +950,7 @@ final class LiveElement extends ReadableElementRow {
     required super.payload,
     required super.sortIndex,
     required super.revision,
+    super.unknownFields = const {},
   }) : super._();
 }
 
@@ -554,6 +961,7 @@ final class DeletedElement extends ReadableElementRow {
     required super.payload,
     required super.sortIndex,
     required super.revision,
+    super.unknownFields = const {},
   }) : super._();
 }
 
@@ -561,14 +969,18 @@ final class UnreadableElement extends ElementRow {
   UnreadableElement({
     required super.publicId,
     required super.pagePublicId,
-    required Map<Object?, Object?> json,
-  }) : json = frozenJsonObject(json),
+    required Object? stored,
+    required this.problem,
+  }) : stored = frozenJson(stored),
        super._();
 
-  final Map<String, Object?> json;
+  final Object? stored;
+  final String problem;
 
   @override
-  Map<String, Object?> toJson() => json;
+  Object? toJson() => stored;
+
+  bool? get deleted => _booleanAt(stored, 'deleted');
 }
 
 sealed class LineupGroupRow extends Row {
@@ -576,12 +988,19 @@ sealed class LineupGroupRow extends Row {
     required this.publicId,
     required this.strategyPublicId,
     required this.pagePublicId,
-    required this.payload,
-    required this.sortIndex,
-    required this.revision,
   });
 
-  static Decoded<LineupGroupRow> decode(Object? json) =>
+  static const _known = {
+    'publicId',
+    'strategyPublicId',
+    'pagePublicId',
+    'payload',
+    'sortIndex',
+    'revision',
+    'deleted',
+  };
+
+  static Decoded<ReadableLineupGroupRow> decode(Object? json) =>
       JsonFields.read(json, 'lineup group row', (fields) {
         final publicId = fields.string('publicId');
         final strategyPublicId = fields.string('strategyPublicId');
@@ -590,6 +1009,7 @@ sealed class LineupGroupRow extends Row {
         final sortIndex = fields.whole('sortIndex');
         final revision = fields.whole('revision');
         final deleted = fields.boolean('deleted');
+        final unknown = fields.rest(_known);
         return () => deleted
             ? DeletedLineupGroup(
                 publicId: publicId,
@@ -598,6 +1018,7 @@ sealed class LineupGroupRow extends Row {
                 payload: payload!,
                 sortIndex: sortIndex,
                 revision: revision,
+                unknownFields: unknown,
               )
             : LiveLineupGroup(
                 publicId: publicId,
@@ -606,21 +1027,67 @@ sealed class LineupGroupRow extends Row {
                 payload: payload!,
                 sortIndex: sortIndex,
                 revision: revision,
+                unknownFields: unknown,
               );
       });
+
+  static LineupGroupRow parse(
+    String text, {
+    required String publicId,
+    required String strategyPublicId,
+    required String pagePublicId,
+  }) {
+    UnreadableLineupGroup unreadable(Object? stored, String problem) =>
+        UnreadableLineupGroup(
+          publicId: publicId,
+          strategyPublicId: strategyPublicId,
+          pagePublicId: pagePublicId,
+          stored: stored,
+          problem: problem,
+        );
+    return _fromText(
+      text,
+      (json) => switch (decode(json)) {
+        Read(:final value)
+            when value.publicId == publicId &&
+                value.strategyPublicId == strategyPublicId &&
+                value.pagePublicId == pagePublicId =>
+          value,
+        Read() => unreadable(json, _misplaced),
+        CouldNotRead(:final problem) => unreadable(json, problem),
+      },
+      unreadable,
+    );
+  }
 
   final String publicId;
   final String strategyPublicId;
   final String pagePublicId;
-  final LineupGroupPayload payload;
-  final int sortIndex;
-  final int revision;
 
   @override
   LineupGroupKey get key => LineupGroupKey(strategyPublicId, publicId);
+}
+
+sealed class ReadableLineupGroupRow extends LineupGroupRow {
+  ReadableLineupGroupRow._({
+    required super.publicId,
+    required super.strategyPublicId,
+    required super.pagePublicId,
+    required this.payload,
+    required this.sortIndex,
+    required this.revision,
+    required Map<String, Object?> unknownFields,
+  }) : unknownFields = frozenJsonObject(unknownFields),
+       super._();
+
+  final LineupGroupPayload payload;
+  final int sortIndex;
+  final int revision;
+  final Map<String, Object?> unknownFields;
 
   @override
   Map<String, Object?> toJson() => {
+    ...unknownFields,
     'publicId': publicId,
     'strategyPublicId': strategyPublicId,
     'pagePublicId': pagePublicId,
@@ -631,24 +1098,43 @@ sealed class LineupGroupRow extends Row {
   };
 }
 
-final class LiveLineupGroup extends LineupGroupRow {
-  const LiveLineupGroup({
+final class LiveLineupGroup extends ReadableLineupGroupRow {
+  LiveLineupGroup({
     required super.publicId,
     required super.strategyPublicId,
     required super.pagePublicId,
     required super.payload,
     required super.sortIndex,
     required super.revision,
+    super.unknownFields = const {},
   }) : super._();
 }
 
-final class DeletedLineupGroup extends LineupGroupRow {
-  const DeletedLineupGroup({
+final class DeletedLineupGroup extends ReadableLineupGroupRow {
+  DeletedLineupGroup({
     required super.publicId,
     required super.strategyPublicId,
     required super.pagePublicId,
     required super.payload,
     required super.sortIndex,
     required super.revision,
+    super.unknownFields = const {},
   }) : super._();
+}
+
+final class UnreadableLineupGroup extends LineupGroupRow {
+  UnreadableLineupGroup({
+    required super.publicId,
+    required super.strategyPublicId,
+    required super.pagePublicId,
+    required Object? stored,
+    required this.problem,
+  }) : stored = frozenJson(stored),
+       super._();
+
+  final Object? stored;
+  final String problem;
+
+  @override
+  Object? toJson() => stored;
 }

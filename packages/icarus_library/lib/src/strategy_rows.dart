@@ -3,7 +3,7 @@ import 'package:collection/collection.dart';
 import 'rows.dart';
 
 abstract interface class StrategyRows {
-  StrategyRow get strategy;
+  ReadableStrategy get strategy;
 
   Iterable<PageRow> get pages;
 
@@ -39,7 +39,7 @@ final class StrategyRowSet implements StrategyRows {
        });
 
   @override
-  final StrategyRow strategy;
+  final ReadableStrategy strategy;
   final Map<String, PageRow> _pages;
   final Map<String, PageSettingsRow> _settings;
   final Map<String, ElementRow> _elements;
@@ -91,7 +91,13 @@ final class StrategyRowSet implements StrategyRows {
     final lineupGroups = {..._lineupGroups};
     for (final row in written) {
       switch (row) {
-        case StrategyRow():
+        case UnreadableStrategy():
+          throw ArgumentError.value(
+            row,
+            'written',
+            'an unreadable strategy row cannot be written',
+          );
+        case ReadableStrategy():
           if (row.publicId != strategy.publicId) {
             throw ArgumentError.value(
               row.publicId,
