@@ -17,7 +17,8 @@ import {
   sweepDeletedImageAssetsRef,
 } from "./images";
 import { refreshStrategyAgentSummary } from "./lib/strategyAgentSummary";
-import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
+import { livePagesQuery, PAGE_TRASH_RETENTION_MS } from "./lib/entities";
+import { lineupCountOf } from "./lib/lineupItems";
 import { foldOldContentChanges } from "./lib/contentVersions";
 
 const MAINTENANCE_BATCH_SIZE = 200;
@@ -58,6 +59,11 @@ export const purgeTrashedPagesRef = makeFunctionReference<"mutation">(
 export const foldContentChangesRef = makeFunctionReference<"mutation">(
   "maintenance:foldContentChanges",
 );
+export const backfillCommunityLineupCountsRef =
+  makeFunctionReference<"mutation">(
+    "maintenance:backfillCommunityLineupCounts",
+  );
+const COMMUNITY_LINEUP_COUNTS_BACKFILL = "communityLineupCounts";
 
 /// Hard-deletes content rows, and queues the images they showed for
 /// reclaim, in the caller's transaction: a purged row and its reclaim
@@ -480,3 +486,75 @@ export const backfillStrategyAgentSummaries = internalMutation({
     return strategies.length;
   },
 });
+
+export const backfillCommunityLineupCounts = internalMutation({
+  args: {
+    progress: v.optional(
+      v.object({
+        cursor: v.string(),
+        checked: v.number(),
+        corrected: v.number(),
+      }),
+    ),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    let checked = args.progress?.checked ?? 0;
+    let corrected = args.progress?.corrected ?? 0;
+    const page = await ctx.db
+      .query("communityPosts")
+      .paginate({ numItems: 1, cursor: args.progress?.cursor ?? null });
+    for (const post of page.page) {
+      const counted = await snapshotLineupCount(ctx, post);
+      if (counted === null) continue;
+      checked += 1;
+      if (counted === post.lineupCount) continue;
+      await ctx.db.patch(post._id, { lineupCount: counted });
+      corrected += 1;
+      console.log(
+        `Post ${post.publicId}: lineupCount ${post.lineupCount} -> ${counted}`,
+      );
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, backfillCommunityLineupCountsRef, {
+        progress: { cursor: page.continueCursor, checked, corrected },
+      });
+      return null;
+    }
+    const finished = await ctx.db
+      .query("completedBackfills")
+      .withIndex("by_name", (q) => q.eq("name", COMMUNITY_LINEUP_COUNTS_BACKFILL))
+      .first();
+    if (finished === null) {
+      await ctx.db.insert("completedBackfills", {
+        name: COMMUNITY_LINEUP_COUNTS_BACKFILL,
+        completedAt: Date.now(),
+      });
+    }
+    console.log(
+      `Community lineup counts finished: ${checked} posts checked, ${corrected} corrected.`,
+    );
+    return null;
+  },
+});
+
+async function snapshotLineupCount(
+  ctx: MutationCtx,
+  post: Doc<"communityPosts">,
+): Promise<number | null> {
+  if (post.snapshotStrategyId === undefined) return null;
+  const snapshot = await ctx.db.get(post.snapshotStrategyId);
+  if (snapshot === null) {
+    console.warn(`Post ${post.publicId}: its snapshot is gone, left as it was.`);
+    return null;
+  }
+  let count = 0;
+  for await (const page of livePagesQuery(ctx, snapshot._id)) {
+    for await (const lineup of ctx.db
+      .query("lineups")
+      .withIndex("by_pageId", (q) => q.eq("pageId", page._id))) {
+      if (!lineup.deleted) count += lineupCountOf(lineup.payload);
+    }
+  }
+  return count;
+}

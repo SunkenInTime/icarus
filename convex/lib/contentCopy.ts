@@ -12,7 +12,7 @@ import {
   collectAssetIdsFromLineupPayload,
   copyActiveAssetToStrategy,
 } from "./imageAssets";
-import { lineupGroupItems } from "./lineupItems";
+import { lineupCountOf, lineupGroupItems } from "./lineupItems";
 import { pageCopyId } from "./pageCopyId";
 import { lineupAgentsOf } from "./strategyAgentSummary";
 
@@ -103,6 +103,7 @@ export class ContentCopy {
   /// target strategy's agent summary.
   readonly elements: ReferencingElement[] = [];
   readonly lineupAgents: CopiedLineupAgent[] = [];
+  lineupCount = 0;
   private readonly newLineupId = lineupIdMap();
   // Pictures the budget has been charged for, and those copied: pictures
   // shown on several pages are copied once.
@@ -223,6 +224,7 @@ export class ContentCopy {
         updatedAt: now,
       };
       const lineupId = await ctx.db.insert("lineups", copiedLineup);
+      this.lineupCount += lineupCountOf(copiedLineup.payload);
       await insertAssetReferences(ctx, { lineupId }, copiedLineup);
       for (const agent of lineupAgentsOf(copiedLineup.payload)) {
         await ctx.db.insert("lineupAgents", {
