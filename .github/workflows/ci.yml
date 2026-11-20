@@ -241,7 +241,7 @@ jobs:
           # packages (Hive among them), and the fixtures and tests that hold
           # old data. The test list is the integrity job's.
           lane integrity '^(lib/hive/|lib/migrations/|lib/strategy/|lib/domain/|lib/main\.dart$|lib/startup/hive_store_launch\.dart$|lib/services/(archive_manifest|strategy_folders|image_file_name)\.dart$|lib/collab/(cloud_library_copy|pending_media_bytes_store)\.dart$|lib/providers/collab/move_to_cloud_provider\.dart$|pubspec\.(yaml|lock)$|lib/providers/(strategy_provider|strategy_page|strategy_page_session_provider|strategy_settings_provider|folder_provider|user_preferences_provider|agent_provider|ability_provider|drawing_provider|image_provider|text_provider|utility_provider)\.dart$|lib/const/(placed_classes|drawing_element|bounding_box|line_provider|json_converters|hive_boxes)\.dart$|lib/collab/durable_[a-z_]*outbox\.dart$|test/fixtures/strategy_integrity/|test/(strategy_integrity|canvas_compatibility_fixture|strategy_folder_import|strategy_import_version_guard|strategy_folders|image_file_name)_test\.dart$|test/hive_[a-z_]*_test\.dart$|test/[a-z_]*_migration_test\.dart$|test/durable_[a-z_]*_version_test\.dart$|test/desktop_[a-z0-9_]*_test_support\.dart$|test/providers/move_to_cloud_provider_test\.dart$|tool/generate_canvas_compatibility_fixture\.dart$)|\.g\.dart$' guarded
-          lane library '^packages/icarus_library/' guarded
+          lane library '^(packages/icarus_library/|tool/library_parity/|convex/(ops|schema|users|test\.setup)\.ts$|convex/lib/|package(-lock)?\.json$|\.fvmrc$|lib/strategy/strategy_cloud_migration\.dart$|lib/collab/(collab_models|cloud_lineup_rows|cloud_media_models|cloud_payload_upgrade)\.dart$|lib/const/(placed_classes|map_doors|drawing_element|line_provider|json_converters)\.dart$|lib/providers/(drawing_provider|strategy_page)\.dart$|test/fixtures/strategy_integrity/|test/library_parity_samples_test\.dart$)' guarded
 
   # Runs on every PR and push, whatever the ci: line names: no PR adds a
   # comment to a file beyond tool/comment_baseline.json.
@@ -299,12 +299,39 @@ jobs:
 
       - uses: ./.github/actions/setup-flutter
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
       - name: Analyze And Test The Library Package
         working-directory: packages/icarus_library
         run: |
           fvm dart pub get
           fvm dart analyze --fatal-infos
           fvm dart test
+
+      - name: Install Convex dependencies
+        run: npm ci
+
+      - name: Check The Parity Samples Are What The App Writes
+        run: fvm flutter test test/library_parity_samples_test.dart
+
+      - name: Check The Parity Comparator
+        run: node --test tool/library_parity/compare.test.mjs
+
+      - name: Compare applyOp With convex/ops.ts
+        env:
+          DART: fvm dart
+        run: node tool/library_parity/run.mjs
+
+      - name: Upload Parity Failures
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: library-parity-failures-${{ env.RELEASE_SOURCE_SHA }}
+          path: build/library_parity/
+          if-no-files-found: ignore
 
   # Flutter compiles test files one after another, and that takes longer than
   # running them, so the suite's time falls with the number of files a runner

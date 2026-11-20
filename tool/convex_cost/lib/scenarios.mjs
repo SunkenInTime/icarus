@@ -2,13 +2,31 @@
 // calls in the same order, with the same live queries subscribed.
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ConvexClient, ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
+import { convexToJson } from "convex/values";
 import { measure, summarize } from "./logs.mjs";
 import { batches, elementAdds, pageSliceStarts, seeded } from "./content.mjs";
 
-const ELEMENT_FIELD_LEVEL = 3;
+function clientFieldLevel() {
+  const models = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "lib", "collab", "collab_models.dart");
+  const match = readFileSync(models, "utf8").match(/const currentElementFieldLevel\s*=\s*(\d+);/);
+  if (!match) throw new Error(`No currentElementFieldLevel in ${models}`);
+  return Number(match[1]);
+}
+
+export const ELEMENT_FIELD_LEVEL = clientFieldLevel();
+const SCENARIO_DEADLINE_MS = 5 * 60 * 1000;
+
+export function deadline(promise, ms, what) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`${what} did not finish within ${ms / 1000} s`)), ms))),
+  ]).finally(() => clearTimeout(timer));
+}
 
 /// The deployed checkout's function arguments (convex/function_spec.json),
 /// so a call leaves out arguments an older server doesn't take: the same
@@ -31,13 +49,16 @@ function protocolVersion(projectDir) {
 }
 
 /// One signed-in device: a websocket client, as the app holds one.
-class Device {
+export class Device {
   constructor(env, user) {
     this.env = env;
     this.user = user;
     // Live queries that failed after answering once: the flow then broke
     // the page or list a user watches, whatever it cost.
     this.errors = [];
+    this.sentBytes = 0;
+    this.asked = 0;
+    env.devices?.push(this);
     this.client = new ConvexClient(env.url, { skipConvexDeploymentUrlCheck: true, unsavedChangesWarning: false });
     // The admin key acting as [user]: the backend treats the calls as that
     // user's, as it does a signed-in app's.
@@ -59,12 +80,26 @@ class Device {
     return out;
   }
 
+  sent(name, args) {
+    const sent = this.args(name, args);
+    this.sentBytes += Buffer.byteLength(JSON.stringify(convexToJson(sent)));
+    return sent;
+  }
+
   mutation(name, args) {
-    return this.client.mutation(makeFunctionReference(name), this.args(name, args));
+    return this.client.mutation(makeFunctionReference(name), this.sent(name, args));
   }
 
   query(name, args) {
-    return this.client.query(makeFunctionReference(name), this.args(name, args));
+    this.asked++;
+    return this.client.query(makeFunctionReference(name), this.sent(name, args));
+  }
+
+  watchEach(name, args, onValue) {
+    this.asked++;
+    return this.client.onUpdate(makeFunctionReference(name), this.sent(name, args), onValue, (error) =>
+      this.errors.push(`${name}: ${error.message}`),
+    );
   }
 
   /// A live query; resolves once it has answered.
@@ -72,9 +107,10 @@ class Device {
     let settle;
     let answered = false;
     const first = new Promise((resolve, reject) => (settle = { resolve, reject }));
+    this.asked++;
     const unsubscribe = this.client.onUpdate(
       makeFunctionReference(name),
-      this.args(name, args),
+      this.sent(name, args),
       (value) => {
         answered = true;
         settle.resolve(value);
@@ -88,7 +124,7 @@ class Device {
     return unsubscribe;
   }
 
-  async applyBatch(strategyPublicId, clientId, ops) {
+  async applyBatch(strategyPublicId, clientId, ops, { includeWasApplied } = {}) {
     const { results } = await this.mutation("ops:applyBatch", {
       strategyPublicId,
       clientId,
@@ -97,6 +133,7 @@ class Device {
       checkTrashedPageDeletes: true,
       acceptsPictureIds: true,
       elementFieldLevel: ELEMENT_FIELD_LEVEL,
+      includeWasApplied,
     });
     const refused = results.filter((result) => result.status !== "applied");
     if (refused.length > 0) throw new Error(`applyBatch refused ops: ${JSON.stringify(refused[0])}`);
@@ -137,7 +174,7 @@ async function seedLibrary(device, rng) {
 
 /// Creates a strategy the way a move does (createWithInitialPage, then
 /// pages:add for each further page) and returns its ids.
-async function createStrategy(device, rng, { name, folderPublicId, pageCount = 1, unfinishedMove }) {
+export async function createStrategy(device, rng, { name, folderPublicId, pageCount = 1, unfinishedMove }) {
   const publicId = rng.uuid();
   const pages = Array.from({ length: pageCount }, () => rng.uuid());
   await device.mutation("strategies:createWithInitialPage", {
@@ -396,38 +433,94 @@ async function elementRevision(device, editor, page, elementPublicId) {
 }
 
 /// Seeds the library and runs [names], each on the same library, in order.
-export async function runScenarios({ url, adminKey, projectDir, logs, names }) {
+export async function runScenarios({
+  url,
+  adminKey,
+  projectDir,
+  logs,
+  names,
+  scenarios = SCENARIOS,
+  worlds = {},
+  ownBackend = false,
+}) {
   const http = new ConvexHttpClient(url, { skipConvexDeploymentUrlCheck: true });
-  const env = { url, adminKey, logs, http, spec: loadSpec(projectDir), protocol: protocolVersion(projectDir) };
+  const env = {
+    url,
+    adminKey,
+    logs,
+    http,
+    ownBackend,
+    spec: loadSpec(projectDir),
+    protocol: protocolVersion(projectDir),
+    devices: [],
+  };
+  try {
+    return await runSeeded({ env, projectDir, names, scenarios, worlds });
+  } finally {
+    await Promise.all(env.devices.map((device) => device.close()));
+  }
+}
+
+async function runSeeded({ env, projectDir, names, scenarios, worlds }) {
   const owner = new Device(env, OWNER);
   const rng = seeded(0x1ca75);
   const started = Date.now();
-  const library = await seedLibrary(owner, rng);
-  console.log(`Seeded the library in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+  const wanted = [...new Set(names.map((name) => scenarios[name].world).filter(Boolean))];
+  const needsOwn = wanted.filter((world) => worlds[world].ownBackendOnly && !env.ownBackend);
+  if (needsOwn.length > 0) throw new Error(`${needsOwn.join(", ")} runs maintenance jobs, so it needs a backend this run starts`);
+  const [library, ...seededWorlds] = await Promise.all([
+    seedLibrary(owner, rng).then((library) => {
+      console.log(`Seeded the library in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+      return library;
+    }),
+    ...wanted.map(async (world) => {
+      const seededWorld = await worlds[world]({ env, rng: seeded(hash(world)), projectDir });
+      console.log(`Seeded ${world} in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+      return seededWorld;
+    }),
+  ]);
+  const prepared = Object.fromEntries(wanted.map((world, index) => [world, seededWorlds[index]]));
+  const settled = new Set();
   const results = {};
   for (const name of names) {
-    const scenario = SCENARIOS[name];
+    const scenario = scenarios[name];
+    if (scenario.world && !settled.has(scenario.world)) {
+      const at = Date.now();
+      await deadline(Promise.resolve(prepared[scenario.world].settle?.()), SCENARIO_DEADLINE_MS, `settling ${scenario.world}`);
+      settled.add(scenario.world);
+      console.log(`Settled ${scenario.world} in ${((Date.now() - at) / 1000).toFixed(1)} s`);
+    }
     const at = Date.now();
     // Each scenario draws from its own generator, so leaving one out
     // doesn't change what another writes.
-    owner.errors = [];
-    const result = await scenario.run({ owner, rng: seeded(hash(name)), library, env });
+    env.devices.forEach((device) => (device.errors = []));
+    const result = await deadline(
+      scenario.run({
+        owner,
+        rng: seeded(hash(name)),
+        library,
+        env,
+        projectDir,
+        world: prepared[scenario.world],
+      }),
+      SCENARIO_DEADLINE_MS,
+      name,
+    );
     result.seconds = (Date.now() - at) / 1000;
     // A cheap flow that failed is not a pass.
     result.problems = [
       ...(result.problems ?? []),
-      ...owner.errors,
+      ...env.devices.flatMap((device) => device.errors),
       ...[...result.summary.byFunction]
         .filter(([, row]) => row.failures > 0)
         .map(([fn, row]) => `${fn} failed ${row.failures} time(s)`),
     ];
     results[name] = result;
   }
-  await owner.close();
   return results;
 }
 
-function hash(text) {
+export function hash(text) {
   let h = 2166136261;
   for (const char of text) h = Math.imul(h ^ char.charCodeAt(0), 16777619);
   return h >>> 0;
