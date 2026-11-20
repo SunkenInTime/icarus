@@ -107,10 +107,13 @@ The package holds both halves:
   opening an old item never counts as an edit of it. `elementEditOp` and
   `lineupEditOp` build the patch: the item's page, field names, the place
   when it moved, and, for work that waited offline (`Connection.offline`),
-  each field's value in the base. A whole write claims `drawnRevision` when
-  that is older than the base's revision: once the client's own merge has
-  landed, the row's newer revision also holds a teammate's fields the client
-  has not drawn, and claiming it would write over them.
+  each field's value in the base. `drawn` says what the client drew:
+  `DrawnAt(revision)`, the newest revision whose content it drew, which a
+  whole write claims when it is older than the base's (once the client's own
+  merge has landed, the row's newer revision also holds a teammate's fields
+  the client has not drawn), or `BehindWholeWrite(revision)`, when a whole
+  write of the item is still pending, so every edit after it is whole too and
+  claims the same revision.
 - **The server's half.** `mergeElementPayload` and `mergeLineupPayload` give
   the payload the server would hold, `Merged`, or say why it will not merge:
   `WriteWhole` with a `WholeReason`, or `MergeConflict` naming the field that
@@ -143,7 +146,7 @@ about each element kind. The app's live sync reads it too.
 | Default when missing, beside `state` | any | `weapon`: `"none"` |
 
 A group is named whole when any field in it changes, so a teammate's half of
-it never mixes with this edit's half. Only the fields the item holds are
+it never mixes with this edit's half. An undo names groups the same way. Only the fields the item holds are
 named. A later field is one added after its kind shipped: the server hides it
 from clients below its level and keeps it when a write leaves it out, so
 clearing it means writing its empty value. That is also what undoing the edit
