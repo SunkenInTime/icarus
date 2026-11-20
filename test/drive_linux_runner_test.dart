@@ -76,4 +76,31 @@ void main() {
     expect(passwordFor('aa@test.example', table), 'second');
     expect(passwordFor('b@test.example', table), isNull);
   });
+
+  test('only the summary line the driver writes counts as clean', () {
+    const clean =
+        '14:21:04.244 SUMMARY steps=101 failed=0 flutterErrors=0 misplaced=0 CLEAN';
+    const disguised = '14:21:03.100 FAIL {"waitText":"x"}: '
+        'Bad state: SUMMARY steps=1 failed=0 flutterErrors=0 misplaced=0 CLEAN';
+    expect(lastSummary([disguised]), isNull);
+    expect(lastSummary(['14:21:00.000 ok {"wait":1} (1000 ms)', clean]), clean);
+    expect(isCleanSummary(clean), isTrue);
+    expect(
+      isCleanSummary(
+        '14:21:04.244 SUMMARY steps=9 failed=1 flutterErrors=0 misplaced=0 PROBLEMS',
+      ),
+      isFalse,
+    );
+    expect(
+      isCleanSummary(
+        '14:21:04.244 SUMMARY steps=9 failed=0 flutterErrors=0 misplaced=0 UNCLEAN',
+      ),
+      isFalse,
+    );
+  });
+
+  test('only MP4 export needs ffmpeg', () {
+    expect(exportsMp4('{"waitFile": "{out}/saved/a.mp4"}'), isTrue);
+    expect(exportsMp4('{"waitFile": "{out}/saved/a.mov"}'), isFalse);
+  });
 }

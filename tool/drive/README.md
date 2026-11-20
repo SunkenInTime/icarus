@@ -2,7 +2,7 @@
 
 A driver build is the desktop app with `lib/dev/drive/drive.dart` compiled in. It plays a JSON script from `scripts/` the way a user would and writes a log that ends in `SUMMARY ... CLEAN` or `SUMMARY ... PROBLEMS`. The steps are listed at the top of `lib/dev/drive/drive.dart`.
 
-A run passes only when every instance finished its script with `SUMMARY ... CLEAN` and quit before the timeout. Flutter errors, items drawn away from their saved positions, failed steps and cloud work that never settles all fail it.
+A run passes only when every instance finished its script with `SUMMARY ... CLEAN` and quit before the timeout. The Linux runner also needs the app's exit code to be 0. `run.ps1` doesn't check it, because Windows builds don't report a trustworthy one. Flutter errors, items drawn away from their saved positions, failed steps and cloud work that never settles all fail it.
 
 ## Windows
 
@@ -27,7 +27,7 @@ Passwords come from `~/.agents/secrets/icarus/test-accounts.md`, or over `ssh wi
 What doesn't run on Linux:
 
 - The `clipboard` step puts a picture on the Windows clipboard through PowerShell. `run` refuses scripts that use it (`paste-on-canvas`, `paste-picture`, `paste-while-busy`).
-- Video export needs `ffmpeg` on PATH. `run` refuses scripts that export video when it's missing.
+- MP4 export needs `ffmpeg` on PATH. `run` refuses scripts that export MP4 when it's missing. Transparent MOV uses the app's own encoder.
 - Growing the window to 2400x1350 (`spawn-barriers-all-maps`) crashes the Linux app with signal 11. Resizes up to 1600x900 work.
 - The app draws system cursors instead of its custom drawing and rotation cursors, because the vendored `custom_mouse_cursor` has no Linux code. Shots don't include the cursor, so they look the same.
 

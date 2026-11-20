@@ -113,8 +113,17 @@ List<String> refusalsFor(String scriptName, List<Object?> steps) => <String>{
 bool signsIn(List<Object?> steps) =>
     steps.any((step) => step is Map && step.containsKey('signIn'));
 
-bool exportsVideo(String scriptText) =>
-    RegExp(r'\.(mp4|mov)"').hasMatch(scriptText);
+bool exportsMp4(String scriptText) => RegExp(r'\.mp4"').hasMatch(scriptText);
+
+final _summaryLine = RegExp(r'^\S+ SUMMARY ');
+final _cleanSummary = RegExp(
+  r'^\S+ SUMMARY steps=\d+ failed=0 flutterErrors=0 misplaced=0 CLEAN$',
+);
+
+String? lastSummary(List<String> logLines) =>
+    logLines.where(_summaryLine.hasMatch).lastOrNull;
+
+bool isCleanSummary(String summary) => _cleanSummary.hasMatch(summary);
 
 Directory get _repo {
   final script = File(Platform.script.toFilePath());
@@ -220,7 +229,8 @@ class _Instance {
   final String name;
   final String script;
   final String? email;
-  late final Process process;
+  Process? process;
+  var timedOut = false;
   final exited = Completer<int>();
 }
 
@@ -262,9 +272,9 @@ Future<int> _run(Map<String, String> options) async {
     }
     final name = instance.script.split('/').last;
     refusals.addAll(refusalsFor(name, steps));
-    if (exportsVideo(text) && !_onPath('ffmpeg')) {
+    if (exportsMp4(text) && !_onPath('ffmpeg')) {
       refusals.add(
-        '$name exports video, and the app finds no ffmpeg on PATH; '
+        '$name exports MP4, and the app finds no ffmpeg on PATH; '
         'install it with: sudo apt-get install -y ffmpeg',
       );
     }
@@ -296,46 +306,54 @@ Future<int> _run(Map<String, String> options) async {
   final out = Directory(
     _absolute(options['out'] ?? '${File(exe).parent.parent.path}/drive-$run'),
   );
-  if (out.existsSync() && out.listSync().isNotEmpty) {
+  out.createSync(recursive: true);
+  try {
+    File('${out.path}/run-id').createSync(exclusive: true);
+  } on FileSystemException {
     throw UsageError('${out.path} is not empty; give each run a new --out');
   }
-  Directory('${out.path}/signals').createSync(recursive: true);
+  File('${out.path}/run-id').writeAsStringSync(run);
+  if (out.listSync().length != 1) {
+    throw UsageError('${out.path} is not empty; give each run a new --out');
+  }
+  Directory('${out.path}/signals').createSync();
 
-  final screen = await _Screen.start(out.path);
-  final stopping = <StreamSubscription<ProcessSignal>>[];
+  _Screen? screen;
   Future<void> stopAll() async {
-    for (final instance in instances) {
-      if (!instance.exited.isCompleted) await _stop(instance);
-    }
-    await screen.stop();
+    await Future.wait([
+      for (final instance in instances)
+        if (!instance.exited.isCompleted) _stop(instance),
+    ]);
+    await screen?.stop();
   }
 
-  for (final signal in [ProcessSignal.sigint, ProcessSignal.sigterm]) {
-    stopping.add(signal.watch().listen((_) async {
-      stderr.writeln('stopping run $run');
-      await stopAll();
-      exit(1);
-    }));
-  }
+  final stopping = [
+    for (final signal in [ProcessSignal.sigint, ProcessSignal.sigterm])
+      signal.watch().listen((_) async {
+        stderr.writeln('stopping run $run');
+        await stopAll();
+        exit(1);
+      }),
+  ];
 
   try {
+    screen = await _Screen.start(out.path);
     for (final instance in instances) {
       await _start(instance, exe, out.path, run, screen.display, passwords);
     }
-    final deadline = DateTime.now().add(Duration(seconds: timeout));
+    await Future.wait([
+      for (final instance in instances)
+        instance.exited.future.timeout(
+          Duration(seconds: timeout),
+          onTimeout: () {
+            instance.timedOut = true;
+            return _stop(instance);
+          },
+        ),
+    ]);
     var clean = true;
     for (final instance in instances) {
-      final left = deadline.difference(DateTime.now());
-      final finished = await instance.exited.future
-          .then<bool>((_) => true)
-          .timeout(left.isNegative ? Duration.zero : left,
-              onTimeout: () => false);
-      if (!finished) {
-        await _stop(instance);
-        stdout.writeln('${instance.name}: timed out after $timeout s');
-        clean = false;
-      }
-      clean = await _report(instance, out.path, timedOut: !finished) && clean;
+      clean = await _report(instance, out.path, timeout) && clean;
     }
     stdout.writeln('logs and shots: ${out.path}');
     return clean ? 0 : 1;
@@ -444,8 +462,8 @@ Future<void> _start(
   final home = '$out/home-$name';
   final email = instance.email;
   final process = await Process.start(
-    exe,
-    ['--hive-store-dir=$out/store-$name'],
+    'setsid',
+    [exe, '--hive-store-dir=$out/store-$name'],
     workingDirectory: out,
     environment: {
       'DISPLAY': display,
@@ -472,22 +490,22 @@ Future<void> _start(
   unawaited(process.exitCode.then(instance.exited.complete));
 }
 
-Future<void> _stop(_Instance instance) async {
-  instance.process.kill();
-  await instance.exited.future.timeout(
+Future<int> _stop(_Instance instance) async {
+  final process = instance.process;
+  if (process == null) return -1;
+  Future<void> signalGroup(String signal) =>
+      Process.run('kill', ['-$signal', '--', '-${process.pid}']);
+  await signalGroup('TERM');
+  return instance.exited.future.timeout(
     const Duration(seconds: 5),
-    onTimeout: () {
-      instance.process.kill(ProcessSignal.sigkill);
-      return -1;
+    onTimeout: () async {
+      await signalGroup('KILL');
+      return instance.exited.future;
     },
   );
 }
 
-Future<bool> _report(
-  _Instance instance,
-  String out, {
-  required bool timedOut,
-}) async {
+Future<bool> _report(_Instance instance, String out, int timeout) async {
   final name = instance.name;
   final log = File('$out/$name.log');
   final lines = log.existsSync() ? log.readAsLinesSync() : const <String>[];
@@ -496,21 +514,29 @@ Future<bool> _report(
       stdout.writeln('$name: $line');
     }
   }
-  final summary = lines.where((line) => line.contains(' SUMMARY ')).lastOrNull;
+  final summary = lastSummary(lines);
+  stdout.writeln(
+    '$name: ${summary ?? 'no SUMMARY (the script never finished)'}',
+  );
+  final exitCode =
+      instance.process == null ? null : await instance.exited.future;
+  if (instance.timedOut) {
+    stdout.writeln('$name: timed out after $timeout s');
+  } else if (exitCode != 0) {
+    stdout.writeln(
+      '$name: the app quit with '
+      '${exitCode == null ? 'no process started' : _describeExit(exitCode)}',
+    );
+  }
   if (summary == null) {
-    stdout.writeln('$name: no SUMMARY (the script never finished)');
-    if (!timedOut) {
-      stdout.writeln(
-        '$name: the app quit by itself with ${_describeExit(await instance.exited.future)}',
-      );
-    }
     for (final error in _appErrors(out, name)) {
       stdout.writeln('$name: the app reported $error');
     }
-    return false;
   }
-  stdout.writeln('$name: $summary');
-  return summary.endsWith('CLEAN');
+  return summary != null &&
+      isCleanSummary(summary) &&
+      !instance.timedOut &&
+      exitCode == 0;
 }
 
 String _describeExit(int code) =>
