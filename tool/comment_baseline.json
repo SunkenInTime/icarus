@@ -637,7 +637,7 @@
   "test/global_strategy_outbox_test.dart": 30,
   "test/halved_image_test.dart": 9,
   "test/high_tide_wall_test.dart": 6,
-  "test/hive_desktop_rollback_test.dart": 9,
+  "test/hive_desktop_rollback_test.dart": 2,
   "test/hive_registry_layout_test.dart": 17,
   "test/hover_dot_grid_glow_test.dart": 2,
   "test/image_file_name_test.dart": 5,
