@@ -93,7 +93,6 @@ class Settings {
   static const double strokeSimplificationEpsilon = 1.4;
   static const PhysicalKeyboardKey deleteKey = PhysicalKeyboardKey.keyX;
 
-  static const Color sideBarColor = Color(0xFF141114);
   static const Color highlightColor = Color(0xff27272a);
 
   static List<ColorOption> penColors = [
