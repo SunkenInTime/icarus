@@ -207,7 +207,6 @@ class _CommunityReviewActionsState
     const theme = Settings.tacticalVioletTheme;
     final l10n = context.l10n;
     final busy = _sending != null;
-    // The buttons stand on the map by themselves, with no card behind them.
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

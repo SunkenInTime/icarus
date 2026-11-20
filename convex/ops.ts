@@ -548,7 +548,6 @@ function assertMergeShape(merge: FieldMerge): void {
   }
 }
 
-/// A merged payload too large to store fails as an oversized op does.
 function assertMergedSize(outcome: MergeOutcome<unknown>): void {
   if (
     outcome.status === "merged" &&
@@ -1466,8 +1465,6 @@ async function applyElementOp(
         payload.payloadVersion,
       );
     }
-    // Only a patch that is merging checks its place's base: one that fell
-    // back to a whole write is revision-checked instead.
     if (!checkRevision && placeChanged(merge, existing.sortIndex, op.sortIndex)) {
       return rejected(
         "field_conflict",
@@ -1644,7 +1641,6 @@ async function applyLineupOp(
   if (deleted !== null) return deleted;
   const patch: Record<string, unknown> = {};
   let eventPageId = existing.pageId;
-  // As for elements: a patch merged by item is not revision-checked.
   let checkRevision = true;
   if (op.kind === "patch") {
     if (op.merge !== undefined) {
@@ -1688,8 +1684,6 @@ async function applyLineupOp(
         payload.payloadVersion,
       );
     }
-    // As for elements: a merging patch checks its place's base, and moves
-    // only when it names its place.
     if (
       !checkRevision &&
       placeChanged(op.merge, existing.sortIndex, op.sortIndex)
@@ -1717,8 +1711,6 @@ async function applyLineupOp(
       // Moving it would take the lineup away from the page that shows it,
       // so refuse and let the conflict surface instead.
       if (page._id !== existing.pageId) {
-        // The client matches this text (lineupPageMismatchMessage) to
-        // explain the refusal.
         throw errorWithCode(
           "LINEUP_PAGE_MISMATCH",
           "This lineup belongs to another page and cannot be moved",
@@ -1788,7 +1780,6 @@ async function elementOpChangedAgents(
   return keyOf(rowBefore) !== keyOf(rowAfter);
 }
 
-/// The element or lineup row an op targets in this strategy, if any.
 async function contentRowForOp(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
@@ -2118,7 +2109,6 @@ export const applyBatch = mutation({
       results.push(publicResult);
     }
 
-    // Checked against the batch's final state, once.
     await removeUploadPlaceholders(ctx, strategy._id, placeholderCandidates);
 
     if (agentsMayHaveChanged) {

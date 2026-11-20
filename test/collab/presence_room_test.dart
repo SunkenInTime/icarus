@@ -537,7 +537,6 @@ void main() {
 
         presence.hideCursor();
         expect(sockets.single.sent.last, {'t': 'hide'});
-        // Nothing to hide twice.
         presence.hideCursor();
         expect(sockets.single.sent.where((m) => m is Map && m['t'] == 'hide'),
             hasLength(1));
@@ -792,7 +791,6 @@ void main() {
         async.flushMicrotasks();
         welcome(async, sockets.single);
 
-        // Nothing edited, nothing to clear.
         presence.setEditing(null);
         async.elapse(interval);
         expect(sockets.single.sentEditing, isEmpty);
@@ -919,7 +917,6 @@ class _FakeSocket extends StreamChannelMixin<dynamic>
           if (message is Map && message['t'] == 'editing') message,
       ];
 
-  /// When each of [sentEditing] went out.
   List<DateTime> get sentEditingAt => [
         for (final (index, message) in sent.indexed)
           if (message is Map && message['t'] == 'editing') sentAt[index],

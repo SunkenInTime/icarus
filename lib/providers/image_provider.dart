@@ -77,30 +77,23 @@ class PlacedImageProvider extends Notifier<ImageState> {
     if (kIsWeb) return;
     final directory = await strategyFoldersRoot();
 
-    // Create a custom directory inside the application support directory.
     final customDirectory =
         Directory(strategyFolderPath(directory.path, strategyID));
 
-    // Create the directory if it doesn't exist.
     if (!await customDirectory.exists()) return;
 
-    // Construct the full path for the images subdirectory.
     final filePath = path.join(customDirectory.path, 'images');
 
-    // Create the images directory if it doesn't exist.
     final imagesDirectory = Directory(filePath);
     if (!await imagesDirectory.exists()) {
       await imagesDirectory.create(recursive: true);
-      return; // If directory was just created, no files to check.
+      return;
     }
 
-    // List all files in the directory (non-recursively).
     List<FileSystemEntity> files = imagesDirectory.listSync();
 
-    // Check each file: if its name (without extension) is not in fileIDs then delete.
     for (FileSystemEntity entity in files) {
       if (entity is File) {
-        // Get the file name without extension.
         String fileName = path.basenameWithoutExtension(entity.path);
         if (!fileIDs.contains(fileName)) {
           try {
@@ -467,7 +460,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
       appSupportDir = Directory.systemTemp;
     }
 
-    // Create the custom directory using the strategy ID.
     final Directory customDirectory =
         Directory(strategyFolderPath(appSupportDir.path, strategyID));
     if (!await customDirectory.exists()) {
@@ -551,7 +543,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   Future<String> toJson(String strategyID) async {
-    // Asynchronously convert each image using the custom serializer.
     final List<Map<String, dynamic>> jsonList =
         state.images.map((image) => image.toJson()).toList();
 
@@ -569,12 +560,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
       {required String jsonString, required String strategyID}) async {
     final List<dynamic> jsonList = jsonDecode(jsonString);
 
-    // Use the custom deserializer for each JSON map.
-    // final images = await Future.wait(
-    //   jsonList.map((json) => PlacedImageSerializer.fromJson(
-    //       json as Map<String, dynamic>, strategyID)),
-    // );
-
     final images = jsonList
         .map((json) => PlacedImage.fromJson(json as Map<String, dynamic>))
         .map(_migrateLoadedImage)
@@ -587,7 +572,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
       {required String jsonString, required String strategyID}) async {
     final List<dynamic> jsonList = jsonDecode(jsonString);
 
-    // Use the custom deserializer for each JSON map.
     final images = await Future.wait(
       jsonList.map((json) => PlacedImageSerializer.fromJson(
           json as Map<String, dynamic>, strategyID)),
@@ -734,36 +718,26 @@ class PlacedImageSerializer {
     PlacedImage image,
     String strategyID,
   ) async {
-    // Compute the final file path.
     final filePath = await _computeFilePath(image, strategyID);
 
-    // Read the image file as bytes.
     final file = File(filePath);
     if (!await file.exists()) {
       throw Exception('Image file does not exist at $filePath');
     }
     final Uint8List fileBytes = await file.readAsBytes();
 
-    // Use your custom serializer for Uint8List.
     final serializedBytes = serializeUint8List(fileBytes);
 
-    // Get the basic JSON from the code-generated method.
     final Map<String, dynamic> json = image.toJson();
 
-    // Add the image bytes into the JSON.
     json['imageBytes'] = serializedBytes;
 
     return json;
   }
 
-  /// Deserializes a JSON map back into a [PlacedImage].
-  ///
-  /// A new strategy ID is generated for the file location using [Uuid].
   static Future<PlacedImage> fromJson(
       Map<String, dynamic> json, String strategyID) async {
-    // Use your code-generated deserializer for basic fields.
 
-    // Retrieve and deserialize the image bytes
     if (!json.containsKey('imageBytes') && !json.containsKey("image")) {
       throw Exception('JSON does not contain imageBytes.');
     }
@@ -786,16 +760,13 @@ class PlacedImageSerializer {
     final placedImage =
         parsedImage.copyWith(scale: ImageScalePolicy.clamp(parsedImage.scale));
 
-    // Compute the final file path to write the image.
     final filePath = await _computeFilePath(placedImage, strategyID);
 
-    // Ensure the target directory exists.
     final file = File(filePath);
     if (!await file.parent.exists()) {
       await file.parent.create(recursive: true);
     }
 
-    // Write the image bytes to disk.
     await file.writeAsBytes(imageBytes);
 
     return placedImage;
@@ -835,20 +806,15 @@ class PlacedImageSerializer {
     if (decoder is img.BmpDecoder) {
       return '.bmp';
     }
-    // …etc.
     return null;
   }
 }
 
-/// Dummy custom serializer for Uint8List.
-/// Replace these with your actual implementations.
 dynamic serializeUint8List(Uint8List data) {
-  // For example, convert to a Base64 string.
   return base64Encode(data);
 }
 
 Uint8List deserializeUint8List(dynamic jsonData) {
-  // For example, convert the Base64 string back into a Uint8List.
   if (jsonData is String) {
     return Uint8List.fromList(base64Decode(jsonData));
   }

@@ -133,9 +133,6 @@ async function settle(w: World) {
   await w.t.finishAllScheduledFunctions(vi.runAllTimers);
 }
 
-// ---------------------------------------------------------------------------
-// Content
-
 let opCount = 0;
 const nextOpId = () => `ledger-op-${++opCount}`;
 
@@ -321,7 +318,6 @@ async function createLink(
   return token;
 }
 
-/// The other user joins [targetPublicId] through a share link.
 async function shareWithOther(
   w: World,
   targetType: "strategy" | "folder",
@@ -333,7 +329,6 @@ async function shareWithOther(
   return token;
 }
 
-/// "s" seeded and shared with the other user at [role].
 function seedShared(role: "viewer" | "editor") {
   return async (w: World) => {
     await seed(w);
@@ -341,7 +336,6 @@ function seedShared(role: "viewer" | "editor") {
   };
 }
 
-/// Folder "team" shared with the other user at [role], holding "s".
 function seedInSharedFolder(role: "viewer" | "editor") {
   return async (w: World) => {
     await createFolder(w, "team");
@@ -361,9 +355,6 @@ async function memberIdOf(
   })) as { members: Row[] };
   return page.members[0]!.memberId as string;
 }
-
-// ---------------------------------------------------------------------------
-// Rows
 
 async function strategyRow(w: World, publicId: string) {
   return await w.t.run((ctx) =>
@@ -438,9 +429,6 @@ async function linkId(w: World, token: string) {
     return link!._id;
   });
 }
-
-// ---------------------------------------------------------------------------
-// What each person sees
 
 const READERS = ["owner", "other"] as const;
 /// How a read fails for someone who can't read the strategy.
@@ -592,9 +580,6 @@ async function check(identifier: string, scenario: Scenario) {
   await scenario.did?.(w);
   await settle(w);
 }
-
-// ---------------------------------------------------------------------------
-// The ledger
 
 function rejectedStalePatch(): Scenario {
   return {
@@ -1048,8 +1033,6 @@ const applyBatch: Scenario[] = [
   rejectedStalePatch(),
 ];
 
-/// An upload intent for [assetPublicId] in "s", as images:generateUploadUrl
-/// makes one.
 function uploadIntentArgs(assetPublicId: string, attempt = "attempt-1") {
   return {
     strategyPublicId: S,
@@ -1061,7 +1044,6 @@ function uploadIntentArgs(assetPublicId: string, attempt = "attempt-1") {
   };
 }
 
-/// "s" shared, showing "s-new-img" whose upload has started.
 async function seedUploadStarted(w: World) {
   await seedShared("editor")(w);
   await apply(w.owner, S, [addElement("s-new-img", P1, image("s-new-img"), 3)]);
@@ -2156,8 +2138,6 @@ const ledger: Record<string, LedgerEntry> = {
       "writes only the caller's own users row (name, avatar); roles are keyed by its _id, which never changes, and no full read carries a user's profile",
   },
 };
-
-// ---------------------------------------------------------------------------
 
 /// Every mutation the deployment would register: the ones the contract
 /// snapshot lists, and the ones the modules export (the snapshot is

@@ -114,8 +114,6 @@ class _ContextMenuRegionState extends State<ContextMenuRegion> {
     _controller.hide();
     setState(() => _pointer = pointer);
     _pointerLayer.show();
-    // The menu below [child] lets go of the controller in the next build.
-    // Opening before then would open it too.
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted && _pointer == pointer) _controller.show();
     });

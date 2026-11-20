@@ -30,10 +30,7 @@ class ImageScaleController extends ConsumerWidget {
                     child: GestureDetector(
                         onTap: () {},
                         onPanUpdate: onPanUpdate,
-                        // Update the scale based on horizontal drag changes.
-                        // onPanUpdate: (details) {
                         onPanEnd: onPanEnd,
-                        // },
                         child: const Icon(
                           CustomIcons.resizeCorner,
                           size: 12,

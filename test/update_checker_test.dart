@@ -6,7 +6,6 @@ import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// The update status provider only asks the Store on Windows hosts.
 final _storeOnlyOnWindows =
     Platform.isWindows ? false : 'Store update checks only run on Windows';
 

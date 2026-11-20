@@ -82,8 +82,6 @@ String _countedImportSummary(AppLocalizations l10n, ImportBatchResult result) {
   return '$message$extraSuffix$space${l10n.icaDropSkippedFiles(skippedCount)}';
 }
 
-/// Tells the user how an import went: what came in, what was skipped, or that
-/// nothing did.
 void showImportResult(
   AppLocalizations l10n,
   ImportBatchResult result, {
@@ -125,7 +123,6 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
         setState(() {
           isDragging = true;
         });
-        // log("I'm in gurt");
       },
       onDragExited: (details) {
         setState(() {

@@ -270,7 +270,6 @@ class _LineUpMediaPagesState extends ConsumerState<LineUpMediaPages>
                   borderRadius: BorderRadius.circular(6),
                   border:
                       Border.all(color: Settings.tacticalVioletTheme.border),
-                  // boxShadow: const [Settings.cardForegroundBackdrop],
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(8.0),

@@ -55,8 +55,6 @@ class CommunityMapArt extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final box = constraints.biggest;
-        // The picture at the scale where the view's height fills the box,
-        // grown if the box is wider than the view.
         var height = box.height / _shownHeight;
         var width = height * _pictureAspect;
         if (width < box.width) {

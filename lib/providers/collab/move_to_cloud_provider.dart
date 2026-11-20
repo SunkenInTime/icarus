@@ -224,7 +224,6 @@ class MoveToCloudNotifier extends Notifier<void> {
     final accountId = ref.read(cloudMediaAccountIdProvider);
     if (root == null || accountId == null) return Future.value();
 
-    // The folder and everything below it, parents before children.
     final tree = <Folder>[root];
     for (var i = 0; i < tree.length; i++) {
       tree.addAll(folders.values.where((f) => f.parentID == tree[i].id));
@@ -574,7 +573,6 @@ class MoveToCloudNotifier extends Notifier<void> {
         final images = await PlacedImageProvider.getImageFolder(localId);
         await images.parent.delete(recursive: true);
       } on FileSystemException {
-        // Only disk space; nothing shows these files any more.
       }
     } catch (error, stackTrace) {
       await _report('remove_moved_original', error, stackTrace);
@@ -901,7 +899,6 @@ class MoveToCloudNotifier extends Notifier<void> {
         final images = await PlacedImageProvider.getImageFolder(cloudId);
         await images.parent.delete(recursive: true);
       } on FileSystemException {
-        // Only disk space; nothing shows these files.
       }
       await _forgetUnfinishedMove(cloudId);
       _unmarkMoving({cloudId});
@@ -913,8 +910,6 @@ class MoveToCloudNotifier extends Notifier<void> {
     }
   }
 
-  /// Throws once the signed-in account is no longer the one that asked for
-  /// the move, before anything more is written.
   void _requireAccount(String accountId) {
     if (ref.read(cloudMediaAccountIdProvider) != accountId) {
       throw StateError('The account changed during the move.');

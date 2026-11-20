@@ -40,8 +40,6 @@ const BACKFILL_WRITE_BUDGET = 2000;
 const PURGE_WAIT_FOR_BACKFILL_MS = 10 * 60 * 1000;
 const DAYS_30_MS = 30 * 24 * 60 * 60 * 1000;
 
-// NOTE: replace these makeFunctionReference calls with internal.maintenance.* after
-// Convex codegen is regenerated and exposes maintenance refs.
 export const purgeDeletedPageOrphansRef = makeFunctionReference<"mutation">(
   "maintenance:purgeDeletedPageOrphans",
 );
@@ -238,7 +236,6 @@ export const purgeTrashedPages = internalMutation({
       for (const content of contents) await ctx.db.delete(content._id);
       await ctx.db.delete(page._id);
     }
-    // The next run continues this page, or finds the next one due.
     await ctx.scheduler.runAfter(0, purgeTrashedPagesRef, {});
   },
 });
@@ -445,7 +442,6 @@ export const findShownUnavailableAssets = internalQuery({
     for (const row of page.page) {
       if (row.deleted) continue;
       for (const assetPublicId of assetIdsOfRow(row)) {
-        // One indexed read per image, so a page's cost is its images.
         const rows = await ctx.db
           .query("imageAssets")
           .withIndex("by_strategyId_and_publicId", (q) =>

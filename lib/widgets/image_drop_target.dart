@@ -27,7 +27,6 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
         (capabilities) => capabilities.canEditPages,
       ),
     );
-    // Only invite a drop that can land.
     final canDrop = canEditPages &&
         ref.watch(platformPolicyProvider).supports(PlatformFeature.fileDrop);
 

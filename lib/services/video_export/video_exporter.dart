@@ -92,7 +92,6 @@ class VideoExporter {
         (pageCount - 1) * encodedTransitionSecondsFor(fps);
   }
 
-  /// Frame-rendering dominates wall time; encoding is the short tail.
   static const double _renderWeight = 0.85;
 
   bool _cancelled = false;
@@ -135,8 +134,6 @@ class VideoExporter {
       }
     }
 
-    // Rendering runs in the capture's own coordinates; the editor keeps
-    // its own, whatever it does meanwhile.
     return CoordinateSystem.runInCapture(
       () => _export(
         pages: pages,
@@ -217,9 +214,6 @@ class VideoExporter {
         );
       }
 
-      // Warm the first page's SVGs and image streams once. Later pages get a
-      // shorter warm-up immediately before their transition begins; the
-      // transition frames themselves never pay a fixed settling delay.
       final firstView = _stillView(pages.first);
       firstView.hydrateProviders(offscreenContainer);
       await renderer.prepare(

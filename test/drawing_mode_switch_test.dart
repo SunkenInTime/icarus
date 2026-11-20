@@ -75,7 +75,6 @@ void main() {
       final state = container.read(drawingProvider);
       // Nothing is left under the pointer to block the next drawing,
       expect(state.currentElement, isNull);
-      // and what was drawn so far is on the page.
       expect(state.elements, hasLength(1));
       final (start, end) = switch (state.elements.single) {
         final Line line => (line.lineStart, line.lineEnd),

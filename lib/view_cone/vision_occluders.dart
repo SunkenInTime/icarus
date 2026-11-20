@@ -9,7 +9,6 @@ import 'package:flutter/painting.dart';
 sealed class VisionOccluder {
   const VisionOccluder();
 
-  /// Whether any of it lies within [reach] of [origin].
   bool reaches(Offset origin, double reach);
 }
 

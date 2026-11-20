@@ -584,7 +584,6 @@ class _LinkRepository extends Fake implements ConvexStrategyRepository {
     this.myRole,
   });
 
-  /// Thrown by [previewShareLink] when set.
   final Object? previewError;
 
   final String? resolvesTo;

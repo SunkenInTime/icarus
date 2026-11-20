@@ -72,7 +72,6 @@ Widget _inside(Widget view, Widget Function(Widget) wrap) {
   );
 }
 
-/// [view] drawn at [opacity].
 Widget _faded(Widget view, double opacity) =>
     _inside(view, (child) => Opacity(opacity: opacity, child: child));
 
@@ -486,7 +485,6 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                       watchedId == null || placed.id == watchedId
                           ? 1
                           : _othersOpacity;
-                  // The map as cones reveal it.
                   final revealedMap = Stack(
                     children: [
                       Positioned(
@@ -594,7 +592,6 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                             ),
                           ),
                         ),
-                      // The map's doors, as in the editor.
                       Positioned.fill(
                         child: IgnorePointer(
                           child: MapDoorBars(
@@ -725,7 +722,6 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
                           '${isAttack ? '' : '_defense'}.svg',
                         ),
                       ),
-                      // What the user drew, above everything on the map.
                       Positioned.fill(child: strokes!),
                     ],
                   );

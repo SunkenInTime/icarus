@@ -34,10 +34,7 @@ const modelsPathInRepo = "lib/collab/generated/convex_models.dart";
 const defaultOptInsPath = resolve(toolDirectory, "convex_opt_in_results.json");
 const shippedTagPattern = "desktop-stable-v*";
 
-// The generator's discriminator preference (tool/icarus_convex_codegen mapper).
 const discriminatorNames = ["type", "status", "kind", "targetType", "provider"];
-
-// --- Validators --------------------------------------------------------------
 
 const hashes = new WeakMap();
 
@@ -393,8 +390,6 @@ function decoderModes(strictness) {
 
 const argumentMode = { decoder: false, strict: true, key: "args" };
 
-// --- Whole specs -------------------------------------------------------------
-
 export function displayName(identifier) {
   return identifier.replace(/\.js:/, ":");
 }
@@ -586,8 +581,6 @@ export function applyOptIns(issues, optIns, oldSpec) {
   return { hit, covered };
 }
 
-// --- Messages ----------------------------------------------------------------
-
 export function explain(issue) {
   const field = issue.path.at(-1)?.replace(/^\./, "");
   if (issue.side === "function") {
@@ -643,8 +636,6 @@ const advice = {
   result:
     "Keep results readable by shipped clients. To add a field, add an optional argument that new clients send (like includeAgentTypes in #343), send the field only when it is set, and declare it in tool/convex_opt_in_results.json: {\"function\", \"path\" as printed above, \"sentOnlyWith\": [\"args.<argument>\"]}. A new enum value or union variant needs the same opt-in.",
 };
-
-// --- Shipped clients from git ------------------------------------------------
 
 function git(args, options = {}) {
   return execFileSync("git", args, {
@@ -719,8 +710,6 @@ function loadClients(refs) {
   }));
   return { clients, skipped };
 }
-
-// --- Main --------------------------------------------------------------------
 
 function repoLabel(path) {
   const inRepo = relative(repositoryRoot, path);

@@ -170,7 +170,6 @@ Future<void> _rightClick(WidgetTester tester, Finder finder) async {
   await tester.pumpAndSettle();
 }
 
-/// A second agent on the page [_pumpMap] drew.
 Future<void> _addSova(WidgetTester tester, ProviderContainer container) async {
   container.read(agentProvider.notifier).fromHive([
     ...container.read(agentProvider),
@@ -192,7 +191,6 @@ Future<void> _hover(WidgetTester tester, Finder finder) async {
   await tester.pump();
 }
 
-/// The capabilities of the open strategy, changeable mid-test.
 final _capabilities = StateProvider<StrategyCapabilities>(
   (ref) => StrategyCapabilities.fullAccess(),
 );
@@ -305,7 +303,6 @@ void main() {
 
     expect(find.byType(LineUpPanelDialog), findsOneWidget);
 
-    // A lineup row offers no menu of edits.
     await tester.tapAt(
       tester.getCenter(
         find.byKey(const ValueKey('lineup-panel-row-breach-item')),

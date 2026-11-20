@@ -16,7 +16,6 @@ import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 enum MapThemeEditorMode {
-  /// Design a new profile from scratch.
   createProfile,
 
   /// Change an existing profile everywhere it is used.

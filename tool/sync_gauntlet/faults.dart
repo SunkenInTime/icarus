@@ -14,7 +14,6 @@ enum BatchFault {
   /// nothing but a timeout.
   loseAnswer,
 
-  /// Lost before it reaches the server.
   loseRequest,
 
   /// Delivered twice. The app gets the second answer.
@@ -64,7 +63,6 @@ final class FaultyTransport implements ConvexTransport {
   /// Applies [fault] to the next ops:applyBatch the app sends.
   void inject(BatchFault fault) => _pending.add(fault);
 
-  /// Whether no fault is waiting for a batch and none is holding one.
   bool get isClear => _pending.isEmpty && _held == null;
 
   /// Sends the batch [BatchFault.holdUntilReleased] is holding.

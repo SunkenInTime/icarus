@@ -1409,7 +1409,6 @@ class _UnusedTransport implements ConvexTransport {
       throw UnimplementedError();
 }
 
-/// Stands in for the open dialog, answering with [filePath].
 class _PickedFile extends FilePicker {
   _PickedFile(this.filePath);
 

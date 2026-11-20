@@ -22,7 +22,7 @@ import 'package:uuid/uuid.dart';
 
 class DrawingState {
   final List<DrawingElement> elements;
-  final int updateCounter; // Keep this!
+  final int updateCounter;
   final DrawingElement? currentElement;
 
   DrawingState({
@@ -43,7 +43,6 @@ class DrawingState {
     );
   }
 
-  //The copy with pattern does not work in this current situation because sometimes we actually need to set a null value to currentElement
   DrawingState copyWithButEvil({
     List<DrawingElement>? elements,
     int? updateCounter,
@@ -524,43 +523,6 @@ class DrawingProvider extends Notifier<DrawingState> {
       deleteDrawing(index);
     }
   }
-
-  // void startSimpleTap(Offset start, CoordinateSystem coordinateSystem) {
-  //   if (state.currentElement != null) {
-  //     dev.log(
-  //         "An error occured the gesture detecture is attempting to draw while another line is active");
-  //     return;
-  //   }
-  //   final Offset normalizedStart = coordinateSystem.screenToCoordinate(start);
-
-  //   final id = const Uuid().v4();
-
-  //   FreeDrawing freeDrawing = FreeDrawing(
-  //     hasArrow: false,
-  //     isDotted: false,
-  //     color: Colors.white,
-  //     boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
-  //     id: id,
-  //     listOfPoints: [normalizedStart],
-  //   );
-
-  //   // Draw a visible dot in screen space so it actually renders
-  //   // final radius = max(1.0, coordinateSystem.scale(2));
-
-  //   // freeDrawing.path.addOval(Rect.fromCircle(center: start, radius: radius));
-
-  //   state = state.copyWithButEvil(
-  //     elements: [...state.elements, freeDrawing],
-  //   );
-
-  //   final action = UserAction(
-  //       type: ActionType.addition,
-  //       id: freeDrawing.id,
-  //       group: ActionGroup.drawing);
-  //   ref.read(actionProvider.notifier).addAction(action);
-
-  //   _triggerRepaint();
-  // }
 
   void startFreeDrawing(
       Offset start,
@@ -1097,7 +1059,6 @@ List<List<Offset>> _alongPath(Path path) => [
         ],
     ];
 
-/// [rect]'s outline as a closed polyline.
 List<Offset> _corners(Rect rect) => [
       rect.topLeft,
       rect.topRight,
@@ -1160,26 +1121,19 @@ bool _ellipseStrokeCrosses(Rect rect, Rect area) {
 }
 
 double _distanceToLineSegment(Offset p, Offset a, Offset b) {
-  // If a and b are the same point, just return distance to that point
   if (a == b) return (p - a).distance;
 
-  // Calculate squared length of segment ab
   final double lengthSquared =
       (b - a).dx * (b - a).dx + (b - a).dy * (b - a).dy;
 
-  // Calculate projection of point p onto line ab
-  // t is the normalized position (0-1) along the line segment
   double t = ((p.dx - a.dx) * (b.dx - a.dx) + (p.dy - a.dy) * (b.dy - a.dy)) /
       lengthSquared;
 
-  // Clamp t to the segment
   t = t.clamp(0.0, 1.0);
 
-  // Calculate the closest point on the segment
   final Offset projection =
       Offset(a.dx + t * (b.dx - a.dx), a.dy + t * (b.dy - a.dy));
 
-  // Return the distance to the closest point
   return (p - projection).distance;
 }
 
@@ -1311,7 +1265,6 @@ BoundingBox _boundingBoxForPoints(Offset a, Offset b) {
   );
 }
 
-//Yes I used AI to write the algo. I promise you I understand how it works
 FreeDrawing douglasPeucker(FreeDrawing drawing, double epsilon) {
   if (drawing.listOfPoints.length < 3) {
     return drawing;
@@ -1320,7 +1273,6 @@ FreeDrawing douglasPeucker(FreeDrawing drawing, double epsilon) {
 
   final listOfPoints = newDrawing.listOfPoints;
 
-  // Find the point farthest from the line between the first and last points
   double maxDistance = 0;
   int index = 0;
 
@@ -1333,7 +1285,6 @@ FreeDrawing douglasPeucker(FreeDrawing drawing, double epsilon) {
     }
   }
 
-  // If the max distance is greater than epsilon, recursively simplify
   if (maxDistance > epsilon) {
     final leftDrawing = douglasPeucker(
         newDrawing.copyWith(listOfPoints: listOfPoints.sublist(0, index + 1)),
@@ -1343,7 +1294,6 @@ FreeDrawing douglasPeucker(FreeDrawing drawing, double epsilon) {
             listOfPoints: listOfPoints.sublist(index, listOfPoints.length)),
         epsilon);
 
-    // Combine the results, removing the duplicate point at the split
     newDrawing.replacePoints([
       ...leftDrawing.listOfPoints
           .sublist(0, leftDrawing.listOfPoints.length - 1),
@@ -1351,7 +1301,6 @@ FreeDrawing douglasPeucker(FreeDrawing drawing, double epsilon) {
     ]);
     return newDrawing;
   } else {
-    // If no point is far enough, return the endpoints
     newDrawing.replacePoints([listOfPoints.first, listOfPoints.last]);
     return newDrawing;
   }
@@ -1362,7 +1311,6 @@ double perpendicularDistance(Offset point, Offset lineStart, Offset lineEnd) {
   double dy = lineEnd.dy - lineStart.dy;
 
   if (dx == 0 && dy == 0) {
-    // Line start and end are the same point
     return sqrt(
         pow(point.dx - lineStart.dx, 2) + pow(point.dy - lineStart.dy, 2));
   }

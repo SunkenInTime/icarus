@@ -118,7 +118,6 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
   @override
   void initState() {
     super.initState();
-    // Listen to text changes and rebuild
     _selectedColor = widget.folder?.color ?? FolderColor.generic;
     if (widget.folder != null) {
       _folderNameController.text = widget.folder!.name;
@@ -149,7 +148,6 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
             },
           ),
         ),
-        // const SizedBox(width: 30),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: ShadButton(
@@ -231,7 +229,6 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                 ],
               ),
             ),
-            // const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: Row(
@@ -249,7 +246,6 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                             _selectedColor = color;
                             _customColor = null;
                           });
-                          // ref.read(penProvider.notifier).setColor(index);
                         },
                       ),
                     ),
@@ -257,7 +253,6 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                     height: 30,
                     width: 30,
                     onTap: () {
-                      // Open color picker dialog
                       showDialog(
                         context: context,
                         builder: (context) {
@@ -353,7 +348,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
               child: GridView.builder(
                 padding: const EdgeInsets.all(8),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 7, // Number of icons per row
+                  crossAxisCount: 7,
                   mainAxisSpacing: 8,
                   crossAxisSpacing: 8,
                   childAspectRatio: 1,

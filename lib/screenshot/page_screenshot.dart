@@ -39,8 +39,6 @@ import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
-/// How a capture reads its finished frame: a PNG to save, or an image to
-/// draw.
 typedef _ReadFrame<T> = Future<T> Function(
   PersistentOffscreenRenderer renderer,
   Widget view,
@@ -107,7 +105,6 @@ Future<T> _renderEditorPage<T>(
 
   final images = await resolveCaptureImages(
     {
-      // By picture, as the captured page's images look them up.
       for (final image in page.imageData)
         image.pictureId: (
           source: readStrategyImageSource(
@@ -167,8 +164,6 @@ Future<T> _renderEditorPage<T>(
   );
   CaptureGeometryLease? geometry;
   try {
-    // The sightline models load asynchronously; the capture waits for the
-    // page's geometry before the first frame is taken.
     geometry = await prepareCaptureGeometry(
       container,
       mapState.currentMap,
@@ -487,8 +482,6 @@ Future<void> _renderPages<T>(
             if (settleUntilQuiet) {
               await renderer.prepareUntilQuiet(view);
             } else {
-              // The first page loads the map's SVGs; later pages reuse
-              // them and wait only for their own images.
               await renderer.prepare(
                 view,
                 settleDuration: Duration(milliseconds: first ? 800 : 300),

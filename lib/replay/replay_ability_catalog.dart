@@ -96,7 +96,6 @@ const _followUps = {
 String replayAssetName(String classPath) =>
     classPath.split('/').last.split('.').first;
 
-/// Every asset name the catalog maps, for tests and tooling.
 Iterable<String> get replayAbilityAssetNames => _catalog.keys;
 
 /// How the replay viewer draws a utility while it is active, beyond the
@@ -486,7 +485,6 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'GameObject_Breach_E_SweetSpotFissure': _rectangle(AgentType.breach, 2),
   'GameObject_Breach_X_Shockwave': _rectangle(AgentType.breach, 3),
 
-  // Brimstone (Sarge).
   'GameObject_Sarge_E_SpeedStim': _area(AgentType.brimstone, 0),
   'Projectile_Sarge_E_SpeedStim': _flight(AgentType.brimstone, 0),
   'Patch_Sarge_Q_Molotov_Production': _area(AgentType.brimstone, 1),
@@ -570,7 +568,6 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'Projectile_Paprika_X_FullBendPop': _flight(AgentType.hush, 3),
   'GameObject_Paprika_X_LevitateZone': _area(AgentType.hush, 3),
 
-  // Iso (Sequoia).
   'GameObject_Sequoia_4_MovingCover': _rectangle(AgentType.iso, 0),
   'GameObject_Sequoia_4_MovingCover_Slower': _rectangle(AgentType.iso, 0),
   'Projectile_Sequoia_Q_FragileMissile': _sweep(AgentType.iso, 1),
@@ -590,7 +587,6 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'Gameobject_Grenadier_E_SuppressionPulse': _area(AgentType.kayo, 2),
   'Gameobject_Grenadier_X_UltPulse': _area(AgentType.kayo, 3),
 
-  // Killjoy.
   'Projectile_Killjoy_4_RemoteBees_MultiDetonate': _area(AgentType.killjoy, 0),
   'GameObject_Killjoy_4_BeeSwarm_Damage': _area(AgentType.killjoy, 0),
   'Pawn_Killjoy_Q_StealthAlarmbot': _area(AgentType.killjoy, 1),
@@ -632,7 +628,6 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'Projectile_Phoenix_Q_FlameWall_ThroughWall': _flight(AgentType.pheonix, 0),
   'GameObject_Phoenix_X_ResTarget_Production': _marker(AgentType.pheonix, 3),
 
-  // Raze (Clay).
   'Pawn_Clay_E_Boomba': _marker(AgentType.raze, 0),
   'Projectile_Clay_Q_Satchel_Arming': _marker(AgentType.raze, 1),
   'Projectile_Clay_4_Projectile_Primary': _projectile(AgentType.raze, 2),
@@ -650,7 +645,6 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'Patch_Thorne_4_SlowField_Production': _area(AgentType.sage, 1),
   'Projectile_Thorne_4_SlowFIeld_Production': _flight(AgentType.sage, 1),
 
-  // Skye (Guide).
   'GameObject_Guide_4_Heal_AOE': _area(AgentType.skye, 0),
   'Pawn_Guide_Q_PossessableScout': _marker(AgentType.skye, 1),
   'Projectile_Guide_E_HawkFlash': _projectile(AgentType.skye, 2),

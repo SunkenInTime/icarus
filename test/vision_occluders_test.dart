@@ -71,7 +71,6 @@ void main() {
   });
 
   group('a cone sees only part of a wall', () {
-    // A ring of short segments all round the eye.
     final ring = LineOccluder([
       for (var i = 0; i <= 72; i++)
         Offset.fromDirection(i * math.pi / 36, 30),

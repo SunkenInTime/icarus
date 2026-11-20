@@ -69,7 +69,6 @@ void main() {
     copies = MemoryCloudStrategyCopyStore();
   });
 
-  /// The app, started with [online] as the connection.
   Future<ProviderContainer> start({required bool online}) async {
     server.reachable = online;
     final connected = StateProvider<bool>((ref) => online);
@@ -133,7 +132,6 @@ void main() {
     container.read(container.read(_connection).notifier).state = online;
   }
 
-  /// Brings the connection back and lets the queue send until it is empty.
   Future<void> reconnect(ProviderContainer container) async {
     setOnline(container, true);
     await _drain(container);
@@ -166,7 +164,6 @@ void main() {
     expect(drawn.map((page) => page.publicId), ['p1', pageId]);
     expect(drawn.last.name, 'Page 2');
 
-    // The canvas shows the copy: the same items under copy ids.
     final agent = app.read(agentProvider).single;
     expect(agent.id, isNot('agent-1'));
     expect(pageCopyRoot(agent.id), 'agent-1');
@@ -228,7 +225,6 @@ void main() {
     final pageId = activePage(app)!;
     final agentId = app.read(agentProvider).single.id;
 
-    // An edit on the new page.
     app.read(agentProvider.notifier).updatePosition(
           const Offset(300, 200),
           agentId,
@@ -238,7 +234,6 @@ void main() {
         .notifyCloudMutation(flushImmediately: true);
     await _settle();
 
-    // Restart, still offline: the page is listed and opens with the edit.
     app.dispose();
     app = await start(online: false);
     expect(
@@ -316,7 +311,6 @@ void main() {
     expect(pageCopyRoot(origin['id'] as String), 'lineup-1-origin');
     expect((origin['agent'] as Map)['lineUpID'], origin['id']);
     expect((landing['ability'] as Map)['lineUpID'], landing['id']);
-    // The lineup's picture is the source's.
     expect(
       ((link['images'] as List).single as Map)['id'],
       (((from['links'] as List).single as Map)['images'] as List)
@@ -472,7 +466,6 @@ void main() {
         await reconnect(app);
         expect(server.pageIds, ['p1'], reason: 'the cut copy is never sent');
         expect(server.missingPageReads, 0);
-        // Back online, the sync button says why.
         expect(
           friendlyCloudSyncError(
             _english,
@@ -496,7 +489,6 @@ void main() {
           hasLength(1 + cut.keep),
         );
 
-        // Use cloud discards it, and nothing of it is left.
         await app.read(strategyOpQueueProvider.notifier).discardRejected({
           for (final intent in held) intent.entityKey,
         });
@@ -520,7 +512,6 @@ void main() {
       await app.read(strategyProvider.notifier).addPage();
       await _settle();
       final pageId = activePage(app)!;
-      // The copied agent is deleted before anything was sent.
       final agentId = app.read(agentProvider).single.id;
       app.read(agentProvider.notifier).removeAgent(agentId);
       await app
@@ -616,7 +607,6 @@ void main() {
   });
 }
 
-/// Lets the queue send until it is empty.
 Future<void> _drain(ProviderContainer container) async {
   final queue = container.read(strategyOpQueueProvider.notifier);
   for (var i = 0; i < 20; i++) {

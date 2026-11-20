@@ -119,7 +119,6 @@ Future<void> _dispose(WidgetTester tester, ProviderContainer container) async {
   container.dispose();
 }
 
-/// Right-clicks the agent and opens the Weapon submenu.
 Future<void> _openWeaponMenu(WidgetTester tester, TestGesture mouse) async {
   await tester.tapAt(tester.getCenter(find.byType(AgentWidget).first),
       buttons: kSecondaryButton, kind: PointerDeviceKind.mouse);
@@ -128,7 +127,6 @@ Future<void> _openWeaponMenu(WidgetTester tester, TestGesture mouse) async {
   await tester.pumpAndSettle();
 }
 
-/// Opens the Weapon submenu, then the given category inside it.
 Future<void> _openCategory(
     WidgetTester tester, TestGesture mouse, String category) async {
   await _openWeaponMenu(tester, mouse);

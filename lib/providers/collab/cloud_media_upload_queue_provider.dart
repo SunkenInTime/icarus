@@ -632,7 +632,6 @@ class CloudMediaUploadQueueNotifier
         _referenceCheckDue.remove(key);
         continue;
       }
-      // Another account's job waits for that account.
       if (!_belongsToActiveAccount(job)) continue;
       final bool? deleted;
       try {
@@ -726,8 +725,6 @@ class CloudMediaUploadQueueNotifier
     }
   }
 
-  /// Whether [job] may upload: its image is referenced by saved work, and
-  /// no check of that reference is pending.
   bool _canUpload(CloudMediaUploadJob job) =>
       job.referenceDurable &&
       !_referenceCheckDue.contains(durableCloudMediaOutboxStorageKey(job));

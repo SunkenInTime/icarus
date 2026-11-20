@@ -27,7 +27,6 @@ export function pageCopyRoot(id: string): string {
 /// id instead: it then fades between pages rather than gliding.
 const maxKeptRootLength = 80;
 
-/// A new id for a copy of `id`, made with `freshId`: `<root>~cp1~<fresh>`.
 export function pageCopyId(id: string, freshId: () => string): string {
   const root = pageCopyRoot(id);
   const fresh = freshId();

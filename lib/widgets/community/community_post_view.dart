@@ -302,7 +302,6 @@ class CommunityWindowButton extends StatelessWidget {
   }
 }
 
-/// Moves the open post [delta] pages on, if there is a page there.
 Future<void> stepCommunityPage(WidgetRef ref, int delta) async {
   final pages = ref.read(drawnCloudPagesProvider)?.pages ?? const [];
   final activeId = ref.read(strategyPageSessionProvider).activePageId;
@@ -440,7 +439,6 @@ class _CommunityPostActionsState extends ConsumerState<CommunityPostActions> {
     final copy = ref.watch(
       communityCopyByPostProvider.select((byPost) => byPost[post.publicId]),
     );
-    // The buttons stand on the map by themselves, with no card behind them.
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

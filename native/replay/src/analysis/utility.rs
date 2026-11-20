@@ -191,7 +191,6 @@ pub(super) fn utility(
     out
 }
 
-/// One utility actor from its first open to its close.
 struct Life<'a> {
     open: &'a ActorRecord,
     class: &'a str,
@@ -361,7 +360,6 @@ mod tests {
         assert_eq!(spans, [(100, Some(400)), (500, None)]);
         assert_eq!(reopened, 0);
 
-        // An open while open and awake is still one life, but warned about.
         let twice = [at(100, 7, "open"), at(150, 7, "open"), at(400, 7, "close")];
         let (found, reopened) = lives(&twice);
         assert_eq!(found.len(), 1);

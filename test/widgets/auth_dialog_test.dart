@@ -201,7 +201,6 @@ Finder _field(String key) => find.descendant(
       matching: find.byType(EditableText),
     );
 
-/// Home, then a page the dialog opens over, then the dialog.
 ProviderContainer _container(WidgetTester tester) =>
     ProviderScope.containerOf(tester.element(find.byType(AuthDialog)));
 

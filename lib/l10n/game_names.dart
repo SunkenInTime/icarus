@@ -15,7 +15,6 @@ extension GameNames on AppLocalizations {
         english;
   }
 
-  /// [map] as Valorant names it in this language.
   String mapName(MapValue map) => mapNameOf(Maps.displayName(map));
 
   /// The same for a map known only by its English name, in any case.

@@ -33,7 +33,6 @@ pub const MAX_RETAINED_BYTES: usize = 512 << 20;
 /// The `.icrp` buffer handed back. Corpus: 74 MB.
 pub const MAX_OUTPUT_BYTES: usize = 512 << 20;
 
-/// The `corrupt` error for a replay past one of these caps.
 pub fn exceeded(what: &str, cap: impl std::fmt::Display) -> ReplayError {
     ReplayError::new(
         ErrorCode::Corrupt,
@@ -46,7 +45,6 @@ pub fn exceeded(what: &str, cap: impl std::fmt::Display) -> ReplayError {
 pub struct Inflated(u64);
 
 impl Inflated {
-    /// Count one chunk inflated to `bytes`.
     pub fn add(&mut self, bytes: usize) -> Result<(), ReplayError> {
         self.0 += bytes as u64;
         if self.0 > MAX_INFLATED_BYTES {
@@ -134,7 +132,6 @@ impl Declared {
     }
 }
 
-/// The finished buffer: a JSON document and movement blob of these sizes.
 pub fn check_output(json_bytes: usize, blob_bytes: usize) -> Result<(), ReplayError> {
     if json_bytes.saturating_add(blob_bytes) > MAX_OUTPUT_BYTES {
         return Err(exceeded("decoded replay bytes", MAX_OUTPUT_BYTES));
@@ -274,7 +271,6 @@ mod tests {
         assert!(refused.is_some());
         assert_eq!((cache.group_count(), packets), (0, 0));
 
-        // The same frame within the caps walks.
         let mut packets = 0;
         walk_demo_frames(
             &frame(&exports(3, 10)),

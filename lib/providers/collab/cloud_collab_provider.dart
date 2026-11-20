@@ -53,7 +53,6 @@ final isCloudCollabEnabledProvider = Provider<bool>((ref) {
 class CloudCollabModeNotifier extends Notifier<CloudCollabModeState> {
   @override
   CloudCollabModeState build() {
-    // Feature-flagged dual mode; default enabled for authenticated users.
     return const CloudCollabModeState(
       featureFlagEnabled: true,
       forceLocalFallback: false,

@@ -500,7 +500,6 @@ const memberValidator = v.object({
   shareLinkToken: v.union(v.string(), v.null()),
 });
 
-/** How many people [listMembers] returns at a time. */
 export const MEMBER_PAGE_SIZE = 50;
 
 async function describeMember(
@@ -614,7 +613,6 @@ export const listFolderAccess = query({
 /** Past this many, a link's joiners are counted as "more". */
 export const LINK_JOIN_COUNT_CAP = 100;
 
-/** How many joiners' names a link's count carries. */
 const LINK_JOIN_NAMES = 5;
 
 /**

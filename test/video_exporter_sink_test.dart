@@ -39,7 +39,6 @@ final _magentaPng = Uint8List.fromList(
   ),
 );
 
-/// Records every call an export makes to the app's one Convex client.
 class _RecordingConvexAuth extends Fake implements AuthProviderConvexApi {
   final calls = <String>[];
 
@@ -369,7 +368,6 @@ void main() {
         0.1,
       ),
     );
-    // Needs a PATH ffmpeg and ffprobe, as local development has.
   }, skip: _ffmpeg == null || _ffprobe == null);
 
   testWidgets('a transparent export keeps its background out, as alpha',

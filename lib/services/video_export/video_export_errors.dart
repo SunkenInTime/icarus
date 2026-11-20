@@ -1,6 +1,5 @@
 import 'package:icarus/l10n/l10n.dart';
 
-/// Thrown when the user cancels a video export.
 class VideoExportCancelled implements Exception {}
 
 /// Thrown when a capture was asked to print a page's captions and they can't

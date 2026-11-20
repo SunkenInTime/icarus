@@ -50,7 +50,6 @@ void main() {
     expect(repository.watchedPages, isNot(contains('b')));
 
     repository.failPageReads = false;
-    // Two refreshes at once start one live read, not two.
     await Future.wait([remote.refresh(), remote.refresh()]);
     expect(repository.watchedPages.where((id) => id == 'b'), hasLength(1));
     expect(
@@ -63,7 +62,6 @@ void main() {
       1,
     );
 
-    // A teammate's later edit to b reaches the editor.
     repository.pageStreams['b']!.add(_page('b', revision: 2));
     await _settle();
     expect(
@@ -133,7 +131,6 @@ void main() {
     queue.stamp = 1;
     expect(remote.answeredOnCurrentConnection(active()), isFalse);
 
-    // A teammate's change comes in on the live read: a fresh answer.
     repository.pageStreams['a']!.add(_page('a', revision: 2));
     await _settle();
     expect(remote.answeredOnCurrentConnection(active()), isTrue);
@@ -145,7 +142,6 @@ void main() {
     expect(active()?.page.publicId, 'b');
     expect(remote.answeredOnCurrentConnection(active()), isFalse);
 
-    // An answer from this computer's copy is never live.
     repository.pagesFromCopy = true;
     await remote.refresh();
     expect(active()?.fromCopy, isTrue);
@@ -188,7 +184,6 @@ void main() {
     expect(active()?.page.revision, 2);
     expect(remote.answeredOnCurrentConnection(active()), isFalse);
 
-    // The watch answers on this connection: live again.
     repository.pageStreams['a']!.add(_page('a', revision: 3));
     await _settle();
     expect(remote.answeredOnCurrentConnection(active()), isTrue);
@@ -255,7 +250,6 @@ void main() {
     final gate = Completer<void>();
     repository.staleShellGate = gate;
     final stale = remote.refresh();
-    // ...and the page is restored and shown before it answers.
     await remote.showRestoredPage('a');
     gate.complete();
     await stale;
@@ -322,7 +316,6 @@ void main() {
     repository.failNextRead.add('b');
     final selectB = remote.setActivePage('b');
     await _settle();
-    // A is restored and shown before b's read answers.
     await remote.showRestoredPage('a');
     gate.complete();
     await selectB;
@@ -570,7 +563,6 @@ void main() {
       final state = container.read(remoteEditorSnapshotProvider);
       expect(state.error, isA<StrategyAccessLost>());
       expect(container.read(strategyAccessLostProvider), isTrue);
-      // Nothing is watched any more: the next push changes nothing.
       repository.shellError = null;
       repository.shells.add(_shell(['a', 'b'], revision: 5));
       await _settle();
@@ -783,13 +775,11 @@ class _Repository extends ConvexStrategyRepository {
   /// the gate opens.
   Completer<void>? staleShellGate;
 
-  /// The revision of the shell reads answer.
   int shellRevision = 1;
 
   /// While set, the next page read waits for it, then answers as usual.
   Completer<void>? pageReadGate;
 
-  /// Pages whose next read fails.
   final failNextRead = <String>{};
 
   /// What reads of a page answer; an empty page when it has none.

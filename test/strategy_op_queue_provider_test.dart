@@ -1199,7 +1199,6 @@ void main() {
       expect(durable.pending.op.opId, retired.opId);
       expect(durable.pending.op.payload, retired.payload);
 
-      // After a restart it is still there, still explained, still unsent.
       container.dispose();
       repository = _RecordingAckRepository();
       container = _cloudQueueContainer(store: store, repository: repository);
@@ -2525,7 +2524,6 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(acked().single.op.opId, finalEdit.opId);
       expect(acked().single.restored, isFalse);
-      // Nothing is remembered for work that has landed.
       expect(notifier.canvasWorkCount, 0);
     });
 
@@ -2622,7 +2620,6 @@ void main() {
             'payloadVersion': 1,
             'data': {'id': 'element-1', 'position': position, 'weapon': weapon},
           };
-      // The user moves the agent from A to B.
       await notifier.enqueue(ElementPatchOp(
         opId: 'move',
         elementPublicId: 'element-1',
@@ -4855,7 +4852,6 @@ class _TombstoneRepository extends ConvexStrategyRepository {
   final List<List<StrategyOp>> calls = [];
   final _deleted = {'element-1', 'element-2', 'k'};
 
-  /// The add that restored each row, by its id.
   final Map<String, StrategyOp> restored = {};
 
   @override
@@ -5142,7 +5138,6 @@ class _ScriptedRepository extends ConvexStrategyRepository {
   }
 }
 
-/// Holds every write until [gate] completes.
 class _GatedPutStore extends MemoryDurableStrategyOutboxStore {
   _GatedPutStore(this.gate);
 

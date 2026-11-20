@@ -271,7 +271,6 @@ class CloudStrategyPageSource implements StrategyPageSource {
             utilities.add(utility);
         }
       } catch (_) {
-        // Ignore malformed payloads during hydration.
       }
     }
 
@@ -348,7 +347,6 @@ class CloudStrategyPageSource implements StrategyPageSource {
     if (snapshot == null || snapshot.header.publicId != strategyId) {
       return false;
     }
-    // A viewer can't edit, so there is nothing to queue.
     if (!StrategyCapabilities.fromCloudRole(snapshot.header.role)
         .canEditPages) {
       return true;
@@ -414,7 +412,6 @@ class CloudStrategyPageSource implements StrategyPageSource {
             utilities.add(utility);
         }
       } catch (_) {
-        // Ignore malformed payloads during hydration.
       }
     }
 

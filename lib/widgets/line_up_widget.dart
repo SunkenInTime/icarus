@@ -38,7 +38,6 @@ class LineUpOriginAgentWidget extends ConsumerWidget {
   /// lineups stay where they are otherwise.
   final ValueChanged<DragUpdateDetails>? onMove;
 
-  /// Called when a move reported through [onMove] ends.
   final VoidCallback? onMoveEnd;
 
   @override
@@ -118,7 +117,6 @@ class LineUpLandingAbilityWidget extends ConsumerWidget {
   /// lineups stay where they are otherwise.
   final ValueChanged<DragUpdateDetails>? onMove;
 
-  /// Called when a move reported through [onMove] ends.
   final VoidCallback? onMoveEnd;
 
   @override
@@ -265,7 +263,6 @@ class _MovableEnd extends StatelessWidget {
   }
 }
 
-/// Wraps a lineup end: ringed in violet when it is the pinned one.
 class _PinnedEnd extends StatelessWidget {
   const _PinnedEnd({required this.isPinned, required this.child});
 

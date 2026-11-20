@@ -605,7 +605,6 @@ StrategyOutboxSummary _unsent(String strategyId, {int paused = 0}) =>
       successorCount: 0,
     );
 
-/// The save dialog, dismissed.
 class _NoSaveDialog extends FilePicker {
   @override
   Future<String?> saveFile({
@@ -631,7 +630,6 @@ class _SignedIn extends AuthProvider {
       );
 }
 
-/// Signed in as one account, then as [signInAs] says.
 class _Switchable extends AuthProvider {
   @override
   AppAuthState build() => _signedInAs('account-a');
@@ -735,7 +733,6 @@ class _CloudRepository extends Fake implements ConvexStrategyRepository {
   final scopes = <String>[];
   final snapshotsRead = <String>[];
 
-  /// Runs as each strategy is read.
   void Function()? onSnapshotRead;
   final unreadable = <String>{};
   var listingFails = false;

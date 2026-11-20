@@ -521,13 +521,11 @@ impl<'a> Stream<'a> {
         Ok(self.take(N)?.try_into().expect("took N bytes"))
     }
 
-    /// The next `len` bytes as their own stream.
     fn sub(&mut self, len: usize, name: &'static str) -> Result<Stream<'a>, ReplayError> {
         let at = self.at;
         Ok(Stream::new(self.take(len)?, at, name))
     }
 
-    /// Everything left, as its own stream.
     fn rest(&mut self, name: &'static str) -> Stream<'a> {
         let rest = Stream::new(self.bytes, self.at, name);
         self.at += self.bytes.len();
@@ -535,7 +533,6 @@ impl<'a> Stream<'a> {
         rest
     }
 
-    /// The first `len` bytes and the rest, as two streams.
     fn split(self, len: usize) -> (Stream<'a>, Stream<'a>) {
         let (head, tail) = self.bytes.split_at(len);
         (
@@ -726,12 +723,9 @@ mod tests {
         bytes
     }
 
-    /// `out[at..end]` repeats the bytes `distance` before it.
     fn repeats(out: &[u8], at: usize, end: usize, distance: usize) -> bool {
         (at..end).all(|i| out[i] == out[i - distance])
     }
-
-    // Worked examples ("Worked examples from the corpus").
 
     /// Initial bytes, `8e` (compact reuse) and `87` (literal only), from
     /// 1fb53a2c_1_1.
@@ -951,8 +945,6 @@ mod tests {
             decode(&lz.archive(), size)
         );
     }
-
-    // Rejections ("Reject table", "End conditions and consistency checks").
 
     const CORRUPT: ErrorCode = ErrorCode::Corrupt;
     const UNSUPPORTED: ErrorCode = ErrorCode::UnsupportedCompression;

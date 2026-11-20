@@ -129,7 +129,6 @@ void main() {
               transform.sideWorldFromSource(projection.attackSvgPoint(x, y),
                   isAttack: true),
               tolerance: 1e-9);
-          // The defense view of the saved point is the defense SVG point.
           final defenseWorld = coordinates.positionForSide(
               canonicalPosition: world,
               reflectionOffset: Offset.zero,

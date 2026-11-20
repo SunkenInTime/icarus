@@ -341,13 +341,11 @@ describe("media cleanup stays within transaction limits", () => {
       }),
     ).rejects.toThrow("simulated failure");
 
-    // Rolled back: still queued, image untouched.
     expect((await candidates(t)).map((row) => row.assetPublicId)).toEqual([
       "old-image",
     ]);
     expect(await assetStatus(t, "old-image")).toEqual(["active"]);
 
-    // The next run reclaims it.
     await t.run(async (ctx) => {
       await processAssetReclaimBatch(ctx);
     });
@@ -829,7 +827,6 @@ describe("the backfill and its gate", () => {
       );
       return counted.rangeReads();
     });
-    // Before: 4,250 index reads in one run, past Convex's 4,096.
     expect(firstRun).toBeLessThanOrEqual(110);
     expect(await candidates(t)).toHaveLength(100);
 
@@ -986,7 +983,6 @@ describe("purges stay within transaction limits", () => {
       await (maintenance.purgeOldTombstones as any)._handler(counted.ctx, {});
       return counted.rangeReads();
     });
-    // Before: one run, 4,257 index reads, past Convex's 4,096.
     expect(firstRun).toBeLessThan(300);
     expect(await state()).toEqual({
       lineups: 5,
@@ -1086,7 +1082,6 @@ describe("duplicate stays within transaction limits", () => {
       }),
     ).resolves.toEqual({ ok: true });
 
-    // The copy's image element got a reference row of its own.
     const copyReferences = await t.run(async (ctx) => {
       const copy = await ctx.db
         .query("strategies")

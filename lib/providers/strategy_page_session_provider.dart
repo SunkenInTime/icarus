@@ -66,7 +66,6 @@ enum PageSwitchDirection { next, previous }
 /// never got. [name] is its name when it was last loaded.
 typedef DeletedPage = ({String pageId, String name});
 
-/// How Keep both ended (see StrategyPageSessionNotifier.keepBothForRejected).
 enum KeepBothOutcome {
   /// The cloud's versions stand, and the user's are beside them as copies.
   kept,
@@ -81,7 +80,6 @@ enum KeepBothOutcome {
   copiesOnly,
 }
 
-/// How an attempt to restore a deleted page ended.
 enum DeletedPageRestore {
   /// The page is back on the server, and the work on it is saving as usual.
   /// The deleted page on screen is back on screen too.
@@ -726,7 +724,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       lineUps.addRecovered(copy);
     }
     _keptAsCopy.addAll(copied);
-    // Every copy of this work, made now or by an earlier press.
     final lineUpState = ref.read(lineUpProvider);
     final copyLineupIds = [
       for (final MapEntry(:key, :value) in waiting.entries)
@@ -801,7 +798,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     return true;
   }
 
-  /// Whether exactly [waiting] still waits, nothing changed or gone.
   bool _sameWaitingWork(Map<EntitySyncKey, (String, String?)> waiting) {
     final now = _waitingWork(waiting.keys);
     return now.length == waiting.length &&
@@ -1024,8 +1020,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         await _resolvePageSource(strategyId, StrategySource.cloud)
             .listPageIds();
     if (!canApply()) return;
-    // Whether the canvas item [id] (an element, or a lineup or one of its
-    // spots) is in [of].
     bool chosen(String id) =>
         of.contains(EntitySyncKey.element(pageId, id)) ||
         switch (liveSync.lineupGroupOf(pageId, id)) {
@@ -1188,7 +1182,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     } catch (error) {
-      // No overlay to show it on (tests); the page staying put says enough.
     }
   }
 
@@ -1656,7 +1649,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     return DeletedPageRestore.restored;
   }
 
-  /// Asks the server to take [pageId] out of its trash.
   Future<DeletedPageRestore> _restoreOnServer(
     String strategyId,
     String pageId,
@@ -2105,7 +2097,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     return map;
   }
 
-  /// The map doors changed on the page on screen.
   Set<String> _changedDoors() => changedMapDoors(
         ref.read(utilityProvider),
         ref.read(mapProvider).currentMap,

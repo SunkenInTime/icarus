@@ -76,7 +76,6 @@ List<Map<String, dynamic>> trimFontManifest(
   return kept;
 }
 
-/// Where web/index.html asks for the preloads.
 const fontPreloadsMarker = '<!-- prepare_web_fonts preloads -->';
 
 /// Replaces [fontPreloadsMarker] with preloads for the manifest and [fonts].

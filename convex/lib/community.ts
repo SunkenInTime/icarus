@@ -21,7 +21,6 @@ export const MAX_REPORT_NOTE_LENGTH = 200;
 /// Distinct accounts reporting a listed post that take it out of the feed
 /// until a reviewer looks.
 export const REPORTS_TO_HIDE = 3;
-/// Live posts one account can have at a time.
 export const MAX_LIVE_POSTS_PER_AUTHOR = 50;
 /// How fast one account can post, copy and report, so a script or a stuck
 /// button can't flood the feed, the database or the reviewers. Counted from

@@ -34,12 +34,10 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
   Widget build(BuildContext context) {
     final coordinateSystem = CoordinateSystem.instance;
 
-    // Use LayoutBuilder to get the actual rendered size of this canvas.
     return LayoutBuilder(
       builder: (context, constraints) {
         final currentSize = constraints.biggest;
 
-        // Skip screenshots; only bump when size actually changes.
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (coordinateSystem.isScreenshot) return;
           if (_previousSize == currentSize) return;
@@ -71,7 +69,6 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
                 mapScale: mapScale,
                 isAttack: ref.watch(mapProvider).isAttack,
               ),
-              // Ensure it expands to the available area so constraints.biggest is meaningful.
               size: Size.infinite,
             ),
           ),

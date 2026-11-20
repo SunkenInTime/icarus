@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:icarus/const/settings.dart';
 
-/// One line of a release's patch notes.
 class ReleaseNoteChange {
   const ReleaseNoteChange({required this.message, this.type});
 
@@ -31,7 +30,6 @@ class ReleaseNotesEntry {
   final String? date;
   final List<ReleaseNoteChange> changes;
 
-  /// `4.6.2` from `4.6.2+102`.
   String get versionName => version.split('+').first;
 
   bool get isInstalled => shortVersion == Settings.versionNumber;

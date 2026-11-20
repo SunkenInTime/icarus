@@ -177,10 +177,6 @@ void main() {
     return container;
   }
 
-  /// The drop's work is real file IO, which only finishes on the real clock,
-  /// and its continuations and the replay list's rebuilds run on the test's:
-  /// give it both, in turns, long enough for every step of an add and an
-  /// open.
   Future<void> settle(WidgetTester tester) async {
     for (var round = 0; round < 200; round++) {
       await tester.runAsync(

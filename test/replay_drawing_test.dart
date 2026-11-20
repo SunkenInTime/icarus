@@ -47,7 +47,6 @@ import 'replay_test_support.dart';
 
 const _mapPath = '/Game/Maps/Juliett/Juliett';
 
-/// How far [point] is from the nearest place between [a] and [b].
 double _distanceToSegment(Offset point, Offset a, Offset b) {
   final along = b - a;
   final t = along.distanceSquared == 0
@@ -58,7 +57,6 @@ double _distanceToSegment(Offset point, Offset a, Offset b) {
   return (point - (a + along * t)).distance;
 }
 
-/// The editor's pen, white and 5 thick, drawing [mode].
 PenState _pen({
   PenMode mode = PenMode.freeDraw,
   bool hasArrow = false,
@@ -134,7 +132,6 @@ void main() {
   group('drawing over the replay', () {
     final coordinates = CoordinateSystem(playAreaSize: const Size(1600, 900));
 
-    /// Draws a freehand stroke across the canvas.
     void stroke(ReplayDrawing drawing) {
       drawing.begin(const Offset(100, 100), coordinates, _pen());
       for (var x = 120.0; x <= 300; x += 20) {
@@ -264,7 +261,6 @@ void main() {
       expect(drawing.strokes.single.boundingBox!.min.dy,
           coordinates.screenToCoordinate(const Offset(0, 400)).dy);
 
-      // The pen swaps the eraser out, and erasing then does nothing.
       drawing.toggle();
       expect(drawing.erasing, isFalse);
       expect(drawing.active, isTrue);
@@ -346,7 +342,6 @@ void main() {
         .value
         .clone();
 
-    /// Drags with the mouse across the middle of the map.
     Future<void> drag(WidgetTester tester) async {
       final from = tester.getCenter(find.byType(ReplayDrawingLayer));
       final gesture = await tester.startGesture(
@@ -429,7 +424,6 @@ void main() {
       await openReplay(tester);
       final drawing = canvas(tester).drawing;
 
-      // Without the pen, the same drag pans the map.
       final resting = view(tester);
       await drag(tester);
       expect(view(tester), isNot(resting));
@@ -557,7 +551,6 @@ void main() {
           (drawn.dy - world.top) / world.height,
         );
 
-        // On screen, the stroke is drawn there, over everything.
         final shown = await _pixel(
           tester,
           find

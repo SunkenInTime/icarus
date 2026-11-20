@@ -115,7 +115,6 @@ void main() {
     final server = _Server(row: agent('A', 'none'));
     final (container, queue) = _start(store, server);
 
-    // The user moves the agent to B; the move is sent and held there.
     await queue.enqueue(
       edit('move', agent('B', 'none'), base: {'position': 'A'}, revision: 1),
     );

@@ -86,9 +86,8 @@ class CustomSquareWidget extends ConsumerWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Main square
 
-          isWall //This is here because there's a certain size needed to prevent input clipping issues
+          isWall
               ? Positioned(
                   top: 0,
                   left: 0,
@@ -155,7 +154,6 @@ class CustomSquareWidget extends ConsumerWidget {
                 ),
               ),
             ),
-          // Ability icon
           Positioned(
             bottom: 0,
             left: (scaledWidth / 2) - (scaledAbilitySize / 2),
@@ -172,17 +170,6 @@ class CustomSquareWidget extends ConsumerWidget {
               ),
             ),
           ),
-          // Debug point to visualize rotation origin
-          // if (false) // Set to true to debug
-          //   Positioned(
-          //     left: rotationOrigin.dx - 2,
-          //     top: rotationOrigin.dy - 2,
-          //     child: Container(
-          //       width: 4,
-          //       height: 4,
-          //       color: Colors.red,
-          //     ),
-          //   ),
         ],
       ),
     );

@@ -208,8 +208,6 @@ class _ServingRepository extends _R2Repository {
   }
 }
 
-/// [_ServingRepository] whose served check waits for [urlGate], saying when
-/// it is asked.
 class _HeldServingRepository extends _ServingRepository {
   _HeldServingRepository(super.served);
 
@@ -232,7 +230,6 @@ class _HeldServingRepository extends _ServingRepository {
   }
 }
 
-/// Holds single writes while [hold] is set, saying when one starts.
 class _HoldableOutboxStore extends MemoryDurableCloudMediaOutboxStore {
   Completer<void>? hold;
   final putStarted = Completer<void>();
@@ -280,7 +277,6 @@ class _GatedBytesStore extends MemoryPendingMediaBytesStore {
   }
 }
 
-/// Holds each outbox batch write open until [batchGate] completes.
 class _GatedOutboxStore extends MemoryDurableCloudMediaOutboxStore {
   Completer<void>? batchGate;
 
@@ -291,7 +287,6 @@ class _GatedOutboxStore extends MemoryDurableCloudMediaOutboxStore {
   }
 }
 
-/// Holds each single write until [gate] completes, saying when one starts.
 class _HeldPutOutboxStore extends MemoryDurableCloudMediaOutboxStore {
   final putStarted = Completer<void>();
   final gate = Completer<void>();
@@ -972,7 +967,6 @@ void main() {
       ),
     ));
 
-    // Edit the lineup and pick an image.
     await tester.tap(find.text('Edit lineup'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Click here to add images'));

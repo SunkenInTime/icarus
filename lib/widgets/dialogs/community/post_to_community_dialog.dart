@@ -97,10 +97,6 @@ class _WaitingView extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Posting
-// ---------------------------------------------------------------------------
-
 final _postPreviewProvider = FutureProvider.autoDispose
     .family<CommunityPostPreview?, String>((ref, strategyPublicId) {
   return ref
@@ -310,10 +306,6 @@ class _PostFormState extends ConsumerState<_PostForm> {
     );
   }
 }
-
-// ---------------------------------------------------------------------------
-// Posted
-// ---------------------------------------------------------------------------
 
 /// Whether the strategy changed since its post was last updated: null while
 /// unknown, and [_SourceState.deleted] once the strategy is gone.
@@ -559,10 +551,6 @@ class _PostedViewState extends ConsumerState<_PostedView> {
     );
   }
 }
-
-// ---------------------------------------------------------------------------
-// Parts
-// ---------------------------------------------------------------------------
 
 /// How long ago [time] was, inside a sentence: the cards' "Just now" starts
 /// a label, not a clause.

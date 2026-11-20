@@ -36,7 +36,6 @@ impl Phases {
         })
     }
 
-    /// A reset and nothing after it yet.
     fn is_lone_reset(&self) -> bool {
         self.reset.is_some()
             && self.start.is_none()
@@ -80,8 +79,6 @@ pub(super) fn rounds(cx: &mut Context<'_>) -> Vec<Round> {
             if !(2..=6).contains(&phase) {
                 continue;
             }
-            // A reset opens the next cycle, unless it repeats a lone reset;
-            // the first phase seen opens one, whichever it is.
             let repeat_reset = phases.last().is_some_and(Phases::is_lone_reset);
             if phases.is_empty() || (phase == 2 && !repeat_reset) {
                 phases.push(Phases::default());
@@ -397,7 +394,6 @@ fn economy(cx: &Context<'_>, buy_end: Option<u32>) -> Vec<Economy> {
     let Some(t) = buy_end else {
         return Vec::new();
     };
-    // Equippables open at `t`, by owner body.
     let mut open: HashMap<u32, bool> = HashMap::new();
     for a in cx.actors.iter().filter(|a| a.time_ms <= t) {
         match a.event {
@@ -423,7 +419,6 @@ fn economy(cx: &Context<'_>, buy_end: Option<u32>) -> Vec<Economy> {
         let Some(writes) = cx.owner_writes.get(&guid) else {
             continue;
         };
-        // Ownership needs a write at or before `t`, and its latest value.
         if let Some(&(_, owner)) = writes.iter().rev().find(|&&(wt, _)| wt <= t) {
             owned.entry(owner).or_default().push(class);
         }
@@ -476,7 +471,6 @@ mod tests {
     use super::*;
     use crate::collect::Row;
 
-    /// The rounds of a replay whose game state sends `phases` `(time, phase)`.
     fn rounds_of(phases: &[(u32, i64)]) -> (Vec<Round>, Vec<String>) {
         let rows: Vec<Row> = phases
             .iter()

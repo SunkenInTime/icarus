@@ -134,8 +134,6 @@ final cloudFolderTreeProvider =
   }();
 });
 
-// This is the same cached provider, retained for the widgets whose concern is
-// the complete tree rather than the current folder's children.
 final cloudAllFoldersProvider = cloudFolderTreeProvider;
 
 /// The folders at the open level of the cloud library, derived from the

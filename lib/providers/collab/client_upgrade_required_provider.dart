@@ -20,8 +20,6 @@ class ClientUpgradeRequiredNotifier extends Notifier<bool> {
     return false;
   }
 
-  /// Notes [error] when it is the server refusing this build, and returns
-  /// whether it was.
   bool noteError(Object? error) {
     if (!isClientUpgradeRequiredError(error)) return false;
     state = true;

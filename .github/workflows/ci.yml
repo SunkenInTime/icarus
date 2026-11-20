@@ -235,6 +235,11 @@ jobs:
       - name: Check Convex Web Binding Against The Browser Bundle
         run: node tool/check_convex_web_binding.mjs
 
+      - name: Check Comments Against The Baseline
+        run: |
+          node --test tool/comments.test.mjs
+          node tool/comments.mjs check
+
       - uses: ./.github/actions/setup-flutter
 
       - name: Analyze

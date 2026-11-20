@@ -18,7 +18,6 @@ class OpenAttempt {
 
   final bool Function() _isCurrent;
 
-  /// Whether this open is still the one wanted.
   bool get isCurrent => _isCurrent();
 
   /// Waits for [step], then throws [OpenGaveWay] if this open was closed or

@@ -5,7 +5,6 @@ import 'dart:ui' show Offset;
 /// wall's first point and isn't saved.
 const maxWallPathPoints = 7;
 
-/// How finely each stretch of a wall is drawn.
 const _samplesPerStretch = 16;
 
 /// The smooth line through [points], in the same space. It passes through
@@ -40,7 +39,6 @@ List<Offset> smoothWallLine(List<Offset> points) {
   return line;
 }
 
-/// How long [line] is, in its own units.
 double wallLineLength(List<Offset> line) {
   var length = 0.0;
   for (var i = 0; i + 1 < line.length; i++) {
@@ -68,7 +66,6 @@ List<Offset> wallPathWithPoint(
   return [for (final offset in added) offset * (limit / length)];
 }
 
-/// The point [fraction] of the way along [line].
 Offset pointAlongWall(List<Offset> line, double fraction) {
   final total = wallLineLength(line);
   var remaining = total * fraction;
@@ -105,7 +102,6 @@ List<Offset> wallStretchMiddles(List<Offset> points) {
 /// over and over the point furthest from the line through those kept around
 /// it. A traced wall, such as a replay's, has too many points to keep.
 List<Offset> keepWallShape(List<Offset> line, int count) {
-  // A point repeated would be a stretch of no length.
   final unique = <Offset>[];
   for (final point in line) {
     if (unique.isEmpty || unique.last != point) unique.add(point);

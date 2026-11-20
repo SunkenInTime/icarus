@@ -156,7 +156,6 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
           const SizedBox(height: 4),
           SizedBox(
             height: 40,
-            // width: 100,
             child: NumericDragInput(
               value: _diameterMeters,
               onChanged: (v) => setState(() => _diameterMeters = v),
@@ -175,7 +174,6 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
             Flexible(
               child: SizedBox(
                 height: 40,
-                // width: 100,
                 child: NumericDragInput(
                   value: _rectLengthMeters,
                   onChanged: (v) => setState(() => _rectLengthMeters = v),
@@ -190,7 +188,6 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
             Flexible(
               child: SizedBox(
                 height: 40,
-                // width: 100,
                 child: NumericDragInput(
                   value: _rectWidthMeters,
                   onChanged: (v) => setState(() => _rectWidthMeters = v),
@@ -209,7 +206,6 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
         const SizedBox(height: 4),
         SizedBox(
           height: 40,
-          // width: 100,
           child: NumericDragInput(
             value: _opacityPercent.toDouble(),
             onChanged: (v) => setState(() => _opacityPercent = v.round()),
@@ -217,7 +213,6 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
             max: 80,
             leading: Icon(LucideIcons.droplet,
                 size: 16, color: Settings.tacticalVioletTheme.mutedForeground),
-            // label: 'O',
             hintText: l10n.shapeToolsOpacityHint,
             suffix: '%',
           ),

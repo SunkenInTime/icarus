@@ -34,7 +34,6 @@ double _changedAmount(
   return from + (to - from) * transition.t;
 }
 
-/// [door]'s line on the canvas, on [isAttack]'s side.
 (Offset, Offset) _lineOnCanvas(
   MapDoor door, {
   required double changed,

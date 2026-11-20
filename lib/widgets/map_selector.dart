@@ -123,7 +123,6 @@ class _MapSelectorState extends ConsumerState<MapSelector>
                       alignment: AlignmentDirectional.topStart,
                       child: Padding(
                         padding: const EdgeInsets.only(top: 6),
-                        // A closing list takes no clicks.
                         child: IgnorePointer(
                           ignoring: !_isOpen,
                           child: FadeTransition(
@@ -224,7 +223,6 @@ class _MapSelectorState extends ConsumerState<MapSelector>
                                             return MapTile(
                                               name: mapName,
                                               borderRadius: _innerRadius,
-                                              // isActive: mapValue == currentMap,
                                               onTap: () {
                                                 ref
                                                     .read(mapProvider.notifier)
@@ -300,8 +298,6 @@ class _SideToggle extends ConsumerWidget {
     return ValueListenableBuilder(
       valueListenable: box.listenable(keys: [strategyId]),
       builder: (context, Box<StrategyData> b, _) {
-        // Reads the local copy; a cloud strategy has none here, so it never
-        // shows the mixed dot.
         final pages =
             (strategyId == null ? null : b.get(strategyId))?.pages ?? const [];
         final mixed =

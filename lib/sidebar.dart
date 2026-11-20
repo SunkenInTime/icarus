@@ -38,7 +38,6 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
     final filterState = ref.watch(agentFilterProvider);
     final agentList = filterState.agentList;
     return Row(
-      // mainAxisAlignment: MainAxisAlignment.end,
       mainAxisSize: MainAxisSize.min,
       children: [
         const AbiilityBar(),

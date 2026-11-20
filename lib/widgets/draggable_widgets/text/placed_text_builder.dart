@@ -48,7 +48,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
   static const _tagRed = Color(0xFFEF4444);
   static const _tagPurple = Color(0xFFA855F7);
   final _boxKey = GlobalKey();
-  double? localSize; // Make localScale nullable to check if it's initialized
+  double? localSize;
   bool isPanning = false;
   bool isDragging = false;
   Offset? pinnedScreenPosition;

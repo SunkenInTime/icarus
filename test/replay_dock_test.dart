@@ -90,7 +90,6 @@ Future<void> _pumpDock(
   await tester.pump();
 }
 
-/// An image of [path] in the dock.
 Finder _asset(String path) => find.descendant(
       of: find.byType(ReplayDock),
       matching: find.byWidgetPredicate(
@@ -235,7 +234,6 @@ void main() {
     final row = tester.getRect(_playbackRow.first);
     final strip = tester.getRect(find.byType(SingleChildScrollView));
     expect(row.width, ReplayDock.minPlaybackWidth);
-    // The strip hugs its slots, centred over playback.
     expect(strip.width, lessThan(row.width - 100));
     expect(strip.center.dx, closeTo(row.center.dx, 0.01));
   });
@@ -272,7 +270,6 @@ void main() {
     expect(jett.center.dx, closeTo(track.left + track.width * 0.4, 1));
     expect(omen.center.dx, closeTo(track.left + track.width * 0.7, 1));
 
-    // Hovering a killer shows the kill's killfeed line.
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);
     await mouse.addPointer(location: Offset.zero);
@@ -293,7 +290,6 @@ void main() {
     await tester.pump();
     expect(playback.timeMs, 7000);
 
-    // Watched from the other side, the lanes swap.
     await mouse.moveTo(Offset.zero);
     playback.perspective = ReplayTeam.blue;
     await tester.pump();
@@ -416,7 +412,6 @@ void main() {
       await tester.pump(const Duration(milliseconds: 150));
       expect(storyOpen(tester), isFalse);
       await tester.pump(const Duration(milliseconds: 50));
-      // Partway, the track is between its two heights.
       await tester.pump(ReplayDock.storyDuration ~/ 2);
       final growing = tester.getSize(scrubber()).height;
       expect(growing, greaterThan(24));
@@ -425,7 +420,6 @@ void main() {
       expect(tester.getSize(scrubber()).height, 54);
       expect((line(tester) - rest).abs(), lessThan(8));
 
-      // Leaving, it lingers a moment, then folds shut.
       await mouse.moveTo(away);
       await tester.pump(const Duration(milliseconds: 300));
       expect(storyOpen(tester), isTrue);
@@ -512,7 +506,6 @@ void main() {
       await tester.pump(const Duration(milliseconds: 800));
       expect(storyOpen(tester), isTrue);
 
-      // Unpinned, it closes once the pointer has gone.
       await mouse.moveTo(tester.getCenter(find.byIcon(LucideIcons.pin)));
       await tester.pump();
       await tester.tap(find.byIcon(LucideIcons.pin));

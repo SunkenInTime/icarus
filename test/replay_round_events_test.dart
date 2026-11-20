@@ -150,7 +150,6 @@ Future<void> pumpBody(WidgetTester tester, Widget child) async {
   await tester.pump();
 }
 
-/// An image of [path] in an event line.
 Finder asset(String path) => find.descendant(
       of: find.byType(ReplayEventLine),
       matching: find.byWidgetPredicate(
@@ -161,7 +160,6 @@ Finder asset(String path) => find.descendant(
       ),
     );
 
-/// The spike's art in an event line.
 Finder spike() => find.descendant(
       of: find.byType(ReplayEventLine),
       matching: find.byWidgetPredicate(
@@ -249,7 +247,6 @@ void main() {
     ]);
     expect(asset(AgentData.agents[AgentType.chamber]!.abilities[1].iconPath),
         findsOneWidget);
-    // The plant draws Valorant's spike, beside its site.
     expect(spike(), findsOneWidget);
     expect(find.text('B'), findsOneWidget);
 
@@ -495,7 +492,6 @@ void main() {
       // Ability uses start hidden, and the trap is all that has happened.
       expect(find.byType(ReplayEventLine), findsNothing);
       expect(find.text('No kills yet this round'), findsOneWidget);
-      // Each chip reads as one toggle button.
       final semantics = tester.ensureSemantics();
       expect(
         tester.getSemantics(find.text('Abilities')),

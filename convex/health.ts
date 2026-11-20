@@ -1,4 +1,3 @@
-// convex/health.ts
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import { assertSupportedCloudProtocol } from "./lib/cloudProtocol";

@@ -84,7 +84,6 @@ test("the inventory places every folder and listed strategy of the caller", asyn
     { publicId: "root", folderPublicId: null },
   ]);
 
-  // A strategy moved to another folder is placed there.
   await owner.mutation(moveStrategy, {
     ...protocol,
     strategyPublicId: "root",

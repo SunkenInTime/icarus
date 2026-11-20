@@ -11,34 +11,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:icarus/widgets/loading_spinner.dart';
 
-// class YoutubeView extends StatelessWidget {
-//   const YoutubeView({
-//     super.key,
-//     required this.youtubeLink,
-//   });
-//   final String youtubeLink;
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return InAppWebView(
-//       // key: const Key('youtube_view'),
-//       // onWebViewCreated: (controller) {
-//       //   log("Youtube view created");
-
-//       //   controller.loadUrl(
-//       //       urlRequest: URLRequest(
-//       //           url:
-//       //               WebUri("https://embed.icarus-strats.xyz/?v=$youtubeLink")));
-//       // },
-
-//       webViewEnvironment: webViewEnvironment,
-//       initialSettings: InAppWebViewSettings(allowBackgroundAudioPlaying: false),
-//       initialUrlRequest: URLRequest(
-//           url: WebUri("https://embed.icarus-strats.xyz/?v=$youtubeLink")),
-//     );
-//   }
-// }
-
 class YoutubeView extends StatefulWidget {
   const YoutubeView({
     super.key,

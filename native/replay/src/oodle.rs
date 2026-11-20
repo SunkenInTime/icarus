@@ -19,7 +19,6 @@ pub trait Decompressor: Send + Sync {
     fn decompress(&self, input: &[u8], decompressed_size: usize) -> Result<Vec<u8>, ReplayError>;
 }
 
-/// No decoder: every compressed archive is refused.
 pub struct Unavailable;
 
 impl Decompressor for Unavailable {

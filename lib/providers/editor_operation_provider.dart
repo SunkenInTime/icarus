@@ -5,7 +5,6 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 
-/// What a pressed pointer landed on.
 class EditorPointerHold {
   const EditorPointerHold({this.onCanvas = false, this.entityIds = const {}});
 
@@ -13,7 +12,6 @@ class EditorPointerHold {
   /// overlays) may drive an edit whose target we cannot see.
   final bool onCanvas;
 
-  /// The canvas items under the pointer.
   final Set<String> entityIds;
 
   EditorPointerHold copyWith({bool? onCanvas, Set<String>? entityIds}) =>
@@ -48,7 +46,6 @@ class EditorPointersNotifier extends Notifier<Map<int, EditorPointerHold>> {
     };
   }
 
-  /// Every press holding [heldId] now holds [id] as well.
   void holdAlongside(String heldId, String id) {
     state = {
       for (final MapEntry(key: pointer, value: hold) in state.entries)

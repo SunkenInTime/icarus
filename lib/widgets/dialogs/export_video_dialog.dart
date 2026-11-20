@@ -45,9 +45,6 @@ class ExportVideoDialog extends ConsumerStatefulWidget {
 class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   static const double _dialogWidth = 640;
 
-  /// ShadDialog shrink-wraps its content to intrinsic widths, which cannot
-  /// lay out Expanded/Spacer rows or the slider; a tight width fixes every
-  /// descendant (same idiom as UploadImageDialog).
   static const double _contentWidth = _dialogWidth - 48;
 
   List<VideoExportPageChoice> _pages = const [];
@@ -82,8 +79,6 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
 
   @override
   void dispose() {
-    // Closing the dialog mid-export must not leave frames rendering and
-    // the encoder running in the background.
     _cancel();
     _refusedWatch.dispose();
     super.dispose();
@@ -196,8 +191,6 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   }
 
   Future<void> _export() async {
-    // The Export button stays enabled while the file picker is open; a
-    // second tap must not start a second export.
     if (_exportRunning || !_canExport) return;
     _exportRunning = true;
     try {
@@ -225,12 +218,8 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     final fileName =
         "${sanitizeStrategyFileName(ref.read(strategyProvider).stratName ?? l10n.exportVideoDefaultFileName)}.$extension";
 
-    // Where the video goes is settled first, so a dismissed save dialog or
-    // a browser that cannot encode video costs nothing.
     final VideoFrameSink sink;
     if (transparent) {
-      // Encoded in Dart, so it needs neither ffmpeg nor the browser's
-      // encoder. The browser downloads the finished file.
       String? outputPath;
       if (!kIsWeb) {
         outputPath = await chooseExportPath(l10n, fileName);
@@ -314,8 +303,6 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
               .read(viewConeGeometryProvider(mapState.currentMap).future);
         }
       } on Object {
-        // The provider reports the failure. The exporter rejects movement on
-        // enabled maps when their required navigation data is unavailable.
       }
       if (_cancelRequested) throw VideoExportCancelled();
 
@@ -351,7 +338,6 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
           });
         },
       );
-      // A cancel that arrived while the export was wrapping up still wins.
       if (_cancelRequested) throw VideoExportCancelled();
       // The browser sink hands the finished video back to be downloaded;
       // the desktop one has already written it where the user chose.
@@ -416,8 +402,6 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
       );
     } on Object catch (error) {
       Settings.showToast(
-        // Closing the dialog mid-preparation can fail the work it cut
-        // short; the user asked to stop, so that is what they hear.
         message: _cancelRequested
             ? l10n.exportVideoCancelled
             : l10n.exportVideoFailed('$error'),
@@ -450,8 +434,6 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   bool get _canExport =>
       _selectedPageIds.isNotEmpty && _captionRefusal == null;
 
-  /// The preset the export runs at. A transparent video is lossless, so the
-  /// presets' size targets don't apply; it plays at Social's 30 fps.
   VideoExportQuality get _exportQuality =>
       _transparent ? VideoExportQuality.social : _quality;
 
@@ -519,7 +501,6 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                 ),
                 const SizedBox(height: 12),
                 ShadProgress(value: _progress, minHeight: 8),
-                // A hidden tab stops painting frames, which stalls the render.
                 if (kIsWeb) ...[
                   const SizedBox(height: 12),
                   Text(
@@ -614,16 +595,10 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                 const SizedBox(height: 24),
                 _SectionLabel(text: l10n.exportVideoQuality),
                 const SizedBox(height: 10),
-                // A transparent video is lossless, so the presets sit out:
-                // dimmed, and without a tap they take no clicks or focus.
                 AnimatedOpacity(
                   opacity: _transparent ? 0.4 : 1,
                   duration: const Duration(milliseconds: 150),
                   curve: Settings.easeOut,
-                  // IntrinsicHeight bounds the stretch so all three cards
-                  // share the tallest card's height; without it the
-                  // scrollable dialog hands the Row an infinite height to
-                  // stretch into.
                   child: IntrinsicHeight(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -696,9 +671,6 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                   onToggle: _togglePage,
                 ),
                 const SizedBox(height: 20),
-                // Summary shares the bottom row with the buttons, so the
-                // dialog's own actions slot stays empty. Bottom-aligned so
-                // the summary sits on the buttons' bottom line.
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -737,7 +709,6 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   }
 }
 
-/// Muted eyebrow that names a settings section.
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel({required this.text});
 
@@ -753,7 +724,6 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-/// Raised readout for the slider's current value.
 class _ValueChip extends StatelessWidget {
   const _ValueChip({required this.text});
 
@@ -856,7 +826,6 @@ class _QualityCard extends StatelessWidget {
   }
 }
 
-/// Live one-line receipt of what Export will produce.
 class _ExportSummary extends StatelessWidget {
   const _ExportSummary({
     required this.estimatedSeconds,

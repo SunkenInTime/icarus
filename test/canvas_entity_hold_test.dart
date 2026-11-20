@@ -115,7 +115,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(container.read(editorHeldEntitiesProvider), isEmpty);
 
-    // Empty canvas: nothing held.
     final empty = await tester.startGesture(const Offset(150, 700));
     expect(container.read(editorHeldEntitiesProvider), isEmpty);
     await empty.up();

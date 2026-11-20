@@ -211,7 +211,6 @@ class _ReplayLevels {
   }
 
   static _ReplayLevels? _measure(SvgHeightVisibility model, Offset point) {
-    // The cone stands at this point, pushed out of any wall it is in.
     final origin = model.standablePointNear(point);
     if (origin == null) return null;
     final ground = model.ground?.heightAt(origin);

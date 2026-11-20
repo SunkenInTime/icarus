@@ -32,10 +32,9 @@ bool LaunchedWithAppLink() {
   ::LocalFree(argv);
   return is_app_link;
 }
-}  // namespace
+}
 
 bool SendAppLinkToInstance(const std::wstring& title) {
-  // Find our exact window
   HWND hwnd = ::FindWindow(L"FLUTTER_RUNNER_WIN32_WINDOW", title.c_str());
 
   // The app title is changed later by Dart code, so fallback to scanning
@@ -54,10 +53,8 @@ bool SendAppLinkToInstance(const std::wstring& title) {
   if (hwnd) {
     DebugLog(L"Existing window found. Forwarding app link to running instance.");
 
-    // Dispatch new link to current window
     SendAppLink(hwnd);
 
-    // (Optional) Restore our window to front in same state
     WINDOWPLACEMENT place = { sizeof(WINDOWPLACEMENT) };
     GetWindowPlacement(hwnd, &place);
 
@@ -76,9 +73,7 @@ bool SendAppLinkToInstance(const std::wstring& title) {
     SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
                  SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE);
     SetForegroundWindow(hwnd);
-    // END (Optional) Restore
 
-    // Window has been found, don't create another one.
     return true;
   }
 
@@ -101,18 +96,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     DebugLog(L"App link forwarded to existing instance. Exiting.");
     return EXIT_SUCCESS;
   }
-  // Attach to console when present (e.g., 'flutter run') or create a
-  // new console when running with a debugger.
   if (!::AttachConsole(ATTACH_PARENT_PROCESS) && ::IsDebuggerPresent()) {
     CreateAndAttachConsole();
   }
 
-  // Initialize COM, so that it is available for use in the library and/or
-  // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
-  // project.set_ui_thread_policy(flutter::UIThreadPolicy::RunOnSeparateThread);
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();

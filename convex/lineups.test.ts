@@ -116,7 +116,6 @@ function lineup(id: string, details: TestLineup = {}) {
   return { key: id, payload: oneLineupPayload(id, details) };
 }
 
-/** A lineup group row as a test sends it: its key and its payload. */
 function group(id: string, lineups: TestLineupGroup) {
   return { key: id, payload: lineupsPayload(id, lineups) };
 }
@@ -591,7 +590,6 @@ describe("a lineup group row is checked whole", () => {
         code: "INVALID_LINEUP_PAYLOAD_DATA",
       },
       {
-        // A link may not name a landing as its origin.
         op: brokenAdd("link-ends-swapped", (payload) => {
           payload.data.links[0].originId = "site";
           payload.data.links[0].landingId = "heaven";
@@ -775,7 +773,6 @@ describe("no lineup or spot is in two groups of a page", () => {
       "applied",
     ]);
 
-    // Once k1's group is deleted, its spot is free for another group.
     await apply(owner, "owner-client", [deleteOp("drop-k1", "k1", 1)]);
     const reuse = await apply(owner, "owner-client", [
       addOp(lineup("k4", { landingId: "shared" }), 2),
@@ -966,7 +963,6 @@ describe("lineup row keys belong to their strategy and page", () => {
       );
       expect(results[0]).toMatchObject({ status: "applied" });
     }
-    // Editing one copy leaves the other untouched.
     await apply(
       owner,
       "edit-copy",
@@ -1020,7 +1016,6 @@ describe("lineup row keys belong to their strategy and page", () => {
       code: "LINEUP_PAGE_MISMATCH",
     });
 
-    // The row stays on its page, untouched.
     const first = await pageLineups(owner);
     expect(first.map((row) => row.publicId)).toEqual(["k"]);
     expect(first[0]!.payload).toEqual(lineup("k").payload);
@@ -1141,7 +1136,6 @@ describe("agent summary", () => {
   test("an origin shared by several lineups counts once, distinct origins count each", async () => {
     const { t, owner } = await createHarness();
     await apply(owner, "owner-client", [
-      // One astra origin, thrown to two landings.
       addOp(
         group("astra", {
           origins: [{ id: "astra-origin", agentType: "astra" }],
@@ -1153,7 +1147,6 @@ describe("agent summary", () => {
         }),
         0,
       ),
-      // Two viper origins into one landing.
       addOp(
         group("viper", {
           origins: [
@@ -1173,7 +1166,6 @@ describe("agent summary", () => {
     // counted per origin, viper (2) leads astra (1).
     expect(await agentSummary(t)).toEqual(["viper", "astra"]);
 
-    // Deleting the group of an origin drops its agent.
     await apply(owner, "owner-client", [deleteOp("delete-astra", "astra", 1)]);
     expect(await agentSummary(t)).toEqual(["viper"]);
   });
@@ -1215,7 +1207,6 @@ describe("agent summary", () => {
     ]);
     expect(await agentSummary(t)).toEqual([]);
 
-    // Placing an agent does.
     await apply(owner, "owner-client", [elementAdd("jett-1", "agent", 3)]);
     expect(await agentSummary(t)).toEqual(["jett", "viper"]);
 
@@ -1233,7 +1224,6 @@ describe("agent summary", () => {
     ]);
     expect(await agentSummary(t)).toEqual(["astra", "viper"]);
 
-    // And so does any lineup change.
     await seedLineupRow(t, "seeded-kayo", "kayo");
     expect(await agentSummary(t)).toEqual(["astra", "viper"]);
     await apply(owner, "owner-client", [
@@ -1250,7 +1240,6 @@ describe("agent summary", () => {
     const rawRows = async () =>
       await t.run(async (ctx) => await ctx.db.query("lineupAgents").collect());
 
-    // Adding a group adds a row for each of its origins.
     await apply(owner, "owner-client", [
       addOp(siteGroup(), 0),
       addOp(kayo, 0, secondPage),
@@ -1313,7 +1302,6 @@ describe("agent summary", () => {
     ]);
     expect(await agentSummary(t)).toEqual(["astra", "brimstone", "kayo"]);
 
-    // Deleting a group removes all its rows; restoring it brings them back.
     await apply(owner, "owner-client", [deleteOp("delete-site", siteKey, 4)]);
     expect((await lineupAgentRows(t)).map((row) => row.lineup)).toEqual([
       "kayo-a",
@@ -1440,7 +1428,6 @@ describe("agent summary", () => {
     expect(copyRows.map((row) => row.page)).toEqual(
       copyRows.map(() => copy.pages[0]!.publicId),
     );
-    // The source keeps its rows untouched.
     expect(await lineupAgentRows(t)).toEqual(sourceRows);
     expect(await agentSummary(t, "lineups-copy")).toEqual([
       "astra",
@@ -1448,7 +1435,6 @@ describe("agent summary", () => {
       "viper",
     ]);
 
-    // Editing the copy moves only the copy's rows.
     const copiedSite = copy.lineups.find(
       (row) => (row.payload.data.origins as Origin[]).length === 2,
     )!;
@@ -1504,7 +1490,6 @@ describe("a resent lineup op", () => {
     const first = await apply(owner, "owner-client", [mine]);
     expect(first[0]).toMatchObject({ status: "applied", appliedRevision: 2 });
 
-    // A teammate edits the same group after it.
     const theirs = siteGroup((lineups) => {
       lineups.links[0]!.name = "Editor name";
     });
@@ -1553,7 +1538,6 @@ describe("a resent lineup op", () => {
       )!;
       await ctx.db.patch(event._id, { appliedRevision: undefined });
     });
-    // A teammate moves the row on.
     const theirs = siteGroup((lineups) => {
       lineups.links[0]!.name = "Editor name";
     });

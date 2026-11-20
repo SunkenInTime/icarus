@@ -115,7 +115,6 @@ export const getFullSnapshot = query({
     ) {
       throw clientUpgradeRequiredError();
     }
-    // Content on a page in the trash is left out with its page.
     const pages = await listLivePages(ctx, strategy._id);
     const [elements, lineups] = await Promise.all([
       elementsOnPages(ctx, pages),

@@ -59,7 +59,6 @@ class _TextLinkReadRegionState extends State<TextLinkReadRegion> {
           _down.add(event.pointer);
           _press = null;
           if (_down.length > 1) _pinch = true;
-          // Another mouse button isn't a click on a link.
           if (_pinch || event.buttons != kPrimaryButton) return;
           final link = _linkAt(event.position);
           if (link != null) {

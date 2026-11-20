@@ -19,7 +19,6 @@ export 'package:icarus/l10n/generated/app_localizations.dart';
 final _english = lookupAppLocalizations(const Locale('en'));
 
 extension L10nContext on BuildContext {
-  /// The app's words in the language it is showing.
   AppLocalizations get l10n =>
       Localizations.of<AppLocalizations>(this, AppLocalizations) ?? _english;
 }

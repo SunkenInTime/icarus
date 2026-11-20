@@ -105,18 +105,14 @@ class ColorConverter implements JsonConverter<Color, String> {
 
   @override
   Color fromJson(String json) {
-    // Handle null or empty string
     if (json.isEmpty) {
       return Colors.transparent;
     }
 
-    // Remove the hash if it exists
     final hexColor = json.startsWith('#') ? json.substring(1) : json;
 
-    // Parse the hex string to an integer
     final intColor = int.parse(hexColor, radix: 16);
 
-    // If the hex is 6 digits (RRGGBB), add the alpha channel
     if (hexColor.length == 6) {
       return Color.fromARGB(
         255,
@@ -126,7 +122,6 @@ class ColorConverter implements JsonConverter<Color, String> {
       );
     }
 
-    // If the hex is 8 digits (AARRGGBB)
     return Color.fromARGB(
       (intColor >> 24) & 0xFF,
       (intColor >> 16) & 0xFF,
@@ -137,11 +132,9 @@ class ColorConverter implements JsonConverter<Color, String> {
 
   @override
   String toJson(Color color) {
-    // Handle null color
     return _colorToHex(color);
   }
 
-  // Helper method to convert Color to hex string
   String _colorToHex(Color color, {bool leadingHashSign = true}) {
     final hexA = (color.a * 255).round().toRadixString(16).padLeft(2, '0');
     final hexR = (color.r * 255).round().toRadixString(16).padLeft(2, '0');

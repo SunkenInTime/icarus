@@ -300,8 +300,6 @@ Future<void> main(List<String> args) async {
         );
       }
 
-      // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
-
       if (!kIsWeb) {
         await initializeIcarusDesktopWindow(
           "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
@@ -318,8 +316,6 @@ Future<void> main(List<String> args) async {
           ),
         ),
       );
-      // After the first frame, so the strategy is made in the order the app
-      // makes it: it reads the session as soon as it exists.
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _watchStrategyForDebugBreadcrumbs(),
       );
@@ -911,7 +907,6 @@ class _MyAppState extends ConsumerState<MyApp> {
     return ToastificationWrapper(
       config: const ToastificationConfig(
         alignment: Alignment.bottomCenter,
-        // itemWidth: 440,
         animationDuration: Duration(milliseconds: 300),
         blockBackgroundInteraction: false,
       ),
@@ -967,7 +962,6 @@ class _MyAppState extends ConsumerState<MyApp> {
               ),
             ),
           ),
-          // Destructive commands are raised the same way, in red.
           destructiveButtonTheme: ShadButtonTheme(
             decoration: ShadDecoration(
               gradient: Settings.raisedDestructiveFill,

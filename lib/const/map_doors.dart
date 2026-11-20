@@ -104,7 +104,6 @@ class MapDoor {
 /// The walls' colour in the map art, for a row a build draws as a plain shape.
 const _mapWallColor = 0xFFB27C40;
 
-/// The floor's colour in the map art.
 const _mapFloorColor = 0xFF271406;
 
 /// How thick a door's bar is, in world units: about the map art's walls.
@@ -179,7 +178,6 @@ const mapDoors = <MapDoor>[
   ),
 ];
 
-/// The doors of [map].
 List<MapDoor> mapDoorsOf(MapValue map) =>
     [for (final door in mapDoors) if (door.map == map) door];
 
@@ -204,7 +202,6 @@ Iterable<PlacedUtility> withoutMapDoors(
 ) =>
     utilities.where((utility) => mapDoorOfRow(utility, map) == null);
 
-/// The doors of [map] that [utilities] change, by id.
 Set<String> changedMapDoors(Iterable<PlacedUtility> utilities, MapValue map) =>
     {
       for (final utility in utilities)

@@ -137,7 +137,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
   ];
   static const _uuid = Uuid();
 
-  /// The most undo steps kept; older ones are dropped.
   static const historyLimit = 200;
 
   List<UserAction> poppedItems = [];
@@ -214,8 +213,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
 
   UserAction? _replay(UserAction action, {required bool undo}) {
     if (action.group == ActionGroup.bulk) {
-      // Undo runs the changes last to first, redo first to last; only the
-      // ones that changed something are kept, in their original order.
       final order = undo ? action.changes.reversed : action.changes;
       final replayed = [
         for (final change in order)

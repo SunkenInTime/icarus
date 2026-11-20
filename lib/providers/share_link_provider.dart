@@ -302,7 +302,6 @@ class ShareLinkController extends Notifier<String?> {
     return true;
   }
 
-  /// Adds the strategy open through a view link to the reader's library.
   Future<bool> addViewedLinkToLibrary() async {
     final view = ref.read(shareLinkViewProvider);
     if (view == null) return false;

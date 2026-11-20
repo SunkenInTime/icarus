@@ -1,10 +1,3 @@
-// A room pass is Convex's word that a signed-in user may open one strategy's
-// room until `exp`. Convex signs it (convex/lib/presencePass.ts, same format)
-// with the secret both sides share; this Worker only verifies.
-//
-// Format: "v1.<base64url(JSON claims)>.<base64url(HMAC-SHA256)>", where the
-// MAC covers "v1.<claims>".
-
 export type PassRole = "owner" | "editor" | "viewer";
 
 export interface PassClaims {

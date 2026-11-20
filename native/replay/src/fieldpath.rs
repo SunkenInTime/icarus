@@ -33,12 +33,10 @@ impl<'a> FieldPath<'a> {
         Self { segments }
     }
 
-    /// The last segment's base name.
     pub fn leaf(&self) -> &'a str {
         self.segments.last().map_or("", |s| s.base)
     }
 
-    /// The indices of every segment but the last, in order.
     pub fn indices(&self) -> Vec<Option<u32>> {
         self.segments[..self.segments.len().saturating_sub(1)]
             .iter()

@@ -487,7 +487,6 @@ class _LiveRepository extends ConvexStrategyRepository {
 
   final _NoTransport _transport;
 
-  /// Every server call this repository was asked to make.
   List<String> get calls => _transport.calls;
 
   final folders = StreamController<List<CloudFolderEntry>>.broadcast();

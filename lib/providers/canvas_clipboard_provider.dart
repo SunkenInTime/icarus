@@ -191,7 +191,6 @@ class CanvasClipboardNotifier extends Notifier<CanvasClipboard?> {
         ref.read(strategyPageSessionProvider).activePageId == pageId &&
         _canEdit;
 
-    // Each picture by id, with its file extension.
     final pictureIds = <String, String>{
       for (final image in clipboard.images)
         image.pictureId: image.fileExtension ?? '',
@@ -212,7 +211,6 @@ class CanvasClipboardNotifier extends Notifier<CanvasClipboard?> {
     ];
     if (renew.isNotEmpty) {
       final pictures = await clipboard.pictures;
-      // The editor may have moved on while the pictures were read.
       if (!stillHere()) return PasteRefusal.pageChanged;
       if (renew.any((id) => pictures[id] == null)) {
         return PasteRefusal.picturesMissing;
@@ -447,8 +445,6 @@ class CanvasClipboardNotifier extends Notifier<CanvasClipboard?> {
 }
 
 DrawingElement _drawingCopy(DrawingElement drawing) {
-  // Through JSON text: the saved form holds objects (its bounding box)
-  // that reading it back expects as maps.
   final json = jsonDecode(jsonEncode(DrawingProvider.elementToJson(drawing)))
       as Map<String, dynamic>;
   final copy = DrawingProvider.elementFromJson({

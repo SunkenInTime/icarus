@@ -83,7 +83,6 @@ export async function getPageByPublicId(
 /// it, before maintenance purges it for good (purgeTrashedPages).
 export const PAGE_TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
-/// Whether [page] is in the trash: deleted, not purged yet.
 export function isTrashed(page: Doc<"pages">): boolean {
   return page.deletedAt !== undefined;
 }
@@ -168,7 +167,6 @@ export async function elementsOnPages(
   return byPage.flat();
 }
 
-/// The lineup rows on [pages]; see [elementsOnPages].
 export async function lineupsOnPages(
   ctx: AnyCtx,
   pages: Doc<"pages">[],

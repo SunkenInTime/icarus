@@ -23,14 +23,12 @@ class ColorButtons extends ConsumerStatefulWidget {
 
 class _ColorButtonsState extends ConsumerState<ColorButtons> {
   final _hoverColor = Colors.white;
-  // final _selectColor = const Color(0xFF2282FF);
   final _selectColor = Settings.accentInk;
 
   Color _currentColor = Colors.transparent;
 
   @override
   Widget build(BuildContext context) {
-    // The selection ring presses with the swatch.
     return PressScale(
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -71,13 +69,6 @@ class _ColorButtonsState extends ConsumerState<ColorButtons> {
                     strokeAlign: BorderSide.strokeAlignCenter,
                   ),
                   color: widget.color,
-                  // boxShadow: const [
-                  //   BoxShadow(
-                  //     blurRadius: 4,
-                  //     color: Colors.black,
-                  //     offset: Offset(0, 4),
-                  //   ),
-                  // ],
                 ),
               ),
             ),
@@ -87,61 +78,3 @@ class _ColorButtonsState extends ConsumerState<ColorButtons> {
     );
   }
 }
-
-// class ColorButtons extends ConsumerWidget {
-//   const ColorButtons({
-//     super.key,
-//     required this.color,
-//     required this.isSelected,
-//     required this.onTap,
-
-//   });
-//   final bool isSelected;
-//   final Color color;
-//   final VoidCallback onTap;
-
-//   @override
-//   Widget build(BuildContext context, WidgetRef ref) {
-
-//     return Container(
-//       decoration: BoxDecoration(
-//         borderRadius: const BorderRadius.all(Radius.circular(4)),
-//         border: Border.all(
-//           color: const Color.fromARGB(255, 34, 130, 255),
-//           width: 3,
-//           strokeAlign: BorderSide.strokeAlignCenter,
-//         ),
-//       ),
-//       height: 26,
-//       width: 26,
-//       child: InkWell(
-//         onTap: onTap,
-//         onHover: (value) {
-
-//         },
-//         child: Center(
-//           child: Container(
-//             height: 24,
-//             width: 24,
-//             decoration: BoxDecoration(
-//               borderRadius: const BorderRadius.all(Radius.circular(4)),
-//               border: Border.all(
-//                 color: const Color(0xFF272727),
-//                 width: 1,
-//                 strokeAlign: BorderSide.strokeAlignCenter,
-//               ),
-//               color: color,
-//               // boxShadow: const [
-//               //   BoxShadow(
-//               //     blurRadius: 4,
-//               //     color: Colors.black,
-//               //     offset: Offset(0, 4),
-//               //   ),
-//               // ],
-//             ),
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-// }

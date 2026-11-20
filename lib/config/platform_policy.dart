@@ -38,7 +38,6 @@ class PlatformPolicy {
     required this.comingToWebBeta,
   });
 
-  /// The desktop app: everything, local and cloud.
   static const desktop = PlatformPolicy(
     isWebBeta: false,
     allowsLocalLibrary: true,

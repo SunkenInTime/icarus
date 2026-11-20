@@ -50,7 +50,6 @@ class StrategyPresenceNotifier extends AutoDisposeNotifier<PresenceRoomState> {
       issuePass: () => repository.issueRoomPass(strategyPublicId),
     );
     _room = room;
-    // Each visit reports the most other people present at once.
     final visitStarted = DateTime.now();
     var peakPeople = 0;
     final subscription = room.states.listen((next) {
@@ -66,7 +65,6 @@ class StrategyPresenceNotifier extends AutoDisposeNotifier<PresenceRoomState> {
       );
     });
     room.start();
-    // What this user is editing goes out as it changes, and from the start.
     ref.listen(
       myEditingProvider,
       (_, editing) => room.setEditing(editing),

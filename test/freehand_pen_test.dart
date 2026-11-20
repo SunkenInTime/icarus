@@ -72,7 +72,6 @@ double _turning(List<Offset> path) {
   return total * 180 / math.pi;
 }
 
-/// How far [point] is from the nearest place on [path].
 double _distanceTo(List<Offset> path, Offset point) {
   var nearest = double.infinity;
   for (var i = 1; i < path.length; i++) {
@@ -94,7 +93,6 @@ void main() {
   // across, the staircase a stroke used to be drawn through.
   const shallow = [Offset(160, 140), Offset(440, 163)];
 
-  // Out, a right angle, and down.
   const corner = Offset(300, 130);
   const elbow = [Offset(170, 130), corner, Offset(300, 250)];
 
@@ -183,7 +181,6 @@ void main() {
       expect(unsettled, lessThan(2 * FreehandPen.settleBehind + 3));
       settled = math.max(settled, same);
     }
-    // And most of the stroke did settle while it was drawn.
     expect(settled, greaterThan(frames.last.length * 0.8));
   });
 

@@ -310,14 +310,12 @@ void main() {
       return p;
     }
 
-    /// The key drawn on [subject]'s row.
     KeybindBadge keyOf(WidgetTester tester, String subject) =>
         tester.widget<KeybindBadge>(find.descendant(
           of: find.byKey(ValueKey(subject)),
           matching: find.byType(KeybindBadge),
         ));
 
-    /// The tooltip shown while the mouse rests on [row].
     Future<String> tooltipOf(WidgetTester tester, Finder row) async {
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: Offset.zero);
@@ -434,7 +432,6 @@ void main() {
           [subject],
         );
       }
-      // Seen from the other team, the keys count from them.
       p.perspective = p.perspective.other;
       await tester.pump();
       expect(
@@ -563,7 +560,6 @@ void main() {
       return (p, controller);
     }
 
-    /// Where [subject]'s icon is on screen now.
     Offset onScreen(
       ReplayPlayback p,
       TransformationController controller,
@@ -599,7 +595,6 @@ void main() {
       expect(controller.value.getMaxScaleOnAxis(), closeTo(2, 1e-9));
       expectCentred(onScreen(p, controller, 'r2'));
 
-      // They walk on; the camera keeps them centred.
       p.seek(4000);
       await tester.pump();
       expectCentred(onScreen(p, controller, 'r2'));
@@ -635,7 +630,6 @@ void main() {
       final panned = controller.value.clone();
       p.seek(5000);
       await tester.pump();
-      // Left where the user put the map.
       expect(controller.value, panned);
 
       await tester.tapAt(onScreen(p, controller, 'r2'));

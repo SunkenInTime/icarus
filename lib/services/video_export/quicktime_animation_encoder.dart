@@ -1,19 +1,5 @@
 import 'dart:typed_data';
 
-/// Encodes frames as QuickTime Animation (`rle `, 32-bit ARGB): lossless,
-/// with an alpha channel that DaVinci Resolve and Clipchamp both composite
-/// correctly. VP9 WebM loses half-transparent pixels in Resolve and ProRes
-/// 4444 breaks in Clipchamp; this format is right in both.
-///
-/// Each frame is run-length coded row by row. A keyframe codes every row; any
-/// other frame codes only the rows that changed since the previous frame, and
-/// within them skips the unchanged pixels, so a held page costs a few bytes a
-/// frame. Pure Dart, so the desktop app and the browser make the same file.
-///
-/// The layout follows FFmpeg's `qtrle` decoder (libavcodec/qtrle.c): a
-/// 32-bit sample size, a 16-bit header (8 when a range of rows follows), then
-/// per row a skip byte (pixels to skip + 1) and codes until -1: 0 skips again,
-/// -2..-128 repeats one pixel, 1..127 copies that many pixels.
 class QuickTimeAnimationEncoder {
   QuickTimeAnimationEncoder({required this.width, required this.height}) {
     if (width <= 0 || width > 0xFFFF || height <= 0 || height > 0xFFFF) {

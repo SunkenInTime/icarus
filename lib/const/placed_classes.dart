@@ -296,8 +296,6 @@ class PlacedImage extends PlacedWidget {
       tagColorValue: tagColorValue ?? this.tagColorValue,
       assetId: assetId ?? this.assetId,
     );
-    // Base class field
-    // cloned.isDeleted = isDeleted ?? this.isDeleted;
     cloned.link = link ?? this.link;
     cloned.caption = caption;
     return cloned;
@@ -311,12 +309,10 @@ class PlacedImage extends PlacedWidget {
 }
 
 class Uint8ListConverter {
-  /// Serializes a [Uint8List] into a Base64-encoded string.
   static String serialize(Uint8List data) {
     return base64Encode(data);
   }
 
-  /// Deserializes a Base64-encoded string back into a [Uint8List].
   static Uint8List deserialize(String base64String) {
     return Uint8List.fromList(base64Decode(base64String));
   }
@@ -1257,7 +1253,6 @@ class PlacedUtility extends PlacedWidget {
 
   bool get isFullCircleCone => angle == ViewConeUtility.fullCircleDegrees;
 
-  /// The cone this view cone utility draws.
   ViewConeUtility get viewCone => isFullCircleCone
       ? UtilityData.fullCircleCone
       : UtilityData.getViewConePreset(type);
@@ -1372,9 +1367,7 @@ class PlacedUtility extends PlacedWidget {
     return copied;
   }
 }
-// ...existing code...
 
-// Add this at the end of the file
 extension PlacedWidgetCopy on PlacedWidget {
   T deepCopy<T extends PlacedWidget>() {
     final json = toJson();

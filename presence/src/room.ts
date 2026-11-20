@@ -227,7 +227,6 @@ export class PresenceRoom extends DurableObject<Env> {
     try {
       ws.close(code === 1005 || code === 1006 ? 1000 : code, "Closed");
     } catch {
-      // Already closed.
     }
   }
 
@@ -316,7 +315,6 @@ export class PresenceRoom extends DurableObject<Env> {
     try {
       ws.close(code, reason);
     } catch {
-      // Already closed.
     }
     this.broadcast({ t: "leave", sid: self.sid }, ws);
   }

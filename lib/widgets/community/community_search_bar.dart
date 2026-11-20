@@ -1032,7 +1032,6 @@ class _SideButtonState extends State<_SideButton> {
   }
 }
 
-/// A filter in the bar, removed with its ×.
 class _Tag extends StatefulWidget {
   const _Tag({
     required this.label,
@@ -1229,7 +1228,6 @@ class _SortButton extends ConsumerWidget {
         height: 36,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         gap: 8,
-        // No outline inside the bar, but the button's own rounded corners.
         decoration: ShadDecoration(
           border: ShadBorder(radius: BorderRadius.circular(8)),
         ),
@@ -1245,7 +1243,6 @@ class _SortButton extends ConsumerWidget {
   }
 }
 
-/// Narrows the feed to the posts the reader starred.
 class _StarredToggle extends StatelessWidget {
   const _StarredToggle({required this.on, required this.onTap});
 

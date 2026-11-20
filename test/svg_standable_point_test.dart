@@ -15,7 +15,6 @@ Map<String, dynamic> _floor(List<double> ring) => {
     };
 
 void main() {
-  // A 100 x 100 floor with a 10 x 10 wall in its middle.
   final model = SvgHeightVisibility.fromJson(data(
     [
       wall('pillar', [rectangle(45, 45, 55, 55)])

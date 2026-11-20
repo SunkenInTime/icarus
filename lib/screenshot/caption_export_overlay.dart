@@ -17,7 +17,6 @@ typedef CaptionExportItem = ({String id, String text, bool round});
 /// A layout measured earlier, drawn over a video frame at [opacity].
 typedef FadingCaptions = ({CaptionExportLayout layout, double opacity});
 
-/// The items among those given that hold a caption.
 List<CaptionExportItem> captionExportItems(List<PlacedWidget> items) => [
       for (final item in items)
         if (item.caption?.isNotEmpty ?? false)

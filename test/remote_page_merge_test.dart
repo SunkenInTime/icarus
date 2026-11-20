@@ -139,7 +139,6 @@ void main() {
         'shared': 1,
         'l3': 9,
       });
-      // Held objects stay the ones on screen.
       expect(identical(graph.origins.first, local.origins.first), isTrue);
     });
 

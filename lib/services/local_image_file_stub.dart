@@ -1,6 +1,5 @@
 import 'package:flutter/painting.dart';
 
-/// Whether this platform keeps strategy images as files on the device.
 const bool deviceHasImageFiles = false;
 
 /// The path of an image's file under [storageDirectory], or null when the

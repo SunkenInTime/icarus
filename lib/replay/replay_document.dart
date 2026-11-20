@@ -143,7 +143,6 @@ class ReplayDocument {
   }
 }
 
-/// Valorant's two teams as replicated.
 enum ReplayTeam {
   red,
   blue;
@@ -511,7 +510,6 @@ class ReplayVector {
   final double y;
   final double z;
 
-  /// The point [t] of the way from here to [other].
   ReplayVector lerp(ReplayVector other, double t) => ReplayVector(
         x + (other.x - x) * t,
         y + (other.y - y) * t,
@@ -542,7 +540,6 @@ class ReplayPathPoint {
       );
 }
 
-/// A player's pose at one moment.
 class ReplayPose {
   const ReplayPose({
     required this.position,

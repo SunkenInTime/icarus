@@ -495,7 +495,6 @@ class _FolderCardState extends ConsumerState<FolderCard>
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Back panel with tab: the folder itself.
           Positioned(
             left: 0,
             right: 0,
@@ -509,10 +508,8 @@ class _FolderCardState extends ConsumerState<FolderCard>
             ),
           ),
 
-          // Map photos peeking out of the pocket.
           ..._buildMapPeeks(t),
 
-          // Front panel: name + agent comp.
           Positioned(
             left: 0,
             right: 0,
@@ -954,11 +951,9 @@ class _FolderBackPainter extends CustomPainter {
     final path = Path()
       ..moveTo(0, size.height - r)
       ..lineTo(0, tabHeight + r)
-      // Up the left edge into the tab.
       ..lineTo(0, r)
       ..quadraticBezierTo(0, 0, r, 0)
       ..lineTo(tabWidth - 12, 0)
-      // Tab slope down to the main top edge.
       ..quadraticBezierTo(tabWidth - 4, 0, tabWidth, tabHeight * 0.55)
       ..quadraticBezierTo(tabWidth + 4, tabHeight, tabWidth + 14, tabHeight)
       ..lineTo(size.width - r, tabHeight)

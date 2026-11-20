@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-/// One parsed ISO-BMFF box.
 class Mp4Box {
   Mp4Box(this.type, this.start, this.size, this.headerSize);
 

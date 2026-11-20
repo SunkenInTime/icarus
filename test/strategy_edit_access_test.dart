@@ -251,7 +251,6 @@ Future<void> _invokeAddTextShortcut(
   );
 }
 
-/// The capabilities of the open strategy, changeable mid-test.
 final _capabilities = StateProvider<StrategyCapabilities>(
   (ref) => StrategyCapabilities.fullAccess(),
 );
@@ -799,7 +798,6 @@ void main() {
       history.redoAction();
       expect(_pageContent(container), edited);
 
-      // With edit access back, the same history works again.
       container.read(_capabilities.notifier).state =
           StrategyCapabilities.fromCloudRole('editor');
       history.redoAction();

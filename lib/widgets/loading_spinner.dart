@@ -11,7 +11,6 @@ class LoadingSpinner extends StatefulWidget {
   final double? strokeWidth;
   final Color? color;
 
-  /// One full cycle of the indeterminate animation.
   static final Duration cycle =
       CircularProgressIndicator.defaultAnimationDuration * 0.6;
 

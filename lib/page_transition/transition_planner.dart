@@ -65,7 +65,6 @@ class TransitionPlanner {
     final copiedFrom = _pairedCopies(prev, next);
     final paired = copiedFrom.values.toSet();
 
-    // Move / appear
     next.forEach((id, to) {
       final from = prev[id] ?? prev[copiedFrom[id]];
       if (from != null) {
@@ -82,7 +81,6 @@ class TransitionPlanner {
       order++;
     });
 
-    // Disappear
     prev.forEach((id, from) {
       if (!next.containsKey(id) && !paired.contains(id)) {
         entries.add(PageTransitionEntry.disappear(from: from, order: order));

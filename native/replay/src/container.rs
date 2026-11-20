@@ -40,7 +40,6 @@ impl MovementSample {
     }
 }
 
-/// Assemble a buffer from the JSON document and the blob.
 pub fn write(json: &str, blob: &[u8]) -> Vec<u8> {
     let json_len = u32::try_from(json.len()).expect("document under 4 GiB");
     let blob_start = (HEADER_BYTES + json.len()).next_multiple_of(8);
@@ -105,7 +104,6 @@ mod tests {
         assert_eq!(u32::from_le_bytes(buf[4..8].try_into().unwrap()), 1);
         assert_eq!(u32::from_le_bytes(buf[8..12].try_into().unwrap()), 2);
         assert_eq!(&buf[12..14], b"{}");
-        // 14 bytes pad to 16; the blob starts there.
         assert_eq!(&buf[14..16], &[0, 0]);
         assert_eq!(&buf[16..], &[0xAA; 3]);
     }

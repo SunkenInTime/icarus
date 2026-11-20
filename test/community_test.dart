@@ -138,7 +138,6 @@ void main() {
         container.read(communityFilterProvider.notifier).state = filter;
     List<String> ids() => [for (final post in feed().posts) post.publicId];
 
-    /// Opens the feed and answers its first page with [posts].
     Future<void> readFirst(List<String> posts, {String? nextCursor}) async {
       container.listen(communityFeedProvider, (_, __) {});
       await pumpEventQueue();

@@ -8,7 +8,6 @@ import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
 import 'package:icarus/services/app_assets.dart';
 
-// A 1x1 PNG.
 final _png = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA'
   '60e6kgAAAABJRU5ErkJggg==',

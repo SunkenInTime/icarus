@@ -201,7 +201,6 @@ class _ReplayViewState extends ConsumerState<ReplayView>
     }
   }
 
-  /// Puts a replay that couldn't open in the debug report.
   void _reportFailure(Object error, StackTrace stackTrace) {
     AppErrorReporter.reportWarning(
       "A replay couldn't be opened.",

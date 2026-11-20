@@ -39,7 +39,6 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   static const double _barHeight = 30;
   static const double _barRadius = 8;
   static const double _chevronWidth = 38;
-  // Menu geometry, matching the library strip's popovers.
   static const double _menuRadius = 12;
   static const double _menuInset = 6;
   static const double _rowInset = 6;
@@ -342,9 +341,6 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                       left: left,
                       top: top,
                       width: _barWidth,
-                      // A floating menu like the library strip's: popover
-                      // grey, hairline border, panel radius, one shadow. The
-                      // rows inside are flat.
                       child: Container(
                         constraints: BoxConstraints(maxHeight: maxHeight),
                         decoration: BoxDecoration(
@@ -596,8 +592,6 @@ class _StrategyQuickSwitchItemState extends State<_StrategyQuickSwitchItem> {
   @override
   Widget build(BuildContext context) {
     const theme = Settings.tacticalVioletTheme;
-    // A flat menu row: thumbnail, name over map, side over time. Hover is
-    // the ghost button's grey fill; nothing here is bordered or shadowed.
     return ShadButton.ghost(
       height: _rowHeight,
       expands: true,

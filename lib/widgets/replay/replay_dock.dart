@@ -55,7 +55,6 @@ class ReplayDock extends ConsumerStatefulWidget {
   /// the edge doesn't shut it.
   static const peekLinger = Duration(milliseconds: 400);
 
-  /// How long the story takes to grow open or fold shut.
   static const storyDuration = Duration(milliseconds: 200);
 
   /// How far below the dock its own margin from the window's edge is when
@@ -63,7 +62,6 @@ class ReplayDock extends ConsumerStatefulWidget {
   /// grows around moves only a few pixels.
   static const _margin = 4.0;
 
-  /// The card's padding inside its border.
   static const _padding = 5.0;
 
   @override
@@ -85,7 +83,6 @@ class _ReplayDockState extends ConsumerState<ReplayDock>
   late final _storyController = AnimationController(
     vsync: this,
     duration: ReplayDock.storyDuration,
-    // A pinned story is open from the first frame.
     value: ref.read(replayRoundStoryProvider) ? 1 : 0,
   );
   late final _story = CurvedAnimation(
@@ -208,7 +205,6 @@ class _ReplayDockState extends ConsumerState<ReplayDock>
             child: ReplaySelect(
               listenable: playback,
               select: () => (playback.round?.index, playback.perspective),
-              // Too many rounds for the room: the strip scrolls.
               builder: (context, _) => _RoundStrip(playback: playback),
             ),
             builder: (context, rounds) {
@@ -452,7 +448,6 @@ class _RoundStrip extends StatefulWidget {
       2 * ReplayDock._padding +
       2;
 
-  /// Where slot [index] starts along the strip.
   static double _slotLeft(int index, {int? half, int? overtime}) {
     var left = index * (_slot + _gap);
     if (half != null && index >= half) left += _half + _gap;
@@ -862,7 +857,6 @@ class _RoundScrubberState extends ConsumerState<_RoundScrubber> {
       playback.seek(start + (span * fraction).round());
     }
 
-    /// The mark under [local], and where its card goes.
     (ReplayRoundEvent, double)? markAt(Offset local) {
       if (story != null) {
         final passed = _passed(events, playback.timeMs);
@@ -1148,7 +1142,6 @@ class _ScrubberPainter extends CustomPainter {
           );
         case ReplayEventKind.plant:
           canvas.drawPath(diamond(ex), Paint()..color = ink);
-        // The plant's diamond, emptied.
         case ReplayEventKind.defuse:
           canvas.drawPath(
             diamond(ex),
@@ -1157,7 +1150,6 @@ class _ScrubberPainter extends CustomPainter {
               ..style = PaintingStyle.stroke
               ..strokeWidth = 1.5,
           );
-        // A four-pointed burst.
         case ReplayEventKind.detonation:
           final burst = Path()
             ..moveTo(ex, midY - 8)

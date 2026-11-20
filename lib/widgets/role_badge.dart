@@ -17,11 +17,6 @@ CloudBadgeKind? cloudBadgeKindForRole(String? role) {
     case 'viewer':
       return CloudBadgeKind.viewer;
     default:
-      // Unknown non-null roles fall back to the viewer badge. This mirrors
-      // StrategyCapabilities.fromCloudRole (strategy_capabilities_provider),
-      // which grants viewer capabilities to any role that is not exactly
-      // 'owner' or 'editor' — so the badge matches what the user can actually
-      // do, and shared items are never mistaken for owned ones.
       return role == null ? null : CloudBadgeKind.viewer;
   }
 }
@@ -115,7 +110,6 @@ class NeedsConnectionBadge extends StatelessWidget {
 /// readable, plainly not available.
 const double movingToCloudOpacity = 0.45;
 
-/// A strategy on its way from this device to the cloud.
 class MovingToCloudBadge extends StatelessWidget {
   const MovingToCloudBadge({super.key});
 
@@ -135,7 +129,6 @@ class MovingToCloudBadge extends StatelessWidget {
   }
 }
 
-/// The share role of a strategy someone else owns. Null for owned strategies.
 class CloudRoleBadge extends StatelessWidget {
   const CloudRoleBadge({super.key, required this.kind});
 

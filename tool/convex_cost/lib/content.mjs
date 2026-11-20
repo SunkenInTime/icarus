@@ -42,7 +42,6 @@ export function seeded(seed) {
 
 const AGENTS = ["astra", "jett", "sova", "omen", "killjoy", "viper", "fade"];
 
-/// An element payload of [kind] with public id [id].
 export function elementPayload(kind, id, rng) {
   const position = rng.position();
   switch (kind) {
@@ -168,7 +167,6 @@ export function pageKinds(count) {
   return Array.from({ length: count }, (_, i) => cycle[i % cycle.length]);
 }
 
-/// element.add ops for a page of [count] elements.
 export function elementAdds(pagePublicId, count, rng) {
   return pageKinds(count).map((kind, sortIndex) => {
     const id = rng.uuid();
@@ -190,8 +188,6 @@ export function batches(ops, size = 40) {
   return out;
 }
 
-/// Where each slice of a page with about [elementCount] elements starts, as
-/// lib/collab/page_slices.dart pageSliceStarts works it out.
 export function pageSliceStarts(elementCount) {
   const count =
     elementCount < 16 ? 1 : elementCount < 32 ? 2 : elementCount < 64 ? 4 : elementCount < 128 ? 8 : 16;

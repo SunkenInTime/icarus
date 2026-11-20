@@ -682,7 +682,6 @@ void main() {
         ),
       ));
 
-      // The first frame paints it: nothing was left to load.
       expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
       final painted = tester.widget<Image>(find.byType(Image)).image;
       final key = await tester.runAsync(

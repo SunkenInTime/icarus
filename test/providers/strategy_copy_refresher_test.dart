@@ -414,7 +414,6 @@ void main() {
     await _settle(pause: false);
     container.read(_connected.notifier).state = true;
     await _settle(pause: false);
-    // ...then it fails, which used to clear the walk the reconnect wanted.
     repository.fullReadGate = null;
     gate.complete();
     await _settle();
@@ -465,7 +464,6 @@ Future<void> _settle({bool pause = true}) async {
   for (var i = 0; i < 20; i += 1) {
     await Future<void>.delayed(const Duration(milliseconds: 1));
   }
-  // The pause between background reads.
   if (pause) await Future<void>.delayed(const Duration(seconds: 2));
 }
 
@@ -491,7 +489,6 @@ class _Repository extends ConvexStrategyRepository {
   /// The caller's role per strategy, when not the fixture's.
   final roles = <String, String>{};
 
-  /// Strategies the server says are gone.
   final gone = <String>{};
 
   /// While set, asking for content versions fails like this.

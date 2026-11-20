@@ -89,9 +89,6 @@ foreach ($name in $instances.Keys) {
     "${name}: timed out after $TimeoutSeconds s"
     $clean = $false
   }
-  # The exit code says nothing: Dart's exit() tears the app down with native
-  # plugins still running, and Windows reports an access violation. A crash
-  # before the end leaves no SUMMARY, which fails the run below.
   $log = Join-Path $Out "$name.log"
   $lines = if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log } else { @() }
   $lines | Where-Object { $_ -match ' (FAIL|FLUTTER-ERROR|MISPLACED) ' } | ForEach-Object { "${name}: $_" }

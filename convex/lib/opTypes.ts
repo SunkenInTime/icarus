@@ -132,7 +132,6 @@ const lineupDeleteOpValidator = v.object({
   lineupPublicId: v.string(),
   pagePublicId: v.string(),
   expectedLineupRevision: v.number(),
-  // As for element.delete.
   lastWriterWins: v.optional(v.boolean()),
 });
 

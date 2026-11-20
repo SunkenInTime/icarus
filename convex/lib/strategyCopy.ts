@@ -41,7 +41,6 @@ export async function copyStrategy(
   agentTypes: string[];
   /// Each copied page's side, in page order.
   pageIsAttack: boolean[];
-  /// How many lineups the copy holds.
   lineupCount: number;
 }> {
   const now = Date.now();
@@ -117,7 +116,6 @@ export async function copyStrategy(
   };
 }
 
-/// Deletes [strategy] with everything that belongs to it.
 export async function deleteStrategyRecord(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,

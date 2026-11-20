@@ -718,7 +718,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('Cloud connection lost'), findsOneWidget);
 
-    // The server accepts the token after all, and setup finishes.
     convexApi.emitAuthState(true);
     convexApi.lastOnAuthChange!(true);
     ensureCurrentUser.complete();
@@ -937,8 +936,6 @@ void main() {
     convexApi.mutationError = _upgradeRequired;
     convexApi.emitAuthState(true);
     convexApi.setAuthCompleter!.complete(FakeAuthHandle());
-    // Readiness times out after 50 ms; the setup fails after that. Any read
-    // of a provider from the disposed container fails this test.
     await Future<void>.delayed(const Duration(milliseconds: 120));
     await pumpMicrotasks();
   });
@@ -1275,7 +1272,6 @@ void main() {
     expect(again.message, startsWith('A link is already on its way.'));
     expect(supabaseApi.resetRequests, 1);
 
-    // Another address is a new request.
     await auth.sendPasswordReset('c@d.co');
     expect(supabaseApi.resetRequests, 2);
   });
@@ -1879,7 +1875,6 @@ void main() {
     );
     expect(container.read(authProvider).activeAuthIncidentId, isNull);
 
-    // Supabase answers again and Convex confirms: ready.
     final refreshed = fakeSession(accessToken: 'refreshed');
     supabaseApi.currentSession = refreshed;
     convexApi.autoAuthenticateOnSetAuth = true;
@@ -2479,8 +2474,6 @@ void _libraryListAccountEndGroup({
   });
 }
 
-/// Lets queued copy writes finish: microtasks in memory, real file writes
-/// on Hive.
 Future<void> settleWrites(bool onHive) async {
   for (var i = 0; i < 5; i++) {
     await pumpMicrotasks();

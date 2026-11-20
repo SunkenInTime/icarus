@@ -64,7 +64,6 @@ class _ShapedCone extends CustomPainter implements ConeAreaPainter {
   bool shouldRepaint(_ShapedCone oldDelegate) => false;
 }
 
-/// A box cone that notes whether it was asked to clip itself to the floor.
 class _NotingCone extends _BoxCone {
   final clipped = <bool>[];
 
@@ -308,7 +307,6 @@ void main() {
         _page(coverage, const [Offset(10, 10)], painters: [_ShapedCone()]));
     final one = _pixels(tester);
     final single = [for (var x = 12; x < 48; x++) await one(x, 59 - x)];
-    // Ten of the same cone, edges on top of each other.
     await tester.pumpWidget(_page(
         coverage, [for (var i = 0; i < 10; i++) const Offset(10, 10)],
         painters: [for (var i = 0; i < 10; i++) _ShapedCone()]));

@@ -53,14 +53,12 @@ class _CursorCirclePainter extends CustomPainter {
     final ringRadius = outerRadius - (ringThickness / 2);
     final innerRadius = outerRadius - ringThickness - gap;
 
-    // Outer ring
     final ringPaint = Paint()
       ..color = ringColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = ringThickness;
     canvas.drawCircle(center, ringRadius, ringPaint);
 
-    // Inner filled circle
     if (innerRadius > 0) {
       final fillPaint = Paint()
         ..color = fillColor

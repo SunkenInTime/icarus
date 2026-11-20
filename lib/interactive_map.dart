@@ -180,7 +180,6 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
         ),
       ),
     );
-    // A view-only reader has no sidebar, so the map takes its width.
     final viewOnly = ref.watch(isViewOnlyStrategyProvider);
     final showCaptionMarkers = !transitionPresentation.hideView &&
         !transitionPresentation.active &&
@@ -327,7 +326,6 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                             ),
                                           ),
                                         ),
-                                      // Dot Grid
                                       Positioned.fill(
                                         child: GestureDetector(
                                           behavior: HitTestBehavior.translucent,
@@ -348,7 +346,6 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                                 ),
                                         ),
                                       ),
-                                      // Map SVG
                                       Positioned(
                                         left: mapLeft,
                                         top: 0,
@@ -536,7 +533,6 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                                 child: TemporaryWidgetBuilder())
                                             : SizedBox.shrink(),
                                       ),
-                                      // Painting
                                       Positioned.fill(
                                         // Nested Consumer so the per-frame fade-in
                                         // progress only rebuilds the drawing layer.
@@ -586,8 +582,6 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                                 const LineUpPlacementEditor(),
                                           ),
                                         ),
-                                      // Teammates' cursors ride above everything
-                                      // they point at.
                                       Positioned.fill(
                                         child: RemoteCursorsLayer(
                                           coordinateSystem: coordinateSystem,

@@ -127,15 +127,12 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
   }
 
   Offset rotateOffset(Offset point, Offset origin, double angle) {
-    // Translate point to origin
     final dx = point.dx - origin.dx;
     final dy = point.dy - origin.dy;
 
-    // Rotate around origin using rotation matrix
     final rotatedX = dx * math.cos(angle) - dy * math.sin(angle);
     final rotatedY = dx * math.sin(angle) + dy * math.cos(angle);
 
-    // Translate back
     return Offset(rotatedX + origin.dx, rotatedY + origin.dy);
   }
 
@@ -293,7 +290,6 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
 
         final double anchorLength = (clampedLength * mapScale);
 
-        // log("anchor length: ${anchorLength.toString()} local length: ${localLength.toString()}");
         buttonTop = anchorLength;
       } else {
         buttonTop = null;
@@ -314,8 +310,6 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             abilitySize: abilitySize,
           ),
           onPanStart: (details) {
-            // ref.read(abilityProvider.notifier).updateRotationHistory(index);
-            // ref.read(abilityProvider.notifier).updateLengthHistory(index);
 
             final box = context.findRenderObject() as RenderBox;
             final bottomCenter = abilityData
@@ -341,7 +335,6 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
 
             final currentPosition = details.globalPosition;
 
-            // Calculate angles
             final Offset currentPositionNormalized =
                 (currentPosition - rotationOrigin);
 
@@ -350,7 +343,6 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               currentPositionNormalized.dx,
             );
 
-            // // Update rotation
             final sideRotation = currentAngle + (math.pi / 2);
             final newRotation = coordinateSystem.rotationFromSide(
               sideRotation,
@@ -464,7 +456,6 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               });
               widget.onDragEnd(details, dragId);
             },
-            // dragAnchorStrategy: pointDragAnchorStrategy,
             child: EditorItemOutline(
               child: abilityData.createWidget(
                 id: widget.id,

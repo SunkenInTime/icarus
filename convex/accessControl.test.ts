@@ -249,14 +249,12 @@ describe("A/B/C access boundary", () => {
     await share("viewer-token", "viewer");
     await share("editor-token", "editor");
 
-    // The owner opening their own link gains nothing.
     await expect(redeem(a, "viewer-token")).resolves.toMatchObject({
       targetType: "strategy",
       strategyPublicId,
       role: "owner",
       alreadyHadAccess: true,
     });
-    // A first redemption grants access; repeating it grants nothing.
     await expect(redeem(b, "viewer-token")).resolves.toMatchObject({
       role: "viewer",
       alreadyHadAccess: false,
@@ -265,7 +263,6 @@ describe("A/B/C access boundary", () => {
       role: "viewer",
       alreadyHadAccess: true,
     });
-    // A higher role is new; a lower one after it is not.
     await expect(redeem(b, "editor-token")).resolves.toMatchObject({
       role: "editor",
       alreadyHadAccess: false,
@@ -275,7 +272,6 @@ describe("A/B/C access boundary", () => {
       alreadyHadAccess: true,
     });
 
-    // Folders report the same way.
     await a.mutation(createFolder, {
       clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       publicId: "owned-folder",

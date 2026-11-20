@@ -130,7 +130,6 @@ void main() {
     expect((data['links'] as List).single['id'], 'link-1');
     expect((data['origins'] as List).single['id'], 'origin-1');
 
-    // And the rows reproduce exactly when the hydrated graph is sent again.
     final hydrated = _hydrated(adds);
     final resent = cloudLineupRows(hydrated.graph, groupOf: hydrated.groupOf);
     expect(

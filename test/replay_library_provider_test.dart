@@ -69,8 +69,6 @@ void main() {
     await root.delete(recursive: true);
   });
 
-  /// A replay of [matchId] played at [playedAt], whose file was last written
-  /// at [fileTime].
   Future<File> writeReplay(
     Directory directory,
     String name, {

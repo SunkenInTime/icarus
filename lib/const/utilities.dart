@@ -58,14 +58,12 @@ class UtilityData {
     defaultLength: 150,
   );
 
-  /// Helper to check if a utility type is a view cone
   static bool isViewCone(UtilityType type) {
     return type == UtilityType.viewCone180 ||
         type == UtilityType.viewCone90 ||
         type == UtilityType.viewCone40;
   }
 
-  /// Get the angle for a view cone type
   static double getViewConeAngle(UtilityType type) {
     switch (type) {
       case UtilityType.viewCone180:
@@ -411,7 +409,6 @@ class ImageUtility extends Utilities {
   }
 }
 
-/// Utility class for view cone widgets (180°, 90°, 40° presets)
 class ViewConeUtility extends Utilities {
   final double angle;
   final double defaultLength;
@@ -450,8 +447,6 @@ class ViewConeUtility extends Utilities {
     );
   }
 
-  /// Get the anchor point at the bottom center (apex of the cone)
-  /// The length determines where the bottom center is positioned
   @override
   Offset getAnchorPoint(
       {String? id,
@@ -493,18 +488,6 @@ class ViewConeUtility extends Utilities {
       ViewConeWidget.totalHeightVirtual,
     );
   }
-  // /// Get anchor point with length - bottom center of the view cone
-  // /// Similar to how SquareAbility calculates its anchor
-  // Offset getAnchorPointWithLength({
-  //   required double length,
-  // }) {
-  //   // The widget is sized to contain the cone
-  //   // Width = 2 * length (cone can extend left and right)
-  //   // Height = length (cone extends upward from bottom)
-  //   // Anchor point is at the bottom center: (length, length)
-  //   final scaledLength = length;
-  //   return Offset(scaledLength, scaledLength);
-  // }
 }
 
 class CustomCircleUtility extends Utilities {

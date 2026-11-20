@@ -20,7 +20,6 @@ use icarus_replay::{ReplayError, container, header, oodle};
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let survey = args.iter().any(|a| a == "--survey");
-    // `--rows=A,B`: every field row whose name or group contains A or B.
     let rows: Vec<String> = args
         .iter()
         .filter_map(|a| a.strip_prefix("--rows="))

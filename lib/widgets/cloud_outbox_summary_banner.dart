@@ -39,7 +39,6 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
     final auth = ref.watch(authProvider);
     final strategyNames = ref.watch(cloudStrategyNamesProvider);
     final connected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
-    // Replay captures still on their way, or refused.
     final captureQueue = ref.watch(replayCaptureQueueProvider);
     final captures =
         captureQueue.forAccount(ref.watch(cloudMediaAccountIdProvider));

@@ -397,7 +397,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         retryCurrentAccount();
       }
     });
-    // The server accepts this build again: the work it held goes out.
     ref.listen<bool>(clientUpgradeRequiredProvider, (previous, next) {
       if (previous == true && !next) retryCurrentAccount();
     });
@@ -410,7 +409,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     ref.listen<bool>(
       convexConnectionSnapshotProvider,
       (_, next) => connectionIs(next),
-      // No client to ask (tests that never connect): offline.
       onError: (_, __) => connectionIs(false),
       fireImmediately: true,
     );
@@ -625,10 +623,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _ownLanded.clear();
   }
 
-  /// How many op IDs are remembered as the canvas's work; for tests.
   int get canvasWorkCount => _canvasOpIds.length;
 
-  /// How many items' last landed change is remembered; for tests.
   int get landedCanvasWorkCount => _ownLanded.length;
 
   /// Whether [opId] is work the canvas holds: queued from its edits, or
@@ -938,7 +934,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     ];
   }
 
-  /// Whether [snapshot]'s read already shows [landed].
   static bool _readShows(
     RemoteEditorSnapshot snapshot,
     ({StrategyOp op, int revision, bool applied}) landed,
@@ -1761,7 +1756,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             record?.lastError == pageDeletedMessage,
       );
 
-  /// Retries the attention records [only] accepts, or all of them.
   Future<void> _retryAttention({
     required bool flushImmediately,
     bool Function(EntitySyncKey key, DurableOutboxRecord? record)? only,
@@ -3703,7 +3697,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   bool _storingMany = false;
   bool _publishWaits = false;
 
-  /// Ends [_storingMany], publishing if a publish waited for it.
   void _storedMany() {
     _storingMany = false;
     if (!_publishWaits) return;

@@ -9,11 +9,9 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/services/halved_image.dart';
 import 'package:image/image.dart' as img;
 
-/// A real PNG [width] × [height].
 Uint8List _png(int width, int height) =>
     img.encodePng(img.Image(width: width, height: height));
 
-/// The size [image] decodes to.
 Future<Size> _decodedSize(WidgetTester tester, ImageProvider image) async {
   final size = await tester.runAsync(() {
     final decoded = Completer<Size>();

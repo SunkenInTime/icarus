@@ -270,7 +270,6 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     state = newState;
   }
 
-  /// How strong a placed circle, rectangle or zone is drawn, in percent.
   void updateCustomShapeOpacity({
     required String id,
     required int opacityPercent,

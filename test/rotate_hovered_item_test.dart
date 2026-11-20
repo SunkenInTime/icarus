@@ -190,7 +190,6 @@ void main() {
     final container = await _pumpAbility(tester, _plainIcon());
     double stored() => container.read(abilityProvider).single.rotation;
 
-    // Without a hovered item, X does nothing.
     await _press(tester, LogicalKeyboardKey.keyX);
     expect(stored(), 0);
 

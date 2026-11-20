@@ -126,7 +126,6 @@ describe("a strategy moving in from a device", () => {
     expect(await listedIds(owner, "plays")).toEqual(["moving-in-folder"]);
     expect(await folderCount(owner, "plays")).toBe(1);
 
-    // Finishing twice changes nothing.
     await owner.mutation(finishMove, {
       ...protocol,
       strategyPublicId: "moving-root",

@@ -28,7 +28,6 @@ PlacedWidget? placedItemById(ProviderContainer container, String id) {
   return null;
 }
 
-/// The longest note an item can keep.
 const captionMaxLength = 2000;
 
 /// Writes [caption] onto the placed item [id] through its own provider, so

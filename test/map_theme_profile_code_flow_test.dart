@@ -115,7 +115,6 @@ void main() {
     await tester.pump();
   }
 
-  // Hive and the clipboard answer on the real event loop.
   Future<void> settle(WidgetTester tester) async {
     for (var i = 0; i < 4; i++) {
       await tester.runAsync(
@@ -157,7 +156,6 @@ void main() {
     expect(find.text('Pasted from your clipboard.'), findsOneWidget);
     expect(find.text('Haven Dusk'), findsOneWidget);
 
-    // Start the Hive write on the real event loop so it can finish.
     await tester.runAsync(() async {
       await tester.tap(find.text('Add profile'));
       await Future<void>.delayed(const Duration(milliseconds: 200));
@@ -171,7 +169,6 @@ void main() {
     expect(added.palette, havenDusk);
     expect(added.isBuiltIn, isFalse);
     expect(find.text('Haven Dusk added'), findsOneWidget);
-    // The new profile lands after the ones already there.
     await tester.pump(const Duration(milliseconds: 500));
     expect(
       tester.getTopLeft(find.text('Haven Dusk')).dy,
@@ -208,7 +205,6 @@ void main() {
     await settle(tester);
 
     showSection.value = false;
-    // Let the toast finish sliding in.
     await tester.pump(const Duration(milliseconds: 700));
     expect(find.byType(MapThemeSettingsSection), findsNothing);
 

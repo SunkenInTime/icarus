@@ -76,10 +76,6 @@ const tooLargeToPost = () =>
     "This strategy is too large to post.",
   );
 
-// ---------------------------------------------------------------------------
-// Reading
-// ---------------------------------------------------------------------------
-
 /**
  * One page of the feed. Reads only post rows and never the caller, so every
  * reader asking for the same page shares one cached result, and a star
@@ -421,7 +417,6 @@ export const getPostPreview = query({
   },
 });
 
-/// What the caller may do in Community.
 export const getViewer = query({
   args: {},
   returns: v.object({
@@ -442,10 +437,6 @@ export const getViewer = query({
     };
   },
 });
-
-// ---------------------------------------------------------------------------
-// Posting
-// ---------------------------------------------------------------------------
 
 /// Posts the caller's strategy [strategyPublicId] as it is now, as
 /// [postPublicId]. The post shows a copy, so what they change afterwards
@@ -650,10 +641,6 @@ export const takeDown = mutation({
   },
 });
 
-// ---------------------------------------------------------------------------
-// Stars and copies
-// ---------------------------------------------------------------------------
-
 /// Stars or unstars a post for the caller. Doing what is already done does
 /// nothing. The post's count catches up within a few minutes.
 export const setStar = mutation({
@@ -797,10 +784,6 @@ export const copyPost = mutation({
     return { ok: true } as const;
   },
 });
-
-// ---------------------------------------------------------------------------
-// Reports and review
-// ---------------------------------------------------------------------------
 
 /// Reports a post. One report per account per post; reporting again
 /// changes nothing. The author is never told who reported it. Enough
@@ -1030,10 +1013,6 @@ export const notifyReviewers = internalAction({
   },
 });
 
-// ---------------------------------------------------------------------------
-// Counts
-// ---------------------------------------------------------------------------
-
 const FOLD_BATCH = 1000;
 
 /// Folds stars, unstars and copies into their posts' counts. Runs every few
@@ -1113,7 +1092,6 @@ export const refreshTrending = internalMutation({
     for (const copy of copies) {
       scores.set(copy.postId, (scores.get(copy.postId) ?? 0) + 2);
     }
-    // Posts that were trending and no longer are drop back to zero.
     const trending = await ctx.db
       .query("communityPosts")
       .withIndex("by_trendScore", (q) => q.gt("trendScore", 0))
@@ -1144,10 +1122,6 @@ export const clearReportsBatch = internalMutation({
     return null;
   },
 });
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /// [authorId]'s posts that are not taken down. Read by status, so however
 /// many they have taken down, none of these is missed.

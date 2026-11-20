@@ -20,7 +20,6 @@ class LineupChange {
   /// [LineupChangeKind.deleted] stand alone.
   final List<LineupChangeKind> kinds;
 
-  /// The lineup as the user knows it: its name, or its agent's.
   String label(AppLocalizations l10n) =>
       name ??
       switch (agent) {
@@ -28,7 +27,6 @@ class LineupChange {
         final agent => l10n.lineupChangeAgentLineup(l10n.gameName(agent)),
       };
 
-  /// What changed, e.g. "added" or "notes edited, landing moved".
   String description(AppLocalizations l10n) => [
         for (final kind in kinds)
           switch (kind) {

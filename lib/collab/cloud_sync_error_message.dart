@@ -76,7 +76,6 @@ String? incompletePageCopyPageName(String reason) {
   return reason.substring(start.length, end);
 }
 
-/// Whether [reason] is an [incompletePageCopyMessage].
 bool isIncompletePageCopyReason(String? reason) =>
     reason != null && reason.contains(_incompletePageCopyMark);
 

@@ -83,7 +83,6 @@ abstract interface class ConeAreaPainter {
       {required bool clipToFloor});
 }
 
-/// Gives the cones below it a shared [ConeCoverage].
 class ConeCoverageScope extends InheritedWidget {
   const ConeCoverageScope({
     super.key,
@@ -442,7 +441,6 @@ class RevealedFloor extends SingleChildRenderObjectWidget {
 
   final CustomPainter cones;
 
-  /// How strongly the cones show.
   final double opacity;
 
   @override

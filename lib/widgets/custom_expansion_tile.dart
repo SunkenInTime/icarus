@@ -27,58 +27,44 @@ class CustomExpansionTile extends StatefulWidget {
     this.maintainState = false,
   });
 
-  /// The primary content of the tile's title.
   final Widget? title;
 
-  /// A widget to display before the title.
   final Widget? leading;
 
-  /// A widget that remains visible even when the expansion tile is collapsed.
   final List<Widget>? persistentRow;
 
-  /// The widgets that are displayed when the tile expands.
   final List<Widget> children;
 
-  /// Whether the tile is initially expanded.
   final bool initiallyExpanded;
 
-  /// Called when the tile expands or collapses.
   final ValueChanged<bool>? onExpansionChanged;
 
   /// The background color of the expanded tile.
   final Color? backgroundColor;
 
-  /// The background color of the collapsed tile.
   final Color? collapsedBackgroundColor;
 
   /// The color of the title text when expanded.
   final Color? textColor;
 
-  /// The color of the title text when collapsed.
   final Color? collapsedTextColor;
 
   /// The color of the expansion icon when expanded.
   final Color? iconColor;
 
-  /// The color of the expansion icon when collapsed.
   final Color? collapsedIconColor;
 
-  /// The alignment of the children when expanded.
   final Alignment? expandedAlignment;
 
-  /// The cross axis alignment of the children when expanded.
   final CrossAxisAlignment? expandedCrossAxisAlignment;
 
-  /// Padding for the expanded children.
   final EdgeInsetsGeometry? childrenPadding;
 
   /// Padding for the title and persistent row.
   final EdgeInsetsGeometry? tilePadding;
 
-  /// A widget to display at the end of the title row.
   final Widget? trailing;
 
-  /// Whether to maintain the state of the children when collapsed.
   final bool maintainState;
 
   @override
@@ -153,7 +139,6 @@ class _CustomExpansionTileState extends State<CustomExpansionTile>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          // Title row with expansion control
           InkWell(
             mouseCursor: SystemMouseCursors.click,
             onTap: _handleTap,
@@ -186,7 +171,6 @@ class _CustomExpansionTileState extends State<CustomExpansionTile>
             ),
           ),
 
-          // Persistent row that's always visible
           if (widget.persistentRow != null)
             Padding(
               padding: widget.tilePadding ??
@@ -196,7 +180,6 @@ class _CustomExpansionTileState extends State<CustomExpansionTile>
               ),
             ),
 
-          // Expandable children
           ClipRect(
             child: AnimatedBuilder(
               animation: _controller.view,

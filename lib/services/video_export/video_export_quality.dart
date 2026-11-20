@@ -12,9 +12,6 @@ extension VideoExportQualitySettings on VideoExportQuality {
         VideoExportQuality.max => null,
       };
 
-  /// Potato only drops to 720p when its duration-derived bitrate reaches the
-  /// readable floor. At every higher tested bitrate, 1080p retained more map
-  /// and label detail for the same sharing target.
   int outputHeightForDuration(double durationSeconds) {
     final policy = sizePolicy;
     if (policy == null) return 1080;
@@ -45,7 +42,6 @@ class VideoExportSizePolicy {
   final int retryTargetBytes;
   final int? outputHeightAtBitrateFloor;
 
-  /// Keeps very long exports at the readable floor rather than rejecting them.
   int initialVideoBitrate(double durationSeconds) {
     if (!durationSeconds.isFinite || durationSeconds <= 0) {
       throw ArgumentError.value(
@@ -95,9 +91,6 @@ class VideoExportSizePolicy {
   }
 }
 
-/// Attachment limits vary by Discord account and server and are changing over
-/// time. These presets optimize toward useful sharing targets without making
-/// an external limit an Icarus export gate.
 abstract final class VideoExportSizePolicies {
   static const potato = VideoExportSizePolicy(
     targetFileSizeBytes: 10 * 1024 * 1024,

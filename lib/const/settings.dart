@@ -181,7 +181,6 @@ class Settings {
       "https://github.com/SunkenInTime/icarus/releases/latest/download/icarus-setup.exe");
   static ThemeData appTheme = ThemeData(
       colorScheme: const ColorScheme.dark(
-        // primary: Color.fromARGB(255, 129, 75, 223),
         primary: Colors.deepPurpleAccent,
         secondary: Colors.teal,
         error: Colors.red,
@@ -193,10 +192,6 @@ class Settings {
       textButtonTheme: TextButtonThemeData(
         style: ButtonStyle(
           foregroundColor: WidgetStateProperty.all<Color>(Colors.white),
-          // You can also set other properties like textStyle here if needed
-          // textStyle: MaterialStateProperty.all<TextStyle>(
-          //   const TextStyle(color: Colors.white),
-          // ),
         ),
       ),
       menuTheme: MenuThemeData(
@@ -241,21 +236,15 @@ class Settings {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ButtonStyle(
           foregroundColor: WidgetStateProperty.all<Color>(Colors.white),
-          // You can also set other properties like textStyle here if needed
-          // textStyle: MaterialStateProperty.all<TextStyle>(
-          //   const TextStyle(color: Colors.white),
-          // ),
         ),
       ));
 
   /// Violet for lines, glyphs, text, and strokes on dark surfaces: two
   /// steps lighter than [tacticalVioletTheme.primary], which is the fill
   /// under white text and too dark to read as a thin mark.
-  static const Color accentInk = Color(0xff8b5cf6); // violet-500
+  static const Color accentInk = Color(0xff8b5cf6);
 
   static const ShadColorScheme tacticalVioletTheme = ShadColorScheme(
-    // --- THE GRAYS (UNCHANGED) ---
-    // These are the "Zinc" cool grays you liked.
     background: Color(0xff09090b),
     foreground: Color(0xfffafafa),
     card: Color(0xff18181b),
@@ -273,17 +262,13 @@ class Settings {
     // on a card still reads as a field.
     input: Color(0xff3f3f46),
 
-    // --- THE NEW PURPLE (UPDATED) ---
-    // Violet-700: Higher contrast, deeper, premium look.
     primary: Color(0xff7c3aed),
-    primaryForeground: Color(0xfff9fafb), // Pure white text pops perfectly here
+    primaryForeground: Color(0xfff9fafb),
 
     ring: accentInk,
 
-    // Selection can stay a bit darker (Violet-800) or match primary
     selection: Color(0xff4c1d95),
 
-    // --- ERROR STATE ---
     destructive: Color(0xffef4444),
     destructiveForeground: Color(0xfffafafa),
   );
@@ -291,12 +276,12 @@ class Settings {
   // Semantic accents for settings tile icons. Each hue follows the meaning of
   // its setting (never the violet action hue, which is reserved for
   // commands/selection).
-  static const Color settingsAgentAccent = Color(0xff5da37e); // team markers
-  static const Color settingsAbilityAccent = Color(0xff6aa1d8); // utility
+  static const Color settingsAgentAccent = Color(0xff5da37e);
+  static const Color settingsAbilityAccent = Color(0xff6aa1d8);
   static const Color settingsNeutralAccent = Color(0xffa1a1aa); // greys toggle
-  static const Color settingsPersistenceAccent = Color(0xff4b8f86); // saving
-  static const Color settingsDiscordAccent = Color(0xff5865f2); // brand blurple
-  static const Color settingsMapAccent = Color(0xffb27c40); // map layers
+  static const Color settingsPersistenceAccent = Color(0xff4b8f86);
+  static const Color settingsDiscordAccent = Color(0xff5865f2);
+  static const Color settingsMapAccent = Color(0xffb27c40);
 
   // Sightline report crop. A diagnostic image we send ourselves, never app
   // chrome: walls that block the reported eye, walls that do not, the cone.
@@ -309,18 +294,18 @@ class Settings {
   // sees them in the same color. None is the violet command hue or a
   // tactical one (ally green, enemy red, defender blue, favorite amber).
   static const List<Color> presenceColors = [
-    Color(0xfff472b6), // pink-400
-    Color(0xfffb923c), // orange-400
-    Color(0xff22d3ee), // cyan-400
-    Color(0xffa3e635), // lime-400
-    Color(0xffe4e4e7), // zinc-200
+    Color(0xfff472b6),
+    Color(0xfffb923c),
+    Color(0xff22d3ee),
+    Color(0xffa3e635),
+    Color(0xffe4e4e7),
   ];
   // Text on a presence name tag; every presence hue is light.
-  static const Color presenceTagInk = Color(0xff09090b); // zinc-950
+  static const Color presenceTagInk = Color(0xff09090b);
   // Resting glyph color for toolbar controls: a step under foreground so the
   // strip of icons stays quiet, but above mutedForeground, which vanishes at
   // the light stroke weights. Hover still comes up to foreground.
-  static const Color toolbarGlyph = Color(0xffd4d4d8); // zinc-300
+  static const Color toolbarGlyph = Color(0xffd4d4d8);
   // The checkerboard a see-through screenshot previews on: two zinc steps
   // close enough to stay behind the map.
   static const Color transparencyCheckerLight = Color(0xff2e2e33);
@@ -331,14 +316,14 @@ class Settings {
   // inside the top, a dark 1px edge inside the bottom, and a 1px shadow drops
   // beneath. The sides stay bare. Everything paints inside or 1px under the
   // box, so the footprint never changes. Hover stays flat.
-  static const Color raisedTopLight = Color(0x24ffffff); // white 14%
-  static const Color raisedBottomShade = Color(0x4d000000); // black 30%
+  static const Color raisedTopLight = Color(0x24ffffff);
+  static const Color raisedBottomShade = Color(0x4d000000);
   static const List<InsetShadow> raisedRim = [
     InsetShadow(color: raisedTopLight, offset: Offset(0, 1)),
     InsetShadow(color: raisedBottomShade, offset: Offset(0, -1)),
   ];
   static const BoxShadow raisedDropShadow = BoxShadow(
-    color: Color(0x73000000), // black 45%
+    color: Color(0x73000000),
     offset: Offset(0, 1),
   );
   // How far the fill's top and bottom move from the base color, in HSL
@@ -391,7 +376,6 @@ class Settings {
     radius: const BorderRadius.all(Radius.circular(16)),
   );
 
-  /// The destructive fill, raised the same way as the primary one.
   static final LinearGradient raisedDestructiveFill =
       raisedGradient(tacticalVioletTheme.destructive);
 
@@ -409,7 +393,7 @@ class Settings {
   static const cardForegroundBackdrop = BoxShadow(
     color: Colors.black54, // High opacity because the background is dark
     blurRadius: 12,
-    offset: Offset(0, 4), // Slight downward shift
+    offset: Offset(0, 4),
   );
 
   static ToastificationItem showToast({

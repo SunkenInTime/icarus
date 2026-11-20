@@ -56,10 +56,6 @@ class _CaptureStrategy extends StrategyProvider {
       );
 }
 
-/// Wraps a widget in the fresh app shell (ProviderScope, theme, portal) that
-/// `ScreenshotController.captureFromWidget` needs to render it offscreen at
-/// [CoordinateSystem.screenShotSize]. Shared by the PNG screenshot flow and
-/// the video exporter.
 Widget wrapForOffscreenCapture(
   Widget child, {
   ProviderContainer? container,

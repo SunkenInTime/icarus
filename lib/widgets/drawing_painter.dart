@@ -55,7 +55,6 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
         _previousSize = coordinateSystem.effectiveSize;
       }
     });
-    // Get the drawing data here in the widget
     DrawingState drawingState = ref.watch(drawingProvider);
     final penState = ref.watch(penProvider);
     final currentMap =
@@ -72,7 +71,7 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
     CustomPainter drawingPainter = DrawingPainter(
         updateCounter: drawingState.updateCounter,
         coordinateSystem: coordinateSystem,
-        elements: drawingState.elements, // Pass the data directly
+        elements: drawingState.elements,
         currentLine: drawingState.currentElement,
         shiftedIds: shiftedIds,
         shift: isAttack
@@ -95,26 +94,17 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                   : SystemMouseCursors.basic,
           onEnter: (event) {
             if (currentInteractionState != InteractionState.erasing) return;
-            // setState(() {
-            //   _visualMousePosition = event.localPosition;
-            // });
             ref.read(visualPositionProvider.notifier).state =
                 event.localPosition;
           },
           onExit: (event) {
             if (currentInteractionState != InteractionState.erasing) return;
 
-            // setState(() {
-            //   _visualMousePosition = null;
-            // });
             ref.read(visualPositionProvider.notifier).state = null;
           },
           onHover: (event) {
             if (currentInteractionState != InteractionState.erasing) return;
 
-            // setState(() {
-            //   _visualMousePosition = event.localPosition;
-            // });
             ref.read(visualPositionProvider.notifier).state =
                 event.localPosition;
           },
@@ -170,16 +160,12 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                       .read(drawingProvider.notifier)
                       .onErase(normalizedPosition);
 
-                  // setState(() {
-                  //   _visualMousePosition = details.localPosition;
-                  // });
                   ref.read(visualPositionProvider.notifier).state =
                       details.localPosition;
                 default:
               }
             },
 
-            // },
             onPanUpdate: (details) {
               switch (currentInteractionState) {
                 case InteractionState.drawing:
@@ -210,9 +196,6 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                       .read(drawingProvider.notifier)
                       .onErase(normalizedPosition);
 
-                  // setState(() {
-                  //   _visualMousePosition = details.localPosition;
-                  // });
                   ref.read(visualPositionProvider.notifier).state =
                       details.localPosition;
                 default:
@@ -533,7 +516,7 @@ Offset? _traversalAnchor(DrawingElement element) {
 
 class DrawingPainter extends CustomPainter {
   final CoordinateSystem coordinateSystem;
-  final List<DrawingElement> elements; // Store the drawing elements
+  final List<DrawingElement> elements;
   final DrawingElement? currentLine;
   final int updateCounter;
 
@@ -671,7 +654,6 @@ class DrawingPainter extends CustomPainter {
       if (!shiftedIds.contains(element.id)) paintElement(element);
     }
     if (shiftedIds.isNotEmpty) {
-      // Drawn where a drag of the selection has carried them.
       canvas.save();
       canvas.translate(shift.dx, shift.dy);
       for (final element in elements) {
@@ -732,9 +714,8 @@ class DrawingPainter extends CustomPainter {
         oldDelegate.shift != shift ||
         !identical(oldDelegate.shiftedIds, shiftedIds) ||
         oldDelegate.coordinateSystem.isScreenshot) {
-      // log("Repainting DrawingPainter");
       return true;
-    } // Repaint when elements change
+    }
     return false;
   }
 }

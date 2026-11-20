@@ -105,15 +105,6 @@ class ToolGrid extends ConsumerWidget {
       return ShortcutInfo.displayLabelFor(action.name, shortcutBindings);
     }
 
-    // void showImageDialog() {
-    //   showDialog(
-    //     context: context,
-    //     builder: (dialogContext) {
-    //       return const ImageSelector();
-    //     },
-    //   );
-    // }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

@@ -24,7 +24,6 @@ use crate::collect::Row;
 use crate::document::{Round, VitalsRow};
 use crate::fieldpath::FieldPath;
 
-/// Health every body starts a round with.
 const FULL_HEALTH: f64 = 100.0;
 
 /// One thing that moves a player's vitals, at a time.
@@ -60,13 +59,11 @@ pub(super) fn vitals(cx: &mut Context<'_>, rounds: &[Round]) -> BTreeMap<String,
         .filter_map(|r| Some(((u32::try_from(r.start_ms).ok()?, 0, 0), Change::RoundStart)))
         .collect();
 
-    // Armour items and their full points, by actor.
     let full: HashMap<u32, f64> = cx
         .actor_class
         .iter()
         .filter_map(|(&item, class)| Some((item, super::rounds::armor_points(class)? as f64)))
         .collect();
-    // An item's own `Owner` writes, as `Context::owner_writes` reads them.
     for (i, row) in cx.rows.iter().enumerate() {
         if &*row.name != "Owner" || row.object.is_some() || !full.contains_key(&row.actor) {
             continue;
@@ -176,7 +173,6 @@ fn section_results(rows: &[Row]) -> Vec<(Order, u32, f64)> {
     results
 }
 
-/// `changes` in the order they happened, each with its millisecond.
 fn in_order(mut changes: Vec<(Order, Change)>) -> Vec<(u32, Change)> {
     changes.sort_by_key(|c| c.0);
     changes

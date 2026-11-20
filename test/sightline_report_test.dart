@@ -88,7 +88,6 @@ void main() {
         reason: 'an unbounded top reads as null');
     expect(bands.every((band) => band.first != null), isTrue,
         reason: 'a floor-anchored base stays a number');
-    // The copy itself, which is the call that used to throw.
     expect(() => jsonDecode(report.encode()), returnsNormally);
   });
 }

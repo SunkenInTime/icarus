@@ -107,7 +107,6 @@ void main() {
         'within $pixels px of $expected',
       );
 
-  /// Whether a rotation points the same way as a screen direction.
   Matcher pointsAlong(Offset direction, {double degrees = 1}) =>
       predicate<double>(
         (rotation) {

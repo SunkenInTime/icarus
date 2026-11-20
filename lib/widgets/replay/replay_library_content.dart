@@ -135,7 +135,6 @@ class _ReplayGridState extends ConsumerState<_ReplayGrid> {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        // The strategy grid's columns, so the two tabs line up.
         const minTileWidth = 250.0;
         const padding = 32.0;
         _columns = ((constraints.maxWidth - padding + strategyTileGridSpacing) /

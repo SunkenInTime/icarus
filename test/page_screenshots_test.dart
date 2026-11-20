@@ -118,15 +118,12 @@ StrategyPage _page(
       settings: StrategySettings(),
     );
 
-/// The test font draws every glyph a full em wide, so labels that fit in the
-/// app overflow here; that is the font, not the panel. Anything else fails.
 void ignoreTestFontOverflow(WidgetTester tester) {
   for (Object? error; (error = tester.takeException()) != null;) {
     expect('$error', contains('overflowed'));
   }
 }
 
-/// Answers the folder dialog with [folder].
 class _FolderPicker extends FilePicker {
   _FolderPicker(this.folder);
   final String folder;
@@ -347,7 +344,6 @@ void main() {
       final png = img.decodePng(shot.png)!;
       expect(png.width, CoordinateSystem.screenShotSize.width);
       expect(png.height, CoordinateSystem.screenShotSize.height);
-      // Transparent around the map, as asked.
       expect(png.getPixel(2, 2).a, 0);
       expect(png.getPixel(png.width ~/ 2, png.height ~/ 2).a, 255);
     }
@@ -876,7 +872,6 @@ void main() {
     await tester.tap(find.text('Clear all'));
     await tester.pump();
     ignoreTestFontOverflow(tester);
-    // Nothing to capture: the button can't be pressed.
     expect(
       tester
           .widget<ShadButton>(find.ancestor(
@@ -1118,7 +1113,6 @@ void main() {
       (tester) async {
     final (:folder, navigator: _) = await startTwoPageCapture(tester);
 
-    // Nothing but Stop closes it: no X, no Cancel, and Escape does nothing.
     expect(find.byIcon(LucideIcons.x), findsNothing);
     expect(find.text('Cancel'), findsNothing);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -1129,11 +1123,6 @@ void main() {
     await tester.pump();
     // It stays up, saying so, until the capture has stopped.
     expect(find.text('Stopping…'), findsOneWidget);
-    // The clock moves too, so the dialog's closing animation plays out. The
-    // toast is shown while real time passes here, so its closing timer runs
-    // on real time: it is looked for as it shows, and taken away at once,
-    // so it neither closes before the check on a slow machine nor closes
-    // itself after the test, on a torn-down tree.
     var toldCancelled = false;
     for (var i = 0;
         i < 400 && find.text('Saving screenshots').evaluate().isNotEmpty;
@@ -1158,7 +1147,6 @@ void main() {
     expect(folder.listSync(), isEmpty);
     expect(toldCancelled, isTrue);
     ignoreTestFontOverflow(tester);
-    // Let the toast's removal play out.
     await tester.pump(const Duration(seconds: 4));
   });
 
@@ -1238,7 +1226,6 @@ void main() {
       ignoreTestFontOverflow(tester);
       expect(picker.opened, attempt);
     }
-    // Nothing started: the dialog still asks.
     expect(find.text('Save screenshots'), findsOneWidget);
     await tester.pump(const Duration(seconds: 10));
     ignoreTestFontOverflow(tester);

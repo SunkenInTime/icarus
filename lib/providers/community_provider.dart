@@ -6,7 +6,6 @@ import 'package:icarus/collab/community_repository.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 
-/// What the Community tab is narrowed to.
 final communityFilterProvider =
     StateProvider<CommunityFilter>((ref) => const CommunityFilter());
 
@@ -54,7 +53,6 @@ class CommunityFeedState {
 
   bool get hasMore => !started || nextCursor != null;
 
-  /// The first page has not arrived yet.
   bool get isFirstLoad =>
       posts.isEmpty && (loading || !started) && error == null;
 
@@ -137,8 +135,6 @@ class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
         ref.read(communityClockProvider)().difference(readAt) > freshFor;
   }
 
-  /// Reads the feed again if it was read more than [freshFor] ago, unless a
-  /// read is already under way.
   Future<void> refreshIfStale() async {
     if (_stale(state) && !state.loading) await refresh();
   }
@@ -227,7 +223,6 @@ class CommunityFeedNotifier extends Notifier<CommunityFeedState> {
     }
   }
 
-  /// Drops [postPublicId] from every kept feed: it was taken down.
   void forget(String postPublicId) {
     bool keep(CommunityPost post) => post.publicId != postPublicId;
     for (final entry in _kept.entries.toList()) {
@@ -270,7 +265,6 @@ class CommunityStars {
 
   bool isStarred(String postPublicId) => starred.contains(postPublicId);
 
-  /// [post]'s star count as it should read on screen.
   int countFor(CommunityPost post) {
     final shown = shownCounts[post.publicId];
     if (shown == null || shown.serverCount != post.starCount) {
@@ -363,8 +357,6 @@ final myCommunityPostsProvider = StreamProvider<List<MyCommunityPost>>((ref) {
   return ref.watch(communityRepositoryProvider).watchMine();
 });
 
-/// The signed-in user's post of each of their strategies, by the strategy's
-/// id.
 final myPostsByStrategyProvider = Provider<Map<String, MyCommunityPost>>((ref) {
   final mine = ref.watch(myCommunityPostsProvider).valueOrNull ?? const [];
   return {for (final post in mine) post.sourceStrategyPublicId: post};
@@ -380,7 +372,6 @@ final communityReviewQueueProvider =
   return ref.watch(communityRepositoryProvider).watchForReview();
 });
 
-/// What the signed-in user may do in Community.
 final communityViewerProvider = FutureProvider<CommunityViewer>((ref) async {
   final signedIn = ref.watch(
     authProvider
@@ -438,7 +429,6 @@ class CommunityCopiesNotifier extends Notifier<List<CommunityCopy>> {
     }
   }
 
-  /// Records a copy just made, newest first.
   void add(CommunityCopy copy) => state = [copy, ...state];
 }
 
@@ -452,7 +442,6 @@ final communityCopyByPostProvider = Provider<Map<String, String>>((ref) {
   return byPost;
 });
 
-/// The post each of the user's copies came from, by the copy's id.
 final communityPostByCopyProvider = Provider<Map<String, String>>((ref) {
   return {
     for (final copy in ref.watch(communityCopiesProvider))

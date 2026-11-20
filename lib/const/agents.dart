@@ -51,11 +51,8 @@ const Map<AgentRole, String> agentRoleNames = {
 
 abstract class DraggableData {}
 
-// Virtual distance to valorant distance is valmeters * 4.952941176470588 = vitual distance
 @HiveType(typeId: 9)
 class AbilityInfo extends HiveObject implements DraggableData {
-  // Even though you might have more properties at runtime,
-  // only these two are persisted.
   @HiveField(0)
   final AgentType type;
 
@@ -97,7 +94,6 @@ class AbilityInfo extends HiveObject implements DraggableData {
     this.centerPoint = centerPoint;
   }
 
-  /// Helper method to perform the lookup on deserialization.
   static Ability? _lookupAbility(AgentType type, int index) {
     final agentEntry = AgentData.agents[type];
     if (agentEntry != null &&
@@ -119,8 +115,6 @@ class DraggedAbilityData implements DraggableData {
   final bool isAlly;
 }
 
-// This is the custom Hive adapter for AbilityInfo.
-// It only stores the AgentType and index.
 class AbilityInfoAdapter extends TypeAdapter<AbilityInfo> {
   @override
   final int typeId = 9;
@@ -132,11 +126,9 @@ class AbilityInfoAdapter extends TypeAdapter<AbilityInfo> {
       for (var i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
 
-    // Retrieve stored type and index
     final agentType = fields[0] as AgentType;
     final index = fields[1] as int;
 
-    // Lookup the complete AbilityInfo data.
     final ability = AgentData.agents[agentType]?.abilities[index];
 
     return ability!;
@@ -144,7 +136,6 @@ class AbilityInfoAdapter extends TypeAdapter<AbilityInfo> {
 
   @override
   void write(BinaryWriter writer, AbilityInfo obj) {
-    // Only persist type and index.
     writer
       ..writeByte(2)
       ..writeByte(0)
@@ -172,7 +163,6 @@ class AgentData implements DraggableData {
   final String iconPath;
 
   static const double inGameMeters = 5.78;
-  // static const double inGameMeters = 6;
 
   static const double inGameMetersDiameter = inGameMeters * 2;
   AgentData({
@@ -209,7 +199,6 @@ class AgentData implements DraggableData {
         "Blade Storm",
       ],
     )..abilities[0] =
-          // Override the default abilities
           AbilityInfo(
         type: AgentType.jett,
         index: 0,
@@ -450,7 +439,6 @@ class AgentData implements DraggableData {
         ],
       );
 
-      // Heal
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
         size: 18,
@@ -480,7 +468,6 @@ class AgentData implements DraggableData {
         hasCenterDot: true,
       );
 
-      // Ultimate
       agent.abilities[3].abilityData = CircleAbility(
         iconPath: agent.abilities[3].iconPath,
         size: 42.5,
@@ -517,7 +504,6 @@ class AgentData implements DraggableData {
         hasCenterDot: true,
       );
 
-      // Alarmbot
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 40,
@@ -527,7 +513,6 @@ class AgentData implements DraggableData {
         innerRangeColor: const Color.fromARGB(255, 106, 14, 182),
       );
 
-      // Turret
       agent.abilities[2].abilityData = CircleAbility(
         iconPath: agent.abilities[2].iconPath,
         size: 40,
@@ -537,7 +522,6 @@ class AgentData implements DraggableData {
         rangeFillColor: Colors.transparent,
       );
 
-      // Ultimate
       agent.abilities[3].abilityData = CircleAbility(
         iconPath: agent.abilities[3].iconPath,
         size: 32.5,
@@ -576,7 +560,6 @@ class AgentData implements DraggableData {
         hasCenterDot: true,
       );
 
-      // Ultimate
       agent.abilities.last.abilityData = CircleAbility(
         iconPath: agent.abilities[3].iconPath,
         size: 9,
@@ -584,7 +567,6 @@ class AgentData implements DraggableData {
         hasCenterDot: true,
       );
 
-      // Stim Beacon
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities[0].iconPath,
         size: 6,
@@ -959,15 +941,6 @@ class AgentData implements DraggableData {
         defaultLengthMeters: 30,
       );
 
-      // agent.abilities.first.abilityData = ResizableSquareAbility(
-      //   width: 9.75 * inGameMeters,
-      //   height: 35 * inGameMeters,
-      //   minLength: 5 * inGameMeters,
-      //   iconPath: agent.abilities.first.iconPath,
-      //   hasTopborder: true,
-      //   color: Colors.lightBlue,
-      // );
-
       agent.abilities.last.abilityData = ResizableSquareAbility(
         width: 20 * inGameMeters,
         height: 40 * inGameMeters,
@@ -1142,7 +1115,6 @@ class AgentData implements DraggableData {
           "Harmonize",
         ],
       );
-      // agent.abilities.
       final miksConcuss = AbilityInfo(
         type: AgentType.miks,
         index: 0,

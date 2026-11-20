@@ -75,7 +75,6 @@ ReplayDocument document({
   ));
 }
 
-/// Standing still at (x, 0) from [from] to [to], one sample a second.
 List<List<num>> still(int from, int to, {double x = 0}) => [
       for (var t = from; t <= to; t += 1000) [t, x, 0, 100, 90, 0],
     ];
@@ -460,7 +459,6 @@ void main() {
       final fallen = at(3200).effects.whereType<ReplayFlight>().single;
       expect((fallen.trail.last - landed).distance, lessThan(1e-6));
 
-      // Revealing: Haunt's circle, centred where the eye fell.
       final revealing = at(3600);
       expect(revealing.effects.whereType<ReplayFlight>(), isEmpty);
       final circle = revealing.abilities.single;
@@ -547,7 +545,6 @@ void main() {
       expect(wall.opacity, 1);
       expect(wall.isAlly, isFalse);
 
-      // The cones are cut along exactly the line drawn.
       expect((frame.occluders.single as LineOccluder).points, wall.points);
 
       // The icon rides the head.
@@ -587,7 +584,6 @@ void main() {
             reason: '$t');
       }
 
-      // Coming down: it fades where it stood, and hides nothing any more.
       final leaving = at(17252);
       expect(leaving.abilities, isEmpty);
       expect(leaving.occluders, isEmpty);

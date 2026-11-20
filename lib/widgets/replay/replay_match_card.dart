@@ -90,7 +90,6 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     if (mounted) setState(() {});
   }
 
-  /// The pages captured into the strategy and not discarded.
   List<String> _keptPageIds(ReplayCaptureQueueState queue) => [
         for (final id in _capture.pageIds)
           if (!queue.discardedPageIds.contains(id)) id,
@@ -530,10 +529,6 @@ class _CloudStatus extends StatelessWidget {
       };
 }
 
-/// The pen's tools, under the card's actions while the pen is out: draw
-/// freehand or a straight arrow, and clear what is drawn.
-/// The editor's drawing panel while the pen is out, the same pen the
-/// editor draws with, and Clear once something is drawn.
 class _DrawingTools extends StatelessWidget {
   const _DrawingTools({required this.drawing});
 

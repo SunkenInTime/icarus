@@ -31,7 +31,6 @@ pub fn decode_file(path: &Path, control: Control<'_>) -> Result<Vec<u8>, ReplayE
     decode_file_with(path, oodle::default_decompressor().as_ref(), control)
 }
 
-/// [`decode_file`] with an explicit decompressor.
 pub fn decode_file_with(
     path: &Path,
     decompressor: &dyn Decompressor,

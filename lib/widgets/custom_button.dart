@@ -39,7 +39,6 @@ class CustomButton extends ConsumerWidget {
     final style = ButtonStyle(
       alignment: Alignment.center,
       padding: padding,
-      // Allow narrow widths when dynamic width is requested
       minimumSize:
           isDynamicWidth ? WidgetStateProperty.all(Size(0, height)) : null,
       backgroundColor: WidgetStateProperty.resolveWith<Color>((states) {
@@ -109,7 +108,6 @@ class CustomButton extends ConsumerWidget {
             child: labelText,
           );
 
-    // When dynamic, size to content; otherwise respect explicit width
     Widget content = PressScale(
       enabled: effectiveOnPressed != null,
       child: SizedBox(

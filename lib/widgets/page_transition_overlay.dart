@@ -523,7 +523,7 @@ class _EntryRenderer {
       weaponTransitionProgress: weaponTransitionProgress,
       agentSize: agentSize,
       abilitySize: abilitySize,
-    ); // central factory (below)
+    );
     if (_shouldRotate(widget, displayRotation)) {
       final angle = displayRotation ?? 0;
       if (widget is PlacedAbility) {

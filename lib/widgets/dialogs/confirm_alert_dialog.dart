@@ -21,7 +21,7 @@ class ConfirmAlertDialog extends ConsumerWidget {
   final Widget? body;
   final String? confirmText;
   final String? cancelText;
-  final bool isDestructive; // For dangerous actions like delete
+  final bool isDestructive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -76,7 +76,6 @@ class ConfirmAlertDialog extends ConsumerWidget {
     );
   }
 
-  // Static helper method for easy usage
   static Future<bool> show({
     required BuildContext context,
     required String title,
@@ -98,6 +97,6 @@ class ConfirmAlertDialog extends ConsumerWidget {
       ),
     );
 
-    return result ?? false; // Return false if dialog was dismissed
+    return result ?? false;
   }
 }

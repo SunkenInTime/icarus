@@ -43,7 +43,6 @@ class CustomBorderContainer extends StatelessWidget {
               ),
             ),
 
-          // Left border
           if (hasSide)
             Positioned(
               left: 0,
@@ -54,7 +53,6 @@ class CustomBorderContainer extends StatelessWidget {
                 color: color,
               ),
             ),
-          // Right border
           if (hasSide)
             Positioned(
               right: 0,

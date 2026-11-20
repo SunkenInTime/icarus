@@ -5,7 +5,6 @@ import 'package:icarus/replay/recycle_bin.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-/// Where replay files come from.
 enum ReplaySource {
   /// Valorant's own download folder. Valorant may clear it.
   valorant,
@@ -40,7 +39,6 @@ class ReplayRemoveRefused implements Exception {
   String toString() => 'ReplayRemoveRefused(${reason.name})';
 }
 
-/// One `.vrf` on disk.
 class ReplayFile {
   const ReplayFile({
     required this.path,

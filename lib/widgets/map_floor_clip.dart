@@ -151,7 +151,6 @@ class _RenderMapFloorClip extends RenderProxyBox {
     if (before != size) _repaintOrdered();
   }
 
-  /// This box's outline in [box]'s coordinates.
   Path _outlineIn(_RenderMapFloorBox box) {
     final toBox = getTransformTo(box);
     final rect = Offset.zero & size;

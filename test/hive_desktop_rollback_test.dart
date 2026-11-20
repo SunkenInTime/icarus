@@ -22,7 +22,6 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 
 import 'desktop_4_6_3_adapters_test_support.dart';
 
-/// This build's adapters.
 HiveImpl _currentRegistry() {
   final registry = HiveImpl();
   registerIcarusAdapters(registry);
@@ -63,7 +62,6 @@ Uint8List _write(HiveImpl registry, Object value) {
 T _read<T>(HiveImpl registry, Uint8List bytes) =>
     BinaryReaderImpl(bytes, registry).read() as T;
 
-/// Saved by one build, opened by the other.
 T _across<T extends Object>(HiveImpl from, HiveImpl to, T value) =>
     _read<T>(to, _write(from, value));
 
