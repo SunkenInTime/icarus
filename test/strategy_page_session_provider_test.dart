@@ -8259,6 +8259,58 @@ void main() {
           other.publicId);
     });
 
+    test(
+        'a page switch after the edit\'s own outbox write failed stays on the '
+        'page with the edit still on the canvas', () async {
+      final page = _page('page-1', 0);
+      final other = _page('page-2', 1);
+      server = _FakeServer(page.publicId);
+      final store = _FailingOutboxStore();
+      final (container, _) =
+          await openOnRealQueue(page, store: store, otherPages: [other]);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      store.failPut = (_) => true;
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            id: 'agent-b',
+            type: AgentType.jett,
+            position: const Offset(40, 40),
+          ));
+      await _until(() =>
+          container.read(strategyOpQueueProvider).hasDurabilityFailure);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      container
+          .read(agentProvider.notifier)
+          .updatePosition(const Offset(80, 60), 'agent-b');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .switchRelativePage(PageSwitchDirection.next);
+
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          page.publicId);
+      expect(container.read(agentProvider).map((agent) => agent.id),
+          ['agent-b']);
+
+      store.failPut = null;
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .switchRelativePage(PageSwitchDirection.next);
+      readPage(other.publicId);
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          other.publicId);
+      expect(
+        store.load().records.map((record) => record.entityKey),
+        contains(EntitySyncKey.element(page.publicId, 'agent-b')),
+      );
+    });
+
     /// Opens page 1 with text on it and page 2 after it, copies the text to
     /// page 2 with the copy's answer held back (the returned completer lets
     /// it go), then a teammate deletes page 1 and the user moves the text

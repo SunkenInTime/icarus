@@ -1202,7 +1202,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               ...desiredOpsByEntityKey.keys,
             }
           : desiredOpsByEntityKey.keys.toSet();
-      return _syncDesiredLocked(
+      final write = await _syncDesiredLocked(
         keys: keys,
         desiredOps: <EntitySyncKey, StrategyOp?>{
           for (final key in keys) key: desiredOpsByEntityKey[key],
@@ -1212,8 +1212,17 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         heldOpIds: heldOpIds,
         madeLive: madeLive,
       );
+      return write == OutboxWrite.written && _pageHasUnstoredWrite(pageId)
+          ? OutboxWrite.failed
+          : write;
     });
   }
+
+  bool _pageHasUnstoredWrite(String pageId) =>
+      _uncertainDurableIntents.values.any((record) =>
+          record.accountId == state.accountId &&
+          record.strategyPublicId == state.strategyPublicId &&
+          record.entityKey.pageId == pageId);
 
   /// [canvasSession] is the canvas's session when the desired ops were
   /// asked for: ops made from them are the canvas's work only if it has not
@@ -1370,7 +1379,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             continue;
           }
           if (successorIntent != null &&
-              _sameIntent(successorIntent.pending.op, desired)) {
+              _sameIntent(successorIntent.pending.op, desired) &&
+              !_uncertainDurableRecords.contains(storageKey)) {
             continue;
           }
           final pending = PendingOp(
