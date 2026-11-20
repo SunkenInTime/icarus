@@ -466,6 +466,8 @@ async function runSeeded({ env, projectDir, names, scenarios, worlds }) {
   const rng = seeded(0x1ca75);
   const started = Date.now();
   const wanted = [...new Set(names.map((name) => scenarios[name].world).filter(Boolean))];
+  const needsOwn = wanted.filter((world) => worlds[world].ownBackendOnly && !env.ownBackend);
+  if (needsOwn.length > 0) throw new Error(`${needsOwn.join(", ")} runs maintenance jobs, so it needs a backend this run starts`);
   const [library, ...seededWorlds] = await Promise.all([
     seedLibrary(owner, rng).then((library) => {
       console.log(`Seeded the library in ${((Date.now() - started) / 1000).toFixed(1)} s`);
@@ -484,7 +486,7 @@ async function runSeeded({ env, projectDir, names, scenarios, worlds }) {
     const scenario = scenarios[name];
     if (scenario.world && !settled.has(scenario.world)) {
       const at = Date.now();
-      await prepared[scenario.world].settle?.();
+      await deadline(Promise.resolve(prepared[scenario.world].settle?.()), SCENARIO_DEADLINE_MS, `settling ${scenario.world}`);
       settled.add(scenario.world);
       console.log(`Settled ${scenario.world} in ${((Date.now() - at) / 1000).toFixed(1)} s`);
     }

@@ -170,22 +170,13 @@ export function deploy({ url, adminKey, projectDir, withoutCrons = false }) {
   }
 }
 
-export function setEnvironment({ url, adminKey, projectDir, values }) {
-  for (const [name, value] of Object.entries(values)) {
-    const result = spawnSync(
-      process.execPath,
-      [join(projectDir, "node_modules", "convex", "bin", "main.js"), "env", "set", name, value],
-      { cwd: projectDir, env: selfHosted(url, adminKey), encoding: "utf8" },
-    );
-    if (result.status !== 0) throw new Error(`convex env set ${name} failed:\n${result.stdout}\n${result.stderr}`);
-  }
-}
-
-function selfHosted(url, adminKey) {
-  const env = { ...process.env, CONVEX_SELF_HOSTED_URL: url, CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey };
-  delete env.CONVEX_DEPLOY_KEY;
-  delete env.CONVEX_DEPLOYMENT;
-  return env;
+export async function setEnvironment({ backend, values }) {
+  const response = await fetch(`${backend.url}/api/update_environment_variables`, {
+    method: "POST",
+    headers: { Authorization: `Convex ${backend.adminKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ changes: Object.entries(values).map(([name, value]) => ({ name, value })) }),
+  });
+  if (!response.ok) throw new Error(`Setting environment variables failed: ${response.status} ${await response.text()}`);
 }
 
 function deployFrom({ url, adminKey, projectDir, deployed }) {

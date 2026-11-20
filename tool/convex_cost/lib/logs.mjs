@@ -76,7 +76,9 @@ export async function measure(logs, http, work) {
   for (let size = -1; size !== fromCrons.size; ) {
     size = fromCrons.size;
     for (const entry of logs.entries) {
-      if (entry.caller === "Cron" || fromCrons.has(entry.parentExecutionId)) fromCrons.add(entry.executionId);
+      if (entry.caller === "Cron" || fromCrons.has(entry.parentExecutionId) || isFoldChain(entry)) {
+        fromCrons.add(entry.executionId);
+      }
     }
   }
   const entries = logs.entries
@@ -84,6 +86,9 @@ export async function measure(logs, http, work) {
     .filter((entry) => entry.identifier !== MARKER && !fromCrons.has(entry.executionId));
   return { value, entries };
 }
+
+const FOLD = "maintenance:foldContentChanges";
+const isFoldChain = (entry) => entry.caller === "Scheduler" && entry.identifier === FOLD;
 
 async function mark(logs, http) {
   const from = logs.entries.length;

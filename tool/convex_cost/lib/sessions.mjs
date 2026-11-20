@@ -17,7 +17,6 @@ const ROOM_PASS_RENEWALS_PER_HOUR = 60;
 const DRAWING_POINTS = 2000;
 const LARGE_DRAWING_POINTS = 250;
 const ANSWER_DEADLINE_MS = 60_000;
-const SCHEDULER_QUIET_MS = 1000;
 
 const fullSnapshotArgs = (strategyPublicId) => ({
   strategyPublicId,
@@ -75,7 +74,10 @@ class PageWatch {
     this.elements = page.elements;
     const version = pageVersion(page);
     this.firstVersion ??= version;
-    if (version !== this.firstVersion) this.switching = this.watchSlices(page.elements.length);
+    if (version !== this.firstVersion) {
+      this.switching = this.watchSlices(page.elements.length);
+      this.switching.catch(() => {});
+    }
     this.notify();
   }
 
@@ -532,16 +534,6 @@ function foldAfterMs(projectDir) {
   return match[1].split("*").reduce((product, factor) => product * Number(factor.replaceAll("_", "").trim()), 1);
 }
 
-async function schedulerQuiet(env) {
-  let seen = -1;
-  while (true) {
-    const scheduled = env.logs.entries.filter((entry) => entry.caller === "Scheduler").length;
-    if (scheduled === seen) return;
-    seen = scheduled;
-    await new Promise((resolve) => setTimeout(resolve, SCHEDULER_QUIET_MS));
-  }
-}
-
 function requireOwnBackend(env, what) {
   if (!env.ownBackend) throw new Error(`${what} runs maintenance jobs, so it only runs on a backend this run started`);
 }
@@ -553,7 +545,6 @@ async function foldSeedChanges(env, projectDir, seededAt) {
   const admin = new ConvexHttpClient(env.url, { skipConvexDeploymentUrlCheck: true });
   admin.setAdminAuth(env.adminKey);
   await idleRun(env, admin, { job: "fold-content-changes", name: "maintenance:foldContentChanges", kind: "mutation" });
-  await schedulerQuiet(env);
 }
 
 const IDLE_ATTEMPTS = 50;
@@ -812,7 +803,6 @@ export const SESSIONS = {
       const notes = [];
       for (const job of cronJobs(projectDir)) {
         const measured = await idleRun(env, admin, job);
-        await schedulerQuiet(env);
         const calls = measured.total.runs + measured.total.cachedRuns;
         total.calls += calls * job.perHour;
         total.readBytes += measured.total.readBytes * job.perHour;
@@ -839,3 +829,5 @@ export const SESSIONS = {
     },
   },
 };
+
+seedTeam.ownBackendOnly = true;

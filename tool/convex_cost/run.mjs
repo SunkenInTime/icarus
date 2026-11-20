@@ -113,10 +113,8 @@ async function main() {
     if (backend) {
       const at = Date.now();
       deploy({ url, adminKey, projectDir: options.project, withoutCrons: true });
-      setEnvironment({
-        url,
-        adminKey,
-        projectDir: options.project,
+      await setEnvironment({
+        backend,
         values: { PRESENCE_URL: "https://presence.cost.icarus.test", PRESENCE_PASS_SECRET: "cost-run-presence-secret" },
       });
       console.log(`Deployed ${options.project === repoRoot ? "this checkout" : options.project} in ${((Date.now() - at) / 1000).toFixed(1)} s`);
