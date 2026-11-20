@@ -45,7 +45,10 @@ class ColorLibraryController extends Notifier<List<int>> {
 
   @override
   List<int> build() {
-    return ref.read(appPreferencesProvider).customColorValues;
+    return ref.watch(
+      appPreferencesProvider
+          .select((preferences) => preferences.customColorValues),
+    );
   }
 
   bool get canAddColor => state.length < customColorLimit;
@@ -68,9 +71,8 @@ class ColorLibraryController extends Notifier<List<int>> {
     await _save(next);
   }
 
-  Future<void> _save(List<int> colorValues) async {
-    state = colorValues;
-    await ref
+  Future<void> _save(List<int> colorValues) {
+    return ref
         .read(appPreferencesProvider.notifier)
         .setCustomColorValues(colorValues);
   }

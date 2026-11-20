@@ -1937,8 +1937,6 @@ class StrategyImportExportService {
 
     final profileBox =
         Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
-    final appPreferencesBox =
-        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox);
     final favoriteAgentsBox = Hive.box<bool>(HiveBoxNames.favoriteAgentsBox);
 
     final profileIdRemap = <String, String>{};
@@ -2000,36 +1998,28 @@ class StrategyImportExportService {
                 ? globals.defaultThemeProfileIdForNewStrategies!
                 : MapThemeProfilesProvider.immutableDefaultProfileId);
 
-    final currentPreferences = appPreferencesBox
-            .get(MapThemeProfilesProvider.appPreferencesSingletonKey) ??
-        AppPreferences(
-          defaultThemeProfileIdForNewStrategies:
-              MapThemeProfilesProvider.immutableDefaultProfileId,
+    await ref.read(appPreferencesProvider.notifier).restoreFromBackup(
+          (AppPreferences currentPreferences) => currentPreferences.copyWith(
+            defaultThemeProfileIdForNewStrategies: resolvedDefaultProfileId,
+            showSpawnBarrier:
+                globals.showSpawnBarrier ?? currentPreferences.showSpawnBarrier,
+            showUltOrbs: globals.showUltOrbs ?? currentPreferences.showUltOrbs,
+            showRegionNames:
+                globals.showRegionNames ?? currentPreferences.showRegionNames,
+            backgroundDotOpacity:
+                globals.backgroundDotOpacity?.clamp(0.0, 1.0) ??
+                    currentPreferences.backgroundDotOpacity,
+            viewConeOpacity: globals.viewConeOpacity
+                    ?.clamp(AppPreferences.minViewConeOpacity, 1.0) ??
+                currentPreferences.viewConeOpacity,
+            customColorValues: globals.hasCustomColorValues
+                ? globals.customColorValues
+                    .where((value) => value >= 0 && value <= 0xFFFFFFFF)
+                    .take(ColorLibraryController.customColorLimit)
+                    .toList(growable: false)
+                : currentPreferences.customColorValues,
+          ),
         );
-    await appPreferencesBox.put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      currentPreferences.copyWith(
-        defaultThemeProfileIdForNewStrategies: resolvedDefaultProfileId,
-        showSpawnBarrier:
-            globals.showSpawnBarrier ?? currentPreferences.showSpawnBarrier,
-        showUltOrbs: globals.showUltOrbs ?? currentPreferences.showUltOrbs,
-        showRegionNames:
-            globals.showRegionNames ?? currentPreferences.showRegionNames,
-        backgroundDotOpacity: globals.backgroundDotOpacity?.clamp(0.0, 1.0) ??
-            currentPreferences.backgroundDotOpacity,
-        viewConeOpacity: globals.viewConeOpacity
-                ?.clamp(AppPreferences.minViewConeOpacity, 1.0) ??
-            currentPreferences.viewConeOpacity,
-        // Written straight to storage, past the colour library that limits
-        // what the colour pickers have to draw, so the limit applies here.
-        customColorValues: globals.hasCustomColorValues
-            ? globals.customColorValues
-                .where((value) => value >= 0 && value <= 0xFFFFFFFF)
-                .take(ColorLibraryController.customColorLimit)
-                .toList(growable: false)
-            : currentPreferences.customColorValues,
-      ),
-    );
 
     await favoriteAgentsBox.clear();
     for (final favorite in globals.favoriteAgentTypes()) {
@@ -2037,7 +2027,6 @@ class StrategyImportExportService {
     }
 
     await ref.read(mapThemeProfilesProvider.notifier).refreshFromHive();
-    await ref.read(appPreferencesProvider.notifier).refreshFromHive();
     ref.invalidate(favoriteAgentsProvider);
 
     return _GlobalImportResult(
