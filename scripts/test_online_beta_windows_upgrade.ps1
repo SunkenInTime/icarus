@@ -239,7 +239,12 @@ function Get-DebugLogTail {
     if (-not (Test-Path $debugLog -PathType Leaf)) {
         return "(no $debugLog)"
     }
-    return (Get-Content $debugLog -Tail 40) -join [Environment]::NewLine
+    try {
+        return (Get-Content $debugLog -Tail 40 -ErrorAction Stop) -join [Environment]::NewLine
+    }
+    catch {
+        return "(could not read ${debugLog}: $($_.Exception.Message))"
+    }
 }
 
 function Get-LaunchDiagnosis {
@@ -258,7 +263,7 @@ function Get-LaunchDiagnosis {
         "idle: it used $([math]::Round($RecentCpuSeconds, 2)) s of CPU in the last $([math]::Round($RecentWindowSeconds)) s"
     }
     $stage = switch ($State) {
-        "NoWindow" { "It never created its window, so native startup stalled before the Flutter engine started." }
+        "NoWindow" { "The last sample found no Flutter window, so native startup had not reached the Flutter engine." }
         "Hidden" { "Its window exists and answers messages but was never shown, so Flutter never drew a first frame." }
         "HiddenNotAnswering" { "Its window was never shown and stopped answering messages, so the main thread is blocked." }
         "ShownNotAnswering" { "Its window was shown and then stopped answering messages, so the app hung after its first frame." }
@@ -276,20 +281,27 @@ function Read-WebView2Runtime {
     $clock = [System.Diagnostics.Stopwatch]::StartNew()
     $files = @(Get-ChildItem -Path $runtimeRoot -Recurse -File)
     $bytes = [long]0
+    $unread = 0
     foreach ($file in $files) {
-        $stream = [System.IO.File]::OpenRead($file.FullName)
         try {
-            $stream.CopyTo([System.IO.Stream]::Null)
-            $bytes += $stream.Length
+            $stream = [System.IO.File]::OpenRead($file.FullName)
+            try {
+                $stream.CopyTo([System.IO.Stream]::Null)
+                $bytes += $stream.Length
+            }
+            finally {
+                $stream.Dispose()
+            }
         }
-        finally {
-            $stream.Dispose()
+        catch {
+            $unread++
         }
     }
     $seconds = [math]::Round($clock.Elapsed.TotalSeconds, 1)
-    Write-Host "Read the WebView2 runtime ahead of the first launch: $($files.Count) files, $([math]::Round($bytes / 1MB)) MB in $seconds s"
+    Write-Host "Read the WebView2 runtime ahead of the first launch: $($files.Count - $unread) of $($files.Count) files, $([math]::Round($bytes / 1MB)) MB in $seconds s"
     return [ordered]@{
         files = $files.Count
+        unreadFiles = $unread
         megabytes = [math]::Round($bytes / 1MB)
         seconds = $seconds
     }
@@ -301,15 +313,16 @@ function Start-And-ProveAlive {
         [string[]]$Arguments = @()
     )
 
-    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    $startClock = [System.Diagnostics.Stopwatch]::StartNew()
     $process = if ($Arguments.Count -gt 0) {
         Start-Process -FilePath $installedExe -ArgumentList $Arguments -PassThru
     } else {
         Start-Process -FilePath $installedExe -PassThru
     }
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
     $timing = [ordered]@{
         launch = $Label
-        processStartedSeconds = [math]::Round($clock.Elapsed.TotalSeconds, 2)
+        processStartedSeconds = [math]::Round($startClock.Elapsed.TotalSeconds, 2)
     }
     $cpuSamples = New-Object System.Collections.Generic.List[object]
     $state = "NoWindow"
@@ -335,6 +348,9 @@ function Start-And-ProveAlive {
             }
             if ($state -eq "Ready") {
                 $readyAt = $timing["Ready"]
+                if ($readyAt -gt $ReadySeconds) {
+                    throw "${Label}: Icarus showed a responsive window only after $readyAt s, over the $ReadySeconds s limit."
+                }
             } else {
                 $cpuSamples.Add([pscustomobject]@{
                     at = $elapsed
