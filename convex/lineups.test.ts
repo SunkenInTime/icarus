@@ -1706,11 +1706,13 @@ describe("a Community post's lineup count", () => {
     expect(await storedCounts(harness.t)).toEqual({ [postPublicId]: 4 });
   });
 
-  test("the backfill corrects posts counted by origin, and running it again changes nothing", async () => {
+  test("the backfill counts each post's own snapshot, and running it again writes nothing", async () => {
     vi.useFakeTimers();
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const harness = await createHarness();
     const { t, owner } = harness;
     const shared = await postWith(harness, strategyPublicId, [siteGroup()]);
+    await apply(owner, "owner-client", [addOp(lineup("after-post"), 1)]);
     const single = await postWith(harness, "single", [lineup("only")]);
     const removed = await postWith(harness, "removed", [siteGroup()]);
     await t.run(markAssetReferencesReady);
@@ -1731,7 +1733,11 @@ describe("a Community post's lineup count", () => {
     });
     const finished = await finishedAt(t);
     expect(finished).toHaveLength(1);
+    expect(log).toHaveBeenLastCalledWith(
+      "Community lineup counts finished: 2 posts checked, 1 corrected.",
+    );
 
+    vi.advanceTimersByTime(60_000);
     await t.mutation(backfillCommunityLineupCounts, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(await storedCounts(t)).toEqual({
@@ -1740,9 +1746,13 @@ describe("a Community post's lineup count", () => {
       [removed]: 2,
     });
     expect(await finishedAt(t)).toEqual(finished);
+    expect(log).toHaveBeenLastCalledWith(
+      "Community lineup counts finished: 2 posts checked, 0 corrected.",
+    );
+    log.mockRestore();
   });
 
-  test("a backfill part way through leaves the rest as they were, and finishes over posts made meanwhile", async () => {
+  test("a backfill part way through leaves the rest as they were, and reaches posts made meanwhile", async () => {
     vi.useFakeTimers();
     const harness = await createHarness();
     const { t } = harness;
@@ -1759,13 +1769,29 @@ describe("a Community post's lineup count", () => {
       siteGroup(),
       lineup("astra-a", { originId: "astra", agentType: "astra" }),
     ]);
-    await t.mutation(backfillCommunityLineupCounts, {});
+    await storeCount(t, later, 1);
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(await storedCounts(t)).toEqual({
       [first]: 3,
       [second]: 3,
       [later]: 4,
     });
+    expect(await finishedAt(t)).toHaveLength(1);
+  });
+
+  test("two backfills at once agree, and finish once", async () => {
+    vi.useFakeTimers();
+    const harness = await createHarness();
+    const { t } = harness;
+    const first = await postWith(harness, strategyPublicId, [siteGroup()]);
+    const second = await postWith(harness, "second", [siteGroup()]);
+    await storeCount(t, first, 2);
+    await storeCount(t, second, 2);
+
+    await t.mutation(backfillCommunityLineupCounts, {});
+    await t.mutation(backfillCommunityLineupCounts, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await storedCounts(t)).toEqual({ [first]: 3, [second]: 3 });
     expect(await finishedAt(t)).toHaveLength(1);
   });
 });
