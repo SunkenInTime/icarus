@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { MidLineComment, blocks, codeOnly, commentLineCount, isOurs, removeBlocks, scan } from "./comments.mjs";
+import { ContinuedLineComment, MidLineComment, blocks, codeOnly, commentLineCount, isOurs, removeBlocks, scan } from "./comments.mjs";
 
 const texts = (source, language) => scan(source, language).map((comment) => comment.text);
 
@@ -89,6 +89,7 @@ test("shell heredocs and powershell here-strings are data", () => {
   const shell = [
     "cat <<'EOF'", "# delivered literally", "EOF",
     "cat <<\\END", "# also literal", "END",
+    "cat <<123", "# numbered", "123",
     "cat <<< hello", "# after a here-string",
     "((x = 1<<2))", "# after a shift",
     "echo done # trailing",
@@ -116,6 +117,21 @@ test("a comment with code on both sides is left for a person", () => {
   const opening = "  /* gone */ run();\n";
   assert.equal(removeBlocks(opening, blocks(opening, "js")), "  run();\n");
   assert.notEqual(codeOnly("a+++b", "js"), codeOnly("a+ ++b", "js"));
+});
+
+test("a comment inside a backslash-continued line is left for a person", () => {
+  for (const [source, language] of [
+    ['puts("before"); // note \\\nputs("after");', "c"],
+    ["#define F \\\n/* note */(x)", "c"],
+    ["x = 1 \\\n# note\n+ 2", "python"],
+  ]) {
+    assert.throws(() => removeBlocks(source, blocks(source, language)), ContinuedLineComment, source);
+  }
+});
+
+test("u+2028 ends a js line comment, and c++ raw strings are data", () => {
+  assert.deepEqual(texts('a(); // note\u2028b();', "js"), ["// note"]);
+  assert.deepEqual(texts('auto s = R"x(one\n// literal\n)x"; // real', "c"), ["// real"]);
 });
 
 test("removing a trailing comment keeps CRLF line endings", () => {

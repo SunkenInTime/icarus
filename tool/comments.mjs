@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -54,7 +54,7 @@ const DIRECTIVES = {
   swift: /^swiftlint:/,
   c: /^(NOLINT|clang-format (off|on))/,
   powershell: /^Requires /,
-  python: /^(noqa|type: ignore|pragma|-\*-)/,
+  python: /^(noqa|type: ignore|pragma|-\*-|.*coding[:=])/,
   shell: /^(shellcheck )/,
 };
 
@@ -86,9 +86,10 @@ export function lex(text, language) {
   return hash ? lexHash(text, language) : lexSlash(text, language);
 }
 
-function lineCommentEnd(text, from) {
-  const newline = text.indexOf("\n", from);
-  const stop = newline === -1 ? text.length : newline;
+function lineCommentEnd(text, from, terminators = /[\n]/g) {
+  terminators.lastIndex = from;
+  const found = terminators.exec(text);
+  const stop = found ? found.index : text.length;
   return text[stop - 1] === "\r" ? stop - 1 : stop;
 }
 
@@ -174,7 +175,7 @@ function lexSlash(text, language) {
     }
 
     if (c === "/" && next === "/") {
-      const stop = lineCommentEnd(text, i);
+      const stop = lineCommentEnd(text, i, language === "js" ? /[\n\u2028\u2029]/g : /[\n]/g);
       comments.push({ start: i, end: stop, text: text.slice(i, stop), block: false });
       i = stop;
       continue;
@@ -286,6 +287,10 @@ function openString(text, i, language) {
       mode: { kind: "string", end: `${prefix[2]}${hashes}`, raw: hashes.length > 0, hashes },
     };
   }
+  const raw = /^(?:u8|u|U|L)?R"([^()\\\s]{0,16})\(/.exec(text.slice(i, i + 24));
+  if (raw && !/[\w]/.test(text[i - 1] ?? "")) {
+    return { length: raw[0].length, mode: { kind: "string", end: `)${raw[1]}"`, raw: true } };
+  }
   if (c === '"') return { length: 1, mode: { kind: "string", end: '"', singleLine: true } };
   if (c === "'") return { length: 1, mode: { kind: "string", end: "'", singleLine: true } };
   return null;
@@ -374,8 +379,9 @@ function lexHash(text, language) {
       i = stop;
       continue;
     }
-    if (language === "shell" && text.startsWith("<<", i) && text[i + 2] !== "<" && text[i - 1] !== "<") {
-      const heredoc = /^<<(-?)\s*(?:\\|(['"]?))([A-Za-z_][\w.-]*)\2/.exec(text.slice(i, i + 80));
+    const startsWord = i === 0 || /[\s;|&(]/.test(text[i - 1]);
+    if (language === "shell" && startsWord && text.startsWith("<<", i) && text[i + 2] !== "<") {
+      const heredoc = /^<<(-?)\s*(?:\\|(['"]?))([\w.-]+)\2/.exec(text.slice(i, i + 80));
       if (heredoc) {
         heredocs.push({ delimiter: heredoc[3], tabs: heredoc[1] === "-" });
         i += heredoc[0].length;
@@ -470,11 +476,19 @@ export class MidLineComment extends Error {
   }
 }
 
+export class ContinuedLineComment extends Error {
+  constructor(block) {
+    super(`line ${block.startLine + 1} is part of a backslash-continued line; edit it by hand`);
+  }
+}
+
 export function removeBlocks(text, removed) {
   const lines = text.split("\n");
   const drop = new Set();
   const edits = [];
   for (const block of removed) {
+    const continued = /\\\r?$/.test(lines[block.startLine - 1] ?? "") || /\\\s*$/.test(block.text);
+    if (continued) throw new ContinuedLineComment(block);
     if (block.ownLine) {
       for (let line = block.startLine; line <= block.endLine; line += 1) drop.add(line);
     } else {
@@ -702,6 +716,7 @@ function remove(idsFile) {
     writes.push({ path, next });
     removedCount += found.length;
   }
+  for (const { path } of writes) accessSync(path, constants.W_OK);
   for (const { path, next } of writes) {
     if (next.trim() === "") unlinkSync(path);
     else writeFileSync(path, next);
