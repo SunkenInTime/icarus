@@ -191,7 +191,7 @@ final class _Apply {
           ),
         ),
         if (source is LivePage)
-          for (final row in PageCopy(opId).content(
+          for (final row in PageCopy(opId, rows).content(
             rows.elementsOn(source.publicId),
             rows.lineupGroupsOn(source.publicId),
             page.publicId,

@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'derived_id.dart';
 import 'payloads.dart';
 import 'rows.dart';
+import 'strategy_rows.dart';
 
 const _copyMark = '~cp1~';
 
@@ -26,10 +29,25 @@ String pageCopyId(String id, String fresh) {
 }
 
 final class PageCopy {
-  PageCopy(this._opId);
+  PageCopy(this._opId, this._rows);
 
   final String _opId;
+  final StrategyRows _rows;
   final _lineupIds = <String, String>{};
+  final _made = <String>{};
+
+  String _freeId(String kind, String sourceId, bool Function(String id) taken) {
+    for (var attempt = 0; ; attempt++) {
+      final id = pageCopyId(
+        sourceId,
+        derivedId(jsonEncode([_opId, 'copy', kind, sourceId, attempt])),
+      );
+      if (!taken(id) && _made.add('$kind/$id')) return id;
+    }
+  }
+
+  String _elementId(String sourceId) =>
+      _freeId('element', sourceId, (id) => _rows.element(id) != null);
 
   List<Row> content(
     Iterable<ElementRow> elements,
@@ -57,10 +75,7 @@ final class PageCopy {
           'a deleted row is not copied',
         );
       case LiveElement(:final payload, :final sortIndex):
-        final publicId = pageCopyId(
-          source.publicId,
-          derivedId('$_opId/copy/element/${source.publicId}'),
-        );
+        final publicId = _elementId(source.publicId);
         return LiveElement(
           publicId: publicId,
           pagePublicId: pagePublicId,
@@ -73,10 +88,7 @@ final class PageCopy {
           revision: 1,
         );
       case UnreadableElement(:final json):
-        final publicId = pageCopyId(
-          source.publicId,
-          derivedId('$_opId/copy/element/${source.publicId}'),
-        );
+        final publicId = _elementId(source.publicId);
         return UnreadableElement(
           publicId: publicId,
           pagePublicId: pagePublicId,
@@ -120,7 +132,7 @@ final class PageCopy {
     final key = id is String ? id : '';
     return _lineupIds.putIfAbsent(
       key,
-      () => pageCopyId(key, derivedId('$_opId/copy/lineup/$key')),
+      () => _freeId('lineup', key, (id) => _rows.lineupGroup(id) != null),
     );
   }
 

@@ -190,6 +190,8 @@ final class FolderRow extends Row {
   };
 }
 
+const _latestTime = 8640000000000000;
+
 sealed class PageRow extends Row {
   const PageRow._({
     required this.publicId,
@@ -217,6 +219,12 @@ sealed class PageRow extends Row {
             : fields.decoded('deletedBy', PageDeleter.decode);
         if (!deleted && deletedAt != null) {
           fields.reject('a live page has no deletion time');
+        }
+        if (deletedAt == null && fields.has('deletedBy')) {
+          fields.reject('who deleted a page comes with when');
+        }
+        if (deletedAt != null && deletedAt.abs() > _latestTime) {
+          fields.reject('deletedAt is not a time');
         }
         return () => switch ((deleted, deletedAt)) {
           (false, _) => LivePage(

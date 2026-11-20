@@ -385,4 +385,22 @@ void main() {
     session.apply(undoOp(edited));
     expect(session.dataOf('jett')['caption'], 'entry');
   });
+
+  test('a whole number written as a decimal is not a change', () {
+    final far = element('jett', fields: {'seed': 1000000000000000000});
+    final session = Session(strategyRows(elements: [far]));
+    expect(
+      describe(
+        session.attempt(
+          ElementPatchOp(
+            opId: 'same',
+            elementPublicId: 'jett',
+            expectedElementRevision: 1,
+            payload: agentPayload('jett', {'seed': 1e18}),
+          ),
+        ),
+      ),
+      'unchanged',
+    );
+  });
 }

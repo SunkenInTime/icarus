@@ -28,7 +28,7 @@ String _jsonKey(Object? key) => key is String
     ? key
     : throw ArgumentError.value(key, 'key', 'a JSON object key is a string');
 
-const _largestExactWhole = 9007199254740991;
+const _largestWholeAsInt = 9.2e18;
 
 Object? _asJavaScript(Object? value, {required bool sortKeys}) =>
     switch (value) {
@@ -44,7 +44,7 @@ Object? _asJavaScript(Object? value, {required bool sortKeys}) =>
       ],
       double()
           when value == value.truncateToDouble() &&
-              value.abs() <= _largestExactWhole =>
+              value.abs() < _largestWholeAsInt =>
         value.toInt(),
       _ => value,
     };

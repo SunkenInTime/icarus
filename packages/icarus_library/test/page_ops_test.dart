@@ -354,4 +354,106 @@ void main() {
     }
     expect(PageRow.decode(trashed(null)), isA<CouldNotRead<PageRow>>());
   });
+
+  test('a copy never takes the id of a row the strategy already has', () {
+    final rows = strategyRows(elements: [element('jett', pageId: 'page-a')]);
+    const copy = PageAddOp(
+      opId: 'copy-op',
+      pagePublicId: 'page-copy',
+      sortIndex: 2,
+      expectedStrategyRevision: 1,
+      copyContentFromPagePublicId: 'page-a',
+    );
+    String copiedId(StrategyRowSet rows) => applied(
+      applyOp(rows, copy),
+    ).rows.whereType<ElementRow>().single.publicId;
+    final firstChoice = copiedId(rows);
+    final squatter = element(firstChoice, pageId: 'page-b');
+    final crowded = rows.withRows([squatter]);
+    final copied = applied(applyOp(crowded, copy));
+    final copiedElement = copied.rows.whereType<ElementRow>().single;
+    expect(copiedElement.publicId, isNot(firstChoice));
+    expect(copiedElement.publicId, startsWith('jett~cp1~'));
+    expect(crowded.withRows(copied.rows).element(firstChoice), squatter);
+  });
+
+  test('a copied lineup group links the copies of its own spots', () {
+    final rows = strategyRows(
+      lineupGroups: [
+        LiveLineupGroup(
+          strategyPublicId: strategyId,
+          publicId: 'g1',
+          pagePublicId: 'page-a',
+          payload: LineupGroupPayload(
+            payloadVersion: 1,
+            data: {
+              'id': 'g1',
+              'origins': [
+                {
+                  'id': 'o1',
+                  'agent': {'lineUpID': 'o1'},
+                },
+              ],
+              'landings': [
+                {
+                  'id': 'l1',
+                  'ability': {'lineUpID': 'l1'},
+                },
+              ],
+              'links': [
+                {'id': 'k1', 'originId': 'o1', 'landingId': 'l1'},
+              ],
+            },
+          ),
+          sortIndex: 0,
+          revision: 1,
+        ),
+      ],
+    );
+    final copied = applied(
+      applyOp(
+        rows,
+        const PageAddOp(
+          opId: 'copy-op',
+          pagePublicId: 'page-copy',
+          sortIndex: 2,
+          expectedStrategyRevision: 1,
+          copyContentFromPagePublicId: 'page-a',
+        ),
+      ),
+    ).rows.whereType<LiveLineupGroup>().single;
+    final data = copied.payload.data;
+    final origin = (data['origins']! as List<Object?>).single! as Map;
+    final landing = (data['landings']! as List<Object?>).single! as Map;
+    final link = (data['links']! as List<Object?>).single! as Map;
+    expect(copied.publicId, startsWith('g1~cp1~'));
+    expect(data['id'], copied.publicId);
+    expect(link['originId'], origin['id']);
+    expect(link['landingId'], landing['id']);
+    expect((origin['agent']! as Map)['lineUpID'], origin['id']);
+    expect(origin['id'], startsWith('o1~cp1~'));
+  });
+
+  test('a trashed page row that contradicts itself is not read', () {
+    final base = <String, Object?>{
+      'publicId': 'page-b',
+      'strategyPublicId': strategyId,
+      'name': 'Page 2',
+      'sortIndex': 1,
+      'isAttack': true,
+      'revision': 3,
+      'deleted': true,
+    };
+    for (final json in [
+      {...base, 'deletedBy': 'you'},
+      {...base, 'deletedAt': 8640000000000001, 'deletedBy': 'you'},
+      {...base, 'deleted': false, 'deletedAt': 1, 'deletedBy': 'you'},
+    ]) {
+      expect(
+        PageRow.decode(json),
+        isA<CouldNotRead<PageRow>>(),
+        reason: '$json',
+      );
+    }
+  });
 }

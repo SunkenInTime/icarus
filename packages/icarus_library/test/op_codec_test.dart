@@ -251,6 +251,30 @@ void main() {
       },
       {
         'opId': 'x',
+        'type': 'element.patch',
+        'elementPublicId': 'jett',
+        'expectedElementRevision': 1,
+        'merge': {
+          'fields': ['caption', 'caption'],
+          'base': [
+            {'field': 'caption', 'value': 'a'},
+          ],
+        },
+      },
+      {
+        'opId': 'x',
+        'type': 'lineup.add',
+        'lineupPublicId': 'g1',
+        'pagePublicId': 'p',
+        'payload': {
+          'kind': 'lineups',
+          'payloadVersion': 2,
+          'data': {'id': 'g1'},
+        },
+        'sortIndex': 0,
+      },
+      {
+        'opId': 'x',
         'type': 'element.reorder',
         'elementPublicId': 'jett',
         'pagePublicId': 'p',

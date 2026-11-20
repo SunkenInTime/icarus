@@ -31,6 +31,7 @@ final class FieldMerge {
         for (final entry in base.cast<Map<String, Object?>>()) entry['field'],
       ];
       if (based.toSet().length != based.length ||
+          based.length != names.length ||
           !const SetEquality<Object?>().equals(based.toSet(), names.toSet())) {
         fields.reject('expected "base" to name each field once');
       }

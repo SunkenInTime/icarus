@@ -18,4 +18,4 @@ String derivedId(String seed) {
   ].join('-');
 }
 
-String undoOpId(String opId) => derivedId('$opId/undo');
+String undoOpId(String opId) => derivedId(jsonEncode([opId, 'undo']));

@@ -40,7 +40,7 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   `newestElementPayloadVersion`, whose data is not an object, or that the
   app's `canRead` check refuses decodes as an `UnreadableElement` holding its
   row's JSON exactly. `ElementRow.decode` requires `canRead`, so the app's own
-  decoder decides what it can draw. It is saved back byte for
+  decoder decides what it can draw; `canRead` answers and never throws. It is saved back byte for
   byte. Every op aimed at it is refused with `UnreadableTarget`, including a
   delete; deleting its page keeps it, as it keeps every row on the page.
 - **Applying an op predicts the server.** The meaning comes from
@@ -55,6 +55,7 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 - **Ids come from the op.** The undo op's id and the ids of rows a page copy
   creates are derived from the op's id (and, for a copy, the source row's
   id), so recomputing the base with its pending ops never renames anything.
+  A derived copy id never takes the id of a row the strategy already has.
 - **An undo names only what the op changed.** Undoing an edit to an agent's
   position writes the position back and leaves a teammate's change to its
   side alone.
@@ -86,6 +87,8 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   `isZone`) has `UndoUnavailable`. The server keeps a later field that a write
   leaves out, so the undo would have to write the field's empty value, and
   this package does not know those yet.
+- Whole numbers of 9.2e18 or more that arrive as decimals compare and measure
+  as Dart writes them, not as JavaScript does.
 - Each op is applied alone. The server also lets several page ops queued from
   the same strategy revision land in one batch; that belongs to whoever sends
   batches.
