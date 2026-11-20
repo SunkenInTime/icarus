@@ -1,0 +1,1514 @@
+{
+ "elements": [
+  {
+   "data": {
+    "armLengthsMeters": [
+     10.0,
+     10.0,
+     10.0,
+     10.0
+    ],
+    "data": {
+     "index": 0,
+     "type": "jett"
+    },
+    "elementType": "ability",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 0.0,
+    "lineUpID": null,
+    "position": {
+     "dx": 330.0,
+     "dy": 145.0
+    },
+    "rotation": 0.0,
+    "visualState": {
+     "showInnerFill": true,
+     "showInnerOutline": true,
+     "showRangeFill": true,
+     "showRangeOutline": true,
+     "showVisionCone": true
+    }
+   },
+   "kind": "ability",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "armLengthsMeters": [
+     10.0,
+     10.0,
+     10.0,
+     10.0
+    ],
+    "data": {
+     "index": 1,
+     "type": "omen"
+    },
+    "elementType": "ability",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 0.0,
+    "lineUpID": null,
+    "position": {
+     "dx": 550.0,
+     "dy": 370.0
+    },
+    "rotation": -0.6731984257692414,
+    "visualState": {
+     "showInnerFill": true,
+     "showInnerOutline": true,
+     "showRangeFill": true,
+     "showRangeOutline": true,
+     "showVisionCone": true
+    }
+   },
+   "kind": "ability",
+   "payloadVersion": 2
+  },
+  {
+   "data": {
+    "colorValue": 4287323382,
+    "diameterMeters": 6.0,
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "circle",
+    "opacityPercent": 30,
+    "position": {
+     "dx": 260.0,
+     "dy": 620.0
+    },
+    "state": "none",
+    "type": "astra",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 1130.0,
+     "dy": 130.0
+    },
+    "state": "none",
+    "type": "astra",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 170.0,
+     "dy": 275.0
+    },
+    "state": "none",
+    "type": "breach",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 1450.0,
+     "dy": 420.0
+    },
+    "state": "none",
+    "type": "brimstone",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 490.0,
+     "dy": 565.0
+    },
+    "state": "none",
+    "type": "chamber",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 1450.0,
+     "dy": 130.0
+    },
+    "state": "none",
+    "type": "clove",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 170.0,
+     "dy": 565.0
+    },
+    "state": "none",
+    "type": "cypher",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": false,
+    "isDeleted": false,
+    "kind": "viewCone",
+    "length": 90.0,
+    "position": {
+     "dx": 880.0,
+     "dy": 220.0
+    },
+    "presetType": "viewCone90",
+    "rotation": -1.0471975511965976,
+    "state": "none",
+    "type": "cypher",
+    "visionElevation": null,
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 1130.0,
+     "dy": 275.0
+    },
+    "state": "none",
+    "type": "deadlock",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 810.0,
+     "dy": 565.0
+    },
+    "state": "none",
+    "type": "fade",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 1130.0,
+     "dy": 565.0
+    },
+    "state": "none",
+    "type": "gekko",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 1450.0,
+     "dy": 565.0
+    },
+    "state": "none",
+    "type": "harbor",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 490.0,
+     "dy": 275.0
+    },
+    "state": "none",
+    "type": "iso",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 170.0,
+     "dy": 130.0
+    },
+    "state": "none",
+    "type": "jett",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 810.0,
+     "dy": 420.0
+    },
+    "state": "none",
+    "type": "kayo",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 1130.0,
+     "dy": 420.0
+    },
+    "state": "none",
+    "type": "killjoy",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "viewCone",
+    "length": 165.0,
+    "position": {
+     "dx": 1180.0,
+     "dy": 170.0
+    },
+    "presetType": "viewCone40",
+    "rotation": 2.57610597594363,
+    "state": "dead",
+    "type": "killjoy",
+    "visionElevation": -2.0,
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 1130.0,
+     "dy": 855.0
+    },
+    "state": "none",
+    "type": "miks",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 170.0,
+     "dy": 710.0
+    },
+    "state": "none",
+    "type": "neon",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "colorValue": 4293870660,
+    "diameterMeters": 11.0,
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "circle",
+    "opacityPercent": 45,
+    "position": {
+     "dx": 1120.0,
+     "dy": 610.0
+    },
+    "state": "dead",
+    "type": "omen",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 490.0,
+     "dy": 710.0
+    },
+    "state": "none",
+    "type": "omen",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 810.0,
+     "dy": 130.0
+    },
+    "state": "none",
+    "type": "pheonix",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 490.0,
+     "dy": 130.0
+    },
+    "state": "none",
+    "type": "raze",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 810.0,
+     "dy": 710.0
+    },
+    "state": "none",
+    "type": "reyna",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 1130.0,
+     "dy": 710.0
+    },
+    "state": "none",
+    "type": "sage",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 490.0,
+     "dy": 420.0
+    },
+    "state": "none",
+    "type": "skye",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 170.0,
+     "dy": 420.0
+    },
+    "state": "none",
+    "type": "sova",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "viewCone",
+    "length": 130.0,
+    "position": {
+     "dx": 500.0,
+     "dy": 180.0
+    },
+    "presetType": "viewCone180",
+    "rotation": 0.4487989505128276,
+    "state": "none",
+    "type": "sova",
+    "visionElevation": 1.5,
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 170.0,
+     "dy": 855.0
+    },
+    "state": "none",
+    "type": "tejo",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 810.0,
+     "dy": 855.0
+    },
+    "state": "none",
+    "type": "veto",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "colorValue": 4280468830,
+    "diameterMeters": 18.0,
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": false,
+    "isDeleted": false,
+    "kind": "circle",
+    "opacityPercent": 65,
+    "position": {
+     "dx": 650.0,
+     "dy": 560.0
+    },
+    "state": "none",
+    "type": "viper",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 810.0,
+     "dy": 275.0
+    },
+    "state": "none",
+    "type": "viper",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 1450.0,
+     "dy": 710.0
+    },
+    "state": "none",
+    "type": "vyse",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 490.0,
+     "dy": 855.0
+    },
+    "state": "none",
+    "type": "waylay",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "agent",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "kind": "plain",
+    "lineUpID": null,
+    "position": {
+     "dx": 1450.0,
+     "dy": 275.0
+    },
+    "state": "none",
+    "type": "yoru",
+    "weapon": "none"
+   },
+   "kind": "agent",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "boundingBox": {
+     "max": {
+      "dx": 1240.0,
+      "dy": 930.0
+     },
+     "min": {
+      "dx": 930.0,
+      "dy": 765.0
+     }
+    },
+    "colorValue": 4282090230,
+    "elementType": "drawing",
+    "end": {
+     "dx": 1240.0,
+     "dy": 930.0
+    },
+    "hasArrow": false,
+    "id": "sample",
+    "isDotted": false,
+    "start": {
+     "dx": 930.0,
+     "dy": 765.0
+    },
+    "thickness": 5.0,
+    "type": "ellipseDrawing"
+   },
+   "kind": "drawing",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "boundingBox": {
+     "max": {
+      "dx": 570.0,
+      "dy": 620.0
+     },
+     "min": {
+      "dx": 180.0,
+      "dy": 480.0
+     }
+    },
+    "colorValue": 4280468830,
+    "elementType": "drawing",
+    "hasArrow": false,
+    "id": "sample",
+    "isDotted": false,
+    "listOfPoints": [
+     {
+      "dx": 180.0,
+      "dy": 550.0
+     },
+     {
+      "dx": 260.0,
+      "dy": 480.0
+     },
+     {
+      "dx": 350.0,
+      "dy": 610.0
+     },
+     {
+      "dx": 450.0,
+      "dy": 500.0
+     },
+     {
+      "dx": 570.0,
+      "dy": 620.0
+     }
+    ],
+    "showTraversalTime": false,
+    "thickness": 8.0,
+    "traversalSpeedProfile": "running",
+    "type": "freeDrawing"
+   },
+   "kind": "drawing",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "boundingBox": {
+     "max": {
+      "dx": 1450.0,
+      "dy": 190.0
+     },
+     "min": {
+      "dx": 180.0,
+      "dy": 125.0
+     }
+    },
+    "colorValue": 4294967295,
+    "elementType": "drawing",
+    "hasArrow": false,
+    "id": "sample",
+    "isDotted": false,
+    "lineEnd": {
+     "dx": 1450.0,
+     "dy": 185.0
+    },
+    "lineStart": {
+     "dx": 180.0,
+     "dy": 150.0
+    },
+    "showTraversalTime": true,
+    "thickness": 2.0,
+    "traversalSpeedProfile": "running",
+    "type": "lineDrawing"
+   },
+   "kind": "drawing",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "boundingBox": {
+     "max": {
+      "dx": 1300.0,
+      "dy": 735.0
+     },
+     "min": {
+      "dx": 980.0,
+      "dy": 530.0
+     }
+    },
+    "colorValue": 4293870660,
+    "elementType": "drawing",
+    "end": {
+     "dx": 1300.0,
+     "dy": 735.0
+    },
+    "hasArrow": false,
+    "id": "sample",
+    "isDotted": false,
+    "start": {
+     "dx": 980.0,
+     "dy": 530.0
+    },
+    "thickness": 8.0,
+    "type": "rectangleDrawing"
+   },
+   "kind": "drawing",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "aspectRatio": 1.0,
+    "assetId": "picture",
+    "elementType": "image",
+    "fileExtension": ".png",
+    "id": "sample",
+    "isDeleted": false,
+    "position": {
+     "dx": 120.0,
+     "dy": 300.0
+    },
+    "scale": 90.0,
+    "sizeVersion": 1,
+    "tagColorValue": null
+   },
+   "kind": "image",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "elementType": "text",
+    "fontSize": 12.0,
+    "id": "sample",
+    "isDeleted": false,
+    "position": {
+     "dx": 110.0,
+     "dy": 82.0
+    },
+    "size": 150.0,
+    "sizeVersion": 1,
+    "tagColorValue": null,
+    "text": "Jett"
+   },
+   "kind": "text",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "angle": 0.0,
+    "customColorValue": 4280468830,
+    "customDiameter": null,
+    "customLength": null,
+    "customOpacityPercent": 30,
+    "customWidth": null,
+    "elementType": "utility",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 0.0,
+    "position": {
+     "dx": 480.0,
+     "dy": 640.0
+    },
+    "rotation": 0.9287989505128276,
+    "type": "controller",
+    "visionElevation": null
+   },
+   "kind": "utility",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "angle": 0.0,
+    "customColorValue": 4280468830,
+    "customDiameter": null,
+    "customLength": 18.0,
+    "customOpacityPercent": 30,
+    "customWidth": 6.0,
+    "elementType": "utility",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 0.0,
+    "position": {
+     "dx": 150.0,
+     "dy": 640.0
+    },
+    "rotation": 0.8487989505128276,
+    "type": "customRectangle",
+    "visionElevation": null
+   },
+   "kind": "utility",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "angle": 0.0,
+    "customColorValue": 4280468830,
+    "customDiameter": null,
+    "customLength": null,
+    "customOpacityPercent": 30,
+    "customWidth": null,
+    "elementType": "utility",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 0.0,
+    "position": {
+     "dx": 810.0,
+     "dy": 640.0
+    },
+    "rotation": 1.0087989505128276,
+    "type": "duelist",
+    "visionElevation": null
+   },
+   "kind": "utility",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "angle": 0.0,
+    "customColorValue": 4280468830,
+    "customDiameter": null,
+    "customLength": null,
+    "customOpacityPercent": 30,
+    "customWidth": null,
+    "elementType": "utility",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 0.0,
+    "position": {
+     "dx": 1140.0,
+     "dy": 640.0
+    },
+    "rotation": 1.0887989505128277,
+    "type": "initiator",
+    "visionElevation": null
+   },
+   "kind": "utility",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "angle": 0.0,
+    "customColorValue": 4280468830,
+    "customDiameter": null,
+    "customLength": null,
+    "customOpacityPercent": 30,
+    "customWidth": null,
+    "elementType": "utility",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 0.0,
+    "position": {
+     "dx": 1470.0,
+     "dy": 640.0
+    },
+    "rotation": 1.1687989505128276,
+    "type": "sentinel",
+    "visionElevation": null
+   },
+   "kind": "utility",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "angle": 0.0,
+    "customColorValue": 4280468830,
+    "customDiameter": null,
+    "customLength": null,
+    "customOpacityPercent": 30,
+    "customWidth": null,
+    "elementType": "utility",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 0.0,
+    "position": {
+     "dx": 150.0,
+     "dy": 220.0
+    },
+    "rotation": 0.4487989505128276,
+    "type": "spike",
+    "visionElevation": null
+   },
+   "kind": "utility",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "angle": 180.0,
+    "customColorValue": 4280468830,
+    "customDiameter": null,
+    "customLength": null,
+    "customOpacityPercent": 30,
+    "customWidth": null,
+    "elementType": "utility",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 79.0,
+    "position": {
+     "dx": 480.0,
+     "dy": 220.0
+    },
+    "rotation": 0.5287989505128275,
+    "type": "viewCone180",
+    "visionElevation": null
+   },
+   "kind": "utility",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "angle": 40.0,
+    "customColorValue": 4280468830,
+    "customDiameter": null,
+    "customLength": null,
+    "customOpacityPercent": 30,
+    "customWidth": null,
+    "elementType": "utility",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 107.0,
+    "position": {
+     "dx": 1140.0,
+     "dy": 220.0
+    },
+    "rotation": 0.6887989505128276,
+    "type": "viewCone40",
+    "visionElevation": null
+   },
+   "kind": "utility",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "angle": 90.0,
+    "customColorValue": 4280468830,
+    "customDiameter": null,
+    "customLength": null,
+    "customOpacityPercent": 30,
+    "customWidth": null,
+    "elementType": "utility",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 93.0,
+    "position": {
+     "dx": 810.0,
+     "dy": 220.0
+    },
+    "rotation": 0.6087989505128276,
+    "type": "viewCone90",
+    "visionElevation": 1.0
+   },
+   "kind": "utility",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "angle": 0.0,
+    "customColorValue": 4282090230,
+    "customDiameter": 14.0,
+    "customLength": null,
+    "customOpacityPercent": 35,
+    "customWidth": null,
+    "elementType": "utility",
+    "id": "sample",
+    "isAlly": true,
+    "isDeleted": false,
+    "length": 0.0,
+    "position": {
+     "dx": 1470.0,
+     "dy": 220.0
+    },
+    "rotation": 0.7687989505128277,
+    "type": "customCircle",
+    "visionElevation": null
+   },
+   "kind": "utility",
+   "payloadVersion": 3
+  }
+ ],
+ "lineupGroups": [
+  {
+   "data": {
+    "id": "sample",
+    "landings": [
+     {
+      "ability": {
+       "armLengthsMeters": [
+        10.0,
+        10.0,
+        10.0,
+        10.0
+       ],
+       "data": {
+        "index": 0,
+        "type": "kayo"
+       },
+       "id": "mirror-lineup-ability",
+       "isAlly": true,
+       "isDeleted": false,
+       "length": 0.0,
+       "lineUpID": "mirror-lineup-item",
+       "position": {
+        "dx": 1250.0,
+        "dy": 900.0
+       },
+       "rotation": 0.0,
+       "visualState": {
+        "showInnerFill": true,
+        "showInnerOutline": true,
+        "showRangeFill": true,
+        "showRangeOutline": true,
+        "showVisionCone": true
+       }
+      },
+      "id": "mirror-lineup-item"
+     }
+    ],
+    "links": [
+     {
+      "id": "mirror-lineup-item",
+      "images": [],
+      "landingId": "mirror-lineup-item",
+      "name": "",
+      "notes": "Same canonical lineup on both sides.",
+      "originId": "mirror-lineup-group",
+      "youtubeLink": ""
+     }
+    ],
+    "origins": [
+     {
+      "agent": {
+       "id": "mirror-lineup-agent",
+       "isAlly": true,
+       "isDeleted": false,
+       "kind": "plain",
+       "lineUpID": "mirror-lineup-group",
+       "position": {
+        "dx": 1020.0,
+        "dy": 860.0
+       },
+       "state": "none",
+       "type": "kayo",
+       "weapon": "none"
+      },
+      "id": "mirror-lineup-group"
+     }
+    ]
+   },
+   "kind": "lineups",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "id": "sample",
+    "landings": [
+     {
+      "ability": {
+       "armLengthsMeters": [
+        10.0,
+        10.0,
+        10.0,
+        10.0
+       ],
+       "data": {
+        "index": 0,
+        "type": "viper"
+       },
+       "id": "lineup-viper-ability-0",
+       "isAlly": false,
+       "isDeleted": false,
+       "length": 0.0,
+       "lineUpID": "lineup-viper-item-0",
+       "position": {
+        "dx": 1370.0,
+        "dy": 390.0
+       },
+       "rotation": 0.0,
+       "visualState": {
+        "showInnerFill": true,
+        "showInnerOutline": true,
+        "showRangeFill": true,
+        "showRangeOutline": true,
+        "showVisionCone": true
+       }
+      },
+      "id": "lineup-viper-item-0"
+     },
+     {
+      "ability": {
+       "armLengthsMeters": [
+        10.0,
+        10.0,
+        10.0,
+        10.0
+       ],
+       "data": {
+        "index": 2,
+        "type": "viper"
+       },
+       "id": "lineup-viper-ability-1",
+       "isAlly": false,
+       "isDeleted": false,
+       "length": 0.0,
+       "lineUpID": "lineup-viper-item-1",
+       "position": {
+        "dx": 1450.0,
+        "dy": 720.0
+       },
+       "rotation": 2.199114857512855,
+       "visualState": {
+        "showInnerFill": true,
+        "showInnerOutline": true,
+        "showRangeFill": true,
+        "showRangeOutline": true,
+        "showVisionCone": true
+       }
+      },
+      "id": "lineup-viper-item-1"
+     }
+    ],
+    "links": [
+     {
+      "id": "lineup-viper-item-0",
+      "images": [],
+      "landingId": "lineup-viper-item-0",
+      "name": "",
+      "notes": "Enemy-color lineup with an area ability.",
+      "originId": "lineup-group-viper",
+      "youtubeLink": ""
+     },
+     {
+      "id": "lineup-viper-item-1",
+      "images": [],
+      "landingId": "lineup-viper-item-1",
+      "name": "",
+      "notes": "Rotated wall endpoint.",
+      "originId": "lineup-group-viper",
+      "youtubeLink": ""
+     }
+    ],
+    "origins": [
+     {
+      "agent": {
+       "id": "lineup-viper-agent",
+       "isAlly": false,
+       "isDeleted": false,
+       "kind": "plain",
+       "lineUpID": "lineup-group-viper",
+       "position": {
+        "dx": 1080.0,
+        "dy": 670.0
+       },
+       "state": "none",
+       "type": "viper",
+       "weapon": "none"
+      },
+      "id": "lineup-group-viper"
+     }
+    ]
+   },
+   "kind": "lineups",
+   "payloadVersion": 1
+  },
+  {
+   "data": {
+    "id": "sample",
+    "landings": [
+     {
+      "ability": {
+       "armLengthsMeters": [
+        10.0,
+        10.0,
+        10.0,
+        10.0
+       ],
+       "data": {
+        "index": 1,
+        "type": "sova"
+       },
+       "id": "lineup-sova-ability-0",
+       "isAlly": true,
+       "isDeleted": false,
+       "length": 0.0,
+       "lineUpID": "lineup-sova-item-0",
+       "position": {
+        "dx": 520.0,
+        "dy": 360.0
+       },
+       "rotation": 0.0,
+       "visualState": {
+        "showInnerFill": true,
+        "showInnerOutline": true,
+        "showRangeFill": true,
+        "showRangeOutline": true,
+        "showVisionCone": true
+       }
+      },
+      "id": "lineup-sova-item-0"
+     },
+     {
+      "ability": {
+       "armLengthsMeters": [
+        10.0,
+        10.0,
+        10.0,
+        10.0
+       ],
+       "data": {
+        "index": 2,
+        "type": "sova"
+       },
+       "id": "lineup-sova-ability-1",
+       "isAlly": true,
+       "isDeleted": false,
+       "length": 0.0,
+       "lineUpID": "lineup-sova-item-1",
+       "position": {
+        "dx": 700.0,
+        "dy": 470.0
+       },
+       "rotation": 0.6283185307179586,
+       "visualState": {
+        "showInnerFill": true,
+        "showInnerOutline": true,
+        "showRangeFill": true,
+        "showRangeOutline": true,
+        "showVisionCone": true
+       }
+      },
+      "id": "lineup-sova-item-1"
+     },
+     {
+      "ability": {
+       "armLengthsMeters": [
+        10.0,
+        10.0,
+        10.0,
+        10.0
+       ],
+       "data": {
+        "index": 3,
+        "type": "sova"
+       },
+       "id": "lineup-sova-ability-2",
+       "isAlly": true,
+       "isDeleted": false,
+       "length": 0.0,
+       "lineUpID": "lineup-sova-item-2",
+       "position": {
+        "dx": 880.0,
+        "dy": 580.0
+       },
+       "rotation": 1.2566370614359172,
+       "visualState": {
+        "showInnerFill": true,
+        "showInnerOutline": true,
+        "showRangeFill": true,
+        "showRangeOutline": true,
+        "showVisionCone": true
+       }
+      },
+      "id": "lineup-sova-item-2"
+     }
+    ],
+    "links": [
+     {
+      "id": "lineup-sova-item-0",
+      "images": [
+       {
+        "fileExtension": ".png",
+        "id": "picture-0"
+       }
+      ],
+      "landingId": "lineup-sova-item-0",
+      "name": "",
+      "notes": "Reference 1: bounce and aim marker.",
+      "originId": "lineup-group-sova",
+      "youtubeLink": "https://www.youtube.com/watch?v=compatibility"
+     },
+     {
+      "id": "lineup-sova-item-1",
+      "images": [],
+      "landingId": "lineup-sova-item-1",
+      "name": "",
+      "notes": "Reference 2: bounce and aim marker.",
+      "originId": "lineup-group-sova",
+      "youtubeLink": ""
+     },
+     {
+      "id": "lineup-sova-item-2",
+      "images": [],
+      "landingId": "lineup-sova-item-2",
+      "name": "",
+      "notes": "Reference 3: bounce and aim marker.",
+      "originId": "lineup-group-sova",
+      "youtubeLink": ""
+     }
+    ],
+    "origins": [
+     {
+      "agent": {
+       "id": "lineup-sova-agent",
+       "isAlly": true,
+       "isDeleted": false,
+       "kind": "plain",
+       "lineUpID": "lineup-group-sova",
+       "position": {
+        "dx": 220.0,
+        "dy": 430.0
+       },
+       "state": "none",
+       "type": "sova",
+       "weapon": "none"
+      },
+      "id": "lineup-group-sova"
+     }
+    ]
+   },
+   "kind": "lineups",
+   "payloadVersion": 1
+  }
+ ]
+}

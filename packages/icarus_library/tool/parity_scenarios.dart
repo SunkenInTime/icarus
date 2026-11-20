@@ -4,32 +4,79 @@ import 'dart:math';
 
 import 'package:icarus_library/icarus_library.dart';
 
-const strategyId = 's1';
+const _strategyId = 's1';
+const _largestSafeInteger = 9007199254740991;
+const _maxArrayEntries = 8000;
 
 void main(List<String> args) {
-  if (args.length != 4) {
-    stderr.writeln(
-      'usage: parity_scenarios <first seed> <seeds> <steps> <out>',
-    );
-    exitCode = 64;
-    return;
+  switch (args) {
+    case [
+      'generate',
+      final samples,
+      final first,
+      final seeds,
+      final steps,
+      final out,
+    ]:
+      final corpus = _Samples.read(samples);
+      final from = int.parse(first);
+      final count = int.parse(seeds);
+      final length = int.parse(steps);
+      _write(out, [
+        for (var seed = from; seed < from + count; seed++)
+          _Generator(seed, corpus).scenario(length),
+      ]);
+    case ['replay', final input, final out]:
+      final recorded = jsonDecode(File(input).readAsStringSync());
+      if (recorded is! Map<String, Object?>) {
+        stderr.writeln('$input is not a recorded sequence');
+        exitCode = 65;
+        return;
+      }
+      _write(out, [_replay(recorded)]);
+    default:
+      stderr.writeln(
+        'usage: parity_scenarios generate <samples> <first seed> <seeds> '
+        '<steps> <out>\n'
+        '       parity_scenarios replay <recorded sequence> <out>',
+      );
+      exitCode = 64;
   }
-  final first = int.parse(args[0]);
-  final seeds = int.parse(args[1]);
-  final steps = int.parse(args[2]);
-  final scenarios = [
-    for (var seed = first; seed < first + seeds; seed++) _scenario(seed, steps),
-  ];
-  File(args[3]).writeAsStringSync(jsonEncode(scenarios));
 }
 
-Map<String, Object?> _rowsJson(StrategyRowSet rows) => {
-  'strategy': rows.strategy.toJson(),
-  'pages': [for (final r in rows.pages) r.toJson()],
-  'settings': [for (final r in rows.settings) r.toJson()],
-  'elements': [for (final r in rows.elements) r.toJson()],
-  'lineupGroups': [for (final r in rows.lineupGroups) r.toJson()],
-};
+void _write(String out, List<Map<String, Object?>> scenarios) {
+  for (final scenario in scenarios) {
+    _assertSafeNumbers(scenario, 'seed ${scenario['seed']}');
+  }
+  File(out).writeAsStringSync(jsonEncode(scenarios));
+}
+
+void _assertSafeNumbers(Object? value, String path) {
+  switch (value) {
+    case num() when !value.isFinite || value.abs() > _largestSafeInteger:
+      throw StateError('$path holds $value, which JavaScript cannot hold');
+    case List<Object?>():
+      for (final (index, item) in value.indexed) {
+        _assertSafeNumbers(item, '$path[$index]');
+      }
+    case Map<Object?, Object?>():
+      for (final MapEntry(:key, :value) in value.entries) {
+        _assertSafeNumbers(value, '$path.$key');
+      }
+    default:
+      break;
+  }
+}
+
+Map<String, Object?> _rowsJson(StrategyRowSet rows, List<FolderRow> folders) =>
+    {
+      'strategy': rows.strategy.toJson(),
+      'folders': [for (final row in folders) row.toJson()],
+      'pages': [for (final row in rows.pages) row.toJson()],
+      'settings': [for (final row in rows.settings) row.toJson()],
+      'elements': [for (final row in rows.elements) row.toJson()],
+      'lineupGroups': [for (final row in rows.lineupGroups) row.toJson()],
+    };
 
 Map<String, Object?> _outcome(ApplyResult result) => switch (result) {
   OpApplied() => {'status': 'applied'},
@@ -45,200 +92,384 @@ Map<String, Object?> _outcome(ApplyResult result) => switch (result) {
   OpRefused(refusal: UnreadableTarget()) => {'status': 'unreadable'},
 };
 
-List<Map<String, Object?>> _items(Map<String, Object?> data, String key) => [
-  for (final item in data[key] as List<Object?>? ?? const [])
-    if (item is Map<String, Object?>) item,
-];
-
-Map<String, Object?> _origin(String id) => {
-  'id': id,
-  'agent': {'type': 'sova', 'lineUpID': id},
+T _read<T>(Decoded<T> decoded) => switch (decoded) {
+  Read(:final value) => value,
+  CouldNotRead(:final problem) => throw StateError(problem),
 };
 
-Map<String, Object?> _landing(String id) => {
-  'id': id,
-  'ability': {'type': 'recon', 'lineUpID': id},
-};
+List<Object?> _list(Object? value) => value is List<Object?> ? value : const [];
 
-Map<String, Object?> _link(String id, String o, String l, String notes) => {
-  'id': id,
-  'originId': o,
-  'landingId': l,
-  'notes': notes,
-};
-
-LineupGroupPayload _group(String id, String n) => LineupGroupPayload(
-  payloadVersion: 1,
-  data: {
-    'id': id,
-    'origins': [_origin('o$n')],
-    'landings': [_landing('l$n')],
-    'links': [_link('k$n', 'o$n', 'l$n', '')],
-  },
-);
-
-Map<String, Object?> _scenario(int seed, int steps) {
-  final rng = Random(seed);
-  var fresh = 0;
-  String newId() => 'n${fresh++}';
-  T pick<T>(List<T> list) => list[rng.nextInt(list.length)];
-  bool chance(double p) => rng.nextDouble() < p;
-
-  ElementPayload payload(String id, ElementKind kind, int n) => ElementPayload(
-    kind: kind,
-    payloadVersion: 1,
-    data: {
-      'id': id,
-      'elementType': kind.name,
-      'position': {'x': n, 'y': n},
-      'isAlly': n.isEven,
-      'rotation': n * 10,
-      'length': 5,
-      if (n.isOdd) 'caption': 'note $n',
-    },
-  );
-
-  final pageIds = ['p0', 'p1', 'p2'];
+Map<String, Object?> _replay(Map<String, Object?> recorded) {
+  final initial = recorded['initial']! as Map<String, Object?>;
+  bool canRead(ElementPayload payload) => true;
+  final folders = [
+    for (final row in _list(initial['folders'])) _read(FolderRow.decode(row)),
+  ];
   var rows = StrategyRowSet(
-    strategy: const StrategyRow(
-      publicId: strategyId,
-      name: 'Retake',
-      mapData: 'ascent',
-      revision: 1,
-    ),
+    strategy: _read(StrategyRow.decode(initial['strategy'])),
     pages: [
-      for (final (i, id) in pageIds.indexed)
-        LivePage(
-          publicId: id,
-          strategyPublicId: strategyId,
-          name: i < 2 ? 'Page ${i + 1}' : 'Exec',
-          isAutoNamed: i < 2 ? true : false,
-          sortIndex: i,
-          isAttack: true,
-          revision: 1,
-        ),
+      for (final row in _list(initial['pages'])) _read(PageRow.decode(row)),
     ],
     settings: [
-      for (final id in pageIds)
-        PageSettingsRow(
-          pagePublicId: id,
-          settings: const PageSettings(
-            agentSize: 1,
-            abilitySize: 1,
-            useNeutralTeamColors: false,
-          ),
-          revision: 1,
-        ),
+      for (final row in _list(initial['settings']))
+        _read(PageSettingsRow.decode(row)),
     ],
     elements: [
-      for (var i = 0; i < 5; i++)
-        LiveElement(
-          publicId: 's$seed-e$i',
-          pagePublicId: pageIds[i % 2],
-          payload: payload(
-            's$seed-e$i',
-            i.isEven ? ElementKind.agent : ElementKind.ability,
-            i,
-          ),
-          sortIndex: i,
-          revision: 1,
-        ),
+      for (final row in _list(initial['elements']))
+        _read(ElementRow.decode(row, canRead: canRead)),
     ],
     lineupGroups: [
-      LiveLineupGroup(
-        strategyPublicId: strategyId,
-        publicId: 'g0',
-        pagePublicId: 'p0',
-        payload: _group('g0', '0'),
-        sortIndex: 0,
-        revision: 1,
-      ),
-      LiveLineupGroup(
-        strategyPublicId: strategyId,
-        publicId: 'g1',
-        pagePublicId: 'p1',
-        payload: _group('g1', '1'),
-        sortIndex: 0,
-        revision: 1,
-      ),
+      for (final row in _list(initial['lineupGroups']))
+        _read(LineupGroupRow.decode(row)),
     ],
   );
-  final initial = _rowsJson(rows);
-  final history = <String, List<Map<String, Object?>>>{};
-  for (final element in rows.elements) {
-    history[element.publicId] = [(element as LiveElement).payload.data];
+  final ops = [
+    for (final op in _list(recorded['ops'])) _read(StrategyOp.decode(op)),
+  ];
+  final predicted = <Map<String, Object?>>[];
+  for (final op in ops) {
+    final result = applyOp(rows, op);
+    if (result is OpApplied) rows = rows.withRows(result.rows);
+    predicted.add({..._outcome(result), 'rows': _rowsJson(rows, folders)});
   }
-  final groupHistory = <String, List<Map<String, Object?>>>{
-    for (final g in rows.lineupGroups) g.publicId: [g.payload.data],
+  return {
+    'seed': recorded['seed'],
+    'steps': ops.length,
+    'dartVersion': Platform.version,
+    'initial': initial,
+    'ops': [for (final op in ops) op.toJson()],
+    'predicted': predicted,
   };
+}
+
+final class _Samples {
+  _Samples(this.elements, this.lineupGroups);
+
+  factory _Samples.read(String path) {
+    final json =
+        jsonDecode(File(path).readAsStringSync()) as Map<String, Object?>;
+    return _Samples(
+      [
+        for (final sample in _list(json['elements']))
+          _read(ElementPayload.decode(sample)),
+      ],
+      [
+        for (final sample in _list(json['lineupGroups']))
+          _read(LineupGroupPayload.decode(sample)),
+      ],
+    );
+  }
+
+  final List<ElementPayload> elements;
+  final List<LineupGroupPayload> lineupGroups;
+
+  List<ElementPayload> ofKind(ElementKind kind) => [
+    for (final sample in elements)
+      if (sample.kind == kind) sample,
+  ];
+}
+
+const _identityKeys = {'id', 'elementType', 'kind', 'type', 'data'};
+
+const _settingsChoices = [
+  PageSettings(agentSize: 1, abilitySize: 1, useNeutralTeamColors: false),
+  PageSettings(agentSize: 1.5, abilitySize: 0.75, useNeutralTeamColors: true),
+];
+
+final class _Generator {
+  _Generator(this.seed, this.samples) : rng = Random(seed);
+
+  final int seed;
+  final _Samples samples;
+  final Random rng;
+  int _fresh = 0;
+  late StrategyRowSet rows;
+  late List<FolderRow> folders;
+  final history = <String, List<Map<String, Object?>>>{};
+  final groupHistory = <String, List<Map<String, Object?>>>{};
+
+  String newId() => 's$seed-n${_fresh++}';
+
+  T pick<T>(List<T> list) => list[rng.nextInt(list.length)];
+
+  bool chance(double p) => rng.nextDouble() < p;
 
   int rev(int current) => chance(0.85) ? current : current + pick([-1, 1]);
+
+  Map<String, Object?> scenario(int steps) {
+    folders = [
+      const FolderRow(publicId: 'f-root', name: 'Retakes', color: 'red'),
+      const FolderRow(
+        publicId: 'f-child',
+        name: 'Bind',
+        parentFolderPublicId: 'f-root',
+        iconCodePoint: 58000,
+      ),
+    ];
+    final pageIds = ['p0', 'p1', 'p2'];
+    rows = StrategyRowSet(
+      strategy: StrategyRow(
+        publicId: _strategyId,
+        name: 'Retake',
+        mapData: 'ascent',
+        revision: 1,
+        folderPublicId: switch (seed % 3) {
+          0 => null,
+          1 => 'f-root',
+          _ => 'f-child',
+        },
+      ),
+      pages: [
+        for (final (i, id) in pageIds.indexed)
+          LivePage(
+            publicId: id,
+            strategyPublicId: _strategyId,
+            name: i < 2 ? 'Page ${i + 1}' : 'Exec',
+            isAutoNamed: i < 2,
+            sortIndex: i,
+            isAttack: true,
+            revision: 1,
+          ),
+      ],
+      settings: [
+        for (final id in pageIds)
+          PageSettingsRow(
+            pagePublicId: id,
+            settings: _settingsChoices.first,
+            revision: 1,
+          ),
+      ],
+      elements: [
+        for (final (i, kind) in ElementKind.values.indexed)
+          LiveElement(
+            publicId: 's$seed-e$i',
+            pagePublicId: pageIds[i % 2],
+            payload: elementPayload('s$seed-e$i', kind),
+            sortIndex: i,
+            revision: 1,
+          ),
+      ],
+      lineupGroups: [
+        for (final (i, page) in ['p0', 'p1'].indexed)
+          LiveLineupGroup(
+            strategyPublicId: _strategyId,
+            publicId: 's$seed-g$i',
+            pagePublicId: page,
+            payload: groupPayload('s$seed-g$i'),
+            sortIndex: 0,
+            revision: 1,
+          ),
+      ],
+    );
+    final initial = _rowsJson(rows, folders);
+    for (final element in rows.elements) {
+      remember(element);
+    }
+    for (final group in rows.lineupGroups) {
+      groupHistory[group.publicId] = [group.payload.data];
+    }
+    final ops = <Map<String, Object?>>[];
+    final predicted = <Map<String, Object?>>[];
+    for (var step = 0; step < steps; step++) {
+      final op = nextOp('s$seed-op$step');
+      final result = applyOp(rows, op);
+      if (result is OpApplied) {
+        rows = rows.withRows(result.rows);
+        for (final row in result.rows) {
+          switch (row) {
+            case final ElementRow element:
+              remember(element);
+            case LineupGroupRow(:final publicId, :final payload):
+              (groupHistory[publicId] ??= []).add(payload.data);
+            default:
+              break;
+          }
+        }
+      }
+      ops.add(op.toJson());
+      predicted.add({..._outcome(result), 'rows': _rowsJson(rows, folders)});
+    }
+    return {
+      'seed': seed,
+      'steps': steps,
+      'dartVersion': Platform.version,
+      'initial': initial,
+      'ops': ops,
+      'predicted': predicted,
+    };
+  }
+
+  void remember(ElementRow row) {
+    if (row case ReadableElementRow(:final payload)) {
+      (history[row.publicId] ??= []).add(payload.data);
+    }
+  }
+
+  ElementPayload elementPayload(String id, ElementKind kind) {
+    final sample = pick(samples.ofKind(kind));
+    return ElementPayload(
+      kind: sample.kind,
+      payloadVersion: sample.payloadVersion,
+      data: {
+        ...sample.data,
+        'id': id,
+        if (sample.data.containsKey('assetId'))
+          'assetId': chance(0.3) ? 'picture-shared' : 'picture-$id',
+      },
+    );
+  }
+
+  ElementPayload hugeDrawing(String id) {
+    final freehand = [
+      for (final sample in samples.ofKind(ElementKind.drawing))
+        if (sample.data['listOfPoints'] is List<Object?>) sample,
+    ].first;
+    return ElementPayload(
+      kind: ElementKind.drawing,
+      payloadVersion: freehand.payloadVersion,
+      data: {
+        ...freehand.data,
+        'id': id,
+        'listOfPoints': [
+          for (var i = 0; i <= _maxArrayEntries; i++)
+            {'dx': i % 1000, 'dy': i ~/ 1000},
+        ],
+      },
+    );
+  }
+
+  LineupGroupPayload groupPayload(String id) {
+    final sample = pick(samples.lineupGroups);
+    final renamed = <String, String>{};
+    void collect(Object? value) {
+      switch (value) {
+        case {'id': final String itemId}:
+          renamed[itemId] = '$id/$itemId';
+          for (final nested in (value as Map<String, Object?>).values) {
+            collect(nested);
+          }
+        case List<Object?>():
+          value.forEach(collect);
+        default:
+          break;
+      }
+    }
+
+    for (final key in ['origins', 'landings', 'links']) {
+      collect(sample.data[key]);
+    }
+    Object? rename(Object? value) => switch (value) {
+      final String text => renamed[text] ?? text,
+      final List<Object?> list => [for (final item in list) rename(item)],
+      final Map<String, Object?> map => {
+        for (final MapEntry(:key, :value) in map.entries) key: rename(value),
+      },
+      _ => value,
+    };
+    return LineupGroupPayload(
+      payloadVersion: sample.payloadVersion,
+      data: {
+        ...sample.data,
+        'id': id,
+        for (final key in ['origins', 'landings', 'links'])
+          key: rename(sample.data[key]),
+      },
+    );
+  }
+
   List<String> allPages() => [
     ...rows.pages.map((p) => p.publicId),
     'p-missing',
   ];
+
+  List<String> trashedPages() => [
+    for (final p in rows.pages)
+      if (p is TrashedPage) p.publicId,
+  ];
+
   List<String> livePages() => [
     for (final p in rows.pages)
       if (p is LivePage) p.publicId,
   ];
+
   List<String> elementIds() => [
     ...rows.elements.map((e) => e.publicId),
     'e-missing',
   ];
+
   List<String> groupIds() => [
     ...rows.lineupGroups.map((g) => g.publicId),
     'g-missing',
   ];
-  const settingsChoices = [
-    PageSettings(agentSize: 1, abilitySize: 1, useNeutralTeamColors: false),
-    PageSettings(agentSize: 1.5, abilitySize: 0.75, useNeutralTeamColors: true),
-  ];
+
+  Object? nudged(Object? value) => switch (value) {
+    final bool flag => !flag,
+    final int number => number + 1 + rng.nextInt(5),
+    final double number => number + 0.5 + rng.nextInt(5),
+    final String text => '$text~${rng.nextInt(3)}',
+    {'dx': final num dx, 'dy': final num dy} => {
+      ...(value as Map<String, Object?>),
+      'dx': dx + 10 + rng.nextInt(50),
+      'dy': dy + 10 + rng.nextInt(50),
+    },
+    final Map<String, Object?> map when map.isNotEmpty => () {
+      final key = pick(map.keys.toList());
+      return {...map, key: nudged(map[key])};
+    }(),
+    final List<Object?> list when list.isNotEmpty => [
+      ...list.skip(1),
+      nudged(list.first),
+    ],
+    _ => chance(0.5) ? 'set' : value,
+  };
 
   StrategyOp elementPatch(String opId) {
     final id = pick(elementIds());
     final row = rows.element(id);
     final current = switch (row) {
       ReadableElementRow(:final payload) => payload,
-      _ => payload(id, ElementKind.agent, 3),
+      _ => elementPayload(id, pick(ElementKind.values)),
     };
     final data = {...current.data};
-    final changed = <String>[];
-    void change(String key, Object? value) {
-      data[key] = value;
+    final editable = [
+      for (final key in data.keys)
+        if (!_identityKeys.contains(key)) key,
+    ];
+    final changed = <String>{};
+    for (var n = rng.nextInt(3) + 1; n > 0 && editable.isNotEmpty; n--) {
+      final key = pick(editable);
+      data[key] = nudged(data[key]);
       changed.add(key);
     }
-
-    if (chance(0.6)) {
-      change('position', {'x': rng.nextInt(9), 'y': rng.nextInt(9)});
-    }
-    if (chance(0.4)) change('isAlly', chance(0.5));
-    if (chance(0.3)) {
-      change('rotation', rng.nextInt(4) * 90);
-      change('length', rng.nextInt(3) + 4);
-    }
-    if (chance(0.25)) {
+    if (current.kind != ElementKind.drawing && chance(0.2)) {
       if (chance(0.5)) {
         data.remove('caption');
-        changed.add('caption');
       } else {
-        change('caption', 'c${rng.nextInt(3)}');
+        data['caption'] = 'c${rng.nextInt(3)}';
       }
+      changed.add('caption');
     }
-    if (chance(0.05)) change('type', 'flipped');
-    var kind = current.kind;
     if (chance(0.04)) {
-      kind = kind == ElementKind.agent
-          ? ElementKind.ability
-          : ElementKind.agent;
+      data['type'] = 'flipped';
+      changed.add('type');
+    }
+    var kind = current.kind;
+    if (chance(0.03)) {
+      kind = pick([
+        for (final other in ElementKind.values)
+          if (other != kind) other,
+      ]);
       data['elementType'] = kind.name;
     }
+    final payloadVersion = chance(0.04) && current.payloadVersion < 3
+        ? current.payloadVersion + 1
+        : current.payloadVersion;
     final sent = ElementPayload(
       kind: kind,
-      payloadVersion: chance(0.05) ? 2 : current.payloadVersion,
+      payloadVersion: payloadVersion,
       data: data,
     );
-    final withPayload = chance(0.9);
-    final sortIndex = chance(0.3) ? rng.nextInt(6) : null;
+    final sortIndex = chance(0.3) ? rng.nextInt(8) : null;
     FieldMerge? merge;
     if (chance(0.6)) {
       final fields = [...changed];
@@ -250,10 +481,9 @@ Map<String, Object?> _scenario(int seed, int steps) {
         base = {
           for (final f in fields)
             if (f == '@sortIndex')
-              if (chance(0.7))
-                f: (row is ReadableElementRow ? row.sortIndex : 0)
-              else
-                f: rng.nextInt(6)
+              f: chance(0.7) && row is ReadableElementRow
+                  ? row.sortIndex
+                  : rng.nextInt(8)
             else if (older.containsKey(f))
               f: older[f],
         };
@@ -266,57 +496,102 @@ Map<String, Object?> _scenario(int seed, int steps) {
       expectedElementRevision: rev(
         row is ReadableElementRow ? row.revision : 1,
       ),
-      payload: withPayload ? sent : null,
+      payload: chance(0.9) ? sent : null,
       sortIndex: sortIndex,
       pagePublicId: chance(0.15) ? pick(allPages()) : null,
       merge: merge,
     );
   }
 
+  List<Map<String, Object?>> items(Map<String, Object?> data, String key) => [
+    for (final item in _list(data[key]))
+      if (item is Map<String, Object?>) item,
+  ];
+
+  Map<String, Object?> fresh(Map<String, Object?> item, String id) {
+    final marker = item['agent'] ?? item['ability'];
+    return {
+      ...item,
+      'id': id,
+      if (item['agent'] is Map<String, Object?>)
+        'agent': {
+          ...marker! as Map<String, Object?>,
+          'lineUpID': id,
+          'id': '$id-a',
+        },
+      if (item['ability'] is Map<String, Object?>)
+        'ability': {
+          ...marker! as Map<String, Object?>,
+          'lineUpID': id,
+          'id': '$id-a',
+        },
+    };
+  }
+
   LineupGroupPayload editedGroup(LineupGroupRow row, List<String> fields) {
     final data = row.payload.data;
-    final origins = [
-      ...(data['origins']! as List<Object?>).cast<Map<String, Object?>>(),
-    ];
-    final landings = [
-      ...(data['landings']! as List<Object?>).cast<Map<String, Object?>>(),
-    ];
-    final links = [
-      ...(data['links']! as List<Object?>).cast<Map<String, Object?>>(),
-    ];
+    final origins = items(data, 'origins');
+    final landings = items(data, 'landings');
+    final links = items(data, 'links');
     final roll = rng.nextInt(3);
     if (roll == 0 || links.isEmpty) {
       final n = newId();
-      final useOrigin = chance(0.5) && origins.isNotEmpty;
+      final useOrigin = chance(0.25) && origins.isNotEmpty;
       final originId = useOrigin ? pick(origins)['id']! as String : 'o$n';
       if (!useOrigin) {
-        origins.add(_origin(originId));
+        origins.add(
+          fresh(
+            origins.isEmpty ? {'agent': <String, Object?>{}} : origins.first,
+            originId,
+          ),
+        );
         fields.add('origins/$originId');
       }
-      landings.add(_landing('l$n'));
+      landings.add(
+        fresh(
+          landings.isEmpty ? {'ability': <String, Object?>{}} : landings.first,
+          'l$n',
+        ),
+      );
       fields.add('landings/l$n');
-      links.add(_link('k$n', originId, 'l$n', ''));
+      links.add({
+        ...(links.isEmpty ? <String, Object?>{} : links.first),
+        'id': 'k$n',
+        'originId': originId,
+        'landingId': 'l$n',
+      });
       fields.add('links/k$n');
     } else if (roll == 1) {
       final i = rng.nextInt(links.length);
       links[i] = {...links[i], 'notes': 'n${rng.nextInt(4)}'};
       fields.add('links/${links[i]['id']}');
     } else {
-      final i = rng.nextInt(links.length);
-      final gone = links.removeAt(i);
+      final alone = [
+        for (final (index, link) in links.indexed)
+          if (links
+                  .where((other) => other['originId'] == link['originId'])
+                  .length ==
+              1)
+            index,
+      ];
+      final gone = links.removeAt(
+        alone.isNotEmpty && chance(0.8)
+            ? pick(alone)
+            : rng.nextInt(links.length),
+      );
       fields.add('links/${gone['id']}');
-      final usedO = {for (final l in links) l['originId']};
-      final usedL = {for (final l in links) l['landingId']};
-      for (final o in [...origins]) {
-        if (!usedO.contains(o['id'])) {
-          origins.remove(o);
-          fields.add('origins/${o['id']}');
+      final usedOrigins = {for (final link in links) link['originId']};
+      final usedLandings = {for (final link in links) link['landingId']};
+      for (final origin in [...origins]) {
+        if (!usedOrigins.contains(origin['id'])) {
+          origins.remove(origin);
+          fields.add('origins/${origin['id']}');
         }
       }
-      for (final l in [...landings]) {
-        if (!usedL.contains(l['id'])) {
-          landings.remove(l);
-          fields.add('landings/${l['id']}');
+      for (final landing in [...landings]) {
+        if (!usedLandings.contains(landing['id'])) {
+          landings.remove(landing);
+          fields.add('landings/${landing['id']}');
         }
       }
     }
@@ -330,11 +605,27 @@ Map<String, Object?> _scenario(int seed, int steps) {
     final id = pick(groupIds());
     final row = rows.lineupGroup(id);
     if (row == null) return elementPatch(opId);
-    final older = pick(groupHistory[id] ?? [row.payload.data]);
-    final origins = _items(older, 'origins');
-    if (origins.isEmpty) return elementPatch(opId);
+    final versions = groupHistory[id] ?? [row.payload.data];
+    final current = {
+      for (final origin in items(row.payload.data, 'origins')) origin['id'],
+    };
+    final lost = [
+      for (final version in versions)
+        for (final origin in items(version, 'origins'))
+          if (!current.contains(origin['id']))
+            (version, origin['id']! as String),
+    ];
+    final (older, lostOrigin) = lost.isNotEmpty && chance(0.8)
+        ? pick(lost)
+        : (pick(versions), null);
+    final origins = items(older, 'origins');
+    final landings = items(older, 'landings');
+    final links = items(older, 'links');
+    if (origins.isEmpty || landings.isEmpty || links.isEmpty) {
+      return elementPatch(opId);
+    }
     final n = newId();
-    final originId = pick(origins)['id']! as String;
+    final originId = lostOrigin ?? pick(origins)['id']! as String;
     return LineupGroupPatchOp(
       opId: opId,
       lineupPublicId: id,
@@ -343,10 +634,15 @@ Map<String, Object?> _scenario(int seed, int steps) {
         payloadVersion: 1,
         data: {
           ...older,
-          'landings': [..._items(older, 'landings'), _landing('l$n')],
+          'landings': [...landings, fresh(landings.first, 'l$n')],
           'links': [
-            ..._items(older, 'links'),
-            _link('k$n', originId, 'l$n', ''),
+            ...links,
+            {
+              ...links.first,
+              'id': 'k$n',
+              'originId': originId,
+              'landingId': 'l$n',
+            },
           ],
         },
       ),
@@ -356,14 +652,11 @@ Map<String, Object?> _scenario(int seed, int steps) {
 
   StrategyOp nextOp(String opId) {
     switch (rng.nextInt(16)) {
-      case 14:
-      case 15:
-        return staleLineupMerge(opId);
       case 0:
         return StrategyPatchOp(
           opId: opId,
           expectedStrategyRevision: rev(rows.strategy.revision),
-          name: chance(0.4) ? 'S${rng.nextInt(3)}' : null,
+          name: chance(0.5) ? 'S${rng.nextInt(3)}' : null,
           mapData: chance(0.2) ? pick(['ascent', 'bind']) : null,
           themeProfile: pick<ValueEdit<String>>([
             const KeepValue(),
@@ -379,16 +672,19 @@ Map<String, Object?> _scenario(int seed, int steps) {
           ]),
         );
       case 1:
-        final existing = chance(0.2);
         return PageAddOp(
           opId: opId,
-          pagePublicId: existing ? pick(allPages()) : 'p${newId()}',
+          pagePublicId: trashedPages().isNotEmpty && chance(0.15)
+              ? pick(trashedPages())
+              : chance(0.2)
+              ? pick(allPages())
+              : 'p${newId()}',
           sortIndex: rng.nextInt(livePages().length + 2),
           expectedStrategyRevision: rev(rows.strategy.revision),
           name: chance(0.7) ? 'Page ${rng.nextInt(5) + 1}' : null,
           isAutoNamed: chance(0.7) ? chance(0.6) : null,
           isAttack: chance(0.5) ? chance(0.5) : null,
-          settings: chance(0.8) ? pick(settingsChoices) : null,
+          settings: chance(0.8) ? pick(_settingsChoices) : null,
         );
       case 2:
         final id = pick(allPages());
@@ -419,26 +715,23 @@ Map<String, Object?> _scenario(int seed, int steps) {
         return PageSettingsPatchOp(
           opId: opId,
           pagePublicId: id,
-          settings: pick(settingsChoices),
+          settings: pick(_settingsChoices),
           expectedPageSettingsRevision: rev(rows.settingsOf(id)?.revision ?? 1),
         );
       case 6:
-        final existing = chance(0.4);
-        final id = existing ? pick(elementIds()) : 's$seed-${newId()}';
+        final id = chance(0.4) ? pick(elementIds()) : 's$seed-${newId()}';
         final row = rows.element(id);
-        final p = row is ReadableElementRow && chance(0.5)
+        final payload = chance(0.07)
+            ? hugeDrawing(id)
+            : row is ReadableElementRow && chance(0.5)
             ? row.payload
-            : payload(
-                id,
-                pick([ElementKind.agent, ElementKind.ability]),
-                rng.nextInt(4),
-              );
+            : elementPayload(id, pick(ElementKind.values));
         return ElementAddOp(
           opId: opId,
           elementPublicId: id,
           pagePublicId: chance(0.8) ? pick(livePages()) : pick(allPages()),
-          payload: p,
-          sortIndex: rng.nextInt(6),
+          payload: payload,
+          sortIndex: rng.nextInt(8),
           expectedElementRevision: row is ReadableElementRow && chance(0.8)
               ? rev(row.revision)
               : null,
@@ -465,24 +758,32 @@ Map<String, Object?> _scenario(int seed, int steps) {
           opId: opId,
           elementPublicId: id,
           pagePublicId: row?.pagePublicId ?? 'p0',
-          sortIndex: rng.nextInt(6),
+          sortIndex: rng.nextInt(8),
           expectedElementRevision: rev(
             row is ReadableElementRow ? row.revision : 1,
           ),
         );
       case 11:
         if (chance(0.5)) {
-          final existing = chance(0.3);
-          final id = existing ? pick(groupIds()) : 'g${newId()}';
+          final id = chance(0.3) ? pick(groupIds()) : 's$seed-g${newId()}';
           final row = rows.lineupGroup(id);
-          final overlap = chance(0.15);
-          final n = overlap ? pick(['0', '1']) : newId();
-          final p = row != null && chance(0.5) ? row.payload : _group(id, n);
+          final overlap = chance(0.15) && rows.lineupGroups.isNotEmpty;
+          final payload = row != null && chance(0.5)
+              ? row.payload
+              : overlap
+              ? LineupGroupPayload(
+                  payloadVersion: 1,
+                  data: {
+                    ...pick(rows.lineupGroups.toList()).payload.data,
+                    'id': id,
+                  },
+                )
+              : groupPayload(id);
           return LineupGroupAddOp(
             opId: opId,
             lineupPublicId: id,
             pagePublicId: chance(0.8) ? pick(livePages()) : pick(allPages()),
-            payload: p,
+            payload: payload,
             sortIndex: rng.nextInt(3),
             expectedLineupRevision: row != null && chance(0.8)
                 ? rev(row.revision)
@@ -506,7 +807,8 @@ Map<String, Object?> _scenario(int seed, int steps) {
                 sortIndex: rng.nextInt(4),
                 expectedLineupRevision: rev(row?.revision ?? 1),
               );
-      default:
+      case 12:
+      case 13:
         final id = pick(groupIds());
         final row = rows.lineupGroup(id);
         if (row == null) {
@@ -514,7 +816,7 @@ Map<String, Object?> _scenario(int seed, int steps) {
             opId: opId,
             lineupPublicId: id,
             expectedLineupRevision: 1,
-            payload: _group(id, '9'),
+            payload: groupPayload(id),
           );
         }
         final fields = <String>[];
@@ -527,16 +829,16 @@ Map<String, Object?> _scenario(int seed, int steps) {
           if (chance(0.35)) {
             final older = pick(groupHistory[id] ?? [row.payload.data]);
             base = {};
-            for (final f in fields) {
-              if (f == '@sortIndex') {
-                base[f] = row.sortIndex;
+            for (final field in fields) {
+              if (field == '@sortIndex') {
+                base[field] = row.sortIndex;
                 continue;
               }
-              final slash = f.indexOf('/');
-              final items =
-                  older[f.substring(0, slash)] as List<Object?>? ?? [];
-              for (final item in items.cast<Map<String, Object?>>()) {
-                if (item['id'] == f.substring(slash + 1)) base[f] = item;
+              final slash = field.indexOf('/');
+              for (final item in items(older, field.substring(0, slash))) {
+                if (item['id'] == field.substring(slash + 1)) {
+                  base[field] = item;
+                }
               }
             }
           }
@@ -551,27 +853,8 @@ Map<String, Object?> _scenario(int seed, int steps) {
           pagePublicId: chance(0.1) ? pick(allPages()) : null,
           merge: merge,
         );
+      default:
+        return staleLineupMerge(opId);
     }
   }
-
-  final ops = <Map<String, Object?>>[];
-  final predicted = <Map<String, Object?>>[];
-  for (var step = 0; step < steps; step++) {
-    final op = nextOp('s$seed-op$step');
-    final result = applyOp(rows, op);
-    if (result is OpApplied) {
-      rows = rows.withRows(result.rows);
-      for (final row in result.rows) {
-        if (row case ReadableElementRow(:final payload)) {
-          (history[row.publicId] ??= []).add(payload.data);
-        }
-        if (row case LineupGroupRow(:final payload)) {
-          (groupHistory[row.publicId] ??= []).add(payload.data);
-        }
-      }
-    }
-    ops.add(op.toJson());
-    predicted.add({..._outcome(result), 'rows': _rowsJson(rows)});
-  }
-  return {'seed': seed, 'initial': initial, 'ops': ops, 'predicted': predicted};
 }
