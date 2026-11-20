@@ -14,6 +14,23 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 
+class UnreadableDrawing implements Exception {
+  const UnreadableDrawing({
+    required this.strategyName,
+    required this.pageName,
+    required this.cause,
+  });
+
+  final String strategyName;
+  final String pageName;
+  final Object cause;
+
+  @override
+  String toString() =>
+      'UnreadableDrawing(strategy: $strategyName, page: $pageName, '
+      'cause: $cause)';
+}
+
 class StrategyPage extends HiveObject {
   final String id;
   final int sortIndex;
@@ -187,46 +204,43 @@ class StrategyPage extends HiveObject {
   }
 
   Map<String, dynamic> toJson(String strategyID) {
-    String fetchedImageData =
-        kIsWeb ? "[]" : PlacedImageProvider.objectToJson(imageData, strategyID);
     final lineUpJson = lineUpGraph.toJson();
-    String data = '''
-               {
-               "id": "$id",
-               "sortIndex": "$sortIndex",
-               "name": "$name",
-               "isAutoNamed": $isAutoNamed,
-               "drawingData": ${DrawingProvider.objectToJson(drawingData)},
-               "agentData": ${AgentProvider.objectToJson(agentData)},
-               "abilityData": ${AbilityProvider.objectToJson(abilityData)},
-               "textData": ${TextProvider.objectToJson(textData)},
-               "imageData":$fetchedImageData,
-               "utilityData": ${UtilityProvider.objectToJson(utilityData)},
-               "isAttack": "${isAttack.toString()}",
-               "settings": ${StrategySettingsProvider.objectToJson(settings)},
-               "lineUpOrigins": ${jsonEncode(lineUpJson['lineUpOrigins'])},
-               "lineUpLandings": ${jsonEncode(lineUpJson['lineUpLandings'])},
-               "lineUpLinks": ${jsonEncode(lineUpJson['lineUpLinks'])}
-               }
-             ''';
-
-    final result = jsonDecode(data) as Map<String, dynamic>;
-    if (isAutoNamed == null) {
-      result.remove('isAutoNamed');
-    }
-    return result;
+    return {
+      'id': id,
+      'sortIndex': '$sortIndex',
+      'name': name,
+      if (isAutoNamed != null) 'isAutoNamed': isAutoNamed,
+      'drawingData': jsonDecode(DrawingProvider.objectToJson(drawingData)),
+      'agentData': jsonDecode(AgentProvider.objectToJson(agentData)),
+      'abilityData': jsonDecode(AbilityProvider.objectToJson(abilityData)),
+      'textData': jsonDecode(TextProvider.objectToJson(textData)),
+      'imageData': kIsWeb
+          ? []
+          : jsonDecode(PlacedImageProvider.objectToJson(imageData, strategyID)),
+      'utilityData': jsonDecode(UtilityProvider.objectToJson(utilityData)),
+      'isAttack': '$isAttack',
+      'settings': jsonDecode(StrategySettingsProvider.objectToJson(settings)),
+      'lineUpOrigins': jsonDecode(jsonEncode(lineUpJson['lineUpOrigins'])),
+      'lineUpLandings': jsonDecode(jsonEncode(lineUpJson['lineUpLandings'])),
+      'lineUpLinks': jsonDecode(jsonEncode(lineUpJson['lineUpLinks'])),
+    };
   }
 
   static Future<List<StrategyPage>> listFromJson(
       {required String json,
       required String strategyID,
+      required String strategyName,
       required bool isZip}) async {
     List<StrategyPage> pages = [];
     List<dynamic> listJson = jsonDecode(json);
 
     for (final item in listJson) {
-      final page =
-          await fromJson(json: item, strategyID: strategyID, isZip: isZip);
+      final page = await fromJson(
+        json: item,
+        strategyID: strategyID,
+        strategyName: strategyName,
+        isZip: isZip,
+      );
       pages.add(page);
     }
 
@@ -240,6 +254,7 @@ class StrategyPage extends HiveObject {
   static Future<StrategyPage> fromJson(
       {required Map<String, dynamic> json,
       required String strategyID,
+      required String strategyName,
       required bool isZip}) async {
     final bool? isAutoNamed;
     if (!json.containsKey('isAutoNamed')) {
@@ -279,7 +294,11 @@ class StrategyPage extends HiveObject {
       sortIndex: int.parse(json['sortIndex']),
       name: json['name'],
       isAutoNamed: isAutoNamed,
-      drawingData: DrawingProvider.fromJson(jsonEncode(json['drawingData'])),
+      drawingData: drawingsFromJson(
+        json['drawingData'],
+        strategyName: strategyName,
+        pageName: json['name'],
+      ),
       agentData: AgentProvider.fromJson(jsonEncode(json['agentData'])),
       abilityData: AbilityProvider.fromJson(jsonEncode(json['abilityData'])),
       textData: TextProvider.fromJson(jsonEncode(json['textData'])),
@@ -291,6 +310,27 @@ class StrategyPage extends HiveObject {
       lineUpLandings: graph.landings,
       lineUpLinks: graph.links,
     );
+  }
+
+  static List<DrawingElement> drawingsFromJson(
+    Object? json, {
+    required String strategyName,
+    required String pageName,
+  }) {
+    try {
+      return [
+        for (final drawing in json as List)
+          DrawingProvider.elementFromJson(
+            Map<String, dynamic>.from(drawing as Map),
+          ),
+      ];
+    } catch (error) {
+      throw UnreadableDrawing(
+        strategyName: strategyName,
+        pageName: pageName,
+        cause: error,
+      );
+    }
   }
 
   static LineUpGraph _lineUpGraphFromJson(Map<String, dynamic> json) {

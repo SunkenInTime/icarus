@@ -34,6 +34,7 @@ import 'package:icarus/services/video_export/video_export_errors.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/services/video_export/video_export_source.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/strategy_page_source.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
 import 'package:supabase_flutter/supabase_flutter.dart' show User;
@@ -114,8 +115,10 @@ class _Canvas extends StrategyPageSessionNotifier {
       );
 
   @override
-  Future<bool> flushCurrentPage({bool flushImmediately = false}) async =>
-      queued;
+  Future<PageHandover> flushCurrentPage({bool flushImmediately = false}) async =>
+      queued
+          ? const QueuedForServer()
+          : const HeldOnCanvas(HeldReason.noServerRead);
 }
 
 class _SignedOut extends AuthProvider {

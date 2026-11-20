@@ -52,6 +52,7 @@ import 'package:icarus/providers/collab/lineup_conflicts_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/collab/unshown_cloud_content_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
@@ -69,6 +70,7 @@ import 'package:icarus/strategy/lineup_group_changes.dart';
 import 'package:icarus/strategy/copied_page_check.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/strategy_page_source.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show User;
 import 'package:uuid/uuid.dart';
@@ -263,7 +265,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   }
 
   @override
-  Future<void> syncDesiredOpsForPage({
+  Future<OutboxWrite> syncDesiredOpsForPage({
     required String pageId,
     required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
     bool clearMissing = true,
@@ -296,6 +298,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
       queuedByEntityKey: queued,
       successorByEntityKey: successors,
     );
+    return OutboxWrite.written;
   }
 
   /// Like the real queue, keeps [desired] behind [key]'s refused op: work
@@ -2207,6 +2210,148 @@ void main() {
     );
   });
 
+  group('items on a cloud page this build cannot draw', () {
+    RemoteElement row(String id, String elementType, Map<String, dynamic> data,
+            {int sortIndex = 1}) =>
+        RemoteElement(
+          publicId: id,
+          strategyPublicId: 'cloud-strategy',
+          pagePublicId: 'page-1',
+          elementType: elementType,
+          payload: cloudElementPayload(kind: elementType, data: {
+            ...data,
+            'elementType': elementType,
+          }),
+          sortIndex: sortIndex,
+          revision: 3,
+          deleted: false,
+        );
+
+    final unreadable = row('broken', 'text', {'id': 'broken', 'size': 'wide'});
+    final unknownKind = row('hologram', 'hologram', {
+      'id': 'hologram',
+      'position': {'dx': 5.0, 'dy': 5.0},
+    });
+
+    Future<(ProviderContainer, _FakeStrategyOpQueueNotifier)> open(
+      RemoteElement undrawable, {
+      CloudPayload? settings,
+    }) async {
+      final page = _page('page-1', 0);
+      final queue = _FakeStrategyOpQueueNotifier();
+      final container = await _cloudContainer(
+        remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+          pages: [page],
+          activePage: _pageSnapshot(
+            page,
+            settings: settings ?? StrategySettings().toJson(),
+            elements: [
+              _textElement('page-1', 'kept', 'kept'),
+              undrawable,
+            ],
+          ),
+        )),
+        queue: queue,
+      );
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      await _settle();
+      expect(
+        [for (final text in container.read(textProvider)) text.id],
+        ['kept'],
+      );
+      return (container, queue);
+    }
+
+    Future<Map<EntitySyncKey, QueuedEntityIntent>> editTheOtherItem(
+      ProviderContainer container,
+    ) async {
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'kept');
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .handOverForSyncStatus();
+      return container.read(strategyOpQueueProvider).queuedByEntityKey;
+    }
+
+    for (final (name, undrawable) in [
+      ('a row that fails to decode', unreadable),
+      ('a row of a kind this build does not know', unknownKind),
+    ]) {
+      test('$name is not deleted by an edit of something else', () async {
+        final (container, _) = await open(undrawable);
+
+        final queued = await editTheOtherItem(container);
+
+        expect(
+          queued.keys,
+          contains(const EntitySyncKey.element('page-1', 'kept')),
+        );
+        expect(
+          queued.keys,
+          isNot(contains(EntitySyncKey.element('page-1', undrawable.publicId))),
+        );
+        expect(
+          [for (final intent in queued.values) intent.pending.op],
+          everyElement(isNot(isA<ElementDeleteOp>())),
+        );
+      });
+
+      test('$name is in a copy of the page', () async {
+        final (container, _) = await open(undrawable);
+
+        final copied = container
+            .read(activePageLiveSyncProvider.notifier)
+            .drawnRows('page-1')!
+            .elements;
+
+        expect(
+          {for (final copy in copied) copy.publicId},
+          {'kept', undrawable.publicId},
+        );
+        final copy = copied.firstWhere(
+          (copy) => copy.publicId == undrawable.publicId,
+        );
+        expect(copy.payload, undrawable.payload);
+        expect(copy.sortIndex, undrawable.sortIndex);
+      });
+
+      test('$name is listed as an item the page cannot show', () async {
+        final (container, _) = await open(undrawable);
+
+        expect(
+          [
+            for (final item
+                in container.read(unshownCloudContentProvider).elements)
+              item.publicId
+          ],
+          [undrawable.publicId],
+        );
+      });
+    }
+
+    test('page settings that fail to read are not rewritten by an edit',
+        () async {
+      final (container, _) = await open(
+        unknownKind,
+        settings: {'agentSize': 'large'},
+      );
+
+      final queued = await editTheOtherItem(container);
+
+      expect(
+        queued.keys,
+        isNot(contains(const EntitySyncKey.pageContent('page-1'))),
+      );
+    });
+  });
+
   group('a copied page is drawable exactly when hydration draws it:', () {
     // One real row of each kind, as the canvas writes it.
     final rows = <String, Map<String, dynamic>>{
@@ -2699,7 +2844,7 @@ void main() {
           type: AgentType.jett,
           position: const Offset(40, 40),
         ));
-    await session.flushCurrentPage();
+    await session.handOverForSyncStatus();
 
     expect(
       container.read(strategyPageSessionProvider).activePageId,
@@ -2990,7 +3135,7 @@ void main() {
       await container
           .read(strategyPageSessionProvider.notifier)
           .flushCurrentPage(),
-      isFalse,
+      isA<HeldOnCanvas>(),
     );
   });
 
@@ -4871,6 +5016,110 @@ void main() {
       // Revision 1, not the teammate's 2: the server rejects it as a
       // conflict instead of the move silently overwriting their edit.
       expect(sent.op.expectedRevision, 1);
+    });
+
+    void teammateMakesHeldUnreadable(
+      _FakeRemoteEditorNotifier remote,
+      RemotePage page,
+    ) =>
+        remote.setSnapshot(_editorSnapshot(
+          pages: [page],
+          activePage: _pageSnapshot(
+            page,
+            contentRevision: 2,
+            elements: [
+              RemoteElement(
+                publicId: 'held',
+                strategyPublicId: 'cloud-strategy',
+                pagePublicId: page.publicId,
+                elementType: 'text',
+                payload: cloudElementPayload(kind: 'text', data: {
+                  'id': 'held',
+                  'elementType': 'text',
+                  'size': 'from a newer build',
+                }),
+                sortIndex: 0,
+                revision: 2,
+                deleted: false,
+              ),
+              _textElement(page.publicId, 'other', 'other v1',
+                  sortIndex: 1, worldSized: true),
+            ],
+          ),
+        ));
+
+    StrategyOp sentFor(ProviderContainer container, String id) => container
+        .read(strategyOpQueueProvider)
+        .pending
+        .singleWhere((item) => item.op.entityPublicId == id)
+        .op;
+
+    test(
+        'an edit committed to it is sent when a teammate made it unreadable '
+        'here', () async {
+      final (container, remote, page) = await open();
+      teammateMakesHeldUnreadable(remote, page);
+      await _settle();
+      container
+          .read(textProvider.notifier)
+          .updatePosition(const Offset(300, 300), 'held');
+      container.read(editorPointersProvider.notifier).release(1);
+      await _settle();
+
+      final sent = sentFor(container, 'held');
+      expect(sent, isA<ElementPatchOp>());
+      expect(sent.expectedRevision, 1);
+      expect(
+        cloudPayloadData(sent.payload)['position'],
+        {'dx': 300.0, 'dy': 300.0},
+      );
+    });
+
+    test(
+        'let go untouched after a teammate made it unreadable here, it is '
+        'kept unshown and no element op is sent', () async {
+      final (container, remote, page) = await open();
+      teammateMakesHeldUnreadable(remote, page);
+      await _settle();
+      expect(textOf(container, 'held'), 'held v1');
+
+      container.read(editorPointersProvider.notifier).release(1);
+      await _settle();
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .handOverForSyncStatus();
+
+      expect(container.read(textProvider).map((text) => text.id), ['other']);
+      expect(
+        container
+            .read(unshownCloudContentProvider)
+            .elements
+            .map((element) => element.publicId),
+        ['held'],
+      );
+      expect(
+        [
+          for (final item in container.read(strategyOpQueueProvider).pending)
+            if (item.op.entityType == StrategyOpEntityType.element)
+              '${item.op.runtimeType} ${item.op.entityPublicId}',
+        ],
+        isEmpty,
+      );
+    });
+
+    test(
+        'deleting it is sent when a teammate made it unreadable here, '
+        'checked against the version the user saw', () async {
+      final (container, remote, page) = await open();
+      teammateMakesHeldUnreadable(remote, page);
+      await _settle();
+      container.read(textProvider.notifier).removeText('held');
+      container.read(editorPointersProvider.notifier).release(1);
+      await _settle();
+
+      final sent = sentFor(container, 'held');
+      expect(sent, isA<ElementDeleteOp>());
+      expect(sent.expectedRevision, 1);
     });
 
     test('a teammate deleting it leaves it under the pointer until release',
@@ -7971,6 +8220,143 @@ void main() {
       expect(server.elements.map((element) => element.publicId), ['local']);
       expect(container.read(strategySaveStateProvider).canLeaveSafely, isTrue);
       expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.synced);
+    });
+
+    test(
+        'a page switch whose outbox write fails stays on the page with the '
+        'edit still on the canvas', () async {
+      final page = _page('page-1', 0);
+      final other = _page('page-2', 1);
+      server = _FakeServer(page.publicId);
+      final store = _FailingOutboxStore();
+      final (container, _) =
+          await openOnRealQueue(page, store: store, otherPages: [other]);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      final session = container.read(strategyPageSessionProvider.notifier);
+      store.failPut = (_) => true;
+      container.read(textProvider.notifier).fromHive([
+        PlacedText(id: 'local', position: const Offset(5, 5))..text = 'edit',
+      ]);
+      container.read(strategyProvider.notifier)
+        ..setUnsaved()
+        ..consumeScheduledCloudPageSync();
+
+      await session.setActivePage(other.publicId);
+
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          page.publicId);
+      expect(container.read(textProvider).map((text) => text.text), ['edit']);
+      expect(container.read(strategySaveStateProvider).canLeaveSafely, isFalse);
+
+      store.failPut = null;
+      await session.setActivePage(other.publicId);
+      readPage(other.publicId);
+      await _until(() =>
+          server.elements.any((element) => element.publicId == 'local'));
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          other.publicId);
+    });
+
+    test(
+        'a page switch after the edit\'s own outbox write failed stays on the '
+        'page with the edit still on the canvas', () async {
+      final page = _page('page-1', 0);
+      final other = _page('page-2', 1);
+      server = _FakeServer(page.publicId);
+      final store = _FailingOutboxStore();
+      final (container, _) =
+          await openOnRealQueue(page, store: store, otherPages: [other]);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      store.failPut = (_) => true;
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            id: 'agent-b',
+            type: AgentType.jett,
+            position: const Offset(40, 40),
+          ));
+      await _until(() =>
+          container.read(strategyOpQueueProvider).hasDurabilityFailure);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      container
+          .read(agentProvider.notifier)
+          .updatePosition(const Offset(80, 60), 'agent-b');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .switchRelativePage(PageSwitchDirection.next);
+
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          page.publicId);
+      expect(container.read(agentProvider).map((agent) => agent.id),
+          ['agent-b']);
+
+      store.failPut = null;
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .switchRelativePage(PageSwitchDirection.next);
+      readPage(other.publicId);
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          other.publicId);
+      final stored = store.load().records.singleWhere((record) =>
+          record.entityKey == EntitySyncKey.element(page.publicId, 'agent-b'));
+      final newest = stored.successorPending ?? stored.pending;
+      expect(
+        jsonEncode(newest.op.payload),
+        contains('"position":{"dx":80.0,"dy":60.0}'),
+      );
+    });
+
+    test(
+        'an edit whose outbox write failed and was then undone does not keep '
+        'the user on the page once storage recovers', () async {
+      final page = _page('page-1', 0);
+      final other = _page('page-2', 1);
+      server = _FakeServer(page.publicId);
+      final store = _FailingOutboxStore();
+      final (container, _) =
+          await openOnRealQueue(page, store: store, otherPages: [other]);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      store.failPut = (_) => true;
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            id: 'agent-b',
+            type: AgentType.jett,
+            position: const Offset(40, 40),
+          ));
+      await _until(() =>
+          container.read(strategyOpQueueProvider).hasDurabilityFailure);
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      container.read(agentProvider.notifier).removeAgent('agent-b');
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+
+      store.failPut = null;
+      expect(
+          await container
+              .read(strategyPageSessionProvider.notifier)
+              .useCloudVersionsForRejected(),
+          isTrue);
+      expect(container.read(strategyOpQueueProvider).outboxIsReliable, isTrue);
+      expect(container.read(strategyOpQueueProvider).pending, isEmpty);
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .switchRelativePage(PageSwitchDirection.next);
+      readPage(other.publicId);
+
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          other.publicId);
     });
 
     /// Opens page 1 with text on it and page 2 after it, copies the text to
@@ -13076,17 +13462,22 @@ void main() {
       source: StrategySource.cloud,
       selectFirstPageIfNeeded: true,
     );
-    expect(await session.flushCurrentPage(), isTrue);
+    expect(await session.flushCurrentPage(), isA<QueuedForServer>());
 
     remote.failRead();
     container.read(textProvider.notifier).fromHive([
       PlacedText(id: 'local', position: const Offset(5, 5))..text = 'edit',
     ]);
+    container.read(strategyProvider.notifier).setUnsaved();
 
-    expect(await session.flushCurrentPage(), isFalse);
+    expect(
+      await session.flushCurrentPage(),
+      isA<HeldOnCanvas>()
+          .having((held) => held.reason, 'reason', HeldReason.noServerRead),
+    );
   });
 
-  test('a viewer whose read failed can export once it recovers', () async {
+  test('a viewer whose read fails holds nothing on the canvas', () async {
     final page = _page('page-1', 0);
     final viewerSnapshot = _editorSnapshot(
       pages: [page],
@@ -13104,13 +13495,13 @@ void main() {
       source: StrategySource.cloud,
       selectFirstPageIfNeeded: true,
     );
-    expect(await session.flushCurrentPage(), isTrue);
+    expect(await session.flushCurrentPage(), isA<NothingToHandOver>());
 
     remote.failRead();
-    expect(await session.flushCurrentPage(), isFalse);
+    expect(await session.flushCurrentPage(), isA<NothingToHandOver>());
 
     remote.setSnapshot(viewerSnapshot);
-    expect(await session.flushCurrentPage(), isTrue);
+    expect(await session.flushCurrentPage(), isA<NothingToHandOver>());
   });
 
   test('persisted overlay wins over a late remote active-page base', () async {
@@ -13131,7 +13522,7 @@ void main() {
       PlacedText(id: 'local', position: const Offset(5, 5))
         ..text = 'local-intent',
     ]);
-    await session.flushCurrentPage();
+    await session.handOverForSyncStatus();
 
     remote.setSnapshot(_editorSnapshot(
       pages: [page],
@@ -13217,7 +13608,7 @@ void main() {
       'collaborator-before',
     );
 
-    await session.flushCurrentPage();
+    await session.handOverForSyncStatus();
 
     final elementOps = container
         .read(strategyOpQueueProvider)

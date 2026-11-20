@@ -89,13 +89,14 @@ class _MoveWaitingQueue extends StrategyOpQueueNotifier {
   }) {}
 
   @override
-  Future<void> syncDesiredOpsForPage({
+  Future<OutboxWrite> syncDesiredOpsForPage({
     required String pageId,
     required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
     bool clearMissing = true,
     bool flushImmediately = false,
     int? madeLive,
-  }) async {}
+  }) async =>
+      OutboxWrite.written;
 
   @override
   Future<void> flushNow() async {}

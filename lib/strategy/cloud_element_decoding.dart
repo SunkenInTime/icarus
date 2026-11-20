@@ -4,25 +4,49 @@ import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 
-/// The canvas item a cloud element of [elementType] with [data] (its
-/// payload's data) hydrates into: a [PlacedAgentNode], [PlacedAbility],
-/// [DrawingElement], [PlacedText], [PlacedImage] or [PlacedUtility]. Null
-/// for a kind this build does not draw, or a drawing that decodes to
-/// nothing. Throws when the data can't be read as its kind.
-Object? decodeCloudElement(String elementType, Map<String, dynamic> data) {
-  switch (elementType) {
-    case 'agent':
-      return PlacedAgentNode.fromJson(data);
-    case 'ability':
-      return PlacedAbility.fromJson(data);
-    case 'drawing':
-      return DrawingProvider.fromJson(jsonEncode([data])).firstOrNull;
-    case 'text':
-      return PlacedText.fromJson(data);
-    case 'image':
-      return PlacedImage.fromJson(data);
-    case 'utility':
-      return PlacedUtility.fromJson(data);
+sealed class CloudElementReading {
+  const CloudElementReading();
+}
+
+/// A [PlacedAgentNode], [PlacedAbility], [DrawingElement], [PlacedText],
+/// [PlacedImage] or [PlacedUtility].
+final class DrawnCloudElement extends CloudElementReading {
+  const DrawnCloudElement(this.item);
+
+  final Object item;
+}
+
+final class UnreadableCloudElement extends CloudElementReading {
+  const UnreadableCloudElement(this.error);
+
+  final Object error;
+}
+
+final class UnknownKindCloudElement extends CloudElementReading {
+  const UnknownKindCloudElement();
+}
+
+/// [data] is the element's payload data.
+CloudElementReading readCloudElement(
+  String elementType,
+  Map<String, dynamic> data,
+) {
+  final Object? Function()? decode = switch (elementType) {
+    'agent' => () => PlacedAgentNode.fromJson(data),
+    'ability' => () => PlacedAbility.fromJson(data),
+    'drawing' => () => DrawingProvider.fromJson(jsonEncode([data])).firstOrNull,
+    'text' => () => PlacedText.fromJson(data),
+    'image' => () => PlacedImage.fromJson(data),
+    'utility' => () => PlacedUtility.fromJson(data),
+    _ => null,
+  };
+  if (decode == null) return const UnknownKindCloudElement();
+  try {
+    return switch (decode()) {
+      final Object item => DrawnCloudElement(item),
+      null => const UnreadableCloudElement('Decodes to nothing.'),
+    };
+  } on Object catch (error) {
+    return UnreadableCloudElement(error);
   }
-  return null;
 }

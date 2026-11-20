@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/app_cursors.dart';
 import 'package:icarus/const/color_option.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/custom_icons.dart';
@@ -101,7 +102,7 @@ class PenProvider extends Notifier<PenState> {
     final coordinateSystem = CoordinateSystem.instance;
     final erasingSize = coordinateSystem.scale(Settings.erasingSize * 2);
 
-    final drawingCursor = await CustomMouseCursor.icon(
+    final drawingCursor = await iconCursor(
       CustomIcons.drawcursor,
       size: 12,
       hotX: 6,
@@ -109,7 +110,7 @@ class PenProvider extends Notifier<PenState> {
       color: state.color,
     );
 
-    final erasingCursor = await CustomMouseCursor.icon(
+    final erasingCursor = await iconCursor(
       CustomIcons.drawcursor,
       size: erasingSize,
       hotX: erasingSize ~/ 2,

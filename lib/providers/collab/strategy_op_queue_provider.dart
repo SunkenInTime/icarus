@@ -203,6 +203,8 @@ class StrategyOpQueueState {
   }
 }
 
+enum OutboxWrite { written, failed, noAccount }
+
 final strategyOpQueueProvider =
     NotifierProvider<StrategyOpQueueNotifier, StrategyOpQueueState>(
   StrategyOpQueueNotifier.new,
@@ -1170,7 +1172,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         ));
   }
 
-  Future<void> syncDesiredOpsForPage({
+  Future<OutboxWrite> syncDesiredOpsForPage({
     required String pageId,
     required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
     bool clearMissing = true,
@@ -1200,7 +1202,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               ...desiredOpsByEntityKey.keys,
             }
           : desiredOpsByEntityKey.keys.toSet();
-      await _syncDesiredLocked(
+      final write = await _syncDesiredLocked(
         keys: keys,
         desiredOps: <EntitySyncKey, StrategyOp?>{
           for (final key in keys) key: desiredOpsByEntityKey[key],
@@ -1210,7 +1212,24 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         heldOpIds: heldOpIds,
         madeLive: madeLive,
       );
+      return write == OutboxWrite.written &&
+              _hasUnstoredWrite(desiredOpsByEntityKey.keys)
+          ? OutboxWrite.failed
+          : write;
     });
+  }
+
+  bool _hasUnstoredWrite(Iterable<EntitySyncKey> keys) {
+    final accountId = state.accountId;
+    final strategyPublicId = state.strategyPublicId;
+    if (accountId == null || strategyPublicId == null) return false;
+    return keys.any((key) => _uncertainDurableIntents.containsKey(
+          DurableOutboxRecord.createStorageKey(
+            accountId: accountId,
+            strategyPublicId: strategyPublicId,
+            entityKey: key,
+          ),
+        ));
   }
 
   /// [canvasSession] is the canvas's session when the desired ops were
@@ -1220,7 +1239,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// replaced since, whatever the queue now holds for its entity is left as
   /// it is. Ops made with [onCanvas] false are never the canvas's work.
   /// [madeLive] is the live stamp the work was made with (see [_markLive]).
-  Future<void> _syncDesiredLocked({
+  Future<OutboxWrite> _syncDesiredLocked({
     required Set<EntitySyncKey> keys,
     required Map<EntitySyncKey, StrategyOp?> desiredOps,
     required bool flushImmediately,
@@ -1249,14 +1268,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     final accountId = state.accountId;
     final strategyPublicId = state.strategyPublicId;
     if (accountId == null || strategyPublicId == null) {
-      if (desiredOps.values.any((op) => op != null)) {
+      final hasWork = desiredOps.values.any((op) => op != null);
+      if (hasWork) {
         state = state.copyWith(
           lastError:
               'Cloud work could not be queued without an active account.',
           hasDurabilityFailure: true,
         );
       }
-      return;
+      return hasWork ? OutboxWrite.noAccount : OutboxWrite.written;
     }
 
     final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
@@ -1367,7 +1387,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             continue;
           }
           if (successorIntent != null &&
-              _sameIntent(successorIntent.pending.op, desired)) {
+              _sameIntent(successorIntent.pending.op, desired) &&
+              !_uncertainDurableRecords.contains(storageKey)) {
             continue;
           }
           final pending = PendingOp(
@@ -1589,10 +1610,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     } catch (error, stackTrace) {
       _storedMany();
       _recordPersistenceFailure(error, stackTrace);
-      return;
+      return OutboxWrite.failed;
     }
     _storedMany();
-    if (!changed) return;
+    if (!changed) return OutboxWrite.written;
     _pruneCanvasOpIds();
     final attentionMessage = _loadedAttentionMessage(
       loadIssues: state.loadIssues,
@@ -1609,6 +1630,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       clearError: attentionMessage == null,
     );
     _scheduleFlush(flushImmediately: flushImmediately);
+    return OutboxWrite.written;
   }
 
   /// Holds the waiting work of each of [waiting]'s entities in attention,

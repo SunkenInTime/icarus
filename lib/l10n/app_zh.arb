@@ -458,6 +458,7 @@
   "icaDropRestoredLibrarySettings": "已恢复资料库设置。",
   "icaDropNothingImported": "没有导入任何兼容的战术或文件夹。",
   "icaDropSkippedFiles": "{count, plural, other{已跳过 {count} 个文件。}}",
+  "icaDropUnreadableDrawing": "无法读取“{strategyName}”中页面“{pageName}”上的一个绘图，因此未导入“{strategyName}”。",
   "icaDropImportedStrategiesIntoFolders": "已将 {strategyCount, plural, other{{strategyCount} 个战术}}导入 {folderCount, plural, other{{folderCount} 个文件夹}}。",
   "icaDropImportedStrategies": "{count, plural, other{已导入 {count} 个战术。}}",
   "icaDropImportedFolders": "{count, plural, other{已导入 {count} 个文件夹。}}",
@@ -1053,6 +1054,7 @@
   "strategyMsgMoveFailed": "无法移动此战术。请再试一次。",
   "strategyMsgPageUnreachable": "无法打开“{pageName}”。请检查网络后再试。",
   "strategyMsgPageUnreachableUnnamed": "无法打开该页面。请检查网络后再试。",
+  "strategyMsgPageEditsNotSaved": "无法保存此页面的更改，因此仍停留在此页面。你的内容仍在这里。",
   "strategyMsgDeletedPageFallbackName": "此页面",
   "prefsMsgSortAlphabetical": "名称",
   "prefsMsgSortDateCreated": "创建日期",
@@ -1113,6 +1115,7 @@
   "moveToCloudOffline": "暂时无法连接云端，因此“{name}”仍保留在此设备上。请在联网后再试。",
   "opQueueReplayCaptureFolderGone": "“{strategyName}”已放在“我的资料库”的顶层：截取时所选的文件夹已不存在或不属于你。",
   "importExportCloudUnreadable": "无法读取你的云端资料库，因此未导出任何内容。请检查网络后再试。",
+  "importExportUnreadableDrawing": "无法读取“{strategyName}”中页面“{pageName}”上的一个绘图，因此未导出任何内容。",
   "importExportCloudNotSynced": "你的部分云端更改尚未同步，因此未导出任何内容。请等待同步完成，或在资料库中查看这些更改，然后再试。",
   "importExportCloudWorkUnreadable": "Icarus 无法读取此设备上保存的部分云端更改，因此未导出任何内容。请查看这些更改后再试。",
   "importExportCloudChanged": "导出期间你的云端资料库发生了变化，因此未导出任何内容。请再试一次。",
@@ -1400,5 +1403,7 @@
   "communityReviewQueueFailed": "无法加载待审核的帖子。",
   "communityPausedTitle": "目前没有匹配的帖子",
   "communityPausedSubtitle": "只检查了社区的一部分。",
-  "communityKeepLooking": "继续查找"
+  "communityKeepLooking": "继续查找",
+  "strategyMsgPageHasUnshownItems": "此页面有 {count} 个项目无法在此版本的 Icarus 中显示。它们会原样保留。",
+  "strategyMsgPageHasUnshownSettings": "此版本的 Icarus 无法读取此页面的设置，因此以默认大小显示。除非你更改设置，否则已保存的设置会原样保留。"
 }

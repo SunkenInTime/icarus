@@ -9,9 +9,7 @@ param(
     [string]$ReleaseCandidateVersion = "",
     [string]$PublicFixtureUrl = "https://raw.githubusercontent.com/SunkenInTime/icarus/fddec2b0b6163cf3962863db18ab0f06ea467773/base-test.ica",
     [string]$PublicFixtureSha256 = "166eb3ad31a19aca418081dc3ba949aedbf12b5049cd007fda410814a03b0b1a",
-    # Each launch must stay alive this long and show a responsive window in
-    # it. A cold runner's first launch of the public build once took more
-    # than 12 seconds to show its window (2026-10-01).
+    [int]$ReadySeconds = 30,
     [int]$LaunchSeconds = 30
 )
 
@@ -167,29 +165,215 @@ function Assert-InstalledVersion {
     return $observed
 }
 
-function Start-And-ProveAlive {
-    param([string[]]$Arguments = @())
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
 
+public static class IcarusRunnerWindow
+{
+    private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr window, StringBuilder className, int maxCount);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessageTimeout(
+        IntPtr window, uint message, IntPtr wParam, IntPtr lParam,
+        uint flags, uint timeoutMilliseconds, out IntPtr result);
+
+    private const uint WmNull = 0x0000;
+    private const uint SmtoAbortIfHung = 0x0002;
+
+    public static string State(int processId)
+    {
+        IntPtr runner = IntPtr.Zero;
+        EnumWindows((window, parameter) =>
+        {
+            uint owner;
+            GetWindowThreadProcessId(window, out owner);
+            if (owner != (uint)processId)
+            {
+                return true;
+            }
+            StringBuilder className = new StringBuilder(64);
+            GetClassName(window, className, className.Capacity);
+            if (className.ToString() != "FLUTTER_RUNNER_WIN32_WINDOW")
+            {
+                return true;
+            }
+            runner = window;
+            return false;
+        }, IntPtr.Zero);
+
+        if (runner == IntPtr.Zero)
+        {
+            return "NoWindow";
+        }
+        IntPtr ignored;
+        bool answers = SendMessageTimeout(
+            runner, WmNull, IntPtr.Zero, IntPtr.Zero,
+            SmtoAbortIfHung, 1000, out ignored) != IntPtr.Zero;
+        if (IsWindowVisible(runner))
+        {
+            return answers ? "Ready" : "ShownNotAnswering";
+        }
+        return answers ? "Hidden" : "HiddenNotAnswering";
+    }
+}
+'@
+
+$launchTimings = New-Object System.Collections.Generic.List[object]
+
+function Get-DebugLogTail {
+    $debugLog = Join-Path $supportDir "icarus_debug.log"
+    if (-not (Test-Path $debugLog -PathType Leaf)) {
+        return "(no $debugLog)"
+    }
+    try {
+        return (Get-Content $debugLog -Tail 40 -ErrorAction Stop) -join [Environment]::NewLine
+    }
+    catch {
+        return "(could not read ${debugLog}: $($_.Exception.Message))"
+    }
+}
+
+function Get-LaunchDiagnosis {
+    param(
+        [Parameter(Mandatory = $true)][System.Diagnostics.Process]$Process,
+        [Parameter(Mandatory = $true)][string]$State,
+        [Parameter(Mandatory = $true)][double]$RecentCpuSeconds,
+        [Parameter(Mandatory = $true)][double]$RecentWindowSeconds
+    )
+
+    $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($Process.Id)" -ErrorAction SilentlyContinue |
+        ForEach-Object { "$($_.Name) ($($_.ProcessId))" })
+    $busy = if ($RecentCpuSeconds -ge 0.5) {
+        "still working: it used $([math]::Round($RecentCpuSeconds, 1)) s of CPU in the last $([math]::Round($RecentWindowSeconds)) s"
+    } else {
+        "idle: it used $([math]::Round($RecentCpuSeconds, 2)) s of CPU in the last $([math]::Round($RecentWindowSeconds)) s"
+    }
+    $stage = switch ($State) {
+        "NoWindow" { "The last sample found no Flutter window, so native startup had not reached the Flutter engine." }
+        "Hidden" { "Its window exists and answers messages but was never shown, so Flutter never drew a first frame." }
+        "HiddenNotAnswering" { "Its window was never shown and stopped answering messages, so the main thread is blocked." }
+        "ShownNotAnswering" { "Its window was shown and then stopped answering messages, so the app hung after its first frame." }
+        default { "Its last observed state was $State." }
+    }
+    return "$stage The process is $busy. Child processes: $(if ($children.Count -gt 0) { $children -join ', ' } else { 'none' })."
+}
+
+function Read-WebView2Runtime {
+    $runtimeRoot = Join-Path ${env:ProgramFiles(x86)} "Microsoft\EdgeWebView\Application"
+    if (-not (Test-Path $runtimeRoot -PathType Container)) {
+        Write-Host "No WebView2 runtime at $runtimeRoot to read ahead."
+        return $null
+    }
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    $files = @(Get-ChildItem -Path $runtimeRoot -Recurse -File)
+    $bytes = [long]0
+    $unread = 0
+    foreach ($file in $files) {
+        try {
+            $stream = [System.IO.File]::OpenRead($file.FullName)
+            try {
+                $stream.CopyTo([System.IO.Stream]::Null)
+                $bytes += $stream.Length
+            }
+            finally {
+                $stream.Dispose()
+            }
+        }
+        catch {
+            $unread++
+        }
+    }
+    $seconds = [math]::Round($clock.Elapsed.TotalSeconds, 1)
+    Write-Host "Read the WebView2 runtime ahead of the first launch: $($files.Count - $unread) of $($files.Count) files, $([math]::Round($bytes / 1MB)) MB in $seconds s"
+    return [ordered]@{
+        files = $files.Count
+        unreadFiles = $unread
+        megabytes = [math]::Round($bytes / 1MB)
+        seconds = $seconds
+    }
+}
+
+function Start-And-ProveAlive {
+    param(
+        [Parameter(Mandatory = $true)][string]$Label,
+        [string[]]$Arguments = @()
+    )
+
+    $startClock = [System.Diagnostics.Stopwatch]::StartNew()
     $process = if ($Arguments.Count -gt 0) {
         Start-Process -FilePath $installedExe -ArgumentList $Arguments -PassThru
     } else {
         Start-Process -FilePath $installedExe -PassThru
     }
-    $deadline = (Get-Date).AddSeconds($LaunchSeconds)
-    $windowReady = $false
-    while ((Get-Date) -lt $deadline) {
-        Start-Sleep -Milliseconds 500
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    $timing = [ordered]@{
+        launch = $Label
+        processStartedSeconds = [math]::Round($startClock.Elapsed.TotalSeconds, 2)
+    }
+    $cpuSamples = New-Object System.Collections.Generic.List[object]
+    $state = "NoWindow"
+    $readyAt = $null
+    Write-Host "${Label}: process $($process.Id) started after $($timing.processStartedSeconds) s"
+
+    while ($true) {
         $process.Refresh()
+        $elapsed = $clock.Elapsed.TotalSeconds
         if ($process.HasExited) {
-            throw "Icarus exited during the $LaunchSeconds-second Windows launch smoke. Exit code: $($process.ExitCode)"
+            $when = if ($null -eq $readyAt) {
+                "before its window was ready (last state: $state)"
+            } else {
+                "$([math]::Round($elapsed - $readyAt, 1)) s after its window was ready"
+            }
+            throw "${Label}: Icarus exited $([math]::Round($elapsed, 1)) s after launch, $when. Exit code: $($process.ExitCode).$([Environment]::NewLine)Debug log tail:$([Environment]::NewLine)$(Get-DebugLogTail)"
         }
-        if ($process.MainWindowHandle -ne 0 -and $process.Responding) {
-            $windowReady = $true
+        if ($null -eq $readyAt) {
+            $state = [IcarusRunnerWindow]::State($process.Id)
+            if (-not $timing.Contains($state)) {
+                $timing[$state] = [math]::Round($clock.Elapsed.TotalSeconds, 2)
+                Write-Host "${Label}: $state after $($timing[$state]) s"
+            }
+            if ($state -eq "Ready") {
+                $readyAt = $timing["Ready"]
+                if ($readyAt -gt $ReadySeconds) {
+                    throw "${Label}: Icarus showed a responsive window only after $readyAt s, over the $ReadySeconds s limit."
+                }
+            } else {
+                $cpuSamples.Add([pscustomobject]@{
+                    at = $elapsed
+                    cpu = $process.TotalProcessorTime.TotalSeconds
+                })
+                if ($elapsed -ge $ReadySeconds) {
+                    $recent = @($cpuSamples | Where-Object { $_.at -ge $elapsed - 10 })
+                    $diagnosis = Get-LaunchDiagnosis -Process $process -State $state `
+                        -RecentCpuSeconds ($recent[-1].cpu - $recent[0].cpu) `
+                        -RecentWindowSeconds ($recent[-1].at - $recent[0].at)
+                    throw "${Label}: Icarus did not show a responsive window within $ReadySeconds s. $diagnosis$([Environment]::NewLine)Debug log tail:$([Environment]::NewLine)$(Get-DebugLogTail)"
+                }
+            }
         }
+        if ($null -ne $readyAt -and $elapsed -ge $LaunchSeconds) {
+            break
+        }
+        Start-Sleep -Milliseconds 250
     }
-    if (-not $windowReady) {
-        throw "Icarus stayed alive but did not expose a responsive Windows window within $LaunchSeconds seconds."
-    }
+
+    $timing["aliveSeconds"] = [math]::Round($clock.Elapsed.TotalSeconds, 2)
+    $script:launchTimings.Add($timing)
+    Write-Host "${Label}: ready after $readyAt s, still running after $($timing.aliveSeconds) s"
     return $process
 }
 
@@ -368,7 +552,8 @@ try {
     Install-Icarus -InstallerPath $publicInstaller -ExpectedVersion $PublicVersion
     $observedPublicInstallPath = $installedExe
     $observedPublicVersion = Assert-InstalledVersion -ExpectedVersion $PublicVersion
-    $runningProcess = Start-And-ProveAlive -Arguments @($fixtureFullPath)
+    $webView2ReadAhead = Read-WebView2Runtime
+    $runningProcess = Start-And-ProveAlive -Label "Public $PublicVersion" -Arguments @($fixtureFullPath)
     Wait-ForStrategyLibrary
     Stop-Icarus -Process $runningProcess
     $runningProcess = $null
@@ -379,7 +564,7 @@ try {
         -ExpectedVersion $ReleaseCandidateVersion
     $observedCandidateInstallPath = $installedExe
     $observedCandidateVersion = Assert-InstalledVersion -ExpectedVersion $ReleaseCandidateVersion
-    $runningProcess = Start-And-ProveAlive
+    $runningProcess = Start-And-ProveAlive -Label "Candidate $ReleaseCandidateVersion"
     Stop-Icarus -Process $runningProcess
     $runningProcess = $null
     $afterUpgrade = Get-StrategyLibraryEvidence
@@ -394,7 +579,7 @@ try {
     Install-Icarus -InstallerPath $publicInstaller -ExpectedVersion $PublicVersion
     $observedRollbackInstallPath = $installedExe
     $observedRollbackVersion = Assert-InstalledVersion -ExpectedVersion $PublicVersion
-    $runningProcess = Start-And-ProveAlive
+    $runningProcess = Start-And-ProveAlive -Label "Rollback $PublicVersion"
     Stop-Icarus -Process $runningProcess
     $runningProcess = $null
     $afterRollback = Get-StrategyLibraryEvidence
@@ -438,7 +623,10 @@ try {
         upgradePreservedLibrarySemantics = $true
         rollbackPreservedLibrarySemantics = $true
         rollbackPreservedCandidateBytes = $true
+        webView2ReadAhead = $webView2ReadAhead
+        readySecondsLimit = $ReadySeconds
         launchSecondsPerBuild = $LaunchSeconds
+        launches = $launchTimings
     }
     $evidence | ConvertTo-Json -Depth 4 | Set-Content -Path $evidencePath -Encoding utf8
     Write-Host "Windows public-upgrade and rollback smoke passed."
