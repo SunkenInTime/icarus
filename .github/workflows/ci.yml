@@ -214,9 +214,10 @@ jobs:
           # gauntlet itself.
           lane gauntlet '^(lib/collab/|lib/providers/collab/|lib/providers/strategy_save_state_provider\.dart$|lib/startup/cloud_bootstrap\.dart$|third_party/convex_(flutter|rs)/|convex/(ops|schema|strategy|strategies|folders|users)\.ts$|convex/lib/|tool/sync_gauntlet/|tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment\.mjs$)' guarded
           # View cones: the C++ cutter desktop builds use, the Dart one the
-          # web build uses, the wall height data both cut, and the tests that
-          # compare them.
-          lane cones '^(native/height/|lib/view_cone/|lib/providers/svg_height_runtime_provider\.dart$|assets/maps/[a-z_]+_svg_height_[a-z]+\.json\.gz$|test/(svg_cone_exact|map_door_cones|svg_height_native|view_cone_agent_anchor)_test\.dart$)' guarded
+          # web build uses, the wall height data both cut, the door, map and
+          # coordinate code that turns a map into their input, and the tests
+          # that compare them.
+          lane cones '^(native/height/|lib/view_cone/|lib/providers/svg_height_runtime_provider\.dart$|lib/const/(map_doors|maps|coordinate_system|map_artwork_registration)\.dart$|lib/services/app_assets\.dart$|lib/widgets/draggable_widgets/utilities/svg_height_view_cone\.dart$|assets/maps/[a-z_]+_svg_height_[a-z]+\.json\.gz$|test/(svg_cone_exact|map_door_cones|svg_height_native|view_cone_agent_anchor)_test\.dart$)' guarded
           # The desktop builds and the upgrade/rollback test, for changes to
           # what a shipped build finds in its Hive store, the installer, the
           # release scripts, or the test itself. The release runs the same
