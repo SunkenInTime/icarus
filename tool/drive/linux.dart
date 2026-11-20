@@ -335,7 +335,7 @@ Future<int> _run(Map<String, String> options) async {
         stdout.writeln('${instance.name}: timed out after $timeout s');
         clean = false;
       }
-      clean = _report(instance, out.path) && clean;
+      clean = await _report(instance, out.path, timedOut: !finished) && clean;
     }
     stdout.writeln('logs and shots: ${out.path}');
     return clean ? 0 : 1;
@@ -401,7 +401,7 @@ class _Screen {
       '1',
       '-screen',
       '0',
-      '1920x1080x24',
+      '3840x2160x24',
       '-nolisten',
       'tcp',
       '-noreset',
@@ -483,7 +483,11 @@ Future<void> _stop(_Instance instance) async {
   );
 }
 
-bool _report(_Instance instance, String out) {
+Future<bool> _report(
+  _Instance instance,
+  String out, {
+  required bool timedOut,
+}) async {
   final name = instance.name;
   final log = File('$out/$name.log');
   final lines = log.existsSync() ? log.readAsLinesSync() : const <String>[];
@@ -495,6 +499,11 @@ bool _report(_Instance instance, String out) {
   final summary = lines.where((line) => line.contains(' SUMMARY ')).lastOrNull;
   if (summary == null) {
     stdout.writeln('$name: no SUMMARY (the script never finished)');
+    if (!timedOut) {
+      stdout.writeln(
+        '$name: the app quit by itself with ${_describeExit(await instance.exited.future)}',
+      );
+    }
     for (final error in _appErrors(out, name)) {
       stdout.writeln('$name: the app reported $error');
     }
@@ -503,6 +512,9 @@ bool _report(_Instance instance, String out) {
   stdout.writeln('$name: $summary');
   return summary.endsWith('CLEAN');
 }
+
+String _describeExit(int code) =>
+    code < 0 ? 'signal ${-code}' : 'exit code $code';
 
 Iterable<String> _appErrors(String out, String name) {
   final log = File('$out/home-$name/data/com.example.icarus/icarus_debug.log');

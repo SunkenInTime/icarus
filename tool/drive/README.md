@@ -28,6 +28,7 @@ What doesn't run on Linux:
 
 - The `clipboard` step puts a picture on the Windows clipboard through PowerShell. `run` refuses scripts that use it (`paste-on-canvas`, `paste-picture`, `paste-while-busy`).
 - Video export needs `ffmpeg` on PATH. `run` refuses scripts that export video when it's missing.
+- Growing the window to 2400x1350 (`spawn-barriers-all-maps`) crashes the Linux app with signal 11. Resizes up to 1600x900 work.
 - The app draws system cursors instead of its custom drawing and rotation cursors, because the vendored `custom_mouse_cursor` has no Linux code. Shots don't include the cursor, so they look the same.
 
 ## Keeping the two in step
