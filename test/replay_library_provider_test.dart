@@ -198,6 +198,7 @@ void main() {
     // Damaged, and the same size, so size alone can't tell them apart.
     await File(p.join(replays.path, 'match-a.vrf'))
         .writeAsString('x' * await good.length());
+    await container.read(replayLibraryProvider.future);
 
     final result =
         await container.read(replayLibraryProvider.notifier).add([good.path]);
