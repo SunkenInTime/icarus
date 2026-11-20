@@ -170,7 +170,7 @@
   "lib/providers/collab/client_upgrade_required_provider.dart": 7,
   "lib/providers/collab/cloud_copy_scope_provider.dart": 3,
   "lib/providers/collab/cloud_media_cache_provider.dart": 9,
-  "lib/providers/collab/cloud_media_upload_queue_provider.dart": 97,
+  "lib/providers/collab/cloud_media_upload_queue_provider.dart": 69,
   "lib/providers/collab/cloud_sync_status_provider.dart": 23,
   "lib/providers/collab/convex_connection_provider.dart": 8,
   "lib/providers/collab/drawn_cloud_pages_provider.dart": 7,

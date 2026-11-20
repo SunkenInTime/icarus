@@ -208,9 +208,8 @@ void main() {
             assetPublicId: 'image-1',
             fileExtension: '.png',
             mimeType: 'image/png',
-            state: CloudMediaJobState.failed,
-            attempts: 3,
             updatedAt: DateTime.utc(2026),
+            phase: MediaUploadFailed(why: '', attempts: 3),
           ),
         ],
       );

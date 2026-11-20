@@ -322,12 +322,15 @@ void main() {
       assetPublicId: 'image-a',
       fileExtension: '.png',
       mimeType: 'image/png',
-      provider: 'r2',
-      uploadId: 'swept-upload',
-      objectKey: 'old/image.png',
-      state: CloudMediaJobState.pendingAttach,
-      attempts: 1,
       updatedAt: DateTime.now().subtract(const Duration(days: 2)),
+      phase: const MediaUploadFailed(
+        why: 'An earlier attach failed.',
+        attempts: 1,
+        media: R2UploadedMedia(
+          uploadId: 'swept-upload',
+          objectKey: 'old/image.png',
+        ),
+      ),
     ));
     final repository = _GoneUploadRepository();
     final container = _container(store,
@@ -337,17 +340,13 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 100));
     expect(repository.attemptedUploadIds, ['swept-upload']);
     final restored = store.load().jobs.single;
-    expect(restored.uploadId, isNull);
-    expect(restored.objectKey, isNull);
-    expect(restored.hasUploadedRemoteObject, isFalse);
+    expect(restored.phase, isA<MediaUploadFailed>());
+    expect((restored.phase as MediaUploadFailed).media, isNull);
     expect(restored.referenceDurable, isTrue);
     expect(
-        container
-            .read(cloudMediaUploadQueueProvider)
-            .jobs
-            .single
-            .hasUploadedRemoteObject,
-        isFalse,
+        container.read(cloudMediaUploadQueueProvider).jobs.single.phase,
+        isA<MediaUploadFailed>()
+            .having((failed) => failed.media, 'media', isNull),
         reason:
             'A permanently deleted server intent must not be retried as if the object still exists.');
   });
@@ -360,12 +359,15 @@ void main() {
           assetPublicId: id,
           fileExtension: '.png',
           mimeType: 'image/png',
-          provider: 'r2',
-          uploadId: 'upload-$id',
-          objectKey: 'strategies/strategy-a/$id.png',
-          state: CloudMediaJobState.pendingAttach,
-          attempts: 1,
           updatedAt: DateTime.now().subtract(const Duration(days: 2)),
+          phase: MediaUploadFailed(
+            why: 'An earlier attach failed.',
+            attempts: 1,
+            media: R2UploadedMedia(
+              uploadId: 'upload-$id',
+              objectKey: 'strategies/strategy-a/$id.png',
+            ),
+          ),
         );
 
     test('drops the jobs of a strategy the server no longer has', () async {
@@ -400,7 +402,7 @@ void main() {
 
       expect(repository.shellChecks, ['strategy-a']);
       final kept = store.load().jobs.single;
-      expect(kept.state, CloudMediaJobState.failed);
+      expect(kept.isFailed, isTrue);
     });
   });
 
@@ -414,8 +416,6 @@ void main() {
           assetPublicId: id,
           fileExtension: '.png',
           mimeType: 'image/png',
-          state: CloudMediaJobState.pendingUpload,
-          attempts: 0,
           updatedAt: DateTime.utc(2026, 10, 13),
         );
     final mediaStore = MemoryDurableCloudMediaOutboxStore();
@@ -453,8 +453,6 @@ void main() {
       assetPublicId: 'b-image',
       fileExtension: '.png',
       mimeType: 'image/png',
-      state: CloudMediaJobState.pendingUpload,
-      attempts: 0,
       updatedAt: DateTime.utc(2026, 10, 13),
     ));
     final container = _container(mediaStore, accountId: 'account-b');
@@ -508,8 +506,6 @@ void main() {
         fileExtension: '.png',
         mimeType: 'image/png',
         referenceDurable: false,
-        state: CloudMediaJobState.pendingUpload,
-        attempts: 0,
         updatedAt: DateTime.utc(2026, 9, 4),
       );
       await store.put(job);
@@ -578,8 +574,6 @@ void main() {
       fileExtension: '.png',
       mimeType: 'image/png',
       referenceDurable: false,
-      state: CloudMediaJobState.pendingUpload,
-      attempts: 0,
       updatedAt: DateTime.utc(2026, 9, 4),
     ));
     var snapshotAvailable = false;
@@ -697,8 +691,6 @@ void main() {
           assetPublicId: 'shared-image',
           fileExtension: '.png',
           mimeType: 'image/png',
-          state: CloudMediaJobState.pendingUpload,
-          attempts: 0,
           updatedAt: DateTime.utc(2026, 9, 3),
         );
     final accountAJob = job('account-a');
@@ -738,7 +730,7 @@ void main() {
 
     expect(job.assetPublicId, 'interrupted-image');
     expect(job.referenceDurable, isFalse);
-    expect(job.attempts, 0);
+    expect(job.failedAttempts, 0);
     expect(restarted.read(cloudMediaUploadQueueProvider).isProcessing, isFalse);
   });
 
@@ -794,7 +786,7 @@ void main() {
 
     final job = container.read(cloudMediaUploadQueueProvider).jobs.single;
     expect(job.referenceDurable, isFalse);
-    expect(job.attempts, 0);
+    expect(job.failedAttempts, 0);
     expect(container.read(cloudMediaUploadQueueProvider).isProcessing, isFalse);
   });
 
@@ -814,7 +806,7 @@ void main() {
 
     final state = container.read(cloudMediaUploadQueueProvider);
     expect(state.isProcessing, isFalse);
-    expect(state.jobs.single.attempts, 0);
+    expect(state.jobs.single.failedAttempts, 0);
     expect(store.values, contains('account-a|offline-image'));
   });
 
@@ -879,9 +871,7 @@ void main() {
           assetPublicId: assetId,
           fileExtension: '.png',
           mimeType: 'image/png',
-          state: CloudMediaJobState.pendingUpload,
           referenceDurable: false,
-          attempts: 0,
           updatedAt: DateTime.utc(2026, 9, 3),
         ),
     ]);
@@ -919,9 +909,7 @@ void main() {
         assetPublicId: 'acked-image',
         fileExtension: '.png',
         mimeType: 'image/png',
-        state: CloudMediaJobState.pendingUpload,
         referenceDurable: false,
-        attempts: 0,
         updatedAt: DateTime.utc(2026, 9, 3),
       ),
     );
@@ -977,9 +965,7 @@ void main() {
         assetPublicId: assetId,
         fileExtension: '.png',
         mimeType: 'image/png',
-        state: CloudMediaJobState.pendingUpload,
         referenceDurable: false,
-        attempts: 0,
         updatedAt: DateTime.utc(2026, 9, 3),
       ),
     );
@@ -1013,9 +999,11 @@ void main() {
         assetPublicId: assetId,
         fileExtension: '.png',
         mimeType: 'image/png',
-        state: CloudMediaJobState.pendingUpload,
+        phase: const MediaUploadFailed(
+          why: 'Local media file is missing.',
+          attempts: 3,
+        ),
         referenceDurable: true,
-        attempts: 3,
         updatedAt: DateTime.utc(2026, 9, 3),
       ),
     );
@@ -1073,14 +1061,12 @@ void main() {
         assetPublicId: 'pending-attach-image',
         fileExtension: '.png',
         mimeType: 'image/png',
-        provider: 'r2',
-        uploadId: 'upload-a',
-        objectKey: 'strategies/strategy-a/images/pending-attach-image.png',
-        etag: 'etag-a',
-        byteSize: 1024,
-        state: CloudMediaJobState.pendingAttach,
-        attempts: 0,
         updatedAt: DateTime.utc(2026, 9, 3),
+        phase: MediaUploaded(R2UploadedMedia(
+            uploadId: 'upload-a',
+            objectKey: 'strategies/strategy-a/images/pending-attach-image.png',
+            etag: 'etag-a',
+            byteSize: 1024)),
       ),
     );
 
@@ -1089,10 +1075,10 @@ void main() {
     final job = restarted.read(cloudMediaUploadQueueProvider).jobs.single;
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    expect(job.state, CloudMediaJobState.pendingAttach);
-    expect(job.uploadId, 'upload-a');
-    expect(job.objectKey, contains('pending-attach-image.png'));
-    expect(job.etag, 'etag-a');
+    final media = (job.phase as MediaUploaded).media as R2UploadedMedia;
+    expect(media.uploadId, 'upload-a');
+    expect(media.objectKey, contains('pending-attach-image.png'));
+    expect(media.etag, 'etag-a');
   });
 
   test('media from another strategy does not affect the active save state', () {
@@ -1115,10 +1101,9 @@ void main() {
         assetPublicId: 'other-image',
         fileExtension: '.png',
         mimeType: 'image/png',
-        state: CloudMediaJobState.failed,
-        attempts: 1,
-        lastError: 'Local media file is missing.',
         updatedAt: DateTime.utc(2026, 9, 3),
+        phase:
+            MediaUploadFailed(why: 'Local media file is missing.', attempts: 1),
       ),
     ]);
 
@@ -1143,9 +1128,11 @@ void main() {
           assetPublicId: assetId,
           fileExtension: '.png',
           mimeType: 'image/png',
-          state: CloudMediaJobState.pendingUpload,
+          phase: const MediaUploadFailed(
+            why: 'Local media file is missing.',
+            attempts: 3,
+          ),
           referenceDurable: referenceDurable,
-          attempts: 3,
           updatedAt: DateTime.utc(2026, 9, 3),
         );
 
@@ -1355,9 +1342,9 @@ void main() {
         for (final job in mediaStore.load().jobs) job.assetPublicId: job,
       };
       expect(jobs.keys, containsAll(['page-image', 'queued-image']));
-      expect(jobs['page-image']!.attempts, 3);
+      expect(jobs['page-image']!.failedAttempts, 3);
       // The other upload was tried meanwhile (its bytes are gone here).
-      expect(jobs['queued-image']!.attempts, 4);
+      expect(jobs['queued-image']!.failedAttempts, 4);
 
       mediaStore.failRemove = false;
       await queue.retryNow(ignoreBackoff: true);
