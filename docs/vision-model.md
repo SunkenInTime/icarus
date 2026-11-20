@@ -1061,3 +1061,19 @@ that everything outside them stays as it was:
   keep their detailed floors; the rest use their nav triangles, with each
   vertex's refined 13.06 height where the vertex is unchanged and its nav
   height minus 10 cm where it is new.
+
+## The older geometry removed (2026-11-20)
+
+Before the bundled height models, cones came from `assets/maps/<map>_vision.json`
+(Riot's vision layers, projected onto the map) cut by contours parsed from the
+map SVGs, with hand edits from a boundary editor. Page transitions routed
+agents with an 18-unit grid search over those contours. Once every map had a
+height model and baked navigation, none of that ran: the app checked a flag
+that was true for every map and never reached it.
+
+It is gone: the loader, the boundary editor and its assets, the grid search,
+`tool/generate_view_cone_geometry.dart` and `tool/vision_collision_audit/`.
+Cones come only from the height models described above, and agents walk only
+on the baked navigation; a move with no route goes straight. The navigation
+files are still stored in Riot's minimap uv, so `Maps.projectUv` keeps the
+padding, quarter turns and alignment that place them on the art.

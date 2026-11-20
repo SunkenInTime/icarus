@@ -1,39 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/l10n/l10n.dart';
-import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-
-ShadContextMenuItem buildViewConeElevationMenuItem({
-  required VisionGeometryMap geometry,
-  required double? selectedElevation,
-  required double automaticElevation,
-  required ValueChanged<double?> onChanged,
-}) {
-  return ShadContextMenuItem(
-    leading: const Icon(LucideIcons.layers, size: 16),
-    trailing: Text(
-      selectedElevation == null
-          ? 'Auto ${formatVisionElevation(automaticElevation)}'
-          : formatVisionElevation(selectedElevation),
-    ),
-    items: [
-      _elevationItem(
-        label: 'Automatic (${formatVisionElevation(automaticElevation)})',
-        selected: selectedElevation == null,
-        onPressed: () => onChanged(null),
-      ),
-      for (final elevation in geometry.elevations)
-        _elevationItem(
-          label: formatVisionElevation(elevation),
-          selected: selectedElevation != null &&
-              (selectedElevation - elevation).abs() < 0.001,
-          onPressed: () => onChanged(elevation),
-        ),
-    ],
-    child: const Text('View elevation'),
-  );
-}
 
 ShadContextMenuItem buildSvgHeightElevationMenuItem({
   required AppLocalizations l10n,

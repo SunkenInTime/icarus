@@ -9,13 +9,10 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
-import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_view_cone_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-
-import 'vision_geometry_test_support.dart';
 
 class _Map extends MapProvider {
   @override
@@ -32,8 +29,6 @@ void main() {
           CoordinateSystem(playAreaSize: const Size(1920, 1080));
       final container = ProviderContainer(overrides: [
         mapProvider.overrideWith(_Map.new),
-        viewConeGeometryProvider
-            .overrideWith((ref, map) async => twoLayerAscentGeometry()),
       ]);
       addTearDown(container.dispose);
       final utility = PlacedUtility(

@@ -46,13 +46,11 @@ import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/providers/navigation_geometry_provider.dart';
-import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_page_apply.dart';
 import 'package:icarus/strategy/lineup_group_changes.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
-import 'package:icarus/view_cone/vision_geometry.dart';
 
 enum PageTransitionState {
   idle,
@@ -523,19 +521,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       );
       // Agent routes load the small movement mesh independently of sightlines.
       // Unchanged agents, abilities and drawings need no route initialization.
-      VisionGeometryMap? transitionGeometry;
       NavigationGeometryMap? transitionNavigation;
       final map = ref.read(mapProvider).currentMap;
-      final usesNavigationMesh = ref.read(worldGeometryEnabledProvider(map));
       if (needsAgentRouting) {
         try {
-          if (usesNavigationMesh) {
-            transitionNavigation =
-                await ref.read(navigationGeometryProvider(map).future);
-          } else {
-            transitionGeometry =
-                await ref.read(viewConeGeometryProvider(map).future);
-          }
+          transitionNavigation =
+              await ref.read(navigationGeometryProvider(map).future);
         } on Object {
           // The provider reports the failure. Agents then move straight.
         }
@@ -560,10 +551,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       final endSettings = ref.read(strategySettingsProvider);
       final agentPaths = AgentTransitionPathPlanner.plan(
         entries: entries,
-        geometry: transitionGeometry,
         navigation: transitionNavigation,
-        startAgentSize: startSettings.agentSize,
-        endAgentSize: endSettings.agentSize,
         coordinateSystem: CoordinateSystem.instance,
       );
       transitionNotifier.start(

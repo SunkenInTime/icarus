@@ -7,7 +7,6 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
-import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/screenshot/capture_images.dart';
 import 'package:icarus/services/app_assets.dart';
 
@@ -29,29 +28,14 @@ Future<CaptureGeometryLease?> prepareCaptureGeometry(
   Iterable<StrategyPage> pages,
 ) async {
   if (!pages.any(pageNeedsCaptureGeometry)) return null;
-  if (hasSvgHeightRuntime(map) &&
-      container.read(worldGeometryEnabledProvider(map))) {
-    final provider = svgHeightRuntimeProvider(map);
-    final subscription = container.listen(provider, (_, __) {});
-    try {
-      final runtime = await _stopIfFilesGoMissing(
-        container.read(provider.future),
-        map,
-      );
-      if (runtime == null) {
-        throw StateError('Sightline geometry is unavailable for ${map.name}.');
-      }
-      return CaptureGeometryLease(subscription.close, () async {});
-    } catch (_) {
-      subscription.close();
-      rethrow;
-    }
-  }
-  final provider = viewConeGeometryProvider(map);
+  final provider = svgHeightRuntimeProvider(map);
   final subscription = container.listen(provider, (_, __) {});
   try {
-    final geometry = await container.read(provider.future);
-    if (container.read(worldGeometryEnabledProvider(map)) && geometry == null) {
+    final runtime = await _stopIfFilesGoMissing(
+      container.read(provider.future),
+      map,
+    );
+    if (runtime == null) {
       throw StateError('Sightline geometry is unavailable for ${map.name}.');
     }
     return CaptureGeometryLease(subscription.close, () async {});
