@@ -86,14 +86,14 @@ jobs:
   #   ci: all
   #
   # Lanes: analyze, test, web, replay, convex, cost, presence, contract,
-  # bridge, gauntlet, integrity, cones, desktop, separated by spaces or
-  # commas, unquoted. "skip" runs none of them. A word that is not a lane runs
-  # every lane. Lanes that guard production, the library, or what desktop and
-  # web agree on (convex, cost, presence, contract, gauntlet, integrity,
-  # cones, desktop) still run when the PR changes their files, whatever the
-  # line says. Without the line, a PR runs analyze, test and web plus the lanes
-  # its changed files reach. The line is read when the run starts, so after
-  # editing it, rerun the run.
+  # bridge, gauntlet, integrity, cones, desktop, library, separated by spaces
+  # or commas, unquoted. "skip" runs none of them. A word that is not a lane
+  # runs every lane. Lanes that guard production, the library, or what desktop
+  # and web agree on (convex, cost, presence, contract, gauntlet, integrity,
+  # cones, desktop, library) still run when the PR changes their files,
+  # whatever the line says. Without the line, a PR runs analyze, test and web
+  # plus the lanes its changed files reach. The line is read when the run
+  # starts, so after editing it, rerun the run.
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -113,6 +113,7 @@ jobs:
       integrity: ${{ steps.lanes.outputs.integrity }}
       cones: ${{ steps.lanes.outputs.cones }}
       desktop: ${{ steps.lanes.outputs.desktop }}
+      library: ${{ steps.lanes.outputs.library }}
     steps:
       - name: Pick lanes
         id: lanes
@@ -157,14 +158,14 @@ jobs:
               unknown=0
               for word in "${words[@]}"; do
                 case "$word" in
-                  analyze|test|web|replay|convex|cost|presence|contract|bridge|gauntlet|integrity|cones|desktop|skip) named+="$word " ;;
+                  analyze|test|web|replay|convex|cost|presence|contract|bridge|gauntlet|integrity|cones|desktop|library|skip) named+="$word " ;;
                   all) named+="all "; full=true ;;
                   *) unknown=$((unknown + 1)) ;;
                 esac
               done
               printf 'The description names:%s\n' "$named"
               if (( unknown > 0 )); then
-                printf '::warning::The ci: line has %d word(s) that are not lanes; running every lane. Lanes: analyze test web replay convex cost presence contract bridge gauntlet integrity cones desktop skip all.\n' "$unknown"
+                printf '::warning::The ci: line has %d word(s) that are not lanes; running every lane. Lanes: analyze test web replay convex cost presence contract bridge gauntlet integrity cones desktop library skip all.\n' "$unknown"
                 full=true
               fi
             fi
@@ -240,6 +241,7 @@ jobs:
           # packages (Hive among them), and the fixtures and tests that hold
           # old data. The test list is the integrity job's.
           lane integrity '^(lib/hive/|lib/migrations/|lib/strategy/|lib/domain/|lib/main\.dart$|lib/startup/hive_store_launch\.dart$|lib/services/(archive_manifest|strategy_folders|image_file_name)\.dart$|lib/collab/(cloud_library_copy|pending_media_bytes_store)\.dart$|lib/providers/collab/move_to_cloud_provider\.dart$|pubspec\.(yaml|lock)$|lib/providers/(strategy_provider|strategy_page|strategy_page_session_provider|strategy_settings_provider|folder_provider|user_preferences_provider|agent_provider|ability_provider|drawing_provider|image_provider|text_provider|utility_provider)\.dart$|lib/const/(placed_classes|drawing_element|bounding_box|line_provider|json_converters|hive_boxes)\.dart$|lib/collab/durable_[a-z_]*outbox\.dart$|test/fixtures/strategy_integrity/|test/(strategy_integrity|canvas_compatibility_fixture|strategy_folder_import|strategy_import_version_guard|strategy_folders|image_file_name)_test\.dart$|test/hive_[a-z_]*_test\.dart$|test/[a-z_]*_migration_test\.dart$|test/durable_[a-z_]*_version_test\.dart$|test/desktop_[a-z0-9_]*_test_support\.dart$|test/providers/move_to_cloud_provider_test\.dart$|tool/generate_canvas_compatibility_fixture\.dart$)|\.g\.dart$' guarded
+          lane library '^packages/icarus_library/' guarded
 
   # Runs on every PR and push, whatever the ci: line names: no PR adds a
   # comment to a file beyond tool/comment_baseline.json.
@@ -284,6 +286,25 @@ jobs:
 
       - name: Check Bundled Wall Heights
         run: fvm dart run tool/check_bundled_wall_heights.dart
+
+  library:
+    needs: changes
+    if: needs.changes.outputs.library == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Release Source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
+
+      - uses: ./.github/actions/setup-flutter
+
+      - name: Analyze And Test The Library Package
+        working-directory: packages/icarus_library
+        run: |
+          fvm dart pub get
+          fvm dart analyze --fatal-infos
+          fvm dart test
 
   # Flutter compiles test files one after another, and that takes longer than
   # running them, so the suite's time falls with the number of files a runner
