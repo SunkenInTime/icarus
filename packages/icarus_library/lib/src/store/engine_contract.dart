@@ -299,40 +299,7 @@ const _values = {
   'quotes': '{"a":"\\"b\\"","c":[1,2.5,null]}',
 };
 
-Future<(StorageLease, StorageOrigin)> _leaseWithOrigin(
-  StorageEngine engine,
-) async => switch (await engine.lease()) {
-  Leased(:final lease, :final origin) => (lease, origin),
-  HeldByAnotherWriter() => _broke('a free storage refused a lease'),
-  LeaseFailed(:final failure) => _broke('leasing failed: $failure'),
-};
-
-void _existed(StorageOrigin origin, String when) => switch (origin) {
-  StorageExisted() => null,
-  StorageCreated() => _broke('a lease $when said its storage was just created'),
-};
-
 final List<EngineCheck> engineContract = [
-  _check('says the first lease on new storage created it, and every lease '
-      'after a release, a close or a crash found it existing', (harness) async {
-    final engine = await harness.open();
-    final (lease, origin) = await _leaseWithOrigin(engine);
-    if (origin is! StorageCreated) {
-      _broke('the first lease on new storage said it already existed');
-    }
-    await _put(lease, 'a', {'k': 'v'}, 'seed');
-    await lease.release();
-    final (again, released) = await _leaseWithOrigin(engine);
-    _existed(released, 'after a release');
-    await again.release();
-    await harness.close(engine);
-    final reopened = await harness.open();
-    final (_, closed) = await _leaseWithOrigin(reopened);
-    _existed(closed, 'after a close');
-    await harness.crash(reopened);
-    final (_, crashed) = await _leaseWithOrigin(await harness.open());
-    _existed(crashed, 'after a crash');
-  }),
   _check('a commit across areas is seen whole or not at all after a reopen', (
     harness,
   ) async {
@@ -732,6 +699,12 @@ final List<EngineCheck> engineContract = [
       final granted = asked.whereType<Leased>().toList();
       if (granted.length != 1) {
         _broke('$what: ${granted.length} leases were granted, not one');
+      }
+      for (final failed in asked.whereType<LeaseFailed>()) {
+        _broke(
+          '$what: a caller who lost was told ${failed.failure}, not '
+          'that another writer holds the storage',
+        );
       }
       for (final lease in granted) {
         await lease.lease.release();

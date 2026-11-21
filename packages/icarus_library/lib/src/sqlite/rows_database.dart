@@ -29,10 +29,9 @@ sealed class RowsOpening {
 }
 
 final class RowsOpened extends RowsOpening {
-  const RowsOpened(this.rows, {required this.origin});
+  const RowsOpened(this.rows);
 
   final RowsDatabase rows;
-  final StorageOrigin origin;
 }
 
 final class RowsHeld extends RowsOpening {
@@ -138,16 +137,14 @@ final class RowsDatabase {
         ..execute('PRAGMA busy_timeout = 0')
         ..execute('PRAGMA synchronous = FULL')
         ..execute('PRAGMA fullfsync = ON');
-      final StorageOrigin origin;
       switch (_contents(db, fileSize)) {
         case _Unmade():
           _create(db);
-          origin = const StorageCreated();
         case _Damaged(:final why):
           db.close();
           return RowsRefused(DamagedLibrary(why));
         case _Made():
-          origin = const StorageExisted();
+          break;
       }
       if (_identityProblem(db) ?? _damage(db) case final problem?) {
         db.close();
@@ -165,7 +162,6 @@ final class RowsDatabase {
         ..execute('BEGIN IMMEDIATE')
         ..execute('COMMIT');
       return RowsOpened(
-        origin: origin,
         RowsDatabase._(
           db,
           get: prepare('SELECT value FROM rows WHERE area = ?1 AND key = ?2'),

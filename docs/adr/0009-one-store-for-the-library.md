@@ -227,10 +227,14 @@ treated as fixed. It ships behind a switch that is off by default. Turning it
 on is its own change, reviewed on its own, after the store has opened real
 libraries from past releases and produced the same pages the old code does.
 
-A library records two format numbers from the moment it is created: the
-engine's layout (SQLite's `user_version`, IndexedDB's database version) and
-the store's row layout (the `format` row in the `library` area). Both start
-at 1. A build that finds a higher number refuses to open the library and
-writes nothing; the package README gives the rule for when each changes, and
-the full set of states a library can be in with what the app can say about
-each.
+A library records two format numbers: the engine's layout (SQLite's
+`user_version`, IndexedDB's database version), written when the engine
+creates the storage, and the store's row layout (the `format` row in the
+`library` area), written by the open that finds the library empty or its
+marker missing. That row is also how the store knows a library is new: a
+library with no rows at all is created, whatever the engine did before. Both
+numbers start at 1. A build that finds a higher number refuses to open the
+library and writes or changes no row, though SQLite may still recover a
+journal or fold its log into the file. The package README gives the rule for
+when each number changes, and the full set of states a library can be in,
+with what is certain in each and what the app can say.

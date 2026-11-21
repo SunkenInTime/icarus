@@ -13,7 +13,7 @@ enum Flaw {
   restoresOldAfterEnd,
   reservesOneMicrotask,
   areasInInsertionOrder,
-  alwaysCreated,
+  failsTheLoser,
 }
 
 final class SloppyHold implements PendingWrite {
@@ -32,7 +32,6 @@ final class SloppyStorage {
   SloppyLease? holder;
   SloppyHold? hold;
   bool reserved = false;
-  bool made = false;
 }
 
 final class SloppyEngine implements StorageEngine {
@@ -47,7 +46,9 @@ final class SloppyEngine implements StorageEngine {
   Future<Leasing> lease() async {
     if (_closed) return const LeaseFailed(EngineClosed());
     if (storage.holder?.status is Holding || storage.reserved) {
-      return const HeldByAnotherWriter();
+      return flaw == Flaw.failsTheLoser
+          ? const LeaseFailed(DeviceFailure('busy'))
+          : const HeldByAnotherWriter();
     }
     if (flaw == Flaw.racyLease) await Future<void>.delayed(Duration.zero);
     if (flaw == Flaw.reservesOneMicrotask) {
@@ -58,11 +59,7 @@ final class SloppyEngine implements StorageEngine {
     final lease = SloppyLease(storage, flaw);
     storage.holder = lease;
     _granted.add(lease);
-    final StorageOrigin origin = storage.made && flaw != Flaw.alwaysCreated
-        ? const StorageExisted()
-        : const StorageCreated();
-    storage.made = true;
-    return Leased(lease, origin);
+    return Leased(lease);
   }
 
   Future<void> close() async {

@@ -62,10 +62,9 @@ final class _Reached {
 }
 
 final class _Ready {
-  const _Ready(this.requests, this.origin);
+  const _Ready(this.requests);
 
   final SendPort requests;
-  final StorageOrigin origin;
 }
 
 final class _Reply {
@@ -82,9 +81,9 @@ void _serve((String, SendPort) start) {
       replies.send(const HeldByAnotherWriter());
     case RowsRefused(:final failure):
       replies.send(LeaseFailed(failure));
-    case RowsOpened(:final rows, :final origin):
+    case RowsOpened(:final rows):
       final requests = ReceivePort();
-      replies.send(_Ready(requests.sendPort, origin));
+      replies.send(_Ready(requests.sendPort));
       final waiting = <_Request>[];
       var holding = false;
       var busy = false;
@@ -171,11 +170,11 @@ final class SqliteEngine implements StorageEngine {
 
     replies.listen((message) {
       switch (message) {
-        case _Ready(:final requests, :final origin):
+        case _Ready(:final requests):
           final lease = granted = SqliteLease._(requests, spawned.future);
           _granted.add(lease);
           first.complete(
-            _closed ? const LeaseFailed(EngineClosed()) : Leased(lease, origin),
+            _closed ? const LeaseFailed(EngineClosed()) : Leased(lease),
           );
         case final Leasing refused:
           replies.close();

@@ -84,9 +84,22 @@ void main() {
     });
 
     test(
-      'a store format that is not a whole number is a damaged library',
+      'a store format that is not a plain decimal is a damaged library, never a newer one',
       () async {
-        for (final format in ['x', '01', '0', '-1', '1.0', '']) {
+        for (final format in [
+          'x',
+          '01',
+          '02',
+          '0x2',
+          '+2',
+          ' 1',
+          '2 ',
+          '0',
+          '-1',
+          '1.0',
+          '1e1',
+          '',
+        ]) {
           final disk = MemoryStorage({
             libraryArea: {formatKey: format},
           });

@@ -250,10 +250,10 @@ void main() {
         'a write pending when its engine closes lands whole before the next grant or not at all',
     Flaw.appliesFirstBeforeHold:
         'a commit across areas cut short by a crash is seen whole or not at all',
+    Flaw.failsTheLoser:
+        'grants one lease among callers who ask at nearly the same moment',
     Flaw.writesAfterRelease:
         'a write pending when its lease ends lands whole before the next grant or not at all',
-    Flaw.alwaysCreated:
-        'says the first lease on new storage created it, and every lease after a release, a close or a crash found it existing',
   };
   for (final MapEntry(key: flaw, value: check) in flawed.entries) {
     test('the contract fails an engine with the flaw ${flaw.name}', () async {

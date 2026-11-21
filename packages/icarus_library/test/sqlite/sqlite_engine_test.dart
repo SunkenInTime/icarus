@@ -342,24 +342,55 @@ void main() {
     }
   });
 
-  test('a lease says the library file was created by it when the file was '
-      'absent or empty, and that it existed otherwise', () async {
+  test('the store says a library was created when it holds nothing: on the '
+      'first open, after a first open that stopped before the store marked '
+      'it, and after the file was deleted or emptied; a library with rows '
+      'whose marker was lost existed, and gets the marker back', () async {
     Future<StorageOrigin> originOf() async {
-      final engine = SqliteEngine(path);
-      final origin = switch (await engine.lease()) {
-        Leased(:final origin) => origin,
-        final other => fail('not leased: $other'),
-      };
-      await engine.close();
-      return origin;
+      final opening = await LibraryStore.open(
+        SqliteEngine(path),
+        canRead: readsKnownKinds,
+        clock: fixedClock,
+      );
+      final opened = opening as StoreOpened;
+      await opened.store.close();
+      return opened.origin;
     }
 
+    Future<KeyRead> marker() async {
+      final engine = SqliteEngine(path);
+      final read = await (await leaseOf(engine)).read('library', 'format');
+      await engine.close();
+      return read;
+    }
+
+    final cutShort = SqliteEngine(path);
+    await leaseOf(cutShort);
+    await cutShort.close();
+    expect(await marker(), isA<KeyMissing>());
     expect(await originOf(), isA<StorageCreated>());
+    expect(valueOf(await marker()), '$storeFormat');
     expect(await originOf(), isA<StorageExisted>());
+
+    final engine = SqliteEngine(path);
+    final lease = await leaseOf(engine);
+    committed(
+      await lease.commit(const [
+        Delete('library', 'format'),
+        Put('library', 'folder/x', 'kept'),
+      ]),
+    );
+    await engine.close();
+    expect(await originOf(), isA<StorageExisted>());
+    expect(valueOf(await marker()), '$storeFormat');
+
     for (final file in [path, '$path-wal', '$path-shm']) {
       if (File(file).existsSync()) File(file).deleteSync();
     }
     expect(await originOf(), isA<StorageCreated>());
+    for (final file in [path, '$path-wal', '$path-shm']) {
+      if (File(file).existsSync()) File(file).deleteSync();
+    }
     File(path).writeAsBytesSync(const []);
     expect(await originOf(), isA<StorageCreated>());
     expect(await originOf(), isA<StorageExisted>());

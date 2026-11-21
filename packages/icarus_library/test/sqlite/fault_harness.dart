@@ -85,10 +85,7 @@ final class FaultEngine implements StorageEngine {
   Future<Leasing> lease() async => _closed
       ? const LeaseFailed(EngineClosed())
       : switch (drive.open()) {
-          RowsOpened(:final rows, :final origin) => Leased(
-            InlineLease(drive, rows, this),
-            origin,
-          ),
+          RowsOpened(:final rows) => Leased(InlineLease(drive, rows, this)),
           RowsHeld() => const HeldByAnotherWriter(),
           RowsRefused(:final failure) => LeaseFailed(failure),
         };

@@ -183,23 +183,10 @@ sealed class Leasing {
   const Leasing();
 }
 
-sealed class StorageOrigin {
-  const StorageOrigin();
-}
-
-final class StorageExisted extends StorageOrigin {
-  const StorageExisted();
-}
-
-final class StorageCreated extends StorageOrigin {
-  const StorageCreated();
-}
-
 final class Leased extends Leasing {
-  const Leased(this.lease, this.origin);
+  const Leased(this.lease);
 
   final StorageLease lease;
-  final StorageOrigin origin;
 }
 
 final class HeldByAnotherWriter extends Leasing {

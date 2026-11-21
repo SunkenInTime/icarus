@@ -121,7 +121,7 @@ final class _Failed extends _Answer {
   final StorageFailure failure;
 }
 
-Future<_Answer> _answer(IDBRequest request, String what) {
+Future<_Answer> _answer(IDBRequest request, String what, Duration patience) {
   final answered = Completer<_Answer>();
   request
     ..onsuccess = ((Event _) => _into(
@@ -132,7 +132,10 @@ Future<_Answer> _answer(IDBRequest request, String what) {
       event.preventDefault();
       _into(answered, () => _Failed(_named(request.error, what)));
     }).toJS;
-  return answered.future;
+  return answered.future.timeout(
+    patience,
+    onTimeout: () => _Failed(NoAnswer(what, patience)),
+  );
 }
 
 List<String>? _namesIn(JSAny? keys, int part) {
@@ -165,26 +168,47 @@ final class _Refused extends _Opened {
   final StorageFailure failure;
 }
 
+final class _NewerThanOpened extends _Opened {
+  const _NewerThanOpened();
+}
+
 Future<_Opened> _openDatabase(String name, Duration patience) {
   final opened = Completer<_Opened>();
   var created = false;
-  final request = window.indexedDB.open(name);
+  final request = window.indexedDB.open(name, indexedDbFormat);
   request
     ..onupgradeneeded = ((IDBVersionChangeEvent _) {
       created = true;
-      (request.result! as IDBDatabase).createObjectStore(_rows);
+      final made = _done(
+        () => (request.result! as IDBDatabase).createObjectStore(_rows),
+        'creating the rows store',
+      );
+      if (made case final failure?) {
+        _into(opened, () => _Refused(failure));
+        _done(() => request.transaction?.abort(), 'aborting the upgrade');
+      }
     }).toJS
     ..onsuccess = ((Event _) {
-      final db = request.result! as IDBDatabase;
       if (opened.isCompleted) {
-        db.close();
+        _done(
+          () => (request.result! as IDBDatabase).close(),
+          'closing an open that came too late',
+        );
         return;
       }
-      _into(opened, () => _Database(db, created: created));
+      _into(
+        opened,
+        () => _Database(request.result! as IDBDatabase, created: created),
+      );
     }).toJS
     ..onerror = ((Event event) {
       event.preventDefault();
-      _into(opened, () => _Refused(_named(request.error, 'opening')));
+      _into(
+        opened,
+        () => request.error?.name == 'VersionError'
+            ? const _NewerThanOpened()
+            : _Refused(_named(request.error, 'opening')),
+      );
     }).toJS;
   final waiting = Timer(
     patience,
@@ -196,30 +220,49 @@ Future<_Opened> _openDatabase(String name, Duration patience) {
   return opened.future.whenComplete(waiting.cancel);
 }
 
-Future<StorageFailure?> _deleteDatabase(String name, Duration patience) =>
-    _settles(
-      () {
-        final deleted = Completer<void>();
-        window.indexedDB.deleteDatabase(name)
-          ..onsuccess = ((Event _) => _into(deleted, () {})).toJS
-          ..onerror = ((Event event) {
-            event.preventDefault();
-            _into(deleted, () {});
-          }).toJS;
-        return deleted.future;
-      },
-      'deleting the database the lease created',
-      patience,
-    );
+Future<StorageFailure?> _deleteDatabase(String name, Duration patience) {
+  const what = 'deleting the database the lease created';
+  final deleted = Completer<StorageFailure?>();
+  final IDBOpenDBRequest request;
+  try {
+    request = window.indexedDB.deleteDatabase(name);
+  } on Object catch (error) {
+    return Future.value(_thrown(error, what));
+  }
+  request
+    ..onsuccess = ((Event _) => _into(deleted, () => null)).toJS
+    ..onerror = ((Event event) {
+      event.preventDefault();
+      _into(deleted, () => _named(request.error, what));
+    }).toJS;
+  return deleted.future.timeout(
+    patience,
+    onTimeout: () => NoAnswer(what, patience),
+  );
+}
+
+Future<Stored<int>> _versionOf(String name, Duration patience) {
+  const what = 'reading the version of a newer database';
+  final read = Completer<Stored<int>>();
+  final request = window.indexedDB.open(name);
+  request
+    ..onsuccess = ((Event _) => _into(read, () {
+      final db = request.result! as IDBDatabase;
+      final version = db.version;
+      db.close();
+      return Done(version);
+    })).toJS
+    ..onerror = ((Event event) {
+      event.preventDefault();
+      _into(read, () => StorageFailed<int>(_named(request.error, what)));
+    }).toJS;
+  return read.future.timeout(
+    patience,
+    onTimeout: () => StorageFailed(NoAnswer(what, patience)),
+  );
+}
 
 StorageFailure? _problemWith(IDBDatabase db) {
-  if (db.version > indexedDbFormat) {
-    return NewerFormat(
-      FormatLayer.engine,
-      found: db.version,
-      known: indexedDbFormat,
-    );
-  }
   if (!db.objectStoreNames.contains(_rows)) {
     return const DamagedLibrary('not an Icarus library (no rows store)');
   }
@@ -449,6 +492,15 @@ final class IndexedDbEngine implements StorageEngine {
     switch (await _openDatabase(name, patience)) {
       case _Refused(:final failure):
         return LeaseFailed(failure);
+      case _NewerThanOpened():
+        return LeaseFailed(switch (await _versionOf(name, patience)) {
+          Done(value: final found) => NewerFormat(
+            FormatLayer.engine,
+            found: found,
+            known: indexedDbFormat,
+          ),
+          StorageFailed(:final failure) => failure,
+        });
       case _Database(db: final opened, :final created):
         db = acquiring.db = opened;
         acquiring.created = created;
@@ -461,12 +513,7 @@ final class IndexedDbEngine implements StorageEngine {
     await room.ask();
     final lease = acquiring.lease = IndexedDbLease._(db, lock, room, patience);
     _granted.add(lease);
-    return _closed
-        ? const LeaseFailed(EngineClosed())
-        : Leased(
-            lease,
-            acquiring.created ? const StorageCreated() : const StorageExisted(),
-          );
+    return _closed ? const LeaseFailed(EngineClosed()) : Leased(lease);
   }
 
   PendingWrite holdNextCommit() => _granted.last._held = _HeldCommit();
@@ -565,8 +612,9 @@ final class IndexedDbLease implements StorageLease {
     if (pastLimit(area, key, indexedDbMaxKeyLength)) return const KeyMissing();
     final read = await _reading(
       'reading',
-      (rows) async =>
-          Done(await _answer(rows.getAll(_key(area, key)), 'reading')),
+      (rows) async => Done(
+        await _answer(rows.getAll(_key(area, key)), 'reading', _patience),
+      ),
     );
     return switch (read) {
       StorageFailed(:final failure) => KeyNotRead(failure),
@@ -595,7 +643,11 @@ final class IndexedDbLease implements StorageLease {
   Future<Stored<List<String>>> keys(String area, String prefix) => _reading(
     'listing',
     (rows) async => _listed(
-      await _answer(rows.getAllKeys(_under(area, prefix)), 'listing'),
+      await _answer(
+        rows.getAllKeys(_under(area, prefix)),
+        'listing',
+        _patience,
+      ),
       1,
     ),
   );
@@ -646,7 +698,10 @@ final class IndexedDbLease implements StorageLease {
             ),
           );
         }).toJS;
-      return listed.future;
+      return listed.future.timeout(
+        _patience,
+        onTimeout: () => StorageFailed(NoAnswer('listing areas', _patience)),
+      );
     },
   );
 
@@ -654,8 +709,8 @@ final class IndexedDbLease implements StorageLease {
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
       _reading('reading', (rows) async {
         final range = _under(area, prefix);
-        final keys = _answer(rows.getAllKeys(range), 'listing');
-        final values = _answer(rows.getAll(range), 'reading');
+        final keys = _answer(rows.getAllKeys(range), 'listing', _patience);
+        final values = _answer(rows.getAll(range), 'reading', _patience);
         switch ((_listed(await keys, 1), await values)) {
           case (StorageFailed(:final failure), _) ||
               (_, _Failed(:final failure)):
@@ -786,7 +841,10 @@ final class IndexedDbLease implements StorageLease {
         );
       }
     }
-    return landed.future;
+    return landed.future.timeout(
+      _patience,
+      onTimeout: () => CommitUnknown(NoAnswer('committing', _patience)),
+    );
   }
 
   @override

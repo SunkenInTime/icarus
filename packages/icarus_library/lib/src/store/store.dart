@@ -242,15 +242,15 @@ final class LibraryStore {
         return const StoreNotOpened(StoreAlreadyOpen());
       case LeaseFailed(:final failure):
         return StoreNotOpened(OpenStorageFailed(failure));
-      case Leased(:final lease, :final origin):
+      case Leased(:final lease):
         if (lease.maxKeyLength < longestName) {
           await lease.release();
           return StoreNotOpened(EngineTooSmall(lease.maxKeyLength));
         }
         final store = LibraryStore._(lease, canRead, clock);
         final foreign = <ForeignName>[];
-        switch ((await store._readLibrary(foreign, origin), store._settle())) {
-          case (Done(), Done()):
+        switch ((await store._readLibrary(foreign), store._settle())) {
+          case (Done(value: final origin), Done()):
             return StoreOpened(store, foreign, origin);
           case (StorageFailed(:final failure), _) ||
               (_, StorageFailed(:final failure)):
@@ -260,16 +260,27 @@ final class LibraryStore {
     }
   }
 
-  static StorageFailure? _formatProblem(String? stored) {
-    if (stored == null) return null;
-    return switch (int.tryParse(stored)) {
-      final format? when format > storeFormat => NewerFormat(
-        FormatLayer.store,
-        found: format,
-        known: storeFormat,
-      ),
-      final format? when format >= 1 && '$format' == stored => null,
-      _ => DamagedLibrary('the store format is not a number: $stored'),
+  static final _plainDecimal = RegExp(r'^[1-9][0-9]{0,8}$');
+
+  static StorageFailure? _formatProblem(String stored) {
+    if (!_plainDecimal.hasMatch(stored)) {
+      return DamagedLibrary('the store format is not a plain number: $stored');
+    }
+    final format = int.parse(stored);
+    if (format > storeFormat) {
+      return NewerFormat(FormatLayer.store, found: format, known: storeFormat);
+    }
+    return null;
+  }
+
+  Future<Stored<StorageOrigin>> _originWithoutMarker(
+    List<StoredEntry> libraryRows,
+  ) async {
+    if (libraryRows.isNotEmpty) return const Done(StorageExisted());
+    return switch (await _lease.areas('')) {
+      StorageFailed(:final failure) => StorageFailed(failure),
+      Done(value: []) => const Done(StorageCreated()),
+      Done() => const Done(StorageExisted()),
     };
   }
 
@@ -476,10 +487,7 @@ final class LibraryStore {
     }
   }
 
-  Future<Stored<void>> _readLibrary(
-    List<ForeignName> foreign,
-    StorageOrigin origin,
-  ) async {
+  Future<Stored<StorageOrigin>> _readLibrary(List<ForeignName> foreign) async {
     final List<StoredEntry> entries;
     switch (await _lease.entries(libraryArea, '')) {
       case StorageFailed(:final failure):
@@ -491,10 +499,19 @@ final class LibraryStore {
       for (final (:key, :value) in entries)
         if (key == formatKey) value,
     ].firstOrNull;
-    if (_formatProblem(format) case final problem?) {
-      return StorageFailed(problem);
-    }
-    if ((format, origin) case (null, StorageCreated())) {
+    final StorageOrigin origin;
+    if (format != null) {
+      if (_formatProblem(format) case final problem?) {
+        return StorageFailed(problem);
+      }
+      origin = const StorageExisted();
+    } else {
+      switch (await _originWithoutMarker(entries)) {
+        case StorageFailed(:final failure):
+          return StorageFailed(failure);
+        case Done(:final value):
+          origin = value;
+      }
       if (await _markCreated() case StorageFailed(:final failure)) {
         return StorageFailed(failure);
       }
@@ -535,7 +552,7 @@ final class LibraryStore {
     for (final digest in toRebuild) {
       await _repair(digest);
     }
-    return done;
+    return Done(origin);
   }
 
   Future<void> _repair(String digest) async {

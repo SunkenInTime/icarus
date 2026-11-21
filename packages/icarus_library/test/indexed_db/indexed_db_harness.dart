@@ -31,6 +31,9 @@ const _patch = '''
     closeThrows: false,
     deleteThrows: false,
     errorThrows: false,
+    swallowComplete: false,
+    swallowReads: false,
+    storeCreationThrows: false,
     opened: [],
   };
   globalThis.icarusFaults = faults;
@@ -43,7 +46,24 @@ const _patch = '''
   };
   const transaction = IDBDatabase.prototype.transaction;
   IDBDatabase.prototype.transaction = function (...args) {
-    return transaction.apply(this, faults.dropOptions ? args.slice(0, 2) : args);
+    const made = transaction.apply(this, faults.dropOptions ? args.slice(0, 2) : args);
+    if (faults.swallowComplete && args[1] === 'readwrite') {
+      Object.defineProperty(made, 'oncomplete', { set() {}, get() { return null; } });
+    }
+    return made;
+  };
+  const getAll = IDBObjectStore.prototype.getAll;
+  IDBObjectStore.prototype.getAll = function (...args) {
+    const request = getAll.apply(this, args);
+    if (faults.swallowReads) {
+      Object.defineProperty(request, 'onsuccess', { set() {}, get() { return null; } });
+    }
+    return request;
+  };
+  const createObjectStore = IDBDatabase.prototype.createObjectStore;
+  IDBDatabase.prototype.createObjectStore = function (...args) {
+    if (faults.storeCreationThrows) throw new TypeError('the store cannot be made');
+    return createObjectStore.apply(this, args);
   };
   const abort = IDBTransaction.prototype.abort;
   IDBTransaction.prototype.abort = function (...args) {
@@ -203,6 +223,14 @@ void estimateFails(String? how) => _faults['estimateFails'] = how?.toJS;
 
 void hideWebLocks(bool hidden) =>
     _faults.callMethod<JSAny?>('hideLocks'.toJS, hidden.toJS);
+
+void swallowCompletions(bool swallow) =>
+    _faults['swallowComplete'] = swallow.toJS;
+
+void swallowReads(bool swallow) => _faults['swallowReads'] = swallow.toJS;
+
+void storeCreationThrows(bool throws) =>
+    _faults['storeCreationThrows'] = throws.toJS;
 
 void closeThrows(bool throws) => _faults['closeThrows'] = throws.toJS;
 
@@ -508,10 +536,7 @@ final class StaleWriterEngine implements StorageEngine {
 
   @override
   Future<Leasing> lease() async => switch (await inner.lease()) {
-    Leased(:final lease, :final origin) => Leased(
-      _StaleWriterLease(this, lease),
-      origin,
-    ),
+    Leased(:final lease) => Leased(_StaleWriterLease(this, lease)),
     final other => other,
   };
 }

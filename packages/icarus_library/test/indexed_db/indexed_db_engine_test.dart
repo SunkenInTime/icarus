@@ -614,24 +614,59 @@ void main() {
     expect(await lease.release(), isA<Released>());
   });
 
-  test('a lease says the database was created by it on first open and after '
-      'the database was deleted, and that it existed otherwise', () async {
-    Future<StorageOrigin> originOf() async {
-      final engine = IndexedDbEngine(name);
-      final origin = switch (await engine.lease()) {
-        Leased(:final origin) => origin,
-        final other => fail('not leased: $other'),
-      };
-      await engine.close();
-      return origin;
-    }
+  Future<StorageOrigin> originOf(String database) async {
+    final opening = await LibraryStore.open(
+      IndexedDbEngine(database),
+      canRead: readsKnownKinds,
+      clock: fixedClock,
+    );
+    final opened = opening as StoreOpened;
+    await opened.store.close();
+    return opened.origin;
+  }
 
-    expect(await originOf(), isA<StorageCreated>());
-    expect(await originOf(), isA<StorageExisted>());
+  test('the store says a library was created when it holds nothing: on the '
+      'first open, after a first open that stopped before the store marked '
+      'it, and after the database was deleted; a library with rows whose '
+      'marker was lost existed, and gets the marker back', () async {
+    await (await openIndexedDb(name)).release();
+    expect(await originOf(name), isA<StorageCreated>());
+    expect(await originOf(name), isA<StorageExisted>());
+    final lease = await openIndexedDb(name);
+    committed(
+      await lease.commit(const [
+        Delete('library', 'format'),
+        Put('library', 'folder/x', 'kept'),
+      ]),
+    );
+    await lease.release();
+    expect(await originOf(name), isA<StorageExisted>());
+    final reading = await openIndexedDb(name);
+    expect(valueOf(await reading.read('library', 'format')), '$storeFormat');
+    await reading.release();
     await deleteDatabase(name);
-    expect(await originOf(), isA<StorageCreated>());
-    expect(await originOf(), isA<StorageExisted>());
+    expect(await originOf(name), isA<StorageCreated>());
   });
+
+  test(
+    'an open that gave up while a delete was blocked, and whose upgrade '
+    'then ran late, leaves a database the store still calls created',
+    () async {
+      await (await openIndexedDb(name)).release();
+      final other = await openRaw(name);
+      final deleting = deleteDatabase(name);
+      expect(
+        await IndexedDbEngine(
+          name,
+          patience: const Duration(milliseconds: 500),
+        ).lease(),
+        isA<LeaseFailed>(),
+      );
+      other.close();
+      await deleting;
+      expect(await originOf(name), isA<StorageCreated>());
+    },
+  );
 
   test(
     'a database at a newer engine format is refused and left as it was',
@@ -716,6 +751,62 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('a read whose answer never comes is a failure once the engine\'s '
+      'patience runs out', () async {
+    final engine = IndexedDbEngine(
+      name,
+      patience: const Duration(milliseconds: 500),
+    );
+    final lease = await leaseOf(engine);
+    swallowReads(true);
+    final read = await lease.read('a', 'k').timeout(const Duration(seconds: 5));
+    swallowReads(false);
+    expect(
+      read,
+      isA<KeyNotRead>().having(
+        (notRead) => notRead.failure,
+        'failure',
+        isA<NoAnswer>(),
+      ),
+    );
+    await engine.close();
+  });
+
+  test('a commit whose completion never comes is in doubt once the engine\'s '
+      'patience runs out, and release still lets go of the lock', () async {
+    final engine = IndexedDbEngine(
+      name,
+      patience: const Duration(milliseconds: 500),
+    );
+    final lease = await leaseOf(engine);
+    swallowCompletions(true);
+    final outcome = await lease
+        .commit(const [Put('a', 'k', 'v')])
+        .timeout(const Duration(seconds: 5));
+    swallowCompletions(false);
+    expect(
+      outcome,
+      isA<CommitUnknown>().having(
+        (unknown) => unknown.failure,
+        'failure',
+        isA<NoAnswer>(),
+      ),
+    );
+    await lease.release().timeout(const Duration(seconds: 5));
+    expect(await lockIsFree(name), isTrue);
+  });
+
+  test('a rows store that cannot be made is a failed lease that lets go of '
+      'the lock, never a hang', () async {
+    storeCreationThrows(true);
+    final leasing = await IndexedDbEngine(
+      name,
+    ).lease().timeout(const Duration(seconds: 5));
+    storeCreationThrows(false);
+    expect(leasing, isA<LeaseFailed>());
+    expect(await lockIsFree(name), isTrue);
   });
 
   group('the engine contract', () {
