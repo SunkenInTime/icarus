@@ -1234,6 +1234,17 @@ with different spacing.
   intent and the next found what could not be recovered. Ops will come from
   the edit itself, in the step that saves edits as they are made, where the
   intent is known. Do not rebuild the snapshot diff.
+- **When it stops being the save.** An image holds what this build's editor
+  holds and nothing else. That is right while Hive is what the app reads,
+  because Hive loses the same things: a field a newer build wrote inside an
+  element's `data` is dropped by an older build's save in both. It is wrong
+  once the store is what the app reads, since rows then carry what only
+  another build or another device knows. From that step on a strategy is
+  saved by ops and `putStrategy` is no longer called for it. The app's
+  converter also derives a row's id from where its page sits among pages
+  that share an item id, so reordering such pages rewrites those rows under
+  new ids; the image stays exact, and it is one more reason an image is not
+  the save for a store other builds write.
 
 `test/store_put_strategy_test.dart` checks the stored rows against
 `AddStrategy`, what is written and deleted, the second put, each refusal on
