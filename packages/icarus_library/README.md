@@ -1425,7 +1425,7 @@ where the server rejecting a pending op can take a row away.
 
 ### Room for cloud strategies
 
-Nothing for them is built here. What a local strategy reads and saves
+The store keeps nothing for them yet. What a local strategy reads and saves
 through does not have to change for them: a cloud strategy's base can live
 under the same names in its area and its pending ops under names of their
 own, read through a new call; `commit` keeps its signature and saves the op
@@ -1433,6 +1433,168 @@ as a pending op; a change already names its op and can name rows that are
 gone; and one engine commit already writes any set of names across areas
 at once, so advancing the base and removing the acknowledged ops is one more
 commit.
+
+### Cloud strategies: the queue
+
+`lib/src/cloud/` holds a cloud strategy's pending ops as a list of entries and
+`transition(queue, event, now:)`, a pure function from an event to the next
+queue and its effects. Nothing here touches storage.
+
+**The server judges delivery.** An op leaves the queue, or is handed to the
+user, only on the server's answer to it:
+
+- Applied, or nothing to do: done.
+- Rejected: the user decides, with the row the server sent. Later work on
+  that row waits behind it. A rejection whose row already holds exactly what
+  the op wrote is done; that is judged only for strategy and page renames,
+  because a rejected element's row comes without its page and place.
+- Failed: the user decides. A failure is a verdict, so it is not retried.
+
+Results, the rows the server sends while the app watches a strategy, never
+hold, release, settle or drop an entry. They do two things: they end the
+drawing of landed work (below), and they tell a whole write made after a
+landed field merge whether its row is still as the user saw it. The one
+exception is the page delete, until
+[#670](https://github.com/SunkenInTime/icarus/issues/670): the server guards a
+page delete by the strategy's revision only, so a page delete waits for a
+result of its page and needs the user when the page no longer holds what the
+user saw. All of it is in `lib/src/cloud/held_page_delete.dart`, which comes
+out in one piece when the server checks the page.
+
+**Entry states.** An entry is in one of four states, derived from the facts
+it stores and the attempts that sent it:
+
+- `Waiting`: never sent, or sent and refused whole (upgrade, sign-in, access);
+  it may be held behind an earlier entry or waiting for a result.
+- `Sending(attempt)`: in an open attempt.
+- `Unanswered`: sent, and the answer never came. It is sent again with
+  backoff, under the same op id, always in its checked form; after
+  `retriesBeforePause` failures it needs the user, who can retry.
+- `NeedsUser(reason)`: rejected or failed (`RefusedByServer`), unanswered for
+  29 days (`WindowClosed`), retries exhausted, page delete held, too big to
+  send (`Oversized`), written over a row someone else changed
+  (`ChangedUnseen`), or a format this build no longer sends.
+
+**What an entry stores.** Its op, with the field base of a merge always
+recorded; its scope (the page it was made on, both pages of a move, or the
+whole strategy); what it was authored against (the revision and digest of
+the row the user saw); the session it was authored in; the server's refusal
+once known; and whether its resend window has passed. The queue stores
+numbered attempts, the landed work, the latest results of this session, the
+strategy's facts (deleted, edit access lost or confirmed after attempt N,
+upgrade asked of build X by attempt N) and the session.
+
+**Sessions.** A restart, a reconnect or an account change opens a new
+session (`SessionOpened`). Results carry the session they were read in, and
+one from a session that ended does not apply. Rows from earlier sessions
+stay for drawing and for ending landed work, but the two decisions results
+make (a page delete, and a write behind a landed merge) use only a header and
+pages read in the current session. An op goes in its live form
+(a field merge without its base, a last-writer-wins delete) only on its first
+send, while connected, in the session it was written in. Every other send is
+checked.
+
+**The resend window.** The server remembers its answer to an op id for 30
+days (`serverRemembersAnswersFor`, beside `DAYS_30_MS` in
+`convex/maintenance.ts`), so sending the same op id again inside that time
+replays the first answer instead of applying it twice. The queue resends only
+until 29 days after an op's first send (`resendWindow`), a day of margin.
+When an event finds that time passed, it records it on the entry before
+anything else, even when the event changes nothing more; from then on the
+entry needs the user and is never sent again, even if the clock moves back.
+Deadlines are kept in the queue's index bucketed by day, so the check visits
+only entries that are due. Views taken at a given time apply the same check,
+so a view never calls an entry sendable that a claim at that time would
+refuse.
+
+**Landed work.** An answered op is drawn on top of the latest results until
+a result shows its row at the answered revision or later. The queue keeps
+the highest revision any result has shown for each row, so a page trashed and
+restored in between does not change when that happens. A row no result has
+shown does not count, since a result older than the answer can lack a row
+the answer just added. Landed work is drawn in the order the server
+applied it: by the attempt that carried it and its place in that attempt.
+Field merges, page adds, page reorders and page deletes land as partial
+(the server may have merged or renumbered rows the device has not seen);
+everything else lands whole. Landed work never authors a send: a whole write
+on a row behind a landed partial result (a field merge on that row, or a
+page renumbering for a page rename) waits for the row's result
+(`AwaitingResult`). When the result comes and no landed work on the row is
+left undrawn, it needs the user unless the row is exactly as the user saw
+it; when it is, it goes against the revision the result shows, and later
+entries on the row move with it. A row or page the results show gone does
+not wait; the server answers it. A whole landing ahead of an entry moves its
+expected revision to follow, and turns a wait behind a merge back into a
+plain check, because the row is then exactly what the device wrote.
+
+**Dependencies.** An entry waits behind an earlier entry on the same row,
+its page's add or delete, a page delete for work on that page, and page
+changes against renumbering, until that one is answered applied. A refused
+prerequisite keeps its dependants waiting, and the sync state says so. A page
+copy reaches the queue as ordinary adds under ids derived on this device.
+
+**A put-back over this device's own delete**
+([#668](https://github.com/SunkenInTime/icarus/issues/668)). An undo of a
+delete is an add over the tombstone. It waits behind the delete while the
+delete is unsent, sending, unanswered or refused. When the delete is
+answered applied by this device, the put-back goes as an add over the
+tombstone at the revision the answer named, with no read. When the server
+answers that someone else already deleted it, the put-back needs the user.
+
+**Folding.** One rule: a field edit folds into an earlier field edit of the
+same row only when the earlier one is unsent and unclaimed, both name exactly
+the same fields (and both carry a field base or neither does), and nothing
+else for that row is queued between them. The folded edit keeps the earlier
+one's place, base and what it was authored against, with the later one's
+values. Nothing else folds. The fold is not exact in two corners, both pinned
+in `test/cloud_fold_test.dart` against `applyOp`:
+
+- The server already holds the first edit's value (another device set it).
+  Sending both would be a no-op then an applied edit; the folded edit is a
+  field conflict and is held for the user with both values kept.
+- The server already holds the later edit's value where the first would
+  conflict. Sending both would hold the first; the folded edit lands, and the
+  server ends with the user's last value for every named field.
+
+**Attempts are numbered by the queue.** A claim is attempt N, increasing and
+stored; an answer counts only from an attempt that held the op, and an empty
+claim is refused. A `CloudQueue` cannot be built with two entries under one id
+or an attempt number that could be issued again. Op ids are minted by the
+caller (UUID v4 in the app); the queue refuses an id it holds.
+
+**What it rules out that today's queue does not.**
+
+- [#631](https://github.com/SunkenInTime/icarus/issues/631): an undo after a
+  lost answer never removes the op that may have landed; the op is resent
+  under its own id and the undo waits behind it.
+- [#645](https://github.com/SunkenInTime/icarus/issues/645): an op id the
+  queue holds is refused.
+- [#646](https://github.com/SunkenInTime/icarus/issues/646): Use cloud removes
+  only the refused op.
+- [#668](https://github.com/SunkenInTime/icarus/issues/668): a delete and its
+  undo never tell the user a teammate deleted the item when none did, and
+  never silently overwrite one who did.
+
+**Tests.** `test/cloud_queue_test.dart` pins the rules above, including three
+sequences reproduced against the server model: an old add whose answer was
+lost does not come back after a teammate deleted it and the server forgot
+both; an old field merge does not overwrite a teammate who put the field
+back; and a stale patch rejected first never lets the delete behind it go.
+`doc/cloud_transitions.md` is generated by `test/cloud_transitions_test.dart`
+and lists every state against every event. `test/cloud_permutation_test.dart`
+delivers every order of a run's answers, transport failures, results, removals
+and clock moves (results keep their arrival order within a session, as a
+subscription delivers them) and requires one final queue and the same effects.
+`test/cloud_model_test.dart` runs random interleavings with restarts, lost
+and late answers, teammates and the 30-day jump against the server model,
+derives the views afresh after every step and requires them to equal the
+carried ones, and at the end requires the server to hold the user's edits.
+`test/cloud_cost_test.dart` requires the same work for an edit, a claim, an
+answer and a transport failure on queues of 100, 1,000 and 3,000 entries.
+
+**The sync state** (`Tally`, `syncStateOf`, `accountSyncState`) is derived
+from the entries and the standing. Waiting for a result counts as underway,
+not as unsent. An empty queue reads as all saved only in good standing.
 
 ### Measuring it
 

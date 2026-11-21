@@ -378,6 +378,47 @@ ElementPayload elementPayloadAtMergeBase(
         (field) => _mergeBase(merge, field),
       );
 
+Map<String, Object?> _baseFrom(
+  List<String> fields,
+  _Read Function(String field) valueOf,
+  int sortIndex,
+) => {
+  for (final field in fields)
+    if (field == placeField)
+      field: sortIndex
+    else if (valueOf(field) case (present: true, :final value))
+      field: plainJson(value),
+};
+
+Map<String, Object?> elementMergeBase(
+  ElementPayload payload,
+  int sortIndex,
+  List<String> fields,
+) => _baseFrom(fields, _elementReader(payload.data.raw), sortIndex);
+
+Map<String, Object?> lineupMergeBase(
+  LineupGroupPayload payload,
+  int sortIndex,
+  List<String> fields,
+) => _baseFrom(fields, _lineupReader(payload.data.raw), sortIndex);
+
+ElementPayload elementWithNamedFields(
+  ElementPayload into,
+  ElementPayload from,
+  FieldMerge merge,
+) => _elementWith(into, payloadFields(merge), _elementReader(from.data.raw));
+
+MergeOutcome<LineupGroupPayload> lineupWithNamedFields(
+  LineupGroupPayload into,
+  LineupGroupPayload from,
+  FieldMerge merge,
+) => switch (_lineupNames(merge)) {
+  _NotAnItem(:final field) => WriteWhole(NamesNoLineupItem(field)),
+  _Items(:final items) => Merged(
+    _lineupWith(into, items, _lineupReader(from.data.raw)),
+  ),
+};
+
 typedef LineupItemField = ({String collection, String id});
 
 LineupItemField? lineupField(String field) {
