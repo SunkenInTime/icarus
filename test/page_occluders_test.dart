@@ -29,6 +29,8 @@ import 'package:icarus/view_cone/vision_world_gzip.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
+import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -95,6 +97,16 @@ Map<String, dynamic> _openFloor() => {
 class _Ascent extends MapProvider {
   @override
   MapState build() => MapState(currentMap: MapValue.ascent, isAttack: true);
+}
+
+class _AscentDefense extends MapProvider {
+  @override
+  MapState build() => MapState(currentMap: MapValue.ascent, isAttack: false);
+}
+
+class _Split extends MapProvider {
+  @override
+  MapState build() => MapState(currentMap: MapValue.split, isAttack: true);
 }
 
 void main() {
@@ -245,15 +257,25 @@ void main() {
       expect(centre(), _drawnMiddle(smoke, 1));
     });
 
-    test('follows a selection dragged together, on either side', () {
-      container
-          .read(canvasGroupDragProvider.notifier)
-          .set((ids: {smoke.id}, by: const Offset(20, 10)));
-      final moved =
-          CoordinateSystem.instance.screenToCoordinate(const Offset(20, 10));
-      expect((centre() - (_drawnMiddle(smoke, 1) + moved)).distance,
-          lessThan(1e-9));
-    });
+    for (final isAttack in [true, false]) {
+      test('follows a selection dragged together, attack=$isAttack', () {
+        final side = ProviderContainer(overrides: [
+          mapProvider.overrideWith(isAttack ? _Ascent.new : _AscentDefense.new),
+        ]);
+        addTearDown(side.dispose);
+        side.read(abilityProvider.notifier).fromHive([smoke]);
+        side
+            .read(canvasGroupDragProvider.notifier)
+            .set((ids: {smoke.id}, by: const Offset(20, 10)));
+        final onScreen =
+            CoordinateSystem.instance.screenToCoordinate(const Offset(20, 10));
+        final moved = isAttack ? onScreen : -onScreen;
+        final circle =
+            side.read(pageOccludersProvider).single as CircleOccluder;
+        expect((circle.centre - (_drawnMiddle(smoke, 1) + moved)).distance,
+            lessThan(1e-9));
+      });
+    }
 
     test('follows a High Tide wall while a dot is dragged', () {
       final tide =
@@ -332,6 +354,54 @@ void main() {
     final late = await at(0.75);
     expect(late.map((smoke) => smoke.radius).toSet(),
         {radiusOf(moving), radiusOf(arriving)});
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('a High Tide moving between pages blocks along the wall drawn',
+      (tester) async {
+    CoordinateSystem(playAreaSize: const Size(1920, 1080));
+    final container =
+        ProviderContainer(overrides: [mapProvider.overrideWith(_Ascent.new)]);
+    addTearDown(container.dispose);
+    final from = _placed(AgentType.harbor, 1,
+        wallPath: const [Offset(0, -40), Offset(20, -80)]);
+    final to = from.copyWith(
+      position: from.position + const Offset(60, 0),
+      wallPath: const [Offset(40, -30), Offset(90, -30), Offset(120, 10)],
+    );
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: ShadApp(
+        home: Scaffold(
+          body: TransitionEntriesLayer(
+            entries: [PageTransitionEntry.move(from: from, to: to)],
+            agentPaths: const {},
+            t: 0.4,
+            direction: PageTransitionDirection.forward,
+            agentSize: 40,
+            abilitySize: 40,
+          ),
+        ),
+      ),
+    ));
+    final wall = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((paint) => paint.painter)
+        .whereType<WallPainter>()
+        .single;
+    final blocker = tester
+        .widget<PageOccludersScope>(find.byType(PageOccludersScope))
+        .occluders
+        .single as LineOccluder;
+    final coordinates = CoordinateSystem.instance;
+    expect(blocker.points.length, wall.line.length);
+    for (var i = 0; i < wall.line.length; i++) {
+      expect(
+        (coordinates.coordinateToScreen(blocker.points[i]) - wall.line[i])
+            .distance,
+        lessThan(1e-6),
+      );
+    }
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -467,6 +537,93 @@ void main() {
       ]);
       expect(clear, isNotNull);
       expect(lit(clear!, 0, reach() * 0.5), isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('from the rim of a smoke at the floor edge shows nothing',
+        (tester) async {
+      const onTheEdge = Offset(-100.4, 200);
+      final standing = runtime.model(true).standablePointNear(onTheEdge)!;
+      final smoke = _placed(AgentType.brimstone, 2);
+      final radius =
+          (occluderOf(smoke, mapScale: mapScale)! as CircleOccluder).radius /
+              transform.scale;
+      expect((standing - onTheEdge).distance, greaterThan(0.3),
+          reason: 'the cone is cast from a point the smoke does not cover');
+      await tester.pumpWidget(Directionality(
+        textDirection: TextDirection.ltr,
+        child: SvgHeightViewCone(
+          runtime: runtime,
+          canonicalOrigin: world(onTheEdge),
+          rotation: math.pi / 2,
+          range: range,
+          angle: math.pi / 2,
+          isAttack: true,
+          occluders: pageOccluders([
+            placedWithMiddleAt(smoke, onTheEdge - Offset(radius - 0.2, 0)),
+          ], mapScale: mapScale),
+        ),
+      ));
+      expect(
+        tester
+            .widgetList<CustomPaint>(find.byType(CustomPaint))
+            .map((paint) => paint.painter)
+            .whereType<ShadowedConePainter>(),
+        isEmpty,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('carried with its smoke in a selection drag stays dark',
+        (tester) async {
+      final smoke = placedWithMiddleAt(_placed(AgentType.brimstone, 2), eye);
+      final container = ProviderContainer(overrides: [
+        mapProvider.overrideWith(_Split.new),
+        svgHeightRuntimeProvider.overrideWith((ref, map) async => runtime),
+      ]);
+      addTearDown(container.dispose);
+      container.read(abilityProvider.notifier).fromHive([smoke]);
+
+      Future<bool> coneShows(Set<String> carried) async {
+        container
+            .read(canvasGroupDragProvider.notifier)
+            .set((ids: carried, by: const Offset(160, 0)));
+        await tester.pumpWidget(UncontrolledProviderScope(
+          container: container,
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Stack(children: [
+              EditorEntityLayer(
+                id: 'cone',
+                kind: SelectableKind.utility,
+                child: Positioned(
+                  left: 0,
+                  top: 0,
+                  child: ViewConeWidget(
+                    id: null,
+                    angle: 60,
+                    length: 100,
+                    worldOrigin: world(eye),
+                    showCenterMarker: false,
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        ));
+        await tester.pump();
+        await tester.pump();
+        return tester
+            .widgetList<CustomPaint>(find.byType(CustomPaint))
+            .map((paint) => paint.painter)
+            .whereType<ShadowedConePainter>()
+            .isNotEmpty;
+      }
+
+      expect(await coneShows(const {}), isFalse);
+      expect(await coneShows({smoke.id, 'cone'}), isFalse);
+      expect(await coneShows({smoke.id}), isTrue,
+          reason: 'the smoke alone is carried off the cone');
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
