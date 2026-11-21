@@ -3999,23 +3999,27 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       record.pending.lastAttemptAt != null;
 
   /// [successor], waiting behind [predecessor], once [predecessor] landed at
-  /// [revision]: rebased onto it (an add behind an add becomes an edit),
-  /// as [_onLandedPredecessor] allows.
+  /// [revision]: rebased onto it (an add behind an add is an edit, an edit
+  /// behind a delete brings the item back), as [_onLandedPredecessor] allows.
   StrategyOp _landedBehind(
     StrategyOp successor, {
     required StrategyOp predecessor,
     required int revision,
-  }) =>
-      _onLandedPredecessor(
-        _rebaseRejectedOp(
-          successor,
-          revision,
-          preserveAdd:
-              predecessor is! ElementAddOp && predecessor is! LineupAddOp,
-        ),
-        original: successor,
-        predecessor: predecessor,
-      );
+  }) {
+    if (predecessor is ElementDeleteOp || predecessor is LineupDeleteOp) {
+      if (_restoreOp(successor, revision) case final restore?) return restore;
+    }
+    return _onLandedPredecessor(
+      _rebaseRejectedOp(
+        successor,
+        revision,
+        preserveAdd:
+            predecessor is! ElementAddOp && predecessor is! LineupAddOp,
+      ),
+      original: successor,
+      predecessor: predecessor,
+    );
+  }
 
   bool _sameIntent(StrategyOp left, StrategyOp right) {
     return left.kind == right.kind &&
