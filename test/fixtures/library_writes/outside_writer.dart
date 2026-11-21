@@ -20,3 +20,16 @@ Future<void> writesAroundTheFunnel(StrategyData strategy, Folder folder) async {
   strategies.get(strategy.id);
   folders.values.toList().add(folder);
 }
+
+Future<void> writesThroughWiderTypes(
+  StrategyData strategy,
+  Folder folder,
+  dynamic anything,
+) async {
+  await (folder as HiveObject).delete();
+  await anything.save();
+  await folder.box!.delete(folder.key);
+  await Hive.box<dynamic>(HiveBoxNames.foldersBox).clear();
+  await Hive.deleteBoxFromDisk(HiveBoxNames.strategiesBox);
+  Hive.isBoxOpen(HiveBoxNames.strategiesBox);
+}

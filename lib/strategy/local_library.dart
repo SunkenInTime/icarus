@@ -40,18 +40,19 @@ final class LocalLibrary {
   Box<Folder> get _folders => Hive.box<Folder>(HiveBoxNames.foldersBox);
 
   Future<LibraryWrite> savePageOnScreen(StrategyData strategy) =>
-      _write(() => _strategies.put(strategy.id, strategy));
+      _put(strategy);
 
   Future<LibraryWrite> saveStrategyFields(StrategyData strategy) =>
-      _write(() => _strategies.put(strategy.id, strategy));
+      _put(strategy);
 
-  Future<LibraryWrite> changePages(StrategyData strategy) =>
-      _write(() => _strategies.put(strategy.id, strategy));
+  Future<LibraryWrite> changePages(StrategyData strategy) => _put(strategy);
 
   Future<LibraryWrite> replaceAfterMigration(StrategyData strategy) =>
-      _write(() => _strategies.put(strategy.id, strategy));
+      _put(strategy);
 
-  Future<LibraryWrite> addStrategy(StrategyData strategy) =>
+  Future<LibraryWrite> addStrategy(StrategyData strategy) => _put(strategy);
+
+  Future<LibraryWrite> _put(StrategyData strategy) =>
       _write(() => _strategies.put(strategy.id, strategy));
 
   Future<LibraryWrite> renameStrategy(StrategyData stored, String name) {

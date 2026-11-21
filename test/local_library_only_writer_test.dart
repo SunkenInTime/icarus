@@ -25,19 +25,27 @@ const _boxWrites = {
   'deleteFromDisk',
 };
 const _recordWrites = {'save', 'delete'};
+const _recordTypes = {..._libraryModels, 'HiveObject', 'HiveObjectMixin'};
+const _boxNames = {'strategiesBox', 'foldersBox'};
+const _typedOpeners = {'box', 'openBox'};
 
-String get _dartSdk => p.join(
-      p.dirname(Platform.resolvedExecutable).split('/bin/cache/').first,
-      'bin',
-      'cache',
-      'dart-sdk',
-    );
+String get _dartSdk {
+  final parts = p.split(p.dirname(Platform.resolvedExecutable));
+  final cache = parts.lastIndexOf('cache');
+  return p.joinAll([...parts.take(cache + 1), 'dart-sdk']);
+}
+
+String _repoPath(String path) => p.split(path).join('/');
+
+String _nameOf(InterfaceType type) =>
+    type.getDisplayString().replaceFirst(RegExp(r'\?$'), '');
 
 bool _isLibraryModel(DartType? type) =>
-    type is InterfaceType &&
-    _libraryModels.contains(
-      type.getDisplayString().replaceFirst(RegExp(r'\?$'), ''),
-    );
+    type is InterfaceType && _libraryModels.contains(_nameOf(type));
+
+bool _isRecord(DartType? type) =>
+    type is DynamicType ||
+    type is InterfaceType && _recordTypes.contains(_nameOf(type));
 
 bool _isLibraryBox(DartType? type) =>
     type is InterfaceType &&
@@ -54,13 +62,32 @@ final class _WriteFinder extends RecursiveAstVisitor<void> {
   final String path;
   final found = <String>[];
 
+  void _found(AstNode node, String what) {
+    final line = unit.lineInfo.getLocation(node.offset).lineNumber;
+    found.add('$path:$line $what');
+  }
+
   void _check(Expression? target, SimpleIdentifier name) {
     final type = target?.staticType;
     final write = (_boxWrites.contains(name.name) && _isLibraryBox(type)) ||
-        (_recordWrites.contains(name.name) && _isLibraryModel(type));
-    if (!write) return;
-    final line = unit.lineInfo.getLocation(name.offset).lineNumber;
-    found.add('$path:$line ${name.name}');
+        (_recordWrites.contains(name.name) && _isRecord(type)) ||
+        (name.name == 'box' && _isLibraryModel(type));
+    if (write) _found(name, name.name);
+  }
+
+  bool _openedTyped(PrefixedIdentifier node) {
+    final call = node.parent?.parent;
+    if (call is! MethodInvocation || node.parent is! ArgumentList) {
+      return false;
+    }
+    if (call.target case SimpleIdentifier(name: 'Hive')) {
+      if (call.methodName.name == 'isBoxOpen') return true;
+      final types = call.typeArguments?.arguments ?? const [];
+      return _typedOpeners.contains(call.methodName.name) &&
+          types.length == 1 &&
+          _libraryModels.contains(types.single.toSource());
+    }
+    return false;
   }
 
   @override
@@ -71,7 +98,7 @@ final class _WriteFinder extends RecursiveAstVisitor<void> {
 
   @override
   void visitPropertyAccess(PropertyAccess node) {
-    if (node.staticType is FunctionType) {
+    if (node.staticType is FunctionType || node.propertyName.name == 'box') {
       _check(node.realTarget, node.propertyName);
     }
     super.visitPropertyAccess(node);
@@ -79,8 +106,13 @@ final class _WriteFinder extends RecursiveAstVisitor<void> {
 
   @override
   void visitPrefixedIdentifier(PrefixedIdentifier node) {
-    if (node.staticType is FunctionType) {
+    if (node.staticType is FunctionType || node.identifier.name == 'box') {
       _check(node.prefix, node.identifier);
+    }
+    if (node.prefix.name == 'HiveBoxNames' &&
+        _boxNames.contains(node.identifier.name) &&
+        !_openedTyped(node)) {
+      _found(node, 'box name');
     }
     super.visitPrefixedIdentifier(node);
   }
@@ -89,7 +121,9 @@ final class _WriteFinder extends RecursiveAstVisitor<void> {
 Future<List<String>> _writesIn(List<String> roots) async {
   final repo = Directory.current.path;
   final collection = AnalysisContextCollection(
-    includedPaths: [for (final root in roots) p.join(repo, root)],
+    includedPaths: [
+      for (final root in roots) p.normalize(p.join(repo, root)),
+    ],
     sdkPath: _dartSdk,
   );
   final found = <String>[];
@@ -98,7 +132,7 @@ Future<List<String>> _writesIn(List<String> roots) async {
           (file) => file.endsWith('.dart') && !file.endsWith('.g.dart'),
         );
     for (final file in files) {
-      final path = p.relative(file, from: repo);
+      final path = _repoPath(p.relative(file, from: repo));
       if (path == _funnel) continue;
       final unit = await context.currentSession.getResolvedUnit(file);
       if (unit is! ResolvedUnitResult) {
@@ -135,6 +169,11 @@ void main() {
       '$_fixture:16 save',
       '$_fixture:17 delete',
       '$_fixture:18 save',
+      '$_fixture:29 delete',
+      '$_fixture:30 save',
+      '$_fixture:31 box',
+      '$_fixture:32 box name',
+      '$_fixture:33 box name',
     ]);
   });
 }
