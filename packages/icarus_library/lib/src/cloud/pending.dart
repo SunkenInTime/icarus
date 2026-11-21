@@ -351,6 +351,19 @@ final class AuthoredRow extends Authored {
   String toString() => 'AuthoredRow($revision, $digest)';
 }
 
+final class AuthoredUnreadable extends Authored {
+  const AuthoredUnreadable();
+
+  @override
+  bool operator ==(Object other) => other is AuthoredUnreadable;
+
+  @override
+  int get hashCode => (AuthoredUnreadable).hashCode;
+
+  @override
+  String toString() => 'AuthoredUnreadable';
+}
+
 final class AuthoredNoRow extends Authored {
   const AuthoredNoRow();
 
@@ -384,17 +397,21 @@ final class NoAnswer extends ServerAnswer {
 }
 
 final class AnsweredApplied extends ServerAnswer {
-  const AnsweredApplied(this.revision, this.by);
+  const AnsweredApplied(this.revision, this.by, {required this.afterRead});
 
   final int revision;
   final AppliedBy by;
+  final int afterRead;
 
   @override
   bool operator ==(Object other) =>
-      other is AnsweredApplied && other.revision == revision && other.by == by;
+      other is AnsweredApplied &&
+      other.revision == revision &&
+      other.by == by &&
+      other.afterRead == afterRead;
 
   @override
-  int get hashCode => Object.hash(AnsweredApplied, revision, by);
+  int get hashCode => Object.hash(AnsweredApplied, revision, by, afterRead);
 
   @override
   String toString() => 'AnsweredApplied($revision, ${by.name})';
@@ -416,16 +433,19 @@ final class AnsweredNothingToDo extends ServerAnswer {
 }
 
 final class AnsweredRefused extends ServerAnswer {
-  const AnsweredRefused(this.refusal);
+  const AnsweredRefused(this.refusal, {required this.afterRead});
 
   final ServerRefusal refusal;
+  final int afterRead;
 
   @override
   bool operator ==(Object other) =>
-      other is AnsweredRefused && other.refusal == refusal;
+      other is AnsweredRefused &&
+      other.refusal == refusal &&
+      other.afterRead == afterRead;
 
   @override
-  int get hashCode => Object.hash(AnsweredRefused, refusal);
+  int get hashCode => Object.hash(AnsweredRefused, refusal, afterRead);
 
   @override
   String toString() => 'AnsweredRefused($refusal)';
@@ -693,8 +713,17 @@ final class AppClosedWhileSending extends SendCut {
 
 enum TransportFailure { network, timeout, malformedAnswer, missingAnswer }
 
-final class RowFact {
-  const RowFact({
+sealed class RowEvidence {
+  const RowEvidence({required this.read, required this.readAt});
+
+  final int read;
+  final DateTime readAt;
+}
+
+final class RowSeen extends RowEvidence {
+  const RowSeen({
+    required super.read,
+    required super.readAt,
     required this.revision,
     required this.digest,
     required this.page,
@@ -708,17 +737,56 @@ final class RowFact {
 
   @override
   bool operator ==(Object other) =>
-      other is RowFact &&
+      other is RowSeen &&
+      other.read == read &&
+      other.readAt == readAt &&
       other.revision == revision &&
       other.digest == digest &&
       other.page == page &&
       other.life == life;
 
   @override
-  int get hashCode => Object.hash(RowFact, revision, digest, page, life);
+  int get hashCode => Object.hash(RowSeen, read, revision, digest, page, life);
 
   @override
-  String toString() => 'RowFact($revision, $page, ${life.name})';
+  String toString() => 'RowSeen(read $read, $revision, $page, ${life.name})';
+}
+
+final class RowUnreadable extends RowEvidence {
+  const RowUnreadable({
+    required super.read,
+    required super.readAt,
+    required this.page,
+  });
+
+  final String? page;
+
+  @override
+  bool operator ==(Object other) =>
+      other is RowUnreadable &&
+      other.read == read &&
+      other.readAt == readAt &&
+      other.page == page;
+
+  @override
+  int get hashCode => Object.hash(RowUnreadable, read, readAt, page);
+
+  @override
+  String toString() => 'RowUnreadable(read $read, $page)';
+}
+
+final class RowAbsent extends RowEvidence {
+  const RowAbsent({required super.read, required super.readAt});
+
+  @override
+  bool operator ==(Object other) =>
+      other is RowAbsent && other.read == read && other.readAt == readAt;
+
+  @override
+  int get hashCode => Object.hash(RowAbsent, read, readAt);
+
+  @override
+  String toString() => 'RowAbsent(read $read)';
 }
 
 enum Life { live, gone }
@@ -785,16 +853,19 @@ final class NoUpgradeTold extends UpgradeTold {
 }
 
 final class UpgradeToldTo extends UpgradeTold {
-  const UpgradeToldTo(this.build);
+  const UpgradeToldTo(this.build, {required this.attempt});
 
   final String build;
+  final int attempt;
 
   @override
   bool operator ==(Object other) =>
-      other is UpgradeToldTo && other.build == build;
+      other is UpgradeToldTo &&
+      other.build == build &&
+      other.attempt == attempt;
 
   @override
-  int get hashCode => Object.hash(UpgradeToldTo, build);
+  int get hashCode => Object.hash(UpgradeToldTo, build, attempt);
 }
 
 bool sameSet(Set<Object?> a, Set<Object?> b) => _setEquality.equals(a, b);

@@ -160,7 +160,10 @@ StrategyRowSet visibleOf(StrategyRowSet base, CloudQueue queue) {
       final PageAddOp add,
       AnsweredApplied(:final revision),
     ) when add.copyContentFromPagePublicId != null) {
-      final shown = queue.base.rows[const StrategyTarget()]?.revision ?? -1;
+      final shown = switch (queue.base.evidence(const StrategyTarget())) {
+        RowSeen(:final revision) => revision,
+        _ => -1,
+      };
       if (shown >= revision) continue;
       op = PageAddOp(
         opId: add.opId,
@@ -180,43 +183,10 @@ StrategyRowSet visibleOf(StrategyRowSet base, CloudQueue queue) {
   return rows;
 }
 
-BaseFacts factsOf(StrategyRowSet rows) {
-  var queue = CloudQueue.start(build: build);
-  queue = stepped(
-    transition(
-      queue,
-      BaseArrived(
-        HeaderRead(
-          strategy: rows.strategy,
-          pages: rows.pages.toList(),
-          settings: rows.settings.toList(),
-        ),
-      ),
-      now: now,
-    ),
-  ).queue;
-  for (final page in rows.pages) {
-    queue = stepped(
-      transition(
-        queue,
-        BaseArrived(
-          PageRead(
-            page: page,
-            settings: rows.settingsOf(page.publicId)!,
-            elements: rows.elementsOn(page.publicId).toList(),
-            lineupGroups: rows.lineupGroupsOn(page.publicId).toList(),
-          ),
-        ),
-        now: now,
-      ),
-    ).queue;
-  }
-  return queue.base;
-}
-
 final class Client {
   Client({StrategyRowSet? base, this.clock}) : base = base ?? initialRows() {
-    queue = CloudQueue.start(build: build, base: factsOf(this.base));
+    queue = CloudQueue.start(build: build);
+    read(this.base);
   }
 
   StrategyRowSet base;
@@ -254,12 +224,14 @@ final class Client {
         rows.lineupGroup(lineupPublicId)?.pagePublicId,
       _ => null,
     };
-    return UserEdited(switch (editOf(
-      op,
-      authored: authored,
-      rowPage: rowPage,
-    )) {
+    EditMaking made(StrategyOp op) =>
+        editOf(op, authored: authored, rowPage: rowPage);
+    return UserEdited(switch (made(op)) {
       EditMade(:final edit) => edit,
+      NeedsFieldBase() => switch (made(withFieldBase(rows, op))) {
+        EditMade(:final edit) => edit,
+        _ => fail('cannot edit $op'),
+      },
       NeedsRowPage() || NeedsPageDeleteEdit() => fail('cannot edit $op'),
     });
   }
@@ -282,30 +254,19 @@ final class Client {
   List<StrategyOp> lastSent() =>
       effects.whereType<SendBatch>().last.ops.toList();
 
+  int startRead() {
+    must(const ReadStarted());
+    return effects.whereType<ReadNumbered>().last.read;
+  }
+
+  void arrive(ArrivedBase base, {int? read}) =>
+      must(BaseArrived(base, read: read ?? startRead(), startedAt: at));
+
   void read(StrategyRowSet server, {Iterable<String>? pages}) {
     base = server;
-    must(
-      BaseArrived(
-        HeaderRead(
-          strategy: server.strategy,
-          pages: server.pages.toList(),
-          settings: server.settings.toList(),
-        ),
-      ),
-    );
+    arrive(headerOf(server));
     for (final page in pages ?? server.pages.map((page) => page.publicId)) {
-      if (server.page(page) case final row?) {
-        must(
-          BaseArrived(
-            PageRead(
-              page: row,
-              settings: server.settingsOf(page)!,
-              elements: server.elementsOn(page).toList(),
-              lineupGroups: server.lineupGroupsOn(page).toList(),
-            ),
-          ),
-        );
-      }
+      arrive(pageReadOf(server, page));
     }
   }
 
@@ -316,4 +277,21 @@ StrategyRowSet withOp(StrategyRowSet rows, StrategyOp op) =>
     switch (applyOp(rows, op)) {
       final OpApplied done => rows.withRows(done.rows),
       final other => fail('expected $op to apply, got $other'),
+    };
+
+HeaderRead headerOf(StrategyRowSet rows) => HeaderRead(
+  strategy: rows.strategy,
+  pages: rows.pages.toList(),
+  settings: rows.settings.toList(),
+);
+
+ArrivedBase pageReadOf(StrategyRows rows, String page) =>
+    switch (rows.page(page)) {
+      final row? => PageRead(
+        page: row,
+        settings: rows.settingsOf(page)!,
+        elements: rows.elementsOn(page).toList(),
+        lineupGroups: rows.lineupGroupsOn(page).toList(),
+      ),
+      null => PageGone(page),
     };

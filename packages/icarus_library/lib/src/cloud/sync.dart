@@ -17,7 +17,14 @@ enum Attention {
   retriesExhausted,
 }
 
-enum Waiting { unsent, answerUnknown, sending, confirming, awaitingBase }
+enum Waiting {
+  unsent,
+  answerUnknown,
+  sending,
+  confirming,
+  awaitingBase,
+  reissue,
+}
 
 final class Tally {
   Tally({
@@ -56,6 +63,8 @@ final class Tally {
               wait(Waiting.confirming);
             case (Claimed(), _):
               wait(Waiting.sending);
+            case (_, NeedsFreshId()):
+              wait(Waiting.reissue);
             case (ServerRefused(refusal: RejectedByServer()), _):
               needs(Attention.rejectedByServer);
             case (ServerRefused(refusal: FailedOnServer()), _):
@@ -243,7 +252,8 @@ SyncState syncStateOf(
       Face.answerUnknown,
     Tally(:final waiting)
         when waiting.containsKey(Waiting.unsent) ||
-            waiting.containsKey(Waiting.sending) =>
+            waiting.containsKey(Waiting.sending) ||
+            waiting.containsKey(Waiting.reissue) =>
       Face.sending,
     _ => Face.confirming,
   };

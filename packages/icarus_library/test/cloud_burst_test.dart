@@ -8,11 +8,16 @@ import 'cloud_support.dart';
 import 'support.dart';
 
 final class Burst {
-  Burst({required this.folding, required this.online, required this.seed})
-    : random = Random(seed);
+  Burst({
+    required this.folding,
+    required this.online,
+    required this.seed,
+    required this.switchEvery,
+  }) : random = Random(seed);
 
   final bool folding;
   final bool online;
+  final int? switchEvery;
   final int seed;
   final Random random;
   final client = Client();
@@ -20,12 +25,16 @@ final class Burst {
   int received = 0;
   int nextId = 0;
   int? open;
+  int gestureKind = 0;
 
   StrategyOp gesture() {
     final row = client.visible.element('e1')! as LiveElement;
     final data = {...row.payload.data.toJson()};
     final String field;
-    switch (random.nextInt(3)) {
+    if (switchEvery case final every? when random.nextInt(every) == 0) {
+      gestureKind = random.nextInt(3);
+    }
+    switch (gestureKind) {
       case 0:
         field = 'position';
         data[field] = {'dx': random.nextInt(500), 'dy': random.nextInt(500)};
@@ -42,15 +51,7 @@ final class Burst {
       expectedElementRevision: row.revision,
       payload: agentPayload('e1', data),
       sortIndex: row.sortIndex,
-      merge: FieldMerge(
-        fields: [field],
-        base: online
-            ? null
-            : {
-                if (row.payload.data.containsKey(field))
-                  field: row.payload.data[field],
-              },
-      ),
+      merge: FieldMerge(fields: [field]),
     );
   }
 
@@ -81,6 +82,7 @@ final class Burst {
         ],
         attempts: before.attempts,
         nextAttempt: before.nextAttempt,
+        nextRead: before.nextRead,
         base: before.base,
         strategy: before.strategy,
         session: before.session,
@@ -145,32 +147,64 @@ final class Burst {
   }
 }
 
-void main() {
-  test('a burst of edits to one item folds into few ops', () {
-    final totals = <String, int>{};
-    for (final online in [true, false]) {
-      for (final folding in [true, false]) {
-        var ops = 0;
-        var edits = 0;
-        for (var seed = 1; seed <= 300; seed++) {
-          final burst = Burst(folding: folding, online: online, seed: seed)
-            ..run();
-          ops += burst.received;
-          edits += burst.nextId;
-        }
-        totals['${online ? 'online' : 'offline'} '
-                '${folding ? 'folding' : 'no folding'}'] =
-            ops;
-        totals['${online ? 'online' : 'offline'} edits'] = edits;
+Map<String, int> measure({required int? switchEvery}) {
+  final totals = <String, int>{};
+  for (final online in [true, false]) {
+    for (final folding in [true, false]) {
+      var ops = 0;
+      var edits = 0;
+      for (var seed = 1; seed <= 300; seed++) {
+        final burst = Burst(
+          folding: folding,
+          online: online,
+          seed: seed,
+          switchEvery: switchEvery,
+        )..run();
+        ops += burst.received;
+        edits += burst.nextId;
       }
+      totals['${online ? 'online' : 'offline'} '
+              '${folding ? 'folding' : 'no folding'}'] =
+          ops;
+      totals['${online ? 'online' : 'offline'} edits'] = edits;
     }
-    if (Platform.environment['CLOUD_BURST_COUNTS'] == '1') {
-      stdout.writeln(totals);
-    }
+  }
+  if (Platform.environment['CLOUD_BURST_COUNTS'] == '1') {
+    stdout.writeln(
+      switchEvery == null
+          ? 'one gesture per burst: $totals'
+          : 'gesture changes about every $switchEvery edits: $totals',
+    );
+  }
+  return totals;
+}
+
+void main() {
+  test('a nudge burst on one item folds into few ops', () {
+    final totals = measure(switchEvery: null);
     for (final mode in ['online', 'offline']) {
       expect(
         totals['$mode folding']! * 3,
         lessThan(totals['$mode no folding']!),
+      );
+    }
+  });
+
+  test('a burst that changes gesture still drains and folds no worse', () {
+    final totals = {
+      for (final every in [8, 1])
+        for (final MapEntry(:key, :value) in measure(
+          switchEvery: every,
+        ).entries)
+          '$every $key': value,
+    };
+    for (final mode in [
+      for (final every in [8, 1]) '$every online',
+      for (final every in [8, 1]) '$every offline',
+    ]) {
+      expect(
+        totals['$mode folding']!,
+        lessThanOrEqualTo(totals['$mode no folding']!),
       );
     }
   });

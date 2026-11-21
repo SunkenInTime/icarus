@@ -63,6 +63,12 @@ final class NeedsRowPage extends EditMaking {
   final StrategyOp op;
 }
 
+final class NeedsFieldBase extends EditMaking {
+  const NeedsFieldBase(this.op);
+
+  final StrategyOp op;
+}
+
 final class NeedsPageDeleteEdit extends EditMaking {
   const NeedsPageDeleteEdit(this.op);
 
@@ -74,6 +80,12 @@ EditMaking editOf(
   required Authored authored,
   String? rowPage,
 }) => switch ((op, rowPage)) {
+  (
+    ElementPatchOp(merge: FieldMerge(base: null)) ||
+        LineupGroupPatchOp(merge: FieldMerge(base: null)),
+    _,
+  ) =>
+    NeedsFieldBase(op),
   (StrategyPatchOp(), _) => EditMade(
     PlainEdit._(op, const StrategyWide(), authored),
   ),
@@ -200,18 +212,23 @@ final class UserDiscarded extends UserAction {
   const UserDiscarded(super.opId);
 }
 
-final class PageRestored extends QueueEvent {
-  PageRestored(this.pagePublicId, Map<String, String> freshOpIds)
+final class Reissue extends QueueEvent {
+  Reissue(Map<String, String> freshOpIds)
     : freshOpIds = Map.unmodifiable(freshOpIds);
 
-  final String pagePublicId;
   final Map<String, String> freshOpIds;
 }
 
+final class ReadStarted extends QueueEvent {
+  const ReadStarted();
+}
+
 final class BaseArrived extends QueueEvent {
-  const BaseArrived(this.base);
+  const BaseArrived(this.base, {required this.read, required this.startedAt});
 
   final ArrivedBase base;
+  final int read;
+  final DateTime startedAt;
 }
 
 sealed class OpAnswer {

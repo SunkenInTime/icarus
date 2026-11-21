@@ -162,7 +162,7 @@ void main() {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.must(const BaseArrived(StrategyGone()));
+      client.arrive(const StrategyGone());
       client.must(
         OpAnswered(attempt, const AppliedAnswer('move', revision: 2)),
       );
@@ -187,37 +187,113 @@ void main() {
     });
   });
 
-  test('rule 3: an older read arriving later never overrides newer '
-      'evidence', () {
-    final client = Client();
-    final newer = teammate(initialRows(), movePatch('theirs', x: 7));
-    client.read(newer, pages: ['page-a']);
-    final before = client.queue.base.rows[const ElementTarget('e1')];
-    client.read(initialRows(), pages: ['page-a']);
-    expect(client.queue.base.rows[const ElementTarget('e1')], before);
+  group('evidence is ordered by read, not by revision', () {
+    test('an earlier read arriving later never replaces a later one', () {
+      final client = Client();
+      final changed = teammate(initialRows(), movePatch('theirs', x: 7));
+      final earlier = client.startRead();
+      final later = client.startRead();
+      client.arrive(pageReadOf(changed, 'page-a'), read: later);
+      final before = client.queue.base.evidence(const ElementTarget('e1'));
+      client.arrive(pageReadOf(initialRows(), 'page-a'), read: earlier);
+      expect(client.queue.base.evidence(const ElementTarget('e1')), before);
+    });
+
+    test('a later read replaces an earlier one even with a lower '
+        'revision', () {
+      final client = Client();
+      client.read(
+        teammate(initialRows(), movePatch('theirs', x: 7)),
+        pages: ['page-a'],
+      );
+      client.read(initialRows(), pages: ['page-a']);
+      expect(
+        client.queue.base.evidence(const ElementTarget('e1')),
+        isA<RowSeen>().having((seen) => seen.revision, 'revision', 1),
+      );
+    });
+
+    test('a complete read that omits a row is evidence it is absent', () {
+      final client = Client();
+      final without = withOp(
+        withOp(initialRows(), elementDelete('gone', elementId: 'e2')),
+        pageDelete('page gone', 'page-b', expected: 1),
+      );
+      final pageRead = pageReadOf(initialRows(), 'page-a') as PageRead;
+      client.arrive(
+        PageRead(
+          page: pageRead.page,
+          settings: pageRead.settings,
+          elements: [
+            for (final row in pageRead.elements)
+              if (row.publicId != 'e2') row,
+          ],
+          lineupGroups: pageRead.lineupGroups,
+        ),
+      );
+      expect(
+        client.queue.base.evidence(const ElementTarget('e2')),
+        isA<RowAbsent>(),
+      );
+      client.arrive(
+        HeaderRead(
+          strategy: without.strategy,
+          pages: [
+            for (final page in without.pages)
+              if (page.publicId != 'page-b') page,
+          ],
+          settings: [
+            for (final row in without.settings)
+              if (row.pagePublicId != 'page-b') row,
+          ],
+        ),
+      );
+      expect(
+        client.queue.base.evidence(const PageTarget('page-b')),
+        isA<RowAbsent>(),
+      );
+      expect(client.queue.base.pageGoneAfter('page-b', 0), isTrue);
+    });
+
+    test('a read number not yet issued is refused', () {
+      final client = Client();
+      expect(
+        notApplicable(
+          client.step(
+            BaseArrived(
+              const StrategyGone(),
+              read: client.queue.nextRead,
+              startedAt: now,
+            ),
+          ),
+        ),
+        isA<NoSuchRead>(),
+      );
+    });
   });
 
   test('an unreadable row still gives its revision as base evidence', () {
     final client = Client();
-    client.must(
-      BaseArrived(
-        PageRead(
-          page: page('page-a', sortIndex: 0),
-          settings: settings('page-a'),
-          elements: [
-            UnreadableElement(
-              publicId: 'e1',
-              pagePublicId: 'page-a',
-              stored: const {'publicId': 'e1', 'revision': 5, 'deleted': false},
-              problem: 'newer',
-              reason: const FromNewerBuild(),
-            ),
-          ],
-          lineupGroups: const [],
-        ),
+    client.arrive(
+      PageRead(
+        page: page('page-a', sortIndex: 0),
+        settings: settings('page-a'),
+        elements: [
+          UnreadableElement(
+            publicId: 'e1',
+            pagePublicId: 'page-a',
+            stored: const {'publicId': 'e1', 'revision': 5, 'deleted': false},
+            problem: 'newer',
+            reason: const FromNewerBuild(),
+          ),
+        ],
+        lineupGroups: const [],
       ),
     );
-    expect(client.queue.base.rows[const ElementTarget('e1')]?.revision, 5);
+    expect(
+      client.queue.base.evidence(const ElementTarget('e1')),
+      isA<RowSeen>().having((seen) => seen.revision, 'revision', 5),
+    );
   });
 
   group('rule 4: attempts are numbered by the queue', () {
@@ -362,7 +438,7 @@ void main() {
 
     test('an empty queue on a deleted strategy is not plain all saved', () {
       final client = Client();
-      client.must(const BaseArrived(StrategyGone()));
+      client.arrive(const StrategyGone());
       expect(
         syncStateOf(
           Tally.of(client.queue, now),
@@ -415,6 +491,307 @@ void main() {
       expect(standingOf(client.queue), Standing.upgradeRequired);
       client.must(const AppRestarted(build: 'build-2'));
       expect(standingOf(client.queue), Standing.good);
+    });
+  });
+
+  group('content is what the user saw', () {
+    test('an item the base holds on another page needs the user, merges '
+        'included', () {
+      for (final merge in [
+        null,
+        FieldMerge(fields: ['position']),
+      ]) {
+        final client = Client();
+        client.edit(movePatch('mine', x: 40, merge: merge));
+        client.read(
+          teammate(initialRows(), movePatch('theirs', pageId: 'page-b', x: 10)),
+        );
+        expect(
+          client.view('mine').go,
+          isA<NeedsUser>().having(
+            (go) => go.reason,
+            'reason',
+            isA<ChangedUnseen>(),
+          ),
+          reason: '$merge',
+        );
+      }
+    });
+
+    test('a row with no readable revision is not the same fact as no row', () {
+      final rows = strategyRows(
+        elements: [
+          UnreadableElement(
+            publicId: 'e1',
+            pagePublicId: 'page-a',
+            stored: const {'publicId': 'e1'},
+            problem: 'damaged',
+            reason: const Damaged(),
+          ),
+        ],
+      );
+      expect(authoredFor(rows, elementDelete('x')), const AuthoredUnreadable());
+      expect(
+        authoredFor(rows, elementDelete('y', elementId: 'e7')),
+        const AuthoredNoRow(),
+      );
+    });
+
+    test('no row waits for evidence of absence instead of assuming it', () {
+      final server = withOp(initialRows(), pageAdd('add', 'page-c'));
+      final client = Client(base: server);
+      client.queue = CloudQueue(
+        entries: [
+          PendingOp(
+            place: 0,
+            work: OpWork(
+              ElementDeleteOp(
+                opId: 'x',
+                elementPublicId: 'ghost',
+                pagePublicId: 'page-c',
+                expectedElementRevision: 1,
+              ),
+            ),
+            scope: const OnPage('page-c'),
+            authored: const AuthoredNoRow(),
+            policy: SendPolicy.checked,
+            answer: const NoAnswer(),
+            retriedAfter: 0,
+          ),
+        ],
+        attempts: const {},
+        nextAttempt: 1,
+        nextRead: client.queue.nextRead,
+        base: BaseFacts.none,
+        strategy: StrategyFacts.fresh,
+        session: client.queue.session,
+      );
+      expect(client.view('x').holds, [
+        const AwaitingBase(ElementTarget('ghost')),
+      ]);
+      client.read(server, pages: ['page-c']);
+      expect(client.view('x').holds, isEmpty);
+      expect(client.view('x').go, isA<Free>());
+    });
+
+    test('an edit always records its field base; the policy only decides '
+        'whether it goes on the wire', () {
+      final bare = movePatch('bare', merge: FieldMerge(fields: ['position']));
+      expect(
+        editOf(bare, authored: const AuthoredNoRow(), rowPage: 'page-a'),
+        isA<NeedsFieldBase>(),
+      );
+      final client = Client()..must(const ConnectionReturned());
+      client.edit(bare);
+      final stored = (client.queue.entries.single as PendingOp).op;
+      expect((stored as ElementPatchOp).merge!.base, isNotNull);
+      client.claim(['bare']);
+      expect((client.lastSent().single as ElementPatchOp).merge!.base, isNull);
+    });
+  });
+
+  test('work on a copied page waits until a read shows the copy', () {
+    final client = Client();
+    client.edit(pageAdd('copy', 'page-c', copyFrom: 'page-b'));
+    final attempt = client.claim(['copy']);
+    client.edit(elementAdd('add', pageId: 'page-c'));
+    final copy = client.queue.entries.first as PendingOp;
+    final server = withOp(initialRows(), copy.op);
+    client.must(
+      OpAnswered(
+        attempt,
+        AppliedAnswer('copy', revision: server.strategy.revision),
+      ),
+    );
+    expect(client.view('add').holds, [
+      const AwaitingBase(PageTarget('page-c')),
+    ]);
+    client.read(server);
+    expect(client.queue.entries.map((entry) => entry.id), ['add']);
+    expect(client.view('add').holds, isEmpty);
+  });
+
+  group('gone and live again are ordered by read', () {
+    test('an accepted entry settles under a page found gone by a read '
+        'started after its answer, not before', () {
+      final client = Client();
+      client.edit(elementAdd('add', pageId: 'page-b'));
+      final attempt = client.claim(['add']);
+      final early = client.startRead();
+      client.must(OpAnswered(attempt, const AppliedAnswer('add', revision: 1)));
+      client.arrive(const PageGone('page-b'), read: early);
+      expect(client.view('add').state, isA<Accepted>());
+      client.arrive(const PageGone('page-b'));
+      expect(client.queue.entries, isEmpty);
+    });
+
+    test('a page-deleted refusal is reissued once a read started after it '
+        'shows the page live', () {
+      final client = Client();
+      client.edit(elementAdd('add', pageId: 'page-b'));
+      final attempt = client.claim(['add']);
+      final early = client.startRead();
+      client.must(
+        OpAnswered(
+          attempt,
+          const FailedAnswer(
+            'add',
+            KnownFailure(FailureCode.pageDeleted),
+            'deleted',
+          ),
+        ),
+      );
+      client.arrive(pageReadOf(initialRows(), 'page-b'), read: early);
+      expect(client.view('add').go, isA<Free>());
+      client.arrive(pageReadOf(initialRows(), 'page-b'));
+      expect(
+        client.view('add').go,
+        isA<NeedsFreshId>().having(
+          (go) => go.reason,
+          'reason',
+          isA<PageLiveAgain>(),
+        ),
+      );
+      client.must(Reissue(const {'add': 'add again'}));
+      client.claim(['add again']);
+      expect(client.lastSent().single.opId, 'add again');
+    });
+  });
+
+  group('after the server forgets an op', () {
+    final later = now.add(serverRemembersAnswersFor + const Duration(hours: 1));
+
+    Client lostDelete({required bool online}) {
+      final client = Client();
+      if (online) client.must(const ConnectionReturned());
+      client.edit(elementDelete('x'));
+      final attempt = client.claim(['x']);
+      client.must(TransportFailed(attempt, TransportFailure.network, at: now));
+      return client..clock = later;
+    }
+
+    test('a read from before the window passed is not enough', () {
+      final client = lostDelete(online: false);
+      expect(client.view('x').holds, [const AwaitingBase(ElementTarget('e1'))]);
+    });
+
+    test('a row read as authored after the window is reissued under a fresh '
+        'id in its checked form', () {
+      final client = lostDelete(online: true);
+      expect(
+        (client.lastSent().single as ElementDeleteOp).lastWriterWins,
+        isTrue,
+      );
+      client.read(initialRows(), pages: ['page-a']);
+      expect(
+        client.view('x').go,
+        isA<NeedsFreshId>().having(
+          (go) => go.reason,
+          'reason',
+          isA<ServerForgot>(),
+        ),
+      );
+      client.must(Reissue(const {'x': 'x again'}));
+      client.claim(['x again']);
+      final sent = client.lastSent().single as ElementDeleteOp;
+      expect(sent.opId, 'x again');
+      expect(sent.lastWriterWins, isFalse);
+      expect(sent.expectedElementRevision, 1);
+    });
+
+    test('a row changed since it was authored needs the user', () {
+      final client = lostDelete(online: false);
+      client.read(teammate(initialRows(), movePatch('theirs', rotation: 90)));
+      expect(
+        client.view('x').go,
+        isA<NeedsUser>().having(
+          (go) => go.reason,
+          'reason',
+          isA<ServerForgotAnswer>(),
+        ),
+      );
+    });
+  });
+
+  group('construction and ordering', () {
+    test('an upgrade request is replaced only by one from a later '
+        'attempt', () {
+      for (final laterFirst in [true, false]) {
+        final client = Client();
+        client.edit(movePatch('a'));
+        client.edit(movePatch('b', elementId: 'e2'));
+        final first = client.claim(['a']);
+        client.must(const AppRestarted(build: 'build-2'));
+        final second = client.claim(['b']);
+        final refusals = [
+          BatchRefused(first, BatchRefusal.upgradeRequired),
+          BatchRefused(second, BatchRefusal.upgradeRequired),
+        ];
+        for (final refusal in laterFirst ? refusals.reversed : refusals) {
+          client.must(refusal);
+        }
+        expect(
+          client.queue.strategy.upgradeTold,
+          UpgradeToldTo('build-2', attempt: second),
+        );
+        expect(standingOf(client.queue), Standing.upgradeRequired);
+      }
+    });
+
+    test('an empty claim is refused and sends nothing', () {
+      final client = Client()..edit(movePatch('a'));
+      final before = client.effects.length;
+      expect(
+        notApplicable(
+          client.step(BatchClaimed(clientId: clientId, opIds: [], at: now)),
+        ),
+        isA<NothingClaimed>(),
+      );
+      expect(client.effects.length, before);
+    });
+
+    test('a queue cannot be built with two entries under one id or an '
+        'attempt number that could be issued again', () {
+      final client = Client()..edit(movePatch('a'));
+      final entry = client.queue.entries.single;
+      CloudQueue make({
+        List<QueueEntry>? entries,
+        Map<int, AttemptFact>? attempts,
+        int nextAttempt = 1,
+      }) => CloudQueue(
+        entries: entries ?? [entry],
+        attempts: attempts ?? const {},
+        nextAttempt: nextAttempt,
+        nextRead: client.queue.nextRead,
+        base: client.queue.base,
+        strategy: client.queue.strategy,
+        session: client.queue.session,
+      );
+      final pending = entry as PendingOp;
+      final again = PendingOp(
+        place: pending.place + 1,
+        work: pending.work,
+        scope: pending.scope,
+        authored: pending.authored,
+        policy: pending.policy,
+        answer: pending.answer,
+        retriedAfter: pending.retriedAfter,
+      );
+      expect(make, returnsNormally);
+      expect(() => make(entries: [entry, again]), throwsArgumentError);
+      final attempt = AttemptFact(
+        number: 1,
+        clientId: clientId,
+        build: build,
+        at: now,
+        ops: [entry.op],
+        outcome: const AttemptOpen(),
+      );
+      expect(() => make(attempts: {1: attempt}), throwsArgumentError);
+      expect(
+        () => make(attempts: {1: attempt}, nextAttempt: 2),
+        returnsNormally,
+      );
     });
   });
 }

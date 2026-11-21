@@ -78,7 +78,8 @@ export 'src/cloud/op_facts.dart'
         authoredFor,
         seenPageIn,
         rowDigest,
-        strategyDigest;
+        strategyDigest,
+        withFieldBase;
 export 'src/cloud/pending.dart';
 export 'src/cloud/queue.dart';
 export 'src/cloud/sync.dart';
