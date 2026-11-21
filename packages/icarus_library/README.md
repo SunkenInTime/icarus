@@ -1170,6 +1170,23 @@ into an element add, a whole lineup patch into a lineup patch or add, and an
 add then a delete cancelling. `test/cloud_burst_test.dart` measures bursts of
 2 to 20 moves, rotations and resizes of one item, claimed part-way.
 
+**Cost.** A queue indexes its attempts by op id and its entries by row, page
+and the dependencies above (`lib/src/cloud/derivation.dart`). Each queue
+carries its views and tally forward from the queue before it: an event
+recomputes the entries it touched, the entries whose base evidence it changed,
+any whose retry time or 30-day window has passed, and the later entries that
+depend on one whose view changed. A page read or a header read touches every
+entry it gives evidence about; a restart or a lost connection touches them
+all. `test/cloud_cost_test.dart` counts the views derived and index entries
+visited for an edit, a claim, an answer and a transport failure, with the
+views and tally the app asks for afterwards, and requires the same count on
+queues of 100, 1,000 and 3,000 entries. Copying the entry list and maps into
+the next immutable queue still grows with length; on a 1,000-entry queue
+those events take 0.3 to 0.5 ms at the median (`CLOUD_COST=1` prints the
+times, `CLOUD_COST_TIMES=1` also fails above 2 ms). The model test derives
+the views and tally afresh after every step and requires them to equal the
+carried ones.
+
 **The sync state** (`Tally`, `syncStateOf`, `accountSyncState`) is derived
 from the entries and the standing. An empty queue reads as all saved only in
 good standing. The app combines it with what only it knows: media uploads,

@@ -44,68 +44,12 @@ final class Tally {
   static final empty = Tally(standing: Standing.good);
 
   factory Tally.of(CloudQueue queue, DateTime now) {
-    final views = entryViews(queue, now);
-    final waiting = <Waiting, int>{};
-    final attention = <Attention, int>{};
-    var unreadable = 0;
-    void wait(Waiting why) => waiting[why] = (waiting[why] ?? 0) + 1;
-    void needs(Attention why) => attention[why] = (attention[why] ?? 0) + 1;
-    for (final entry in queue.entries) {
-      switch (entry) {
-        case UnreadableEntry():
-          unreadable++;
-        case RetiredOp():
-          needs(Attention.retiredFormat);
-        case PendingOp():
-          final view = views[entry.id]!;
-          switch ((view.state, view.go)) {
-            case (Accepted(), _):
-              wait(Waiting.confirming);
-            case (Claimed(), _):
-              wait(Waiting.sending);
-            case (_, NeedsFreshId()):
-              wait(Waiting.reissue);
-            case (ServerRefused(refusal: RejectedByServer()), _):
-              needs(Attention.rejectedByServer);
-            case (ServerRefused(refusal: FailedOnServer()), _):
-              needs(Attention.failedOnServer);
-            case (_, NeedsUser(:final reason)):
-              needs(switch (reason) {
-                Oversized() => Attention.oversized,
-                ChangedUnseen() => Attention.changedUnseen,
-                ServerForgotAnswer() => Attention.serverForgotAnswer,
-                OnDeletedPage() => Attention.onDeletedPage,
-                DeleteHeld() => Attention.heldPageDelete,
-                IncompleteCopy() => Attention.incompletePageCopy,
-              });
-            case (AnswerUnknown(backoff: RetriesExhausted()), _):
-              needs(Attention.retriesExhausted);
-            case (_, Free())
-                when view.holds.any(
-                  (hold) =>
-                      hold is BehindEntry &&
-                      switch (views[hold.opId]) {
-                        EntryView(state: ServerRefused()) ||
-                        EntryView(go: NeedsUser()) => true,
-                        _ => false,
-                      },
-                ):
-              needs(Attention.waitingOnRefused);
-            case (_, Free())
-                when view.holds.any((hold) => hold is AwaitingBase):
-              wait(Waiting.awaitingBase);
-            case (AnswerUnknown(), Free()):
-              wait(Waiting.answerUnknown);
-            case (NeverSent(), Free()):
-              wait(Waiting.unsent);
-          }
-      }
-    }
+    final counts = queueCounts(queue, now);
     return Tally(
       standing: standingOf(queue),
-      waiting: waiting,
-      attention: attention,
-      unreadable: unreadable,
+      waiting: counts.waiting,
+      attention: counts.attention,
+      unreadable: counts.unreadable,
     );
   }
 
