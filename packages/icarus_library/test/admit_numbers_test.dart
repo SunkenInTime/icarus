@@ -152,6 +152,32 @@ void main() {
     testOn: 'vm',
   );
 
+  test(
+    'a bare number past 2^53 reads as the same double on every platform',
+    () {
+      final admitted = admitChecking('1152921504606847000', counted);
+      expect(
+        admitted,
+        isA<Admitted>().having(
+          (admitted) => admitted.json,
+          'json',
+          isA<double>().having((json) => json, 'value', 1152921504606846976.0),
+        ),
+      );
+    },
+  );
+
+  test(
+    'the smallest 64-bit integer is written as the double that holds it',
+    () {
+      final smallest = int.parse('-9223372036854775808');
+      final written = canonicalJson([smallest]);
+      final read = (admitChecking(written, counted) as Admitted).json!;
+      expect((read as JsonList).single, smallest.toDouble());
+    },
+    testOn: 'vm',
+  );
+
   test('a whole number JavaScript writes for no double is refused', () {
     for (final text in [
       '[9007199254740993]',

@@ -87,6 +87,34 @@ const _undoneOtherwise = <String, Undo>{
   ),
 };
 
+final _undoneLast = {
+  'lineup.patch removing the first of three links': lineupName('page-c', 'g4'),
+};
+
+Object? _itemsById(Object? json) => switch (json) {
+  final Map<String, Object?> map => {
+    for (final MapEntry(:key, :value) in map.entries)
+      key: switch (value) {
+        final List<Object?> items
+            when items.every((item) => item is Map && item['id'] is String) =>
+          [...items.map(_itemsById)]..sort(
+            (a, b) => ((a! as Map)['id'] as String).compareTo(
+              (b! as Map)['id'] as String,
+            ),
+          ),
+        _ => _itemsById(value),
+      },
+  },
+  final List<Object?> list => [for (final item in list) _itemsById(item)],
+  _ => json,
+};
+
+List<Object?> _linkIds(Map<String, Object?>? row) => [
+  for (final link
+      in (((row!['payload']! as Map)['data']! as Map)['links']! as List))
+    (link! as Map)['id'],
+];
+
 final _undoneAutoNamed = {
   'page.patch naming a page saved before isAutoNamed': pageName('page-c'),
 };
@@ -387,6 +415,9 @@ void main() {
           final added,
         ) when row == key) {
           expect(now, {...?was, 'payload': added}, reason: '$name, $key');
+        } else if (_undoneLast[name] == key) {
+          expect(_itemsById(now), _itemsById(was), reason: '$name, $key');
+          expect(_linkIds(now).last, 'g4-k1', reason: '$name, $key');
         } else if (_undoneAutoNamed[name] == key) {
           expect(now, {...?was, 'isAutoNamed': false}, reason: '$name, $key');
         } else {
@@ -395,4 +426,124 @@ void main() {
       }
     });
   }
+
+  for (final MapEntry(key: row, value: (key, edits))
+      in _editsOfOneRow.entries) {
+    for (final sequence in _sequences(edits.length)) {
+      final names = [for (final at in sequence) edits[at].$1];
+      test(
+        'on $row, ${names.join(', then ')}, undone in reverse order, stores the row again',
+        () async {
+          final disk = MemoryStorage(probed);
+          final store = await openStore(MemoryEngine(disk));
+          final undos = <StrategyOp>[];
+          for (final (step, at) in sequence.indexed) {
+            final current =
+                jsonDecode(disk.contents[sampleArea]![key]!)
+                    as Map<String, Object?>;
+            switch (await store.commit(
+              strategyId,
+              edits[at].$2(current, 'step-$step'),
+            )) {
+              case Saved(value: Committed(undo: UndoWithOp(:final op))):
+                undos.add(op);
+              case NothingToSave():
+                break;
+              case final other:
+                fail('step $step: ${describeSaving(other)}');
+            }
+          }
+          for (final undo in undos.reversed) {
+            final undone = await store.commit(strategyId, undo);
+            expect(
+              undone,
+              isA<Saved<Committed, CommitRefusal>>(),
+              reason: '${undo.opId}: ${describeSaving(undone)}',
+            );
+          }
+          await store.close();
+          final now = _withoutClock(disk.contents[sampleArea]![key]);
+          final was = _withoutClock(probed[sampleArea]![key]);
+          expect(_itemsById(now), _itemsById(was));
+        },
+      );
+    }
+  }
 }
+
+List<List<int>> _sequences(int edits) => [
+  for (var a = 0; a < edits; a++)
+    for (var b = 0; b < edits; b++) ...[
+      [a, b],
+      for (var c = 0; c < edits; c++) [a, b, c],
+    ],
+];
+
+typedef _Edit = StrategyOp Function(Map<String, Object?> row, String opId);
+
+int _revisionOf(Map<String, Object?> row) => row['revision']! as int;
+
+Map<String, Object?> _dataOf(Map<String, Object?> row) => {
+  ...((row['payload']! as Map)['data']! as Map).cast<String, Object?>(),
+};
+
+LineupGroupPatchOp _linkEdit(
+  Map<String, Object?> row,
+  String opId,
+  String linkId,
+  Map<String, Object?>? Function(Map<String, Object?> link) change,
+) {
+  final data = _dataOf(row);
+  final links = [
+    for (final link in (data['links']! as List).cast<Map<String, Object?>>())
+      if (link['id'] == linkId) ?change(link) else link,
+  ];
+  return LineupGroupPatchOp(
+    opId: opId,
+    lineupPublicId: 'g4',
+    expectedLineupRevision: _revisionOf(row),
+    payload: _manyLinks.withData({...data, 'links': links}),
+    merge: FieldMerge(fields: ['links/$linkId']),
+  );
+}
+
+final _editsOfOneRow = <String, (String, List<(String, _Edit)>)>{
+  'a lineup group': (
+    lineupName('page-c', 'g4'),
+    [
+      (
+        'remove the first link',
+        (row, opId) => _linkEdit(row, opId, 'g4-k1', (_) => null),
+      ),
+      (
+        'edit the note of the second link',
+        (row, opId) =>
+            _linkEdit(row, opId, 'g4-k2', (link) => {...link, 'notes': opId}),
+      ),
+      (
+        'edit the note of the third link',
+        (row, opId) =>
+            _linkEdit(row, opId, 'g4-k3', (link) => {...link, 'notes': opId}),
+      ),
+    ],
+  ),
+  'an agent': (
+    _jett,
+    [
+      for (final (what, field, value) in [
+        ('move it', 'position', <String, Object?>{'dx': 300, 'dy': 400}),
+        ('caption it', 'caption', 'retake'),
+      ])
+        (
+          what,
+          (row, opId) => ElementPatchOp(
+            opId: opId,
+            elementPublicId: 'jett',
+            expectedElementRevision: _revisionOf(row),
+            payload: agentPayload('jett', {..._dataOf(row), field: value}),
+            merge: FieldMerge(fields: [field]),
+          ),
+        ),
+    ],
+  ),
+};

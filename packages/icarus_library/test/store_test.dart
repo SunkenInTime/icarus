@@ -451,7 +451,7 @@ void main() {
         expect(listOf(store).strategies, isEmpty);
         expect(
           listOf(store).unreadableStrategies.single.header,
-          isA<Placed<StrategyRow>>().having(
+          isA<HeaderPlaced>().having(
             (placed) => placed.row,
             'row',
             isA<UnreadableStrategy>().having(
@@ -730,6 +730,29 @@ void main() {
       );
     });
 
+    test(
+      'a strategy added and moved twice in one edit is stored once, at its own revision',
+      () async {
+        final disk = MemoryStorage(seeded);
+        final store = await openStore(MemoryEngine(disk));
+        final added = sampleStrategy(id: 'strategy-new', prefix: 'new-');
+        savedValue(
+          await store.editLibrary([
+            PutFolder(folder('f')),
+            PutFolder(folder('g')),
+            AddStrategy(added),
+            const MoveStrategy('strategy-new', 'f'),
+            const MoveStrategy('strategy-new', 'g'),
+          ]),
+        );
+        final header = headerOf(
+          strategyOf(await store.readStrategy('strategy-new')),
+        );
+        expect(header.folderPublicId, 'g');
+        expect(header.revision, added.strategy.revision);
+      },
+    );
+
     test('folders and moves are rows in the same store', () async {
       final disk = MemoryStorage(seeded);
       final store = await openStore(MemoryEngine(disk));
@@ -898,7 +921,7 @@ void main() {
         final store = await openStore(MemoryEngine(disk));
         final listing = listOf(store).unreadableStrategies.single;
         expect(listing.ref, StrategyRef(garbledArea));
-        expect(listing.header, isA<Unplaced<StrategyRow>>());
+        expect(listing.header, isA<HeaderUnplaced>());
         expect(
           listOf(store).strategies.map((summary) => summary.publicId),
           unorderedEquals([strategyId, garbledArea]),
@@ -1425,6 +1448,33 @@ void main() {
         );
         expect(disk.contents['library']?[summaryName(strategyId)], isNull);
         expect(listOf(store).unreadableStrategies, isEmpty);
+      },
+    );
+
+    test(
+      'a damaged summary whose strategy has no rows is listed as unreadable at open, and can be removed',
+      () async {
+        final clean = await seededClean();
+        final disk = MemoryStorage(
+          {
+            ...clean,
+            'library': {...clean['library']!, summaryName(strategyId): '{}'},
+          }..remove(sampleArea),
+        );
+        final store = await openStore(MemoryEngine(disk));
+        final listing = listOf(store).unreadableStrategies.single;
+        expect(listing.ref, StrategyRef(sampleArea));
+        expect(listing.header, isA<HeaderAbsent>());
+        expect(listOf(store).strategies, isEmpty);
+        expect(
+          (await store.findStrategies() as StrategiesFound).unreadable,
+          isEmpty,
+        );
+        expect(listOf(store).unreadableStrategies.single.ref, listing.ref);
+        savedValue(
+          await store.editLibrary([RemoveUnreadableStrategy(listing.ref)]),
+        );
+        expect(disk.contents['library']?[summaryName(strategyId)], isNull);
       },
     );
 

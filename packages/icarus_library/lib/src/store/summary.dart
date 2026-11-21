@@ -221,11 +221,6 @@ final class StrategySummary {
   ) {
     final tallies = {...this.tallies};
     for (final write in writes) {
-      if (write case RowAdded(after: PageRow(:final publicId))) {
-        tallies.remove(publicId);
-      }
-    }
-    for (final write in writes) {
       if (write case RowChanged(before: final ElementRow before)) {
         tallies[before.pagePublicId] =
             (tallies[before.pagePublicId] ?? PageTally.empty).plus(before, -1);

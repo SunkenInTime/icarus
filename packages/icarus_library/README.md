@@ -59,8 +59,8 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   A whole number past the exact range is refused unless it is exactly how
   JavaScript writes some double, because the web build writes a whole
   double of 2^53 or more without a fraction (`1152921504606847000` for
-  2^60). Such a number is unusual, and on the VM the walk turns it into
-  that double, so both platforms hold the same value. A number with a point
+  2^60). Such a number is unusual, and on the VM it is turned into that
+  double wherever it stands, a bare top-level number included, so both platforms hold the same value. A number with a point
   or an exponent is a double on both platforms, so `9007199254740993e0`
   reads as 9007199254740992, and saving writes that value. The store's
   writer keeps a whole double of 2^53 or more as a double, and writes an
@@ -181,11 +181,14 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 - Undoing an edit that set `isAutoNamed` on a page saved before that field
   existed writes `isAutoNamed: false` where the field was absent. A page op
   cannot clear the field, and the server reads absent as `false`.
-- Undoing a lineup merge that removed a link or another item writes the
-  group's payload whole, not as a merge: the server's merge appends the
-  items it adds, so a merge would put the item back last instead of in its
-  place. The undo still carries the expected revision, so it is refused
-  rather than overwriting a group someone has changed since.
+- Undoing a lineup merge that removed a link or another item puts it back
+  last, because the server's merge appends the items it adds. The order is
+  visible: the lineup panel opened from an origin lists its lineups in
+  stored order and opens on the first, and connector lines are drawn in
+  the order their links are stored.
+- An undo value is good only for the life of the strategy it was made in.
+  The editor drops its undo history when a strategy is removed or replaced,
+  for example by an import under the same ids.
 - An element op whose payload version is newer than this build reads is
   applied, as the server applies it, and the element becomes an
   `UnreadableElement` from a newer build holding that payload whole.
@@ -450,10 +453,12 @@ names included.
 
 **What is admitted.** Stored text goes through `admit`, which scans it once
 before decoding: nesting deeper than `maxJsonDepth`, or a whole-number
-token outside the range JavaScript holds exactly (anywhere in the text,
-fields this build does not know included), makes the row unreadable with
-its text kept. So the VM and the web read the same rows the same way, and
-a rewrite can never save a number the web rounded.
+token outside the range JavaScript holds exactly and not written as
+JavaScript writes a double (anywhere in the text, fields this build does
+not know included), makes the row unreadable with its text kept. So the VM
+and the web hold the same value for every number they admit. A number
+neither can hold, such as `9007199254740991.1`, is held by both as the
+nearest double, and a rewrite saves that double.
 
 **One place commits.** Exactly one function in the store calls
 `lease.commit`. It takes typed writes (a row, a summary, a delete, a clear),
@@ -489,8 +494,13 @@ summary. Opening and reading never commit: the only calls that write are
 `commit`, `editLibrary` and `rebuildSummary`. `editLibrary` copies the list
 it is given when it is called, not when its turn comes. A library edit
 saves what differs from the stored rows when it ends: moving a strategy
-into a folder and back in one edit is `NothingToSave`, and several moves
-of one strategy raise its revision once.
+into a folder and back in one edit is `NothingToSave`, several moves of
+one strategy raise its revision once, and a strategy added in the same
+edit keeps its own revision. Each step sees what earlier steps staged: a
+move of a strategy the same edit removes is refused with `NoSuchStrategy`,
+and adding it back in the same edit with `StrategyAlreadyInStore`. `test/store_library_batch_test.dart` runs short
+random edits and checks that each saves what the same steps save one edit
+at a time, or refuses and saves nothing.
 
 Every save returns a `Saving`, which the caller has to handle:
 
@@ -607,8 +617,12 @@ read either, the strategy is listed in `unreadableStrategies`. Whenever rows
 are loaded, by a read or by an edit, the in-memory summary is brought up to
 date with them, and so is the summary a library edit writes: moving a
 strategy into a folder before its pages were read saves the summary its
-rows give, not the stored one. A page tally counts only pages the strategy
-has, so a lost page row is counted once, as orphaned rows, and a page added
+rows give, not the stored one. That summary is only as current as the
+rows the store has seen: if an item row went missing on a page no one has
+opened, a folder move carries the stale count forward, and it is corrected
+when that page is read or the summary rebuilt. Reading every page to move
+a strategy would make every move slow to find damage a moment sooner. A
+page tally counts only pages the strategy has, so a lost page row is counted once, as orphaned rows, and a page added
 under the id of a page that is wholly gone starts empty. A summary changed
 in memory this way is marked as not yet in storage: the next save of that strategy writes it, and `rebuildSummary`
 writes it even if it compares equal to the one in memory.
@@ -620,7 +634,8 @@ that has a readable row and no summary, and lists each area that holds rows
 with neither as an unreadable strategy. A listed strategy whose area holds
 no rows at all becomes an unreadable strategy too ("none of its rows are
 stored"), so the user sees it is gone, and `RemoveUnreadableStrategy`
-removes its summary. It works out every answer before it changes the list,
+removes its summary. A summary that cannot be read, for a strategy with no
+rows, is listed the same way when the store opens. It works out every answer before it changes the list,
 so a read that fails partway leaves the list as it was. It returns
 `StrategiesFound(rebuilt, unreadable)` or `StrategiesNotSearched(failure)`,
 and commits nothing.

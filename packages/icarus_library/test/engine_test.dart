@@ -135,7 +135,7 @@ final class PartlyUnknownLease extends ForwardingLease {
 
   @override
   Future<Committing> commit(List<Change> changes) async {
-    if (changes.length < 20) return inner.commit(changes);
+    if (changes.length < 2) return inner.commit(changes);
     switch (await inner.commit(changes.take(1).toList())) {
       case CommitApplied():
         cut();
@@ -275,7 +275,14 @@ void main() {
         reached.add(check.name);
         expect(result, isA<Broke>(), reason: check.name);
       }
-      expect(reached, isNotEmpty);
+      expect(
+        reached,
+        containsAll([
+          'a commit across areas is seen whole or not at all after a reopen',
+          'applies the changes of one commit in list order',
+          'a commit that applied survives a crash, whole',
+        ]),
+      );
     },
   );
 

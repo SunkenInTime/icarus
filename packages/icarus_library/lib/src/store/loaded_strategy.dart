@@ -245,8 +245,8 @@ final class LoadedStrategy {
   Held heldUnder(StoreName name) {
     final row = switch (name) {
       HeaderName() => switch (header) {
-        Placed<StrategyRow>(:final row) => row,
-        Placed() || Unplaced() || HeaderAbsent() => null,
+        HeaderPlaced(:final row) => row,
+        HeaderUnplaced() || HeaderAbsent() => null,
       },
       PageName(:final digest) => _pages[digest],
       SettingsName(:final digest) => _settings[digest],
@@ -319,7 +319,7 @@ final class LoadedStrategy {
   void _keep(Row row) {
     switch (row) {
       case StrategyRow():
-        header = Placed(row);
+        header = HeaderPlaced(row);
       case PageRow(:final publicId):
         _pages[digestOf(publicId)] = row;
       case PageSettingsRow(:final pagePublicId):

@@ -338,7 +338,9 @@ bool _exactAsADouble(int value) =>
     BigInt.from(value.toDouble()) == BigInt.from(value);
 
 bool _heldAsADouble(Object? value) =>
-    !_wholesAreDoubles && value is int && value.abs() > _largestExactInt;
+    !_wholesAreDoubles &&
+    value is int &&
+    (value > _largestExactInt || value < -_largestExactInt);
 
 bool settleNumbers(Object? json) {
   switch (json) {
@@ -382,12 +384,15 @@ Admission admitChecking(
   if (scan case _Unsafe(:final problem)) {
     return NotAdmitted(text, problem);
   }
-  final Object? parsed;
+  final Object? decoded;
   try {
-    parsed = jsonDecode(text);
+    decoded = jsonDecode(text);
   } on FormatException catch (error) {
     return NotAdmitted(text, 'not JSON: ${error.message}');
   }
+  final parsed = _heldAsADouble(decoded)
+      ? (decoded! as int).toDouble()
+      : decoded;
   if (scan is _Unusual && !numbersSettled(parsed)) {
     return NotAdmitted(text, 'holds a number that is not finite');
   }

@@ -962,21 +962,6 @@ final class _Apply {
     final byItem = write.dataFields.every(
       (field) => lineupField(field) != null,
     );
-    final after = switch (write.after) {
-      ReadableLineupGroupRow(:final payload) => payload,
-      _ => before.payload,
-    };
-    bool holds(LineupGroupPayload payload, String field) =>
-        switch (lineupField(field)) {
-          (:final collection, :final id) => lineupItems(
-            payload.data.raw,
-            collection,
-          ).any((item) => item['id'] == id),
-          null => false,
-        };
-    final putsBack = write.dataFields.any(
-      (field) => holds(before.payload, field) && !holds(after, field),
-    );
     final mergeFields = [
       if (payloadChanged) ...write.dataFields.toList()..sort(),
       if (movedPlace) placeField,
@@ -987,7 +972,7 @@ final class _Apply {
       expectedLineupRevision: before.revision + 1,
       payload: payloadChanged ? before.payload : null,
       sortIndex: movedPlace ? before.sortIndex : null,
-      merge: whole || putsBack || mergeFields.isEmpty || !byItem
+      merge: whole || mergeFields.isEmpty || !byItem
           ? null
           : FieldMerge(fields: mergeFields),
     );
