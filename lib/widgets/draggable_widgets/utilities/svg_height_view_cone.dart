@@ -1,6 +1,6 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/map_artwork_registration.dart';
@@ -8,6 +8,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
+import 'package:icarus/view_cone/vision_occluders.dart';
 
 class SvgHeightMapTransform {
   SvgHeightMapTransform._(this.map)
@@ -131,6 +132,7 @@ class SvgHeightViewCone extends StatefulWidget {
     this.elevation,
     this.opacity = 1,
     this.changedDoors = const {},
+    this.occluders = const [],
   });
 
   final SvgHeightRuntime runtime;
@@ -140,6 +142,7 @@ class SvgHeightViewCone extends StatefulWidget {
   final double? elevation;
   final double opacity;
   final Set<String> changedDoors;
+  final List<VisionOccluder> occluders;
 
   @override
   State<SvgHeightViewCone> createState() => _SvgHeightViewConeState();
@@ -148,8 +151,12 @@ class SvgHeightViewCone extends StatefulWidget {
 class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
   static final _receiverPaths = Expando<Path>();
   final _observer = Object();
-  Object? _paintInputs;
-  SvgHeightViewConePainter? _painter;
+  ({
+    Object inputs,
+    Float64List sourceToCanvas,
+    List<VisionOccluder> near,
+    ShadowedConePainter painter,
+  })? _drawn;
   Object? _receiverKey;
   Path? _rotatedReceiver;
 
@@ -189,13 +196,27 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
       return const SizedBox.expand();
     }
 
+    final reach = widget.range / mapTransform.scale;
+    final nearOccluders = [
+      for (final occluder in widget.occluders)
+        switch (occluder) {
+          CircleOccluder() => occluder.map(
+              (point) => _source(point, mapTransform), 1 / mapTransform.scale),
+          LineOccluder() =>
+            occluder.map((point) => _source(point, mapTransform)),
+        },
+    ].where((occluder) => occluder.reaches(sourceOrigin, reach)).toList();
+    if (standsInsideSmoke(sourceOrigin, nearOccluders)) {
+      return const SizedBox.expand();
+    }
+
     final support = model.standingSupportAt(sourceOrigin,
         savedEyeElevationCm: widget.elevation);
     final result = widget.runtime.cache(widget.isAttack).cone(
           observerId: _observer,
           origin: sourceOrigin,
           directionRadians: widget.rotation - math.pi / 2,
-          range: widget.range / mapTransform.scale,
+          range: reach,
           apertureRadians: widget.angle,
           supportId: support?.id,
           changedDoors: widget.changedDoors,
@@ -217,9 +238,43 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
       coordinates.worldOffsetToScreen(const Offset(1, 1)),
       widget.opacity,
     );
-    if (_paintInputs == paintInputs) {
-      return ConeArea(size: size, painter: _painter!, fallback: _painter!);
+    final drawn = _drawn;
+    final sameCone = drawn != null && drawn.inputs == paintInputs;
+    if (sameCone && listEquals(drawn.near, nearOccluders)) {
+      return ConeArea(
+          size: size, painter: drawn.painter, fallback: drawn.painter);
     }
+    final (cone, sourceToCanvas) = sameCone
+        ? (drawn.painter.cone, drawn.sourceToCanvas)
+        : _paintCone(model, mapTransform, rawOrigin, result.cone, radius, reach);
+    final shadows = occluderShadows(
+      sourceOrigin,
+      reach,
+      nearOccluders,
+      view: (heading: widget.rotation - math.pi / 2, spread: widget.angle / 2),
+    );
+    final painter = ShadowedConePainter(
+      cone,
+      shadows == null ? null : (shadows, sourceToCanvas),
+    );
+    _drawn = (
+      inputs: paintInputs,
+      sourceToCanvas: sourceToCanvas,
+      near: nearOccluders,
+      painter: painter,
+    );
+    return ConeArea(size: size, painter: painter, fallback: painter);
+  }
+
+  (SvgHeightViewConePainter, Float64List) _paintCone(
+    SvgHeightVisibility model,
+    SvgHeightMapTransform mapTransform,
+    Offset rawOrigin,
+    SvgVisibilityCone cone,
+    double radius,
+    double reach,
+  ) {
+    final coordinates = CoordinateSystem.instance;
     final apex = Offset(radius, radius);
     final inverse = -widget.rotation;
     final cosine = math.cos(inverse), sine = math.sin(inverse);
@@ -256,20 +311,27 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
         ..[10] = 1
         ..[15] = 1);
     }
-    _paintInputs = paintInputs;
-    _painter = SvgHeightViewConePainter.fromPaths(
-      visibility: result.cone.outlinePath(transform),
+    final painter = SvgHeightViewConePainter.fromPaths(
+      visibility: cone.outlinePath(transform),
       receiver: _rotatedReceiver!,
       receiverOffset: Offset(transform[12], transform[13]),
       apex: apex,
       radius: radius,
       opacity: widget.opacity,
-      floors: result.cone.floors.isEmpty
-          ? null
-          : (result.cone, transform, widget.range / mapTransform.scale),
+      floors: cone.floors.isEmpty ? null : (cone, transform, reach),
     );
-    return ConeArea(size: size, painter: _painter!, fallback: _painter!);
+    return (painter, transform);
   }
+
+  Offset _source(Offset canonical, SvgHeightMapTransform mapTransform) =>
+      mapTransform.sourceFromSideWorld(
+        CoordinateSystem.instance.positionForSide(
+          canonicalPosition: canonical,
+          reflectionOffset: Offset.zero,
+          isAttack: widget.isAttack,
+        ),
+        isAttack: widget.isAttack,
+      );
 
   static Path _combinedReceiver(SvgHeightVisibility model) {
     Path? combined;
@@ -441,4 +503,48 @@ class SvgHeightViewConePainter extends CustomPainter
       oldDelegate.receiverOffset != receiverOffset ||
       oldDelegate.opacity != opacity ||
       oldDelegate.floors != floors;
+}
+
+class ShadowedConePainter extends CustomPainter implements ConeAreaPainter {
+  const ShadowedConePainter(this.cone, this.shadows);
+
+  final SvgHeightViewConePainter cone;
+  final (Path, Float64List)? shadows;
+
+  @override
+  double get opacity => cone.opacity;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (shadows == null) {
+      cone.paint(canvas, size);
+      return;
+    }
+    canvas.saveLayer(Offset.zero & size, Paint());
+    cone.paint(canvas, size);
+    _erase(canvas);
+    canvas.restore();
+  }
+
+  @override
+  void paintArea(Canvas canvas, Size size, Paint fill,
+      {required bool clipToFloor}) {
+    cone.paintArea(canvas, size, fill, clipToFloor: clipToFloor);
+    _erase(canvas);
+  }
+
+  static final _clear = Paint()..blendMode = BlendMode.clear;
+
+  void _erase(Canvas canvas) {
+    if (shadows case (final hidden, final sourceToCanvas)) {
+      canvas.save();
+      canvas.transform(sourceToCanvas);
+      canvas.drawPath(hidden, _clear);
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(ShadowedConePainter oldDelegate) =>
+      cone.shouldRepaint(oldDelegate.cone) || oldDelegate.shadows != shadows;
 }

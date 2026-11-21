@@ -28,6 +28,7 @@ import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/view_cone/cone_coverage.dart';
+import 'package:icarus/view_cone/page_occluders.dart';
 
 Offset _overlayScreenPosition({
   required PlacedWidget widget,
@@ -121,18 +122,28 @@ class TransitionEntriesLayer extends ConsumerWidget {
       strategySettingsProvider.select((s) => s.useNeutralTeamColors),
     );
 
-    return IgnorePointer(
-      ignoring: true,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Under every icon, as on the canvas.
+    return PageOccludersScope(
+      occluders: pageOccluders(
+        [
           for (final entry in orderedEntries)
-            if (renderer.buildWall(entry, neutralTeamColors: neutralTeamColors)
-                case final wall?)
-              wall,
-          for (final entry in orderedEntries) renderer.buildEntry(entry),
+            if (renderer.blockerAsDrawn(entry) case final blocker?) blocker,
         ],
+        mapScale: mapScale,
+      ),
+      child: IgnorePointer(
+        ignoring: true,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Under every icon, as on the canvas.
+            for (final entry in orderedEntries)
+              if (renderer.buildWall(entry,
+                      neutralTeamColors: neutralTeamColors)
+                  case final wall?)
+                wall,
+            for (final entry in orderedEntries) renderer.buildEntry(entry),
+          ],
+        ),
       ),
     );
   }
@@ -253,6 +264,45 @@ class _EntryRenderer {
         ),
       ),
     );
+  }
+
+  bool get _pastHalfway => t >= 0.5;
+
+  PlacedAbility? blockerAsDrawn(PageTransitionEntry entry) {
+    final shown = entry.to ?? entry.from;
+    if (shown is! PlacedAbility || !blocksSight(shown.data)) return null;
+    final directionalOffset = coordinateSystem.scale(28) *
+        (direction == PageTransitionDirection.forward ? 1.0 : -1.0);
+    Offset slid(Offset position, double screenX) =>
+        position + Offset(_canonicalHorizontalTranslation(screenX), 0);
+    return switch (entry.kind) {
+      TransitionKind.none => shown,
+      TransitionKind.appear when _pastHalfway => shown.copyWith(
+          position: slid(entry.endPos, directionalOffset * (1 - t)),
+        ),
+      TransitionKind.disappear when !_pastHalfway => shown.copyWith(
+          position: slid(entry.startPos, -directionalOffset * t),
+        ),
+      TransitionKind.move => shown.copyWith(
+          position: Offset.lerp(entry.startPos, entry.endPos, t),
+          rotation: _lerpRotation(
+            shown,
+            PageTransitionEntry.rotationOf(entry.from!),
+            shown.rotation,
+            t,
+          ),
+          wallPath: _wallPathAt(
+            PageTransitionEntry.wallPathOf(entry.from),
+            PageTransitionEntry.wallPathOf(entry.to),
+          ),
+        ),
+      _ => null,
+    };
+  }
+
+  List<Offset> _wallPathAt(List<Offset>? from, List<Offset>? to) {
+    if (from != null && to != null) return _morphedWall(from, to)!.sublist(1);
+    return (_pastHalfway ? to : from) ?? const [];
   }
 
   /// The two walls blended by [t], as a drawn line; just the one when only
@@ -946,44 +996,50 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
     final neutralTeamColors = ref.watch(
       strategySettingsProvider.select((s) => s.useNeutralTeamColors),
     );
-    return IgnorePointer(
-      ignoring: true,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          for (final widget in orderedWidgets)
-            if (widget is PlacedAbility &&
-                PageTransitionEntry.wallPathOf(widget) != null)
-              Positioned.fill(
-                key: ValueKey('wall_${widget.id}'),
-                child: CustomPaint(
-                  painter: WallPainter(
-                    line: smoothWallLine(
-                      WallOnScreen.of(
-                        widget,
-                        mapScale: mapScale,
-                        abilitySize: abilitySize,
-                        isAttack: isAttack,
-                      ).points(widget.wallPath!),
+    return PageOccludersScope(
+      occluders: pageOccluders(
+        orderedWidgets.whereType<PlacedAbility>(),
+        mapScale: mapScale,
+      ),
+      child: IgnorePointer(
+        ignoring: true,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            for (final widget in orderedWidgets)
+              if (widget is PlacedAbility &&
+                  PageTransitionEntry.wallPathOf(widget) != null)
+                Positioned.fill(
+                  key: ValueKey('wall_${widget.id}'),
+                  child: CustomPaint(
+                    painter: WallPainter(
+                      line: smoothWallLine(
+                        WallOnScreen.of(
+                          widget,
+                          mapScale: mapScale,
+                          abilitySize: abilitySize,
+                          isAttack: isAttack,
+                        ).points(widget.wallPath!),
+                      ),
+                      team: wallTeamColor(
+                        widget.isAlly,
+                        neutralTeamColors: neutralTeamColors,
+                      ),
+                      width: wallStrokeWidth(mapScale),
+                      edge: wallStrokeEdge(),
                     ),
-                    team: wallTeamColor(
-                      widget.isAlly,
-                      neutralTeamColors: neutralTeamColors,
-                    ),
-                    width: wallStrokeWidth(mapScale),
-                    edge: wallStrokeEdge(),
                   ),
                 ),
+            for (final widget in orderedWidgets)
+              staticPlacedWidgetView(
+                widget: widget,
+                mapScale: mapScale,
+                abilitySize: abilitySize,
+                agentSize: agentSize,
+                isAttack: isAttack,
               ),
-          for (final widget in orderedWidgets)
-            staticPlacedWidgetView(
-              widget: widget,
-              mapScale: mapScale,
-              abilitySize: abilitySize,
-              agentSize: agentSize,
-              isAttack: isAttack,
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -11,8 +11,10 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/map_doors_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/page_occluders_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/view_cone/page_occluders.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
@@ -125,18 +127,23 @@ class ViewConeWidget extends ConsumerWidget {
           sideWorldOrigin,
           isAttack: mapState.isAttack,
         );
-        heightCone = SvgHeightViewCone(
-          runtime: runtime,
-          canonicalOrigin: resolvedWorldOrigin,
-          rotation: rotation ??
-              coord.rotationForSide(placedUtility?.rotation ?? 0,
-                  isAttack: mapState.isAttack),
-          range: coord.virtualLengthToWorld(currentLength),
-          angle: angle * pi / 180,
-          isAttack: mapState.isAttack,
-          elevation: resolvedElevation,
-          opacity: opacity,
-          changedDoors: ref.watch(changedMapDoorsProvider),
+        final changedDoors = ref.watch(changedMapDoorsProvider);
+        heightCone = Consumer(
+          builder: (context, ref, _) => SvgHeightViewCone(
+            runtime: runtime,
+            canonicalOrigin: resolvedWorldOrigin,
+            rotation: rotation ??
+                coord.rotationForSide(placedUtility?.rotation ?? 0,
+                    isAttack: mapState.isAttack),
+            range: coord.virtualLengthToWorld(currentLength),
+            angle: angle * pi / 180,
+            isAttack: mapState.isAttack,
+            elevation: resolvedElevation,
+            opacity: opacity,
+            changedDoors: changedDoors,
+            occluders: PageOccludersScope.maybeOf(context) ??
+                ref.watch(pageOccludersProvider),
+          ),
         );
       }
       // Only a placed cone carries a context menu; a drag preview has none.
