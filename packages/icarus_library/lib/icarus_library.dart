@@ -55,3 +55,15 @@ export 'src/store/store.dart'
     show CanRead, LibraryStore, StoreNotOpened, StoreOpened, StoreOpening;
 export 'src/store/summary.dart'
     show AllReadable, Readability, Sides, SomeUnreadable, StrategySummary;
+export 'src/cloud/events.dart';
+export 'src/cloud/op_facts.dart'
+    show
+        Target,
+        StrategyTarget,
+        PageTarget,
+        SettingsTarget,
+        ElementTarget,
+        LineupTarget,
+        targetOf;
+export 'src/cloud/pending.dart';
+export 'src/cloud/queue.dart';
