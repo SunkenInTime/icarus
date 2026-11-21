@@ -1175,6 +1175,86 @@ in it; under a missing folder, `NoSuchFolder`; under a folder this build
 cannot read, `UnreadableRowInTheWay`. Opening reads a loop as it is and
 lists its folders.
 
+### Saving a local strategy whole
+
+`putStrategy(rows)` saves a strategy kept only on this device as the
+complete set of rows it should hold, in one engine commit. It is how the
+store keeps an exact image of a local strategy while the Hive library
+stays the one the app reads, so that reading from the store can be proven
+equal to reading from Hive. It stores the rows exactly as given, the
+strategy row's `updatedAt` included, never a time of its own, so the
+stored rows equal what `AddStrategy` writes for the same rows. A stored row
+that parses equal to the given one is left as it is, even if it was written
+with different spacing.
+
+- **Only what changed is written.** Each given row is matched to the
+  stored row with the same key and compared with it as JSON, by walking
+  both (`sameJsonTree`); only rows that differ are encoded and parsed back
+  before the commit, as every write is. A stored row the set no longer
+  holds is deleted in the same commit, and so is the old name of an
+  element or lineup group that moved page. The summary is computed from
+  the whole set and saved in the commit too. Putting the same rows again
+  writes nothing and answers `NothingToSave`. Over an empty store it adds
+  the strategy.
+- **What an image cannot carry is refused, changing nothing.** If the
+  stored strategy holds a row this build cannot read
+  (`UnreadableRowInTheWay`), a row with no id (`UnplacedRowInTheWay`), or
+  something a complete set of readable live rows cannot express, it answers
+  `PutWouldDrop` with the stored name and what it is: a page in the trash
+  (`Dropped.trashedPage`), a tombstone (`tombstone`), a row of a kind or a
+  name this build does not know (`unknownKind`, `foreignName`), two rows
+  with one id (`duplicateRow`, which no editor action makes), or a changed
+  row whose stored version holds a field this build does not know that the
+  given row would drop (`unknownField`: unknown fields on the row, its
+  payload envelope, its page settings or its theme palette). Nothing writes
+  those for a local strategy today; the per-edit step and newer builds
+  will, and this call must not flatten them then. The fields inside an
+  element's or lineup group's `data` are the app's to know, so the store
+  cannot tell an unknown one from one the editor removed; those are not
+  checked here. The store has no word yet for a strategy kept in the
+  cloud; one written by a build that keeps cloud strategies in the store
+  holds names this build does not know, so it is refused as
+  `Dropped.foreignName`.
+- **It loads before it compares.** Every page's content is read before the
+  comparison, the way `commitAll` reads each op's pages. Knowing a page's
+  row is not knowing its content: renaming a page whose content has not
+  been read leaves the content to be read later.
+- **It costs** a structural comparison of every row and a commit of the
+  ones that changed. On SQLite, saving one moved agent in a strategy of 40
+  pages and 1,000 items takes about 20 ms in all, half of it the app's
+  conversion of the strategy to rows; the comparison grows with the number
+  of rows and the commit with the rows that changed.
+- **What it is not.** An earlier attempt turned two snapshots of the
+  editor's strategy into the store's ops (#680). Three rounds of review
+  found failures with one cause: a snapshot does not say what the user
+  did. The editor's model and the rows disagree on identity (ids per page
+  against ids per strategy), on order (one list of lineups against lineup
+  groups) and on what exists (the editor has no trash, no tombstones and no
+  fields a newer build wrote), so every round recovered a little more
+  intent and the next found what could not be recovered. Ops will come from
+  the edit itself, in the step that saves edits as they are made, where the
+  intent is known. Do not rebuild the snapshot diff.
+- **When it stops being the save.** An image holds what this build's editor
+  holds and nothing else. That is right while Hive is what the app reads,
+  because Hive loses the same things: a field a newer build wrote inside an
+  element's `data` is dropped by an older build's save in both. It is wrong
+  once the store is what the app reads, since rows then carry what only
+  another build or another device knows. From that step on a strategy is
+  saved by ops and `putStrategy` is no longer called for it. The app's
+  converter also derives a row's id from where its page sits among pages
+  that share an item id, so reordering such pages rewrites those rows under
+  new ids; the image stays exact, and it is one more reason an image is not
+  the save for a store other builds write.
+
+`test/store_put_strategy_test.dart` checks the stored rows against
+`AddStrategy`, what is written and deleted, the second put, each refusal on
+its own with no commit, and, on the memory engine and on SQLite, a page
+renamed before its content is read, read and then saved whole. The app's
+`test/library_rows/strategy_image_test.dart` saves every step of a scripted
+editing session and of 30 generated ones and checks that the stored rows
+equal the image of the editor's strategy and that what is read back is that
+strategy again, and the corpus check saves every corpus strategy whole.
+
 ### Reading
 
 `readStrategy` and `readPage` return a `Reading`: `Found`, `NotFound`,

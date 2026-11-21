@@ -1,9 +1,12 @@
 import 'dart:io';
 
+import 'package:collection/collection.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/page_items.dart';
@@ -12,6 +15,7 @@ import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_rows/strategy_comparison.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/sqlite_storage.dart';
 
 import 'library_sources.dart';
 
@@ -28,6 +32,7 @@ final class CorpusReport {
   int folders = 0;
   int sameStrategies = 0;
   int storedStrategies = 0;
+  int putStrategies = 0;
   int supersededLegacyItems = 0;
   final differences = <String, int>{};
   final refusals = <String, int>{};
@@ -93,8 +98,11 @@ final class CorpusReport {
       element: (payload) => canReadElementPayload(payload, strategy.mapData),
       lineupGroup: (payload) => _appReadsLineup(payload),
     );
-    Future<LibraryStore> open(MemoryStorage storage) async => switch (
-            await LibraryStore.open(MemoryEngine(storage), canRead: canRead)) {
+    Future<LibraryStore> open(MemoryStorage storage) async =>
+        switch (await LibraryStore.open(
+          MemoryEngine(storage),
+          canRead: canRead,
+        )) {
           StoreOpened(:final store) => store,
           StoreNotOpened(:final problem) => throw StateError('$problem'),
         };
@@ -108,14 +116,13 @@ final class CorpusReport {
     await adding.close();
     if (added is! Saved<LibraryEdited, LibraryRefusal>) {
       _storeProblem(
-        ordinal,
-        'not added',
-        switch (added) {
-          Refused(:final reason) => '$reason',
-          NotSaved(:final failure) => '$failure',
-          final other => '$other',
-        },
-      );
+          ordinal,
+          'not added',
+          switch (added) {
+            Refused(:final reason) => '$reason',
+            NotSaved(:final failure) => '$failure',
+            final other => '$other',
+          });
       return;
     }
     final store = await open(storage);
@@ -147,7 +154,7 @@ final class CorpusReport {
       ...content.pages,
       ...content.settings.values,
       ...elements,
-      ...groups
+      ...groups,
     ]) {
       switch (row) {
         case UnreadablePage(:final problem) ||
@@ -195,6 +202,29 @@ final class CorpusReport {
           storedStrategies++;
         }
     }
+    final whole = MemoryStorage();
+    final putting = await open(whole);
+    if (folders.isNotEmpty) {
+      await putting.editLibrary([
+        for (final folder in _parentsFirst(folders))
+          PutFolder(folderToRow(folder).row),
+      ]);
+    }
+    final put = await putting.putStrategy(made.rows);
+    final again = await putting.putStrategy(made.rows);
+    await putting.close();
+    if (put is! Saved<LibraryEdited, LibraryRefusal>) {
+      _storeProblem(ordinal, 'not put', '$put');
+    } else if (!const DeepCollectionEquality().equals(
+      whole.contents,
+      storage.contents,
+    )) {
+      _storeProblem(ordinal, 'put differs from add', 'stored bytes differ');
+    } else if (again is! NothingToSave<LibraryEdited, LibraryRefusal>) {
+      _storeProblem(ordinal, 'put again saved', '$again');
+    } else {
+      putStrategies++;
+    }
   }
 
   void _addMade(StrategyRowsMade made) {
@@ -231,10 +261,13 @@ final class CorpusReport {
         'strategies: $strategies, pages: $pages, folders: $folders',
         'items: ${[
           for (final MapEntry(:key, :value) in items.entries)
-            '${key.name} $value',
+            '${key.name} $value'
         ].join(', ')}, lineups: $lineups',
         'strategies the same after the round trip: $sameStrategies',
         'strategies the same after a store on the memory engine: $storedStrategies',
+        'strategies saved whole over an empty store with the bytes adding them '
+            'writes, and saved again over their own image with nothing to save: '
+            '$putStrategies',
         'items in superseded strategy-level lists: $supersededLegacyItems',
         'differences: ${differences.isEmpty ? 'none' : differences}',
         'refusals: ${refusals.isEmpty ? 'none' : refusals}',
@@ -258,11 +291,18 @@ void main() {
       final root = Directory(corpus!);
       expect(root.existsSync(), isTrue, reason: '$corpusVariable: $corpus');
       final report = CorpusReport();
+      StrategyData? largest;
+      int itemsOf(StrategyData strategy) => [
+            for (final page in strategy.pages) ...pageItemsOf(page),
+          ].length;
       for (final store in hiveStoresUnder(root)) {
         report.stores++;
         final library = await loadHiveStore(store);
         for (final strategy in library.strategies) {
           await report.addStrategy(strategy, folders: library.folders);
+          if (largest == null || itemsOf(strategy) > itemsOf(largest)) {
+            largest = strategy;
+          }
         }
         library.folders.forEach(report.addFolder);
       }
@@ -272,6 +312,9 @@ void main() {
         for (final strategy in await importIcaFiles(icaFiles)) {
           await report.addStrategy(strategy);
         }
+      }
+      if (largest != null) {
+        stdout.writeln(await _saveCost(largest, itemsOf(largest)));
       }
       final detail = Platform.environment[detailVariable] == '1';
       printOnFailure(report.render(detail: detail));
@@ -311,4 +354,73 @@ List<Folder> _parentsFirst(List<Folder> folders) {
     place(folder, <String>{});
   }
   return ordered;
+}
+
+Future<String> _saveCost(StrategyData strategy, int items) async {
+  final folder = await Directory.systemTemp.createTemp('icarus-corpus-save-');
+  try {
+    final store = switch (await LibraryStore.open(
+      SqliteEngine('${folder.path}/library.sqlite'),
+      canRead: CanRead(
+        element: (payload) => canReadElementPayload(payload, strategy.mapData),
+        lineupGroup: (_) => true,
+      ),
+    )) {
+      StoreOpened(:final store) => store,
+      StoreNotOpened(:final problem) => throw StateError('$problem'),
+    };
+    StrategyRowSet rowsOf(StrategyData model) =>
+        (strategyToRows(model) as StrategyRowsMade).rows;
+    final first = await store.putStrategy(rowsOf(strategy));
+    final withAgents = [
+      for (final page in strategy.pages)
+        if (page.agentData.isNotEmpty) page.id,
+    ];
+    final notMeasured = switch (first) {
+      Saved() when withAgents.isEmpty => 'no page holds an agent to move',
+      Saved() => null,
+      final other => 'the first save answered $other',
+    };
+    if (notMeasured != null) {
+      await store.close();
+      return 'largest strategy, $items items on ${strategy.pages.length} '
+          'pages: save cost not measured, $notMeasured';
+    }
+    final convert = <int>[];
+    final save = <int>[];
+    var current = strategy;
+    for (var run = 0; run < 25; run++) {
+      final pageId = withAgents[run % withAgents.length];
+      final moved = current.copyWith(pages: [
+        for (final page in current.pages)
+          page.id == pageId
+              ? page.copyWith(agentData: [
+                  for (final (index, agent) in page.agentData.indexed)
+                    index == 0
+                        ? PlacedAgentNode.fromJson({
+                            ...agent.toJson(),
+                            'position': {'dx': 100.0 + run, 'dy': 50.0},
+                          })
+                        : agent,
+                ])
+              : page,
+      ]);
+      final watch = Stopwatch()..start();
+      final rows = rowsOf(moved);
+      convert.add(watch.elapsedMicroseconds);
+      final result = await store.putStrategy(rows);
+      save.add(watch.elapsedMicroseconds);
+      if (result is! Saved<LibraryEdited, LibraryRefusal>) {
+        throw StateError('not saved: $result');
+      }
+      current = moved;
+    }
+    await store.close();
+    int median(List<int> times) => (times..sort())[times.length ~/ 2];
+    return 'largest strategy, $items items on ${strategy.pages.length} pages, '
+        'one agent moved, saved whole on SQLite: convert ${median(convert)} us, '
+        'convert + compare + commit ${median(save)} us (medians of 25)';
+  } finally {
+    await folder.delete(recursive: true);
+  }
 }
