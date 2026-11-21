@@ -229,9 +229,15 @@ class MapDoorLayer extends ConsumerWidget {
       ref.watch(utilityProvider),
       mapState.currentMap,
     );
-    final transition = ref.watch(transitionProvider);
-    final moving = transition.phase != PageTransitionPhase.idle;
-    final canClick = !moving &&
+    final MapDoorTransition? moving = switch (ref.watch(transitionProvider)) {
+      PreparingPageTransition(:final fromDoors) => (from: fromDoors, t: 0.0),
+      AnimatingPageTransition(:final fromDoors, :final progress) => (
+          from: fromDoors,
+          t: progress,
+        ),
+      NoPageTransition() => null,
+    };
+    final canClick = moving == null &&
         ref.watch(currentStrategyCapabilitiesProvider).canEditPages &&
         ref.watch(interactionStateProvider).itemsInReach;
 
@@ -244,18 +250,8 @@ class MapDoorLayer extends ConsumerWidget {
             key: ValueKey('map-door-${door.id}'),
             door: door,
             changed: changed.contains(door.id),
-            amount: moving
-                ? _changedAmount(
-                    door,
-                    changed,
-                    (
-                      from: transition.fromDoors,
-                      t: transition.phase == PageTransitionPhase.animating
-                          ? transition.progress
-                          : 0,
-                    ),
-                  )
-                : null,
+            amount:
+                moving == null ? null : _changedAmount(door, changed, moving),
             isAttack: mapState.isAttack,
             canClick: canClick,
           ),

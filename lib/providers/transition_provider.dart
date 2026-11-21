@@ -2,231 +2,196 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/page_transition/agent_path.dart';
-
-enum PageTransitionPhase { idle, preparing, animating }
+import 'package:icarus/strategy/open_attempt.dart';
 
 const Duration kPageTransitionDuration = Duration(milliseconds: 420);
 
-class PageTransitionState {
-  const PageTransitionState({
-    required this.active,
-    required this.entries,
-    required this.progress,
-    required this.duration,
-    required this.hideView,
-    required this.allWidgets,
+final class PageSwitch {
+  PageSwitch({
+    required this.sourcePageId,
+    required this.targetPageId,
+    required this.attempt,
+  });
+
+  final String? sourcePageId;
+  final String targetPageId;
+  final OpenAttempt attempt;
+
+  bool get isCurrent => attempt.isCurrent;
+}
+
+enum TargetDrawings { unread, fadeIn, unchanged }
+
+sealed class PageTransition {
+  const PageTransition();
+
+  PageSwitch? get owner => null;
+}
+
+final class NoPageTransition extends PageTransition {
+  const NoPageTransition();
+}
+
+final class PreparingPageTransition extends PageTransition {
+  const PreparingPageTransition({
+    required this.owner,
     required this.direction,
-    required this.phase,
-    required this.transitionId,
+    required this.leaving,
+    required this.agentSize,
+    required this.abilitySize,
+    required this.fromDoors,
+    this.drawings = TargetDrawings.unread,
+  });
+
+  @override
+  final PageSwitch owner;
+  final PageTransitionDirection direction;
+  final List<PlacedWidget> leaving;
+  final double agentSize;
+  final double abilitySize;
+  final Set<String> fromDoors;
+  final TargetDrawings drawings;
+}
+
+final class AnimatingPageTransition extends PageTransition {
+  const AnimatingPageTransition({
+    required this.owner,
+    required this.direction,
+    required this.entries,
+    required this.agentPaths,
+    required this.duration,
     required this.startAgentSize,
     required this.endAgentSize,
     required this.startAbilitySize,
     required this.endAbilitySize,
-    this.agentPaths = const {},
-    this.sourcePageId,
-    this.targetPageId,
-    this.fadeInDrawings = false,
-    this.fromDoors = const {},
+    required this.fromDoors,
+    required this.fadeInDrawings,
+    this.progress = 0,
   });
-  final bool hideView;
-  final bool active;
-  final List<PageTransitionEntry> entries;
-  final List<PlacedWidget> allWidgets;
-  final double progress;
-  final Duration duration;
+
+  @override
+  final PageSwitch owner;
   final PageTransitionDirection direction;
-  final PageTransitionPhase phase;
-  final int transitionId;
+  final List<PageTransitionEntry> entries;
+  final Map<String, AgentTransitionPath> agentPaths;
+  final Duration duration;
   final double startAgentSize;
   final double endAgentSize;
   final double startAbilitySize;
   final double endAbilitySize;
-  final Map<String, AgentTransitionPath> agentPaths;
-  final String? sourcePageId;
-  final String? targetPageId;
-
-  /// True when the drawing layer differs between source and target page, so
-  /// the live view (and exported video) fades drawings in early instead of
-  /// hard-swapping them.
-  final bool fadeInDrawings;
-
-  /// The map doors changed on the page this leaves. The page it's going to has
-  /// already replaced them where the canvas reads them.
   final Set<String> fromDoors;
+  final bool fadeInDrawings;
+  final double progress;
 
-  PageTransitionState copyWith({
-    bool? active,
-    List<PageTransitionEntry>? entries,
-    double? progress,
-    Duration? duration,
-    bool? hideView,
-    List<PlacedWidget>? allWidgets,
-    PageTransitionDirection? direction,
-    PageTransitionPhase? phase,
-    int? transitionId,
-    double? startAgentSize,
-    double? endAgentSize,
-    double? startAbilitySize,
-    double? endAbilitySize,
-    Map<String, AgentTransitionPath>? agentPaths,
-    String? sourcePageId,
-    String? targetPageId,
-    bool clearPageIds = false,
-    bool? fadeInDrawings,
-    Set<String>? fromDoors,
-  }) =>
-      PageTransitionState(
-        hideView: hideView ?? this.hideView,
-        active: active ?? this.active,
-        entries: entries ?? this.entries,
-        progress: progress ?? this.progress,
-        duration: duration ?? this.duration,
-        allWidgets: allWidgets ?? this.allWidgets,
-        direction: direction ?? this.direction,
-        phase: phase ?? this.phase,
-        transitionId: transitionId ?? this.transitionId,
-        startAgentSize: startAgentSize ?? this.startAgentSize,
-        endAgentSize: endAgentSize ?? this.endAgentSize,
-        startAbilitySize: startAbilitySize ?? this.startAbilitySize,
-        endAbilitySize: endAbilitySize ?? this.endAbilitySize,
-        agentPaths: agentPaths ?? this.agentPaths,
-        sourcePageId: clearPageIds ? null : (sourcePageId ?? this.sourcePageId),
-        targetPageId: clearPageIds ? null : (targetPageId ?? this.targetPageId),
-        fadeInDrawings: fadeInDrawings ?? this.fadeInDrawings,
-        fromDoors: fromDoors ?? this.fromDoors,
+  AnimatingPageTransition at(double progress) => AnimatingPageTransition(
+        owner: owner,
+        direction: direction,
+        entries: entries,
+        agentPaths: agentPaths,
+        duration: duration,
+        startAgentSize: startAgentSize,
+        endAgentSize: endAgentSize,
+        startAbilitySize: startAbilitySize,
+        endAbilitySize: endAbilitySize,
+        fromDoors: fromDoors,
+        fadeInDrawings: fadeInDrawings,
+        progress: progress,
       );
-
-  static const idle = PageTransitionState(
-      active: false,
-      entries: [],
-      progress: 0,
-      duration: kPageTransitionDuration,
-      hideView: false,
-      allWidgets: [],
-      direction: PageTransitionDirection.forward,
-      phase: PageTransitionPhase.idle,
-      transitionId: 0,
-      startAgentSize: 0,
-      endAgentSize: 0,
-      startAbilitySize: 0,
-      endAbilitySize: 0,
-      agentPaths: {},
-      sourcePageId: null,
-      targetPageId: null,
-      fadeInDrawings: false);
 }
 
-final transitionProvider =
-    NotifierProvider<TransitionProvider, PageTransitionState>(
-        TransitionProvider.new);
+final transitionProvider = NotifierProvider<TransitionProvider, PageTransition>(
+    TransitionProvider.new);
 
-class TransitionProvider extends Notifier<PageTransitionState> {
-  int _nextTransitionId = 1;
-
+class TransitionProvider extends Notifier<PageTransition> {
   @override
-  PageTransitionState build() {
-    return PageTransitionState.idle;
-  }
+  PageTransition build() => const NoPageTransition();
 
-  void setProgress(double v) {
-    if (!state.active) return;
-    state = state.copyWith(progress: v.clamp(0, 1));
-  }
-
-  void prepare(List<PlacedWidget> widgets,
-      {PageTransitionDirection direction = PageTransitionDirection.forward,
-      required double startAgentSize,
-      required double startAbilitySize,
-      String? sourcePageId,
-      String? targetPageId,
-      Set<String> fromDoors = const {}}) {
-    state = state.copyWith(
-      allWidgets: widgets,
-      hideView: true,
-      active: false,
-      entries: const [],
-      progress: 0,
-      phase: PageTransitionPhase.preparing,
+  void prepare(
+    PageSwitch owner, {
+    required PageTransitionDirection direction,
+    required List<PlacedWidget> leaving,
+    required double agentSize,
+    required double abilitySize,
+    Set<String> fromDoors = const {},
+  }) {
+    state = PreparingPageTransition(
+      owner: owner,
       direction: direction,
-      startAgentSize: startAgentSize,
-      endAgentSize: startAgentSize,
-      startAbilitySize: startAbilitySize,
-      endAbilitySize: startAbilitySize,
-      sourcePageId: sourcePageId,
-      targetPageId: targetPageId,
-      agentPaths: const {},
-      fadeInDrawings: false,
+      leaving: leaving,
+      agentSize: agentSize,
+      abilitySize: abilitySize,
       fromDoors: fromDoors,
     );
   }
 
-  void targetRead(String targetPageId, {required bool fadeInDrawings}) {
-    if (state.phase != PageTransitionPhase.preparing ||
-        state.targetPageId != targetPageId) {
-      return;
+  bool targetRead(PageSwitch owner, {required bool fadeInDrawings}) {
+    if (state case final PreparingPageTransition preparing
+        when identical(preparing.owner, owner)) {
+      state = PreparingPageTransition(
+        owner: owner,
+        direction: preparing.direction,
+        leaving: preparing.leaving,
+        agentSize: preparing.agentSize,
+        abilitySize: preparing.abilitySize,
+        fromDoors: preparing.fromDoors,
+        drawings:
+            fadeInDrawings ? TargetDrawings.fadeIn : TargetDrawings.unchanged,
+      );
+      return true;
     }
-    state = state.copyWith(fadeInDrawings: fadeInDrawings);
+    return false;
   }
 
-  void start(List<PageTransitionEntry> entries,
-      {Duration duration = kPageTransitionDuration,
-      PageTransitionDirection direction = PageTransitionDirection.forward,
-      required double startAgentSize,
-      required double endAgentSize,
-      required double startAbilitySize,
-      required double endAbilitySize,
-      Map<String, AgentTransitionPath> agentPaths = const {},
-      String? sourcePageId,
-      String? targetPageId,
-      bool fadeInDrawings = false}) {
-    state = state.copyWith(
-      hideView: true,
-      active: true,
-      entries: entries,
-      progress: 0,
-      duration: duration,
-      direction: direction,
-      phase: PageTransitionPhase.animating,
-      transitionId: _nextTransitionId++,
-      startAgentSize: startAgentSize,
-      endAgentSize: endAgentSize,
-      startAbilitySize: startAbilitySize,
-      endAbilitySize: endAbilitySize,
-      sourcePageId: sourcePageId,
-      targetPageId: targetPageId,
-      agentPaths: agentPaths,
-      fadeInDrawings: fadeInDrawings,
-    );
+  bool start(
+    PageSwitch owner, {
+    required List<PageTransitionEntry> entries,
+    required Map<String, AgentTransitionPath> agentPaths,
+    required double endAgentSize,
+    required double endAbilitySize,
+    Duration duration = kPageTransitionDuration,
+  }) {
+    if (state case final PreparingPageTransition preparing
+        when identical(preparing.owner, owner) &&
+            preparing.drawings != TargetDrawings.unread) {
+      state = AnimatingPageTransition(
+        owner: owner,
+        direction: preparing.direction,
+        entries: entries,
+        agentPaths: agentPaths,
+        duration: duration,
+        startAgentSize: preparing.agentSize,
+        endAgentSize: endAgentSize,
+        startAbilitySize: preparing.abilitySize,
+        endAbilitySize: endAbilitySize,
+        fromDoors: preparing.fromDoors,
+        fadeInDrawings: preparing.drawings == TargetDrawings.fadeIn,
+      );
+      return true;
+    }
+    return false;
   }
 
-  void complete() {
-    state = state.copyWith(
-      active: false,
-      progress: 1,
-      hideView: false,
-      entries: const [],
-      allWidgets: const [],
-      phase: PageTransitionPhase.idle,
-      clearPageIds: true,
-      agentPaths: const {},
-      fadeInDrawings: false,
-      fromDoors: const {},
-    );
+  void setProgress(PageSwitch owner, double progress) {
+    if (state case final AnimatingPageTransition animating
+        when identical(animating.owner, owner)) {
+      state = animating.at(progress.clamp(0, 1));
+    }
   }
+
+  bool finish(PageSwitch owner) {
+    if (!identical(state.owner, owner)) return false;
+    state = const NoPageTransition();
+    return true;
+  }
+
+  void clear() => state = const NoPageTransition();
 }
 
-/// Opacity of the drawing layer while a page transition runs. Drawings fade
-/// in early (front-loaded) when they differ between the two pages, instead of
-/// hard-swapping the moment the target page hydrates.
 final drawingsTransitionOpacityProvider = Provider<double>((ref) {
-  final state = ref.watch(transitionProvider);
-  if (!state.fadeInDrawings) return 1.0;
-  switch (state.phase) {
-    case PageTransitionPhase.preparing:
-      return 0.0;
-    case PageTransitionPhase.animating:
-      return earlyFadeInOpacity(state.progress);
-    case PageTransitionPhase.idle:
-      return 1.0;
-  }
+  return switch (ref.watch(transitionProvider)) {
+    PreparingPageTransition(drawings: TargetDrawings.fadeIn) => 0.0,
+    AnimatingPageTransition(fadeInDrawings: true, :final progress) =>
+      earlyFadeInOpacity(progress),
+    _ => 1.0,
+  };
 });

@@ -62,7 +62,6 @@ class _Session extends StrategyPageSessionNotifier {
   StrategyPageSessionState build() => const StrategyPageSessionState(
         activePageId: 'page-1',
         availablePageIds: ['page-1', 'page-2', 'page-3'],
-        transitionState: PageTransitionState.idle,
         isApplyingPage: false,
       );
 }

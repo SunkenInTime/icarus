@@ -22,6 +22,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
+import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/screenshot/caption_export_overlay.dart';
@@ -627,13 +628,23 @@ void main() {
 
     testWidgets('clicks wait for a page change to end', (tester) async {
       final container = await pump(tester);
-      container.read(transitionProvider.notifier).start(
-            const [],
-            startAgentSize: 25,
-            endAgentSize: 25,
-            startAbilitySize: 25,
-            endAbilitySize: 25,
-          );
+      final pageSwitch = _pageSwitch();
+      container.read(transitionProvider.notifier)
+        ..prepare(
+          pageSwitch,
+          direction: PageTransitionDirection.forward,
+          leaving: const [],
+          agentSize: 25,
+          abilitySize: 25,
+        )
+        ..targetRead(pageSwitch, fadeInDrawings: false)
+        ..start(
+          pageSwitch,
+          entries: const [],
+          agentPaths: const {},
+          endAgentSize: 25,
+          endAbilitySize: 25,
+        );
       await tester.pump();
 
       await tester.tapAt(middle('summit-mid'));
@@ -646,23 +657,27 @@ void main() {
         (tester) async {
       final container = await pump(tester, map: MapValue.lotus);
       final notifier = container.read(transitionProvider.notifier);
+      final pageSwitch = _pageSwitch();
       notifier.prepare(
-        const [],
-        startAgentSize: 25,
-        startAbilitySize: 25,
-        fromDoors: const {},
+        pageSwitch,
+        direction: PageTransitionDirection.forward,
+        leaving: const [],
+        agentSize: 25,
+        abilitySize: 25,
       );
       container
           .read(utilityProvider.notifier)
           .fromHive([_door('lotus-a').row(id: 'row')]);
-      notifier.start(
-        const [],
-        startAgentSize: 25,
-        endAgentSize: 25,
-        startAbilitySize: 25,
-        endAbilitySize: 25,
-      );
-      notifier.setProgress(0.5);
+      notifier
+        ..targetRead(pageSwitch, fadeInDrawings: false)
+        ..start(
+          pageSwitch,
+          entries: const [],
+          agentPaths: const {},
+          endAgentSize: 25,
+          endAbilitySize: 25,
+        )
+        ..setProgress(pageSwitch, 0.5);
       await tester.pump();
 
       final painter = tester
@@ -677,3 +692,9 @@ void main() {
 
 MapValue _rowMap(PlacedUtility row) =>
     mapDoors.firstWhere((door) => door.id == row.mapDoor).map;
+
+PageSwitch _pageSwitch() => PageSwitch(
+      sourcePageId: 'page-1',
+      targetPageId: 'page-2',
+      attempt: OpenAttempt.unchallenged,
+    );

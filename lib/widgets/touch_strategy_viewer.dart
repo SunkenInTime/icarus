@@ -10,8 +10,7 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/drawn_cloud_pages_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
-import 'package:icarus/providers/strategy_page_session_provider.dart'
-    hide PageTransitionState;
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/cloud_sync_button.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';

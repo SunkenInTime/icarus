@@ -15,6 +15,7 @@ import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
+import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/shared/framed_ability_icon_shell.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/role_icon_utility_widget.dart';
@@ -305,6 +306,68 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets(
+      'an animation that ends after a newer switch began leaves that switch',
+      (tester) async {
+    final container = _createContainer();
+    addTearDown(container.dispose);
+    PageSwitch switchTo(String pageId) => PageSwitch(
+          sourcePageId: 'page-1',
+          targetPageId: pageId,
+          attempt: OpenAttempt.unchallenged,
+        );
+    final first = switchTo('page-2');
+    final second = switchTo('page-3');
+    final transitions = container.read(transitionProvider.notifier);
+    void prepare(PageSwitch pageSwitch) => transitions.prepare(
+          pageSwitch,
+          direction: PageTransitionDirection.forward,
+          leaving: const [],
+          agentSize: 40,
+          abilitySize: 40,
+        );
+    prepare(first);
+    transitions
+      ..targetRead(first, fadeInDrawings: false)
+      ..start(
+        first,
+        entries: const [],
+        agentPaths: const {},
+        endAgentSize: 40,
+        endAbilitySize: 40,
+      );
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(home: Scaffold(body: PageTransitionOverlay())),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(kPageTransitionDuration - const Duration(milliseconds: 20));
+
+    prepare(second);
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pump();
+
+    expect(container.read(transitionProvider).owner, same(second));
+
+    transitions
+      ..targetRead(second, fadeInDrawings: false)
+      ..start(
+        second,
+        entries: const [],
+        agentPaths: const {},
+        endAgentSize: 40,
+        endAbilitySize: 40,
+      );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(kPageTransitionDuration);
+    await tester.pump(const Duration(milliseconds: 20));
+
+    expect(container.read(transitionProvider), isA<NoPageTransition>());
+  });
+
   testWidgets('ability vision-cone previews use animated geometry',
       (tester) async {
     final container = _createContainer();
@@ -531,9 +594,15 @@ void main() {
       customOpacityPercent: 40,
     )..rotation = rotation;
     container.read(transitionProvider.notifier).prepare(
-      [rectangle],
-      startAgentSize: 40,
-      startAbilitySize: 40,
+      PageSwitch(
+        sourcePageId: 'page-1',
+        targetPageId: 'page-2',
+        attempt: OpenAttempt.unchallenged,
+      ),
+      direction: PageTransitionDirection.forward,
+      leaving: [rectangle],
+      agentSize: 40,
+      abilitySize: 40,
     );
 
     await tester.pumpWidget(
@@ -615,9 +684,15 @@ void main() {
       position: const Offset(500, 350),
     );
     container.read(transitionProvider.notifier).prepare(
-      [roleIcon],
-      startAgentSize: 40,
-      startAbilitySize: 40,
+      PageSwitch(
+        sourcePageId: 'page-1',
+        targetPageId: 'page-2',
+        attempt: OpenAttempt.unchallenged,
+      ),
+      direction: PageTransitionDirection.forward,
+      leaving: [roleIcon],
+      agentSize: 40,
+      abilitySize: 40,
     );
 
     await tester.pumpWidget(

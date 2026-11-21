@@ -62,8 +62,9 @@ import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/providers/transition_provider.dart'
-    hide PageTransitionState;
+import 'package:icarus/providers/navigation_geometry_provider.dart';
+import 'package:icarus/page_transition/navigation_geometry_map.dart';
+import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/strategy/lineup_group_changes.dart';
@@ -109,6 +110,8 @@ class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
   /// Runs as each page is asked for, before it is read.
   void Function(String? pagePublicId)? onSetActivePage;
 
+  Future<void> Function(String? pagePublicId)? whileActivating;
+
   /// While set, every page read fails, as with the connection down.
   bool offline = false;
 
@@ -133,6 +136,7 @@ class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
   }) async {
     selectedPageIds.add(pagePublicId);
     onSetActivePage?.call(pagePublicId);
+    await whileActivating?.call(pagePublicId);
     if (pagePublicId == failingPageId) {
       throw StateError('Failed to load $pagePublicId');
     }
@@ -1595,8 +1599,10 @@ Future<ProviderContainer> _cloudContainer({
   required _FakeStrategyOpQueueNotifier queue,
   _RecordingMediaQueue? mediaQueue,
   ConvexStrategyRepository? repository,
+  List<Override> overrides = const [],
 }) async {
   final container = ProviderContainer(overrides: [
+    ...overrides,
     remoteEditorSnapshotProvider.overrideWith(() => remote),
     strategyOpQueueProvider.overrideWith(() => queue),
     cloudMediaAccountIdProvider.overrideWithValue('account-a'),
@@ -2706,8 +2712,7 @@ void main() {
 
     final session = container.read(strategyPageSessionProvider);
     expect(session.activePageId, pageOne.publicId);
-    expect(session.transitionState, PageTransitionState.idle);
-    expect(container.read(transitionProvider).active, isFalse);
+    expect(container.read(transitionProvider), isA<NoPageTransition>());
     // The page that could not be read was never made the active one.
     expect(remote.selectedPageIds, isEmpty);
     expect(
@@ -2767,11 +2772,381 @@ void main() {
     );
     await _drawFrame();
 
-    final transition = container.read(transitionProvider);
-    expect(transition.active, isTrue);
+    final transition =
+        container.read(transitionProvider) as AnimatingPageTransition;
     expect(transition.entries, isEmpty);
     expect(transition.fromDoors, {door.id});
     expect(container.read(utilityProvider), isEmpty);
+  });
+
+  group('a page switch only changes what is still its own:', () {
+    final one = _page('page-1', 0);
+    final two = _page('page-2', 1);
+    final three = _page('page-3', 2);
+    const onOne = Offset(100, 100);
+    const onTwo = Offset(400, 300);
+    const onThree = Offset(700, 500);
+
+    RemotePageSnapshot withAgentAt(RemotePage page, Offset position) =>
+        _pageSnapshot(page, elements: [
+          _agentElement(page.publicId, 'jett', position),
+        ]);
+
+    Future<(ProviderContainer, _FakeRemoteEditorNotifier)> open({
+      Map<String, RemotePageSnapshot>? pages,
+      List<Override> overrides = const [],
+    }) async {
+      final catalog = pages ??
+          {
+            one.publicId: withAgentAt(one, onOne),
+            two.publicId: withAgentAt(two, onTwo),
+            three.publicId: withAgentAt(three, onThree),
+          };
+      final remote = _FakeRemoteEditorNotifier(
+        _editorSnapshot(
+          pages: [one, two, three],
+          activePage: catalog[one.publicId]!,
+        ),
+        pageCatalog: catalog,
+      );
+      final container = await _cloudContainer(
+        remote: remote,
+        queue: _FakeStrategyOpQueueNotifier(),
+        overrides: [
+          navigationGeometryProvider.overrideWith((ref, map) async => null),
+          ...overrides,
+        ],
+      );
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .initializeForStrategy(
+            strategyId: 'cloud-strategy',
+            source: StrategySource.cloud,
+            selectFirstPageIfNeeded: true,
+          );
+      return (container, remote);
+    }
+
+    Offset agentAt(ProviderContainer container) =>
+        container.read(agentProvider).single.position;
+
+    Completer<void> holdInstallOf(
+      _FakeRemoteEditorNotifier remote,
+      RemotePage page,
+    ) {
+      final installing = Completer<void>();
+      final before = remote.whileActivating;
+      remote.whileActivating = (pageId) => pageId == page.publicId
+          ? installing.future
+          : before?.call(pageId) ?? Future.value();
+      return installing;
+    }
+
+    test('a page asked for while another is put on screen leaves from it',
+        () async {
+      final (container, remote) = await open();
+      final read = <String>[];
+      remote.onFetchPage = (pageId) async => read.add(pageId);
+      final installing = holdInstallOf(remote, two);
+      final session = container.read(strategyPageSessionProvider.notifier);
+
+      final toTwo = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      final toThree = session.setActivePageAnimated(
+        three.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      expect(read, [two.publicId]);
+      expect(
+        container.read(transitionProvider).owner?.targetPageId,
+        two.publicId,
+      );
+
+      installing.complete();
+      await toTwo;
+      await toThree;
+      await _drawFrame();
+
+      final transition =
+          container.read(transitionProvider) as AnimatingPageTransition;
+      expect(transition.owner.targetPageId, three.publicId);
+      expect(transition.entries.single.startPos, onTwo);
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        three.publicId,
+      );
+      expect(agentAt(container), onThree);
+    });
+
+    test('a page asked for while another fails to go on screen leaves from '
+        'the page still shown', () async {
+      final (container, remote) = await open();
+      final installing = holdInstallOf(remote, two);
+      final session = container.read(strategyPageSessionProvider.notifier);
+
+      final toTwo = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      final toThree = session.setActivePageAnimated(
+        three.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      installing.completeError(StateError('page 2 went away'));
+      await expectLater(toTwo, throwsStateError);
+      await toThree;
+      await _drawFrame();
+
+      final transition =
+          container.read(transitionProvider) as AnimatingPageTransition;
+      expect(transition.entries.single.startPos, onOne);
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        three.publicId,
+      );
+      expect(agentAt(container), onThree);
+    });
+
+    test('when both pages fail to go on screen the first page stays',
+        () async {
+      final (container, remote) = await open();
+      final installingTwo = holdInstallOf(remote, two);
+      final installingThree = holdInstallOf(remote, three);
+      final session = container.read(strategyPageSessionProvider.notifier);
+
+      final toTwo = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      final toThree = session.setActivePageAnimated(
+        three.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      installingTwo.completeError(StateError('page 2 went away'));
+      await expectLater(toTwo, throwsStateError);
+      await _settle();
+      installingThree.completeError(StateError('page 3 went away'));
+      await expectLater(toThree, throwsStateError);
+      await _drawFrame();
+
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        one.publicId,
+      );
+      expect(agentAt(container), onOne);
+      expect(container.read(transitionProvider), isA<NoPageTransition>());
+    });
+
+    test('a page still going on screen when the strategy is reopened stays '
+        'off it', () async {
+      final (container, remote) = await open();
+      final installing = holdInstallOf(remote, two);
+      final session = container.read(strategyPageSessionProvider.notifier);
+
+      final toTwo = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      session.reset();
+      remote.whileActivating = null;
+      await session.initializeForStrategy(
+        strategyId: 'cloud-strategy',
+        source: StrategySource.cloud,
+        selectFirstPageIfNeeded: true,
+        preferredPageId: one.publicId,
+      );
+      installing.complete();
+      await toTwo;
+      await _drawFrame();
+
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        one.publicId,
+      );
+      expect(agentAt(container), onOne);
+    });
+
+    test('a page that fails to go on screen after a reopen leaves the '
+        'reopened page alone', () async {
+      final (container, remote) = await open();
+      final installing = holdInstallOf(remote, two);
+      final session = container.read(strategyPageSessionProvider.notifier);
+
+      final toTwo = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      session.reset();
+      remote.whileActivating = null;
+      await session.initializeForStrategy(
+        strategyId: 'cloud-strategy',
+        source: StrategySource.cloud,
+        selectFirstPageIfNeeded: true,
+        preferredPageId: three.publicId,
+      );
+      installing.completeError(StateError('page 2 went away'));
+      await expectLater(toTwo, completes);
+      await _drawFrame();
+
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        three.publicId,
+      );
+      expect(agentAt(container), onThree);
+    });
+
+    test('a page asked for before a reopen is not opened after it', () async {
+      final (container, remote) = await open();
+      final read = <String>[];
+      remote.onFetchPage = (pageId) async => read.add(pageId);
+      final installing = holdInstallOf(remote, two);
+      final session = container.read(strategyPageSessionProvider.notifier);
+
+      final toTwo = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      final toThree = session.setActivePageAnimated(
+        three.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      session.reset();
+      remote.whileActivating = null;
+      await session.initializeForStrategy(
+        strategyId: 'cloud-strategy',
+        source: StrategySource.cloud,
+        selectFirstPageIfNeeded: true,
+        preferredPageId: one.publicId,
+      );
+      await session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      installing.complete();
+      await toTwo;
+      await toThree;
+      await _drawFrame();
+
+      expect(read, [two.publicId, two.publicId]);
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        two.publicId,
+      );
+      expect(agentAt(container), onTwo);
+    });
+
+    test('an earlier switch to the same page does not start a later one',
+        () async {
+      final mesh = Completer<NavigationGeometryMap?>();
+      final (container, remote) = await open(
+        overrides: [
+          navigationGeometryProvider.overrideWith((ref, map) => mesh.future),
+        ],
+      );
+      final session = container.read(strategyPageSessionProvider.notifier);
+
+      await session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _drawFrame();
+      remote.pageCatalog[one.publicId] =
+          withAgentAt(one, const Offset(250, 600));
+      await session.setActivePageAnimated(
+        one.publicId,
+        direction: PageTransitionDirection.backward,
+      );
+      await _drawFrame();
+      await session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _drawFrame();
+      mesh.complete(null);
+      await _settle();
+
+      final transition =
+          container.read(transitionProvider) as AnimatingPageTransition;
+      expect(
+        transition.entries.single.startPos,
+        const Offset(250, 600),
+      );
+    });
+
+    test('with no strategy open there is no transition to start', () async {
+      final (container, _) = await open();
+      container.read(strategyProvider.notifier).setFromState(
+            const StrategyState(
+              strategyId: null,
+              strategyName: null,
+              source: null,
+              storageDirectory: null,
+              isOpen: false,
+            ),
+          );
+
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .setActivePageAnimated(
+            two.publicId,
+            direction: PageTransitionDirection.forward,
+          );
+      await _drawFrame();
+
+      expect(container.read(transitionProvider), isA<NoPageTransition>());
+    });
+
+    test('a stroke drawn while the next page is read is kept where drawn',
+        () async {
+      final (container, remote) = await open();
+      final reading = Completer<void>();
+      remote.onFetchPage = (pageId) => reading.future;
+      final session = container.read(strategyPageSessionProvider.notifier);
+
+      final toTwo = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      container.read(editorPointersProvider.notifier)
+        ..markCanvas(1)
+        ..down(1);
+      container.read(drawingProvider.notifier)
+        ..startFreeDrawing(const Offset(10, 20), CoordinateSystem.instance,
+            Colors.white, 2, false, false, false,
+            TraversalSpeedProfile.values.first)
+        ..finishFreeDrawing(const Offset(40, 50), CoordinateSystem.instance);
+      container.read(editorPointersProvider.notifier).release(1);
+      final stroke = container.read(drawingProvider).elements.single.id;
+      reading.complete();
+      await toTwo;
+      await _settle();
+
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        two.publicId,
+      );
+      expect(container.read(drawingProvider).elements, isEmpty);
+      expect(
+        {
+          for (final item in container.read(strategyOpQueueProvider).pending)
+            if (item.op.entityPublicId == stroke) item.op.pagePublicId,
+        },
+        {one.publicId},
+      );
+    });
   });
 
   test('a cloud page with other drawings fades them in, as the video does',
@@ -2831,8 +3206,8 @@ void main() {
     expect(container.read(drawingsTransitionOpacityProvider), 0);
     await _drawFrame();
 
-    final transition = container.read(transitionProvider);
-    expect(transition.active, isTrue);
+    final transition =
+        container.read(transitionProvider) as AnimatingPageTransition;
     expect(transition.fadeInDrawings, isTrue);
     expect(container.read(drawingsTransitionOpacityProvider), 0);
   });
@@ -2867,9 +3242,7 @@ void main() {
     );
     await _drawFrame();
 
-    final transition = container.read(transitionProvider);
-    expect(transition.active, isFalse);
-    expect(transition.phase, PageTransitionPhase.idle);
+    expect(container.read(transitionProvider), isA<NoPageTransition>());
   });
 
   test('a page switch while offline keeps saving the page on screen', () async {
@@ -3177,7 +3550,7 @@ void main() {
     final session = container.read(strategyPageSessionProvider);
     expect(session.deletedPage?.pageId, one.publicId);
     expect(session.activePageId, one.publicId);
-    expect(session.transitionState, PageTransitionState.idle);
+    expect(container.read(transitionProvider), isA<NoPageTransition>());
     expect(
         container.read(drawingProvider).elements.map((d) => d.id), [strokeId]);
     expect(remote.selectedPageIds, isNot(contains('page-2')));
@@ -3407,7 +3780,7 @@ void main() {
     final session = container.read(strategyPageSessionProvider);
     expect(session.deletedPage, (pageId: one.publicId, name: 'A exec'));
     expect(session.activePageId, one.publicId);
-    expect(session.transitionState, PageTransitionState.idle);
+    expect(container.read(transitionProvider), isA<NoPageTransition>());
     expect(container.read(drawingProvider).elements.map((d) => d.id), [stroke]);
   });
 
@@ -3500,12 +3873,9 @@ void main() {
     await animated;
     await _settle();
 
-    final transition = container.read(transitionProvider);
-    expect(transition.hideView, isFalse);
-    expect(transition.phase, PageTransitionPhase.idle);
+    expect(container.read(transitionProvider), isA<NoPageTransition>());
     final state = container.read(strategyPageSessionProvider);
     expect(state.activePageId, three.publicId);
-    expect(state.transitionState, PageTransitionState.idle);
   });
 
   for (final readWorks in [true, false]) {
@@ -3542,16 +3912,17 @@ void main() {
         direction: PageTransitionDirection.forward,
       );
       await _settle();
-      expect(container.read(transitionProvider).hideView, isTrue);
+      expect(
+        container.read(transitionProvider),
+        isA<PreparingPageTransition>(),
+      );
       session.reset();
       await open();
       hold.complete();
       await switching;
       await _settle();
 
-      final transition = container.read(transitionProvider);
-      expect(transition.hideView, isFalse);
-      expect(transition.phase, PageTransitionPhase.idle);
+      expect(container.read(transitionProvider), isA<NoPageTransition>());
       expect(
         container.read(strategyPageSessionProvider).activePageId,
         one.publicId,
@@ -3625,7 +3996,7 @@ void main() {
     final session = container.read(strategyPageSessionProvider);
     expect(session.deletedPage, (pageId: one.publicId, name: 'A exec'));
     expect(session.activePageId, one.publicId);
-    expect(session.transitionState, PageTransitionState.idle);
+    expect(container.read(transitionProvider), isA<NoPageTransition>());
     expect(container.read(drawingProvider).elements.map((d) => d.id), [stroke]);
   });
 
@@ -15639,3 +16010,22 @@ class _GatedRemoveOutbox extends MemoryDurableStrategyOutboxStore {
     await super.remove(storageKey);
   }
 }
+
+RemoteElement _agentElement(String pageId, String id, Offset position) =>
+    RemoteElement(
+      publicId: id,
+      strategyPublicId: 'cloud-strategy',
+      pagePublicId: pageId,
+      elementType: 'agent',
+      payload: cloudElementPayload(
+        kind: 'agent',
+        data: {
+          ...PlacedAgent(id: id, type: AgentType.jett, position: position)
+              .toJson(),
+          'elementType': 'agent',
+        },
+      ),
+      sortIndex: 0,
+      revision: 1,
+      deleted: false,
+    );

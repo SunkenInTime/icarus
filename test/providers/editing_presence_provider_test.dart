@@ -18,7 +18,6 @@ class _FixedSession extends StrategyPageSessionNotifier {
   StrategyPageSessionState build() => const StrategyPageSessionState(
         activePageId: 'p1',
         availablePageIds: ['p1', 'p2'],
-        transitionState: PageTransitionState.idle,
         isApplyingPage: false,
       );
 }

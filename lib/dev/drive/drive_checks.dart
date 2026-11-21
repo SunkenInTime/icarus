@@ -29,7 +29,9 @@ List<String> misplacedItems(ProviderContainer container) {
       .firstOrNull;
   final playArea = canvas?.laidOutPlayArea;
   if (canvas == null || playArea == null) return const [];
-  if (container.read(transitionProvider).active) return const [];
+  if (container.read(transitionProvider) is AnimatingPageTransition) {
+    return const [];
+  }
 
   final coordinates = CoordinateSystem.forSize(playArea);
   final map = container.read(mapProvider);
