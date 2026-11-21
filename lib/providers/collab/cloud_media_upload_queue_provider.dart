@@ -61,7 +61,7 @@ class CloudMediaUploadQueueState {
 
   int errorCountForStrategy(String? strategyPublicId) {
     return jobsForStrategy(strategyPublicId)
-        .where((job) => job.state == CloudMediaJobState.failed)
+        .where((job) => job.isFailed)
         .length;
   }
 
@@ -119,9 +119,114 @@ final cloudMediaAccountIdProvider = Provider<String?>(
 
 enum _MediaOutboxMutation { write, remove }
 
+final class CloudMediaDeadlines {
+  const CloudMediaDeadlines({
+    this.answer = const Duration(seconds: 30),
+    this.uploadBytesPerSecond = 16 * 1024,
+  });
+
+  final Duration answer;
+  final int uploadBytesPerSecond;
+
+  Duration upload(int byteSize) =>
+      answer + Duration(milliseconds: byteSize * 1000 ~/ uploadBytesPerSecond);
+}
+
+enum _Stop { stalled, stopped }
+
+final class _Attempt {
+  _Attempt(this.job);
+
+  final CloudMediaUploadJob job;
+  final _stopped = Completer<_Stop>();
+  _Stop? stop;
+  bool _answered = false;
+
+  Future<_Stop> get stopped => _stopped.future;
+
+  void halt(_Stop why) {
+    if (_answered || stop != null) return;
+    stop = why;
+    _stopped.complete(why);
+  }
+
+  void answered() => _answered = true;
+}
+
+sealed class _Reply<T> {
+  const _Reply();
+}
+
+final class _Answer<T> extends _Reply<T> {
+  const _Answer(this.value);
+  final T value;
+}
+
+sealed class _Unanswered<T> extends _Reply<T> {
+  const _Unanswered();
+}
+
+final class _Refused<T> extends _Unanswered<T> {
+  const _Refused(this.step, this.error, this.stackTrace);
+  final String step;
+  final Object error;
+  final StackTrace stackTrace;
+}
+
+final class _NoAnswer<T> extends _Unanswered<T> {
+  const _NoAnswer(this.step, this.within, this.stop);
+  final String step;
+  final Duration within;
+  final _Stop stop;
+}
+
+final class _OutboxNotSaved extends StateError {
+  _OutboxNotSaved(Object cause)
+      : super('The media outbox could not save: $cause');
+}
+
+sealed class _Outcome {
+  const _Outcome();
+}
+
+final class _Uploaded extends _Outcome {
+  const _Uploaded(this.media);
+  final UploadedMedia media;
+}
+
+final class _Attached extends _Outcome {
+  const _Attached();
+}
+
+final class _Failed extends _Outcome {
+  const _Failed(this.why, {this.media});
+  final String why;
+  final UploadedMedia? media;
+}
+
+final class _Unreferenced extends _Outcome {
+  const _Unreferenced();
+}
+
+final class _AlreadyServed extends _Outcome {
+  const _AlreadyServed();
+}
+
+final class _StrategyGone extends _Outcome {
+  const _StrategyGone();
+}
+
+final class _Stopped extends _Outcome {
+  const _Stopped();
+}
+
 class CloudMediaUploadQueueNotifier
     extends Notifier<CloudMediaUploadQueueState> {
+  CloudMediaUploadQueueNotifier({this.deadlines = const CloudMediaDeadlines()});
+
   static const Duration _blockedRetryDelay = Duration(seconds: 30);
+  final CloudMediaDeadlines deadlines;
+  _Attempt? _attempt;
   Timer? _retryTimer;
   Timer? _uploadCompletionDismissTimer;
   ToastificationItem? _uploadProgressToast;
@@ -179,6 +284,7 @@ class CloudMediaUploadQueueNotifier
     }
     ref.onDispose(() {
       _disposed = true;
+      _attempt?.halt(_Stop.stopped);
       _retryTimer?.cancel();
       _uploadCompletionDismissTimer?.cancel();
       final toast = _uploadProgressToast;
@@ -200,6 +306,9 @@ class CloudMediaUploadQueueNotifier
 
     ref.listen<String?>(cloudMediaAccountIdProvider, (previous, next) {
       if (previous == next) return;
+      if (_attempt case final attempt? when attempt.job.accountId != next) {
+        attempt.halt(_Stop.stopped);
+      }
       _refreshState();
       if (next != null && next.isNotEmpty) {
         retryNow(ignoreBackoff: true);
@@ -207,6 +316,7 @@ class CloudMediaUploadQueueNotifier
     });
 
     ref.listen<AsyncValue<bool>>(convexConnectionProvider, (previous, next) {
+      if (next.valueOrNull == false) _attempt?.halt(_Stop.stopped);
       final reconnected =
           previous?.valueOrNull != true && next.valueOrNull == true;
       if (reconnected) {
@@ -260,9 +370,7 @@ class CloudMediaUploadQueueNotifier
         mimeType: mimeType ?? mimeTypeForImageExtension(normalizedExtension),
         width: width,
         height: height,
-        state: CloudMediaJobState.pendingUpload,
         referenceDurable: false,
-        attempts: 0,
         updatedAt: DateTime.now(),
       ),
     );
@@ -293,9 +401,7 @@ class CloudMediaUploadQueueNotifier
         mimeType: mimeType ?? mimeTypeForImageExtension(normalizedExtension),
         width: width,
         height: height,
-        state: CloudMediaJobState.pendingUpload,
         referenceDurable: false,
-        attempts: 0,
         updatedAt: DateTime.now(),
       ),
     );
@@ -320,9 +426,7 @@ class CloudMediaUploadQueueNotifier
           assetPublicId: image.assetPublicId,
           fileExtension: normalizeImageExtension(image.fileExtension),
           mimeType: mimeTypeForImageExtension(image.fileExtension),
-          state: CloudMediaJobState.pendingUpload,
           referenceDurable: true,
-          attempts: 0,
           updatedAt: DateTime.now(),
         ),
     ]);
@@ -344,9 +448,7 @@ class CloudMediaUploadQueueNotifier
           assetPublicId: image.id,
           fileExtension: normalizeImageExtension(image.fileExtension),
           mimeType: mimeTypeForImageExtension(image.fileExtension),
-          state: CloudMediaJobState.pendingUpload,
           referenceDurable: false,
-          attempts: 0,
           updatedAt: DateTime.now(),
         ),
     ];
@@ -433,13 +535,17 @@ class CloudMediaUploadQueueNotifier
       throw StateError('The active account changed before media was queued.');
     }
 
-    await _putJobsAtomically([
-      for (final job in staged)
-        job.copyWith(
-          referenceDurable: true,
-          updatedAt: DateTime.now(),
-        ),
-    ]);
+    for (final job in staged) {
+      final promoted = job.copyWith(
+        referenceDurable: true,
+        updatedAt: DateTime.now(),
+      );
+      await _writeJobs(
+        [promoted],
+        () => _store.put(promoted),
+        onlyIf: () => _isCurrent(job),
+      );
+    }
     _refreshState();
     await retryNow(ignoreBackoff: true);
   }
@@ -651,17 +757,17 @@ class CloudMediaUploadQueueNotifier
   Future<void> discardStagedUpload(String assetPublicId) async {
     final job = _getJob(assetPublicId);
     if (job == null || job.referenceDurable) return;
-    await _deleteJob(job, onlyIfUnreferenced: true);
+    await _deleteJob(
+      job,
+      when: (current) => identical(current, job) && _unreferenced(current),
+    );
   }
 
   /// Drops [accountId]'s uploads for [strategyPublicId] that no change on
   /// this device still places, with their bytes: the user just discarded
   /// the changes of a strategy that account lost. An upload a remaining
   /// change refers to stays. Nothing goes unless [accountId] is still the
-  /// one signed in. An upload whose request is out when it goes can be
-  /// written back by its answer, as with [clearJobsForStrategy]; it then
-  /// shows as unsent again and can be discarded again. Returns whether
-  /// nothing failed.
+  /// one signed in. Returns whether nothing failed.
   Future<bool> discardUnreferencedJobs(
     String strategyPublicId, {
     required String accountId,
@@ -673,7 +779,7 @@ class CloudMediaUploadQueueNotifier
         .toList(growable: false);
     try {
       for (final job in jobs) {
-        await _deleteJob(job, onlyIfUnreferenced: true);
+        await _deleteJob(job, when: _unreferenced);
       }
       return true;
     } catch (_) {
@@ -688,36 +794,54 @@ class CloudMediaUploadQueueNotifier
         .where((job) => job.strategyPublicId == strategyPublicId)
         .toList(growable: false);
     for (final job in jobs) {
-      await _deleteJob(job);
+      await _deleteJob(job, when: (_) => true);
     }
     _refreshState();
   }
 
   Future<void> _processNextJob({bool ignoreBackoff = false}) async {
-    if (state.isProcessing) {
-      return;
-    }
+    if (_attempt != null) return;
 
-    final nextJob = _nextRunnableJob(ignoreBackoff: ignoreBackoff);
-    if (nextJob == null) {
+    final job = _nextRunnableJob(ignoreBackoff: ignoreBackoff);
+    if (job == null) {
       _logMedia(
         'process.idle ignoreBackoff=$ignoreBackoff jobs=${_readJobs().length}',
       );
       _scheduleRetryForNextEligibleJob();
       return;
     }
+    if (!_mayStart(job)) return;
 
-    state = state.copyWith(isProcessing: true);
-    _logMedia('process.start ${_describeJob(nextJob)}');
-    late final bool madeProgress;
+    final attempt = _attempt = _Attempt(job);
+    _refreshState();
+    _logMedia('process.start ${_describeJob(job)}');
+    var saved = true;
     try {
-      madeProgress = await _processJob(nextJob);
+      final outcome = await switch (job.phase) {
+        MediaWaitingToUpload() ||
+        MediaUploadFailed(media: null) =>
+          _upload(attempt),
+        MediaUploaded(:final media) ||
+        MediaUploadFailed(:final media?) =>
+          _attach(attempt, media),
+      };
+      attempt.answered();
+      await _settle(attempt, outcome);
+    } on _OutboxNotSaved {
+      saved = false;
     } finally {
-      _refreshState(isProcessing: false);
-      _logMedia('process.finish jobs=${state.jobs.length}');
+      attempt.halt(_Stop.stopped);
+      _attempt = null;
+      _refreshState();
     }
 
-    if (madeProgress && _readJobs().isNotEmpty) {
+    if (_disposed) return;
+    _logMedia('process.finish saved=$saved jobs=${state.jobs.length}');
+    if (!saved) {
+      _scheduleRetryForNextEligibleJob(minimumDelay: _blockedRetryDelay);
+      return;
+    }
+    if (_readJobs().isNotEmpty) {
       // Only bypass backoff for the initial user-triggered kick. Follow-up
       // attempts must honor retry timing so transient attach failures do not
       // hammer Convex in a tight loop.
@@ -745,7 +869,7 @@ class CloudMediaUploadQueueNotifier
     return null;
   }
 
-  Future<bool> _processJob(CloudMediaUploadJob job) async {
+  bool _mayStart(CloudMediaUploadJob job) {
     if (!_belongsToActiveAccount(job)) {
       _logMedia('process.blocked account_mismatch ${_describeJob(job)}');
       return false;
@@ -774,53 +898,69 @@ class CloudMediaUploadQueueNotifier
       _scheduleRetryForNextEligibleJob(minimumDelay: _blockedRetryDelay);
       return false;
     }
-
-    if (!job.hasUploadedRemoteObject) {
-      await _uploadJobBlob(job);
-      return true;
-    }
-
-    await _attachUploadedJob(job);
     return true;
   }
 
-  Future<void> _uploadJobBlob(CloudMediaUploadJob job) async {
-    if (!_belongsToActiveAccount(job)) return;
+  Future<_Reply<T>> _step<T>(
+    _Attempt attempt,
+    String step,
+    Duration within,
+    Future<T> Function() call,
+  ) async {
+    if (attempt.stop case final stop?) return _NoAnswer<T>(step, within, stop);
+    final stall = Timer(within, () => attempt.halt(_Stop.stalled));
     try {
-      _logMedia('upload.local_lookup ${_describeJob(job)}');
-      final bytes = await _findMediaBytes(
-        _bytesKey(job),
-        fileExtension: job.fileExtension,
-      );
-      if (bytes == null) {
-        _logMedia('upload.local_missing ${_describeJob(job)}');
-        if (await _deleteJobWhenReferenceIsGone(job) == true) return;
-        // Null: a newer write replaced this job while the server was asked,
-        // and that job gets its own turn.
-        if (await _deleteJobWhenServerServesPicture(job) != false) return;
-        await _markJobFailed(
-          job,
-          'Local media file is missing.',
-          showToast: job.attempts == 0,
-          onlyIfCurrent: true,
-        );
-        return;
-      }
+      return await Future.any<_Reply<T>>([
+        Future.sync(call).then<_Reply<T>>(
+          _Answer<T>.new,
+          onError: (Object error, StackTrace stackTrace) =>
+              _Refused<T>(step, error, stackTrace),
+        ),
+        attempt.stopped.then((stop) => _NoAnswer<T>(step, within, stop)),
+      ]);
+    } finally {
+      stall.cancel();
+    }
+  }
 
-      final byteSize = await bytes.length();
-      if (!_belongsToActiveAccount(job)) {
-        _logMedia('upload.deferred account_changed ${_describeJob(job)}');
-        return;
-      }
-      _setUploadByteProgress(
-        job.jobId,
-        sentBytes: 0,
-        totalBytes: byteSize,
-      );
-      _logMedia(
-        'upload.intent.request bytes=$byteSize ${_describeJob(job)}',
-      );
-      final intent = await _repo.generateImageUploadUrl(
+  Future<_Outcome> _upload(_Attempt attempt) async {
+    final job = attempt.job;
+    _logMedia('upload.local_lookup ${_describeJob(job)}');
+    final MediaBytesSource? bytes;
+    switch (await _step(
+      attempt,
+      'reading the picture',
+      deadlines.answer,
+      () => _findMediaBytes(_bytesKey(job), fileExtension: job.fileExtension),
+    )) {
+      case _Answer(:final value):
+        bytes = value;
+      case final _Unanswered<MediaBytesSource?> unanswered:
+        return _unansweredOutcome(attempt, unanswered);
+    }
+    if (bytes == null) return _whenBytesAreMissing(attempt);
+
+    final int byteSize;
+    switch (await _step(
+      attempt,
+      'reading the picture',
+      deadlines.answer,
+      bytes.length,
+    )) {
+      case _Answer(:final value):
+        byteSize = value;
+      case final _Unanswered<int> unanswered:
+        return _unansweredOutcome(attempt, unanswered);
+    }
+    _setUploadByteProgress(job.jobId, sentBytes: 0, totalBytes: byteSize);
+
+    _logMedia('upload.intent.request bytes=$byteSize ${_describeJob(job)}');
+    final CloudImageUploadIntent intent;
+    switch (await _step(
+      attempt,
+      'the upload URL',
+      deadlines.answer,
+      () => _repo.generateImageUploadUrl(
         strategyPublicId: job.strategyPublicId,
         assetPublicId: job.assetPublicId,
         mimeType: job.mimeType,
@@ -828,74 +968,280 @@ class CloudMediaUploadQueueNotifier
         byteSize: byteSize,
         width: job.width,
         height: job.height,
+      ),
+    )) {
+      case _Answer(:final value):
+        intent = value;
+      case final _Unanswered<CloudImageUploadIntent> unanswered:
+        return _unansweredOutcome(attempt, unanswered);
+    }
+    if (intent.uploadUrl.isEmpty) return const _Failed('Empty R2 upload URL');
+    _logMedia(
+      'upload.intent.received provider=${intent.provider} '
+      'uploadId=${intent.uploadId} objectKey=${intent.objectKey} '
+      'expiresAt=${intent.expiresAt.toIso8601String()} '
+      'maxBytes=${intent.maxBytes} ${_describeJob(job)}',
+    );
+    if (intent.maxBytes > 0 && byteSize > intent.maxBytes) {
+      return _Failed(
+        'Image exceeds maximum upload size (${intent.maxBytes} bytes).',
       );
-      if (intent.uploadUrl.isEmpty) {
-        throw StateError('Empty R2 upload URL');
-      }
-      _logMedia(
-        'upload.intent.received provider=${intent.provider} '
-        'uploadId=${intent.uploadId} objectKey=${intent.objectKey} '
-        'expiresAt=${intent.expiresAt.toIso8601String()} '
-        'maxBytes=${intent.maxBytes} ${_describeJob(job)}',
-      );
-      if (intent.maxBytes > 0 && byteSize > intent.maxBytes) {
-        throw StateError(
-          'Image exceeds maximum upload size (${intent.maxBytes} bytes).',
-        );
-      }
+    }
 
-      if (!_belongsToActiveAccount(job)) {
-        _logMedia('upload.deferred account_changed ${_describeJob(job)}');
-        return;
-      }
-
-      _logMedia('upload.put.start bytes=$byteSize ${_describeJob(job)}');
-      final response = await _putBytesWithProgress(
-        job: job,
-        bytes: bytes,
+    _logMedia('upload.put.start bytes=$byteSize ${_describeJob(job)}');
+    final http.Response response;
+    switch (await _step(
+      attempt,
+      'the upload',
+      deadlines.upload(byteSize),
+      () => _putBytesWithProgress(
+        attempt: attempt,
+        bytes: bytes!,
         uploadUrl: intent.uploadUrl,
         headers: intent.requiredHeaders,
         byteSize: byteSize,
-      );
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw StateError(
-          'Upload failed (${response.statusCode}): ${response.body}',
-        );
-      }
-      _logMedia(
-        'upload.put.success status=${response.statusCode} '
-        'etag=${response.headers['etag']} ${_describeJob(job)}',
-      );
+      ),
+    )) {
+      case _Answer(:final value):
+        response = value;
+      case final _Unanswered<http.Response> unanswered:
+        return _unansweredOutcome(attempt, unanswered);
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return _Failed(
+          'Upload failed (${response.statusCode}): ${response.body}');
+    }
+    _logMedia(
+      'upload.put.success status=${response.statusCode} '
+      'etag=${response.headers['etag']} ${_describeJob(job)}',
+    );
+    return _Uploaded(R2UploadedMedia(
+      uploadId: intent.uploadId,
+      objectKey: intent.objectKey,
+      etag: response.headers['etag'],
+      byteSize: byteSize,
+    ));
+  }
 
-      await _putJob(
-        job.copyWith(
-          provider: intent.provider,
-          uploadId: intent.uploadId,
-          objectKey: intent.objectKey,
-          storageId: null,
-          etag: response.headers['etag'],
-          byteSize: byteSize,
-          uploadUrlExpiresAt: intent.expiresAt,
-          state: CloudMediaJobState.pendingAttach,
-          attempts: 0,
-          lastError: null,
-          updatedAt: DateTime.now(),
+  Future<_Outcome> _whenBytesAreMissing(_Attempt attempt) async {
+    final job = attempt.job;
+    _logMedia('upload.local_missing ${_describeJob(job)}');
+    if (_pendingOpsReference(job) == false) {
+      switch (await _step(
+        attempt,
+        'the reference check',
+        deadlines.answer,
+        () => ref.read(cloudMediaReferenceLoaderProvider)(
+          job.strategyPublicId,
+          [job.assetPublicId],
         ),
-      );
-      _refreshState();
-      _markUploadCompleting(job.jobId);
-      _logMedia(
-        'upload.pending_attach ${_describeJob(_getJob(job.jobId))}',
-      );
-    } catch (error, stackTrace) {
-      if (await _dropIfStrategyDeleted(job, error)) return;
-      _reportMediaFailure('upload', error, stackTrace, job);
-      await _markJobFailed(
-        job,
-        '$error',
-        showToast: job.attempts == 0,
+      )) {
+        case _Answer(value: final references?)
+            when !references.contains(job.assetPublicId):
+          return const _Unreferenced();
+        case _NoAnswer(stop: _Stop.stopped):
+          return const _Stopped();
+        case _:
+      }
+    }
+    switch (await _step(
+      attempt,
+      'the served check',
+      deadlines.answer,
+      () => _repo.getImageAssetUrl(
+        strategyPublicId: job.strategyPublicId,
+        assetPublicId: job.assetPublicId,
+      ),
+    )) {
+      case _Answer(value: final url?) when url.isNotEmpty:
+        return const _AlreadyServed();
+      case _NoAnswer(stop: _Stop.stopped):
+        return const _Stopped();
+      case _:
+        return const _Failed('Local media file is missing.');
+    }
+  }
+
+  Future<_Outcome> _attach(_Attempt attempt, UploadedMedia media) async {
+    final job = attempt.job;
+    _logMedia('attach.start ${_describeJob(job)}');
+    Future<void> complete({
+      String? provider,
+      String? uploadId,
+      String? objectKey,
+      String? storageId,
+      String? etag,
+      int? byteSize,
+    }) =>
+        _repo.completeImageUpload(
+          strategyPublicId: job.strategyPublicId,
+          assetPublicId: job.assetPublicId,
+          provider: provider,
+          uploadId: uploadId,
+          objectKey: objectKey,
+          storageId: storageId,
+          etag: etag,
+          mimeType: job.mimeType,
+          fileExtension: job.fileExtension,
+          byteSize: byteSize,
+          width: job.width,
+          height: job.height,
+        );
+    switch (await _step(
+      attempt,
+      'attaching the picture',
+      deadlines.answer,
+      () => switch (media) {
+        R2UploadedMedia() => complete(
+            provider: 'r2',
+            uploadId: media.uploadId,
+            objectKey: media.objectKey,
+            etag: media.etag,
+            byteSize: media.byteSize,
+          ),
+        ConvexStoredMedia() => complete(storageId: media.storageId),
+      },
+    )) {
+      case _Answer():
+        return const _Attached();
+      case final _Unanswered<void> unanswered:
+        return _unansweredOutcome(attempt, unanswered, media: media);
+    }
+  }
+
+  Future<_Outcome> _unansweredOutcome(
+    _Attempt attempt,
+    _Unanswered<Object?> unanswered, {
+    UploadedMedia? media,
+  }) async {
+    switch (unanswered) {
+      case _NoAnswer(stop: _Stop.stalled, :final step, :final within):
+        return _Failed(
+          'The upload stalled: no answer from $step in '
+          '${within.inSeconds} s.',
+          media: media,
+        );
+      case _NoAnswer():
+        return const _Stopped();
+      case _Refused(:final step, :final error, :final stackTrace):
+        _reportMediaFailure(step, error, stackTrace, attempt.job);
+        if (isTypedConvexNotFoundError(error) &&
+            await _strategyIsGone(attempt)) {
+          return const _StrategyGone();
+        }
+        return _Failed(
+          '$error',
+          media: isMissingImageUploadIntentError(error) ? null : media,
+        );
+    }
+  }
+
+  Future<bool> _strategyIsGone(_Attempt attempt) async => switch (await _step(
+        attempt,
+        'the strategy check',
+        deadlines.answer,
+        () => _repo.strategyIsDeleted(attempt.job.strategyPublicId),
+      )) {
+        _Answer(:final value) => value,
+        _Unanswered() => false,
+      };
+
+  Future<void> _settle(_Attempt attempt, _Outcome outcome) async {
+    final job = attempt.job;
+    switch (outcome) {
+      case _Stopped():
+        _logMedia('attempt.stopped ${_describeJob(job)}');
+      case _Uploaded(:final media):
+        final uploaded = job.copyWith(
+          phase: MediaUploaded(media),
+          updatedAt: DateTime.now(),
+        );
+        final written = await _writeJobs(
+          [uploaded],
+          () => _store.put(uploaded),
+          onlyIf: () => _owns(attempt),
+        );
+        if (!written) return;
+        _markUploadCompleting(job.jobId);
+        _logMedia('upload.pending_attach ${_describeJob(uploaded)}');
+      case _Attached():
+        if (!await _deleteJob(job,
+            when: (_) => _owns(attempt), attached: true)) {
+          return;
+        }
+        if (_uploadProgressToast != null) _markUploadComplete(job.jobId);
+        _logMedia('attach.success image=${job.assetPublicId} '
+            'strategy=${job.strategyPublicId}');
+      case _Failed(:final why, :final media):
+        await _recordFailure(attempt, why, media);
+      case _Unreferenced():
+        final removed = await _deleteJob(
+          job,
+          when: (current) => _owns(attempt) && _unreferenced(current),
+        );
+        if (removed) {
+          _logMedia(
+            'missing_source.removed_unreferenced job=${job.jobId} '
+            'strategy=${job.strategyPublicId}',
+          );
+        }
+      case _AlreadyServed():
+        if (await _deleteJob(job, when: (_) => _owns(attempt))) {
+          _logMedia('missing_source.served_by_server ${_describeJob(job)}');
+        }
+      case _StrategyGone():
+        if (!_owns(attempt)) return;
+        final count = _readJobs()
+            .where(
+                (pending) => pending.strategyPublicId == job.strategyPublicId)
+            .length;
+        AppErrorReporter.reportWarning(
+          'Strategy ${job.strategyPublicId} was deleted on the server; dropped '
+          '$count pending image upload(s) for it.',
+          source: 'cloud_media.upload_queue',
+        );
+        await clearJobsForStrategy(job.strategyPublicId);
+    }
+  }
+
+  bool _owns(_Attempt attempt) =>
+      attempt.stop != _Stop.stopped && _isCurrent(attempt.job);
+
+  bool _isCurrent(CloudMediaUploadJob job) =>
+      identical(_getJob(job.jobId), job);
+
+  Future<void> _recordFailure(
+    _Attempt attempt,
+    String why,
+    UploadedMedia? media,
+  ) async {
+    final job = attempt.job;
+    final failed = job.copyWith(
+      phase: MediaUploadFailed(
+        why: why,
+        attempts: job.failedAttempts + 1,
+        media: media,
+      ),
+      updatedAt: DateTime.now(),
+    );
+    final written = await _writeJobs(
+      [failed],
+      () => _store.put(failed),
+      onlyIf: () => _owns(attempt),
+    );
+    if (!written) return;
+    final showToast = job.failedAttempts == 0;
+    _logMedia('job.failed showToast=$showToast ${_describeJob(failed)}');
+    // The sync button explains a refusal of this build; Save cannot fix it.
+    final upgradeRequired =
+        ref.read(clientUpgradeRequiredProvider.notifier).noteError(why);
+    if (showToast && !upgradeRequired) {
+      Settings.showToast(
+        message: ref.read(l10nProvider).mediaUploadFailedToast,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     }
+    _scheduleRetryForNextEligibleJob();
   }
 
   /// Deletes [job] if nothing references its image any more. Returns true
@@ -905,20 +1251,9 @@ class CloudMediaUploadQueueNotifier
   Future<bool?> _deleteJobWhenReferenceIsGone(
     CloudMediaUploadJob job,
   ) async {
-    final durableOps = ref.read(durableStrategyOutboxStoreProvider).load();
-    if (durableOps.issues.isNotEmpty) return null;
-    final pendingReferences = durableOps.records.any(
-      (record) =>
-          record.accountId == job.accountId &&
-          record.strategyPublicId == job.strategyPublicId &&
-          (_opReferencesAsset(record.pending.op, job.assetPublicId) ||
-              (record.successorPending != null &&
-                  _opReferencesAsset(
-                    record.successorPending!.op,
-                    job.assetPublicId,
-                  ))),
-    );
-    if (pendingReferences) return false;
+    final pendingReference = _pendingOpsReference(job);
+    if (pendingReference != false)
+      return pendingReference == null ? null : false;
     if (!ref.read(authProvider).isConvexUserReady ||
         !ref.read(convexConnectionSnapshotProvider)) {
       return null;
@@ -946,7 +1281,10 @@ class CloudMediaUploadQueueNotifier
     }
     if (serverReferences.contains(job.assetPublicId)) return false;
 
-    final deleted = await _deleteJob(job, onlyIfUnreferenced: true);
+    final deleted = await _deleteJob(
+      job,
+      when: (current) => identical(current, job) && _unreferenced(current),
+    );
     if (!deleted) return null;
     _refreshState();
     _logMedia(
@@ -956,45 +1294,35 @@ class CloudMediaUploadQueueNotifier
     return true;
   }
 
-  /// Deletes [job], whose bytes are gone, if the server already serves its
-  /// picture: nothing is left to upload. Web builds before #327 could queue
-  /// an upload of a picture already on the server from bytes only memory
-  /// held, so a refresh left the job with nothing to send. Returns false
-  /// when the server does not serve it (the picture is lost and the job
-  /// must fail where the user sees it), or when that could not be told.
-  /// Returns null when a newer write replaced [job] meanwhile.
-  Future<bool?> _deleteJobWhenServerServesPicture(
-    CloudMediaUploadJob job,
-  ) async {
-    final String? url;
-    try {
-      url = await _repo.getImageAssetUrl(
-        strategyPublicId: job.strategyPublicId,
-        assetPublicId: job.assetPublicId,
-      );
-    } catch (error) {
-      _logMedia(
-        'missing_source.served_check_failed ${_describeJob(job)} error=$error',
-      );
-      return false;
-    }
-    if (url == null || url.isEmpty) return false;
-    // Checked where the removal is serialized, so an enqueue still being
-    // persisted when the answer came is seen too.
-    if (!await _deleteJob(job, onlyIfCurrent: true)) return null;
-    _refreshState();
-    _logMedia('missing_source.served_by_server ${_describeJob(job)}');
-    return true;
+  bool? _pendingOpsReference(CloudMediaUploadJob job) {
+    final durableOps = ref.read(durableStrategyOutboxStoreProvider).load();
+    if (durableOps.issues.isNotEmpty) return null;
+    return durableOps.records.any(
+      (record) =>
+          record.accountId == job.accountId &&
+          record.strategyPublicId == job.strategyPublicId &&
+          (_opReferencesAsset(record.pending.op, job.assetPublicId) ||
+              (record.successorPending != null &&
+                  _opReferencesAsset(
+                    record.successorPending!.op,
+                    job.assetPublicId,
+                  ))),
+    );
   }
 
   Future<http.Response> _putBytesWithProgress({
-    required CloudMediaUploadJob job,
+    required _Attempt attempt,
     required MediaBytesSource bytes,
     required String uploadUrl,
     required Map<String, String> headers,
     required int byteSize,
   }) async {
-    final request = http.StreamedRequest('PUT', Uri.parse(uploadUrl));
+    final job = attempt.job;
+    final request = http.AbortableStreamedRequest(
+      'PUT',
+      Uri.parse(uploadUrl),
+      abortTrigger: attempt.stopped,
+    );
     request.headers.addAll(headers);
     if (!request.headers.containsKey('Content-Type')) {
       request.headers['Content-Type'] = job.mimeType;
@@ -1029,134 +1357,13 @@ class CloudMediaUploadQueueNotifier
     }
   }
 
-  Future<void> _attachUploadedJob(CloudMediaUploadJob job) async {
-    if (!_belongsToActiveAccount(job)) return;
-    try {
-      _logMedia('attach.start ${_describeJob(job)}');
-      if ((job.provider == 'r2' || job.uploadId != null) &&
-          (job.uploadId == null || job.objectKey == null)) {
-        throw StateError('R2 upload job is missing upload intent metadata.');
-      }
-      if ((job.provider == null || job.provider == 'convex') &&
-          job.uploadId == null &&
-          job.storageId == null) {
-        throw StateError('Upload job is missing remote storage metadata.');
-      }
-
-      await _repo.completeImageUpload(
-        strategyPublicId: job.strategyPublicId,
-        assetPublicId: job.assetPublicId,
-        provider: job.provider,
-        uploadId: job.uploadId,
-        objectKey: job.objectKey,
-        storageId: job.storageId,
-        etag: job.etag,
-        mimeType: job.mimeType,
-        fileExtension: job.fileExtension,
-        byteSize: job.byteSize,
-        width: job.width,
-        height: job.height,
-      );
-      await _deleteJob(job, attached: true);
-      if (_uploadProgressToast != null) {
-        _markUploadComplete(job.jobId);
-      }
-      _refreshState();
-      _logMedia('attach.success image=${job.assetPublicId} '
-          'strategy=${job.strategyPublicId}');
-    } catch (error, stackTrace) {
-      if (await _dropIfStrategyDeleted(job, error)) return;
-      _reportMediaFailure('attach', error, stackTrace, job);
-      final missingIntent = isMissingImageUploadIntentError(error);
-      await _markJobFailed(
-        missingIntent
-            ? job.copyWith(
-                provider: null,
-                uploadId: null,
-                objectKey: null,
-                storageId: null,
-                etag: null,
-                uploadUrlExpiresAt: null,
-              )
-            : job,
-        '$error',
-        showToast: job.attempts == 0,
-      );
-    }
-  }
-
-  /// Drops every job of [job]'s strategy when [error] is NOT_FOUND and the
-  /// server confirms the strategy is gone; retrying could never succeed.
-  /// Nothing is lost that the user cannot recreate: the image came from
-  /// their own file, and the change that placed it waits in the strategy
-  /// outbox, which the library surfaces for them to discard. Other NOT_FOUND
-  /// errors (an uploaded image the store lost) keep the ordinary retry.
-  Future<bool> _dropIfStrategyDeleted(
-    CloudMediaUploadJob job,
-    Object error,
-  ) async {
-    if (!isTypedConvexNotFoundError(error)) return false;
-    final bool deleted;
-    try {
-      deleted = await _repo.strategyIsDeleted(job.strategyPublicId);
-    } catch (_) {
-      return false;
-    }
-    if (!deleted) return false;
-    final count = _readJobs()
-        .where((pending) => pending.strategyPublicId == job.strategyPublicId)
-        .length;
-    AppErrorReporter.reportWarning(
-      'Strategy ${job.strategyPublicId} was deleted on the server; dropped '
-      '$count pending image upload(s) for it.',
-      source: 'cloud_media.upload_queue',
-    );
-    await clearJobsForStrategy(job.strategyPublicId);
-    return true;
-  }
-
-  /// [onlyIfCurrent] records nothing once a newer write replaced [job]: that
-  /// newer job gets its own turn.
-  Future<void> _markJobFailed(
-    CloudMediaUploadJob job,
-    String errorMessage, {
-    required bool showToast,
-    bool onlyIfCurrent = false,
-  }) async {
-    final failed = job.copyWith(
-      state: CloudMediaJobState.failed,
-      attempts: job.attempts + 1,
-      lastError: errorMessage,
-      updatedAt: DateTime.now(),
-    );
-    final written = await _writeJobs(
-      [failed],
-      () => _store.put(failed),
-      replacing: onlyIfCurrent ? job : null,
-    );
-    if (!written) return;
-    _refreshState();
-    _logMedia(
-        'job.failed showToast=$showToast ${_describeJob(_getJob(job.jobId))}');
-    // The sync button explains a refusal of this build; Save cannot fix it.
-    final upgradeRequired = ref
-        .read(clientUpgradeRequiredProvider.notifier)
-        .noteError(errorMessage);
-    if (showToast && !upgradeRequired) {
-      Settings.showToast(
-        message: ref.read(l10nProvider).mediaUploadFailedToast,
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
-      );
-    }
-    _scheduleRetryForNextEligibleJob();
-  }
-
   DateTime _nextAttemptAt(CloudMediaUploadJob job) {
-    if (job.attempts <= 0) {
+    final attempts = job.failedAttempts;
+    if (attempts <= 0) {
       return job.updatedAt;
     }
 
-    final baseSeconds = 5 * (1 << (job.attempts - 1).clamp(0, 5));
+    final baseSeconds = 5 * (1 << (attempts - 1).clamp(0, 5));
     final cappedSeconds = baseSeconds > 300 ? 300 : baseSeconds;
     return job.updatedAt.add(Duration(seconds: cappedSeconds));
   }
@@ -1241,7 +1448,11 @@ class CloudMediaUploadQueueNotifier
         referenceDurable: true,
         updatedAt: DateTime.now(),
       );
-      await _writeJobs([promoted], () => _store.put(promoted), replacing: job);
+      await _writeJobs(
+        [promoted],
+        () => _store.put(promoted),
+        onlyIf: () => _isCurrent(job),
+      );
     }
 
     if (durableOps.issues.isNotEmpty) return;
@@ -1291,11 +1502,15 @@ class CloudMediaUploadQueueNotifier
           await _writeJobs(
             [promoted],
             () => _store.put(promoted),
-            replacing: job,
+            onlyIf: () => _isCurrent(job),
           );
         } else if (localReference == false &&
             _restoredStagedJobIds.contains(key)) {
-          await _deleteJob(job, onlyIfUnreferenced: true);
+          await _deleteJob(
+            job,
+            when: (current) =>
+                identical(current, job) && _unreferenced(current),
+          );
         }
       }
       _refreshState();
@@ -1361,28 +1576,6 @@ class CloudMediaUploadQueueNotifier
     final existing =
         _jobsByStorageKey[durableCloudMediaOutboxStorageKey(nextJob)];
     if (existing == null) return nextJob;
-    if (existing.isFailed) {
-      return existing.copyWith(
-        strategyPublicId: nextJob.strategyPublicId,
-        assetPublicId: nextJob.assetPublicId,
-        fileExtension: nextJob.fileExtension,
-        mimeType: nextJob.mimeType,
-        width: nextJob.width,
-        height: nextJob.height,
-        byteSize: nextJob.byteSize,
-        state: nextJob.state,
-        referenceDurable: nextJob.referenceDurable,
-        attempts: 0,
-        provider: null,
-        uploadId: null,
-        objectKey: null,
-        storageId: null,
-        etag: null,
-        uploadUrlExpiresAt: null,
-        lastError: null,
-        updatedAt: DateTime.now(),
-      );
-    }
     return existing.copyWith(
       strategyPublicId: nextJob.strategyPublicId,
       assetPublicId: nextJob.assetPublicId,
@@ -1390,8 +1583,10 @@ class CloudMediaUploadQueueNotifier
       mimeType: nextJob.mimeType,
       width: nextJob.width,
       height: nextJob.height,
-      byteSize: nextJob.byteSize,
-      referenceDurable: existing.referenceDurable || nextJob.referenceDurable,
+      phase: existing.isFailed ? nextJob.phase : existing.phase,
+      referenceDurable: existing.isFailed
+          ? nextJob.referenceDurable
+          : existing.referenceDurable || nextJob.referenceDurable,
       updatedAt: DateTime.now(),
     );
   }
@@ -1466,16 +1661,19 @@ class CloudMediaUploadQueueNotifier
     return pendingReference ? null : false;
   }
 
-  /// Returns false, writing nothing, when [replacing] is no longer the job
-  /// held for its id.
+  bool _unreferenced(CloudMediaUploadJob job) =>
+      _belongsToActiveAccount(job) &&
+      _unverifiedByStorageKey[durableCloudMediaOutboxStorageKey(job)] !=
+          _MediaOutboxMutation.write &&
+      _hasLocalReference(job) == false;
+
   Future<bool> _writeJobs(
     List<CloudMediaUploadJob> jobs,
     Future<void> Function() persist, {
-    CloudMediaUploadJob? replacing,
+    bool Function()? onlyIf,
   }) =>
       _serializeWrite(() async {
-        if (replacing != null &&
-            !identical(_getJob(replacing.jobId), replacing)) return false;
+        if (onlyIf != null && !onlyIf()) return false;
         final keys = jobs.map(durableCloudMediaOutboxStorageKey).toSet();
         try {
           await persist();
@@ -1487,6 +1685,7 @@ class CloudMediaUploadQueueNotifier
           for (final key in keys) {
             _unverifiedByStorageKey.remove(key);
           }
+          _stopAttemptWhoseJobChanged();
           _refreshState();
           return true;
         } catch (error, stackTrace) {
@@ -1494,60 +1693,55 @@ class CloudMediaUploadQueueNotifier
             _unverifiedByStorageKey[key] = _MediaOutboxMutation.write;
           }
           _recordDurabilityFailure(error, stackTrace);
-          rethrow;
+          throw _OutboxNotSaved(error);
         }
       });
 
-  /// Removes [job] from the outbox, then the bytes it was holding, and only
-  /// its own: bytes are scoped like the job. [attached] keeps those bytes
-  /// painting until the cloud URL arrives.
-  /// [onlyIfCurrent] removes nothing once a newer write replaced [job].
   Future<bool> _deleteJob(
     CloudMediaUploadJob job, {
-    bool onlyIfUnreferenced = false,
-    bool onlyIfCurrent = false,
+    required bool Function(CloudMediaUploadJob current) when,
     bool attached = false,
   }) async {
-    final deleted = await _removeJobRecord(
-      job,
-      onlyIfUnreferenced: onlyIfUnreferenced,
-      onlyIfCurrent: onlyIfCurrent,
+    final removed = await _removeJobRecord(
+      durableCloudMediaOutboxStorageKey(job),
+      when,
     );
-    if (deleted) {
-      await _releaseMediaBytes(_bytesKey(job), attached: attached);
-    }
-    return deleted;
+    if (removed == null) return false;
+    await _releaseMediaBytes(_bytesKey(removed), attached: attached);
+    return true;
   }
 
-  Future<bool> _removeJobRecord(
-    CloudMediaUploadJob job, {
-    required bool onlyIfUnreferenced,
-    required bool onlyIfCurrent,
-  }) =>
+  Future<CloudMediaUploadJob?> _removeJobRecord(
+    String key,
+    bool Function(CloudMediaUploadJob current) when,
+  ) =>
       _serializeWrite(() async {
-        final key = durableCloudMediaOutboxStorageKey(job);
-        if (onlyIfCurrent && !identical(_jobsByStorageKey[key], job)) {
-          return false;
-        }
-        if (onlyIfUnreferenced &&
-            (!_belongsToActiveAccount(job) ||
-                !identical(_jobsByStorageKey[key], job) ||
-                _unverifiedByStorageKey[key] == _MediaOutboxMutation.write ||
-                _hasLocalReference(job) != false)) return false;
+        final current = _jobsByStorageKey[key];
+        if (current == null || !when(current)) return null;
         try {
-          await _store.remove(job);
+          await _store.remove(current);
           _jobsByStorageKey.remove(key);
           _restoredStagedJobIds.remove(key);
           _referenceCheckDue.remove(key);
           _unverifiedByStorageKey.remove(key);
+          _stopAttemptWhoseJobChanged();
           _refreshState();
-          return true;
+          return current;
         } catch (error, stackTrace) {
           _unverifiedByStorageKey[key] = _MediaOutboxMutation.remove;
           _recordDurabilityFailure(error, stackTrace);
-          rethrow;
+          throw _OutboxNotSaved(error);
         }
       });
+
+  void _stopAttemptWhoseJobChanged() {
+    final attempt = _attempt;
+    if (attempt == null) return;
+    final key = durableCloudMediaOutboxStorageKey(attempt.job);
+    if (!identical(_jobsByStorageKey[key], attempt.job)) {
+      attempt.halt(_Stop.stopped);
+    }
+  }
 
   Future<T> _serializeWrite<T>(Future<T> Function() action) {
     final result = _writeTail.then((_) => action());
@@ -1564,10 +1758,10 @@ class CloudMediaUploadQueueNotifier
       source: 'cloud_media.upload_queue',
       toastMessage: ref.read(l10nProvider).mediaUploadOutboxUpdateFailed,
     );
-    _refreshState(isProcessing: false);
+    _refreshState();
   }
 
-  void _refreshState({bool? isProcessing}) {
+  void _refreshState() {
     if (_disposed) return;
     final accountId = ref.read(cloudMediaAccountIdProvider);
     final prefix =
@@ -1576,7 +1770,7 @@ class CloudMediaUploadQueueNotifier
         _unverifiedByStorageKey.keys.any((key) => key.startsWith(prefix));
     state = state.copyWith(
       jobs: _readJobs(),
-      isProcessing: isProcessing ?? state.isProcessing,
+      isProcessing: _attempt != null,
       durabilityError: hasUnverifiedWrites
           ? 'Media work could not be saved on this device.'
           : null,
@@ -1588,8 +1782,7 @@ class CloudMediaUploadQueueNotifier
   void _syncUploadProgressToast() {
     final activeUploadCount = state.jobs
         .where(
-          (job) =>
-              job.state != CloudMediaJobState.failed && job.referenceDurable,
+          (job) => !job.isFailed && job.referenceDurable,
         )
         .length;
 
@@ -1664,8 +1857,7 @@ class CloudMediaUploadQueueNotifier
     var progressUnits = _uploadCompletedJobs.length.toDouble();
     final activeJobIds = state.jobs
         .where(
-          (job) =>
-              job.state != CloudMediaJobState.failed && job.referenceDurable,
+          (job) => !job.isFailed && job.referenceDurable,
         )
         .map((job) => job.jobId);
 
@@ -1806,8 +1998,7 @@ class CloudMediaUploadQueueNotifier
   void _publishUploadProgressToast() {
     final activeUploadCount = state.jobs
         .where(
-          (job) =>
-              job.state != CloudMediaJobState.failed && job.referenceDurable,
+          (job) => !job.isFailed && job.referenceDurable,
         )
         .length;
     if (activeUploadCount <= 0) {
@@ -1846,14 +2037,20 @@ class CloudMediaUploadQueueNotifier
     if (job == null) {
       return 'job=null';
     }
+    final phase = switch (job.phase) {
+      MediaWaitingToUpload() => 'waiting',
+      MediaUploaded(:final media) => 'uploaded ${_describeMedia(media)}',
+      MediaUploadFailed(:final why, :final attempts, :final media) =>
+        'failed attempts=$attempts ${_describeMedia(media)} why=$why',
+    };
     return 'job=${job.jobId} image=${job.assetPublicId} '
         'account=${job.accountId} '
-        'strategy=${job.strategyPublicId} state=${job.state.name} '
-        'attempts=${job.attempts} provider=${job.provider ?? 'none'} '
-        'hasUploadId=${job.uploadId != null} '
-        'hasObjectKey=${job.objectKey != null} '
-        'hasStorageId=${job.storageId != null} '
-        'byteSize=${job.byteSize ?? 'unknown'} '
-        'lastError=${job.lastError ?? 'none'}';
+        'strategy=${job.strategyPublicId} phase=$phase';
   }
+
+  static String _describeMedia(UploadedMedia? media) => switch (media) {
+        null => 'media=none',
+        R2UploadedMedia(:final byteSize) => 'media=r2 byteSize=$byteSize',
+        ConvexStoredMedia() => 'media=convex',
+      };
 }

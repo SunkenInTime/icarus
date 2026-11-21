@@ -69,7 +69,7 @@ PendingMediaRecord _record(
 CloudMediaUploadJob _job(
   String assetId, {
   String accountId = 'account-a',
-  CloudMediaJobState state = CloudMediaJobState.pendingUpload,
+  CloudMediaJobPhase phase = const MediaWaitingToUpload(),
 }) =>
     CloudMediaUploadJob(
       jobId: assetId,
@@ -78,15 +78,14 @@ CloudMediaUploadJob _job(
       assetPublicId: assetId,
       fileExtension: '.png',
       mimeType: 'image/png',
-      state: state,
+      phase: phase,
       referenceDurable: true,
-      provider: state == CloudMediaJobState.pendingAttach ? 'r2' : null,
-      uploadId: state == CloudMediaJobState.pendingAttach ? 'upload-1' : null,
-      objectKey:
-          state == CloudMediaJobState.pendingAttach ? 'object/$assetId' : null,
-      attempts: 0,
       updatedAt: DateTime.utc(2026, 9, 24),
     );
+
+const _uploaded = MediaUploaded(
+  R2UploadedMedia(uploadId: 'upload-1', objectKey: 'object/web-image'),
+);
 
 class _Auth extends AuthProvider {
   _Auth({required this.ready});
@@ -180,6 +179,55 @@ class _R2Repository implements ConvexStrategyRepository {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FailOncePutStore extends MemoryDurableCloudMediaOutboxStore {
+  bool failNextPut = false;
+
+  @override
+  Future<void> put(CloudMediaUploadJob job) async {
+    if (failNextPut) {
+      failNextPut = false;
+      throw StateError('disk full');
+    }
+    await super.put(job);
+  }
+}
+
+class _HeldAttachRepository extends _R2Repository {
+  final List<String?> attachedUploadIds = [];
+  final Completer<void> _gate = Completer<void>();
+  bool _refuse = false;
+
+  void answer() {
+    if (!_gate.isCompleted) _gate.complete();
+  }
+
+  void refuse() {
+    _refuse = true;
+    answer();
+  }
+
+  @override
+  Future<void> completeImageUpload({
+    required String strategyPublicId,
+    required String assetPublicId,
+    String? provider,
+    String? uploadId,
+    String? objectKey,
+    String? storageId,
+    String? etag,
+    String? mimeType,
+    String? fileExtension,
+    int? byteSize,
+    int? width,
+    int? height,
+  }) async {
+    attachedUploadIds.add(uploadId);
+    await _gate.future;
+    if (_refuse) throw StateError('attach refused');
+    completedAssetIds.add(assetPublicId);
+  }
 }
 
 /// The server, which serves the pictures in [served] and answers NOT_FOUND
@@ -338,6 +386,7 @@ ProviderContainer _webSession({
   bool online = false,
   ConvexStrategyRepository? repository,
   CloudMediaReferenceLoader? referenceLoader,
+  StateProvider<String?>? signedIn,
 }) {
   return ProviderContainer(
     overrides: [
@@ -350,7 +399,10 @@ ProviderContainer _webSession({
       if (repository != null)
         convexStrategyRepositoryProvider.overrideWithValue(repository),
       authProvider.overrideWith(() => _Auth(ready: online)),
-      cloudMediaAccountIdProvider.overrideWithValue(accountId),
+      if (signedIn == null)
+        cloudMediaAccountIdProvider.overrideWithValue(accountId)
+      else
+        cloudMediaAccountIdProvider.overrideWith((ref) => ref.watch(signedIn)),
       cloudCollabModeProvider.overrideWith(_CloudMode.new),
       convexConnectionSnapshotProvider.overrideWithValue(online),
       convexConnectionProvider.overrideWith((ref) => Stream.value(online)),
@@ -717,7 +769,7 @@ void main() {
       final bytesStore = MemoryPendingMediaBytesStore([_record(_imageId)]);
       final mediaStore = MemoryDurableCloudMediaOutboxStore();
       await mediaStore.put(
-        _job(_imageId, state: CloudMediaJobState.pendingAttach),
+        _job(_imageId, phase: _uploaded),
       );
       final container = _webSession(
         mediaStore: mediaStore,
@@ -1188,9 +1240,12 @@ void main() {
       await pumpToasts(tester);
       final mediaStore = MemoryDurableCloudMediaOutboxStore();
       await tester.runAsync(() => mediaStore.put(
-            _job(_imageId, state: CloudMediaJobState.failed).copyWith(
-              attempts: 4,
-              lastError: 'Local media file is missing.',
+            _job(
+              _imageId,
+              phase: const MediaUploadFailed(
+                why: 'Local media file is missing.',
+                attempts: 4,
+              ),
             ),
           ));
       final repository = _ServingRepository({_imageId});
@@ -1252,7 +1307,8 @@ void main() {
               repository: repository,
               referenceLoader: referenced,
             );
-            final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+            final queue =
+                container.read(cloudMediaUploadQueueProvider.notifier);
             unawaited(queue.retryNow(ignoreBackoff: true));
             await repository.urlAsked.future;
 
@@ -1292,8 +1348,7 @@ void main() {
       await tester.pump(const Duration(seconds: 4));
     }
 
-    testWidgets(
-        'leaves a newer job of the picture still being saved to upload',
+    testWidgets('leaves a newer job of the picture still being saved to upload',
         (tester) => newerJobRace(tester, stillWriting: true));
 
     testWidgets(
@@ -1331,8 +1386,14 @@ void main() {
       await settleToasts(tester);
 
       final job = container.read(cloudMediaUploadQueueProvider).jobs.single;
-      expect(job.state, CloudMediaJobState.failed);
-      expect(job.lastError, 'Local media file is missing.');
+      expect(
+        job.phase,
+        isA<MediaUploadFailed>().having(
+          (failed) => failed.why,
+          'why',
+          'Local media file is missing.',
+        ),
+      );
       expect(mediaStore.values.keys, ['account-a|$_imageId']);
       expect(failedToast, findsOneWidget);
       expect(
@@ -1341,6 +1402,407 @@ void main() {
       );
       await clearToasts(tester);
     });
+  });
+
+  group('an answer that comes late or never', () {
+    Future<void> pumpToasts(WidgetTester tester) => tester.pumpWidget(
+          const ToastificationWrapper(child: ShadApp(home: SizedBox())),
+        );
+    Future<void> clearToasts(WidgetTester tester) async {
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    }
+
+    final signedIn = StateProvider<String?>((ref) => 'account-a');
+
+    ProviderContainer session(
+      MemoryDurableCloudMediaOutboxStore mediaStore,
+      MemoryPendingMediaBytesStore bytesStore,
+      ConvexStrategyRepository repository,
+    ) =>
+        _webSession(
+          mediaStore: mediaStore,
+          bytesStore: bytesStore,
+          online: true,
+          repository: repository,
+          signedIn: signedIn,
+        );
+
+    String assetOf(http.BaseRequest request) => request.url.pathSegments.last;
+
+    testWidgets(
+      'a PUT that never answers fails as stalled, on screen, and the next '
+      'picture uploads',
+      (tester) async {
+        await pumpToasts(tester);
+        final mediaStore = MemoryDurableCloudMediaOutboxStore();
+        await mediaStore.putAll([
+          _job('stalled-image'),
+          _job(
+            'next-image',
+          ).copyWith(updatedAt: DateTime.utc(2026, 9, 24, 0, 1)),
+        ]);
+        final bytesStore = MemoryPendingMediaBytesStore([
+          _record('stalled-image'),
+          _record('next-image'),
+        ]);
+        final repository = _R2Repository();
+        var letThrough = false;
+        final puts = <String>[];
+        final client = MockClient((request) {
+          puts.add(assetOf(request));
+          if (assetOf(request) == 'stalled-image' && !letThrough) {
+            return Completer<http.Response>().future;
+          }
+          return Future.value(
+            http.Response('', 200, headers: {'etag': '"etag"'}),
+          );
+        });
+
+        await http.runWithClient(() async {
+          final container = session(mediaStore, bytesStore, repository);
+          final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+          unawaited(queue.retryNow(ignoreBackoff: true));
+          await tester.pump(const Duration(seconds: 1));
+          expect(puts, ['stalled-image']);
+
+          await tester.pump(const Duration(seconds: 28));
+          expect(puts, ['stalled-image']);
+          expect(
+              container.read(cloudMediaUploadQueueProvider).jobs,
+              everyElement(isNot(
+                  predicate<CloudMediaUploadJob>((job) => job.isFailed))));
+
+          await tester.pump(const Duration(seconds: 2));
+          expect(puts, ['stalled-image', 'next-image']);
+          expect(repository.completedAssetIds, ['next-image']);
+          final stalled =
+              container.read(cloudMediaUploadQueueProvider).jobs.single;
+          expect(stalled.assetPublicId, 'stalled-image');
+          expect(
+            stalled.phase,
+            isA<MediaUploadFailed>()
+                .having((failed) => failed.why, 'why', contains('stalled'))
+                .having((failed) => failed.attempts, 'attempts', 1),
+          );
+          expect(
+            container.read(cloudSyncStatusProvider),
+            CloudSyncStatus.attention,
+          );
+
+          letThrough = true;
+          unawaited(queue.retryNow(ignoreBackoff: true));
+          await tester.pump(const Duration(seconds: 5));
+          expect(repository.completedAssetIds, ['next-image', 'stalled-image']);
+          expect(mediaStore.values, isEmpty);
+          container.dispose();
+        }, () => client);
+        await clearToasts(tester);
+      },
+    );
+
+    testWidgets('an attach that never answers fails and attaches again later', (
+      tester,
+    ) async {
+      await pumpToasts(tester);
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await mediaStore.put(
+        _job(_imageId, phase: _uploaded),
+      );
+      final repository = _HeldAttachRepository();
+      final container = session(
+        mediaStore,
+        MemoryPendingMediaBytesStore(),
+        repository,
+      );
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      unawaited(queue.retryNow(ignoreBackoff: true));
+      await tester.pump(const Duration(minutes: 2));
+
+      final failed = container.read(cloudMediaUploadQueueProvider).jobs.single;
+      expect(
+        failed.phase,
+        isA<MediaUploadFailed>().having(
+          (failed) => failed.media,
+          'media',
+          isA<R2UploadedMedia>()
+              .having((media) => media.uploadId, 'uploadId', 'upload-1'),
+        ),
+        reason: 'the upload is kept',
+      );
+
+      repository.answer();
+      unawaited(queue.retryNow(ignoreBackoff: true));
+      await tester.pump(const Duration(seconds: 5));
+      expect(repository.attachedUploadIds, ['upload-1', 'upload-1']);
+      expect(mediaStore.values, isEmpty);
+      container.dispose();
+      await clearToasts(tester);
+    });
+
+    testWidgets('a picture discarded during its PUT does not come back', (
+      tester,
+    ) async {
+      await pumpToasts(tester);
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await mediaStore.put(_job(_imageId));
+      final bytesStore = MemoryPendingMediaBytesStore([_record(_imageId)]);
+      final repository = _R2Repository();
+      final putGate = Completer<void>();
+      final puts = <String>[];
+      final client = MockClient((request) async {
+        puts.add(assetOf(request));
+        await putGate.future;
+        return http.Response('', 200, headers: {'etag': '"etag"'});
+      });
+
+      await http.runWithClient(() async {
+        final container = session(mediaStore, bytesStore, repository);
+        final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+        unawaited(queue.retryNow(ignoreBackoff: true));
+        await tester.pump(const Duration(seconds: 1));
+        expect(puts, [_imageId]);
+
+        expect(
+          await queue.discardUnreferencedJobs(
+            'strategy-a',
+            accountId: 'account-a',
+          ),
+          isTrue,
+        );
+        putGate.complete();
+        await tester.pump(const Duration(minutes: 2));
+
+        expect(mediaStore.values, isEmpty);
+        expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+        expect(bytesStore.values, isEmpty);
+        expect(repository.completedAssetIds, isEmpty);
+        container.dispose();
+      }, () => client);
+      await clearToasts(tester);
+    });
+
+    testWidgets(
+        'a picture replaced during its PUT uploads the replacement, '
+        'not the old answer', (tester) async {
+      await pumpToasts(tester);
+      final newBytes = Uint8List.fromList([9, 9, 9, 9]);
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await mediaStore.put(_job(_imageId));
+      final bytesStore = MemoryPendingMediaBytesStore([_record(_imageId)]);
+      final repository = _R2Repository();
+      final firstPut = Completer<void>();
+      final bodies = <Uint8List>[];
+      final client = MockClient((request) async {
+        bodies.add(request.bodyBytes);
+        if (bodies.length == 1) await firstPut.future;
+        return http.Response('', 200, headers: {'etag': '"etag"'});
+      });
+
+      await http.runWithClient(() async {
+        final container = session(mediaStore, bytesStore, repository);
+        final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+        unawaited(queue.retryNow(ignoreBackoff: true));
+        await tester.pump(const Duration(seconds: 1));
+        expect(bodies, hasLength(1));
+
+        await queue.discardUnreferencedJobs(
+          'strategy-a',
+          accountId: 'account-a',
+        );
+        await container
+            .read(pendingMediaBytesProvider.notifier)
+            .put(_key(_imageId), newBytes);
+        await queue.enqueueMovedImages(
+          strategyPublicId: 'strategy-a',
+          images: [(assetPublicId: _imageId, fileExtension: '.png')],
+        );
+        await tester.pump(const Duration(seconds: 1));
+        expect(bodies, hasLength(2), reason: 'the old PUT was let go at once');
+        expect(bodies.last, newBytes);
+
+        firstPut.complete();
+        await tester.pump(const Duration(minutes: 2));
+        expect(repository.completedAssetIds, [_imageId]);
+        expect(mediaStore.values, isEmpty);
+        container.dispose();
+      }, () => client);
+      await clearToasts(tester);
+    });
+
+    testWidgets('a picture discarded during its attach does not come back', (
+      tester,
+    ) async {
+      await pumpToasts(tester);
+      final mediaStore = MemoryDurableCloudMediaOutboxStore();
+      await mediaStore.put(
+        _job(_imageId, phase: _uploaded),
+      );
+      final repository = _HeldAttachRepository();
+      final container = session(
+        mediaStore,
+        MemoryPendingMediaBytesStore(),
+        repository,
+      );
+      final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+      unawaited(queue.retryNow(ignoreBackoff: true));
+      await tester.pump(const Duration(seconds: 1));
+      expect(repository.attachedUploadIds, ['upload-1']);
+
+      await queue.discardUnreferencedJobs('strategy-a', accountId: 'account-a');
+      repository.refuse();
+      await tester.pump(const Duration(minutes: 2));
+
+      expect(mediaStore.values, isEmpty);
+      expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+      container.dispose();
+      await clearToasts(tester);
+    });
+
+    testWidgets(
+      'an attach that lands after its picture was replaced leaves the '
+      'replacement to upload',
+      (tester) async {
+        await pumpToasts(tester);
+        final newBytes = Uint8List.fromList([9, 9, 9, 9]);
+        final mediaStore = MemoryDurableCloudMediaOutboxStore();
+        await mediaStore.put(
+          _job(_imageId, phase: _uploaded),
+        );
+        final bytesStore = MemoryPendingMediaBytesStore();
+        final repository = _HeldAttachRepository();
+        final bodies = <Uint8List>[];
+        final client = MockClient((request) async {
+          bodies.add(request.bodyBytes);
+          return http.Response('', 200, headers: {'etag': '"etag"'});
+        });
+
+        await http.runWithClient(() async {
+          final container = session(mediaStore, bytesStore, repository);
+          final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+          unawaited(queue.retryNow(ignoreBackoff: true));
+          await tester.pump(const Duration(seconds: 1));
+          expect(repository.attachedUploadIds, ['upload-1']);
+
+          await queue.discardUnreferencedJobs(
+            'strategy-a',
+            accountId: 'account-a',
+          );
+          await container
+              .read(pendingMediaBytesProvider.notifier)
+              .put(_key(_imageId), newBytes);
+          await queue.enqueueMovedImages(
+            strategyPublicId: 'strategy-a',
+            images: [(assetPublicId: _imageId, fileExtension: '.png')],
+          );
+          await tester.pump(const Duration(seconds: 1));
+          expect(bodies, [newBytes],
+              reason: 'the old attach was let go at once');
+
+          repository.answer();
+          await tester.pump(const Duration(minutes: 2));
+          expect(repository.attachedUploadIds, [
+            'upload-1',
+            'upload-$_imageId',
+          ]);
+          expect(mediaStore.values, isEmpty);
+          container.dispose();
+        }, () => client);
+        await clearToasts(tester);
+      },
+    );
+
+    testWidgets(
+        'an answer the outbox fails to save leaves the queue running and '
+        'the job to retry', (tester) async {
+      await pumpToasts(tester);
+      final mediaStore = _FailOncePutStore();
+      await mediaStore.putAll([
+        _job('unsaved-image'),
+        _job('next-image').copyWith(updatedAt: DateTime.utc(2026, 9, 24, 0, 1)),
+      ]);
+      mediaStore.failNextPut = true;
+      final bytesStore = MemoryPendingMediaBytesStore(
+        [_record('unsaved-image'), _record('next-image')],
+      );
+      final repository = _R2Repository();
+      final puts = <String>[];
+      final client = MockClient((request) async {
+        puts.add(assetOf(request));
+        return http.Response('', 200, headers: {'etag': '"etag"'});
+      });
+
+      await http.runWithClient(() async {
+        final container = session(mediaStore, bytesStore, repository);
+        final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+        unawaited(queue.retryNow(ignoreBackoff: true));
+        await tester.pump(const Duration(seconds: 5));
+        expect(puts, ['unsaved-image'], reason: 'no PUT again at once');
+        expect(mediaStore.load().jobs, hasLength(2));
+
+        await tester.pump(const Duration(seconds: 30));
+        expect(puts, ['unsaved-image', 'unsaved-image', 'next-image']);
+        expect(repository.completedAssetIds, ['unsaved-image', 'next-image']);
+        expect(mediaStore.values, isEmpty);
+        container.dispose();
+      }, () => client);
+      await clearToasts(tester);
+    });
+
+    testWidgets(
+      'signing out during an upload lets the next account upload, and the '
+      'old answer changes nothing',
+      (tester) async {
+        await pumpToasts(tester);
+        final mediaStore = MemoryDurableCloudMediaOutboxStore();
+        await mediaStore.putAll([
+          _job('a-image'),
+          _job('b-image', accountId: 'account-b'),
+        ]);
+        final bytesStore = MemoryPendingMediaBytesStore([
+          _record('a-image'),
+          _record('b-image', accountId: 'account-b'),
+        ]);
+        final repository = _R2Repository();
+        final firstPut = Completer<void>();
+        final puts = <String>[];
+        final client = MockClient((request) async {
+          puts.add(assetOf(request));
+          if (puts.length == 1) await firstPut.future;
+          return http.Response('', 200, headers: {'etag': '"etag"'});
+        });
+
+        await http.runWithClient(() async {
+          final container = session(mediaStore, bytesStore, repository);
+          final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+          unawaited(queue.retryNow(ignoreBackoff: true));
+          await tester.pump(const Duration(seconds: 1));
+          expect(puts, ['a-image']);
+
+          container.read(signedIn.notifier).state = null;
+          await tester.pump(const Duration(seconds: 1));
+          container.read(signedIn.notifier).state = 'account-b';
+          await tester.pump(const Duration(seconds: 5));
+          expect(puts, ['a-image', 'b-image']);
+          expect(repository.completedAssetIds, ['b-image']);
+
+          firstPut.complete();
+          await tester.pump(const Duration(seconds: 5));
+          final aJob = mediaStore.load().jobs.single;
+          expect(aJob.assetPublicId, 'a-image');
+          expect(aJob.phase, isA<MediaWaitingToUpload>());
+
+          container.read(signedIn.notifier).state = 'account-a';
+          await tester.pump(const Duration(seconds: 5));
+          expect(puts, ['a-image', 'b-image', 'a-image']);
+          expect(repository.completedAssetIds, ['b-image', 'a-image']);
+          expect(mediaStore.values, isEmpty);
+          container.dispose();
+        }, () => client);
+        await clearToasts(tester);
+      },
+    );
   });
 
   test('desktop never opens the pending-bytes box', () async {

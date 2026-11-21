@@ -150,6 +150,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/collab/convex_client.dart';
@@ -949,7 +950,7 @@ String _probe() {
     'queueError': '${queue.lastError}',
     'mediaJobs': [
       for (final job in c.read(cloudMediaUploadQueueProvider).jobs)
-        '${job.assetPublicId}:${job.state.name}',
+        '${job.assetPublicId}:${_jobPhase(job)}',
     ],
     'syncStatus': c.read(cloudSyncStatusProvider).name,
     'unsaved': c.read(strategySaveStateProvider).isDirty,
@@ -1966,11 +1967,17 @@ Future<void> _logImages(String tag) async {
   }
   for (final job in c.read(cloudMediaUploadQueueProvider).jobs) {
     _log(
-      'JOB $tag ${job.assetPublicId} ${job.state.name} ${job.mimeType} '
-      'bytes=${job.byteSize} attempts=${job.attempts} error=${job.lastError}',
+      'JOB $tag ${job.assetPublicId} ${_jobPhase(job)} ${job.mimeType}',
     );
   }
 }
+
+String _jobPhase(CloudMediaUploadJob job) => switch (job.phase) {
+      MediaWaitingToUpload() => 'waiting',
+      MediaUploaded() => 'uploaded',
+      MediaUploadFailed(:final attempts, :final why) =>
+        'failed attempts=$attempts why=$why',
+    };
 
 Element? _elementOrNull(bool Function(Widget) test) {
   Element? found;
