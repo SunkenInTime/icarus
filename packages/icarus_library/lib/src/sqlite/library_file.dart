@@ -21,13 +21,18 @@ final class DiskLibraryFiles implements LibraryFiles {
 
   @override
   int? size(String path) {
-    final file = File(path);
-    return file.existsSync() ? file.lengthSync() : null;
+    final stat = FileStat.statSync(path);
+    return stat.type == FileSystemEntityType.notFound ? null : stat.size;
   }
 
   @override
   Uint8List head(String path, int length) {
-    final file = File(path).openSync();
+    final RandomAccessFile file;
+    try {
+      file = File(path).openSync();
+    } on PathNotFoundException {
+      return Uint8List(0);
+    }
     try {
       return file.readSync(length);
     } finally {
