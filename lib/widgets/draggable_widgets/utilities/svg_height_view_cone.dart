@@ -205,8 +205,8 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
           LineOccluder() =>
             occluder.map((point) => _source(point, mapTransform)),
         },
-    ].where((occluder) => occluder.reaches(sourceOrigin, reach)).toList();
-    if (standsInsideSmoke(sourceOrigin, nearOccluders)) {
+    ].where((occluder) => occluder.reaches(rawOrigin, reach)).toList();
+    if (standsInsideSmoke(rawOrigin, nearOccluders)) {
       return const SizedBox.expand();
     }
 
@@ -248,7 +248,7 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
         ? (drawn.painter.cone, drawn.sourceToCanvas)
         : _paintCone(model, mapTransform, rawOrigin, result.cone, radius, reach);
     final shadows = occluderShadows(
-      sourceOrigin,
+      rawOrigin,
       reach,
       nearOccluders,
       view: (heading: widget.rotation - math.pi / 2, spread: widget.angle / 2),
