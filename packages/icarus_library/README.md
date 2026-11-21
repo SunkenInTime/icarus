@@ -680,9 +680,14 @@ web.
   commit is refused, so commits issued together are admitted one after
   another against the room left by those before them. A commit that would
   leave less than 1 MiB is refused as `CommitRefused(NoRoomForCommit)`, with
-  nothing written. That includes an empty commit and one that only deletes
-  or clears: each writes its record before it frees anything, so with less
-  than the margin left it is refused too. The engine asks
+  nothing written. A commit that holds no put (only deletes and area clears)
+  is admitted whenever its record alone fits in what the estimate says is
+  left, without the margin, so a full library can always free room; if the
+  browser still aborts its record for room, the commit is in doubt and the
+  next lease settles it whole or absent, like any other. An empty commit
+  writes no record and needs no room: the record already there belongs to
+  a commit known to be whole, so it answers `CommitApplied` in its turn. The
+  engine asks
   again in the background when the last answer is over 10 s old, so in
   normal use a save does not wait on the browser; it waits for a fresh answer
   only when the cached figure says a commit will not fit. Measured in Chrome

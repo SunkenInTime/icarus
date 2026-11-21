@@ -679,19 +679,17 @@ final class _Room {
     });
   }();
 
-  bool _fits(int charge) => switch (_left) {
+  bool _fits(int needed) => switch (_left) {
     null => true,
-    final left => charge + _reserved + roomMargin <= left,
+    final left => needed <= left,
   };
 
-  Future<StorageFailure?> admit(int charge) async {
+  Future<StorageFailure?> admit(int charge, {required bool freesRoom}) async {
+    final needed = freesRoom ? charge : charge + _reserved + roomMargin;
     if (_sinceAsked.elapsed > _refreshRoomEvery) unawaited(ask());
-    if (!_fits(charge)) await ask();
-    if (!_fits(charge)) {
-      return NoRoomForCommit(
-        needed: charge + _reserved + roomMargin,
-        left: _left ?? 0,
-      );
+    if (!_fits(needed)) await ask();
+    if (!_fits(needed)) {
+      return NoRoomForCommit(needed: needed, left: _left ?? 0);
     }
     _reserved += charge;
     return null;
@@ -1078,7 +1076,11 @@ final class IndexedDbLease implements StorageLease {
     if (_state case _InDoubt()) {
       return (landing: Future.value(const CommitRefused(LeaseEnded())));
     }
-    if (await _room.admit(charge) case final failure?) {
+    if (changes.isEmpty) {
+      return (landing: Future.value(const CommitApplied()));
+    }
+    final freesRoom = !changes.any((change) => change is Put);
+    if (await _room.admit(charge, freesRoom: freesRoom) case final failure?) {
       return (landing: Future.value(CommitRefused(failure)));
     }
     admitted();

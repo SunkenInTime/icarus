@@ -513,32 +513,62 @@ void main() {
     await lease.release();
   });
 
-  test('with less than the margin left, every commit is refused before '
-      'anything is written, an empty one and one that only deletes or clears '
-      'included, because each writes its record first', () async {
+  test('with less than the margin left, a commit that only deletes or only '
+      'clears is admitted and lands, an empty commit lands without needing '
+      'room, and a commit with a put is still refused', () async {
     final seeding = await openIndexedDb(name);
-    committed(await seeding.commit(const [Put('a', 'k', 'v')]));
+    committed(
+      await seeding.commit(const [Put('a', 'k', 'v'), Put('b', 'x', 'v')]),
+    );
     await seeding.release();
-    pretendRoomLeft(1000);
+    pretendRoomLeft(8000);
     final lease = await openIndexedDb(name);
-    for (final changes in const <List<Change>>[
-      [],
-      [Delete('a', 'k'), ClearArea('b')],
-      [Put('a', 'k', 'w')],
-    ]) {
-      expect(
-        await lease.commit(changes),
-        isA<CommitRefused>().having(
-          (refused) => refused.failure,
-          'failure',
-          isA<NoRoomForCommit>(),
-        ),
-        reason: '$changes',
-      );
-    }
-    expect(valueOf(await lease.read('a', 'k')), 'v');
+    committed(await lease.commit(const [Delete('a', 'k')]));
+    committed(await lease.commit(const [ClearArea('b')]));
+    committed(await lease.commit(const []));
+    expect(
+      await lease.commit(const [Put('a', 'k', 'w')]),
+      isA<CommitRefused>().having(
+        (refused) => refused.failure,
+        'failure',
+        isA<NoRoomForCommit>(),
+      ),
+    );
+    expect(await lease.read('a', 'k'), isA<KeyMissing>());
+    expect(await lease.read('b', 'x'), isA<KeyMissing>());
     pretendRoomLeft(null);
     await lease.release();
+  });
+
+  test('a delete-only commit whose record the browser aborts for room is in '
+      'doubt, and the next lease shows it whole or absent', () async {
+    for (final (keep, deleted) in [('last', true), ('none', false)]) {
+      final engine = IndexedDbEngine('$name-$keep');
+      final seeding = await leaseOf(engine);
+      committed(await seeding.commit(const [Put('a', 'k', 'v')]));
+      await seeding.release();
+      await engine.close();
+      pretendRoomLeft(8000);
+      final again = IndexedDbEngine('$name-$keep');
+      final lease = await leaseOf(again);
+      cutWrite('quota', 1, keep: keep);
+      expect(
+        await lease.commit(const [Delete('a', 'k')]),
+        isA<CommitUnknown>(),
+        reason: keep,
+      );
+      clearCut();
+      pretendRoomLeft(null);
+      await again.close();
+      final next = IndexedDbEngine('$name-$keep');
+      final reopened = await leaseOf(next);
+      expect(
+        await reopened.read('a', 'k'),
+        deleted ? isA<KeyMissing>() : isA<KeyHeld>(),
+        reason: keep,
+      );
+      await next.close();
+    }
   });
 
   test('an estimate that fails or cannot be read after the engine had a '
