@@ -13,6 +13,7 @@ import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/ui_watch.dart';
 import 'package:icarus/library_store/library_store_open.dart';
+import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/library_store_sqlite.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
@@ -279,16 +280,21 @@ class ShadowNotifier extends Notifier<ShadowState> {
       );
 }
 
+Future<void> storeCatchesUpBeforeExit(ProviderContainer container) async {
+  if (!shadowReachable) return;
+  if (container.read(shadowProvider.notifier).mode
+      case Mirroring(:final mirror)) {
+    await mirror.drained().timeout(
+          const Duration(seconds: 2),
+          onTimeout: () {},
+        );
+  }
+}
+
 void closeLibraryStoreOnExit(ProviderContainer container) {
   AppLifecycleListener(
     onExitRequested: () async {
-      if (container.read(shadowProvider.notifier).mode
-          case Mirroring(:final mirror)) {
-        await mirror.drained().timeout(
-              const Duration(seconds: 2),
-              onTimeout: () {},
-            );
-      }
+      await storeCatchesUpBeforeExit(container);
       await container.read(libraryStoreProvider.notifier).close();
       return ui.AppExitResponse.exit;
     },
