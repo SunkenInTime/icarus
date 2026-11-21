@@ -18,6 +18,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/strategy/strategy_cloud_migration.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:uuid/uuid.dart';
 
 /// Saves replay moments as pages of one strategy. The first capture creates
@@ -292,7 +293,7 @@ class LocalReplayCaptureStore implements ReplayCaptureStore {
       pages: [...pages, page],
       lastEdited: DateTime.now(),
     );
-    await _box.put(updated.id, updated);
+    (await const LocalLibrary().changePages(updated)).orThrow();
     return _captured(updated, page);
   }
 

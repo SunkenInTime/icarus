@@ -21,6 +21,7 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:uuid/uuid.dart';
 
 class StrategyMigrator {
@@ -40,7 +41,7 @@ class StrategyMigrator {
       final legacyMigrated = await migrateLegacyData(strat);
       final migrated = migrateToCurrentVersion(legacyMigrated);
       if (migrated != strat) {
-        await box.put(migrated.id, migrated);
+        (await const LocalLibrary().replaceAfterMigration(migrated)).orThrow();
       }
     }
   }
