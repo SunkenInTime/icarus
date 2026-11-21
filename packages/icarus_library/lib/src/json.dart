@@ -153,8 +153,12 @@ sealed class _Scan {
   const _Scan();
 }
 
-final class _Clean extends _Scan {
-  const _Clean();
+final class _Ordinary extends _Scan {
+  const _Ordinary();
+}
+
+final class _Unusual extends _Scan {
+  const _Unusual();
 }
 
 final class _Unsafe extends _Scan {
@@ -165,11 +169,36 @@ final class _Unsafe extends _Scan {
 
 const _largestExactWhole = '9007199254740991';
 
-const _exponentCeiling = 450359962737049;
+const _largestReadExponent = 400;
 
-const _mostMantissaDigits = 100;
+const _mostSignificantDigits = 17;
+
+const _mostPlainIntegerDigits = 21;
+
+const _mostFractionDigits = 22;
+
+const _smallestOrdinaryExponent = -324;
+
+const _largestExponent = 308;
+
+const _largestFiniteDigits = '17976931348623157';
 
 bool _isDigit(int unit) => unit >= 0x30 && unit <= 0x39;
+
+bool _belowLargestFinite(String text, int start, int digits) {
+  final mantissa = StringBuffer();
+  for (var at = start; mantissa.length < digits; at++) {
+    if (text.codeUnitAt(at) != 0x2e) {
+      mantissa.writeCharCode(text.codeUnitAt(at));
+    }
+  }
+  final written = mantissa.toString().padRight(
+    _largestFiniteDigits.length,
+    '0',
+  );
+  return written.length == _largestFiniteDigits.length &&
+      written.compareTo(_largestFiniteDigits) <= 0;
+}
 
 bool _isExact(String digits) =>
     digits.length < _largestExactWhole.length ||
@@ -180,6 +209,7 @@ _Scan _scan(String text) {
   var depth = 0;
   var inString = false;
   var escaped = false;
+  var unusual = false;
   var at = 0;
   while (at < text.length) {
     final unit = text.codeUnitAt(at);
@@ -196,48 +226,55 @@ _Scan _scan(String text) {
     }
     if (_isDigit(unit)) {
       final start = at;
+      var digits = 0;
+      var firstSignificant = -1;
+      var lastSignificant = -1;
       while (at < text.length && _isDigit(text.codeUnitAt(at))) {
+        if (text.codeUnitAt(at) != 0x30) {
+          if (firstSignificant < 0) firstSignificant = digits;
+          lastSignificant = digits;
+        }
+        digits++;
         at++;
       }
-      final integerDigits = at - start;
+      final integerDigits = digits;
       var fraction = false;
-      var fractionZeros = 0;
-      var fractionDigits = 0;
       if (at < text.length && text.codeUnitAt(at) == 0x2e) {
         fraction = true;
         at++;
-        final fractionStart = at;
         while (at < text.length && _isDigit(text.codeUnitAt(at))) {
+          if (text.codeUnitAt(at) != 0x30) {
+            if (firstSignificant < 0) firstSignificant = digits;
+            lastSignificant = digits;
+          }
+          digits++;
           at++;
-        }
-        fractionDigits = at - fractionStart;
-        while (fractionStart + fractionZeros < at &&
-            text.codeUnitAt(fractionStart + fractionZeros) == 0x30) {
-          fractionZeros++;
         }
       }
       var exponent = 0;
       var hasExponent = false;
+      var negativeExponent = false;
       if (at < text.length && (text.codeUnitAt(at) | 0x20) == 0x65) {
         hasExponent = true;
         at++;
-        var sign = 1;
-        if (at < text.length && text.codeUnitAt(at) == 0x2d) sign = -1;
+        if (at < text.length && text.codeUnitAt(at) == 0x2d) {
+          negativeExponent = true;
+        }
         if (at < text.length &&
             (text.codeUnitAt(at) == 0x2d || text.codeUnitAt(at) == 0x2b)) {
           at++;
         }
         while (at < text.length && _isDigit(text.codeUnitAt(at))) {
-          if (exponent < _exponentCeiling) {
+          if (exponent <= _largestReadExponent) {
             exponent = exponent * 10 + text.codeUnitAt(at) - 0x30;
           }
           at++;
         }
-        exponent *= sign;
       }
-      if (integerDigits + fractionDigits > _mostMantissaDigits) {
+      if (exponent > _largestReadExponent) {
         return const _Unsafe(
-          'holds a number spelled with more digits than any build writes',
+          'holds a number with an exponent over $_largestReadExponent, '
+          'which the VM decodes as zero or infinity whatever its digits',
         );
       }
       if (!fraction && !hasExponent) {
@@ -249,13 +286,21 @@ _Scan _scan(String text) {
         }
         continue;
       }
-      final leading = integerDigits == 1 && unit == 0x30
-          ? -(fractionZeros + 1)
-          : integerDigits - 1;
-      if (leading + exponent >= 308 &&
-          !(double.tryParse(text.substring(start, at)) ?? 0).isFinite) {
-        return const _Unsafe('holds a number that is not finite');
-      }
+      final significant = firstSignificant < 0
+          ? 0
+          : lastSignificant - firstSignificant + 1;
+      final signedExponent = negativeExponent ? -exponent : exponent;
+      final ordinary =
+          significant <= _mostSignificantDigits &&
+          digits - integerDigits <= _mostFractionDigits &&
+          (hasExponent
+              ? integerDigits == 1 &&
+                    signedExponent >= _smallestOrdinaryExponent &&
+                    (signedExponent < _largestExponent ||
+                        (signedExponent == _largestExponent &&
+                            _belowLargestFinite(text, start, digits)))
+              : integerDigits <= _mostPlainIntegerDigits);
+      if (!ordinary) unusual = true;
       continue;
     }
     switch (unit) {
@@ -271,11 +316,24 @@ _Scan _scan(String text) {
     }
     at++;
   }
-  return const _Clean();
+  return unusual ? const _Unusual() : const _Ordinary();
 }
 
-Admission admit(String text) {
-  if (_scan(text) case _Unsafe(:final problem)) {
+bool allNumbersFinite(Object? json) => switch (json) {
+  final double number => number.isFinite,
+  final List<Object?> list => list.every(allNumbersFinite),
+  final Map<String, Object?> map => map.values.every(allNumbersFinite),
+  _ => true,
+};
+
+Admission admit(String text) => admitChecking(text, allNumbersFinite);
+
+Admission admitChecking(
+  String text,
+  bool Function(Object? decoded) numbersFinite,
+) {
+  final scan = _scan(text);
+  if (scan case _Unsafe(:final problem)) {
     return NotAdmitted(text, problem);
   }
   final Object? parsed;
@@ -283,6 +341,9 @@ Admission admit(String text) {
     parsed = jsonDecode(text);
   } on FormatException catch (error) {
     return NotAdmitted(text, 'not JSON: ${error.message}');
+  }
+  if (scan is _Unusual && !numbersFinite(parsed)) {
+    return NotAdmitted(text, 'holds a number that is not finite');
   }
   return Admitted._(_view(parsed));
 }

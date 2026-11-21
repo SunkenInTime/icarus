@@ -368,6 +368,8 @@ const _marker = 'NUMBER_GOES_HERE';
 const _unholdable = [
   '1e400',
   '-1e400',
+  '1e309',
+  '-1.8e308',
   '9223372036854775808',
   '-9223372036854775809',
   '9007199254740993',
@@ -459,7 +461,37 @@ List<Corruption> corruptionsOf(String kind, String text, Random random) {
           ..add((
             name: '$where as 1 and 99 zeros, then e-1100000',
             text: template.replaceFirst('"$_marker"', '1${'0' * 99}e-1100000'),
-            outcome: expected(kind, json, at, 0.0),
+            outcome: whole,
+          ))
+          ..add((
+            name: '$where as 0. and 93 zeros, then 1e401',
+            text: template.replaceFirst('"$_marker"', '0.${'0' * 93}1e401'),
+            outcome: whole,
+          ))
+          ..add((
+            name: '$where as 0. and 93 zeros, then 1e400',
+            text: template.replaceFirst('"$_marker"', '0.${'0' * 93}1e400'),
+            outcome: expected(kind, json, at, 1e306),
+          ))
+          ..add((
+            name: '$where as 1e-401',
+            text: template.replaceFirst('"$_marker"', '1e-401'),
+            outcome: whole,
+          ))
+          ..add((
+            name: '$where as 1 and 500 zeros, then e-400',
+            text: template.replaceFirst('"$_marker"', '1${'0' * 500}e-400'),
+            outcome: expected(kind, json, at, 1e100),
+          ))
+          ..add((
+            name: '$where as 1 and 400 zeros, then .0',
+            text: template.replaceFirst('"$_marker"', '1${'0' * 400}.0'),
+            outcome: whole,
+          ))
+          ..add((
+            name: '$where as 9.99e308',
+            text: template.replaceFirst('"$_marker"', '9.99e308'),
+            outcome: whole,
           ));
       }
     }

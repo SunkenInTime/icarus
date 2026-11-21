@@ -43,16 +43,19 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   An exception means a programmer error.
 - **JSON is read once, at the edge, and never copied on the way in.**
   Stored text goes through `admit`, which never throws. One scan of the
-  text refuses nesting deeper than `maxJsonDepth`, a number that would not
-  be finite (decided exactly, whatever the number of digits or the size of
-  the exponent), a whole number JavaScript cannot hold exactly, and a
-  number spelled with more than 100 mantissa digits, since no build writes
-  more than 17 and the VM's JSON parser reads over 400 differently from the
-  web; then `jsonDecode` runs once and its result is handed on as it is, as
-  `Admitted`, or `NotAdmitted` with the text kept and why. A row holding a
-  number token it refuses is unreadable with its text kept, even when a
-  later duplicate key would replace that value; no build writes duplicate
-  keys.
+  text refuses nesting deeper than `maxJsonDepth`, a whole number
+  JavaScript cannot hold exactly, and an exponent over 400, which the VM's
+  JSON decoder reads as zero or infinity whatever the digits. It also sorts
+  every other number into ordinary, the spellings Dart and JavaScript write
+  (at most 17 significant digits, at most 21 integer and 22 fraction
+  digits, and an exponent only after one integer digit, from -324 up to a
+  value of at most the largest double), or unusual. Then `jsonDecode` runs
+  once. A row with only ordinary numbers is handed on as it is; a row with
+  an unusual one gets one walk over the decoded tree, without a copy, that
+  refuses a number that is not finite. The answer is `Admitted`, or
+  `NotAdmitted` with the text kept and why. A row holding a number token it
+  refuses is unreadable with its text kept, even when a later duplicate key
+  would replace that value; no build writes duplicate keys.
 - **Rows stay values by type.** Every JSON value a row holds (payload
   `data`, `unknownFields`, an unreadable row's `stored`) is a `JsonObject`
   or a `JsonList`. Neither is a `Map` or a `List`: they offer reads only,
