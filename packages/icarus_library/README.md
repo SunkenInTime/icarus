@@ -559,10 +559,12 @@ a `hooks` package newer than Flutter 3.44.4 allows.
   frames, and they would come back on the next open. So the next transaction
   that succeeds also bumps `generation`; it writes over those frames, and from
   then on the unknown commit can never return.
-- **Failures.** A full disk, an I/O error, a locked or unreadable file is a
-  `DeviceFailure` naming SQLite's error code. SQLite can describe damage with
-  bytes that are not UTF-8; `package:sqlite3` throws a `FormatException` for
-  that, and the engine returns it as a failure too.
+- **Failures.** A full disk is `OutOfRoom`; a damaged file
+  (`SQLITE_CORRUPT`, `SQLITE_NOTADB`, a failed integrity check) is
+  `DamagedLibrary`; any other error SQLite reports is a `DeviceFailure`
+  naming its code. SQLite can describe damage with bytes that are not UTF-8;
+  `package:sqlite3` throws a `FormatException` for that, and the engine
+  returns it as `DamagedLibrary` too.
 - **Listing areas** jumps from area to area through the primary key:
   `min(area)` above the last one found, one index seek per area, so a large
   area costs no more than a small one.
@@ -581,8 +583,8 @@ a `hooks` package newer than Flutter 3.44.4 allows.
   first release's answer.
 - **When storage is gone.** Before SQLite touches anything, the engine looks
   at the files: a library file that is missing or empty while a `-wal` with
-  content, or a `-journal` that holds pages, sits beside it is refused as a
-  `DeviceFailure`, and every byte is left as it was. SQLite would otherwise
+  content, or a `-journal` that holds pages, sits beside it is refused as
+  `LibraryFileGone`, and every byte is left as it was. SQLite would otherwise
   delete that log, and the saved edits in it with it. A journal holds pages
   when its header is valid and records a size above zero; the journal left by
   a creation cut short records zero and holds nothing. The engine looks at the
@@ -732,7 +734,7 @@ web.
   `HeldByAnotherWriter` at once. The lock is released when the lease is, or
   when the tab closes or crashes. A page without Web Locks (a plain `http`
   origin that is not `localhost`) cannot hold the library and gets
-  `LeaseFailed`.
+  `LeaseFailed(BrowserLacks(webLocks))`.
 - **Release waits for commits in flight**, then closes the database and lets
   go of the lock. The browser would order them anyway: a transaction started
   by the next holder waits for every overlapping transaction created before
@@ -751,6 +753,74 @@ web.
   more. Releasing twice returns the first release's answer.
 - `IndexedDbEngine.holdNextCommit()` parks the next commit before its
   transaction starts, counted as a commit in flight.
+
+#### What a library can be in, and what the app can say
+
+This section is the specification the app's wording is written from. Every
+state below has a type the app can switch over; none of them needs a message
+parsed.
+
+**Was the storage just created?** `Leased` carries an `origin`, and
+`StoreOpened` passes it on: `StorageExisted`, or `StorageCreated` when this
+open made the storage. On SQLite, created means the library file was absent,
+or provably not created yet (zero bytes, or one blank page); on IndexedDB,
+the open ran its upgrade from nothing. A library the app expected to find
+that comes back `StorageCreated` was wiped: the browser evicted or cleared
+the site's data, or the file was deleted. The engine cannot tell that from a
+first start; the app can, from what it remembers.
+
+| Origin | What the app should be able to say |
+| --- | --- |
+| `StorageCreated` where a library was expected, web | "This browser had cleared your offline copy. Your library is being restored from the server; changes that were not sent are gone." |
+| `StorageCreated` where a library was expected, desktop | "Icarus couldn't find your library file, so it started a new, empty library." |
+
+**Format numbers.** A library carries two, both written when it is created
+and both checked every time it is opened:
+
+- The **engine format** is the engine's own layout: on SQLite the tables,
+  their columns and keys, and the generation row, kept in `user_version`
+  (`sqliteFormat`); on IndexedDB the object store and its keys, kept in the
+  database version (`indexedDbFormat`). It changes when an older engine
+  would misread the layout or write into it wrongly. It does not change for
+  what rows hold.
+- The **store format** is the store's row layout: the area and key names, and
+  the shape of a summary and of every row the store reads back. It is the
+  `format` row in the `library` area (`storeFormat`), written in the same open
+  that created the storage. It changes when an older store would misread the
+  rows or write into them wrongly; a change that older stores read and keep
+  correctly does not change it.
+
+Both are 1, the first format, and nothing earlier shipped. A build that meets
+a number higher than it knows refuses to open with `NewerFormat`, naming the
+layer, the number found and the number it knows, and writes nothing: the
+engine checks before switching SQLite to its log, and the store checks the
+`format` row before it repairs or writes anything. A library without a
+`format` row was made before the row existed and is format 1. A `format` row
+that is not a whole number is `DamagedLibrary`. A build that raises a number
+must also say how it moves a library from the lower one.
+
+**What can go wrong.** `StorageFailure` is a sealed set; a caller switches
+over it exhaustively. What the store does depends on the step: a failure
+while opening refuses the open (`StoreNotOpened(OpenStorageFailed(...))`); a
+refused commit refuses that save (`NotSaved`) and the store keeps going; a
+commit in doubt stops the store (`SaveInDoubt`); a failed read is `NotRead`
+and the store keeps going.
+
+| Failure | Produced by | What the store does | What the app should be able to say |
+| --- | --- | --- | --- |
+| `StorageFull`: `NoRoomForCommit` | IndexedDB's room check, before anything is written | refuses the save; nothing written | "There isn't enough storage space to save this change." |
+| `StorageFull`: `OutOfRoom` | a full disk on SQLite (`SQLITE_FULL`); a browser `QuotaExceededError` outside a commit's abort | refuses the save when it happens before the commit is final, stops when the commit is in doubt, refuses the open when it happens while opening | "Your disk is full, so this change wasn't saved." |
+| `StorageFull`: `AbortedForQuota` | IndexedDB, a commit the browser aborted for space (in Firefox, a full disk too) | stops; the save is in doubt and may be partly applied | "The browser ran out of storage while saving, so this change may be only partly saved." |
+| `NewerFormat` | an engine format or a store format above what this build knows | refuses the open; writes nothing | "This library was saved by a newer version of Icarus. Update Icarus to open it." |
+| `DamagedLibrary` | a failed integrity check, a file SQLite cannot read, a file that is not an Icarus library, a value that is not text, a `format` row that is not a number, an IndexedDB database without its rows store | refuses the open; a read that meets it is not read; a commit that meets it is refused | "Your library is damaged, so Icarus can't open it." |
+| `LibraryFileGone` | SQLite, a library file missing or empty beside a log or journal that holds pages | refuses the open; writes nothing | "Your library file is missing, but recent changes were found beside it, so Icarus won't start a new library over them." |
+| `BrowserLacks` (`strictDurability`, `webLocks`) | IndexedDB, a browser that won't report strict durability, or a page without Web Locks | refuses the open | "This browser can't store your library safely, so Icarus won't keep it here." |
+| `NoAnswer` | IndexedDB, a browser call that gave no answer within its time limit | refuses the open; a release that times out is `ReleaseFailed` | "The browser stopped responding while opening your library. Reload the page to try again." |
+| `HeldByAnotherWriter` (a `Leasing`, not a failure) | another tab, window or process holds the library | refuses the open (`StoreAlreadyOpen`) | "Icarus is already open in another window or tab." |
+| `LeaseEnded`, `EngineClosed`, `StoreClosed` | the lease ended (another tab upgraded or deleted the database, the browser closed it, the app closed the store) | stops, or refuses the step | "Your library was closed. Reopen it to keep working." |
+| `StoreStopped(cause)` | every step after the store stopped, carrying what stopped it | refuses the step | the sentence for its `cause` |
+| `KeyTooLong`, `NameNotAllowed`, `WouldNotReadBack` | a row the store built that the engine or the store itself would not keep | refuses the save | "Icarus couldn't save this change." (a bug to report, not a state of the library) |
+| `DeviceFailure` | anything not classified above: another I/O error, a worker that died, a rollback that failed | as the step it happened in | "Something went wrong reading or writing your library." |
 
 #### What the tests simulate, and what they cannot
 

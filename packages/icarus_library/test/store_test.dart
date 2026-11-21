@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/store/layout.dart'
+    show formatKey, libraryArea;
 import 'package:test/test.dart';
 
 import 'store_support.dart';
@@ -15,6 +17,95 @@ void main() {
 
   setUpAll(() async {
     seeded = await seededContents();
+  });
+
+  group('The library format', () {
+    Future<StoreOpening> opening(MemoryStorage disk) => LibraryStore.open(
+      MemoryEngine(disk),
+      canRead: readsKnownKinds,
+      clock: fixedClock,
+    );
+
+    test('a new library is told it was created and gets the store format; '
+        'opened again it existed', () async {
+      final disk = MemoryStorage();
+      final first = await opening(disk);
+      expect(
+        first,
+        isA<StoreOpened>().having(
+          (opened) => opened.origin,
+          'origin',
+          isA<StorageCreated>(),
+        ),
+      );
+      await (first as StoreOpened).store.close();
+      expect(disk.contents, {
+        libraryArea: {formatKey: '$storeFormat'},
+      });
+      final again = await opening(disk);
+      expect(
+        again,
+        isA<StoreOpened>().having(
+          (opened) => opened.origin,
+          'origin',
+          isA<StorageExisted>(),
+        ),
+      );
+      await (again as StoreOpened).store.close();
+    });
+
+    test('a library with a newer store format is refused, and the store '
+        'writes nothing, not even the summary it would repair', () async {
+      final contents = {
+        ...seeded,
+        libraryArea: {
+          ...?seeded[libraryArea],
+          formatKey: '${storeFormat + 1}',
+          summaryName(strategyId): 'not a summary',
+        },
+      };
+      final disk = MemoryStorage(contents);
+      expect(
+        await opening(disk),
+        isA<StoreNotOpened>().having(
+          (refused) => refused.problem,
+          'problem',
+          isA<OpenStorageFailed>().having(
+            (failed) => failed.failure,
+            'failure',
+            isA<NewerFormat>()
+                .having((newer) => newer.layer, 'layer', FormatLayer.store)
+                .having((newer) => newer.found, 'found', storeFormat + 1)
+                .having((newer) => newer.known, 'known', storeFormat),
+          ),
+        ),
+      );
+      expect(disk.contents, contents);
+    });
+
+    test(
+      'a store format that is not a whole number is a damaged library',
+      () async {
+        for (final format in ['x', '01', '0', '-1', '1.0', '']) {
+          final disk = MemoryStorage({
+            libraryArea: {formatKey: format},
+          });
+          expect(
+            await opening(disk),
+            isA<StoreNotOpened>().having(
+              (refused) => refused.problem,
+              'problem',
+              isA<OpenStorageFailed>().having(
+                (failed) => failed.failure,
+                'failure',
+                isA<DamagedLibrary>(),
+              ),
+            ),
+            reason: format,
+          );
+        }
+      },
+    );
   });
 
   group('Reading', () {
@@ -826,7 +917,9 @@ void main() {
         final disk = MemoryStorage(seeded);
         final store = await openStore(MemoryEngine(disk));
         savedValue(await store.editLibrary([const RemoveStrategy(strategyId)]));
-        expect(disk.contents.values.expand((area) => area.keys), isEmpty);
+        expect(disk.contents, {
+          libraryArea: {formatKey: '$storeFormat'},
+        });
         expect(listOf(store).strategies, isEmpty);
         expect(
           await store.readStrategy(strategyId),

@@ -12,7 +12,7 @@ const _rows = 'rows';
 
 const indexedDbMaxKeyLength = 1024;
 
-const indexedDbVersion = 1;
+const indexedDbFormat = 1;
 
 const roomMargin = 1024 * 1024;
 
@@ -20,11 +20,13 @@ const _bytesPerPut = 1024;
 
 const _refreshRoomEvery = Duration(seconds: 10);
 
-StorageFailure _named(DOMException? error, String what) =>
-    DeviceFailure(switch (error) {
-      null => '$what was aborted',
-      _ => '$what failed: ${error.name}: ${error.message}',
-    });
+StorageFailure _named(DOMException? error, String what) => switch (error) {
+  null => DeviceFailure('$what was aborted'),
+  _ when error.name == 'QuotaExceededError' => OutOfRoom(
+    '$what failed: ${error.message}',
+  ),
+  _ => DeviceFailure('$what failed: ${error.name}: ${error.message}'),
+};
 
 StorageFailure _thrown(Object error, String what) => switch (error) {
   TimeoutException(:final duration?) => NoAnswer(what, duration),
@@ -93,9 +95,9 @@ String? _afterUnits(String prefix) {
   return null;
 }
 
-const _notText = DeviceFailure('the library holds a value that is not text');
+const _notText = DamagedLibrary('the library holds a value that is not text');
 
-const _notAName = DeviceFailure('the library holds a key that is not a name');
+const _notAName = DamagedLibrary('the library holds a key that is not a name');
 
 String? _text(JSAny? value) =>
     value.isA<JSString>() ? (value as JSString).toDart : null;
@@ -163,9 +165,6 @@ final class _Refused extends _Opened {
   final StorageFailure failure;
 }
 
-StorageFailure _cannotOpen(String why) =>
-    DeviceFailure('the library cannot be opened: $why');
-
 Future<_Opened> _openDatabase(String name, Duration patience) {
   final opened = Completer<_Opened>();
   var created = false;
@@ -214,11 +213,15 @@ Future<StorageFailure?> _deleteDatabase(String name, Duration patience) =>
     );
 
 StorageFailure? _problemWith(IDBDatabase db) {
-  if (db.version != indexedDbVersion) {
-    return _cannotOpen('written by a newer build (version ${db.version})');
+  if (db.version > indexedDbFormat) {
+    return NewerFormat(
+      FormatLayer.engine,
+      found: db.version,
+      known: indexedDbFormat,
+    );
   }
   if (!db.objectStoreNames.contains(_rows)) {
-    return _cannotOpen('not an Icarus library (no rows store)');
+    return const DamagedLibrary('not an Icarus library (no rows store)');
   }
   return null;
 }
@@ -417,9 +420,7 @@ final class IndexedDbEngine implements StorageEngine {
 
   Future<Leasing> _lease() async {
     if (!window.navigator.has('locks')) {
-      return const LeaseFailed(
-        DeviceFailure('this page cannot hold the library: no Web Locks'),
-      );
+      return const LeaseFailed(BrowserLacks(BrowserFeature.webLocks));
     }
     final acquiring = _Acquiring();
     final Leasing leasing;
@@ -436,8 +437,7 @@ final class IndexedDbEngine implements StorageEngine {
 
   Future<Leasing> _givenBack(_Acquiring acquiring, Leasing leasing) async =>
       switch ((leasing, await acquiring.giveBack(name, patience))) {
-        (LeaseFailed(:final failure), final StorageFailure left?) =>
-          LeaseFailed(DeviceFailure('$failure, and then $left')),
+        (LeaseFailed(), _) => leasing,
         (_, final StorageFailure left?) => LeaseFailed(left),
         _ => leasing,
       };
@@ -455,15 +455,18 @@ final class IndexedDbEngine implements StorageEngine {
     }
     if (_problemWith(db) case final problem?) return LeaseFailed(problem);
     if (!await _keepsWritesStrict(db, patience)) {
-      return LeaseFailed(
-        _cannotOpen('this browser does not keep writes with strict durability'),
-      );
+      return const LeaseFailed(BrowserLacks(BrowserFeature.strictDurability));
     }
     final room = _Room(patience);
     await room.ask();
     final lease = acquiring.lease = IndexedDbLease._(db, lock, room, patience);
     _granted.add(lease);
-    return _closed ? const LeaseFailed(EngineClosed()) : Leased(lease);
+    return _closed
+        ? const LeaseFailed(EngineClosed())
+        : Leased(
+            lease,
+            acquiring.created ? const StorageCreated() : const StorageExisted(),
+          );
   }
 
   PendingWrite holdNextCommit() => _granted.last._held = _HeldCommit();

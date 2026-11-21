@@ -1,4 +1,5 @@
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/store/layout.dart' show formatKey;
 import 'package:test/test.dart';
 
 import 'store_support.dart';
@@ -160,6 +161,7 @@ void main() {
         expect(
           counts.listedEntries,
           unorderedEquals([
+            ('library', formatKey),
             for (var i = 0; i < strategies; i++)
               ('library', summaryName('s$i')),
           ]),
@@ -188,7 +190,10 @@ void main() {
       final (store, counts) = await openedOn(disk);
       expect(counts.reads, isEmpty);
       expect(counts.entryListings, [('library', '')]);
-      expect(counts.listedEntries, [('library', summaryName('big'))]);
+      expect(counts.listedEntries, [
+        ('library', formatKey),
+        ('library', summaryName('big')),
+      ]);
       counts.reset();
       final content = strategyOf(await store.readStrategy('big'));
       expect(content.pages, hasLength(20));

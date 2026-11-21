@@ -16,8 +16,9 @@ final class _CallingIsolateEngine implements StorageEngine {
   @override
   Future<Leasing> lease() async =>
       switch (openLibraryFile(path, const DiskLibraryFiles())) {
-        RowsOpened(:final rows) => Leased(
+        RowsOpened(:final rows, :final origin) => Leased(
           _granted.adding(_CallingIsolateLease(rows)),
+          origin,
         ),
         RowsHeld() => const HeldByAnotherWriter(),
         RowsRefused(:final failure) => LeaseFailed(failure),

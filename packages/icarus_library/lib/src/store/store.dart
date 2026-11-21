@@ -29,11 +29,12 @@ sealed class StoreOpening {
 }
 
 final class StoreOpened extends StoreOpening {
-  StoreOpened(this.store, List<ForeignName> foreignNames)
+  StoreOpened(this.store, List<ForeignName> foreignNames, this.origin)
     : foreignNames = List.unmodifiable(foreignNames);
 
   final LibraryStore store;
   final List<ForeignName> foreignNames;
+  final StorageOrigin origin;
 }
 
 final class StoreNotOpened extends StoreOpening {
@@ -241,16 +242,16 @@ final class LibraryStore {
         return const StoreNotOpened(StoreAlreadyOpen());
       case LeaseFailed(:final failure):
         return StoreNotOpened(OpenStorageFailed(failure));
-      case Leased(:final lease):
+      case Leased(:final lease, :final origin):
         if (lease.maxKeyLength < longestName) {
           await lease.release();
           return StoreNotOpened(EngineTooSmall(lease.maxKeyLength));
         }
         final store = LibraryStore._(lease, canRead, clock);
         final foreign = <ForeignName>[];
-        switch ((await store._readLibrary(foreign), store._settle())) {
+        switch ((await store._readLibrary(foreign, origin), store._settle())) {
           case (Done(), Done()):
-            return StoreOpened(store, foreign);
+            return StoreOpened(store, foreign, origin);
           case (StorageFailed(:final failure), _) ||
               (_, StorageFailed(:final failure)):
             await store.close();
@@ -258,6 +259,27 @@ final class LibraryStore {
         }
     }
   }
+
+  static StorageFailure? _formatProblem(String? stored) {
+    if (stored == null) return null;
+    return switch (int.tryParse(stored)) {
+      final format? when format > storeFormat => NewerFormat(
+        FormatLayer.store,
+        found: format,
+        known: storeFormat,
+      ),
+      final format? when format >= 1 && '$format' == stored => null,
+      _ => DamagedLibrary('the store format is not a number: $stored'),
+    };
+  }
+
+  Future<Stored<void>> _markCreated() async => switch (await _lease.commit(
+    const [Put(libraryArea, formatKey, '$storeFormat')],
+  )) {
+    CommitApplied() => done,
+    CommitRefused(:final failure) ||
+    CommitUnknown(:final failure) => StorageFailed(failure),
+  };
 
   late final _WatchedLease _lease;
   final CanRead _canRead;
@@ -334,6 +356,7 @@ final class LibraryStore {
       null => RowSpot(names: (_) => false),
     };
     return switch (name) {
+      FormatName() ||
       SummaryName() ||
       UnknownKindName() ||
       ForeignName() => Unplaced(null, '${name.name} holds no row'),
@@ -453,13 +476,28 @@ final class LibraryStore {
     }
   }
 
-  Future<Stored<void>> _readLibrary(List<ForeignName> foreign) async {
+  Future<Stored<void>> _readLibrary(
+    List<ForeignName> foreign,
+    StorageOrigin origin,
+  ) async {
     final List<StoredEntry> entries;
     switch (await _lease.entries(libraryArea, '')) {
       case StorageFailed(:final failure):
         return StorageFailed(failure);
       case Done(:final value):
         entries = value;
+    }
+    final format = [
+      for (final (:key, :value) in entries)
+        if (key == formatKey) value,
+    ].firstOrNull;
+    if (_formatProblem(format) case final problem?) {
+      return StorageFailed(problem);
+    }
+    if ((format, origin) case (null, StorageCreated())) {
+      if (await _markCreated() case StorageFailed(:final failure)) {
+        return StorageFailed(failure);
+      }
     }
     final toRebuild = <String>[];
     for (final (:key, :value) in entries) {

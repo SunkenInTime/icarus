@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
 
+import '../store/engine.dart';
 import 'rows_database.dart';
 
 abstract interface class LibraryFiles {
@@ -104,9 +105,7 @@ String? _strandedCompanion(String path, LibraryFiles files) {
 _Attempt _openOnce(String path, LibraryFiles files) {
   final companion = _strandedCompanion(path, files);
   if (companion != null && (files.size(path) ?? 0) == 0) {
-    return _TryAgain(
-      refusedFor('the file is gone or empty and $companion is still there'),
-    );
+    return _TryAgain(RowsRefused(LibraryFileGone(companion)));
   }
   try {
     return switch (RowsDatabase.open(

@@ -23,7 +23,10 @@ final class MemoryStorage {
     for (final MapEntry(key: area, value: values) in contents.entries) {
       _area(area).addAll(values);
     }
+    _made = contents.isNotEmpty;
   }
+
+  late bool _made;
 
   final int maxKeyLength;
   final _areas = <String, SplayTreeMap<String, String>>{};
@@ -57,7 +60,11 @@ final class MemoryEngine implements StorageEngine {
     final lease = _MemoryLease(storage);
     storage._holder = lease;
     _granted.add(lease);
-    return Leased(lease);
+    final StorageOrigin origin = storage._made
+        ? const StorageExisted()
+        : const StorageCreated();
+    storage._made = true;
+    return Leased(lease, origin);
   }
 
   Future<void> close() async {

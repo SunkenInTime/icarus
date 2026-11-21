@@ -103,11 +103,16 @@ const _patch = '''
     opening.onsuccess = () => {
       const db = opening.result;
       const transaction = db.transaction('rows', 'readwrite');
-      const value = { null: null, undefined: undefined, number: 5 }[kind];
+      const value = kind.startsWith('text:') ? kind.slice(5) : { null: null, undefined: undefined, number: 5 }[kind];
       transaction.objectStore('rows').put(value, [area, key]);
       transaction.oncomplete = () => { db.close(); resolve(); };
     };
   });
+  const locks = Object.getOwnPropertyDescriptor(Navigator.prototype, 'locks');
+  faults.hideLocks = (hidden) => {
+    if (hidden) delete Navigator.prototype.locks;
+    else Object.defineProperty(Navigator.prototype, 'locks', locks);
+  };
   const open = IDBFactory.prototype.open;
   IDBFactory.prototype.open = function (...args) {
     if (faults.openThrows) throw new TypeError('open is broken');
@@ -195,6 +200,9 @@ Future<void> putRaw(String name, String area, String key, String kind) =>
     )).toDart;
 
 void estimateFails(String? how) => _faults['estimateFails'] = how?.toJS;
+
+void hideWebLocks(bool hidden) =>
+    _faults.callMethod<JSAny?>('hideLocks'.toJS, hidden.toJS);
 
 void closeThrows(bool throws) => _faults['closeThrows'] = throws.toJS;
 
@@ -500,7 +508,10 @@ final class StaleWriterEngine implements StorageEngine {
 
   @override
   Future<Leasing> lease() async => switch (await inner.lease()) {
-    Leased(:final lease) => Leased(_StaleWriterLease(this, lease)),
+    Leased(:final lease, :final origin) => Leased(
+      _StaleWriterLease(this, lease),
+      origin,
+    ),
     final other => other,
   };
 }

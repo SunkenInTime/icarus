@@ -113,7 +113,7 @@ final class WrappingEngine implements StorageEngine {
 
   @override
   Future<Leasing> lease() async => switch (await inner.lease()) {
-    Leased(:final lease) => Leased(wrap(lease)),
+    Leased(:final lease, :final origin) => Leased(wrap(lease), origin),
     final other => other,
   };
 }

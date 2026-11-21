@@ -291,7 +291,17 @@ void main() {
       for (final MapEntry(key: path, value: bytes) in files.entries) {
         drive.disk.replace(path, bytes);
       }
-      expect(drive.open(), isA<RowsRefused>(), reason: name);
+      expect(
+        drive.open(),
+        isA<RowsRefused>().having(
+          (refused) => refused.failure,
+          'failure',
+          name.startsWith('a blank first page')
+              ? isA<DamagedLibrary>()
+              : isA<LibraryFileGone>(),
+        ),
+        reason: name,
+      );
       for (final MapEntry(key: path, value: bytes) in files.entries) {
         expect(drive.disk.bytesOf(path), bytes, reason: '$name: $path');
       }
@@ -415,8 +425,12 @@ void main() {
         )) {
           case StoreNotOpened(:final problem):
             expect(
-              '$problem',
-              anyOf(contains('cannot be opened'), contains('SQLite')),
+              problem,
+              isA<OpenStorageFailed>().having(
+                (failed) => failed.failure,
+                'failure',
+                isA<DamagedLibrary>(),
+              ),
               reason: damage,
             );
           case StoreOpened(:final store):

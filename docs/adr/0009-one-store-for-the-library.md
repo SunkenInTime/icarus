@@ -226,3 +226,11 @@ The store changes how a local library is saved, which every earlier rule
 treated as fixed. It ships behind a switch that is off by default. Turning it
 on is its own change, reviewed on its own, after the store has opened real
 libraries from past releases and produced the same pages the old code does.
+
+A library records two format numbers from the moment it is created: the
+engine's layout (SQLite's `user_version`, IndexedDB's database version) and
+the store's row layout (the `format` row in the `library` area). Both start
+at 1. A build that finds a higher number refuses to open the library and
+writes nothing; the package README gives the rule for when each changes, and
+the full set of states a library can be in with what the app can say about
+each.
