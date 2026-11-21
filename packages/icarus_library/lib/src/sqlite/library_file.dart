@@ -103,8 +103,17 @@ String? _strandedCompanion(String path, LibraryFiles files) {
 }
 
 _Attempt _openOnce(String path, LibraryFiles files) {
-  final companion = _strandedCompanion(path, files);
-  if (companion != null && (files.size(path) ?? 0) == 0) {
+  final String? companion;
+  final int? librarySize;
+  try {
+    companion = _strandedCompanion(path, files);
+    librarySize = files.size(path);
+  } on FileSystemException catch (error) {
+    return _TryAgain(
+      RowsRefused(DeviceFailure('the library files could not be read: $error')),
+    );
+  }
+  if (companion != null && (librarySize ?? 0) == 0) {
     return _TryAgain(RowsRefused(LibraryFileGone(companion)));
   }
   try {

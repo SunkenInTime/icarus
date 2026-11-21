@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:sqlite3/sqlite3.dart';
 
 import '../engines/names.dart';
@@ -212,6 +214,11 @@ final class RowsDatabase {
     } on FormatException catch (error) {
       _discard(db, prepared);
       return RowsRefused(_undescribed(error));
+    } on FileSystemException catch (error) {
+      _discard(db, prepared);
+      return RowsRefused(
+        DeviceFailure('the library file could not be read: $error'),
+      );
     }
   }
 

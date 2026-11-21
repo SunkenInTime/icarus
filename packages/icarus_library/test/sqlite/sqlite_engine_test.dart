@@ -484,12 +484,12 @@ void main() {
   test('a path that is a folder and a missing folder are failures, and the '
       'next open recovers', () async {
     await Directory(path).create();
-    expect(await _refusal(path), contains('SQLite'));
+    expect(await _failure(path), isA<DeviceFailure>());
     await Directory(path).delete();
     expect(await _refusal(path), 'leased');
     expect(
-      await _refusal('${directory.path}/missing/library.sqlite'),
-      contains('SQLite'),
+      await _failure('${directory.path}/missing/library.sqlite'),
+      isA<DeviceFailure>(),
     );
   });
 
