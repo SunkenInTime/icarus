@@ -12,11 +12,12 @@ Each section builds a queue by real events until op `x` is in that state, then a
 
 ## Which revision an op names
 
-An op names the revision the user's edit was made against. Only this device's own applied answer on that row can move it forward, and only for work queued behind that answer in the row's chain, or made over it while it was still drawn as landed. A result never changes the revision an op names. If the row has since changed, the server rejects the op and the user is asked, which is the point of sending it checked. `_judge` in `lib/src/cloud/queue.dart` is the only place an outgoing revision is chosen.
+An op names the revision the user's edit was made against. The device keeps, per row, a justified row: a revision with the content at that revision. It gets one from a result, or when its own op on that row is answered applied at exactly the revision `applyOp` gives for it (the entry records that produced row when it is made). An answer at any other revision means someone else wrote in between, and the row is not justified until a result shows it. A result never changes the revision an op names. `_judge` in `lib/src/cloud/queue.dart` is the only place an outgoing revision is chosen.
 
-- A whole-row write (an element or lineup group written whole, a page or its settings) behind this device's own field merge waits for the row's result, and goes only if that result shows the row exactly as the user saw it at the merge's revision. It needs the user if a result of this session shows the row otherwise, or a result of its page no longer holds a row that results have shown or that this device added and a later result left out.
-- A page renumbering this device made (a page add, reorder or delete) moves its pages' revisions by amounts its answer does not name. A page rename behind it waits for the first page list after it, and names the revision shown there only if the page is exactly as the user saw it. This is the one place a result supplies a revision, because the move was this device's own.
-- An undo of a delete goes without asking only over this device's applied delete, at the tombstone revision that answer named, and only within 29 days of sending that delete. Anything else needs the user.
+- An op made with nothing of this device's ahead of it on its row goes at its authored revision, and the server decides.
+- An op made behind this device's own queued or landed work on its row goes only once that row is justified at the revision it names, with the content the user saw (or already holding what the op writes). Otherwise it waits for the row's result, and needs the user when a result of this session shows the row otherwise, when a result of its page no longer holds a row that results showed or this device added, or when its page is gone.
+- A page add, reorder or delete answers only the strategy revision, so the pages it renumbers are not justified by the answer: a page rename behind one waits for a page list.
+- An undo of a delete goes without asking only over this device's delete answered at the revision it predicted, with the tombstone as the user saw it, within 29 days of first sending that delete.
 - Keep mine names the revision the user chose theirs over.
 
 ## The resend window and the sender
@@ -88,7 +89,7 @@ Starts as: waiting, behind first (sameRow).
 
 Does not apply: claimed; claimed under another client id; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended.
 
-## a whole write waiting for the result of a landed field merge
+## a whole write behind a merge that landed where this device did not predict, waiting for the row's result
 
 Starts as: waiting, awaiting a result for ElementTarget(e1).
 
@@ -102,14 +103,14 @@ Starts as: waiting, awaiting a result for ElementTarget(e1).
 | connection returned | opens session 2 |
 | account changed | opens session 2 |
 | result: header as it is | unchanged |
-| result: page-a with the item at revision 2 | x: needs user: changed by someone else since the user saw it; stops drawing first as landed |
-| result: page-a with the item as this device wrote it at 2 | x: waiting; stops drawing first as landed |
+| result: page-a with the item at revision 2 | unchanged |
+| result: page-a with the item as this device wrote it at 2 | unchanged |
 | result: page-b gone | unchanged |
 | result: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended.
 
-## page delete waiting for its page to show this device's landed work
+## page delete waiting for its page after this device's work landed where it did not predict
 
 Starts as: waiting, awaiting a result for page page-a.
 
@@ -123,8 +124,8 @@ Starts as: waiting, awaiting a result for page page-a.
 | connection returned | opens session 2 |
 | account changed | opens session 2 |
 | result: header as it is | unchanged |
-| result: page-a with the item at revision 2 | x: needs user: page delete held (pageChanged); stops drawing first as landed |
-| result: page-a with the item as this device wrote it at 2 | x: waiting; stops drawing first as landed |
+| result: page-a with the item at revision 2 | unchanged |
+| result: page-a with the item as this device wrote it at 2 | unchanged |
 | result: page-b gone | unchanged |
 | result: strategy gone | standing deletedOnServer |
 
@@ -462,6 +463,30 @@ Starts as: needs user: changed by someone else since the user saw it.
 | result: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: delete anyway; result: page-a from a session that ended.
+
+## needs user: an edit waiting for a row whose page is gone
+
+Starts as: needs user: its page is gone.
+
+| Event | Result |
+| --- | --- |
+| user edits another item | z: waiting |
+| user edits the same item | w: waiting, behind x (sameRow) |
+| app restarted, same build | x: waiting, awaiting a result for ElementTarget(e1); opens session 2 |
+| app restarted, new build | x: waiting, awaiting a result for ElementTarget(e1); opens session 2 |
+| connection lost | unchanged |
+| connection returned | x: waiting, awaiting a result for ElementTarget(e1); opens session 2 |
+| account changed | x: waiting, awaiting a result for ElementTarget(e1); opens session 2 |
+| user: keep mine, same item | x: gone; x2: waiting; removes x (RemovedByUser(replacedByKeepMine, notLanded)) |
+| user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, notLanded)) |
+| user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
+| result: header as it is | unchanged |
+| result: page-a with the item at revision 2 | unchanged |
+| result: page-a with the item as this device wrote it at 2 | unchanged |
+| result: page-b gone | unchanged |
+| result: strategy gone | standing deletedOnServer |
+
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended.
 
 ## a format this build no longer sends
 

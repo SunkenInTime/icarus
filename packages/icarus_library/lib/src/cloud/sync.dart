@@ -8,6 +8,7 @@ enum Attention {
   failedOnServer,
   oversized,
   changedUnseen,
+  pageGone,
   serverForgotAnswer,
   heldPageDelete,
   waitingOnRefused,

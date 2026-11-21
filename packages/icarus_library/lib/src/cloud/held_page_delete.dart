@@ -29,6 +29,7 @@ PageDeleteVerdict pageDeleteVerdict(
   Shown shown,
   CheckedDelete work, {
   required bool ownWorkLandedOnPage,
+  Map<SeenPart, String>? known,
 }) {
   final page = work.op.pagePublicId;
   final seen = work.seen;
@@ -44,7 +45,7 @@ PageDeleteVerdict pageDeleteVerdict(
   if (digests == null) return const PageHeld(HeldDeleteCause.contentNeverRead);
   if (ownWorkLandedOnPage) return const PageResultAwaited();
   final content = shown.pagesThisSession.contains(page)
-      ? shown.content[page]
+      ? (known ?? shown.content[page])
       : null;
   if (content == null || pageRow == null) return const PageResultAwaited();
   final current = {

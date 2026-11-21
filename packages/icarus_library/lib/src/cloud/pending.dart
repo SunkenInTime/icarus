@@ -34,7 +34,7 @@ final class PendingOp extends QueueEntry {
     required this.refusal,
     required this.retriedAfter,
     this.window = const WindowOpen(),
-    this.ahead,
+    this.behindOwn = false,
   });
 
   final Work work;
@@ -44,7 +44,7 @@ final class PendingOp extends QueueEntry {
   final RefusalRecord refusal;
   final int retriedAfter;
   final ResendWindow window;
-  final AnsweredAhead? ahead;
+  final bool behindOwn;
 
   StrategyOp get op => work.op;
 
@@ -59,7 +59,6 @@ final class PendingOp extends QueueEntry {
     RefusalRecord? refusal,
     int? retriedAfter,
     ResendWindow? window,
-    AnsweredAhead? ahead,
   }) => PendingOp(
     place: place,
     work: work ?? this.work,
@@ -69,7 +68,7 @@ final class PendingOp extends QueueEntry {
     refusal: refusal ?? this.refusal,
     retriedAfter: retriedAfter ?? this.retriedAfter,
     window: window ?? this.window,
-    ahead: ahead ?? this.ahead,
+    behindOwn: behindOwn,
   );
 
   @override
@@ -83,7 +82,7 @@ final class PendingOp extends QueueEntry {
       other.refusal == refusal &&
       other.retriedAfter == retriedAfter &&
       other.window == window &&
-      other.ahead == ahead;
+      other.behindOwn == behindOwn;
 
   @override
   int get hashCode => Object.hash(
@@ -95,32 +94,11 @@ final class PendingOp extends QueueEntry {
     refusal,
     retriedAfter,
     window,
-    ahead,
+    behindOwn,
   );
 
   @override
   String toString() => 'PendingOp($opId, $refusal)';
-}
-
-final class AnsweredAhead {
-  const AnsweredAhead(this.revision, {required this.whole});
-
-  const AnsweredAhead.renumbered() : revision = null, whole = false;
-
-  final int? revision;
-  final bool whole;
-
-  @override
-  bool operator ==(Object other) =>
-      other is AnsweredAhead &&
-      other.revision == revision &&
-      other.whole == whole;
-
-  @override
-  int get hashCode => Object.hash(AnsweredAhead, revision, whole);
-
-  @override
-  String toString() => 'AnsweredAhead($revision${whole ? ', whole' : ''})';
 }
 
 final class RetiredOp extends QueueEntry {
@@ -358,27 +336,55 @@ sealed class Authored {
   const Authored();
 }
 
+final class ProducedRow {
+  const ProducedRow({
+    required this.page,
+    required this.revision,
+    required this.digest,
+  });
+
+  final String? page;
+  final int revision;
+  final String digest;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ProducedRow &&
+      other.page == page &&
+      other.revision == revision &&
+      other.digest == digest;
+
+  @override
+  int get hashCode => Object.hash(ProducedRow, page, revision, digest);
+
+  @override
+  String toString() => 'ProducedRow($page, $revision)';
+}
+
 final class AuthoredRow extends Authored {
   const AuthoredRow({
     required this.revision,
     required this.digest,
     this.payloadVersion,
+    this.produces,
   });
 
   final int revision;
   final String digest;
   final int? payloadVersion;
+  final ProducedRow? produces;
 
   @override
   bool operator ==(Object other) =>
       other is AuthoredRow &&
       other.revision == revision &&
       other.digest == digest &&
-      other.payloadVersion == payloadVersion;
+      other.payloadVersion == payloadVersion &&
+      other.produces == produces;
 
   @override
   int get hashCode =>
-      Object.hash(AuthoredRow, revision, digest, payloadVersion);
+      Object.hash(AuthoredRow, revision, digest, payloadVersion, produces);
 
   @override
   String toString() => 'AuthoredRow($revision, $digest)';
@@ -414,13 +420,16 @@ final class KeptOverServer extends Authored {
 }
 
 final class AuthoredNoRow extends Authored {
-  const AuthoredNoRow();
+  const AuthoredNoRow({this.produces});
+
+  final ProducedRow? produces;
 
   @override
-  bool operator ==(Object other) => other is AuthoredNoRow;
+  bool operator ==(Object other) =>
+      other is AuthoredNoRow && other.produces == produces;
 
   @override
-  int get hashCode => (AuthoredNoRow).hashCode;
+  int get hashCode => Object.hash(AuthoredNoRow, produces);
 
   @override
   String toString() => 'AuthoredNoRow';
@@ -735,7 +744,8 @@ final class LandedWork {
     required this.revision,
     required this.shape,
     required this.own,
-    required this.at,
+    required this.firstSentAt,
+    this.produced,
     this.shownWithout = false,
   });
 
@@ -745,7 +755,8 @@ final class LandedWork {
   final int revision;
   final LandedShape shape;
   final bool own;
-  final DateTime at;
+  final DateTime firstSentAt;
+  final ProducedRow? produced;
   final bool shownWithout;
 
   LandedWork seenWithout() => LandedWork(
@@ -755,7 +766,8 @@ final class LandedWork {
     revision: revision,
     shape: shape,
     own: own,
-    at: at,
+    firstSentAt: firstSentAt,
+    produced: produced,
     shownWithout: true,
   );
 
@@ -768,7 +780,8 @@ final class LandedWork {
       other.revision == revision &&
       other.shape == shape &&
       other.own == own &&
-      other.at == at &&
+      other.firstSentAt == firstSentAt &&
+      other.produced == produced &&
       other.shownWithout == shownWithout;
 
   @override
@@ -780,7 +793,8 @@ final class LandedWork {
     revision,
     shape,
     own,
-    at,
+    firstSentAt,
+    produced,
     shownWithout,
   );
 

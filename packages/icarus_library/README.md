@@ -1515,34 +1515,41 @@ handed over: the sender must give an attempt up as unanswered within
 An open attempt shows as sending until it does.
 
 **Which revision an op names.** An op names the revision the user's edit
-was made against. Only this device's own applied answer on that row can move
-it forward, and only for work queued behind that answer in the row's chain
-(or made over it while it was still drawn as landed); the entry records that
-answer as a fact (`AnsweredAhead`). A result never changes the revision an op
-names. If the row has since changed, the server rejects the op and the user
-is asked, which is the point of sending it checked. `_judge` is the only
-place an outgoing revision is chosen, and its answer is one of: the authored
-revision, this device's own answer ahead of it, the revision the user kept
-theirs over, wait for the row's result, or needs the user.
+was made against. The device keeps, per row, a justified row: a revision
+together with the content at that revision. It gets one in two ways: a
+result shows the row, or its own op on that row is answered applied at
+exactly the revision `applyOp` gives for that op over the row the user saw.
+Every entry records that produced row when it is made, and landed work keeps
+it only when the answer matched. Any other answered revision means someone
+else wrote in between, and the row is not justified until a result shows it.
+This rests on two facts about `convex/ops.ts`: every applied write raises its
+row's revision by exactly one, and no queued write changes a row without
+raising it. Three paths outside the op loop break the second fact, and none
+of them is something the queue sends: trashing and restoring a page set
+`deletedAt` without a revision, deleting a folder clears a strategy's folder
+without one, and a tombstone purged after 30 days can come back at revision
+1. That is why a page delete's answer never justifies a page row, why
+nothing queued checks the folder, and why justified rows from answers never
+outlive the 29-day window. A result never changes the revision an op names,
+and `_judge` is the only place an outgoing revision is chosen.
 
-- A whole-row write (an element or lineup group written whole, a page or its
-  settings) behind this device's own field merge waits for the row's result
-  (`AwaitingResult`) and goes only if it shows the row exactly as the user
-  saw it at the merge's revision. It needs the user when a result of this
-  session shows the row otherwise, or when its page's result no longer holds
-  a row that results have shown or that this device added and a later result
-  left out.
-- A page renumbering this device made moves its pages' revisions by amounts
-  its answer does not name, so a page rename behind it waits for the first
-  page list after it and names the revision shown there only if the page is
-  exactly as the user saw it. That is the one place a result supplies a
-  revision, because the move was this device's own.
+- An op made with nothing of this device's ahead of it on its row goes at
+  its authored revision, and the server decides.
+- An op made behind this device's own queued or landed work on its row goes
+  only once that row is justified at the revision it names, with the content
+  the user saw (or already holding what the op writes, so the server's answer
+  settles it). Otherwise it waits for the row's result (`AwaitingResult`).
+  It needs the user when a result of this session shows the row otherwise,
+  when a result of its page no longer holds a row that results showed or this
+  device added, or when its page is gone (`RowPageGone`). A solo session
+  never waits: every answer comes back as predicted.
+- A page add, reorder or delete answers only the strategy revision, so the
+  pages it renumbers are not justified by the answer, and a page rename
+  behind one waits for a page list.
 - An undo of a delete ([#668](https://github.com/SunkenInTime/icarus/issues/668))
-  is an add over the tombstone. It goes without asking only over this
-  device's applied delete, at the tombstone revision that answer named, and
-  only within 29 days of sending that delete. Anything else needs the user.
-  The delete stays known as this device's until a result shows a later
-  revision of the row.
+  goes without asking only over this device's delete answered at the
+  revision it predicted, with the tombstone as the user saw it, within 29
+  days of first sending that delete. Anything else needs the user.
 - Keep mine names the revision the user chose theirs over.
 - Live sends: a delete sent live is last writer wins, as in the shipped app.
 
@@ -1554,7 +1561,8 @@ shown does not count, since a result older than the answer can lack a row
 the answer just added. Landed work is drawn in the order the server applied
 it: by the attempt that carried it and its place in that attempt. A landed
 move is drawn off its source page and on its destination in every page view,
-and asks for the page its row comes from. A queued edit of a row a teammate
+even when the source page's result has already removed the row, and asks for
+the page its row comes from. A queued edit of a row a teammate
 moved is drawn wherever the row now is.
 Field merges, page adds, page reorders and page deletes land as partial (the
 server may have merged or renumbered rows the device has not seen);

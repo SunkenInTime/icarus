@@ -414,22 +414,29 @@ void main() {
       ]);
     });
 
-    test('a successor goes at the revision its predecessor landed at', () {
-      final server = Server()
-        ..rows = withOp(initialRows(), movePatch('t', rotation: 90));
-      final client = Client(base: initialRows());
-      client.must(const ConnectionReturned());
-      client.edit(elementDelete('drop'));
-      client.edit(putBackOf('back', initialRows(), 'e1'));
-      sendAndAnswer(client, server, ['drop']);
-      expect(server.rows.element('e1'), isA<DeletedElement>());
-      final tombstone = (server.rows.element('e1')! as DeletedElement).revision;
-      final attempt = client.claim(['back']);
-      final sent = client.lastSent().single as ElementAddOp;
-      expect(sent.expectedElementRevision, tombstone);
-      client.must(OpAnswered(attempt, server.apply(clientId, sent)));
-      expect(client.queue.entries, isEmpty);
-      expect(server.rows.element('e1'), isA<LiveElement>());
+    test('a successor goes once its predecessor landed as predicted, and '
+        'asks when someone wrote in between', () {
+      for (final teammate in [false, true]) {
+        final server = Server();
+        if (teammate) {
+          server.rows = withOp(initialRows(), movePatch('t', rotation: 90));
+        }
+        final client = Client(base: initialRows());
+        client.must(const ConnectionReturned());
+        client.edit(elementDelete('drop'));
+        client.edit(putBackOf('back', initialRows(), 'e1'));
+        sendAndAnswer(client, server, ['drop']);
+        if (teammate) {
+          expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
+          continue;
+        }
+        final attempt = client.claim(['back']);
+        final sent = client.lastSent().single as ElementAddOp;
+        expect(sent.expectedElementRevision, 2);
+        client.must(OpAnswered(attempt, server.apply(clientId, sent)));
+        expect(client.queue.entries, isEmpty);
+        expect(server.rows.element('e1'), isA<LiveElement>());
+      }
     });
   });
 
@@ -467,16 +474,21 @@ void main() {
       expect(client.view('back').sendable, isFalse);
     });
 
-    test('answered applied by this device, it goes as an add over the '
-        'tombstone at the revision the answer named, with no read', () {
+    test('answered applied by this device at the revision it predicted, it '
+        'goes as an add over the tombstone with no read; at any other '
+        'revision it needs the user', () {
       final client = deletedAndPutBack();
       final attempt = client.claim(['del']);
-      client.must(OpAnswered(attempt, const AppliedAnswer('del', revision: 5)));
+      client.must(OpAnswered(attempt, const AppliedAnswer('del', revision: 2)));
       client.claim(['back']);
       expect(
         (client.lastSent().single as ElementAddOp).expectedElementRevision,
-        5,
+        2,
       );
+      final other = deletedAndPutBack();
+      final sent = other.claim(['del']);
+      other.must(OpAnswered(sent, const AppliedAnswer('del', revision: 5)));
+      expect(stateOf(other, 'back'), const NeedsUser(ChangedUnseen()));
     });
 
     test('answered as nothing to do because someone else deleted it, it needs '
@@ -505,9 +517,9 @@ void main() {
   });
 
   group('landed work never authors', () {
-    test('a whole write on a row whose latest knowledge is a landed field '
-        'merge waits for that row\'s result, then goes when the row is as the '
-        'user saw it', () {
+    test('a whole write behind a field merge that landed at the revision '
+        'this device predicted goes at once; behind one that did not, it '
+        'waits for the row\'s result', () {
       final server = Server();
       final client = online();
       client.edit(
@@ -515,11 +527,17 @@ void main() {
       );
       sendAndAnswer(client, server, ['drag']);
       client.edit(movePatch('drop', x: 70, expected: 2));
-      expect(client.view('drop').holds, [
+      expect(client.view('drop').sendable, isTrue);
+      final other = online();
+      other.edit(
+        movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
+      );
+      final attempt = other.claim(['drag']);
+      other.must(OpAnswered(attempt, const AppliedAnswer('drag', revision: 3)));
+      other.edit(onVisible(other.visible, movePatch('drop', x: 70)));
+      expect(other.view('drop').holds, [
         awaitingResult(const RowResult(ElementTarget('e1'), 'page-a')),
       ]);
-      client.read(server.rows, pages: ['page-a']);
-      expect(client.view('drop').sendable, isTrue);
     });
 
     test('and it needs the user when the row\'s result shows fields the user '
@@ -871,13 +889,15 @@ void main() {
     test(
       'an entry waiting for a result is counted as underway, not unsent',
       () {
-        final server = Server();
         final client = online();
         client.edit(
           movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
         );
-        sendAndAnswer(client, server, ['drag']);
-        client.edit(movePatch('drop', x: 70, expected: 2));
+        final attempt = client.claim(['drag']);
+        client.must(
+          OpAnswered(attempt, const AppliedAnswer('drag', revision: 3)),
+        );
+        client.edit(onVisible(client.visible, movePatch('drop', x: 70)));
         final tally = Tally.of(client.queue, now);
         expect(tally.waiting[Underway.awaitingResult], 1);
         expect(tally.waiting[Underway.unsent], isNull);
@@ -1198,11 +1218,11 @@ void main() {
     });
   });
 
-  test('a revision-checked edit is sent naming the revision the answer '
-      'ahead of it gave, not the one it was drawn at', () {
+  test('a revision-checked edit names the revision it was drawn at, which '
+      'counts the answer this device expects for the work ahead of it', () {
     final client = online();
     client.edit(pageAdd('add', 'page-c', expected: 1));
-    client.edit(pageDelete('drop', 'page-b', expected: 1));
+    client.edit(onVisible(client.visible, pageDelete('drop', 'page-b')));
     final attempt = client.claim(['add']);
     client.must(OpAnswered(attempt, const AppliedAnswer('add', revision: 2)));
     client.claim(['drop']);
@@ -1234,8 +1254,8 @@ void main() {
       client.edit(movePatch('whole', x: 40, expected: 2));
       client.must(const ConnectionReturned());
       sendAndAnswer(client, server, ['order']);
+      expect(client.view('whole').sendable, isFalse);
       client.read(server.rows, pages: ['page-a']);
-      sendAndAnswer(client, server, ['whole']);
       expect(stateOf(client, 'whole'), isA<NeedsUser>());
       expect(rotationOf(server.rows), 90);
     });
@@ -1395,13 +1415,14 @@ void main() {
 
     test('a whole write waiting on a row that a result of its page no longer '
         'holds needs the user', () {
-      final server = Server();
+      final server = Server()
+        ..rows = withOp(initialRows(), movePatch('t', rotation: 90));
       final client = online();
       client.edit(
         movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
       );
       sendAndAnswer(client, server, ['drag']);
-      client.edit(movePatch('drop', x: 70, expected: 2));
+      client.edit(onVisible(client.visible, movePatch('drop', x: 70)));
       expect(client.view('drop').sendable, isFalse);
       final row = server.rows.element('e1')! as LiveElement;
       server.rows = withOp(
@@ -1409,7 +1430,7 @@ void main() {
         ElementPatchOp(
           opId: 'away',
           elementPublicId: 'e1',
-          expectedElementRevision: 2,
+          expectedElementRevision: 3,
           pagePublicId: 'page-b',
           payload: row.payload,
           sortIndex: 1,
@@ -1423,7 +1444,8 @@ void main() {
       final server = Server();
       final client = online();
       client.edit(elementAdd('add', elementId: 'n', pageId: 'page-b'));
-      sendAndAnswer(client, server, ['add']);
+      final attempt = client.claim(['add']);
+      client.must(OpAnswered(attempt, const AppliedAnswer('add', revision: 2)));
       client.edit(pageDelete('drop', 'page-b'));
       expect(client.view('drop').holds, [
         awaitingResult(const PageResult('page-b')),
@@ -1528,15 +1550,21 @@ void main() {
           merge: FieldMerge(fields: ['position']),
         ),
       );
+      server.rows = withOp(
+        server.rows,
+        movePatch('t', elementId: 'e9', expected: 1, rotation: 90),
+      );
       sendAndAnswer(client, server, ['drag']);
-      client.edit(movePatch('whole', elementId: 'e9', x: 70, expected: 2));
+      client.edit(
+        onVisible(client.visible, movePatch('whole', elementId: 'e9', x: 70)),
+      );
       final row = server.rows.element('e9')! as LiveElement;
       server.rows = withOp(
         server.rows,
         ElementPatchOp(
           opId: 'away',
           elementPublicId: 'e9',
-          expectedElementRevision: 2,
+          expectedElementRevision: 3,
           pagePublicId: 'page-b',
           payload: row.payload,
           sortIndex: 1,
@@ -1650,6 +1678,289 @@ void main() {
         pagesToLoad(client.queue, SomePages(['page-b'])),
         contains('page-a'),
       );
+    });
+  });
+
+  group('justified rows', () {
+    final e1 = initialRows().element('e1')! as LiveElement;
+
+    StrategyOp rotated(String opId, int expected) =>
+        movePatch(opId, expected: expected, rotation: 90);
+
+    Object? rotationOf(StrategyRows rows) =>
+        (rows.element('e1')! as LiveElement).payload.data.toJson()['rotation'];
+
+    void settle(Client client, Server server) {
+      for (var round = 0; round < 6; round++) {
+        final ids = [
+          for (final entry in client.queue.entries)
+            if (client.view(entry.id).sendable) entry.id,
+        ];
+        if (ids.isNotEmpty) sendAndAnswer(client, server, ids);
+        client.read(server.rows);
+      }
+    }
+
+    test('a whole edit behind a drag that landed over a teammate\'s rotation '
+        'never erases it', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
+      );
+      final attempt = client.claim(['drag']);
+      server.rows = withOp(server.rows, rotated('t', 1));
+      client.must(
+        OpAnswered(attempt, server.apply(clientId, client.lastSent().single)),
+      );
+      client.edit(
+        onVisible(
+          client.visible,
+          ElementReorderOp(
+            opId: 'order',
+            elementPublicId: 'e1',
+            pagePublicId: 'page-a',
+            sortIndex: 1,
+            expectedElementRevision: 1,
+          ),
+        ),
+      );
+      client.edit(onVisible(client.visible, movePatch('whole', x: 70)));
+      settle(client, server);
+      expect(rotationOf(server.rows), 90);
+    });
+
+    test('a whole edit behind this device\'s own drag goes at once when '
+        'nobody else wrote', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
+      );
+      sendAndAnswer(client, server, ['drag']);
+      client.edit(onVisible(client.visible, movePatch('whole', x: 70)));
+      expect(client.view('whole').sendable, isTrue);
+    });
+
+    test('a page rename behind this device\'s reorder asks when another '
+        'device moved the page back first', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        const PageReorderOp(
+          opId: 'order',
+          pagePublicId: 'page-a',
+          sortIndex: 1,
+          expectedStrategyRevision: 1,
+        ),
+      );
+      sendAndAnswer(client, server, ['order']);
+      server.rows = withOp(
+        server.rows,
+        const PageReorderOp(
+          opId: 'back',
+          pagePublicId: 'page-a',
+          sortIndex: 0,
+          expectedStrategyRevision: 2,
+        ),
+      );
+      client.edit(
+        onVisible(
+          client.visible,
+          const PagePatchOp(
+            opId: 'rename',
+            pagePublicId: 'page-a',
+            expectedPageRevision: 1,
+            name: 'Mine',
+          ),
+        ),
+      );
+      client.read(server.rows);
+      expect(stateOf(client, 'rename'), isA<NeedsUser>());
+    });
+
+    test('a page rename behind this device\'s reorder settles when another '
+        'device chose the same name', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        const PageReorderOp(
+          opId: 'order',
+          pagePublicId: 'page-a',
+          sortIndex: 1,
+          expectedStrategyRevision: 1,
+        ),
+      );
+      sendAndAnswer(client, server, ['order']);
+      final page = server.rows.page('page-a')! as LivePage;
+      server.rows = withOp(
+        server.rows,
+        PagePatchOp(
+          opId: 'same',
+          pagePublicId: 'page-a',
+          expectedPageRevision: page.revision,
+          name: 'Same',
+        ),
+      );
+      client.edit(
+        onVisible(
+          client.visible,
+          const PagePatchOp(
+            opId: 'rename',
+            pagePublicId: 'page-a',
+            expectedPageRevision: 1,
+            name: 'Same',
+          ),
+        ),
+      );
+      client.read(server.rows);
+      settle(client, server);
+      expect(client.queue.entries, isEmpty);
+    });
+
+    test('undo of this device\'s delete that landed over a teammate\'s '
+        'rotation needs the user', () {
+      final server = Server();
+      final client = online();
+      client.edit(elementDelete('del'));
+      final attempt = client.claim(['del']);
+      server.rows = withOp(server.rows, rotated('t', 1));
+      client.must(
+        OpAnswered(attempt, server.apply(clientId, client.lastSent().single)),
+      );
+      final drawn = client.visible;
+      final tombstone = drawn.element('e1')! as DeletedElement;
+      client.edit(
+        ElementAddOp(
+          opId: 'back',
+          elementPublicId: 'e1',
+          pagePublicId: 'page-a',
+          payload: e1.payload,
+          sortIndex: e1.sortIndex,
+          expectedElementRevision: tombstone.revision,
+        ),
+      );
+      expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
+    });
+
+    test('an undo window runs from the delete\'s first send, not from a '
+        'replay', () {
+      final client = online();
+      final drawn = client.visible;
+      client.edit(elementDelete('del'));
+      final first = client.claim(['del']);
+      client.must(TransportFailed(first, TransportFailure.network, at: now));
+      client.clock = now.add(const Duration(days: 28));
+      final again = client.claim(['del']);
+      client.must(
+        OpAnswered(
+          again,
+          const NoopAnswer(
+            'del',
+            revision: 2,
+            replay: NoopReplay.appliedWhenFirstReceived,
+          ),
+        ),
+      );
+      client.edit(putBackOf('back', drawn, 'e1'));
+      client.clock = now.add(const Duration(days: 30));
+      expect(stateOf(client, 'back'), isA<NeedsUser>());
+    });
+
+    test('a landed move stays on its destination when the source page\'s '
+        'result comes first', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        ElementPatchOp(
+          opId: 'move',
+          elementPublicId: 'e1',
+          expectedElementRevision: 1,
+          pagePublicId: 'page-b',
+          payload: e1.payload,
+          sortIndex: 0,
+        ),
+      );
+      sendAndAnswer(client, server, ['move']);
+      client.arrive(pageReadOf(server.rows, 'page-a'));
+      final base = StrategyRowSet(
+        strategy: initialRows().strategy,
+        pages: initialRows().pages,
+        settings: initialRows().settings,
+        elements: [
+          for (final row in initialRows().elements)
+            if (row.publicId != 'e1') row,
+        ],
+      );
+      final drawn = visibleOver(base, client.queue, SomePages(['page-b']));
+      expect(drawn.element('e1')?.pagePublicId, 'page-b');
+    });
+
+    test('an edit waiting for a row\'s result needs the user when its page is '
+        'gone', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
+      );
+      final attempt = client.claim(['drag']);
+      server.rows = withOp(server.rows, rotated('t', 1));
+      client.must(
+        OpAnswered(attempt, server.apply(clientId, client.lastSent().single)),
+      );
+      client.edit(onVisible(client.visible, movePatch('whole', x: 70)));
+      expect(client.view('whole').sendable, isFalse);
+      client.arrive(const PageGone('page-a'));
+      expect(stateOf(client, 'whole'), const NeedsUser(RowPageGone()));
+    });
+
+    test('a rename of a new page needs the user when a page list leaves the '
+        'page out', () {
+      final server = Server();
+      final client = online();
+      client.edit(pageAdd('add', 'page-c', expected: 1, sortIndex: 2));
+      sendAndAnswer(client, server, ['add']);
+      client.edit(
+        onVisible(
+          client.visible,
+          const PagePatchOp(
+            opId: 'rename',
+            pagePublicId: 'page-c',
+            expectedPageRevision: 1,
+            name: 'Mine',
+          ),
+        ),
+      );
+      server.rows = withOp(
+        server.rows,
+        pageDelete('t', 'page-c', expected: server.rows.strategy.revision),
+      );
+      client.arrive(headerReadOf(server.rows));
+      expect(stateOf(client, 'rename'), const NeedsUser(RowPageGone()));
+    });
+
+    test('moving an element off a page and deleting the page asks nothing', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        ElementPatchOp(
+          opId: 'move',
+          elementPublicId: 'e1',
+          expectedElementRevision: 1,
+          pagePublicId: 'page-b',
+          payload: e1.payload,
+          sortIndex: 0,
+        ),
+      );
+      client.edit(
+        pageDelete(
+          'drop',
+          'page-a',
+          expected: client.visible.strategy.revision,
+        ),
+      );
+      sendAndAnswer(client, server, ['move']);
+      expect(stateOf(client, 'drop'), isNot(isA<NeedsUser>()));
     });
   });
 }

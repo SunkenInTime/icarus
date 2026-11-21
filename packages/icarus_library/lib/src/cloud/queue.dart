@@ -397,6 +397,19 @@ final class Oversized extends UserReason {
   String toString() => 'oversized';
 }
 
+final class RowPageGone extends UserReason {
+  const RowPageGone();
+
+  @override
+  bool operator ==(Object other) => other is RowPageGone;
+
+  @override
+  int get hashCode => (RowPageGone).hashCode;
+
+  @override
+  String toString() => 'its page is gone';
+}
+
 final class ChangedUnseen extends UserReason {
   const ChangedUnseen();
 
@@ -1132,6 +1145,15 @@ Step _arrived(_Edit edit, ArrivedBase base) {
   }
   final before = edit.shown;
   edit.shown = edit.shown.take(base);
+  if (base case HeaderRead()) {
+    for (final work in edit.landed) {
+      if (work.op case PageAddOp(
+        :final pagePublicId,
+      ) when work.own && !edit.shown.pages.containsKey(pagePublicId)) {
+        edit.shown = edit.shown.withGone(pagePublicId);
+      }
+    }
+  }
   if (base case PageRead(:final page, :final elements, :final lineupGroups)) {
     final held = {
       for (final row in elements) ElementTarget(row.publicId),
@@ -1218,7 +1240,13 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
         view.holds.every((hold) => _foldableHold(hold, views))) {
       switch (fold(last.op, op)) {
         case FoldedOp(op: final folded):
-          edit.replaceAt(at, last.copyWith(work: OpWork(folded)));
+          edit.replaceAt(
+            at,
+            last.copyWith(
+              work: OpWork(folded),
+              authored: _foldedAuthored(last.authored, change.authored),
+            ),
+          );
           edit.effects.add(OpRemoved(last.id, FoldedInto(folded.opId)));
           return edit.done();
         case KeptApart():
@@ -1228,14 +1256,23 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
   }
   final placed = op;
   final authored = change.authored;
-  final drawnOver = queue.landed
-      .where(
+  final row = targetOf(op);
+  final behindOwn =
+      edit.index.checkedUnder(checkTargetOf(op)).isNotEmpty ||
+      (row is PageTarget &&
+          queue._index.lastBefore(
+                queue._index.under,
+                const _Renumbering(),
+                1 << 62,
+              ) !=
+              null) ||
+      queue.landed.any(
         (work) =>
             work.own &&
-            checkTargetOf(work.op) == checkTargetOf(op) &&
-            !_alreadyShown(queue.shown, work),
-      )
-      .lastOrNull;
+            !_alreadyShown(queue.shown, work) &&
+            (targetOf(work.op) == row ||
+                (row is PageTarget && renumbersPages(work.op))),
+      );
   edit.append(
     PendingOp(
       place: edit.entries.isEmpty ? 0 : edit.entries.last.place + 1,
@@ -1251,22 +1288,7 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
       authoredIn: edit.session.number,
       refusal: const NotRefused(),
       retriedAfter: edit.lastAttempt,
-      ahead: switch (drawnOver) {
-        final work? => AnsweredAhead(
-          work.revision,
-          whole: work.shape == LandedShape.whole,
-        ),
-        null
-            when op is PagePatchOp &&
-                queue.landed.any(
-                  (work) =>
-                      work.own &&
-                      renumbersPages(work.op) &&
-                      !_alreadyShown(queue.shown, work),
-                ) =>
-          const AnsweredAhead.renumbered(),
-        null => null,
-      },
+      behindOwn: behindOwn,
     ),
   );
   return edit.done();
@@ -1305,7 +1327,9 @@ final class _AwaitRow extends _Verdict {
 }
 
 final class _AskUser extends _Verdict {
-  const _AskUser();
+  const _AskUser([this.reason = const ChangedUnseen()]);
+
+  final UserReason reason;
 }
 
 enum _Writes { wholeRow, putBack, other }
@@ -1320,6 +1344,71 @@ _Writes _writesOf(StrategyOp op) => switch (op) {
   _ => _Writes.other,
 };
 
+sealed class _Known {
+  const _Known();
+}
+
+final class _KnownRow extends _Known {
+  const _KnownRow(
+    this.page,
+    this.revision,
+    this.digest, {
+    required this.current,
+  });
+
+  final String? page;
+  final int revision;
+  final String? digest;
+  final bool current;
+}
+
+final class _NotKnown extends _Known {
+  const _NotKnown(this.revision);
+
+  final int revision;
+}
+
+_Known? _knownRow(CloudQueue queue, Target row) {
+  final shown = queue.shown;
+  final result = _shownRow(shown, row);
+  final current = switch (row) {
+    PageTarget() || SettingsTarget() => shown.headerThisSession,
+    _ => result != null && shown.pagesThisSession.contains(result.page),
+  };
+  _Known? best = switch ((row, result)) {
+    (StrategyTarget(), _) => switch (shown.strategyRevision) {
+      final revision? => _KnownRow(
+        null,
+        revision,
+        null,
+        current: shown.headerThisSession,
+      ),
+      null => null,
+    },
+    (_, ShownRow(:final page, revision: final revision?, :final digest)) =>
+      _KnownRow(page, revision, digest, current: current),
+    _ => null,
+  };
+  int revisionOf(_Known known) => switch (known) {
+    _KnownRow(:final revision) => revision,
+    _NotKnown(:final revision) => revision,
+  };
+  for (final work in queue.landed) {
+    if (targetOf(work.op) != row) continue;
+    if (best != null && revisionOf(best) >= work.revision) continue;
+    best = switch (work.produced) {
+      ProducedRow(:final page, :final revision, :final digest) => _KnownRow(
+        page,
+        revision,
+        row is StrategyTarget ? null : digest,
+        current: true,
+      ),
+      null => _NotKnown(work.revision),
+    };
+  }
+  return best;
+}
+
 _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
   final op = entry.op;
   final authored = expectedOf(op);
@@ -1327,81 +1416,129 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
   if (entry.authored case KeptOverServer(:final revision)) {
     return _NameAt(revision);
   }
-  final target = checkTargetOf(op);
-  final named = switch (entry.ahead) {
-    AnsweredAhead(:final revision?) => revision,
-    AnsweredAhead() => null,
-    null => authored,
-  };
-  final partial = entry.ahead?.whole == false;
+  final row = targetOf(op);
   switch (_writesOf(op)) {
     case _Writes.other:
-      return _NameAt(named ?? authored);
+      if (!entry.behindOwn) return _NameAt(authored);
+      return _wholeBehindOwn(queue, entry, row, authored);
     case _Writes.putBack:
-      final shown = queue.shown.highest[target] ?? 0;
-      final delete = queue.landed.where(
-        (work) =>
-            _ownDelete(work) &&
-            checkTargetOf(work.op) == target &&
-            work.revision == named,
-      );
-      if (named == null || delete.isEmpty || shown > named) {
-        return const _AskUser();
-      }
-      final until = delete.last.at.add(resendWindow);
+      final seen = entry.authored;
+      final delete = queue.landed
+          .where(
+            (work) =>
+                work.own &&
+                _deletes(work.op) &&
+                targetOf(work.op) == row &&
+                work.produced?.revision == authored,
+          )
+          .lastOrNull;
+      final known = _knownRow(queue, row);
+      final asSeen =
+          seen is AuthoredRow &&
+          known is _KnownRow &&
+          known.revision == authored &&
+          known.digest == seen.digest;
+      if (delete == null || !asSeen) return const _AskUser();
+      final until = delete.firstSentAt.add(resendWindow);
       return now.isBefore(until)
-          ? _NameAt(named, until: until)
+          ? _NameAt(authored, until: until)
           : const _AskUser();
     case _Writes.wholeRow:
-      if (partial) return _awaitRow(queue, entry, target, named);
-      return _NameAt(named ?? authored);
+      if (!entry.behindOwn) return _NameAt(authored);
+      return _wholeBehindOwn(queue, entry, row, authored);
   }
 }
 
-_Verdict _awaitRow(
+ProducedRow? _producesOf(Authored authored) => switch (authored) {
+  AuthoredRow(:final produces) || AuthoredNoRow(:final produces) => produces,
+  _ => null,
+};
+
+Authored _foldedAuthored(Authored earlier, Authored later) {
+  final first = _producesOf(earlier);
+  final last = _producesOf(later);
+  final produces = first == null || last == null
+      ? null
+      : ProducedRow(
+          page: last.page,
+          revision: first.revision,
+          digest: last.digest,
+        );
+  return switch (earlier) {
+    AuthoredRow(:final revision, :final digest, :final payloadVersion) =>
+      AuthoredRow(
+        revision: revision,
+        digest: digest,
+        payloadVersion: payloadVersion,
+        produces: produces,
+      ),
+    AuthoredNoRow() => AuthoredNoRow(produces: produces),
+    final other => other,
+  };
+}
+
+bool _deletes(StrategyOp op) =>
+    op is ElementDeleteOp || op is LineupGroupDeleteOp;
+
+_Verdict _wholeBehindOwn(
   CloudQueue queue,
   PendingOp entry,
-  Target target,
-  int? named,
+  Target row,
+  int authored,
 ) {
   final shown = queue.shown;
-  final row = _shownRow(shown, target);
-  final page = switch ((target, row, entry.scope)) {
+  final seen = entry.authored;
+  final known = _knownRow(queue, row);
+  final page = switch ((row, known, entry.scope)) {
     (PageTarget(:final pagePublicId), _, _) => pagePublicId,
-    (_, ShownRow(:final page), _) => page,
-    (_, null, OnPage(:final pagePublicId)) => pagePublicId,
-    (_, null, Moving(:final from)) => from,
-    (_, null, StrategyWide()) => null,
-  };
-  final current = switch (target) {
-    PageTarget() => shown.headerThisSession,
-    _ => page != null && shown.pagesThisSession.contains(page),
-  };
-  final unshown = queue.landed.any(
-    (work) =>
-        (checkTargetOf(work.op) == target &&
-            (row?.revision ?? 0) < work.revision) ||
-        (target is PageTarget &&
-            renumbersPages(work.op) &&
-            !_alreadyShown(shown, work)),
-  );
-  if (row == null) {
-    final existed =
-        shown.highest.containsKey(target) ||
-        queue.landed.any(
-          (work) => checkTargetOf(work.op) == target && work.shownWithout,
-        );
-    return current && existed ? const _AskUser() : _AwaitRow(page);
-  }
-  if (unshown) return _AwaitRow(page);
-  final seen = switch (entry.authored) {
-    AuthoredRow(:final digest) => digest,
+    (SettingsTarget(:final pagePublicId), _, _) => pagePublicId,
+    (_, _KnownRow(:final page?), _) => page,
+    (_, _, OnPage(:final pagePublicId)) => pagePublicId,
+    (_, _, Moving(:final from)) => from,
     _ => null,
   };
-  if (row.digest == seen && (named == null || row.revision == named)) {
-    return _NameAt(named ?? row.revision);
+  final pageGone =
+      page != null &&
+      (shown.goneThisSession.contains(page) ||
+          (shown.headerThisSession &&
+              !shown.pages.containsKey(page) &&
+              shown.highest.containsKey(PageTarget(page))));
+  if (pageGone) return const _AskUser(RowPageGone());
+  final renumbering =
+      row is PageTarget &&
+      queue.landed.any(
+        (work) => renumbersPages(work.op) && !_alreadyShown(shown, work),
+      );
+  if (renumbering) return _AwaitRow(page);
+  switch (known) {
+    case _KnownRow(:final revision, :final digest, :final current):
+      final asSeen = switch ((seen, digest)) {
+        (AuthoredRow(), null) => revision == authored,
+        (final AuthoredRow seen, final digest?) =>
+          digest == seen.produces?.digest ||
+              (revision == authored && digest == seen.digest),
+        _ => false,
+      };
+      if (asSeen) return _NameAt(authored);
+      return current ? const _AskUser() : _AwaitRow(page);
+    case _NotKnown():
+      final left = queue.landed.any(
+        (work) => targetOf(work.op) == row && work.shownWithout,
+      );
+      final pageCurrent = switch (row) {
+        PageTarget() || SettingsTarget() => shown.headerThisSession,
+        _ => page != null && shown.pagesThisSession.contains(page),
+      };
+      if (left ||
+          (pageCurrent &&
+              shown.highest.containsKey(row) &&
+              _shownRow(shown, row) == null)) {
+        return const _AskUser();
+      }
+      return _AwaitRow(page);
+    case null:
+      return _NameAt(authored);
   }
-  return current ? const _AskUser() : _AwaitRow(page);
 }
 
 PendingOp _named(_Edit edit, PendingOp entry, int revision) {
@@ -1572,6 +1709,22 @@ void _landed(
   required bool ours,
 }) {
   final sent = carried.op;
+  final produced = switch (entry.authored) {
+    AuthoredRow(:final produces?) || AuthoredNoRow(:final produces?)
+        when ours && produces.revision == revision =>
+      produces,
+    _ => null,
+  };
+  final firstSent =
+      [
+        for (final number in edit.index.attemptsByOp[entry.id] ?? const <int>[])
+          if (edit.attempts[number] case final attempt?
+              when attempt.outcome is! AttemptRefusedWhole)
+            attempt.at,
+      ].fold<DateTime?>(
+        null,
+        (first, at) => first == null || at.isBefore(first) ? at : first,
+      );
   final work = LandedWork(
     attempt: carried.attempt,
     position: carried.position,
@@ -1579,35 +1732,17 @@ void _landed(
     revision: revision,
     shape: _shapeOf(sent),
     own: ours,
-    at: edit.attempts[carried.attempt]!.at,
+    firstSentAt: firstSent ?? edit.attempts[carried.attempt]!.at,
+    produced: produced,
   );
   if (!_alreadyShown(edit.shown, work)) {
     edit.landed
       ..add(work)
       ..sort((a, b) => a.compareTo(b));
   }
-  if (ours && renumbersPages(sent)) {
-    for (final next in [...edit.entries]) {
-      if (next is! PendingOp || next.op is! PagePatchOp) continue;
-      if (next.refusal is! NotRefused) continue;
-      if ((edit.index.attemptsByOp[next.id] ?? const []).isNotEmpty) continue;
-      edit.put(next.copyWith(ahead: const AnsweredAhead.renumbered()));
-    }
-  }
-  if (ours) {
-    final ahead = AnsweredAhead(
-      revision,
-      whole: work.shape == LandedShape.whole,
-    );
-    for (final (place, id) in edit.index.checkedUnder(checkTargetOf(sent))) {
-      if (place <= entry.place) continue;
-      final next = edit.index.byId[id];
-      if (next is! PendingOp || next.refusal is! NotRefused) continue;
-      if ((edit.index.attemptsByOp[id] ?? const []).isNotEmpty) continue;
-      edit.put(next.copyWith(ahead: ahead));
-    }
-  }
-  edit.change.targets.add(checkTargetOf(sent));
+  edit.change.targets
+    ..add(checkTargetOf(sent))
+    ..add(targetOf(sent));
   edit.change.lives.addAll([
     ...pagesNeeded(sent),
     ?edit.shown.rows[targetOf(sent)]?.page,
@@ -1616,7 +1751,12 @@ void _landed(
 }
 
 bool _userMayReplace(EntryView view) => switch (view.state) {
-  NeedsUser(reason: RefusedByServer() || ChangedUnseen() || WindowClosed()) =>
+  NeedsUser(
+    reason: RefusedByServer() ||
+        ChangedUnseen() ||
+        WindowClosed() ||
+        RowPageGone(),
+  ) =>
     true,
   _ => false,
 };

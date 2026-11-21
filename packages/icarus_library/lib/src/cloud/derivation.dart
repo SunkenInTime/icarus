@@ -727,6 +727,7 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
         DeleteHeld() => Attention.heldPageDelete,
         Oversized() => Attention.oversized,
         ChangedUnseen() => Attention.changedUnseen,
+        RowPageGone() => Attention.pageGone,
         RetiredFormat() => Attention.retiredFormat,
       }),
       Waiting() || Unanswered()
@@ -873,24 +874,44 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
         break;
       case _AwaitRow(:final page):
         holds.add(AwaitingResult(RowResult(_rowTarget(op), page)));
-      case _AskUser():
-        return (EntryView(const NeedsUser(ChangedUnseen()), const []), null);
+      case _AskUser(:final reason):
+        return (EntryView(NeedsUser(reason), const []), null);
     }
   }
   if (entry.work case final CheckedDelete work) {
     final page = work.op.pagePublicId;
-    final landedOnPage = queue.landed.any(
-      (landed) =>
-          (queue.shown.highest[checkTargetOf(landed.op)] ?? 0) <
-              landed.revision &&
-          (_landedPage(landed.op) ??
-                  queue.shown.rows[targetOf(landed.op)]?.page) ==
-              page,
-    );
+    var landedOnPage = false;
+    final known = {...?queue.shown.content[page]};
+    for (final landed in queue.landed) {
+      if ((queue.shown.highest[checkTargetOf(landed.op)] ?? 0) >=
+          landed.revision) {
+        continue;
+      }
+      final row = targetOf(landed.op);
+      final touches =
+          _landedPage(landed.op) == page || queue.shown.rows[row]?.page == page;
+      if (!touches) continue;
+      final part = switch (row) {
+        ElementTarget(:final elementPublicId) =>
+          SeenElement(elementPublicId) as SeenPart?,
+        LineupTarget(:final lineupPublicId) => SeenLineupGroup(lineupPublicId),
+        _ => null,
+      };
+      switch ((part, landed.produced)) {
+        case (final part?, ProducedRow(page: final at, :final digest))
+            when !_deletes(landed.op):
+          at == page ? known[part] = digest : known.remove(part);
+        case (final part?, ProducedRow()):
+          known.remove(part);
+        case _:
+          landedOnPage = true;
+      }
+    }
     switch (pageDeleteVerdict(
       queue.shown,
       work,
       ownWorkLandedOnPage: landedOnPage,
+      known: known,
     )) {
       case PageAsTheUserSawIt() || PageAlreadyGone():
         break;

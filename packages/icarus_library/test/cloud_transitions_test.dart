@@ -23,6 +23,7 @@ enum Kind {
   deleteHeld,
   oversized,
   changedUnseen,
+  rowPageGone,
   retired,
 }
 
@@ -39,6 +40,7 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
       DeleteHeld() => Kind.deleteHeld,
       Oversized() => Kind.oversized,
       ChangedUnseen() => Kind.changedUnseen,
+      RowPageGone() => Kind.rowPageGone,
       RetiredFormat() => Kind.retired,
     },
     Waiting() || Unanswered()
@@ -101,20 +103,21 @@ final rows = <Row>[
     client.claim(['first']);
     return client..edit(movePatch('x', expected: 2, x: 30));
   }),
-  Row('a whole write waiting for the result of a landed field merge', () {
+  Row('a whole write behind a merge that landed where this device did not '
+      'predict, waiting for the row\'s result', () {
     final client = Client()
       ..edit(movePatch('first', merge: FieldMerge(fields: ['position'])));
     final attempt = client.claim(['first']);
-    client.must(OpAnswered(attempt, const AppliedAnswer('first', revision: 2)));
-    return client..edit(movePatch('x', x: 70, expected: 2));
+    client.must(OpAnswered(attempt, const AppliedAnswer('first', revision: 3)));
+    return client..edit(onVisible(client.visible, movePatch('x', x: 70)));
   }),
   Row(
-    'page delete waiting for its page to show this device\'s landed work',
+    'page delete waiting for its page after this device\'s work landed where it did not predict',
     () {
       final client = Client()..edit(movePatch('first'));
       final attempt = client.claim(['first']);
       client.must(
-        OpAnswered(attempt, const AppliedAnswer('first', revision: 2)),
+        OpAnswered(attempt, const AppliedAnswer('first', revision: 3)),
       );
       return client..edit(pageDelete('x', 'page-a'));
     },
@@ -185,6 +188,14 @@ final rows = <Row>[
         const NoopAnswer('del', revision: 2, replay: NoopReplay.notApplied),
       ),
     );
+  }),
+  Row('needs user: an edit waiting for a row whose page is gone', () {
+    final client = Client()
+      ..edit(movePatch('first', merge: FieldMerge(fields: ['position'])));
+    final attempt = client.claim(['first']);
+    client.must(OpAnswered(attempt, const AppliedAnswer('first', revision: 3)));
+    client.edit(onVisible(client.visible, movePatch('x', x: 70)));
+    return client..arrive(const PageGone('page-a'));
   }),
   Row('a format this build no longer sends', () {
     final client = Client();
@@ -397,37 +408,39 @@ String renderTable() {
     ..writeln('## Which revision an op names')
     ..writeln()
     ..writeln(
-      'An op names the revision the user\'s edit was made against. Only this '
-      'device\'s own applied answer on that row can move it forward, and only '
-      'for work queued behind that answer in the row\'s chain, or made over '
-      'it while it was still drawn as landed. A result never changes the '
-      'revision an op names. If the row has since changed, the server '
-      'rejects the op and the user is asked, which is the point of sending '
-      'it checked. `_judge` in `lib/src/cloud/queue.dart` is the only place '
+      'An op names the revision the user\'s edit was made against. The device '
+      'keeps, per row, a justified row: a revision with the content at that '
+      'revision. It gets one from a result, or when its own op on that row is '
+      'answered applied at exactly the revision `applyOp` gives for it (the '
+      'entry records that produced row when it is made). An answer at any '
+      'other revision means someone else wrote in between, and the row is not '
+      'justified until a result shows it. A result never changes the revision '
+      'an op names. `_judge` in `lib/src/cloud/queue.dart` is the only place '
       'an outgoing revision is chosen.',
     )
     ..writeln()
     ..writeln(
-      '- A whole-row write (an element or lineup group written whole, a page '
-      'or its settings) behind this device\'s own field merge waits for the '
-      'row\'s result, and goes only if that result shows the row exactly as '
-      'the user saw it at the merge\'s revision. It needs the user if a '
-      'result of this session shows the row otherwise, or a result of its '
-      'page no longer holds a row that results have shown or that this '
-      'device added and a later result left out.',
+      '- An op made with nothing of this device\'s ahead of it on its row goes '
+      'at its authored revision, and the server decides.',
     )
     ..writeln(
-      '- A page renumbering this device made (a page add, reorder or delete) '
-      'moves its pages\' revisions by amounts its answer does not name. A '
-      'page rename behind it waits for the first page list after it, and '
-      'names the revision shown there only if the page is exactly as the '
-      'user saw it. This is the one place a result supplies a revision, '
-      'because the move was this device\'s own.',
+      '- An op made behind this device\'s own queued or landed work on its '
+      'row goes only once that row is justified at the revision it names, '
+      'with the content the user saw (or already holding what the op '
+      'writes). Otherwise it waits for the row\'s result, and needs the user '
+      'when a result of this session shows the row otherwise, when a result '
+      'of its page no longer holds a row that results showed or this device '
+      'added, or when its page is gone.',
+    )
+    ..writeln(
+      '- A page add, reorder or delete answers only the strategy revision, so '
+      'the pages it renumbers are not justified by the answer: a page rename '
+      'behind one waits for a page list.',
     )
     ..writeln(
       '- An undo of a delete goes without asking only over this device\'s '
-      'applied delete, at the tombstone revision that answer named, and only '
-      'within 29 days of sending that delete. Anything else needs the user.',
+      'delete answered at the revision it predicted, with the tombstone as '
+      'the user saw it, within 29 days of first sending that delete.',
     )
     ..writeln('- Keep mine names the revision the user chose theirs over.')
     ..writeln()

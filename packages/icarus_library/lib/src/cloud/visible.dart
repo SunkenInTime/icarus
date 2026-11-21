@@ -1,6 +1,7 @@
 import '../apply.dart';
 import '../ops.dart';
 import '../outcome.dart';
+import '../rows.dart';
 import '../strategy_rows.dart';
 import 'op_facts.dart';
 import 'pending.dart';
@@ -62,6 +63,11 @@ StrategyRowSet visibleOver(StrategyRowSet base, CloudQueue queue, Pages pages) {
         entry.place: entry,
     }.values.toList()..sort((a, b) => a.place.compareTo(b.place)),
   };
+  for (final work in queue.landed) {
+    if (_visiblePage(work.op, pages) || _leaves(base, work.op, pages)) {
+      rows = _withMissingRow(rows, work.op);
+    }
+  }
   for (final op in [
     for (final work in queue.landed)
       if (_visiblePage(work.op, pages) || _leaves(base, work.op, pages))
@@ -94,4 +100,27 @@ bool _leaves(StrategyRows rows, StrategyOp op, Pages pages) =>
       (SomePages(:final pages), LineupTarget(:final lineupPublicId)) =>
         pages.contains(rows.lineupGroup(lineupPublicId)?.pagePublicId),
       _ => false,
+    };
+
+StrategyRowSet _withMissingRow(StrategyRowSet rows, StrategyOp op) =>
+    switch (op) {
+      ElementPatchOp(
+        :final elementPublicId,
+        pagePublicId: final page?,
+        payload: final payload?,
+        :final sortIndex,
+        expectedElementRevision: final revision,
+      )
+          when rows.element(elementPublicId) == null &&
+              rows.page(page) != null =>
+        rows.withRows([
+          LiveElement(
+            publicId: elementPublicId,
+            pagePublicId: page,
+            payload: payload,
+            sortIndex: sortIndex ?? 0,
+            revision: revision,
+          ),
+        ]),
+      _ => rows,
     };

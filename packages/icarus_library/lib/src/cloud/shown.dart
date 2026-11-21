@@ -186,6 +186,18 @@ final class Shown {
       if (value > (highest[key] ?? 0)) key: value,
   };
 
+  Shown withGone(String page) => Shown(
+    headerThisSession: headerThisSession,
+    pagesThisSession: pagesThisSession,
+    goneThisSession: {...goneThisSession, page},
+    highest: highest,
+    strategyRevision: strategyRevision,
+    pages: pages,
+    settings: settings,
+    content: content,
+    rows: rows,
+  );
+
   Shown inNewSession() => Shown(
     highest: highest,
     strategyRevision: strategyRevision,

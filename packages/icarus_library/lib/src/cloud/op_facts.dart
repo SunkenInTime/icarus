@@ -494,6 +494,7 @@ Authored authoredFor(StrategyRows rows, StrategyOp op) {
     return AuthoredRow(
       revision: rows.strategy.revision,
       digest: strategyDigest(rows.strategy, rows.pages),
+      produces: producedBy(rows, op),
     );
   }
   return switch ((row, row == null ? null : revisionOfRow(row))) {
@@ -505,10 +506,52 @@ Authored authoredFor(StrategyRows rows, StrategyOp op) {
         ReadableLineupGroupRow(:final payload) => payload.payloadVersion,
         _ => null,
       },
+      produces: producedBy(rows, op),
     ),
     (_?, null) => const AuthoredUnreadable(),
-    (null, _) => const AuthoredNoRow(),
+    (null, _) => AuthoredNoRow(produces: producedBy(rows, op)),
   };
+}
+
+ProducedRow? producedBy(StrategyRows rows, StrategyOp op) {
+  final target = targetOf(op);
+  final applied = switch (applyOp(rows, op)) {
+    final OpApplied done => done,
+    _ => null,
+  };
+  if (applied == null) return null;
+  if (target is StrategyTarget) {
+    for (final row in applied.rows) {
+      if (row case final ReadableStrategy strategy) {
+        return ProducedRow(page: null, revision: strategy.revision, digest: '');
+      }
+    }
+    return null;
+  }
+  for (final row in applied.rows) {
+    final rowTarget = switch (row) {
+      PageRow(:final publicId) => PageTarget(publicId) as Target,
+      PageSettingsRow(:final pagePublicId) => SettingsTarget(pagePublicId),
+      ElementRow(:final publicId) => ElementTarget(publicId),
+      LineupGroupRow(:final publicId) => LineupTarget(publicId),
+      _ => null,
+    };
+    if (rowTarget != target) continue;
+    final revision = revisionOfRow(row);
+    if (revision == null) return null;
+    return ProducedRow(
+      page: switch (row) {
+        PageRow(:final publicId) => publicId,
+        PageSettingsRow(:final pagePublicId) => pagePublicId,
+        ElementRow(:final pagePublicId) => pagePublicId,
+        LineupGroupRow(:final pagePublicId) => pagePublicId,
+        _ => null,
+      },
+      revision: revision,
+      digest: rowDigest(row),
+    );
+  }
+  return null;
 }
 
 Map<SeenPart, String> liveContentOn(Iterable<Row> rows, String pagePublicId) =>

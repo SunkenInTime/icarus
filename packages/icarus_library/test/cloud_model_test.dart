@@ -42,8 +42,45 @@ final class Model {
   final produced = <Target, Set<int>>{};
 
   final seenDigest = <String, String>{};
+  final history = <(Target, int), String>{};
+
+  void recordHistory() {
+    for (final MapEntry(key: target, value: revision) in revisionsOf(
+      server.rows,
+    ).entries) {
+      final row = rowOf(server.rows, target);
+      if (row == null) continue;
+      history.putIfAbsent((
+        target,
+        revision,
+      ), () => target is StrategyTarget ? '' : rowDigest(row));
+    }
+  }
+
+  void checkJustified() {
+    for (final work in client.queue.landed) {
+      final produced = work.produced;
+      if (produced == null) continue;
+      final target = targetOf(work.op);
+      final truth = history[(target, produced.revision)];
+      if (truth == null) {
+        throw StateError(
+          '${work.op.opId} justified $target at ${produced.revision}, a '
+          'revision the server never held',
+        );
+      }
+      if (truth != produced.digest) {
+        throw StateError(
+          '${work.op.opId} justified $target at ${produced.revision} with '
+          'content the server did not hold then',
+        );
+      }
+      count('justified rows checked against the server');
+    }
+  }
 
   OpAnswer applyOwn(String owner, StrategyOp op) {
+    recordHistory();
     final before = revisionsOf(server.rows);
     final beforeRow = rowOf(server.rows, checkTargetOf(op));
     final answer = server.apply(owner, op);
@@ -68,6 +105,7 @@ final class Model {
         if (before[key] != value) (produced[key] ??= {}).add(value);
       }
     }
+    recordHistory();
     return answer;
   }
 
@@ -116,6 +154,7 @@ final class Model {
       }
     }
     checkStates();
+    checkJustified();
     return result;
   }
 
@@ -807,8 +846,7 @@ final class Model {
       final views = entryViews(client.queue, clock);
       throw StateError(
         'did not drain: ${[for (final entry in client.queue.entries) '${entry.id} ${views[entry.id]?.state} ${views[entry.id]?.holds}'].join('; ')} '
-        'landed ${client.queue.landed} '
-        'authored ${[for (final entry in client.queue.entries.whereType<PendingOp>()) '${entry.id} ${entry.authored} shown ${client.queue.shown.rows[checkTargetOf(entry.op)]?.revision} server ${(server.rows.element('e3') as LiveElement?)?.revision} ${server.recorded.keys.where((k) => k.contains('op31') || k.contains('op41') || k.contains('op62'))}}'].join('; ')}',
+        'landed ${client.queue.landed}',
       );
     }
     if (!teammates && drainHelps > 0) {
@@ -862,6 +900,7 @@ const minimums = {
   'put-backs': 100,
   'given up with its chain': 5,
   'nothing to do at another revision': 20,
+  'justified rows checked against the server': 100,
 };
 
 void main() {
