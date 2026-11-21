@@ -233,7 +233,7 @@ jobs:
           # what a shipped build finds in its Hive store, the installer, the
           # release scripts, or the test itself. The release runs the same
           # test on every signed installer; this catches a break on its PR.
-          lane desktop '^(installer/|scripts/|lib/hive/|lib/migrations/|test/windows_online_beta_library_probe_test\.dart$)|\.g\.dart$' guarded
+          lane desktop '^(installer/|scripts/|lib/hive/|lib/migrations/|test/windows_online_beta_library_probe_test\.dart$|packages/icarus_library/pubspec\.(yaml|lock)$|tool/library_store_probe\.dart$)|\.g\.dart$' guarded
           # What reads or writes the library: the Hive adapters and the models
           # they and the .ica format serialize, migrations, import and export
           # and the backup manifest, the store's startup and the load and save
@@ -311,6 +311,7 @@ jobs:
           fvm dart pub get
           fvm dart analyze --fatal-infos
           fvm dart test
+          fvm dart test -p chrome test/indexed_db
 
       - name: Read Damaged Rows Compiled To JavaScript
         working-directory: packages/icarus_library
@@ -769,7 +770,7 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev xvfb
 
       - uses: ./.github/actions/setup-flutter
 
@@ -781,6 +782,19 @@ jobs:
 
       - name: Build Linux Client
         run: fvm flutter build linux --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
+
+      - name: Check The Library Engine Ships
+        run: test -s build/linux/x64/release/bundle/lib/libsqlite3.so
+
+      - name: Open A Library Store In A Release Build
+        run: |
+          fvm flutter build linux --release -t tool/library_store_probe.dart
+          dir=$(mktemp -d)
+          for run in 1 2; do
+            ICARUS_STORE_PROBE_DIR="$dir" xvfb-run -a build/linux/x64/release/bundle/icarus
+            cat "$dir/probe.txt"
+          done
+          grep -q 'on SQLite .* revision 3,' "$dir/probe.txt"
 
   # Builds the Windows installer the way a release does and upgrades the last
   # public release to it, then rolls back.
@@ -842,6 +856,12 @@ jobs:
       - name: Build Windows Client
         run: fvm flutter build windows --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
 
+      - name: Check The Library Engine Ships
+        run: |
+          if (-not (Test-Path build/windows/x64/runner/Release/sqlite3.dll)) {
+            throw "sqlite3.dll is not in the Windows build"
+          }
+
       - name: Build Windows Installer
         run: powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1 -Configuration Release
 
@@ -865,6 +885,24 @@ jobs:
             build/installer/icarus-setup-*.exe
             ${{ runner.temp }}/icarus-online-beta-windows-smoke/evidence.json
           if-no-files-found: error
+
+      - name: Open A Library Store In A Release Build
+        run: |
+          fvm flutter build windows --release -t tool/library_store_probe.dart
+          $dir = Join-Path $env:RUNNER_TEMP 'icarus-store-probe'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $env:ICARUS_STORE_PROBE_DIR = $dir
+          foreach ($run in 1..2) {
+            $probe = Start-Process -FilePath build/windows/x64/runner/Release/icarus.exe -PassThru
+            if (-not $probe.WaitForExit(120000)) {
+              $probe.Kill()
+              throw "the store probe did not finish"
+            }
+            Get-Content (Join-Path $dir 'probe.txt')
+          }
+          if (-not (Select-String -Path (Join-Path $dir 'probe.txt') -Pattern 'on SQLite .* revision 3,' -Quiet)) {
+            throw "the release build did not reopen its library store"
+          }
 
   # The suite on the platform we ship, for the same changes as windows-build.
   windows-test:
