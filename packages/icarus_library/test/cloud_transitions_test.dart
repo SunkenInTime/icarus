@@ -12,12 +12,11 @@ enum Kind {
   neverSentFree,
   heldBehindEntry,
   awaitingBase,
-  awaitingPageRead,
+  awaitingRead,
   oversized,
   changedUnseen,
   deleteHeld,
   onDeletedPage,
-  incompleteCopy,
   claimed,
   answerUnknown,
   retriesExhausted,
@@ -27,12 +26,10 @@ enum Kind {
   rejected,
   failed,
   retired,
-  unreadable,
 }
 
 Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
   (RetiredOp(), _) => Kind.retired,
-  (UnreadableEntry(), _) => Kind.unreadable,
   (PendingOp(), null) => throw StateError('a pending op always has a view'),
   (PendingOp(), final EntryView view) => switch ((view.state, view.go)) {
     (Claimed(), _) => Kind.claimed,
@@ -46,7 +43,6 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
       ServerForgotAnswer() => Kind.serverForgotAnswer,
       OnDeletedPage() => Kind.onDeletedPage,
       DeleteHeld() => Kind.deleteHeld,
-      IncompleteCopy() => Kind.incompleteCopy,
     },
     (AnswerUnknown(backoff: RetriesExhausted()), Free()) =>
       Kind.retriesExhausted,
@@ -54,8 +50,8 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
         when view.holds.any((hold) => hold is BehindEntry) =>
       Kind.heldBehindEntry,
     (NeverSent() || AnswerUnknown(), Free())
-        when view.holds.any((hold) => hold is AwaitingPageRead) =>
-      Kind.awaitingPageRead,
+        when view.holds.any((hold) => hold is AwaitingRead) =>
+      Kind.awaitingRead,
     (NeverSent() || AnswerUnknown(), Free())
         when view.holds.any((hold) => hold is AwaitingBase) =>
       Kind.awaitingBase,
@@ -131,31 +127,6 @@ final rows = <Row>[
     client.edit(elementAdd('x', pageId: 'page-b'));
     client.must(OpAnswered(attempt, const AppliedAnswer('del', revision: 2)));
     return client..read(withOp(initialRows(), pageDelete('del', 'page-b')));
-  }),
-  Row('needs user: incomplete page copy (import only)', () {
-    final client = Client();
-    client.queue = CloudQueue(
-      entries: [
-        PendingOp(
-          place: 0,
-          work: ImportedIncompleteCopy(
-            pageAdd('x', 'page-c', copyFrom: 'page-a'),
-          ),
-          scope: const OnPage('page-c'),
-          authored: const AuthoredNoRow(),
-          policy: SendPolicy.checked,
-          answer: const NotAnswered(),
-          retriedAfter: 0,
-        ),
-      ],
-      attempts: const {},
-      nextAttempt: 1,
-      nextRead: client.queue.nextRead,
-      base: client.queue.base,
-      strategy: StrategyFacts.fresh,
-      session: client.queue.session,
-    );
-    return client;
   }),
   Row('claimed in attempt 1', () {
     final client = Client()..edit(movePatch('x'));
@@ -241,19 +212,6 @@ final rows = <Row>[
     );
     return client;
   }),
-  Row('unreadable entry', () {
-    final client = Client();
-    client.queue = CloudQueue(
-      entries: [const UnreadableEntry(place: 0, text: '{}', problem: 'newer')],
-      attempts: const {},
-      nextAttempt: 1,
-      nextRead: client.queue.nextRead,
-      base: client.queue.base,
-      strategy: StrategyFacts.fresh,
-      session: client.queue.session,
-    );
-    return client;
-  }, subject: 'unreadable/0'),
   Row('never sent, strategy deleted on the server', () {
     return Client()
       ..edit(movePatch('x'))
@@ -324,31 +282,24 @@ final events = <String, QueueEvent Function(Client)>{
   'user: use cloud': (c) => const UserUsedCloud('x'),
   'user: delete anyway': (c) => const UserDeletedAnyway('x'),
   'user: discard': (c) => const UserDiscarded('x'),
-  'user: discard the unreadable entry': (c) =>
-      const UserDiscarded('unreadable/0'),
   'reissue x under a fresh id': (c) => Reissue(const {'x': 'x3'}),
   'read started': (c) => const ReadStarted(),
   'base: header read as it is': (c) =>
-      BaseArrived(headerReadOf(c.base), read: c.startRead(), startedAt: c.at),
+      BaseArrived(headerReadOf(c.base), read: c.startRead()),
   'base: page-a read with the item at revision 2': (c) => BaseArrived(
     PageRead(
       page: page('page-a', sortIndex: 0),
-      settings: settings('page-a'),
       elements: [element('e1', revision: 2), element('e2')],
       lineupGroups: const [],
     ),
     read: c.startRead(),
-    startedAt: c.at,
   ),
   'base: page-a read from before the last answer': (c) =>
-      BaseArrived(pageReadOf(initialRows(), 'page-a'), read: 1, startedAt: now),
-  'base: page-b gone': (c) => BaseArrived(
-    const PageGone('page-b'),
-    read: c.startRead(),
-    startedAt: c.at,
-  ),
+      BaseArrived(pageReadOf(initialRows(), 'page-a'), read: 1),
+  'base: page-b gone': (c) =>
+      BaseArrived(const PageGone('page-b'), read: c.startRead()),
   'base: strategy gone': (c) =>
-      BaseArrived(const StrategyGone(), read: c.startRead(), startedAt: c.at),
+      BaseArrived(const StrategyGone(), read: c.startRead()),
 };
 
 String describe(Client client, String id) {
@@ -359,7 +310,6 @@ String describe(Client client, String id) {
     PendingOp() =>
       '${view!.state}, ${view.go}${view.holds.isEmpty ? '' : ', ${view.holds.join(', ')}'}',
     RetiredOp() => 'retired format',
-    UnreadableEntry() => 'unreadable entry',
   };
 }
 
@@ -413,6 +363,33 @@ String renderTable() {
       'its holds are derived from the stored facts after every event. Events '
       'that do not apply are listed after the table; the queue is left as it '
       'was.',
+    )
+    ..writeln()
+    ..writeln('## Folding')
+    ..writeln()
+    ..writeln(
+      'A field edit folds into an earlier field edit of the same row only '
+      'when the earlier one is unsent and unclaimed, both name exactly the '
+      'same fields, and nothing else for that row is queued between them. The '
+      'folded edit is not exactly the two sent in turn in two corners:',
+    )
+    ..writeln()
+    ..writeln(
+      '- The server already holds the first edit\'s value. Sending both is a '
+      'no-op then an applied edit; the folded edit is a field conflict and '
+      'needs the user, with the server\'s value and the user\'s value both '
+      'kept.',
+    )
+    ..writeln(
+      '- The server already holds the later edit\'s value where the first '
+      'would conflict. Sending both holds the first for the user; the folded '
+      'edit lands and the server ends at the user\'s last value for every '
+      'field it names.',
+    )
+    ..writeln()
+    ..writeln(
+      '`test/cloud_fold_test.dart` requires every other case to give what '
+      'sending both gives.',
     );
   for (final row in rows) {
     final client = row.build();

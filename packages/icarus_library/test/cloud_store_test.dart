@@ -72,8 +72,14 @@ void main() {
       );
       expect(
         storage.contents[area]!.keys.where((key) => key.startsWith('attempt/')),
-        hasLength(1),
-        reason: 'the highest attempt row is kept so its number is never reused',
+        isEmpty,
+      );
+      await store.close();
+      final reopened = await openCloudStore(MemoryEngine(storage));
+      expect(
+        (await syncOf(reopened)).queue.nextAttempt,
+        sent.attempt + 1,
+        reason: 'the counters row keeps attempt numbers from being reused',
       );
     },
   );
@@ -134,8 +140,10 @@ void main() {
       );
     });
 
-    test('an answer writes the answered entry, and the summary only when '
-        'the sync state changed', () async {
+    test('an answer writes the answered entry, the facts row when it is the '
+        'first answer from its attempt, deletes the attempt once every op in '
+        'it is answered, and writes the summary only when the sync state '
+        'changed', () async {
       final (store, counts) = await opened();
       final sent = (await recordAll(store, [
         BatchClaimed(clientId: clientId, opIds: ['add7'], at: fixedClock()),
@@ -149,10 +157,13 @@ void main() {
         counts.written.map((write) => write.$2),
         unorderedEquals([
           'pending/${(7).toString().padLeft(16, '0')}',
+          'cloud',
           summaryName(strategyId),
         ]),
       );
-      expect(counts.deleted, isEmpty);
+      expect(counts.deleted.map((delete) => delete.$2), [
+        'attempt/${(1).toString().padLeft(16, '0')}',
+      ]);
     });
 
     test('an unchanged page read writes its evidence row in one commit and '
@@ -161,18 +172,13 @@ void main() {
       final read = await startRead(store);
       counts.reset();
       await recordAll(store, [
-        BaseArrived(
-          pageReadOf(initialRows(), 'page-a'),
-          read: read,
-          startedAt: fixedClock(),
-        ),
+        BaseArrived(pageReadOf(initialRows(), 'page-a'), read: read),
       ]);
       expect(counts.commits, 1);
       expect(counts.written.map((write) => write.$2), [
         'read/page/${digestOf('page-a')}',
       ]);
       expect(counts.deleted, isEmpty);
-      expect(counts.commits, 1, reason: '${counts.written}');
     });
   });
 
@@ -195,11 +201,7 @@ void main() {
       );
       final read = await startRead(store);
       await recordAll(store, [
-        BaseArrived(
-          pageReadOf(renamed, 'page-a'),
-          read: read,
-          startedAt: fixedClock(),
-        ),
+        BaseArrived(pageReadOf(renamed, 'page-a'), read: read),
       ]);
       final page = pageOf(await store.readPage(strategyId, 'page-a'));
       expect((page.page as LivePage).name, 'Page 1');
@@ -220,7 +222,6 @@ void main() {
             settings: [rows.settingsOf('page-a')!],
           ),
           read: read,
-          startedAt: fixedClock(),
         ),
       ]);
       final names = storage.contents[area]!.keys;
@@ -251,108 +252,109 @@ void main() {
       );
     });
 
-    test('after copying a page online, the copy shows from the local preview '
-        'and work on the new page waits for one read of it', () async {
+    test('a page copied online reaches the queue as ordinary adds under ids '
+        'made on this device, drawn at once and drained without the '
+        'user', () async {
       final store = await openCloudStore(MemoryEngine(MemoryStorage()));
       await addCloud(store, initialRows());
       await recordAll(store, [const ConnectionReturned()]);
+      await readServer(store, initialRows());
       savedValue(
         await store.commit(
           strategyId,
           pageAdd('copy', 'page-c', copyFrom: 'page-a'),
         ),
       );
-      final sent = await claimAll(store);
-      final copied = withOp(initialRows(), sent.ops.single);
-      final serverIds = {
-        for (final row in copied.elementsOn('page-c'))
-          row.publicId: 'server-${row.publicId.hashCode.abs()}',
-      };
-      final server = StrategyRowSet(
-        strategy: copied.strategy,
-        pages: copied.pages,
-        settings: copied.settings,
-        elements: [
-          for (final row in copied.elements)
-            if (row case LiveElement(pagePublicId: 'page-c'))
-              LiveElement(
-                publicId: serverIds[row.publicId]!,
-                pagePublicId: 'page-c',
-                payload: row.payload,
-                sortIndex: row.sortIndex,
-                revision: row.revision,
-              )
-            else
-              row,
-        ],
-      );
-      await recordAll(store, [
-        OpAnswered(
-          sent.attempt,
-          AppliedAnswer('copy', revision: server.strategy.revision),
-        ),
+      final queued = (await syncOf(store)).queue.entries;
+      expect(queued.whereType<PendingOp>().map((entry) => entry.op.type), [
+        OpType.pageAdd,
+        OpType.elementAdd,
+        OpType.elementAdd,
       ]);
-      await readServer(store, server, pages: const []);
-      final preview = pageOf(await store.readPage(strategyId, 'page-c'));
-      expect(
-        preview.elements.map((row) => row.publicId).toSet(),
-        serverIds.keys.toSet(),
-      );
-      savedValue(
-        await store.commit(strategyId, elementAdd('new', pageId: 'page-c')),
-      );
-      final previewItem = preview.elements.first;
+      final drawn = pageOf(await store.readPage(strategyId, 'page-c'));
+      expect(drawn.elements, hasLength(2));
+      final copiedId = drawn.elements.first.publicId;
       savedValue(
         await store.commit(
           strategyId,
-          elementDelete(
-            'drop',
-            elementId: previewItem.publicId,
-            pageId: 'page-c',
-          ),
+          elementDelete('drop', elementId: copiedId, pageId: 'page-c'),
         ),
       );
-      final waiting = await syncOf(store);
-      expect(waiting.views['new']!.holds, [
-        const AwaitingBase(PageTarget('page-c')),
-      ]);
-      expect(waiting.views['drop']!.holds, [
-        const AwaitingBase(PageTarget('page-c')),
-      ]);
-      await readServer(store, server, pages: ['page-c']);
-      final after = await syncOf(store);
-      expect(after.queue.entry('copy'), isNull);
-      expect(after.views['new']!.holds, isEmpty);
-      expect(after.views['new']!.go, isA<Free>());
-      expect(
-        after.views['drop']!.go,
-        isA<NeedsUser>().having(
-          (go) => go.reason,
-          'reason',
-          isA<ChangedUnseen>(),
-        ),
-        reason: 'the server gave the copies its own ids',
-      );
+      var server = initialRows();
+      while ((await syncOf(store)).queue.entries.isNotEmpty) {
+        final sent = await claimAll(store);
+        final answers = <QueueEvent>[];
+        for (final op in sent.ops) {
+          server = withOp(server, op);
+          answers.add(
+            OpAnswered(
+              sent.attempt,
+              AppliedAnswer(op.opId, revision: visibleRevision(server, op)!),
+            ),
+          );
+        }
+        await recordAll(store, answers);
+        await readServer(store, server);
+      }
       final page = pageOf(await store.readPage(strategyId, 'page-c'));
-      expect(page.elements.map((row) => row.publicId).toSet(), {
-        ...serverIds.values,
-        'e9',
-      });
+      expect(page.elements.whereType<LiveElement>(), hasLength(1));
+      expect(server.element(copiedId), isA<DeletedElement>());
     });
   });
 
-  group('the decoder refuses what this build would never write', () {
-    Future<CloudStrategy> withEntryText(String text) async {
+  group('a queue row this build cannot read holds the whole strategy', () {
+    Future<(LibraryStore, MemoryStorage, Contents)> withRow(
+      String name,
+      String text,
+    ) async {
       final storage = MemoryStorage();
-      var store = await openCloudStore(MemoryEngine(storage));
+      final store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
       savedValue(await store.commit(strategyId, movePatch('good')));
+      await claimAll(store);
       await store.close();
       final contents = editable(storage.contents);
-      contents[area]![PendingName(5).name] = text;
-      store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
-      return syncOf(store);
+      contents[area]![name] = text;
+      final disk = MemoryStorage(contents);
+      return (await openCloudStore(MemoryEngine(disk)), disk, contents);
     }
+
+    Future<void> expectHeld(String name, String text) async {
+      final (store, disk, contents) = await withRow(name, text);
+      final content = strategyOf(await store.readStrategy(strategyId));
+      expect(
+        content.sync,
+        isA<CloudHeld>().having(
+          (held) => held.rows.map((row) => row.ref.name),
+          'rows',
+          [name],
+        ),
+      );
+      expect(
+        await store.commit(strategyId, movePatch('next', elementId: 'e2')),
+        isA<Refused<Committed, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<QueueHeld>(),
+        ),
+      );
+      expect(
+        await store.record(strategyId, [const ReadStarted()]),
+        isA<Refused<Recorded, CommitRefusal>>(),
+      );
+      expect(sameContents(disk.contents, contents), isTrue);
+      expect(
+        listOf(store).strategies.single.sync,
+        isA<KeptInCloud>().having(
+          (sync) => sync.tally.unreadable,
+          'unreadable',
+          1,
+        ),
+      );
+    }
+
+    Future<void> withEntryText(String text) =>
+        expectHeld(PendingName(5).name, text);
 
     String entryText(Map<String, Object?> changes) =>
         canonicalJson({...entryJson(), ...changes});
@@ -393,46 +395,40 @@ void main() {
         },
       ),
     ]) {
-      test(label, () async {
-        final cloud = await withEntryText(entryText(changes));
-        expect(cloud.queue.entries.map((entry) => entry.id), [
-          'good',
-          'unreadable/5',
-        ]);
-        expect(cloud.tally.unreadable, 1);
-      });
+      test(label, () => withEntryText(entryText(changes)));
     }
 
     test('an op id another entry holds', () async {
-      final cloud = await withEntryText(
-        entryText({'op': movePatch('good').toJson()}),
-      );
-      expect(cloud.queue.entries.last, isA<UnreadableEntry>());
+      await withEntryText(entryText({'op': movePatch('good').toJson()}));
     });
 
-    test('an attempt it cannot read stops the strategy instead of '
-        'resending', () async {
-      final storage = MemoryStorage();
-      var store = await openCloudStore(MemoryEngine(storage));
-      await addCloud(store, initialRows());
-      savedValue(await store.commit(strategyId, movePatch('move')));
-      await claimAll(store);
-      await store.close();
-      final contents = editable(storage.contents);
-      contents[area]![AttemptName(1).name] = '{"version":1}';
-      store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
-      expect(
-        await store.readStrategy(strategyId),
-        isA<InUnreadableStrategy<StrategyContent>>(),
+    test('an attempt, the counters, the facts or evidence it cannot '
+        'read', () async {
+      for (final name in [
+        AttemptName(1).name,
+        'counters',
+        'cloud',
+        'read/header',
+      ]) {
+        await expectHeld(name, '{"version":2}');
+      }
+    });
+
+    test('only an explicit discard of unsent work lets it go, and removing '
+        'the area as unreadable is refused without one', () async {
+      final (store, disk, _) = await withRow('counters', '{"version":2}');
+      await store.readStrategy(strategyId);
+      final discarded = await store.discardUnreadableQueue(
+        strategyId,
+        const DiscardsUnsentWork(),
       );
+      expect(discarded, isA<Saved<StrategySummary, CommitRefusal>>());
       expect(
-        await store.commit(strategyId, movePatch('next', expected: 1)),
-        isA<Refused<Committed, CommitRefusal>>().having(
-          (refused) => refused.reason,
-          'reason',
-          isA<CloudStateNotReadable>(),
-        ),
+        disk.contents[area]!.keys.where((key) => key.startsWith('pending/')),
+        isEmpty,
       );
+      final cloud = await syncOf(store);
+      expect(cloud.queue.entries, isEmpty);
     });
   });
 
@@ -452,25 +448,6 @@ void main() {
     expect(standingOf(cloud.queue), Standing.editAccessLost);
     expect(cloud.queue.nextRead, read + 1);
     expect(cloud.queue.nextAttempt, sent.attempt + 1);
-  });
-
-  test('a summary whose queued rows disagree with the queue is rebuilt when '
-      'the store opens', () async {
-    final storage = MemoryStorage();
-    var store = await openCloudStore(MemoryEngine(storage));
-    await addCloud(store, initialRows());
-    final stale = storage.contents['library']![summaryName(strategyId)]!;
-    savedValue(await store.commit(strategyId, movePatch('move')));
-    await store.close();
-    final contents = editable(storage.contents);
-    contents['library']![summaryName(strategyId)] = stale;
-    store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
-    expect(
-      listOf(store).strategies.single.sync,
-      isA<KeptInCloud>()
-          .having((sync) => sync.tally.waiting[Waiting.unsent], 'unsent', 1)
-          .having((sync) => sync.queued.count, 'queued', 1),
-    );
   });
 
   test('opening a cloud strategy reads its queue in three listings and two '
@@ -529,10 +506,6 @@ void main() {
     );
   });
 }
-
-Contents editable(Contents contents) => {
-  for (final MapEntry(:key, :value) in contents.entries) key: {...value},
-};
 
 Map<String, Object?> entryJson() => {
   'version': 1,

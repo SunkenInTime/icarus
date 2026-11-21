@@ -69,6 +69,12 @@ final class NeedsFieldBase extends EditMaking {
   final StrategyOp op;
 }
 
+final class CopyMustBeExpanded extends EditMaking {
+  const CopyMustBeExpanded(this.op);
+
+  final PageAddOp op;
+}
+
 final class NeedsPageDeleteEdit extends EditMaking {
   const NeedsPageDeleteEdit(this.op);
 
@@ -86,6 +92,8 @@ EditMaking editOf(
     _,
   ) =>
     NeedsFieldBase(op),
+  (final PageAddOp copy && PageAddOp(copyContentFromPagePublicId: _?), _) =>
+    CopyMustBeExpanded(copy),
   (StrategyPatchOp(), _) => EditMade(
     PlainEdit._(op, const StrategyWide(), authored),
   ),
@@ -224,11 +232,10 @@ final class ReadStarted extends QueueEvent {
 }
 
 final class BaseArrived extends QueueEvent {
-  const BaseArrived(this.base, {required this.read, required this.startedAt});
+  const BaseArrived(this.base, {required this.read});
 
   final ArrivedBase base;
   final int read;
-  final DateTime startedAt;
 }
 
 sealed class OpAnswer {
@@ -290,14 +297,12 @@ final class HeaderRead extends ArrivedBase {
 final class PageRead extends ArrivedBase {
   PageRead({
     required this.page,
-    required this.settings,
     required List<ElementRow> elements,
     required List<LineupGroupRow> lineupGroups,
   }) : elements = List.unmodifiable(elements),
        lineupGroups = List.unmodifiable(lineupGroups);
 
   final PageRow page;
-  final PageSettingsRow settings;
   final List<ElementRow> elements;
   final List<LineupGroupRow> lineupGroups;
 }

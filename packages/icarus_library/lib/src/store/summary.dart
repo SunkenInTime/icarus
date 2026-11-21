@@ -5,6 +5,8 @@ import '../outcome.dart';
 import '../payloads.dart';
 import '../rows.dart';
 import '../wire.dart';
+import '../cloud/codec.dart';
+import '../cloud/queue.dart';
 import '../cloud/sync.dart';
 
 const summaryVersion = 5;
@@ -20,31 +22,9 @@ final class KeptHere extends SummarySync {
 }
 
 final class KeptInCloud extends SummarySync {
-  const KeptInCloud(this.tally, this.queued);
+  const KeptInCloud(this.tally);
 
   final Tally tally;
-  final QueuedRows queued;
-}
-
-final class QueuedRows {
-  const QueuedRows({required this.count, required this.placeSum});
-
-  static const none = QueuedRows(count: 0, placeSum: 0);
-
-  factory QueuedRows.of(Iterable<int> places) => QueuedRows(
-    count: places.length,
-    placeSum: places.fold(0, (sum, place) => sum + place),
-  );
-
-  final int count;
-  final int placeSum;
-
-  @override
-  bool operator ==(Object other) =>
-      other is QueuedRows && other.count == count && other.placeSum == placeSum;
-
-  @override
-  int get hashCode => Object.hash(count, placeSum);
 }
 
 sealed class Readability {
@@ -355,12 +335,8 @@ final class StrategySummary {
     'tallies': {
       for (final page in tallies.keys.sorted()) page: tallies[page]!.toJson(),
     },
-    if (sync case KeptInCloud(:final tally, :final queued))
-      'cloud': {
-        'tally': tally.toJson(),
-        'queued': queued.count,
-        'placeSum': queued.placeSum,
-      },
+    if (sync case KeptInCloud(:final tally))
+      'cloud': {'tally': tally.toJson(), 'rowsVersion': cloudRowVersion},
   };
 
   static Decoded<StrategySummary> decode(Object? json) =>
@@ -418,12 +394,13 @@ final class StrategySummary {
 
   static Decoded<KeptInCloud> _cloudSync(Object? json) =>
       JsonFields.read(json, 'cloud sync', (fields) {
+        final version = fields.whole('rowsVersion');
+        if (version > cloudRowVersion) {
+          return () =>
+              KeptInCloud(Tally(standing: Standing.good, unreadable: 1));
+        }
         final tally = fields.decoded('tally', Tally.decode);
-        final count = fields.whole('queued');
-        final placeSum = fields.whole('placeSum');
-        if (count < 0 || placeSum < 0) fields.reject('expected queued rows');
-        return () =>
-            KeptInCloud(tally!, QueuedRows(count: count, placeSum: placeSum));
+        return () => KeptInCloud(tally!);
       });
 
   @override

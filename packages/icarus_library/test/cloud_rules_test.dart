@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/page_copy.dart' show pageCopyRoot;
 import 'package:test/test.dart';
 
 import 'cloud_support.dart';
@@ -87,40 +88,6 @@ void main() {
   });
 
   group('rule 2: a dependency is satisfied by an applied answer', () {
-    test('a copy never shares a batch with an earlier edit of its source', () {
-      final client = Client();
-      client.edit(movePatch('move'));
-      client.edit(pageAdd('copy', 'page-c', copyFrom: 'page-a'));
-      expect(
-        notApplicable(
-          transition(
-            client.queue,
-            BatchClaimed(clientId: clientId, opIds: ['move', 'copy'], at: now),
-            now: now,
-          ),
-        ),
-        isA<HeldBack>(),
-      );
-      final attempt = client.claim(['move']);
-      client.must(
-        OpAnswered(
-          attempt,
-          const RejectedAnswer(
-            'move',
-            RejectionReason.revisionMismatch,
-            NoServerCopy(),
-          ),
-        ),
-      );
-      expect(client.view('copy').holds, [
-        const BehindEntry('move', Dependency.pageWork),
-      ]);
-      expect(
-        Tally.of(client.queue, now).attention[Attention.waitingOnRefused],
-        1,
-      );
-    });
-
     test('a move cannot be made without its source page', () {
       final move = movePatch('move', pageId: 'page-b');
       expect(
@@ -140,25 +107,8 @@ void main() {
   });
 
   group('rule 3: the state is a function of the facts', () {
-    test('a copy whose page was read before its answer settles on the '
-        'answer', () {
-      final client = Client();
-      client.edit(pageAdd('copy', 'page-c', copyFrom: 'page-b'));
-      final attempt = client.claim(['copy']);
-      final copy = client.queue.entries.single as PendingOp;
-      final server = withOp(initialRows(), copy.op);
-      client.read(server);
-      client.must(
-        OpAnswered(
-          attempt,
-          AppliedAnswer('copy', revision: server.strategy.revision),
-        ),
-      );
-      expect(client.queue.entries, isEmpty);
-    });
-
-    test('a strategy gone before a delayed answer still settles the '
-        'accepted entry', () {
+    test('a strategy gone before a delayed answer records the answer and '
+        'keeps the entry', () {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
@@ -166,7 +116,7 @@ void main() {
       client.must(
         OpAnswered(attempt, const AppliedAnswer('move', revision: 2)),
       );
-      expect(client.queue.entries, isEmpty);
+      expect(client.view('move').state, isA<Accepted>());
       expect(standingOf(client.queue), Standing.deletedOnServer);
     });
 
@@ -182,7 +132,7 @@ void main() {
       client.must(BatchRefused(first, BatchRefusal.editAccessRemoved));
       expect(standingOf(client.queue), Standing.good);
       client.must(BatchRefused(second, BatchRefusal.strategyDeleted));
-      client.must(EditAccessConfirmed(afterAttempt: second + 5));
+      client.must(EditAccessConfirmed(afterAttempt: second));
       expect(standingOf(client.queue), Standing.deletedOnServer);
     });
   });
@@ -223,7 +173,6 @@ void main() {
       client.arrive(
         PageRead(
           page: pageRead.page,
-          settings: pageRead.settings,
           elements: [
             for (final row in pageRead.elements)
               if (row.publicId != 'e2') row,
@@ -260,11 +209,7 @@ void main() {
       expect(
         notApplicable(
           client.step(
-            BaseArrived(
-              const StrategyGone(),
-              read: client.queue.nextRead,
-              startedAt: now,
-            ),
+            BaseArrived(const StrategyGone(), read: client.queue.nextRead),
           ),
         ),
         isA<NoSuchRead>(),
@@ -277,7 +222,6 @@ void main() {
     client.arrive(
       PageRead(
         page: page('page-a', sortIndex: 0),
-        settings: settings('page-a'),
         elements: [
           UnreadableElement(
             publicId: 'e1',
@@ -566,9 +510,7 @@ void main() {
         strategy: StrategyFacts.fresh,
         session: client.queue.session,
       );
-      expect(client.view('x').holds, [
-        const AwaitingBase(ElementTarget('ghost')),
-      ]);
+      expect(client.view('x').holds, [const AwaitingRead(PageNeed('page-c'))]);
       client.read(server, pages: ['page-c']);
       expect(client.view('x').holds, isEmpty);
       expect(client.view('x').go, isA<Free>());
@@ -588,27 +530,6 @@ void main() {
       client.claim(['bare']);
       expect((client.lastSent().single as ElementPatchOp).merge!.base, isNull);
     });
-  });
-
-  test('work on a copied page waits until a read shows the copy', () {
-    final client = Client();
-    client.edit(pageAdd('copy', 'page-c', copyFrom: 'page-b'));
-    final attempt = client.claim(['copy']);
-    client.edit(elementAdd('add', pageId: 'page-c'));
-    final copy = client.queue.entries.first as PendingOp;
-    final server = withOp(initialRows(), copy.op);
-    client.must(
-      OpAnswered(
-        attempt,
-        AppliedAnswer('copy', revision: server.strategy.revision),
-      ),
-    );
-    expect(client.view('add').holds, [
-      const AwaitingBase(PageTarget('page-c')),
-    ]);
-    client.read(server);
-    expect(client.queue.entries.map((entry) => entry.id), ['add']);
-    expect(client.view('add').holds, isEmpty);
   });
 
   group('gone and live again are ordered by read', () {
@@ -672,7 +593,7 @@ void main() {
 
     test('a read from before the window passed is not enough', () {
       final client = lostDelete(online: false);
-      expect(client.view('x').holds, [const AwaitingBase(ElementTarget('e1'))]);
+      expect(client.view('x').holds, [const AwaitingRead(PageNeed('page-a'))]);
     });
 
     test('a row read as authored after the window is reissued under a fresh '
@@ -722,6 +643,7 @@ void main() {
         client.edit(movePatch('b', elementId: 'e2'));
         final first = client.claim(['a']);
         client.must(const AppRestarted(build: 'build-2'));
+        client.read(initialRows(), pages: ['page-a']);
         final second = client.claim(['b']);
         final refusals = [
           BatchRefused(first, BatchRefusal.upgradeRequired),
@@ -784,6 +706,7 @@ void main() {
         clientId: clientId,
         build: build,
         at: now,
+        afterRead: 0,
         ops: [entry.op],
         outcome: const AttemptOpen(),
       );
@@ -838,7 +761,7 @@ void main() {
         final (client, attempt) = deletedAndPutBack();
         client.must(OpAnswered(attempt, answer));
         expect(client.view('back').holds, [
-          const AwaitingBase(ElementTarget('e1')),
+          const AwaitingRead(PageNeed('page-a')),
         ]);
         client.read(deleted, pages: ['page-a']);
         expect(client.queue.entry('del'), isNotNull);
@@ -1019,7 +942,34 @@ void main() {
       answered.must(const AppRestarted(build: build));
       answered.clock = later;
       answered.read(newLifetime, pages: ['page-a']);
-      expect(answered.view('back').go, needsUser);
+      expect(
+        answered.view('back').go,
+        isA<NeedsUser>().having(
+          (go) => go.reason,
+          'reason',
+          isA<ServerForgotAnswer>(),
+        ),
+      );
     });
+  });
+
+  test('a page copy reaches the queue as ordinary adds whose ids the client '
+      'made from the copied ids', () {
+    final client = Client();
+    client.edit(pageAdd('copy', 'page-c', copyFrom: 'page-a'));
+    final ops = [
+      for (final entry in client.queue.entries) (entry as PendingOp).op,
+    ];
+    expect(ops.first, isA<PageAddOp>());
+    expect((ops.first as PageAddOp).copyContentFromPagePublicId, isNull);
+    final added = ops.whereType<ElementAddOp>().toList();
+    expect(added.map((op) => pageCopyRoot(op.elementPublicId)).toSet(), {
+      'e1',
+      'e2',
+    });
+    expect(added.every((op) => op.pagePublicId == 'page-c'), isTrue);
+    expect(client.view(added.first.opId).holds, [
+      BehindEntry('copy', Dependency.pageAdd),
+    ]);
   });
 }

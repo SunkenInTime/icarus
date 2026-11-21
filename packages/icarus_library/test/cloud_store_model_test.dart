@@ -3,6 +3,9 @@ import 'dart:math';
 
 import 'package:collection/collection.dart';
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/cloud/codec.dart';
+import 'package:icarus_library/src/store/layout.dart'
+    show PendingName, strategyArea;
 import 'package:test/test.dart';
 
 import 'cloud_server.dart';
@@ -11,28 +14,86 @@ import 'cloud_support.dart';
 import 'store_support.dart';
 import 'support.dart';
 
-final class SubsetLease extends ForwardingLease {
-  SubsetLease(super.inner, this.model);
+final class FaultyLease extends ForwardingLease {
+  FaultyLease(super.inner, this.model);
 
   final StoreModel model;
 
   @override
   Future<Committing> commit(List<Change> changes) async {
-    if (model.faults && model.random.nextInt(14) == 0) {
-      final subset = [
-        for (final change in changes)
-          if (model.random.nextBool()) change,
-      ];
-      model.subsets++;
-      model.log.add(
-        'commit answered unknown; ${subset.length} of '
-        '${changes.length} changes landed',
-      );
-      if (subset.isNotEmpty) await super.commit(subset);
-      return const CommitUnknown(DeviceFailure('the reply was lost'));
+    if (!model.faults) return super.commit(changes);
+    switch (model.random.nextInt(28)) {
+      case 0 || 1:
+        final landed = model.random.nextBool();
+        count('commits answered unknown');
+        model.log.add(
+          'commit answered unknown; it ${landed ? 'landed' : 'did not land'}',
+        );
+        if (landed) await super.commit(changes);
+        return const CommitUnknown(DeviceFailure('the reply was lost'));
+      case 2:
+        count('commits refused');
+        model.log.add('commit refused');
+        return const CommitRefused(DeviceFailure('the disk is full'));
+      case _:
+        return super.commit(changes);
     }
-    return super.commit(changes);
   }
+}
+
+Map<String, Object?> rowsWithRevisions(StrategyRowSet rows) => {
+  for (final row in rows.rows)
+    '${row.key}': switch (row.toJson()) {
+      final Map<String, Object?> json => {
+        for (final MapEntry(:key, :value) in json.entries)
+          if (key != 'updatedAt' && key != 'deletedBy') key: value,
+      },
+      final other => other,
+    },
+};
+
+final class DiskQueue {
+  DiskQueue(Map<String, String> rows) {
+    final pending = <(int, String)>[];
+    for (final MapEntry(key: name, value: text) in rows.entries) {
+      if (name.startsWith('pending/')) {
+        pending.add((int.parse(name.substring('pending/'.length)), text));
+      } else if (name.startsWith('attempt/')) {
+        final number = int.parse(name.substring('attempt/'.length));
+        attempts[number] = attemptToJson(
+          (attemptFromText(number, text) as CloudRowRead<AttemptFact>).value,
+        );
+      } else if (name == 'read/header' || name.startsWith('read/page/')) {
+        final (page, group) =
+            (groupFromText(text, header: name == 'read/header')
+                    as CloudRowRead<(String?, EvidenceGroup)>)
+                .value;
+        groups[page] = group;
+      }
+    }
+    entries = switch (entriesFrom(pending)) {
+      EntriesRead(:final entries) => [
+        for (final entry in entries) entryToJson(entry),
+      ],
+      EntriesUnreadable(:final problem) => throw StateError(problem),
+    };
+    facts = switch (rows['cloud']) {
+      final text? => factsToJson(
+        (factsFromText(text) as CloudRowRead<StrategyFacts>).value,
+      ),
+      null => null,
+    };
+    counters = switch (rows['counters']) {
+      final text? => (countersFromText(text) as CloudRowRead<Counters>).value,
+      null => null,
+    };
+  }
+
+  late final List<Map<String, Object?>> entries;
+  final attempts = <int, Map<String, Object?>>{};
+  final groups = <String?, EvidenceGroup>{};
+  late final Map<String, Object?>? facts;
+  late final Counters? counters;
 }
 
 final counted = <String, int>{};
@@ -46,7 +107,7 @@ final class StoreModel {
   final int seed;
   final bool teammates;
   final Random random;
-  final storage = MemoryStorage();
+  MemoryStorage storage = MemoryStorage();
   final server = Server();
   final log = <String>[];
   final reference = <StrategyOp>[];
@@ -56,7 +117,6 @@ final class StoreModel {
   String clientId = 'client-0';
   String build = 'build-0';
   int restarts = 0;
-  int subsets = 0;
   int nextId = 0;
   bool faults = true;
   bool userRemoved = false;
@@ -71,7 +131,7 @@ final class StoreModel {
     store = await openCloudStore(
       WrappingEngine(
         MemoryEngine(storage),
-        (lease) => SubsetLease(lease, this),
+        (lease) => FaultyLease(lease, this),
       ),
       build: build,
       clock: () => clock,
@@ -86,8 +146,19 @@ final class StoreModel {
         headerReadOf(rows),
         pageReadsOf(rows),
       );
-      if (await settled(result, 'add the cloud strategy')) break;
-      count('add resumed');
+      if (result case Refused(reason: StrategyAlreadyInStore())) {
+        count('add in doubt landed');
+        await diskEqualsMemory('add the cloud strategy, found landed');
+        break;
+      }
+      if (result case Refused(:final reason)) {
+        throw StateError('adding the cloud strategy was refused: $reason');
+      }
+      if (await settled(result, 'add the cloud strategy')) {
+        await diskEqualsMemory('add the cloud strategy');
+        break;
+      }
+      count('add tried again');
     }
   }
 
@@ -114,11 +185,79 @@ final class StoreModel {
         await reopen('$label was in doubt');
         return false;
       case NotSaved(:final failure):
-        throw StateError('$label was not saved: $failure');
+        log.add('$label was not saved: $failure');
+        return false;
       case Refused(:final reason):
         log.add('$label refused: $reason');
         return false;
     }
+  }
+
+  Future<void> diskEqualsMemory(String label) async {
+    final memory = (await sync()).queue;
+    final disk = DiskQueue(storage.contents[strategyArea(strategyId)] ?? {});
+    final want = {
+      'entries': [for (final entry in memory.entries) entryToJson(entry)],
+      'attempts': {
+        for (final attempt in memory.attempts.values)
+          '${attempt.number}': attemptToJson(attempt),
+      },
+      'facts': factsToJson(memory.strategy),
+      'counters': [memory.nextAttempt, memory.nextRead],
+    };
+    final got = {
+      'entries': disk.entries,
+      'attempts': {
+        for (final MapEntry(:key, :value) in disk.attempts.entries)
+          '$key': value,
+      },
+      'facts': disk.facts,
+      'counters': [disk.counters?.nextAttempt, disk.counters?.nextRead],
+    };
+    if (!const DeepCollectionEquality().equals(want, got)) {
+      throw StateError('after $label the disk holds $got, memory $want');
+    }
+    final groups = evidenceGroups(memory.base);
+    if (!const MapEquality<String?, EvidenceGroup>().equals(
+      groups,
+      disk.groups,
+    )) {
+      throw StateError(
+        'after $label the evidence on disk differs from memory: '
+        '${groups.keys} vs ${disk.groups.keys}',
+      );
+    }
+    final mine = await visible();
+    final summary = listOf(store).strategies.single;
+    final reopened = await openCloudStore(
+      MemoryEngine(MemoryStorage(storage.contents)),
+      build: build,
+      clock: () => clock,
+    );
+    final listed = listOf(reopened).strategies.single;
+    if (listed != summary) {
+      throw StateError(
+        'after $label the stored summary is ${listed.toJson()}, '
+        'memory ${summary.toJson()}',
+      );
+    }
+    if (listed.sync case KeptInCloud(
+      :final tally,
+    ) when tally != Tally.of(memory, clock)) {
+      throw StateError('after $label the stored tally is $tally');
+    }
+    final saved = store;
+    store = reopened;
+    final theirs = await visible();
+    store = saved;
+    await reopened.close();
+    if (!const DeepCollectionEquality().equals(
+      rowsWithRevisions(theirs),
+      rowsWithRevisions(mine),
+    )) {
+      throw StateError('after $label the stored rows differ from memory');
+    }
+    count('disk checked against memory');
   }
 
   Future<Recorded?> record(List<QueueEvent> events, String label) async {
@@ -134,6 +273,7 @@ final class StoreModel {
       }}',
     );
     if (!await settled(result, label)) return null;
+    await diskEqualsMemory(label);
     final recorded = (result as Saved<Recorded, CommitRefusal>).value;
     for (final outcome in recorded.outcomes) {
       if (outcome case ReportApplied()) count('recorded');
@@ -171,7 +311,7 @@ final class StoreModel {
           row,
     ];
     final opId = fresh('op');
-    final roll = random.nextInt(12);
+    final roll = random.nextInt(13);
     final StrategyOp op;
     if (roll < 5 && live.isNotEmpty) {
       final target = pick(live);
@@ -196,6 +336,25 @@ final class StoreModel {
       );
     } else if (roll < 10 && pages.isNotEmpty) {
       op = elementAdd(opId, elementId: fresh('e'), pageId: pick(pages));
+    } else if (roll == 11 && pages.length < 4 && pages.isNotEmpty) {
+      op = pageAdd(
+        opId,
+        fresh('copy-'),
+        expected: rows.strategy.revision,
+        sortIndex: pages.length,
+        copyFrom: pick(pages),
+      );
+      count('page copies');
+    } else if (roll == 11 && pages.any((page) => page.startsWith('copy-'))) {
+      op = pageDelete(
+        opId,
+        pick([
+          for (final page in pages)
+            if (page.startsWith('copy-')) page,
+        ]),
+        expected: rows.strategy.revision,
+      );
+      count('copied page deletes');
     } else if (roll == 10 && pages.isNotEmpty) {
       final page = rows.page(pick(pages))! as LivePage;
       op = PagePatchOp(
@@ -204,7 +363,7 @@ final class StoreModel {
         expectedPageRevision: page.revision,
         name: 'Renamed ${random.nextInt(100)}',
       );
-    } else if (pages.length < 4) {
+    } else if (roll != 11 && pages.length < 4) {
       op = pageAdd(
         opId,
         fresh('page-'),
@@ -222,6 +381,7 @@ final class StoreModel {
     switch (result) {
       case Saved():
         reference.add(op);
+        await diskEqualsMemory('edit $opId');
       case SaveInDoubt():
         count('save in doubt');
         await reopen('edit $opId was in doubt');
@@ -229,14 +389,13 @@ final class StoreModel {
           for (final entry in (await sync()).queue.entries) entry.id,
         };
         final landed =
-            after.contains(opId) || before.difference(after).isNotEmpty;
+            after.difference(before).isNotEmpty ||
+            before.difference(after).isNotEmpty;
         log.add('edit $opId ${landed ? 'landed' : 'did not land'}');
         count(landed ? 'doubtful edit landed' : 'doubtful edit lost');
         if (landed) reference.add(op);
-      case NothingToSave() || Refused():
+      case NothingToSave() || Refused() || NotSaved():
         break;
-      case NotSaved(:final failure):
-        throw StateError('edit not saved: $failure');
     }
   }
 
@@ -301,7 +460,7 @@ final class StoreModel {
     final started = await record([const ReadStarted()], 'start $label');
     if (started == null) return;
     final read = effectsOf(started).whereType<ReadNumbered>().single.read;
-    await record([BaseArrived(base, read: read, startedAt: clock)], label);
+    await record([BaseArrived(base, read: read)], label);
   }
 
   Future<void> lane() async {
@@ -317,6 +476,9 @@ final class StoreModel {
       case Standing.good || Standing.deletedOnServer:
         break;
     }
+    if (random.nextInt(4) == 0) {
+      await staleRead();
+    }
     await readOne(headerReadOf(server.rows), 'read strategy');
     final queue = (await sync()).queue;
     final views = entryViews(queue, clock);
@@ -326,7 +488,7 @@ final class StoreModel {
         if (entry is PendingOp &&
             (views[entry.id]!.state is Accepted ||
                 views[entry.id]!.holds.any(
-                  (hold) => hold is AwaitingPageRead || hold is AwaitingBase,
+                  (hold) => hold is AwaitingRead || hold is AwaitingBase,
                 )))
           ...pagesOf(entry),
     };
@@ -339,6 +501,89 @@ final class StoreModel {
         if (after.views[entry.id]?.go is NeedsFreshId) entry.id: fresh('re'),
     };
     if (reissue.isNotEmpty) await record([Reissue(reissue)], 'reissue');
+  }
+
+  Future<void> staleRead() async {
+    final first = await record([const ReadStarted()], 'start an early read');
+    if (first == null) return;
+    final early = effectsOf(first).whereType<ReadNumbered>().single.read;
+    final earlyBase = headerReadOf(server.rows);
+    if (teammates) teammate();
+    final later = await record([const ReadStarted()], 'start a later read');
+    if (later == null) return;
+    final read = effectsOf(later).whereType<ReadNumbered>().single.read;
+    if (await record([
+          BaseArrived(headerReadOf(server.rows), read: read),
+        ], 'the later read arrives first') ==
+        null) {
+      return;
+    }
+    final before = storage.contents;
+    final result = await store.record(strategyId, [
+      BaseArrived(earlyBase, read: early),
+    ]);
+    log.add('the early read arrives last -> ${describeSaving(result)}');
+    if (!sameContents(before, storage.contents)) {
+      throw StateError('a read older than one already taken wrote rows');
+    }
+    count('stale reads');
+  }
+
+  Future<void> newerRowArrives() async {
+    await store.close();
+    final contents = editable(storage.contents);
+    final area = strategyArea(strategyId);
+    final name = PendingName(1 << 40).name;
+    contents[area]![name] = '{"version":${cloudRowVersion + 1},"kind":"op"}';
+    storage = MemoryStorage(contents);
+    await open();
+    final content = strategyOf(await store.readStrategy(strategyId));
+    if (content.sync is! CloudHeld) {
+      throw StateError('a newer queue row did not hold the strategy');
+    }
+    final before = storage.contents;
+    final refused = await store.commit(
+      strategyId,
+      pageAdd(fresh('op'), fresh('page-')),
+    );
+    if (refused case Refused(reason: QueueHeld())) {
+    } else {
+      throw StateError('a held strategy took an edit: $refused');
+    }
+    if (!sameContents(before, storage.contents)) {
+      throw StateError('a held strategy wrote rows');
+    }
+    await store.close();
+    contents[area]!.remove(name);
+    storage = MemoryStorage(contents);
+    await open();
+    log.add('a newer build wrote a queue row and took it back');
+    count('held by a newer row');
+  }
+
+  Future<void> strategyGone() async {
+    final queue = (await sync()).queue;
+    final rows = await visible();
+    server.exists = false;
+    await readOne(const StrategyGone(), 'the strategy is gone');
+    final after = (await sync()).queue;
+    if (standingOf(after) != Standing.deletedOnServer) {
+      throw StateError('a gone strategy stands ${standingOf(after)}');
+    }
+    if (!const DeepCollectionEquality().equals(
+      [for (final entry in after.entries) entryToJson(entry)],
+      [for (final entry in queue.entries) entryToJson(entry)],
+    )) {
+      throw StateError('a gone strategy lost queue entries');
+    }
+    if (!const DeepCollectionEquality().equals(
+      rowsWithRevisions(await visible()),
+      rowsWithRevisions(rows),
+    )) {
+      throw StateError('a gone strategy lost rows');
+    }
+    count('strategies gone');
+    await store.close();
   }
 
   void teammate() {
@@ -434,7 +679,11 @@ final class StoreModel {
       case 16:
         await userActs(draining: false);
       case 17:
-        await reopen('between two commits');
+        if (random.nextInt(6) == 0) {
+          await newerRowArrives();
+        } else {
+          await reopen('between two commits');
+        }
       case 18:
         final pages = [
           for (final page in (await visible()).pages) page.publicId,
@@ -467,6 +716,23 @@ final class StoreModel {
     if (queue.entries.isNotEmpty) {
       throw StateError('did not drain: ${queue.entries}');
     }
+    await readOne(headerReadOf(server.rows), 'final read');
+    for (final page in server.rows.pages) {
+      if (page is LivePage) {
+        await readOne(pageReadOf(server.rows, page.publicId), 'final read');
+      }
+    }
+    final shown = rowsWithRevisions(liveOnly(await visible()));
+    final held = rowsWithRevisions(liveOnly(server.rows));
+    if (!const DeepCollectionEquality().equals(shown, held)) {
+      final keys = {...shown.keys, ...held.keys}.where(
+        (key) => !const DeepCollectionEquality().equals(shown[key], held[key]),
+      );
+      throw StateError(
+        'the store shows what the server does not hold: '
+        '${[for (final key in keys) '$key: ${shown[key]} vs ${held[key]}'].join('; ')}',
+      );
+    }
     if (!teammateEdited && !userRemoved) {
       var want = initialRows();
       for (final op in reference) {
@@ -491,6 +757,27 @@ final class StoreModel {
   }
 }
 
+StrategyRowSet liveOnly(StrategyRowSet rows) => StrategyRowSet(
+  strategy: rows.strategy,
+  pages: [
+    for (final page in rows.pages)
+      if (page is LivePage) page,
+  ],
+  settings: [
+    for (final settings in rows.settings)
+      if (rows.page(settings.pagePublicId) is LivePage) settings,
+  ],
+  elements: [
+    for (final row in rows.elements)
+      if (row is LiveElement && rows.page(row.pagePublicId) is LivePage) row,
+  ],
+  lineupGroups: [
+    for (final row in rows.lineupGroups)
+      if (row is LiveLineupGroup && rows.page(row.pagePublicId) is LivePage)
+        row,
+  ],
+);
+
 Future<void> runSeed(int seed, int steps) async {
   final model = StoreModel(seed, teammates: seed.isOdd);
   try {
@@ -498,8 +785,11 @@ Future<void> runSeed(int seed, int steps) async {
     for (var i = 0; i < steps; i++) {
       await model.stepOnce();
     }
-    await model.drain();
-    count('commits answered unknown', model.subsets);
+    if (seed % 9 == 0) {
+      await model.strategyGone();
+    } else {
+      await model.drain();
+    }
   } on StateError catch (error) {
     fail(
       'seed $seed failed: ${error.message}\n'
@@ -516,8 +806,9 @@ void main() {
   final one = int.tryParse(environment['CLOUD_STORE_MODEL_SEED'] ?? '');
   final seeds =
       int.tryParse(environment['CLOUD_STORE_MODEL_SEEDS'] ?? '') ?? 40;
-  test('the model run through the store keeps every edit across reopens and '
-      'commits that land in part', () async {
+  test('the model run through the store keeps every edit, with disk equal '
+      'to memory after every commit, across reopens and failed '
+      'commits', () async {
     for (final seed
         in one == null ? [for (var s = 1; s <= seeds; s++) s] : [one]) {
       await runSeed(seed, steps);
@@ -526,7 +817,17 @@ void main() {
       stdout.writeln(counted);
     }
     if (one != null) return;
-    expect(counted['commits answered unknown'] ?? 0, greaterThan(20));
+    for (final what in [
+      'commits answered unknown',
+      'commits refused',
+      'page copies',
+      'copied page deletes',
+      'stale reads',
+      'held by a newer row',
+      'strategies gone',
+    ]) {
+      expect(counted[what] ?? 0, greaterThan(0), reason: what);
+    }
     expect(counted['doubtful edit lost'] ?? 0, greaterThan(0));
     expect(counted['doubtful edit landed'] ?? 0, greaterThan(0));
   }, timeout: const Timeout(Duration(minutes: 20)));

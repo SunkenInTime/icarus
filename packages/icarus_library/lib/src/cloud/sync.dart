@@ -49,7 +49,6 @@ final class Tally {
       standing: standingOf(queue),
       waiting: counts.waiting,
       attention: counts.attention,
-      unreadable: counts.unreadable,
     );
   }
 

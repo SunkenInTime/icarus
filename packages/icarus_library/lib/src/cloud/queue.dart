@@ -15,14 +15,12 @@ part 'derivation.dart';
 final class ContentRead {
   ContentRead({
     required this.read,
-    required this.readAt,
     required Map<SeenPart, String> digests,
     required Set<Target> present,
   }) : digests = Map.unmodifiable(digests),
        present = Set.unmodifiable(present);
 
   final int read;
-  final DateTime readAt;
   final Map<SeenPart, String> digests;
   final Set<Target> present;
 
@@ -30,25 +28,22 @@ final class ContentRead {
   bool operator ==(Object other) =>
       other is ContentRead &&
       other.read == read &&
-      other.readAt == readAt &&
       sameSet(other.present, present) &&
       BaseFacts.canonical(other.digests) == BaseFacts.canonical(digests);
 
   @override
-  int get hashCode => Object.hash(ContentRead, read, readAt);
+  int get hashCode => Object.hash(ContentRead, read);
 }
 
 final class HeaderListing {
   HeaderListing({
     required this.read,
-    required this.readAt,
     required Set<String> pages,
     required Set<String> settings,
   }) : pages = Set.unmodifiable(pages),
        settings = Set.unmodifiable(settings);
 
   final int read;
-  final DateTime readAt;
   final Set<String> pages;
   final Set<String> settings;
 
@@ -56,12 +51,11 @@ final class HeaderListing {
   bool operator ==(Object other) =>
       other is HeaderListing &&
       other.read == read &&
-      other.readAt == readAt &&
       sameSet(other.pages, pages) &&
       sameSet(other.settings, settings);
 
   @override
-  int get hashCode => Object.hash(HeaderListing, read, readAt);
+  int get hashCode => Object.hash(HeaderListing, read);
 }
 
 final class BaseFacts {
@@ -99,17 +93,13 @@ final class BaseFacts {
     }
 
     RowAbsent? unlisted(bool listed) => switch (header) {
-      final header? when !listed => RowAbsent(
-        read: header.read,
-        readAt: header.readAt,
-      ),
+      final header? when !listed => RowAbsent(read: header.read),
       _ => null,
     };
 
     RowAbsent? missingFrom(String? page) => switch (pageContent[page]) {
       final content? when !content.present.contains(target) => RowAbsent(
         read: content.read,
-        readAt: content.readAt,
       ),
       _ => null,
     };
@@ -172,32 +162,33 @@ final class BaseFacts {
 }
 
 final class QueueSession {
-  QueueSession({
+  const QueueSession({
     required this.connected,
     required this.build,
-    required Set<String> pagesReadThisSession,
-  }) : pagesReadThisSession = Set.unmodifiable(pagesReadThisSession);
+    required this.readsFrom,
+  });
 
-  factory QueueSession.start(String build) => QueueSession(
-    connected: false,
-    build: build,
-    pagesReadThisSession: const {},
-  );
+  factory QueueSession.start(String build, {required int nextRead}) =>
+      QueueSession(connected: false, build: build, readsFrom: nextRead);
 
   final bool connected;
   final String build;
-  final Set<String> pagesReadThisSession;
+  final int readsFrom;
+
+  int get readsAfter => readsFrom - 1;
 
   @override
   bool operator ==(Object other) =>
       other is QueueSession &&
       other.connected == connected &&
       other.build == build &&
-      sameSet(other.pagesReadThisSession, pagesReadThisSession);
+      other.readsFrom == readsFrom;
 
   @override
-  int get hashCode => Object.hash(connected, build);
+  int get hashCode => Object.hash(connected, build, readsFrom);
 }
+
+bool startedAfter(int read, int marker) => read > marker;
 
 final class CloudQueue {
   factory CloudQueue({
@@ -253,7 +244,7 @@ final class CloudQueue {
     nextRead: 1,
     base: BaseFacts.none,
     strategy: StrategyFacts.fresh,
-    session: QueueSession.start(build),
+    session: QueueSession.start(build, nextRead: 1),
     index: _Index.empty,
     lineage: null,
   );
@@ -298,6 +289,11 @@ final class CloudQueue {
       ) when retriedAfter >= nextAttempt) {
         return 'entry ${entry.id} was retried after an attempt not yet made';
       }
+      if (entry case PendingOp(
+        memory: Forgotten(:final afterRead),
+      ) when afterRead >= nextRead) {
+        return 'entry ${entry.id} was forgotten after a read not yet started';
+      }
     }
     if (nextAttempt < 1) return 'attempts are numbered from 1';
     for (final MapEntry(:key, :value) in attempts.entries) {
@@ -306,6 +302,9 @@ final class CloudQueue {
       }
       if (key < 1 || key >= nextAttempt) {
         return 'attempt $key would be numbered again';
+      }
+      if (value.afterRead >= nextRead) {
+        return 'attempt $key was made after a read not yet started';
       }
     }
     if (nextRead < 1 || base.lastRead >= nextRead) {
@@ -659,22 +658,6 @@ final class DeleteHeld extends UserReason {
 
 enum HeldDeleteCause { pageChanged, contentNeverRead }
 
-final class IncompleteCopy extends UserReason {
-  const IncompleteCopy(this.pagePublicId);
-
-  final String pagePublicId;
-
-  @override
-  bool operator ==(Object other) =>
-      other is IncompleteCopy && other.pagePublicId == pagePublicId;
-
-  @override
-  int get hashCode => Object.hash(IncompleteCopy, pagePublicId);
-
-  @override
-  String toString() => 'incomplete copy of $pagePublicId';
-}
-
 sealed class Hold {
   const Hold();
 }
@@ -721,20 +704,52 @@ final class UntilRetryTime extends Hold {
   String toString() => 'until ${at.toIso8601String()}';
 }
 
-final class AwaitingPageRead extends Hold {
-  const AwaitingPageRead(this.pagePublicId);
+sealed class ReadNeed {
+  const ReadNeed();
+}
+
+final class PageListNeed extends ReadNeed {
+  const PageListNeed();
+
+  @override
+  bool operator ==(Object other) => other is PageListNeed;
+
+  @override
+  int get hashCode => (PageListNeed).hashCode;
+
+  @override
+  String toString() => 'the page list';
+}
+
+final class PageNeed extends ReadNeed {
+  const PageNeed(this.pagePublicId);
 
   final String pagePublicId;
 
   @override
   bool operator ==(Object other) =>
-      other is AwaitingPageRead && other.pagePublicId == pagePublicId;
+      other is PageNeed && other.pagePublicId == pagePublicId;
 
   @override
-  int get hashCode => Object.hash(AwaitingPageRead, pagePublicId);
+  int get hashCode => Object.hash(PageNeed, pagePublicId);
 
   @override
-  String toString() => 'awaiting a read of $pagePublicId';
+  String toString() => 'page $pagePublicId';
+}
+
+final class AwaitingRead extends Hold {
+  const AwaitingRead(this.need);
+
+  final ReadNeed need;
+
+  @override
+  bool operator ==(Object other) => other is AwaitingRead && other.need == need;
+
+  @override
+  int get hashCode => Object.hash(AwaitingRead, need);
+
+  @override
+  String toString() => 'awaiting a read of $need';
 }
 
 final class AwaitingBase extends Hold {
@@ -826,35 +841,64 @@ bool _isPutBack(StrategyOp op) => switch (op) {
   _ => false,
 };
 
+bool pastServerMemory(DateTime since, DateTime now) =>
+    !now.isBefore(since.add(serverRemembersAnswersFor));
+
+ReadNeed readNeedOf(PendingOp entry) => switch (targetOf(entry.op)) {
+  StrategyTarget() || PageTarget() || SettingsTarget() => const PageListNeed(),
+  ElementTarget() || LineupTarget() => switch (_authoredPage(entry.scope)) {
+    final page? => PageNeed(page),
+    null => const PageListNeed(),
+  },
+};
+
+bool _versionChanged(StrategyOp op, RowEvidence? evidence) =>
+    switch ((op, evidence)) {
+      (
+        ElementPatchOp(merge: _?, :final payload?),
+        RowSeen(:final payloadVersion?),
+      ) =>
+        payloadVersion != payload.payloadVersion,
+      (
+        LineupGroupPatchOp(merge: _?, :final payload?),
+        RowSeen(:final payloadVersion?),
+      ) =>
+        payloadVersion != payload.payloadVersion,
+      _ => false,
+    };
+
 Go _overOwnDelete(
-  Authored authored,
+  PendingOp entry,
   ServerAnswer answer,
   RowEvidence? evidence,
-  Target target,
   List<Hold> holds,
+  DateTime now,
 ) {
-  switch ((answer, authored)) {
+  if (entry.memory is Forgotten) return const NeedsUser(ServerForgotAnswer());
+  switch ((answer, entry.authored)) {
     case (
           AnsweredApplied(
             by: AppliedBy.thisClient,
             :final revision,
             :final afterRead,
+            :final at,
           ),
           AuthoredRow(revision: final tombstone, :final digest),
         )
         when tombstone == revision:
-      switch (evidence) {
-        case RowSeen(revision: final seen, digest: final shown)
-            when seen == revision && shown == digest:
-          return const Free();
-        case RowSeen(revision: final seen) when seen >= revision:
-          return const NeedsUser(ChangedUnseen());
-        case final RowEvidence seen when seen.read > afterRead:
-          return const NeedsUser(ChangedUnseen());
-        case _:
-          holds.add(AwaitingBase(target));
-          return const Free();
+      if (pastServerMemory(at, now)) {
+        return const NeedsUser(ServerForgotAnswer());
       }
+      if (evidence == null || !startedAfter(evidence.read, afterRead)) {
+        holds.add(AwaitingRead(readNeedOf(entry)));
+        return const Free();
+      }
+      return switch (evidence) {
+        RowSeen(revision: final seen, digest: final shown)
+            when seen == revision && shown == digest =>
+          const Free(),
+        _ => const NeedsUser(ChangedUnseen()),
+      };
     case _:
       return const NeedsUser(ChangedUnseen());
   }
@@ -883,14 +927,21 @@ Go _checked(
     authoredOn: _authoredPage(entry.scope),
   );
   if (state case AnswerUnknown(:final firstSentAt)) {
-    final forgottenAt = firstSentAt.add(serverRemembersAnswersFor);
-    if (!now.isAfter(forgottenAt)) return const Free();
+    final int marker;
+    switch (entry.memory) {
+      case Forgotten(:final afterRead):
+        marker = afterRead;
+      case Remembered() when pastServerMemory(firstSentAt, now):
+        marker = queue.nextRead - 1;
+      case Remembered():
+        return const Free();
+    }
     if (checkKindOf(sendForm(entry.op, SendPolicy.checked)) !=
         CheckKind.revision) {
       return const NeedsUser(ServerForgotAnswer());
     }
-    if (evidence == null || !evidence.readAt.isAfter(forgottenAt)) {
-      holds.add(AwaitingBase(target));
+    if (evidence == null || !startedAfter(evidence.read, marker)) {
+      holds.add(AwaitingRead(readNeedOf(entry)));
       return const Free();
     }
     return _compare(entry.authored, evidence) == _Comparison.same &&
@@ -903,7 +954,7 @@ Go _checked(
       op: ElementDeleteOp() || LineupGroupDeleteOp(),
       :final answer,
     )) {
-      return _overOwnDelete(entry.authored, answer, evidence, target, holds);
+      return _overOwnDelete(entry, answer, evidence, holds, now);
     }
   }
   if (target case ElementTarget() || LineupTarget()) {
@@ -917,9 +968,15 @@ Go _checked(
       return const NeedsUser(ChangedUnseen());
     }
   }
-  if (checkKindOf(sendForm(entry.op, entry.policy)) == CheckKind.revision) {
+  if (checkKindOf(sendForm(entry.op, entry.policy)) == CheckKind.revision ||
+      _versionChanged(entry.op, evidence)) {
     if (acceptedSameRow != null) {
       holds.add(AwaitingBase(target));
+      return const Free();
+    }
+    if (evidence == null ||
+        !startedAfter(evidence.read, queue.session.readsAfter)) {
+      holds.add(AwaitingRead(readNeedOf(entry)));
       return const Free();
     }
     switch (_compare(entry.authored, evidence)) {
@@ -928,7 +985,7 @@ Go _checked(
       case _Comparison.differs:
         return const NeedsUser(ChangedUnseen());
       case _Comparison.unknown:
-        holds.add(AwaitingBase(target));
+        holds.add(AwaitingRead(readNeedOf(entry)));
         return const Free();
     }
   }
@@ -1065,21 +1122,6 @@ final class FoldedInto extends RemovalCause {
 
   @override
   String toString() => 'FoldedInto($opId)';
-}
-
-final class CancelledBy extends RemovalCause {
-  const CancelledBy(this.opId);
-
-  final String opId;
-
-  @override
-  bool operator ==(Object other) => other is CancelledBy && other.opId == opId;
-
-  @override
-  int get hashCode => Object.hash(CancelledBy, opId);
-
-  @override
-  String toString() => 'CancelledBy($opId)';
 }
 
 final class RetriedUnder extends RemovalCause {
@@ -1257,6 +1299,15 @@ final class NothingToReissue extends Inapplicable {
   String toString() => 'NothingToReissue';
 }
 
+final class PageNotStored extends Inapplicable {
+  const PageNotStored(this.pagePublicId);
+
+  final String pagePublicId;
+
+  @override
+  String toString() => 'PageNotStored($pagePublicId)';
+}
+
 final class NoSuchRead extends Inapplicable {
   const NoSuchRead(this.read);
 
@@ -1268,7 +1319,6 @@ final class NoSuchRead extends Inapplicable {
 
 Landing landingOf(CloudQueue queue, QueueEntry entry) => switch (entry) {
   RetiredOp(:final landing) => landing,
-  UnreadableEntry() => Landing.mayHaveLanded,
   final PendingOp op => switch (stateOf(queue, op)) {
     NeverSent() || ServerRefused() => Landing.notLanded,
     Claimed() || AnswerUnknown() || Accepted() => Landing.mayHaveLanded,
@@ -1276,7 +1326,7 @@ Landing landingOf(CloudQueue queue, QueueEntry entry) => switch (entry) {
 };
 
 final class _Edit {
-  _Edit(this.original)
+  _Edit(this.original, this.now)
     : entries = [...original.entries],
       attempts = {...original.attempts},
       nextAttempt = original.nextAttempt,
@@ -1287,6 +1337,7 @@ final class _Edit {
       index = _IndexEdit(original._index);
 
   final CloudQueue original;
+  final DateTime now;
   final List<QueueEntry> entries;
   final Map<int, AttemptFact> attempts;
   int nextAttempt;
@@ -1367,6 +1418,7 @@ final class _Edit {
   int get lastRead => nextRead - 1;
 
   Stepped done() {
+    _remember(this);
     _settle(this);
     return Stepped(
       CloudQueue._(
@@ -1385,34 +1437,59 @@ final class _Edit {
   }
 }
 
-void _settle(_Edit edit) {
-  final answered = edit.index.answered;
-  final all =
-      edit.change.everything ||
-      (edit.strategy.presence == Presence.gone &&
-          edit.original.strategy.presence != Presence.gone);
-  final subjects =
-      edit.change.pages.isNotEmpty || edit.change.targets.isNotEmpty;
-  final candidates = <PendingOp>[];
-  for (final id in all || subjects ? answered : edit.change.touched) {
+void _remember(_Edit edit) {
+  final derived = _derive(edit.original, edit.now);
+  if (derived.nextExpiry case final next? when edit.now.isBefore(next)) return;
+  for (final MapEntry(key: id, value: deadline) in derived.deadlines.entries) {
     derivationWork.visits++;
-    if (!answered.contains(id)) continue;
-    final entry = edit.index.byId[id];
-    if (entry is! PendingOp) continue;
-    if (all ||
-        edit.change.touched.contains(id) ||
-        edit.change.targets.contains(targetOf(entry.op)) ||
-        _pagesOf(entry).any(edit.change.pages.contains)) {
-      candidates.add(entry);
+    if (edit.now.isBefore(deadline)) continue;
+    if (edit.index.byId[id] case final PendingOp entry
+        when entry.memory is Remembered) {
+      edit.put(entry.copyWith(memory: Forgotten(afterRead: edit.lastRead)));
     }
   }
-  candidates.sort((a, b) => a.place.compareTo(b.place));
+}
+
+void _settle(_Edit edit) {
+  final answered = edit.index.answered;
+  final candidates = <String>{};
+  final pageDeletes = <String>{};
+  void consider(Iterable<_Slot> slots) {
+    for (final (_, id) in slots) {
+      derivationWork.visits++;
+      if (answered.contains(id)) candidates.add(id);
+    }
+  }
+
+  if (edit.change.everything) {
+    candidates.addAll(answered);
+  } else {
+    candidates.addAll(edit.change.touched.where(answered.contains));
+    for (final target in edit.change.targets) {
+      consider(edit.index.underOf(target));
+    }
+    for (final page in edit.change.pages) {
+      consider(edit.index.underOf(_OnPage(page)));
+      for (final (_, id) in edit.index.underOf(_PageLife(page))) {
+        derivationWork.visits++;
+        pageDeletes.add(id);
+      }
+    }
+  }
+  if (edit.change.everything) {
+    for (final entry in edit.entries) {
+      if (entry case PendingOp(op: PageDeleteOp())) pageDeletes.add(entry.id);
+    }
+  }
+  final ordered = [
+    for (final id in {...candidates, ...pageDeletes})
+      if (edit.index.byId[id] case final PendingOp entry) entry,
+  ]..sort((a, b) => a.place.compareTo(b.place));
   bool backingAPutBack(PendingOp entry) {
     if (entry.op is! ElementDeleteOp && entry.op is! LineupGroupDeleteOp) {
       return false;
     }
-    final target = targetOf(entry.op);
-    for (final (place, id) in edit.index.underOf(target)) {
+    for (final (place, id) in edit.index.underOf(targetOf(entry.op))) {
       derivationWork.visits++;
       if (place <= entry.place) continue;
       return switch (edit.index.byId[id]) {
@@ -1426,24 +1503,20 @@ void _settle(_Edit edit) {
     return false;
   }
 
-  final settled = <String>{};
-  for (final entry in candidates) {
+  for (final entry in ordered) {
     if (backingAPutBack(entry)) continue;
     final cause = switch (entry.answer) {
       AnsweredNothingToDo() => const NothingToWaitFor(),
       AnsweredApplied(:final revision, :final afterRead) => _settledAt(
         edit.base,
-        edit.strategy,
         entry,
         revision,
         afterRead,
       ),
-      NotAnswered() || AnsweredRefused() => null,
+      NotAnswered() => _lostDeleteSettled(edit, entry),
+      AnsweredRefused() => null,
     };
-    if (cause != null) {
-      edit.remove(entry.id, cause);
-      settled.add(entry.id);
-    }
+    if (cause != null) edit.remove(entry.id, cause);
   }
   final affected = {
     ...edit.change.touched,
@@ -1464,31 +1537,50 @@ void _settle(_Edit edit) {
   }
 }
 
+RemovalCause? _lostDeleteSettled(_Edit edit, PendingOp entry) {
+  if (entry.op case PageDeleteOp(:final pagePublicId)) {
+    final sent = [
+      for (final number in edit.index.attemptsByOp[entry.id] ?? const <int>[])
+        ?edit.attempts[number],
+    ];
+    if (sent.isEmpty || sent.any((attempt) => attempt.outcome is AttemptOpen)) {
+      return null;
+    }
+    final after = sent
+        .map((attempt) => attempt.afterRead)
+        .reduce((a, b) => a > b ? a : b);
+    if (edit.base.pageGoneAfter(pagePublicId, after)) return const SeenInBase();
+  }
+  return null;
+}
+
 RemovalCause? _settledAt(
   BaseFacts base,
-  StrategyFacts strategy,
   PendingOp entry,
   int revision,
   int afterRead,
 ) {
-  final gone =
-      strategy.presence == Presence.gone ||
-      _pagesOf(entry).any((page) => base.pageGoneAfter(page, afterRead));
-  final shown = switch (base.evidence(
+  if (_pagesOf(entry).any((page) => base.pageGoneAfter(page, afterRead))) {
+    return const SeenInBase();
+  }
+  final evidence = base.evidence(
     targetOf(entry.op),
     authoredOn: _authoredPage(entry.scope),
-  )) {
-    RowSeen(revision: final at, :final read) =>
-      at >= revision || read > afterRead,
-    RowUnreadable(:final read) || RowAbsent(:final read) => read > afterRead,
-    null => false,
+  );
+  final shown = switch ((entry.scope, evidence)) {
+    (Moving(:final to), RowSeen(revision: final at, :final read, :final page))
+        when page == to =>
+      at >= revision || startedAfter(read, afterRead),
+    (Moving(), _) => false,
+    (_, RowSeen(revision: final at, :final read)) =>
+      at >= revision || startedAfter(read, afterRead),
+    (_, RowUnreadable(:final read) || RowAbsent(:final read)) => startedAfter(
+      read,
+      afterRead,
+    ),
+    (_, null) => false,
   };
-  final copyRead = switch (entry.op) {
-    PageAddOp(:final pagePublicId, copyContentFromPagePublicId: _?) =>
-      base.pageContent.containsKey(pagePublicId),
-    _ => true,
-  };
-  return gone || (shown && copyRead) ? const SeenInBase() : null;
+  return shown ? const SeenInBase() : null;
 }
 
 StrategyOp sendable(CloudQueue queue, PendingOp entry) {
@@ -1524,12 +1616,7 @@ int? _acceptedRevisionBefore(CloudQueue queue, PendingOp entry, Target target) {
   return null;
 }
 
-BaseFacts _withBase(
-  BaseFacts base,
-  ArrivedBase arrived,
-  int read,
-  DateTime startedAt,
-) {
+BaseFacts _withBase(BaseFacts base, ArrivedBase arrived, int read) {
   final sightings = {...base.sightings};
   final pageContent = {...base.pageContent};
   final notFound = {...base.notFound};
@@ -1539,13 +1626,17 @@ BaseFacts _withBase(
     sightings[target] = switch (revisionOfRow(row)) {
       final revision? => RowSeen(
         read: read,
-        readAt: startedAt,
         revision: revision,
         digest: digest ?? rowDigest(row),
         page: page,
         life: lifeOfRow(row),
+        payloadVersion: switch (row) {
+          ReadableElementRow(:final payload) => payload.payloadVersion,
+          ReadableLineupGroupRow(:final payload) => payload.payloadVersion,
+          _ => null,
+        },
       ),
-      null => RowUnreadable(read: read, readAt: startedAt, page: page),
+      null => RowUnreadable(read: read, page: page),
     };
   }
 
@@ -1560,12 +1651,11 @@ BaseFacts _withBase(
         seen(PageTarget(page.publicId), page);
       }
       for (final row in settings) {
-        seen(SettingsTarget(row.pagePublicId), row, page: row.pagePublicId);
+        seen(SettingsTarget(row.pagePublicId), row);
       }
       if ((header?.read ?? 0) <= read) {
         header = HeaderListing(
           read: read,
-          readAt: startedAt,
           pages: {for (final page in pages) page.publicId},
           settings: {for (final row in settings) row.pagePublicId},
         );
@@ -1581,7 +1671,6 @@ BaseFacts _withBase(
       if ((pageContent[id]?.read ?? 0) <= read) {
         pageContent[id] = ContentRead(
           read: read,
-          readAt: startedAt,
           digests: liveContentOn([...elements, ...lineupGroups], id),
           present: {
             for (final row in elements) ElementTarget(row.publicId),
@@ -1591,7 +1680,7 @@ BaseFacts _withBase(
       }
     case PageGone(:final pagePublicId):
       if ((notFound[pagePublicId]?.read ?? 0) <= read) {
-        notFound[pagePublicId] = RowAbsent(read: read, readAt: startedAt);
+        notFound[pagePublicId] = RowAbsent(read: read);
       }
     case StrategyGone():
       break;
@@ -1605,7 +1694,7 @@ BaseFacts _withBase(
 }
 
 Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
-  final edit = _Edit(queue);
+  final edit = _Edit(queue, now);
   switch (event) {
     case UserEdited(edit: final change):
       return _userEdited(edit, change, now);
@@ -1636,7 +1725,9 @@ Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
               upgradeTold: UpgradeToldTo(fact.build, attempt: attempt),
             );
           }
-          edit.effects.add(const HoldSendingForUpgrade());
+          if (fact.build == edit.session.build) {
+            edit.effects.add(const HoldSendingForUpgrade());
+          }
         case BatchRefusal.unauthenticated:
           edit.effects.add(const ReportUnauthenticated());
         case BatchRefusal.editAccessRemoved:
@@ -1660,14 +1751,14 @@ Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
         }
       }
       edit.downgradeAll();
-      edit.session = QueueSession.start(build);
+      edit.session = QueueSession.start(build, nextRead: edit.nextRead);
       return edit.done();
     case ConnectionLost():
       edit.downgradeAll();
       edit.session = QueueSession(
         connected: false,
         build: edit.session.build,
-        pagesReadThisSession: const {},
+        readsFrom: edit.session.readsFrom,
       );
       return edit.done();
     case AccountChanged():
@@ -1675,17 +1766,21 @@ Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
       edit.session = QueueSession(
         connected: edit.session.connected,
         build: edit.session.build,
-        pagesReadThisSession: const {},
+        readsFrom: edit.nextRead,
       );
       return edit.done();
     case ConnectionReturned():
+      edit.change.everything = true;
       edit.session = QueueSession(
         connected: true,
         build: edit.session.build,
-        pagesReadThisSession: edit.session.pagesReadThisSession,
+        readsFrom: edit.nextRead,
       );
       return edit.done();
     case EditAccessConfirmed(:final afterAttempt):
+      if (afterAttempt < 1 || afterAttempt >= edit.nextAttempt) {
+        return NotApplicable(NoSuchAttempt(afterAttempt));
+      }
       if (afterAttempt > edit.strategy.accessConfirmedAt) {
         edit.strategy = edit.strategy.copyWith(accessConfirmedAt: afterAttempt);
       }
@@ -1715,11 +1810,11 @@ Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
     case ReadStarted():
       edit.effects.add(ReadNumbered(edit.nextRead++));
       return edit.done();
-    case BaseArrived(:final base, :final read, :final startedAt):
+    case BaseArrived(:final base, :final read):
       if (read < 1 || read >= edit.nextRead) {
         return NotApplicable(NoSuchRead(read));
       }
-      edit.base = _withBase(edit.base, base, read, startedAt);
+      edit.base = _withBase(edit.base, base, read);
       switch (base) {
         case HeaderRead():
           edit.change.everything = true;
@@ -1729,14 +1824,6 @@ Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
             for (final row in elements) ElementTarget(row.publicId),
             for (final row in lineupGroups) LineupTarget(row.publicId),
           ]);
-          edit.session = QueueSession(
-            connected: edit.session.connected,
-            build: edit.session.build,
-            pagesReadThisSession: {
-              ...edit.session.pagesReadThisSession,
-              page.publicId,
-            },
-          );
         case PageGone(:final pagePublicId):
           edit.change.pages.add(pagePublicId);
         case StrategyGone():
@@ -1781,7 +1868,6 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
         view.state is NeverSent &&
         view.go is Free &&
         view.holds.every((hold) => _foldableHold(hold, views))) {
-      final othersOnRow = onRow.length > 1;
       switch (fold(last.op, op)) {
         case FoldedOp(op: final folded):
           edit.replaceAt(
@@ -1793,10 +1879,7 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
           );
           edit.effects.add(OpRemoved(last.id, FoldedInto(folded.opId)));
           return edit.done();
-        case CancelsOut() when !othersOnRow:
-          edit.remove(last.id, CancelledBy(op.opId));
-          return edit.done();
-        case CancelsOut() || KeptApart():
+        case KeptApart():
           break;
       }
     }
@@ -1824,7 +1907,7 @@ bool _foldableHold(Hold hold, Map<String, EntryView> views) => switch (hold) {
     _ => false,
   },
   UntilRetryTime() => true,
-  BehindEntry() || AwaitingPageRead() || AwaitingBase() => false,
+  BehindEntry() || AwaitingRead() || AwaitingBase() => false,
 };
 
 Step _claim(
@@ -1869,6 +1952,7 @@ Step _claim(
       clientId: clientId,
       build: queue.session.build,
       at: at,
+      afterRead: edit.lastRead,
       ops: ops,
       outcome: const AttemptOpen(),
     ),
@@ -1887,8 +1971,15 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer) {
   if (index == -1) return NotApplicable(NoSuchOp(answer.opId));
   final entry = edit.entries[index];
   if (entry is! PendingOp) return NotApplicable(NoSuchOp(answer.opId));
+  if (attempt > edit.strategy.accessConfirmedAt) {
+    edit.strategy = edit.strategy.copyWith(accessConfirmedAt: attempt);
+  }
   if (entry.answer is! NotAnswered) return edit.done();
   final afterRead = edit.lastRead;
+  final at = [
+    for (final number in edit.index.attemptsByOp[entry.id] ?? const <int>[])
+      ?edit.attempts[number]?.at,
+  ].fold(fact.at, (first, sent) => sent.isBefore(first) ? sent : first);
   edit.put(
     entry.copyWith(
       answer: switch (answer) {
@@ -1896,17 +1987,24 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer) {
           revision,
           AppliedBy.thisClient,
           afterRead: afterRead,
+          at: at,
         ),
         NoopAnswer(
           :final revision,
           replay: NoopReplay.appliedWhenFirstReceived,
         ) =>
-          AnsweredApplied(revision, AppliedBy.thisClient, afterRead: afterRead),
+          AnsweredApplied(
+            revision,
+            AppliedBy.thisClient,
+            afterRead: afterRead,
+            at: at,
+          ),
         NoopAnswer(:final revision, replay: NoopReplay.notApplied) =>
           AnsweredApplied(
             revision,
             AppliedBy.alreadyThere,
             afterRead: afterRead,
+            at: at,
           ),
         NoopWithoutRevision() => const AnsweredNothingToDo(),
         RejectedAnswer(:final reason, :final current) => AnsweredRefused(
@@ -1996,7 +2094,7 @@ Step _userRemoves(_Edit edit, String opId, UserRemoval action, DateTime now) {
   if (entry == null) return NotApplicable(NoSuchOp(opId));
   final standing = standingOf(queue);
   final allowed = switch (entry) {
-    RetiredOp() || UnreadableEntry() => action == UserRemoval.discarded,
+    RetiredOp() => action == UserRemoval.discarded,
     final PendingOp op => switch ((entryViews(queue, now)[op.id]!, action)) {
       (EntryView(state: Claimed() || Accepted()), _) => false,
       (final view, UserRemoval.usedCloud) => _userMayReplace(view),
@@ -2044,14 +2142,13 @@ Step _reissue(_Edit edit, Map<String, String> fresh, DateTime now) {
           ),
           seen,
         );
-      case ImportedIncompleteCopy():
-        return NotApplicable(NotInThatState(opId, 'an incomplete copy'));
     }
     renamedAt[index] = entry.copyWith(
       work: work,
       answer: const NotAnswered(),
       policy: SendPolicy.checked,
       retriedAfter: edit.lastAttempt,
+      memory: const Remembered(),
     );
   }
   for (final MapEntry(key: index, value: entry) in renamedAt.entries) {

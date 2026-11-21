@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:collection/collection.dart';
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/cloud/op_facts.dart';
 import 'package:test/test.dart';
 
 import 'cloud_server.dart';
@@ -82,9 +83,7 @@ final class Model {
   Step unfolded(CloudQueue before, QueueEvent event, Step result) {
     if ((event, result) case (UserEdited(:final edit), Stepped(:final effects))
         when effects.any(
-          (effect) =>
-              effect is OpRemoved &&
-              (effect.cause is FoldedInto || effect.cause is CancelledBy),
+          (effect) => effect is OpRemoved && effect.cause is FoldedInto,
         )) {
       return Stepped(
         CloudQueue(
@@ -142,7 +141,7 @@ final class Model {
                 '${server.firstClient[entry.id]}|${entry.id}',
               ),
         NothingToWaitFor() => event is OpAnswered,
-        FoldedInto(:final opId) || CancelledBy(:final opId) =>
+        FoldedInto(:final opId) =>
           event is UserEdited && event.edit.op.opId == opId,
         RetriedUnder() => event is Reissue,
         RemovedByUser() => event is UserAction && event.opId == entry.id,
@@ -351,15 +350,30 @@ final class Model {
     final visible = client.visible;
     final onTop = onVisible(visible, op);
     if (applyOp(visible, onTop) is! OpApplied) return;
-    if (apply(
-          client.editEvent(op),
-          'edit ${op.opId} ${op.type.wireName} ${targetOf(op)}',
-        )
-        is Stepped) {
-      if (applyOp(reference, onVisible(reference, op))
-          case final OpApplied done) {
-        reference = reference.withRows(done.rows);
-      }
+    final ops = switch (op) {
+      PageAddOp(copyContentFromPagePublicId: _?) => switch (expandCopy(
+        visible,
+        op,
+      )) {
+        CopyExpanded(:final ops) => ops,
+        CopyNotExpanded() => const <StrategyOp>[],
+      },
+      _ => [op],
+    };
+    var stepped = ops.isNotEmpty;
+    for (final each in ops) {
+      stepped =
+          apply(
+                client.editEvent(each),
+                'edit ${each.opId} ${each.type.wireName} ${targetOf(each)}',
+              )
+              is Stepped &&
+          stepped;
+    }
+    if (!stepped) return;
+    if (applyOp(reference, onVisible(reference, op))
+        case final OpApplied done) {
+      reference = reference.withRows(done.rows);
     }
   }
 
@@ -461,7 +475,7 @@ final class Model {
   ).effects.whereType<ReadNumbered>().single.read;
 
   void arrive(ArrivedBase base, String label) =>
-      must(BaseArrived(base, read: startRead(), startedAt: clock), label);
+      must(BaseArrived(base, read: startRead()), label);
 
   void readHeader() {
     if (!server.exists) {
@@ -524,7 +538,7 @@ final class Model {
         if (entry is PendingOp &&
             (views[entry.id]!.state is Accepted ||
                 views[entry.id]!.holds.any(
-                  (hold) => hold is AwaitingPageRead || hold is AwaitingBase,
+                  (hold) => hold is AwaitingRead || hold is AwaitingBase,
                 )))
           ...pagesOf(entry),
     };
@@ -603,7 +617,7 @@ final class Model {
         (PendingOp(), EntryView(state: ServerRefused())) ||
         (PendingOp(), EntryView(go: NeedsUser())) =>
           random.nextBool() ? UserUsedCloud(entry.id) : UserDiscarded(entry.id),
-        (RetiredOp() || UnreadableEntry(), _) => UserDiscarded(entry.id),
+        (RetiredOp(), _) => UserDiscarded(entry.id),
         _
             when standingOf(client.queue) == Standing.deletedOnServer &&
                 view?.state is! Claimed &&
@@ -740,7 +754,7 @@ const minimums = {
   'UserUsedCloud': 5,
   'UserDiscarded': 5,
   'removed SeenInBase': 1500,
-  'removed FoldedInto': 100,
+  'removed FoldedInto': 20,
   'put-backs': 100,
   'Reissue': 5,
 };

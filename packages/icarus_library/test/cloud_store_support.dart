@@ -30,7 +30,7 @@ Future<void> addCloud(LibraryStore store, StrategyRowSet rows) async =>
 
 CloudStrategy cloudOf(StrategySync sync) => switch (sync) {
   final CloudStrategy cloud => cloud,
-  LocalStrategy() => fail('expected a cloud strategy'),
+  LocalStrategy() || CloudHeld() => fail('expected a cloud strategy'),
 };
 
 Future<CloudStrategy> syncOf(LibraryStore store) async =>
@@ -54,18 +54,10 @@ Future<void> readServer(
   Iterable<String>? pages,
 }) async {
   final header = await startRead(store);
-  await recordAll(store, [
-    BaseArrived(headerReadOf(server), read: header, startedAt: fixedClock()),
-  ]);
+  await recordAll(store, [BaseArrived(headerReadOf(server), read: header)]);
   for (final page in pages ?? server.pages.map((page) => page.publicId)) {
     final read = await startRead(store);
-    await recordAll(store, [
-      BaseArrived(
-        pageReadOf(server, page),
-        read: read,
-        startedAt: fixedClock(),
-      ),
-    ]);
+    await recordAll(store, [BaseArrived(pageReadOf(server, page), read: read)]);
   }
 }
 

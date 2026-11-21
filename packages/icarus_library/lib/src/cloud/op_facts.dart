@@ -2,8 +2,11 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../apply.dart';
+import '../derived_id.dart';
 import '../field_rules.dart';
 import '../json.dart';
+import '../outcome.dart';
 import '../ops.dart';
 import '../rows.dart';
 import '../strategy_rows.dart';
@@ -579,4 +582,73 @@ StrategyOp withFieldBase(StrategyRows rows, StrategyOp op) {
       },
     _ => op,
   };
+}
+
+sealed class CopyExpansion {
+  const CopyExpansion();
+}
+
+final class CopyExpanded extends CopyExpansion {
+  CopyExpanded(List<StrategyOp> ops) : ops = List.unmodifiable(ops);
+
+  final List<StrategyOp> ops;
+}
+
+final class CopyNotExpanded extends CopyExpansion {
+  const CopyNotExpanded(this.result);
+
+  final ApplyResult result;
+}
+
+CopyExpansion expandCopy(StrategyRows rows, PageAddOp copy) {
+  final OpApplied applied;
+  switch (applyOp(rows, copy)) {
+    case final OpApplied done:
+      applied = done;
+    case final other:
+      return CopyNotExpanded(other);
+  }
+  var made = 0;
+  String opId() => derivedId(jsonEncode([copy.opId, 'expanded', made++]));
+  final ops = <StrategyOp>[
+    PageAddOp(
+      opId: copy.opId,
+      pagePublicId: copy.pagePublicId,
+      sortIndex: copy.sortIndex,
+      expectedStrategyRevision: copy.expectedStrategyRevision,
+      name: copy.name,
+      isAutoNamed: copy.isAutoNamed,
+      isAttack: copy.isAttack,
+      settings: copy.settings,
+    ),
+  ];
+  for (final write in applied.writes) {
+    switch (write) {
+      case RowAdded(after: final LiveElement row):
+        ops.add(
+          ElementAddOp(
+            opId: opId(),
+            elementPublicId: row.publicId,
+            pagePublicId: row.pagePublicId,
+            payload: row.payload,
+            sortIndex: row.sortIndex,
+          ),
+        );
+      case RowAdded(after: final LiveLineupGroup row):
+        ops.add(
+          LineupGroupAddOp(
+            opId: opId(),
+            lineupPublicId: row.publicId,
+            pagePublicId: row.pagePublicId,
+            payload: row.payload,
+            sortIndex: row.sortIndex,
+          ),
+        );
+      case RowAdded(after: ElementRow() || LineupGroupRow()):
+        return CopyNotExpanded(OpRefused(UnreadableTarget(write.key)));
+      case RowAdded() || RowChanged():
+        break;
+    }
+  }
+  return CopyExpanded(ops);
 }

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/src/cloud/queue.dart' show derivationWork;
+import 'package:icarus_library/src/cloud/visible.dart';
 import 'package:test/test.dart';
 
 import 'cloud_support.dart';
@@ -102,24 +103,60 @@ void main() {
     }
   });
 
-  test('an event touching one entry of a 1,000-entry queue takes under '
-      '2 ms with the views and tally', () {
-    final results = oneEntryEvents(queueOf(1000), rounds: 200);
-    final lines = <String>[];
-    for (final event in events) {
-      final times = [
-        for (final r in results)
-          if (r.event == event) r.took.inMicroseconds,
-      ]..sort();
-      final median = times[times.length ~/ 2];
-      final slow = times[(times.length * 0.95).floor()];
-      lines.add('$event: median $median µs, 95th percentile $slow µs');
-      if (Platform.environment['CLOUD_COST_TIMES'] == '1') {
-        expect(median, lessThan(2000), reason: event);
-      }
+  (int, int) pageWork(int unrelated) {
+    final client = Client()..must(const ConnectionReturned());
+    client.must(added('here', 'n-here', 'page-a'));
+    for (var i = 0; i < unrelated; i++) {
+      client.must(added('add$i', 'n$i', 'page-b'));
     }
-    if (Platform.environment['CLOUD_COST'] == '1') {
-      stdout.writeln(lines.join('\n'));
+    entryViews(client.queue, now);
+    derivationWork.reset();
+    final read = client.startRead();
+    client.must(BaseArrived(pageReadOf(initialRows(), 'page-a'), read: read));
+    entryViews(client.queue, now);
+    final readWork = derivationWork.views + derivationWork.visits;
+    derivationWork.reset();
+    final shown = visibleOver(
+      initialRows(),
+      client.queue,
+      SomePages(['page-a']),
+    );
+    expect(shown.element('n-here'), isNotNull);
+    expect(shown.element('n0'), isNull);
+    return (readWork, derivationWork.visits);
+  }
+
+  test('a page read and a page drawn do the same work whether 10 or 1,000 '
+      'entries wait on another page', () {
+    expect(pageWork(1000), pageWork(10));
+  });
+
+  test('a reconnect with pending work on three pages asks for those pages '
+      'and the page list, nothing more', () {
+    var rows = withOp(initialRows(), pageAdd('make-c', 'page-c'));
+    rows = withOp(rows, elementAdd('add-c', elementId: 'e4', pageId: 'page-c'));
+    final client = Client(base: rows)..must(const ConnectionReturned());
+    client.edit(elementDelete('a', elementId: 'e1'));
+    client.edit(elementDelete('b', elementId: 'e3', pageId: 'page-b'));
+    client.edit(elementDelete('c', elementId: 'e4', pageId: 'page-c'));
+    for (var i = 0; i < 50; i++) {
+      client.edit(
+        movePatch(
+          'drag$i',
+          elementId: 'e2',
+          x: i.toDouble(),
+          merge: FieldMerge(fields: ['position']),
+        ),
+      );
     }
+    expect(readsNeeded(client.queue, now), isEmpty);
+    client.must(const ConnectionLost());
+    client.must(const ConnectionReturned());
+    expect(readsNeeded(client.queue, now), {
+      const PageListNeed(),
+      const PageNeed('page-a'),
+      const PageNeed('page-b'),
+      const PageNeed('page-c'),
+    });
   });
 }

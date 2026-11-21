@@ -48,6 +48,14 @@ final class Server {
   int received = 0;
   int sends = 0;
 
+  Server copy() => Server()
+    ..rows = rows
+    ..exists = exists
+    ..recorded.addAll(recorded)
+    ..firstClient.addAll(firstClient)
+    ..received = received
+    ..sends = sends;
+
   OpAnswer apply(String client, StrategyOp op) {
     sends++;
     final owner = firstClient.putIfAbsent(op.opId, () {

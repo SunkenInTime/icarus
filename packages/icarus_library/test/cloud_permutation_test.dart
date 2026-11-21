@@ -4,6 +4,9 @@ import 'dart:math';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:test/test.dart';
 
+import 'package:icarus_library/src/cloud/op_facts.dart';
+
+import 'cloud_server.dart';
 import 'cloud_support.dart';
 
 sealed class Fact {
@@ -32,32 +35,8 @@ final class ClockFact extends Fact {
   final Duration by;
 }
 
-OpAnswer answerOn(
-  StrategyRowSet rows,
-  StrategyOp op,
-  void Function(StrategyRowSet) keep,
-) {
-  switch (applyOp(rows, op)) {
-    case final OpApplied done:
-      final after = rows.withRows(done.rows);
-      keep(after);
-      return AppliedAnswer(op.opId, revision: visibleRevision(after, op)!);
-    case OpUnchanged():
-      final revision = visibleRevision(rows, op);
-      return revision == null
-          ? NoopWithoutRevision(op.opId)
-          : NoopAnswer(
-              op.opId,
-              revision: revision,
-              replay: NoopReplay.notApplied,
-            );
-    case OpRefused(refusal: Rejected(:final reason)):
-      return RejectedAnswer(op.opId, reason, const NoServerCopy());
-    case OpRefused(refusal: Failed(:final code)):
-      return FailedAnswer(op.opId, KnownFailure(code), code.wireName);
-    case OpRefused(refusal: UnreadableTarget(:final key)):
-      throw StateError('unreadable $key');
-  }
+final class ClaimFact extends Fact {
+  ClaimFact() : super('claim between deliveries');
 }
 
 final class Scenario {
@@ -66,13 +45,17 @@ final class Scenario {
   final int seed;
   final Random random;
   final client = Client();
-  StrategyRowSet server = initialRows();
+  final model = Server();
   final open = <(int, List<StrategyOp>)>[];
   final facts = <Fact>[];
   final log = <String>[];
   int nextId = 0;
 
   String fresh(String prefix) => '$prefix${nextId++}';
+
+  StrategyRowSet get server => model.rows;
+
+  set server(StrategyRowSet rows) => model.rows = rows;
 
   T pick<T>(List<T> items) => items[random.nextInt(items.length)];
 
@@ -145,7 +128,19 @@ final class Scenario {
     if (applyOp(client.visible, onVisible(client.visible, op)) is! OpApplied) {
       return;
     }
-    if (client.step(client.editEvent(op)) is Stepped) log.add('edit $op');
+    final ops = switch (op) {
+      PageAddOp(copyContentFromPagePublicId: _?) => switch (expandCopy(
+        client.visible,
+        op,
+      )) {
+        CopyExpanded(:final ops) => ops,
+        CopyNotExpanded() => const <StrategyOp>[],
+      },
+      _ => [op],
+    };
+    for (final each in ops) {
+      if (client.step(client.editEvent(each)) is Stepped) log.add('edit $each');
+    }
   }
 
   void claim() {
@@ -163,7 +158,7 @@ final class Scenario {
   List<EventFact> answersFor((int, List<StrategyOp>) sent) => [
     for (final op in sent.$2)
       EventFact(
-        OpAnswered(sent.$1, answerOn(server, op, (after) => server = after)),
+        OpAnswered(sent.$1, model.apply(clientId, op)),
         'answer ${op.opId}',
       ),
   ];
@@ -284,11 +279,7 @@ final class Scenario {
       case 0:
         facts.add(
           EventFact(
-            BaseArrived(
-              const StrategyGone(),
-              read: client.startRead(),
-              startedAt: now,
-            ),
+            BaseArrived(const StrategyGone(), read: client.startRead()),
             'strategy gone',
           ),
         );
@@ -299,9 +290,15 @@ final class Scenario {
       case _:
         break;
     }
-    if (random.nextBool()) {
-      facts.add(ClockFact(const Duration(hours: 1), '+1h'));
+    switch (random.nextInt(4)) {
+      case 0:
+        facts.add(ClockFact(const Duration(hours: 1), '+1h'));
+      case 1:
+        facts.add(ClockFact(serverRemembersAnswersFor, '+30 days'));
+      case _:
+        break;
     }
+    if (random.nextInt(3) == 0) facts.add(ClaimFact());
     if (facts.length > most) facts.removeRange(most, facts.length);
     if (random.nextBool()) {
       facts.add(
@@ -347,25 +344,33 @@ Iterable<List<Fact>> orderings(List<Fact> facts) sync* {
 }
 
 final class Delivered {
-  Delivered(this.queue, this.at, this.effects);
+  Delivered(this.queue, this.at, this.effects, this.server);
 
   final CloudQueue queue;
   final DateTime at;
   final List<String> effects;
+  final Server server;
 }
 
-Delivered deliver(CloudQueue start, List<Fact> order) {
+Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
   var queue = start;
   var at = now;
+  final server = model.copy();
+  final sentBefore = {
+    for (final attempt in start.attempts.values)
+      for (final op in attempt.ops) op.opId,
+  };
   final effects = <String>[];
-  void step(QueueEvent event) {
+  List<QueueEffect> step(QueueEvent event) {
     if (transition(queue, event, now: at) case Stepped(
       queue: final next,
       effects: final made,
     )) {
       queue = next;
       effects.addAll(made.map((effect) => '$effect'));
+      return made;
     }
+    return const [];
   }
 
   for (final fact in order) {
@@ -373,12 +378,46 @@ Delivered deliver(CloudQueue start, List<Fact> order) {
       case EventFact(:final event):
         step(event);
       case ReadFact(:final base, :final read):
-        step(BaseArrived(base, read: read, startedAt: now));
+        step(BaseArrived(base, read: read));
       case ClockFact(:final by):
         at = at.add(by);
+      case ClaimFact():
+        final views = entryViews(queue, at);
+        final ids = [
+          for (final entry in queue.entries)
+            if (views[entry.id]?.sendable ?? false) entry.id,
+        ].take(3).toList();
+        if (ids.isEmpty) break;
+        final made = step(BatchClaimed(clientId: clientId, opIds: ids, at: at));
+        for (final sent in made.whereType<SendBatch>()) {
+          for (final op in sent.ops) {
+            if (sentBefore.contains(op.opId) &&
+                !at.isBefore(now.add(serverRemembersAnswersFor))) {
+              throw StateError(
+                '${op.opId} was sent again after the server forgot it',
+              );
+            }
+            step(OpAnswered(sent.attempt, server.apply(sent.clientId, op)));
+          }
+        }
     }
   }
-  return Delivered(queue, at, effects..sort());
+  step(const ConnectionLost());
+  return Delivered(queue, at, effects..sort(), server);
+}
+
+String? disagreement(Delivered end) {
+  final views = entryViews(end.queue, end.at);
+  for (final entry in end.queue.entries) {
+    final state = views[entry.id]?.state;
+    final wrong = switch (state) {
+      NeverSent() || ServerRefused() => end.server.landed(entry.id),
+      Accepted() => end.server.refused(entry.id),
+      Claimed() || AnswerUnknown() || null => false,
+    };
+    if (wrong) return '${entry.id} is $state but the server says otherwise';
+  }
+  return null;
 }
 
 String describe(CloudQueue queue, DateTime at) {
@@ -397,9 +436,11 @@ void main() {
   final one = int.tryParse(
     Platform.environment['CLOUD_PERMUTATION_SEED'] ?? '',
   );
-  test('every causal order of the same facts ends in the same queue', () {
+  test('every causal order of the same facts ends in the same queue, and a '
+      'claim between deliveries never disagrees with the server', () {
     var orders = 0;
     var factsSeen = 0;
+    var claimed = 0;
     for (final seed
         in one == null ? [for (var s = 1; s <= seeds; s++) s] : [one]) {
       final scenario = Scenario(seed)..prefix(40);
@@ -411,7 +452,26 @@ void main() {
       List<Fact>? firstOrder;
       for (final order in orderings(facts)) {
         orders++;
-        final end = deliver(start, order);
+        final Delivered end;
+        try {
+          end = deliver(start, order, scenario.model);
+        } on StateError catch (error) {
+          fail(
+            'seed $seed: ${error.message}\n'
+            'order: ${order.map((f) => f.label).join(' | ')}',
+          );
+        }
+        if (disagreement(end) case final problem?) {
+          fail(
+            'seed $seed: $problem\n'
+            'order: ${order.map((f) => f.label).join(' | ')}\n'
+            '${describe(end.queue, end.at)}',
+          );
+        }
+        if (facts.any((fact) => fact is ClaimFact)) {
+          claimed++;
+          continue;
+        }
         if (first == null) {
           first = end;
           firstOrder = order;
@@ -435,6 +495,8 @@ void main() {
     if (Platform.environment['CLOUD_PERMUTATION_COUNTS'] == '1') {
       stdout.writeln('$orders orders of $factsSeen facts');
     }
+    if (one != null) return;
     expect(orders, greaterThan(seeds * 20));
+    expect(claimed, greaterThan(seeds));
   });
 }
