@@ -1,10 +1,9 @@
-import 'package:collection/collection.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/strategy_diff_check.dart';
 import 'package:test/test.dart';
 
 import 'store_support.dart';
-import 'strategy_diff_support.dart' show Generator;
+import 'strategy_diff_support.dart' show Generator, withUnknownFields;
 import 'support.dart';
 
 Future<StrategyRowSet> storedRows(LibraryStore store, String id) async {
@@ -58,11 +57,17 @@ ElementPatchOp moved(String id, int x, {required int revision}) =>
 
 void main() {
   test('a batch saves what committing its ops one by one saves', () async {
+    var batches = 0;
     for (var seed = 0; seed < 60; seed++) {
       final generator = Generator(seed);
-      final (disk, stored) = await seeded(readableOnly(generator.strategy()));
-      final target = generator.mutated(stored);
+      final plain = readableOnly(generator.strategy());
+      final (disk, stored) = await seeded(
+        seed.isEven ? withUnknownFields(plain) : plain,
+      );
+      final target = generator.mutated(plain);
       final ops = diffOps(stored, target);
+      if (ops.isEmpty) continue;
+      batches++;
 
       final batched = MemoryStorage(disk);
       final batchStore = await openStore(MemoryEngine(batched));
@@ -94,16 +99,79 @@ void main() {
       );
       final reached = await storedRows(batchStore, strategyId);
       expect(
-        const DeepCollectionEquality().equals(
-          seenRows(reached),
-          seenRows(target),
-        ),
-        isTrue,
+        switch (checkReached(stored, target, reached)) {
+          DiffReached() => 'reached',
+          DiffMissed(:final what) => what,
+        },
+        'reached',
         reason: 'seed $seed',
+      );
+      expect(
+        await batchStore.rebuildSummary(strategyId),
+        isA<NothingToSave<StrategySummary, CommitRefusal>>(),
+        reason: 'seed $seed: the saved summary is what a rebuild gives',
       );
       await batchStore.close();
       await singleStore.close();
     }
+    expect(batches, greaterThan(50));
+  });
+
+  group('The summary a batch saves equals a rebuild', () {
+    Future<void> expectRebuildAgrees(
+      Contents disk,
+      List<StrategyOp> ops,
+    ) async {
+      final store = await openStore(MemoryEngine(MemoryStorage(disk)));
+      savedValue(await store.commitAll(strategyId, ops));
+      expect(
+        await store.rebuildSummary(strategyId),
+        isA<NothingToSave<StrategySummary, CommitRefusal>>(),
+      );
+      await store.close();
+    }
+
+    test('when the stored summary counted a row that is gone', () async {
+      final disk = await seededClean();
+      final stale = {
+        ...disk,
+        sampleArea: {...disk[sampleArea]!}
+          ..remove(elementName('page-b', 'omen')),
+      };
+      await expectRebuildAgrees(stale, [
+        const StrategyPatchOp(
+          opId: 'rename',
+          expectedStrategyRevision: 1,
+          name: 'Renamed',
+        ),
+        ElementAddOp(
+          opId: 'add',
+          elementPublicId: 'neon',
+          pagePublicId: 'page-b',
+          payload: agentPayload('neon', {'type': 'neon'}),
+          sortIndex: 3,
+        ),
+      ]);
+    });
+
+    test('when the only item on a page moves off it', () async {
+      final disk = await seededClean();
+      final store = await openOn(disk);
+      final kayo =
+          elementOn(pageOf(await store.readPage(strategyId, 'page-c')), 'kayo')
+              as LiveElement;
+      await store.close();
+      await expectRebuildAgrees(disk, [
+        ElementPatchOp(
+          opId: 'move-kayo',
+          elementPublicId: 'kayo',
+          pagePublicId: 'page-b',
+          payload: kayo.payload,
+          sortIndex: 5,
+          expectedElementRevision: kayo.revision,
+        ),
+      ]);
+    });
   });
 
   test('a batch with a refused op saves none of it', () async {

@@ -49,6 +49,7 @@ const _everyDiffOp = [
   OpType.elementPatch,
   OpType.elementDelete,
   OpType.lineupGroupAdd,
+  OpType.lineupGroupPatch,
   OpType.lineupGroupDelete,
 ];
 
@@ -86,27 +87,30 @@ void main() {
     expect(first.first.opId, isNot(other.first.opId));
   });
 
-  test('a moved item is one whole write at its stored revision', () {
-    final stored = strategyRows(
-      elements: [
-        element('jett', fields: {'position': 1}, revision: 3),
-        element('sova', sortIndex: 1),
-      ],
-    );
-    final target = strategyRows(
-      elements: [
-        element('jett', fields: {'position': 2}),
-        element('sova', sortIndex: 1),
-      ],
-    );
-    final ops = opsOf(diffStrategy(stored, target, editId: 'e'));
-    expect(ops, [
-      isA<ElementPatchOp>()
-          .having((op) => op.expectedElementRevision, 'revision', 3)
-          .having((op) => op.merge, 'merge', isNull),
-    ]);
-    expectReached(stored, target);
-  });
+  test(
+    'a moved item is a field merge naming what moved, at its stored revision',
+    () {
+      final stored = strategyRows(
+        elements: [
+          element('jett', fields: {'position': 1}, revision: 3),
+          element('sova', sortIndex: 1),
+        ],
+      );
+      final target = strategyRows(
+        elements: [
+          element('jett', fields: {'position': 2}),
+          element('sova', sortIndex: 1),
+        ],
+      );
+      final ops = opsOf(diffStrategy(stored, target, editId: 'e'));
+      expect(ops, [
+        isA<ElementPatchOp>()
+            .having((op) => op.expectedElementRevision, 'revision', 3)
+            .having((op) => op.merge?.fields, 'merge', ['position']),
+      ]);
+      expectReached(stored, target);
+    },
+  );
 
   test('a removed caption is written as cleared', () {
     final stored = strategyRows(
@@ -260,13 +264,194 @@ void main() {
     );
   });
 
+  group('A page removed from the target', () {
+    final stored = strategyRows(
+      elements: [
+        element('jett'),
+        element('sova', pageId: 'page-b'),
+        element('omen', pageId: 'page-b', sortIndex: 1),
+      ],
+      lineupGroups: [lineupGroup('g1', pageId: 'page-b')],
+    );
+
+    test('goes to the trash with what is on it', () {
+      final target = strategyRows(
+        pages: [page('page-a', sortIndex: 0)],
+        elements: [element('jett')],
+      );
+      final ops = opsOf(diffStrategy(stored, target, editId: 'e'));
+      expect(ops.map((op) => op.type), [OpType.pageDelete]);
+      expectReached(stored, target);
+    });
+
+    test('keeps an item the target moved to another page', () {
+      final target = strategyRows(
+        pages: [page('page-a', sortIndex: 0)],
+        elements: [element('jett'), element('sova', sortIndex: 1)],
+      );
+      expectReached(stored, target);
+    });
+
+    test('in the trash with its content needs no op', () {
+      final trashed = strategyRows(
+        pages: [
+          page('page-a', sortIndex: 0),
+          page('page-b', sortIndex: 1, deleted: true),
+        ],
+        elements: [
+          element('jett'),
+          element('sova', pageId: 'page-b'),
+        ],
+        lineupGroups: [lineupGroup('g1', pageId: 'page-b')],
+      );
+      expect(opsOf(diffStrategy(trashed, trashed, editId: 'e')), isEmpty);
+    });
+  });
+
+  group('Fields this build does not know', () {
+    final plain = StrategyRowSet(
+      strategy: strategyRow(),
+      pages: [page('page-a', sortIndex: 0, name: 'Entry')],
+      settings: [settings('page-a')],
+      elements: [
+        element(
+          'jett',
+          fields: {
+            'position': {'dx': 1, 'dy': 2},
+          },
+        ),
+      ],
+      lineupGroups: [lineupGroup('g1', pageId: 'page-a', links: 2)],
+    );
+    final stored = withUnknownFields(plain);
+
+    test('are not a reason to save', () {
+      expect(opsOf(diffStrategy(stored, plain, editId: 'e')), isEmpty);
+    });
+
+    test('survive an edit of every row that holds them', () {
+      final edited = StrategyRowSet(
+        strategy: plain.strategy.rewritten(name: 'Renamed'),
+        pages: [page('page-a', sortIndex: 0, name: 'Exit')],
+        settings: [
+          settings(
+            'page-a',
+            value: const PageSettings(
+              agentSize: 40,
+              abilitySize: 1,
+              useNeutralTeamColors: false,
+            ),
+          ),
+        ],
+        elements: [
+          element(
+            'jett',
+            fields: {
+              'position': {'dx': 9, 'dy': 2},
+            },
+          ),
+        ],
+        lineupGroups: [
+          lineupGroup('g1', pageId: 'page-a', links: 2, notes: 'jump throw'),
+        ],
+      );
+      final ops = opsOf(diffStrategy(stored, edited, editId: 'e'));
+      expect(ops.whereType<ElementPatchOp>().single.merge?.fields, [
+        'position',
+      ]);
+      expect(ops.whereType<LineupGroupPatchOp>().single.merge?.fields, [
+        'links/g1',
+        'links/g1-k1',
+      ]);
+      expectReached(stored, edited);
+    });
+  });
+
+  group('Page settings', () {
+    test('that the target asks for on a page with none are refused', () {
+      final stored = strategyRows(pageSettings: [settings('page-b')]);
+      final target = strategyRows(
+        pageSettings: [
+          settings(
+            'page-a',
+            value: const PageSettings(
+              agentSize: 40,
+              abilitySize: 1,
+              useNeutralTeamColors: false,
+            ),
+          ),
+          settings('page-b'),
+        ],
+      );
+      expect(
+        refusalOf(diffStrategy(stored, target, editId: 'e')),
+        isA<SettingsUnreachable>().having(
+          (refusal) => refusal.key,
+          'key',
+          const PageKey('page-a'),
+        ),
+      );
+    });
+
+    test('that the target leaves out are refused', () {
+      final stored = strategyRows();
+      final target = strategyRows(pageSettings: [settings('page-b')]);
+      expect(
+        refusalOf(diffStrategy(stored, target, editId: 'e')),
+        isA<SettingsUnreachable>(),
+      );
+    });
+  });
+
+  test('a page whose place and trash cannot be read stops a new page', () {
+    final unknown = UnreadablePage(
+      publicId: 'page-unknown',
+      strategyPublicId: strategyId,
+      sortIndex: null,
+      trashed: null,
+      stored: {'publicId': 'page-unknown'},
+      problem: 'damaged',
+    );
+    final stored = strategyRows(
+      pages: [page('page-a', sortIndex: 0), unknown],
+      pageSettings: [settings('page-a')],
+    );
+    final target = strategyRows(
+      pages: [page('page-a', sortIndex: 0), page('page-new', sortIndex: 1)],
+    );
+    expect(
+      refusalOf(diffStrategy(stored, target, editId: 'e')),
+      isA<RowNotReadable>().having(
+        (refusal) => refusal.key,
+        'key',
+        const PageKey('page-unknown'),
+      ),
+    );
+  });
+
+  test('op ids do not depend on the order rows come in', () {
+    final stored = strategyRows();
+    final items = [
+      for (var i = 0; i < 6; i++) element('item-$i', sortIndex: i),
+    ];
+    final forwards = strategyRows(elements: items);
+    final backwards = strategyRows(elements: items.reversed.toList());
+    String describe(StrategyDiff diff) =>
+        [for (final op in opsOf(diff)) '${op.opId} ${op.toJson()}'].join('\n');
+    expect(
+      describe(diffStrategy(stored, backwards, editId: 'e')),
+      describe(diffStrategy(stored, forwards, editId: 'e')),
+    );
+  });
+
   test('600 generated pairs each reach their target', () {
     final made = <OpType, int>{};
     var revived = 0;
     for (var seed = 0; seed < 600; seed++) {
       final generator = Generator(seed);
-      final stored = generator.strategy();
-      final target = generator.mutated(stored);
+      final plain = generator.strategy();
+      final target = generator.mutated(plain);
+      final stored = seed.isEven ? withUnknownFields(plain) : plain;
       final diff = diffStrategy(stored, target, editId: 'seed-$seed');
       final ops = opsOf(diff);
       for (final op in ops) {

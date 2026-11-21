@@ -1114,29 +1114,29 @@ final class LibraryStore {
         case HeaderUnplaced() || HeaderAbsent():
           return Refused(NoSuchStrategy(strategyPublicId));
       }
-      final pending = PendingRows(strategy, header);
-      final applied = <(StrategyOp, List<RowWrite>, Undo)>[];
-      final now = _clock();
-      StrategySummary? before;
       for (final op in asked) {
         if (await _loadPages(strategy, _pagesFor(op, strategy))
             case StorageFailed(:final failure)) {
           return NotSaved(failure);
         }
-        if (before == null) {
-          switch (await _summaryFor(strategy)) {
-            case _RebuiltSummary(summary: final found):
-              before = found;
-            case _HeaderUnreadable(:final row):
-              return Refused(UnreadableRowInTheWay(row));
-            case _HeaderMissing(:final ref):
-              return Refused(StrategyNotReadable(ref));
-            case _RebuildNotRead(:final failure):
-              return NotSaved(failure);
-            case _NoStrategyThere():
-              return Refused(NoSuchStrategy(strategyPublicId));
-          }
-        }
+      }
+      final StrategySummary before;
+      switch (await _summaryFor(strategy)) {
+        case _RebuiltSummary(summary: final found):
+          before = found;
+        case _HeaderUnreadable(:final row):
+          return Refused(UnreadableRowInTheWay(row));
+        case _HeaderMissing(:final ref):
+          return Refused(StrategyNotReadable(ref));
+        case _RebuildNotRead(:final failure):
+          return NotSaved(failure);
+        case _NoStrategyThere():
+          return Refused(NoSuchStrategy(strategyPublicId));
+      }
+      final pending = PendingRows(strategy, header);
+      final applied = <(StrategyOp, List<RowWrite>, Undo)>[];
+      final now = _clock();
+      for (final op in asked) {
         if (_blocked(strategy, op) case final refusal?) {
           return Refused(refusal);
         }
@@ -1156,7 +1156,12 @@ final class LibraryStore {
       final changes = <_Write>[];
       final written = <RowWrite>[];
       final committed = <Committed>[];
-      var summary = before!;
+      var summary = before;
+      var (after, pagesAfter, settingsAfter) = strategy.after(header, const []);
+      final pagesById = {for (final page in pagesAfter) page.publicId: page};
+      final settingsById = {
+        for (final row in settingsAfter) row.pagePublicId: row,
+      };
       for (final (op, writes, undo) in applied) {
         for (final write in writes) {
           if (_inTheWay(strategy.heldUnder(nameOf(write.after)), write.after)
@@ -1169,10 +1174,24 @@ final class LibraryStore {
           ) when nameOf(before).name != nameOf(write.after).name) {
             changes.add(_DeleteName(area, nameOf(before).name));
           }
+          switch (write.after) {
+            case final ReadableStrategy row:
+              after = row;
+            case final PageRow row:
+              pagesById[row.publicId] = row;
+            case final PageSettingsRow row:
+              settingsById[row.pagePublicId] = row;
+            case _:
+              break;
+          }
         }
         written.addAll(writes);
-        final (after, pages, settings) = strategy.after(header, written);
-        summary = summary.after(after, pages, settings, writes);
+        summary = summary.after(
+          after,
+          pagesById.values,
+          settingsById.values,
+          writes,
+        );
         committed.add(
           Committed(
             change: StrategyEdited(

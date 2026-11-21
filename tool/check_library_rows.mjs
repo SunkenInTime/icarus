@@ -21,7 +21,16 @@ if (!existsSync(folder) || !statSync(folder).isDirectory()) {
 
 const result = spawnSync(
   "flutter",
-  ["test", "--no-pub", "--reporter", "silent", "test/library_rows/library_corpus_test.dart"],
+  [
+    "test",
+    "--no-pub",
+    "--reporter",
+    "silent",
+    "--plain-name",
+    "corpus",
+    "test/library_rows/library_corpus_test.dart",
+    "test/library_rows/strategy_diff_test.dart",
+  ],
   {
     stdio: "inherit",
     shell: process.platform === "win32",

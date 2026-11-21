@@ -269,50 +269,76 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 `diffStrategy(stored, target, editId:)` takes a strategy's rows as stored
 and the rows it should become, and returns `DiffOps` with the ops that turn
 one into the other, or `DiffRefused` saying why it cannot. It is a pure
-function: the op ids are derived from `editId` and the op's place in the
-list, so the same rows and `editId` give the same ops.
+function. Op ids are derived from `editId` and the op's place in the list,
+and ops of one kind come in the order of their rows' ids, so the ids do not
+depend on the order the rows were handed in.
 
-- **Whole rows, at the stored revision.** A changed element is one
-  `element.patch` carrying its whole payload, its place and, when it moved
-  page, its page, with no field merge; a new one is `element.add`, over a
-  deleted row of the same id when there is one. A changed lineup group is
-  deleted and added again, so no step of the batch holds a lineup in two
-  groups. Each op expects the revision the row will have when its turn comes,
-  counting the ops before it in the list.
-- **Page order, then names.** New pages are added at the end, removed
-  pages deleted after their content has moved or gone, and the pages then
-  reordered to the target's order. Moving pages renames auto-named ones to
-  `Page N`, as `applyOp` does, so page names, sides and settings are
+The ids do not make a retry safe. After a save whose answer was lost,
+sending the same list again fails on its expected revisions if the first
+send landed. The retry is to reopen the store, read the strategy and diff
+again: that gives no ops when the save landed and the right ops when it did
+not.
+
+- **Only what differs is written, at the revision it will have.** An
+  element on both sides is one `element.patch` with a field merge naming
+  only the fields whose values differ (with each field's default filled in,
+  and a group of fields named whole when one of them changes), plus its
+  place when it moved. A field the target does not hold is left as stored:
+  the app writes every field it knows, so a field missing from the target
+  is one this build does not know. A later field the target cleared is
+  sent as its empty value, since a write that leaves it out keeps it. An
+  element moving page, or one whose kind of edit cannot merge, is a whole
+  write of the stored payload with the target's fields merged in, so fields
+  this build does not know still survive. A lineup group is merged per
+  lineup item the same way, with any field of an item that the target's
+  item lacks kept from the stored item. A lineup moving to another group
+  first leaves its old group, so no step holds it in two. A group cannot
+  change page by a patch, so one that moves page is deleted and added again
+  with its merged payload. Page settings and the theme palette are replaced
+  whole by their ops, so their known fields are compared and, when one
+  changed, the stored value's other fields are sent with it. New rows are
+  added whole. Each op expects the revision the row will have when its
+  turn comes.
+- **Page order, then names.** New pages are added at the end, removed pages
+  are trashed, and the pages are then reordered to the target's order. A
+  trashed page keeps everything on it, as a page delete always does, so
+  restoring it brings it back whole; an item the target moved off it is
+  moved first. Rows already on a page in the trash are left alone, and are
+  refused only if the target changes them. Moving pages renames auto-named
+  ones to `Page N`, as `applyOp` does, so page names, sides and settings are
   patched last. Pages are compared by order, not by `sortIndex`, because
   every page op renumbers them.
-- **Later fields are cleared, not left out.** A whole write keeps a later
-  field it leaves out (`keepStoredFields`), so an item whose caption or
-  High Tide wall the target no longer has is written with the field's
-  empty value.
 - **Rows this build cannot read come through untouched.** No op names one.
   The target may leave it out, which keeps it, or hold it unchanged. A
   target that would rewrite, move or drop one, or that holds one the stored
   rows do not, is `RowNotReadable` with its key; so is any change to the
-  page list while the strategy holds a page this build cannot read.
+  page list while the strategy holds a page this build cannot read and
+  does not know to be in the trash.
 - **The other refusals** are what no op can do: `RowInTrash` (a page in the
-  trash, or a row on one, that the target wants live), `FieldNotClearable`
-  (a door, a zone, a picture id, `isAutoNamed` or page settings the target
-  leaves out), `KindChanged`, `FolderChanged` (a folder move is a library
-  edit) and `LastPageRemoved`.
+  trash, or a row on one, that the target changes), `FieldNotClearable` (a
+  door, a zone, a picture id or `isAutoNamed` the target leaves out),
+  `SettingsUnreachable` (a page whose settings row the target has and the
+  stored rows lack, or the other way round), `KindChanged`, `FolderChanged`
+  (a folder move is a library edit) and `LastPageRemoved`.
 
 `package:icarus_library/strategy_diff_check.dart` holds `checkDiff`, which
-applies ops with `applyOp` and compares what a user would see: the
-strategy's fields, the live pages in order with their settings, the live
-elements and lineup groups on them, and the rows this build cannot read.
-Revisions, times and trashed or deleted rows are left out, and a later
-field holding its empty value counts as absent. `test/strategy_diff_test.dart`
-checks hand-made cases and 600 generated pairs, each one reached, then
-diffed again to no ops, with every op type the diff makes produced at
-least 20 times. The app's `test/library_rows/strategy_diff_test.dart`
-runs the same check over the steps of an editing session made through the
-app's models, and, with `ICARUS_LIBRARY_CORPUS` naming a folder of Hive
-stores, from an empty strategy to each real one and from each real one to
-an edited copy.
+applies ops with `applyOp`, and `checkReached`, which compares rows with
+what the target asked for: the strategy's id and fields, the live pages in
+order with their settings and whether they have a settings row, the pages
+in the trash, the live elements and lineup groups wherever they are,
+including those that stay on a page the target removed, the rows this
+build cannot read, and every field this build does not know (on a row, on
+a payload envelope, at the top of an element's data, and on a lineup item),
+which must hold its stored value. Revisions and times are left out, and a
+later field holding its empty value counts as absent.
+`test/strategy_diff_test.dart` checks hand-made cases and 600 generated
+pairs, half of them with a field this build does not know at every level
+of the stored rows; each pair is reached and then diffed again to no ops,
+and every op type the diff makes is produced at least 20 times. The app's
+`test/library_rows/strategy_diff_test.dart` runs the same check over the
+steps of an editing session made through the app's models, and, run by
+`node tool/check_library_rows.mjs <folder>`, from an empty strategy to each
+real one and from each real one to an edited copy.
 
 Payloads are compared by walking both trees (`sameJsonTree`), which gives
 the answer comparing canonical JSON gives without writing it out, and
@@ -320,7 +346,9 @@ stops at the first difference. On a page of 300 items, half of them
 1000-point drawings, a diff with one moved item takes about 0.7 ms when
 the target shares the unchanged payloads with the stored rows, and about
 20 ms when every payload was built again, nearly all of it spent walking
-the unchanged drawings.
+the unchanged drawings. Reversing 20 pages of 300 items each takes about
+0.7 ms for the pages, 2 ms with the items shared and 5 ms with them built
+again.
 
 ## Merging an edit
 
@@ -978,10 +1006,15 @@ would save, with the same `StrategyEdited` for each op, but all of them or
 none: when any op is refused, or the engine refuses the commit, nothing is
 stored and nothing changes in memory. An op that changes nothing is
 skipped, and a batch where every op changes nothing is `NothingToSave`.
-`commit(strategyPublicId, op)` is `commitAll` with one op.
+`commit(strategyPublicId, op)` is `commitAll` with one op. The pages every
+op needs are loaded before the summary is read, so the summary a batch saves
+is the one a rebuild from the same rows gives. A summary keeps no tally for a
+page whose tally is empty.
 `test/store_batch_test.dart` checks a batch against the same ops committed
-one at a time, the all or none, and that a batch of 300 ops is one engine
-commit that reads nothing it had not loaded.
+one at a time and against a rebuild of the summary, the all or none, and
+that a batch of 300 ops is one engine commit that reads nothing it had not
+loaded. A batch costs about 110 µs an op on the memory engine, linearly
+(150, 300 and 600 ops), a third of it in `applyOp`.
 
 Every save returns a `Saving`, which the caller has to handle:
 

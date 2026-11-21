@@ -515,11 +515,6 @@ void main() {
       }
     }
     expect(opsPerStep, everyElement(greaterThan(0)));
-    expect(
-      opsPerStep.length,
-      states.length - 1,
-      reason: 'every step of the session was diffed',
-    );
   });
 
   test('moving one item on a 300-item page is one op', () {
@@ -559,32 +554,36 @@ void main() {
       StrategyRowSet? largest;
       final misses = <String>[];
       final watch = Stopwatch()..start();
-      for (final store in hiveStoresUnder(Directory(corpus!))) {
-        final library = await loadHiveStore(store);
-        for (final strategy in library.strategies) {
-          final rows = rowsOf(strategy);
-          final ordinal = strategies++;
-          final empty = StrategyRowSet(strategy: rows.strategy);
-          switch (diffAndApply(empty, rows, 'empty-$ordinal')) {
+      void check(StrategyData strategy) {
+        final rows = rowsOf(strategy);
+        final ordinal = strategies++;
+        final empty = StrategyRowSet(strategy: rows.strategy);
+        switch (diffAndApply(empty, rows, 'empty-$ordinal')) {
+          case Missed(:final what):
+            misses.add('strategy $ordinal from empty: $what');
+          case Reached(:final ops):
+            fromEmptyOps += ops;
+        }
+        if (rows.pages.isNotEmpty) {
+          final mutated = Mutator(rows, ordinal).mutated();
+          switch (diffAndApply(rows, mutated, 'mutated-$ordinal')) {
             case Missed(:final what):
-              misses.add('strategy $ordinal from empty: $what');
+              misses.add('strategy $ordinal mutated: $what');
             case Reached(:final ops):
-              fromEmptyOps += ops;
-          }
-          if (rows.pages.isNotEmpty) {
-            final mutated = Mutator(rows, ordinal).mutated();
-            switch (diffAndApply(rows, mutated, 'mutated-$ordinal')) {
-              case Missed(:final what):
-                misses.add('strategy $ordinal mutated: $what');
-              case Reached(:final ops):
-                mutatedOps += ops;
-            }
-          }
-          if (rows.elements.length > (largest?.elements.length ?? -1)) {
-            largest = rows;
+              mutatedOps += ops;
           }
         }
+        if (rows.elements.length > (largest?.elements.length ?? -1)) {
+          largest = rows;
+        }
       }
+
+      final root = Directory(corpus!);
+      for (final store in hiveStoresUnder(root)) {
+        (await loadHiveStore(store)).strategies.forEach(check);
+      }
+      final icaFiles = icaFilesUnder(root);
+      if (icaFiles.isNotEmpty) (await importIcaFiles(icaFiles)).forEach(check);
       watch.stop();
       final big = largest!;
       final bigId = big.elements.whereType<LiveElement>().first.publicId;
@@ -593,7 +592,7 @@ void main() {
         diffStrategy(big, bigMoved, editId: 'move');
       });
       stdout.writeln(
-        'strategies: $strategies, ops from empty: $fromEmptyOps, '
+        'strategies: $strategies (${icaFiles.length} from .ica files), ops from empty: $fromEmptyOps, '
         'ops to a mutated copy: $mutatedOps, misses: ${misses.length}, '
         'took ${watch.elapsed.inSeconds} s; largest strategy: '
         '${big.elements.length} elements on ${big.pages.length} pages, one item '

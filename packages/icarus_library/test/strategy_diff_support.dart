@@ -237,7 +237,11 @@ final class Generator {
         for (final row in elements.values)
           if (row is DeletedElement && pages.containsKey(row.pagePublicId)) row,
       ];
-      switch (random.nextInt(15)) {
+      final twoGroups = [
+        for (final group in groups.values.whereType<LiveLineupGroup>())
+          if (_links(group).length > 1) group,
+      ];
+      switch (random.nextInt(16)) {
         case 0:
           strategy = strategy.rewritten(name: id('renamed'));
         case 1:
@@ -344,7 +348,7 @@ final class Generator {
           } else {
             groups[group.publicId] = lineupGroup(
               group.publicId,
-              pageId: pick(livePages),
+              pageId: chance(0.7) ? group.pagePublicId : pick(livePages),
               sortIndex: random.nextInt(3),
               notes: id('notes'),
               links: 1 + random.nextInt(2),
@@ -358,6 +362,21 @@ final class Generator {
               'type': 'sova',
             }),
           );
+        case 15 when twoGroups.isNotEmpty:
+          final from = pick(twoGroups);
+          final to = groups.values.whereType<LiveLineupGroup>().firstWhere(
+            (group) =>
+                group.publicId != from.publicId &&
+                group.pagePublicId == from.pagePublicId,
+            orElse: () => from,
+          );
+          if (identical(to, from)) break;
+          final moved = _links(from).last;
+          groups[from.publicId] = _withLinks(
+            from,
+            _links(from).take(_links(from).length - 1).toList(),
+          );
+          groups[to.publicId] = _withLinks(to, [..._links(to), moved]);
         case _:
           break;
       }
@@ -384,3 +403,143 @@ final class Generator {
     );
   }
 }
+
+final _future = jsonObject({
+  'fromALaterBuild': {'level': 7},
+});
+
+StrategyRowSet withUnknownFields(StrategyRowSet rows) => StrategyRowSet(
+  strategy: ReadableStrategy(
+    publicId: rows.strategy.publicId,
+    name: rows.strategy.name,
+    mapData: rows.strategy.mapData,
+    folderPublicId: rows.strategy.folderPublicId,
+    themeProfileId: rows.strategy.themeProfileId,
+    themeOverridePalette: rows.strategy.themeOverridePalette,
+    revision: rows.strategy.revision,
+    createdAt: rows.strategy.createdAt,
+    updatedAt: rows.strategy.updatedAt,
+    unknownFields: _future,
+  ),
+  pages: [
+    for (final page in rows.pages)
+      if (page case LivePage())
+        LivePage(
+          publicId: page.publicId,
+          strategyPublicId: page.strategyPublicId,
+          name: page.name,
+          isAutoNamed: page.isAutoNamed,
+          sortIndex: page.sortIndex,
+          isAttack: page.isAttack,
+          revision: page.revision,
+          unknownFields: _future,
+        )
+      else
+        page,
+  ],
+  settings: [
+    for (final row in rows.settings)
+      if (row case ReadablePageSettings(:final settings?))
+        ReadablePageSettings(
+          pagePublicId: row.pagePublicId,
+          settings: PageSettings.keeping(
+            agentSize: settings.agentSize,
+            abilitySize: settings.abilitySize,
+            useNeutralTeamColors: settings.useNeutralTeamColors,
+            unknownFields: _future.toMap(),
+          ),
+          revision: row.revision,
+          unknownFields: _future,
+        )
+      else
+        row,
+  ],
+  elements: [
+    for (final row in rows.elements)
+      if (row case LiveElement(:final payload))
+        LiveElement(
+          publicId: row.publicId,
+          pagePublicId: row.pagePublicId,
+          payload: ElementPayload(
+            kind: payload.kind,
+            payloadVersion: payload.payloadVersion,
+            data: {
+              ...payload.data.toMap(),
+              'fromALaterBuild': {'x': 1},
+            },
+            unknownFields: _future.toMap(),
+          ),
+          sortIndex: row.sortIndex,
+          revision: row.revision,
+          unknownFields: _future,
+        )
+      else
+        row,
+  ],
+  lineupGroups: [
+    for (final row in rows.lineupGroups)
+      if (row case LiveLineupGroup(:final payload))
+        LiveLineupGroup(
+          publicId: row.publicId,
+          strategyPublicId: row.strategyPublicId,
+          pagePublicId: row.pagePublicId,
+          payload: LineupGroupPayload(
+            payloadVersion: payload.payloadVersion,
+            data: {
+              ...payload.data.toJson(),
+              'fromALaterBuild': true,
+              'links': [
+                for (final link in payload.data.toJson()['links']! as List)
+                  {...link as Map<String, Object?>, 'laterNote': 'kept'},
+              ],
+            },
+            unknownFields: _future.toMap(),
+          ),
+          sortIndex: row.sortIndex,
+          revision: row.revision,
+          unknownFields: _future,
+        )
+      else
+        row,
+  ],
+);
+
+typedef _Link = (
+  Map<String, Object?> origin,
+  Map<String, Object?> landing,
+  Map<String, Object?> link,
+);
+
+List<_Link> _links(LiveLineupGroup group) {
+  final data = group.payload.data.toJson();
+  final origins = {
+    for (final item in data['origins']! as List)
+      (item as Map<String, Object?>)['id']: item,
+  };
+  final landings = {
+    for (final item in data['landings']! as List)
+      (item as Map<String, Object?>)['id']: item,
+  };
+  return [
+    for (final link in (data['links']! as List).cast<Map<String, Object?>>())
+      (origins[link['originId']]!, landings[link['landingId']]!, link),
+  ];
+}
+
+LiveLineupGroup _withLinks(LiveLineupGroup group, List<_Link> links) =>
+    LiveLineupGroup(
+      publicId: group.publicId,
+      strategyPublicId: group.strategyPublicId,
+      pagePublicId: group.pagePublicId,
+      payload: LineupGroupPayload(
+        payloadVersion: group.payload.payloadVersion,
+        data: {
+          ...group.payload.data.toJson(),
+          'origins': [for (final link in links) link.$1],
+          'landings': [for (final link in links) link.$2],
+          'links': [for (final link in links) link.$3],
+        },
+      ),
+      sortIndex: group.sortIndex,
+      revision: group.revision,
+    );

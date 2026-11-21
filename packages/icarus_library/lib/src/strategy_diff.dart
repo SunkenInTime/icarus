@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'derived_id.dart';
+import 'field_merge.dart';
 import 'field_rules.dart';
 import 'json.dart';
 import 'ops.dart';
@@ -53,6 +54,12 @@ final class KindChanged extends DiffRefusal {
   final RowKey key;
 }
 
+final class SettingsUnreachable extends DiffRefusal {
+  const SettingsUnreachable(this.key);
+
+  final PageKey key;
+}
+
 final class FolderChanged extends DiffRefusal {
   const FolderChanged();
 }
@@ -67,9 +74,9 @@ StrategyDiff diffStrategy(
   required String editId,
 }) {
   final plan = _Plan(stored, target);
-  return switch (plan.refusals().take(1).toList()) {
-    [final refusal] => DiffRefused(refusal),
-    _ => DiffOps(_Ops(plan, editId).build()),
+  return switch (plan.refusals()) {
+    [final refusal, ...] => DiffRefused(refusal),
+    [] => DiffOps(_Ops(plan, editId).build()),
   };
 }
 
@@ -91,6 +98,9 @@ bool _isUnreadable(Row row) =>
     row is UnreadableLineupGroup;
 
 String _idOf(Row row) => row.key.id;
+
+Map<String, Object?> _withDefaults(JsonObject data) =>
+    withFieldDefaults(data)! as Map<String, Object?>;
 
 sealed class _Payload {
   const _Payload();
@@ -132,6 +142,94 @@ _Payload _clearing(ElementPayload stored, ElementPayload wanted) {
   );
 }
 
+List<String> _changedFields(ElementPayload stored, ElementPayload wanted) {
+  if (sameJsonTree(stored.data, wanted.data)) return const [];
+  final before = _withDefaults(stored.data);
+  final after = _withDefaults(wanted.data);
+  return groupedFields(wanted.kind, before, after, {
+    for (final key in after.keys)
+      if (!sameJson(before[key], after[key])) key,
+  });
+}
+
+LineupGroupPayload _keepingItemFields(
+  LineupGroupPayload stored,
+  LineupGroupPayload wanted,
+) {
+  final data = wanted.data.toJson();
+  for (final collection in lineupCollections) {
+    final kept = {
+      for (final item in lineupItems(stored.data.toJson(), collection))
+        item['id']: item,
+    };
+    if (data[collection] case final List<Object?> items) {
+      data[collection] = [
+        for (final item in items)
+          if (item case final Map<String, Object?> map
+              when kept[map['id']] != null)
+            {...kept[map['id']]!, ...map}
+          else
+            item,
+      ];
+    }
+  }
+  return LineupGroupPayload(
+    payloadVersion: wanted.payloadVersion,
+    data: data,
+    unknownFields: wanted.unknownFields.toMap(),
+  );
+}
+
+Set<String> _itemIds(LineupGroupPayload payload) => {
+  for (final collection in lineupCollections)
+    for (final item in lineupItems(payload.data.toJson(), collection))
+      if (item['id'] case final String id) '$collection/$id',
+};
+
+typedef _MakeOp = StrategyOp Function(String opId);
+
+final class _Planned {
+  final _made = <(String, _MakeOp)>[];
+
+  void add(String rowId, _MakeOp make) => _made.add((rowId, make));
+
+  Iterable<_MakeOp> get inIdOrder =>
+      (_made.toList()..sort((a, b) => a.$1.compareTo(b.$1))).map(
+        (planned) => planned.$2,
+      );
+}
+
+bool _sameSettings(PageSettings a, PageSettings b) =>
+    a.agentSize == b.agentSize &&
+    a.abilitySize == b.abilitySize &&
+    a.useNeutralTeamColors == b.useNeutralTeamColors;
+
+PageSettings _settingsKeeping(PageSettings? stored, PageSettings wanted) =>
+    PageSettings.keeping(
+      agentSize: wanted.agentSize,
+      abilitySize: wanted.abilitySize,
+      useNeutralTeamColors: wanted.useNeutralTeamColors,
+      unknownFields: {
+        ...?stored?.unknownFields.toMap(),
+        ...wanted.unknownFields.toMap(),
+      },
+    );
+
+bool _samePalette(ThemePalette? a, ThemePalette? b) => a == null || b == null
+    ? a == b
+    : a.base == b.base && a.detail == b.detail && a.highlight == b.highlight;
+
+ThemePalette _paletteKeeping(ThemePalette? stored, ThemePalette wanted) =>
+    ThemePalette.keeping(
+      base: wanted.base,
+      detail: wanted.detail,
+      highlight: wanted.highlight,
+      unknownFields: {
+        ...?stored?.unknownFields.toMap(),
+        ...wanted.unknownFields.toMap(),
+      },
+    );
+
 final class _Plan {
   _Plan(this.stored, this.target)
     : storedPages = _livePagesInOrder(stored),
@@ -141,15 +239,12 @@ final class _Plan {
   final StrategyRowSet target;
   final List<LivePage> storedPages;
   final List<LivePage> targetPages;
-
-  late final Map<String, _Payload> payloads = {
-    for (final element in target.elements.whereType<LiveElement>())
-      if (stored.element(element.publicId) case final before?)
-        if (before case ReadableElementRow(
-          :final payload,
-        ) when before is DeletedElement || payload.kind == element.payload.kind)
-          element.publicId: _clearing(payload, element.payload),
-  };
+  final _refusals = <DiffRefusal>[];
+  final elementOps = _Planned();
+  final groupDeletes = _Planned();
+  final groupMovesOut = _Planned();
+  final groupAdds = _Planned();
+  final groupEdits = _Planned();
 
   late final Set<String> targetPageIds = {
     for (final page in targetPages) page.publicId,
@@ -164,6 +259,10 @@ final class _Plan {
     for (final page in storedPages)
       if (!targetPageIds.contains(page.publicId)) page,
   ];
+
+  late final Set<String> _removedPageIds = {
+    for (final page in removedPages) page.publicId,
+  };
 
   bool get changesPageList =>
       addedPages.isNotEmpty ||
@@ -180,16 +279,30 @@ final class _Plan {
       a.length == b.length &&
       [for (var i = 0; i < a.length; i++) i].every((i) => a[i] == b[i]);
 
-  bool onTrashedPage(Row row) => switch (row) {
+  static String? _pageOf(Row row) => switch (row) {
     ElementRow(:final pagePublicId) ||
-    LineupGroupRow(:final pagePublicId) => switch (stored.page(pagePublicId)) {
-      LivePage() || UnreadablePage(trashed: false) => false,
-      _ => true,
-    },
-    _ => false,
+    LineupGroupRow(:final pagePublicId) => pagePublicId,
+    _ => null,
   };
 
-  Iterable<DiffRefusal> refusals() sync* {
+  bool _inStoredTrash(Row row) => switch (stored.page(_pageOf(row) ?? '')) {
+    LivePage() || UnreadablePage(trashed: false) => false,
+    _ => true,
+  };
+
+  bool _inTargetTrash(Row row) => !targetPageIds.contains(_pageOf(row));
+
+  bool staysWithItsPage(Row row) =>
+      _inStoredTrash(row) || _removedPageIds.contains(_pageOf(row));
+
+  List<DiffRefusal> refusals() {
+    final found = [..._shapeRefusals()];
+    _planElements();
+    _planLineupGroups();
+    return [...found, ..._refusals];
+  }
+
+  Iterable<DiffRefusal> _shapeRefusals() sync* {
     if (stored.strategy.folderPublicId != target.strategy.folderPublicId) {
       yield const FolderChanged();
     }
@@ -206,14 +319,12 @@ final class _Plan {
     );
     if (changesPageList) {
       for (final page in stored.pages) {
-        if (page case UnreadablePage(trashed: false)) {
+        if (page case UnreadablePage(:final trashed) when trashed != true) {
           yield RowNotReadable(page.key);
         }
       }
     }
     yield* _pageRefusals();
-    yield* _elementRefusals();
-    yield* _lineupRefusals();
   }
 
   Iterable<DiffRefusal> _carried<R extends Row>(
@@ -233,7 +344,8 @@ final class _Plan {
 
   Iterable<DiffRefusal> _pageRefusals() sync* {
     for (final page in targetPages) {
-      switch (stored.page(page.publicId)) {
+      final before = stored.page(page.publicId);
+      switch (before) {
         case TrashedPage(:final key):
           yield RowInTrash(key);
         case LivePage(isAutoNamed: _?) when page.isAutoNamed == null:
@@ -241,58 +353,303 @@ final class _Plan {
         case _:
           break;
       }
-      if ((stored.settingsOf(page.publicId), target.settingsOf(page.publicId))
-          case (
-            ReadablePageSettings(settings: _?),
-            ReadablePageSettings(settings: null, :final key),
-          ) when stored.page(page.publicId) is LivePage) {
-        yield FieldNotClearable(key, 'settings');
-      }
+      final reachable = switch ((
+        before,
+        stored.settingsOf(page.publicId),
+        target.settingsOf(page.publicId),
+      )) {
+        (null, _, ReadablePageSettings()) => true,
+        (null, _, _) => false,
+        (LivePage(), null, null) => true,
+        (LivePage(), ReadablePageSettings(settings: null), _) ||
+        (
+          LivePage(),
+          ReadablePageSettings(),
+          ReadablePageSettings(settings: _?),
+        ) => true,
+        (LivePage(), ReadablePageSettings(), _) => false,
+        (LivePage(), null, _) => false,
+        _ => true,
+      };
+      if (!reachable) yield SettingsUnreachable(page.key);
     }
   }
 
-  Iterable<DiffRefusal> _elementRefusals() sync* {
-    for (final element in target.elements.whereType<LiveElement>()) {
-      switch (stored.element(element.publicId)) {
-        case null || UnreadableElement():
-          break;
-        case final ReadableElementRow before when onTrashedPage(before):
-          yield RowInTrash(before.key);
-        case LiveElement(:final payload)
-            when payload.kind != element.payload.kind:
-          yield KindChanged(element.key);
-        case ReadableElementRow():
-          if (payloads[element.publicId] case _NotClearable(:final field)) {
-            yield FieldNotClearable(element.key, field);
+  void _planElements() {
+    final wanted = target.elements.whereType<LiveElement>().toList();
+    final wantedIds = {for (final element in wanted) element.publicId};
+    for (final element in wanted) {
+      final before = stored.element(element.publicId);
+      if (before is UnreadableElement) continue;
+      if (_inTargetTrash(element) ||
+          (before != null && _inStoredTrash(before))) {
+        if (!_sameElement(before, element)) {
+          _refusals.add(RowInTrash(element.key));
+        }
+        continue;
+      }
+      switch (before) {
+        case null:
+          elementOps.add(
+            element.publicId,
+            (opId) => ElementAddOp(
+              opId: opId,
+              elementPublicId: element.publicId,
+              pagePublicId: element.pagePublicId,
+              payload: element.payload,
+              sortIndex: element.sortIndex,
+            ),
+          );
+        case DeletedElement(:final payload, :final revision):
+          switch (_clearing(payload, element.payload)) {
+            case _NotClearable(:final field):
+              _refusals.add(FieldNotClearable(element.key, field));
+            case _Written(payload: final written):
+              elementOps.add(
+                element.publicId,
+                (opId) => ElementAddOp(
+                  opId: opId,
+                  elementPublicId: element.publicId,
+                  pagePublicId: element.pagePublicId,
+                  payload: written,
+                  sortIndex: element.sortIndex,
+                  expectedElementRevision: revision,
+                ),
+              );
           }
+        case final LiveElement live:
+          _planElementEdit(live, element);
+        case UnreadableElement():
+          break;
+      }
+    }
+    for (final element in stored.elements.whereType<LiveElement>()) {
+      if (wantedIds.contains(element.publicId) || staysWithItsPage(element)) {
+        continue;
+      }
+      elementOps.add(
+        element.publicId,
+        (opId) => ElementDeleteOp(
+          opId: opId,
+          elementPublicId: element.publicId,
+          pagePublicId: element.pagePublicId,
+          expectedElementRevision: element.revision,
+        ),
+      );
+    }
+  }
+
+  void _planElementEdit(LiveElement before, LiveElement wanted) {
+    if (_sameElement(before, wanted)) return;
+    if (before.payload.kind != wanted.payload.kind) {
+      _refusals.add(KindChanged(wanted.key));
+      return;
+    }
+    final ElementPayload desired;
+    switch (_clearing(before.payload, wanted.payload)) {
+      case _NotClearable(:final field):
+        _refusals.add(FieldNotClearable(wanted.key, field));
+        return;
+      case _Written(:final payload):
+        desired = payload;
+    }
+    final movesPage = before.pagePublicId != wanted.pagePublicId;
+    final movesPlace = before.sortIndex != wanted.sortIndex;
+    final samePayload = _samePayload(before.payload, desired);
+    final whole =
+        !samePayload &&
+        switch (elementEdit(before.payload, desired)) {
+          WholeEdit() => true,
+          FieldEdit() => false,
+        };
+    final fields = whole || samePayload
+        ? const <String>[]
+        : _changedFields(before.payload, desired);
+    if (!whole && fields.isEmpty && !movesPage && !movesPlace) return;
+    final merged = switch (fields.isEmpty
+        ? Merged(before.payload)
+        : mergeElementPayload(
+            before.payload,
+            desired,
+            FieldMerge(fields: fields),
+          )) {
+      Merged(:final value) when !whole => value,
+      _ => null,
+    };
+    if (merged != null && !movesPage && fields.length < maxMergeFields) {
+      elementOps.add(
+        wanted.publicId,
+        (opId) => ElementPatchOp(
+          opId: opId,
+          elementPublicId: wanted.publicId,
+          payload: fields.isEmpty ? null : desired,
+          sortIndex: wanted.sortIndex,
+          expectedElementRevision: before.revision,
+          merge: FieldMerge(fields: [...fields, if (movesPlace) placeField]),
+        ),
+      );
+      return;
+    }
+    elementOps.add(
+      wanted.publicId,
+      (opId) => ElementPatchOp(
+        opId: opId,
+        elementPublicId: wanted.publicId,
+        pagePublicId: movesPage ? wanted.pagePublicId : null,
+        payload: merged ?? desired,
+        sortIndex: wanted.sortIndex,
+        expectedElementRevision: before.revision,
+      ),
+    );
+  }
+
+  void _planLineupGroups() {
+    final wanted = target.lineupGroups.whereType<LiveLineupGroup>().toList();
+    final wantedIds = {for (final group in wanted) group.publicId};
+    final elsewhere = <String, String>{
+      for (final group in wanted)
+        for (final item in _itemIds(group.payload)) item: group.publicId,
+    };
+    for (final group in stored.lineupGroups.whereType<LiveLineupGroup>()) {
+      if (wantedIds.contains(group.publicId) || staysWithItsPage(group)) {
+        continue;
+      }
+      groupDeletes.add(group.publicId, _deleteGroup(group));
+    }
+    for (final group in wanted) {
+      final before = stored.lineupGroup(group.publicId);
+      if (before is UnreadableLineupGroup) continue;
+      if (_inTargetTrash(group) || (before != null && _inStoredTrash(before))) {
+        if (!(before is LiveLineupGroup && _sameGroup(before, group))) {
+          _refusals.add(RowInTrash(group.key));
+        }
+        continue;
+      }
+      switch (before) {
+        case null:
+          groupAdds.add(group.publicId, _addGroup(group, group.payload, null));
+        case DeletedLineupGroup(:final revision):
+          groupAdds.add(
+            group.publicId,
+            _addGroup(group, group.payload, revision),
+          );
+        case final LiveLineupGroup live:
+          _planGroupEdit(live, group, elsewhere);
+        case UnreadableLineupGroup():
+          break;
       }
     }
   }
 
-  Iterable<DiffRefusal> _lineupRefusals() sync* {
-    for (final group in target.lineupGroups.whereType<LiveLineupGroup>()) {
-      final before = stored.lineupGroup(group.publicId);
-      if (before case final LiveLineupGroup live
-          when onTrashedPage(live) && !_sameGroup(live, group)) {
-        yield RowInTrash(live.key);
-      } else if (before case DeletedLineupGroup() when onTrashedPage(before)) {
-        yield RowInTrash(before.key);
-      }
+  void _planGroupEdit(
+    LiveLineupGroup before,
+    LiveLineupGroup wanted,
+    Map<String, String> elsewhere,
+  ) {
+    if (_sameGroup(before, wanted)) return;
+    final desired = _keepingItemFields(before.payload, wanted.payload);
+    final shape = lineupEdit(before.payload, desired);
+    final movesPlace = before.sortIndex != wanted.sortIndex;
+    final fields = switch (shape) {
+      FieldEdit(:final fields) => fields,
+      WholeEdit() => const <String>[],
+    };
+    if (shape is FieldEdit &&
+        fields.isEmpty &&
+        !movesPlace &&
+        before.pagePublicId == wanted.pagePublicId) {
+      return;
     }
+    final merged = switch (shape) {
+      FieldEdit() => switch (mergeLineupPayload(
+        before.payload,
+        desired,
+        FieldMerge(fields: fields),
+      )) {
+        Merged(:final value) => value,
+        _ => desired,
+      },
+      WholeEdit() => desired,
+    };
+    if (shape is WholeEdit ||
+        before.pagePublicId != wanted.pagePublicId ||
+        fields.length >= maxMergeFields) {
+      groupDeletes.add(before.publicId, _deleteGroup(before));
+      groupAdds.add(
+        wanted.publicId,
+        _addGroup(wanted, merged, before.revision + 1),
+      );
+      return;
+    }
+    final leaving = [
+      for (final field in fields)
+        if (elsewhere[field] case final owner? when owner != wanted.publicId)
+          field,
+    ];
+    final staying = [
+      for (final field in fields)
+        if (!leaving.contains(field)) field,
+    ];
+    if (leaving.isNotEmpty) {
+      groupMovesOut.add(
+        before.publicId,
+        (opId) => LineupGroupPatchOp(
+          opId: opId,
+          lineupPublicId: before.publicId,
+          payload: desired,
+          expectedLineupRevision: before.revision,
+          merge: FieldMerge(fields: leaving),
+        ),
+      );
+    }
+    if (staying.isEmpty && !movesPlace) return;
+    final revision = before.revision + (leaving.isEmpty ? 0 : 1);
+    groupEdits.add(
+      before.publicId,
+      (opId) => LineupGroupPatchOp(
+        opId: opId,
+        lineupPublicId: before.publicId,
+        payload: staying.isEmpty ? null : desired,
+        sortIndex: wanted.sortIndex,
+        expectedLineupRevision: revision,
+        merge: FieldMerge(fields: [...staying, if (movesPlace) placeField]),
+      ),
+    );
   }
+
+  static _MakeOp _deleteGroup(LiveLineupGroup group) =>
+      (opId) => LineupGroupDeleteOp(
+        opId: opId,
+        lineupPublicId: group.publicId,
+        pagePublicId: group.pagePublicId,
+        expectedLineupRevision: group.revision,
+      );
+
+  static _MakeOp _addGroup(
+    LiveLineupGroup group,
+    LineupGroupPayload payload,
+    int? revision,
+  ) =>
+      (opId) => LineupGroupAddOp(
+        opId: opId,
+        lineupPublicId: group.publicId,
+        pagePublicId: group.pagePublicId,
+        payload: payload,
+        sortIndex: group.sortIndex,
+        expectedLineupRevision: revision,
+      );
 }
 
 final class _Ops {
   _Ops(this.plan, this.editId)
-    : _strategyRevision = plan.stored.strategy.revision;
+    : _strategyRevision = plan.stored.strategy.revision,
+      _pages = [for (final page in plan.storedPages) _Page.stored(page)];
 
   final _Plan plan;
   final String editId;
   final _ops = <StrategyOp>[];
   int _strategyRevision;
-  late final List<_Page> _pages = [
-    for (final page in plan.storedPages) _Page.stored(page),
-  ];
+  final List<_Page> _pages;
 
   StrategyRowSet get stored => plan.stored;
 
@@ -300,15 +657,25 @@ final class _Ops {
 
   String get _opId => derivedId(jsonEncode([editId, _ops.length]));
 
+  void _emit(Iterable<_MakeOp> made) {
+    for (final make in made) {
+      _ops.add(make(_opId));
+    }
+  }
+
   List<StrategyOp> build() {
     _patchStrategy();
     plan.addedPages.forEach(_addPage);
-    _elements();
-    _lineupGroups();
+    _emit(plan.elementOps.inIdOrder);
+    _emit(plan.groupDeletes.inIdOrder);
+    _emit(plan.groupMovesOut.inIdOrder);
+    _emit(plan.groupAdds.inIdOrder);
+    _emit(plan.groupEdits.inIdOrder);
     plan.removedPages.forEach(_deletePage);
     if (plan.changesPageList) _reorder();
+    final byId = {for (final page in _pages) page.publicId: page};
     for (final page in plan.targetPages) {
-      _patchPage(page);
+      _patchPage(byId[page.publicId]!, page);
       _patchSettings(page);
     }
     return _ops;
@@ -328,10 +695,18 @@ final class _Ops {
       name: before.name == after.name ? null : after.name,
       mapData: before.mapData == after.mapData ? null : after.mapData,
       themeProfile: _valueEdit(before.themeProfileId, after.themeProfileId),
-      themeOverridePalette: _valueEdit(
-        before.themeOverridePalette,
-        after.themeOverridePalette,
-      ),
+      themeOverridePalette: switch (after.themeOverridePalette) {
+        _
+            when _samePalette(
+              before.themeOverridePalette,
+              after.themeOverridePalette,
+            ) =>
+          const KeepValue(),
+        null => const ClearValue(),
+        final palette => SetValue(
+          _paletteKeeping(before.themeOverridePalette, palette),
+        ),
+      },
     );
     if (op.name != null ||
         op.mapData != null ||
@@ -348,13 +723,10 @@ final class _Ops {
         final value => SetValue<T>(value),
       };
 
-  void _place(List<_Page> order) {
-    for (final (index, page) in order.indexed) {
+  void _placeAll() {
+    for (final (index, page) in _pages.indexed) {
       page.place(index);
     }
-    _pages
-      ..clear()
-      ..addAll(order);
   }
 
   void _addPage(LivePage page) {
@@ -374,7 +746,7 @@ final class _Ops {
         expectedStrategyRevision: _strategyRevision,
       ),
     );
-    _place([..._pages]);
+    _placeAll();
     _pages.add(_Page.added(page, sortIndex));
   }
 
@@ -386,36 +758,35 @@ final class _Ops {
         expectedStrategyRevision: _strategyRevision,
       ),
     );
-    _place([
-      for (final kept in _pages)
-        if (kept.publicId != page.publicId) kept,
-    ]);
+    _pages.removeWhere((kept) => kept.publicId == page.publicId);
+    _placeAll();
   }
 
   void _reorder() {
-    final byId = {for (final page in _pages) page.publicId: page};
+    final position = {
+      for (final (index, page) in _pages.indexed) page.publicId: index,
+    };
     for (final (index, wanted) in plan.targetPages.indexed) {
-      final page = byId[wanted.publicId]!;
-      final current = _pages.indexOf(page);
+      final current = position[wanted.publicId]!;
       if (current == index) continue;
       _raiseStrategy(
         PageReorderOp(
           opId: _opId,
-          pagePublicId: page.publicId,
+          pagePublicId: wanted.publicId,
           sortIndex: index,
           expectedStrategyRevision: _strategyRevision,
         ),
       );
-      _place(
-        [..._pages]
-          ..removeAt(current)
-          ..insert(index, page),
-      );
+      final page = _pages.removeAt(current);
+      _pages.insert(index, page);
+      for (var i = index; i <= current; i++) {
+        position[_pages[i].publicId] = i;
+      }
+      _placeAll();
     }
   }
 
-  void _patchPage(LivePage wanted) {
-    final page = _pages.firstWhere((page) => page.publicId == wanted.publicId);
+  void _patchPage(_Page page, LivePage wanted) {
     final name = page.name == wanted.name ? null : wanted.name;
     final isAutoNamed = page.isAutoNamed == wanted.isAutoNamed
         ? null
@@ -440,126 +811,24 @@ final class _Ops {
         case (
           ReadablePageSettings(:final settings, :final revision),
           ReadablePageSettings(settings: final wanted?),
-        ) when settings != wanted) {
+        ) when settings == null || !_sameSettings(settings, wanted)) {
       _ops.add(
         PageSettingsPatchOp(
           opId: _opId,
           pagePublicId: page.publicId,
-          settings: wanted,
+          settings: _settingsKeeping(settings, wanted),
           expectedPageSettingsRevision: revision,
         ),
       );
     }
   }
-
-  void _elements() {
-    final wantedIds = <String>{};
-    for (final element in target.elements.whereType<LiveElement>()) {
-      wantedIds.add(element.publicId);
-      final payload = switch (plan.payloads[element.publicId]) {
-        _Written(:final payload) => payload,
-        _NotClearable() || null => element.payload,
-      };
-      switch (stored.element(element.publicId)) {
-        case null:
-          _ops.add(
-            ElementAddOp(
-              opId: _opId,
-              elementPublicId: element.publicId,
-              pagePublicId: element.pagePublicId,
-              payload: payload,
-              sortIndex: element.sortIndex,
-            ),
-          );
-        case DeletedElement(:final revision):
-          _ops.add(
-            ElementAddOp(
-              opId: _opId,
-              elementPublicId: element.publicId,
-              pagePublicId: element.pagePublicId,
-              payload: payload,
-              sortIndex: element.sortIndex,
-              expectedElementRevision: revision,
-            ),
-          );
-        case final LiveElement before:
-          final moved = before.pagePublicId != element.pagePublicId;
-          if (_samePayload(payload, before.payload) &&
-              !moved &&
-              before.sortIndex == element.sortIndex) {
-            continue;
-          }
-          _ops.add(
-            ElementPatchOp(
-              opId: _opId,
-              elementPublicId: element.publicId,
-              pagePublicId: moved ? element.pagePublicId : null,
-              payload: payload,
-              sortIndex: element.sortIndex,
-              expectedElementRevision: before.revision,
-            ),
-          );
-        case UnreadableElement():
-          break;
-      }
-    }
-    for (final element in stored.elements.whereType<LiveElement>()) {
-      if (wantedIds.contains(element.publicId) || plan.onTrashedPage(element)) {
-        continue;
-      }
-      _ops.add(
-        ElementDeleteOp(
-          opId: _opId,
-          elementPublicId: element.publicId,
-          pagePublicId: element.pagePublicId,
-          expectedElementRevision: element.revision,
-        ),
-      );
-    }
-  }
-
-  void _lineupGroups() {
-    final wanted = {
-      for (final group in target.lineupGroups.whereType<LiveLineupGroup>())
-        group.publicId: group,
-    };
-    final deletedAt = <String, int>{};
-    for (final group in stored.lineupGroups) {
-      switch (group) {
-        case DeletedLineupGroup(:final publicId, :final revision):
-          deletedAt[publicId] = revision;
-        case LiveLineupGroup() when _sameGroup(group, wanted[group.publicId]):
-          wanted.remove(group.publicId);
-        case LiveLineupGroup() when plan.onTrashedPage(group):
-          break;
-        case LiveLineupGroup(:final publicId, :final revision):
-          _ops.add(
-            LineupGroupDeleteOp(
-              opId: _opId,
-              lineupPublicId: publicId,
-              pagePublicId: group.pagePublicId,
-              expectedLineupRevision: revision,
-            ),
-          );
-          deletedAt[publicId] = revision + 1;
-        case UnreadableLineupGroup():
-          break;
-      }
-    }
-    for (final group in wanted.values) {
-      _ops.add(
-        LineupGroupAddOp(
-          opId: _opId,
-          lineupPublicId: group.publicId,
-          pagePublicId: group.pagePublicId,
-          payload: group.payload,
-          sortIndex: group.sortIndex,
-          expectedLineupRevision: deletedAt[group.publicId],
-        ),
-      );
-    }
-  }
 }
+
+bool _sameElement(ElementRow? stored, LiveElement wanted) =>
+    stored is LiveElement &&
+    stored.pagePublicId == wanted.pagePublicId &&
+    stored.sortIndex == wanted.sortIndex &&
+    _samePayload(stored.payload, wanted.payload);
 
 bool _samePayload(ElementPayload a, ElementPayload b) =>
     a.kind == b.kind &&
@@ -567,8 +836,7 @@ bool _samePayload(ElementPayload a, ElementPayload b) =>
     sameJsonTree(a.data, b.data) &&
     sameJsonTree(a.unknownFields, b.unknownFields);
 
-bool _sameGroup(LiveLineupGroup stored, LiveLineupGroup? wanted) =>
-    wanted != null &&
+bool _sameGroup(LiveLineupGroup stored, LiveLineupGroup wanted) =>
     wanted.pagePublicId == stored.pagePublicId &&
     wanted.sortIndex == stored.sortIndex &&
     wanted.payload.payloadVersion == stored.payload.payloadVersion &&
