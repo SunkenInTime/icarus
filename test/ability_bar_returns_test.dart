@@ -40,6 +40,13 @@ void main() {
     expect(shown(), omen);
   });
 
+  test('moving or adding things on the select tool keeps the bar', () {
+    show(omen);
+    act(ActionGroup.agent);
+    act(ActionGroup.utility);
+    expect(shown(), omen);
+  });
+
   test('placing an ability keeps the bar', () {
     show(omen);
     act(ActionGroup.ability);
