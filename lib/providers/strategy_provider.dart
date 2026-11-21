@@ -16,6 +16,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
@@ -980,7 +981,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final updated =
         strat.copyWith(pages: reindexed, lastEdited: DateTime.now());
-    await box.put(updated.id, updated);
+    (await const LocalLibrary().changePages(updated)).orThrow();
   }
 
   Future<void> setActivePageAnimated(String pageID,
@@ -1134,7 +1135,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       pages: updatedPages,
       lastEdited: DateTime.now(),
     );
-    await box.put(updated.id, updated);
+    (await const LocalLibrary().changePages(updated)).orThrow();
     return PageCopyResult.copied;
   }
 
@@ -1579,7 +1580,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       lastEdited: DateTime.now(),
     );
     try {
-      await box.put(updated.id, updated);
+      (await const LocalLibrary().changePages(updated)).orThrow();
     } catch (error, stackTrace) {
       AppErrorReporter.reportWarning(
         'Writing lineups to another page failed.',
@@ -1961,7 +1962,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       pages: reindexed,
       lastEdited: DateTime.now(),
     );
-    await box.put(updated.id, updated);
+    (await const LocalLibrary().changePages(updated)).orThrow();
 
     await setActivePageAnimated(newPage.id);
     return none;
@@ -2033,10 +2034,10 @@ class StrategyProvider extends Notifier<StrategyState> {
         else
           page,
     ];
-    await box.put(
-      strat.id,
+    (await const LocalLibrary().changePages(
       strat.copyWith(pages: updatedPages, lastEdited: DateTime.now()),
-    );
+    ))
+        .orThrow();
   }
 
   /// Whether this call deleted the page. A cloud page then sits in the
@@ -2111,10 +2112,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     final nextActivePageId =
         activePageId == pageId ? reindexed.first.id : activePageId;
 
-    await box.put(
-      strat.id,
+    (await const LocalLibrary().changePages(
       strat.copyWith(pages: reindexed, lastEdited: DateTime.now()),
-    );
+    ))
+        .orThrow();
     if (nextActivePageId != null && nextActivePageId != activePageId) {
       await ref.read(strategyProvider.notifier).setActivePageAnimated(
             nextActivePageId,
@@ -2171,8 +2172,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
       if (migratedStrategy != newStrat) {
         await opening.wait(
-          Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-              .put(migratedStrategy.id, migratedStrategy),
+          const LocalLibrary()
+              .replaceAfterMigration(migratedStrategy)
+              .then((written) => written.orThrow()),
         );
       }
 
@@ -2327,7 +2329,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       return newStrategy;
     }
 
-    await box.put(newStrategy.id, newStrategy);
+    (await const LocalLibrary().addStrategy(newStrategy)).orThrow();
 
     unawaited(AnalyticsService.instance.capture('strategy_created'));
 
@@ -2392,8 +2394,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final strategy = strategyBox.get(strategyID);
 
     if (strategy != null) {
-      strategy.name = newName;
-      await strategy.save();
+      (await const LocalLibrary().renameStrategy(strategy, newName)).orThrow();
       if (state.strategyId == strategyID) {
         state = state.copyWith(strategyName: newName);
       }
@@ -2536,7 +2537,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       themeOverridePalette: originalStrategy.themeOverridePalette,
     );
 
-    await strategyBox.put(duplicatedStrategy.id, duplicatedStrategy);
+    (await const LocalLibrary().addStrategy(duplicatedStrategy)).orThrow();
     if (missingPictures > 0) {
       ref.read(cloudLibraryActionReporterProvider).showMessage(
             ref
@@ -2590,7 +2591,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         ref.read(l10nProvider).strategyMsgDeleteWhileMoving,
       );
     }
-    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(strategyID);
+    (await const LocalLibrary().deleteStrategy(strategyID)).orThrow();
     await forgetDeletedLocalStrategy(strategyID);
     return CloudLibraryActionResult.succeeded;
   }
@@ -2648,8 +2649,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       clearThemeOverridePalette: strategyTheme.overridePalette == null,
     );
 
-    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .put(currentStrategy.id, currentStrategy);
+    (await const LocalLibrary().saveStrategyFields(currentStrategy)).orThrow();
 
     ref
         .read(strategySaveStateProvider.notifier)
@@ -2767,7 +2767,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       ],
       lastEdited: DateTime.now(),
     );
-    await box.put(updated.id, updated);
+    (await const LocalLibrary().changePages(updated)).orThrow();
   }
 
   /// Side changes asked for by a switchSide call whose enqueue has not
@@ -2874,7 +2874,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       clearThemeOverridePalette: strategyTheme.overridePalette == null,
       lastEdited: DateTime.now(),
     );
-    await box.put(updated.id, updated);
+    (await const LocalLibrary().changePages(updated)).orThrow();
     setUnsaved();
   }
 
@@ -2933,8 +2933,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final strategy = strategyBox.get(strategyID);
 
     if (strategy != null) {
-      strategy.folderID = parentID;
-      await strategy.save();
+      (await const LocalLibrary().moveStrategy(strategy, parentID)).orThrow();
       return CloudLibraryActionResult.succeeded;
     } else {
       log("Strategy with ID $strategyID not found.");

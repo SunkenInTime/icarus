@@ -1,5 +1,6 @@
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/domain/folder.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 
 /// Puts every local folder and strategy whose folder no longer exists at the
@@ -23,16 +24,14 @@ Future<({int folders, int strategies})> moveOrphansToTopLevel(
   for (final folder in folders.values.toList()) {
     final parentId = folder.parentID;
     if (parentId == null || folders.containsKey(parentId)) continue;
-    folder.parentID = null;
-    await folder.save();
+    (await const LocalLibrary().moveFolder(folder, null)).orThrow();
     movedFolders++;
   }
   var movedStrategies = 0;
   for (final strategy in strategies.values.toList()) {
     final folderId = strategy.folderID;
     if (folderId == null || folders.containsKey(folderId)) continue;
-    strategy.folderID = null;
-    await strategy.save();
+    (await const LocalLibrary().moveStrategy(strategy, null)).orThrow();
     movedStrategies++;
   }
   return (folders: movedFolders, strategies: movedStrategies);

@@ -17,6 +17,7 @@ import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/services/cloud_needs_connection.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:uuid/uuid.dart';
 
 export 'package:icarus/domain/folder.dart' show Folder, FolderColor;
@@ -89,8 +90,7 @@ class FolderProvider extends Notifier<String?> {
       // Refuse rather than save into a library this platform keeps hidden.
       throw StateError('Folders here are created in the cloud only.');
     }
-    await Hive.box<Folder>(HiveBoxNames.foldersBox)
-        .put(newFolder.id, newFolder);
+    (await const LocalLibrary().addFolder(newFolder)).orThrow();
     return newFolder;
   }
 
@@ -259,11 +259,11 @@ class FolderProvider extends Notifier<String?> {
     // The two boxes are written separately. Should only one write land,
     // what is left still shows, and the next launch moves anything whose
     // folder is gone to the top level (moveOrphansToTopLevel).
-    final removals = [
-      strategies.deleteAll(strategyIds),
-      folders.deleteAll(folderIds),
-    ];
-    await Future.wait(removals);
+    (await const LocalLibrary().deleteFoldersWithStrategies(
+      folderIds: folderIds,
+      strategyIds: strategyIds,
+    ))
+        .orThrow();
 
     final strategyNotifier = ref.read(strategyProvider.notifier);
     for (final id in strategyIds) {
@@ -315,11 +315,14 @@ class FolderProvider extends Notifier<String?> {
       return result;
     }
 
-    folder.name = newName;
-    folder.iconId = newIconId;
-    folder.customColor = newCustomColor;
-    folder.color = newColor;
-    await folder.save();
+    (await const LocalLibrary().restyleFolder(
+      folder,
+      name: newName,
+      iconId: newIconId,
+      customColor: newCustomColor,
+      color: newColor,
+    ))
+        .orThrow();
     return CloudLibraryActionResult.succeeded;
   }
 
@@ -352,8 +355,7 @@ class FolderProvider extends Notifier<String?> {
     final folder = findLocalFolderByID(folderID);
 
     if (folder != null) {
-      folder.parentID = parentID;
-      await folder.save();
+      (await const LocalLibrary().moveFolder(folder, parentID)).orThrow();
     }
     return CloudLibraryActionResult.succeeded;
   }
