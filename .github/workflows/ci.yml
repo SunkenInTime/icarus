@@ -17,7 +17,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  RELEASE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  TESTED_SHA: ${{ github.sha }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
   FVM_HOME: ${{ github.workspace }}/.fvm_cache
 
 jobs:
@@ -248,10 +249,10 @@ jobs:
   comments:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -267,10 +268,10 @@ jobs:
     if: needs.changes.outputs.analyze == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -292,10 +293,10 @@ jobs:
     if: needs.changes.outputs.library == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
 
       - uses: ./.github/actions/setup-flutter
 
@@ -333,7 +334,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: library-parity-failures-${{ env.RELEASE_SOURCE_SHA }}
+          name: library-parity-failures-${{ env.HEAD_SHA }}
           path: build/library_parity/
           if-no-files-found: ignore
 
@@ -352,10 +353,10 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3, 4, 5]
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
 
       - uses: ./.github/actions/setup-flutter
 
@@ -376,10 +377,10 @@ jobs:
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
 
       - uses: ./.github/actions/setup-flutter
 
@@ -403,10 +404,10 @@ jobs:
       CONVEX_PREVIEW_NAME: typed-wrapper-contract-${{ github.run_id }}
 
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -501,10 +502,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
           persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -533,10 +534,10 @@ jobs:
       run:
         working-directory: presence
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -560,10 +561,10 @@ jobs:
     if: needs.changes.outputs.contract == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
           # The contract gate records the merge base with origin/main.
           # Fetch all branch history so that ref exists on PR and push runs.
           fetch-depth: 0
@@ -605,10 +606,10 @@ jobs:
     if: needs.changes.outputs.bridge == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
 
       - name: Test Native Convex Bridge
         run: |
@@ -636,10 +637,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
           persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -671,7 +672,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: gauntlet-report-${{ env.RELEASE_SOURCE_SHA }}
+          name: gauntlet-report-${{ env.HEAD_SHA }}
           path: ${{ runner.temp }}/gauntlet-report.json
           if-no-files-found: ignore
 
@@ -684,10 +685,10 @@ jobs:
     if: needs.changes.outputs.integrity == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
 
       - uses: ./.github/actions/setup-flutter
 
@@ -719,10 +720,10 @@ jobs:
     if: needs.changes.outputs.cones == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
 
       - name: Build Native Height Library
         run: |
@@ -760,10 +761,10 @@ jobs:
     if: needs.changes.outputs.desktop == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
 
       - name: Install Linux build dependencies
         run: |
@@ -791,10 +792,10 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
 
       - name: Test Release Safety Policy
         run: powershell -ExecutionPolicy Bypass -File scripts/test_release_safety.ps1
@@ -859,7 +860,7 @@ jobs:
       - name: Upload Windows Release Candidate
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: icarus-windows-rc-${{ env.RELEASE_SOURCE_SHA }}
+          name: icarus-windows-rc-${{ env.HEAD_SHA }}
           path: |
             build/installer/icarus-setup-*.exe
             ${{ runner.temp }}/icarus-online-beta-windows-smoke/evidence.json
@@ -879,10 +880,10 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - name: Checkout Release Source
+      - name: Checkout Tested Commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ env.RELEASE_SOURCE_SHA }}
+          ref: ${{ env.TESTED_SHA }}
 
       - uses: ./.github/actions/setup-flutter
 
