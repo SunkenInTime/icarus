@@ -228,10 +228,51 @@ void _endedStatus(StorageLease lease, String when) {
   if (lease.status is! Ended) _broke('a lease $when still says it holds');
 }
 
-Future<void> _turns(int count) async {
-  for (var i = 0; i < count; i++) {
-    await Future<void>.delayed(Duration.zero);
+Future<void> _heldThroughEnd(
+  EngineHarness harness,
+  Future<Object?> Function(StorageEngine engine, StorageLease lease) end,
+  String how,
+) async {
+  final first = await harness.open();
+  final second = await harness.open();
+  final held = await _lease(first);
+  final changes = [
+    for (var i = 0; i < 20; i++) Put(i.isEven ? 'a' : 'b', 'k$i', 'v$i'),
+  ];
+  const areas = {'a', 'b'};
+  final before = await _snapshot(held, areas);
+  final expected = _after(before, changes);
+  final pending = harness.holdNextWrite(first);
+  final writing = held.commit(changes);
+  await pending.reached;
+  final ending = end(first, held);
+  await Future.any([
+    ending,
+    Future<void>.delayed(const Duration(milliseconds: 200)),
+  ]);
+  StorageLease? next;
+  _Areas? atGrant;
+  if (await second.lease() case Leased(:final lease)) {
+    next = lease;
+    atGrant = await _snapshot(lease, areas);
+    await _put(lease, 'a', {'k0': 'next'}, 'the next holder\'s write');
   }
+  pending.letGo();
+  await ending;
+  next ??= await _lease(second);
+  atGrant ??= await _snapshot(next, areas);
+  final wrote = await writing;
+  _effect(wrote, before, expected, atGrant, 'a write held while $how');
+  final later = await _snapshot(next, areas);
+  final kept = {
+    for (final MapEntry(:key, :value) in atGrant.entries) key: {...value},
+  };
+  if (later['a']?['k0'] == 'next') kept['a']!['k0'] = 'next';
+  if (!_sameAreas(later, kept)) {
+    _broke('a write held while $how landed after the next lease was granted');
+  }
+  await harness.close(first);
+  await harness.close(second);
 }
 
 EngineCheck _check(
@@ -596,49 +637,49 @@ final List<EngineCheck> engineContract = [
   }),
   _check(
     'a write pending when its lease ends lands whole before the next grant or not at all',
-    (harness) async {
-      final first = await harness.open();
-      final second = await harness.open();
-      final held = await _lease(first);
-      final values = {for (var i = 0; i < 20; i++) 'k$i': 'v$i'};
-      final changes = [
-        for (final MapEntry(:key, :value) in values.entries)
-          Put('a', key, value),
-      ];
-      final before = await _snapshot(held, {'a'});
-      final expected = _after(before, changes);
-      final pending = harness.holdNextWrite(first);
-      final writing = held.commit(changes);
-      await pending.reached;
-      final releasing = held.release();
-      StorageLease? granted;
-      final leasing = second.lease().then((leasing) {
-        if (leasing case Leased(:final lease)) granted = lease;
-        return leasing;
-      });
-      await _turns(20);
-      _Areas? atGrant;
-      if (granted case final lease?) {
-        atGrant = await _snapshot(lease, {'a'});
-      }
-      pending.letGo();
-      await releasing;
-      final next = switch (await leasing) {
-        Leased(:final lease) => lease,
-        HeldByAnotherWriter() => await _lease(second),
-        LeaseFailed(:final failure) => _broke('leasing failed: $failure'),
-      };
-      atGrant ??= await _snapshot(next, {'a'});
-      final wrote = await writing;
-      final afterWrite = await _snapshot(next, {'a'});
-      if (!_sameAreas(afterWrite, atGrant)) {
-        _broke('the ended lease wrote after the next lease was granted');
-      }
-      _effect(wrote, before, expected, atGrant, 'the pending write');
-      await harness.close(first);
-      await harness.close(second);
-    },
+    (harness) => _heldThroughEnd(
+      harness,
+      (engine, lease) => lease.release(),
+      'released',
+    ),
   ),
+  _check(
+    'a write pending when its engine closes lands whole before the next grant or not at all',
+    (harness) => _heldThroughEnd(
+      harness,
+      (engine, lease) => harness.close(engine),
+      'closed',
+    ),
+  ),
+  _check(
+    'a commit across areas cut short by a crash is seen whole or not at all',
+    (harness) => _heldThroughEnd(
+      harness,
+      (engine, lease) => harness.crash(engine),
+      'crashed',
+    ),
+  ),
+  _check('grants one lease when two callers ask at the same moment', (
+    harness,
+  ) async {
+    final first = await harness.open();
+    final second = await harness.open();
+    for (final pair in [
+      [first, second],
+      [first, first],
+    ]) {
+      final asked = await Future.wait([pair[0].lease(), pair[1].lease()]);
+      final granted = asked.whereType<Leased>().toList();
+      if (granted.length != 1) {
+        _broke(
+          'two callers asking at once were granted ${granted.length} leases',
+        );
+      }
+      await granted.single.lease.release();
+    }
+    await harness.close(first);
+    await harness.close(second);
+  }),
   _check('an ended lease answers LeaseEnded before anything else', (
     harness,
   ) async {

@@ -28,6 +28,31 @@ final class FailingListLease extends ForwardingLease {
       : super.entries(area, prefix);
 }
 
+final class SlowRelease extends ForwardingLease {
+  SlowRelease(super.inner);
+
+  @override
+  Future<Releasing> release() async {
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    return super.release();
+  }
+}
+
+final class EndsAfterLastPageRead extends ForwardingLease {
+  EndsAfterLastPageRead(super.inner);
+
+  var _pagesRead = 0;
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async {
+    final listed = await super.entries(area, prefix);
+    if (prefix.startsWith('content/') && ++_pagesRead == 3) {
+      await inner.release();
+    }
+    return listed;
+  }
+}
+
 Future<LibraryStore> reopen(MemoryStorage disk) =>
     openStore(MemoryEngine(disk));
 
@@ -168,6 +193,27 @@ void main() {
     });
   }
 
+  test(
+    'a save in doubt returns once the storage can be opened again',
+    () async {
+      final disk = MemoryStorage(seeded);
+      final store = await openStore(
+        WrappingEngine(
+          MemoryEngine(disk),
+          (lease) => FlakyLease(SlowRelease(lease), {0: Failing.lost}),
+        ),
+      );
+      expect(
+        await store.commit(strategyId, moveJett),
+        isA<SaveInDoubt<Committed, CommitRefusal>>(),
+      );
+      expect(
+        await LibraryStore.open(MemoryEngine(disk), canRead: readsKnownKinds),
+        isA<StoreOpened>(),
+      );
+    },
+  );
+
   test('a refused commit changes nothing and leaves the store open', () async {
     final disk = MemoryStorage(seeded);
     final store = await openStore(
@@ -250,29 +296,49 @@ void main() {
       'library': {...seeded['library']!, summaryName(strategyId): '{}'},
     };
 
+    for (final how in [Failing.refused, Failing.lost]) {
+      test(
+        'with a damaged summary, on an engine whose commits are ${how.name}, '
+        'opens, commits nothing and lists the rebuilt summary',
+        () async {
+          final disk = MemoryStorage(damagedSummary());
+          final failing = {for (var i = 0; i < 10; i++) i: how};
+          final (engine, counts) = counting(flaky(MemoryEngine(disk), failing));
+          final store = await openStore(engine);
+          expect(counts.commits, 0);
+          expect(listOf(store).strategies.single.publicId, strategyId);
+          pageOf(await store.readPage(strategyId, 'page-a'));
+          expect(counts.commits, 0);
+          expect(store.library, isA<LibraryOpen>());
+          expect(sameContents(disk.contents, damagedSummary()), isTrue);
+        },
+      );
+    }
+
     test(
-      'at a summary repair that is refused still opens, listing the rebuilt summary',
+      'a summary rebuilt in memory is written by the next rebuild, though it compares equal',
       () async {
         final disk = MemoryStorage(damagedSummary());
-        final store = await openStore(
-          flaky(MemoryEngine(disk), {0: Failing.refused}),
+        final store = await openStore(MemoryEngine(disk));
+        expect(
+          await store.rebuildSummary(strategyId),
+          isA<Saved<StrategySummary, CommitRefusal>>(),
         );
-        expect(listOf(store).strategies.single.publicId, strategyId);
-        expect(sameContents(disk.contents, damagedSummary()), isTrue);
-        await store.close();
-        final repaired = await reopen(disk);
-        expect(listOf(repaired).strategies.single.publicId, strategyId);
         expect(sameContents(disk.contents, seeded), isTrue);
+        expect(
+          await store.rebuildSummary(strategyId),
+          isA<NothingToSave<StrategySummary, CommitRefusal>>(),
+        );
       },
     );
 
     test(
-      'at a summary repair in doubt does not open, and lets the next open repair it',
+      'when the lease ends after the repair has read every page does not open',
       () async {
         final disk = MemoryStorage(damagedSummary());
         expect(
           await LibraryStore.open(
-            flaky(MemoryEngine(disk), {0: Failing.lost}),
+            WrappingEngine(MemoryEngine(disk), EndsAfterLastPageRead.new),
             canRead: readsKnownKinds,
           ),
           isA<StoreNotOpened>().having(
@@ -282,9 +348,7 @@ void main() {
           ),
         );
         expect(sameContents(disk.contents, damagedSummary()), isTrue);
-        final repaired = await reopen(disk);
-        expect(listOf(repaired).strategies.single.publicId, strategyId);
-        expect(sameContents(disk.contents, seeded), isTrue);
+        expect(await reopen(disk), isA<LibraryStore>());
       },
     );
   });

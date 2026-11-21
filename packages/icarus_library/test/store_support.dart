@@ -6,7 +6,23 @@ import 'package:test/test.dart';
 
 import 'support.dart';
 
-bool readsKnownKinds(ElementPayload payload) => true;
+const readsKnownKinds = CanRead(
+  element: _anyElement,
+  lineupGroup: notesAreText,
+);
+
+bool _anyElement(ElementPayload payload) => true;
+
+bool notesAreText(LineupGroupPayload payload) =>
+    switch (payload.data['links']) {
+      final List<Object?> links => links.every(
+        (link) => switch (link) {
+          {'notes': final Object? notes} => notes == null || notes is String,
+          _ => true,
+        },
+      ),
+      _ => true,
+    };
 
 final editedAt = DateTime.utc(2026, 11, 20, 12);
 

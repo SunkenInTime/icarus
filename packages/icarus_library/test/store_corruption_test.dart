@@ -108,6 +108,8 @@ Future<View> viewOf(
               StoredRowRef(area, lineupName(pageId, group.publicId)),
             );
           }
+        case InUnreadableStrategy(:final listing):
+          fail('$id is unreadable: ${listing.header}');
         case NotFound():
           for (final element in elementsHere) {
             view['$id element ${element.publicId}'] = 'unreachable';
@@ -281,6 +283,10 @@ Outcome expected(String kind, Object? json, List<Object> at, Object? value) {
       const Unreadable(),
     ('lineup', ['data', 'links', _, 'originId' || 'landingId']) =>
       const Unreadable(),
+    ('lineup', ['data', 'links', _, 'notes']) => _either(
+      value == null || value is String,
+      replaced,
+    ),
     ('lineup', ['data', 'links', _, 'id']) => _either(
       value is String,
       replaced,
@@ -497,7 +503,8 @@ void main() {
               StoreNotOpened(:final problem) => fail('$where: $problem'),
             };
             final view = await viewOf(store, fixture, folderIds);
-            final unreachable = kind == 'page' && corruption.outcome is NoId
+            final orphaned = kind == 'page' && corruption.outcome is NoId;
+            final unreachable = orphaned
                 ? {
                     for (final row in fixture[owner]!.elements)
                       if (row.pagePublicId == words[2])
@@ -516,6 +523,10 @@ void main() {
                   NoId() => 'unplaced',
                   Rebuilt() => before,
                 }, reason: where);
+              } else if (row ==
+                      '$owner settings ${words.length > 2 ? words[2] : ''}' &&
+                  unreachable.isNotEmpty) {
+                expect(now, 'unplaced', reason: '$where: orphaned settings');
               } else if (unreachable.contains(row)) {
                 expect(now, 'unreachable', reason: where);
               } else {
@@ -552,7 +563,11 @@ void main() {
                         .having((some) => some.newer, 'newer', 1),
                   Unreadable() || NoId() =>
                     isA<SomeUnreadable>()
-                        .having((some) => some.damaged, 'damaged', 1)
+                        .having(
+                          (some) => some.damaged,
+                          'damaged',
+                          orphaned ? 2 + unreachable.length : 1,
+                        )
                         .having((some) => some.newer, 'newer', 0),
                 },
                 reason: '$where: the summary readability',

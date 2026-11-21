@@ -43,6 +43,12 @@ final class LoadedPage {
   final unplaced = <String, UnplacedRow>{};
   final foreignNames = <ForeignName>[];
 
+  bool get isEmpty =>
+      elements.isEmpty &&
+      lineupGroups.isEmpty &&
+      unknownKinds.isEmpty &&
+      unplaced.isEmpty;
+
   PageTally tally() {
     var tally = PageTally.empty
         .plusDamaged(unplaced.length)
@@ -124,6 +130,60 @@ final class LoadedStrategy {
       rowWithId(_settings, pagePublicId, (row) => row.pagePublicId);
 
   String? pageIdOf(String pageDigest) => _pages[pageDigest]?.publicId;
+
+  bool hasPageRow(String pageDigest) => _pages.containsKey(pageDigest);
+
+  Iterable<String> get pagesWithoutRow =>
+      _contentPages.where((page) => !_pages.containsKey(page));
+
+  Iterable<UnplacedRow> orphansUnder(String pageDigest) => [
+    if (!_pages.containsKey(pageDigest)) ...[
+      ...?_loaded[pageDigest]?.unplaced.values,
+      ...unplaced.values.where(
+        (row) => row.ref.name == SettingsName(pageDigest).name,
+      ),
+    ],
+  ];
+
+  List<UnplacedRow> get allUnplaced => [
+    ...unplaced.values,
+    for (final page in pagesWithoutRow)
+      if (_loaded[page] case final loaded?) ...[
+        ...loaded.unplaced.values,
+        for (final row in loaded.unknownKinds)
+          UnplacedRow(
+            ref: refOf(row.key),
+            stored: row.text,
+            problem: 'a kind this build does not know, on a page with no row',
+          ),
+      ],
+  ];
+
+  PageTally get elsewhere {
+    var tally = PageTally.empty.plusDamaged(unplaced.length);
+    for (final page in pagesWithoutRow) {
+      if (_loaded[page] case final loaded?) {
+        tally = tally
+            .plusDamaged(loaded.unplaced.length)
+            .plusNewer(loaded.unknownKinds.length);
+      }
+    }
+    return tally;
+  }
+
+  Map<String, PageTally> talliesOver(Map<String, PageTally> stored) {
+    final tallies = {...stored};
+    for (final MapEntry(key: digest, value: loaded) in _loaded.entries) {
+      final page = _pages[digest];
+      if (page == null) continue;
+      if (loaded.isEmpty) {
+        tallies.remove(page.publicId);
+      } else {
+        tallies[page.publicId] = loaded.tally();
+      }
+    }
+    return tallies;
+  }
 
   LoadedPage? loadedPage(String pageDigest) => _loaded[pageDigest];
 

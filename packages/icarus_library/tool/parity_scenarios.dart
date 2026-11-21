@@ -200,7 +200,7 @@ Map<String, Object?> _replay(Map<String, Object?> recorded) {
     ],
     lineupGroups: [
       for (final row in _list(initial['lineupGroups']))
-        _read(LineupGroupRow.decode(row)),
+        _read(LineupGroupRow.decode(row, canRead: (_) => true)),
     ],
   );
   final raw = _list(recorded['ops']);

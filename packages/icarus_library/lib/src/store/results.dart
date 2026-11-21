@@ -94,6 +94,15 @@ final class UnplacedRowInTheWay implements CommitRefusal, LibraryRefusal {
   String toString() => 'UnplacedRowInTheWay($ref)';
 }
 
+final class StrategyNotReadable implements CommitRefusal, LibraryRefusal {
+  const StrategyNotReadable(this.ref);
+
+  final StrategyRef ref;
+
+  @override
+  String toString() => 'StrategyNotReadable($ref)';
+}
+
 final class CopyLeavesRowsBehind extends CommitRefusal {
   const CopyLeavesRowsBehind(this.pagePublicId);
 
@@ -227,6 +236,12 @@ final class NotRead<T> extends Reading<T> {
   const NotRead(this.failure);
 
   final StorageFailure failure;
+}
+
+final class InUnreadableStrategy<T> extends Reading<T> {
+  const InUnreadableStrategy(this.listing);
+
+  final UnreadableStrategyListing listing;
 }
 
 sealed class Unloading {
@@ -447,4 +462,25 @@ final class EngineTooSmall extends OpenProblem {
 
   @override
   String toString() => 'EngineTooSmall($limit < $needed)';
+}
+
+sealed class StrategySearch {
+  const StrategySearch();
+}
+
+final class StrategiesFound extends StrategySearch {
+  StrategiesFound({
+    required List<StrategySummary> rebuilt,
+    required List<UnreadableStrategyListing> unreadable,
+  }) : rebuilt = List.unmodifiable(rebuilt),
+       unreadable = List.unmodifiable(unreadable);
+
+  final List<StrategySummary> rebuilt;
+  final List<UnreadableStrategyListing> unreadable;
+}
+
+final class StrategiesNotSearched extends StrategySearch {
+  const StrategiesNotSearched(this.failure);
+
+  final StorageFailure failure;
 }

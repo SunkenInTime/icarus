@@ -1090,46 +1090,51 @@ sealed class LineupGroupRow extends Row {
     'deleted',
   };
 
-  static Decoded<ReadableLineupGroupRow> decode(Object? json) =>
-      JsonFields.read(json, 'lineup group row', (fields) {
-        final publicId = fields.string('publicId');
-        final strategyPublicId = fields.string('strategyPublicId');
-        final pagePublicId = fields.string('pagePublicId');
-        final payload = fields.decoded('payload', LineupGroupPayload.decode);
-        if (payload != null &&
-            checkLineupPayload(payload, publicId) is! ValidLineupGroup) {
-          fields.reject('its lineup graph is not one the server stores');
-        }
-        final sortIndex = fields.whole('sortIndex');
-        final revision = fields.whole('revision');
-        final deleted = fields.boolean('deleted');
-        final unknown = fields.rest(_known);
-        return () => deleted
-            ? DeletedLineupGroup(
-                publicId: publicId,
-                strategyPublicId: strategyPublicId,
-                pagePublicId: pagePublicId,
-                payload: payload!,
-                sortIndex: sortIndex,
-                revision: revision,
-                unknownFields: unknown,
-              )
-            : LiveLineupGroup(
-                publicId: publicId,
-                strategyPublicId: strategyPublicId,
-                pagePublicId: pagePublicId,
-                payload: payload!,
-                sortIndex: sortIndex,
-                revision: revision,
-                unknownFields: unknown,
-              );
-      });
+  static Decoded<ReadableLineupGroupRow> decode(
+    Object? json, {
+    required bool Function(LineupGroupPayload payload) canRead,
+  }) => JsonFields.read(json, 'lineup group row', (fields) {
+    final publicId = fields.string('publicId');
+    final strategyPublicId = fields.string('strategyPublicId');
+    final pagePublicId = fields.string('pagePublicId');
+    final payload = fields.decoded('payload', LineupGroupPayload.decode);
+    if (payload != null &&
+        checkLineupPayload(payload, publicId) is! ValidLineupGroup) {
+      fields.reject('its lineup graph is not one the server stores');
+    } else if (payload != null && !canRead(payload)) {
+      fields.reject('this build cannot read its payload');
+    }
+    final sortIndex = fields.whole('sortIndex');
+    final revision = fields.whole('revision');
+    final deleted = fields.boolean('deleted');
+    final unknown = fields.rest(_known);
+    return () => deleted
+        ? DeletedLineupGroup(
+            publicId: publicId,
+            strategyPublicId: strategyPublicId,
+            pagePublicId: pagePublicId,
+            payload: payload!,
+            sortIndex: sortIndex,
+            revision: revision,
+            unknownFields: unknown,
+          )
+        : LiveLineupGroup(
+            publicId: publicId,
+            strategyPublicId: strategyPublicId,
+            pagePublicId: pagePublicId,
+            payload: payload!,
+            sortIndex: sortIndex,
+            revision: revision,
+            unknownFields: unknown,
+          );
+  });
 
   static Parsed<LineupGroupRow> parse(
     Admission stored, {
     required RowSpot spot,
     required RowSpot page,
     required RowSpot strategy,
+    required bool Function(LineupGroupPayload payload) canRead,
   }) {
     Parsed<LineupGroupRow> unreadable(Object? stored, String problem) =>
         switch ((
@@ -1150,7 +1155,7 @@ sealed class LineupGroupRow extends Row {
         };
     return _fromAdmission(
       stored,
-      (json) => switch (decode(json)) {
+      (json) => switch (decode(json, canRead: canRead)) {
         Read(:final value)
             when spot.names(value.publicId) &&
                 page.names(value.pagePublicId) &&

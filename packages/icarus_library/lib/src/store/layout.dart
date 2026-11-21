@@ -6,7 +6,7 @@ import '../rows.dart';
 
 const libraryArea = 'library';
 
-const _strategyAreaPrefix = 's/';
+const strategyAreaPrefix = 's/';
 
 const _digestLength = 32;
 
@@ -26,13 +26,13 @@ final _digest = RegExp(r'^[0-9a-f]{32}$');
 bool _isDigest(String text) => _digest.hasMatch(text);
 
 StrategyArea? strategyAreaNamed(String area) =>
-    area.startsWith(_strategyAreaPrefix) &&
-        _isDigest(area.substring(_strategyAreaPrefix.length))
-    ? StrategyArea(area.substring(_strategyAreaPrefix.length))
+    area.startsWith(strategyAreaPrefix) &&
+        _isDigest(area.substring(strategyAreaPrefix.length))
+    ? StrategyArea(area.substring(strategyAreaPrefix.length))
     : null;
 
 String strategyArea(String strategyPublicId) =>
-    '$_strategyAreaPrefix${digestOf(strategyPublicId)}';
+    '$strategyAreaPrefix${digestOf(strategyPublicId)}';
 
 const longestName =
     'content/'.length + _digestLength + '/e/'.length + _digestLength;
@@ -56,7 +56,7 @@ final class StrategyArea extends StoreArea {
   final String digest;
 
   @override
-  String get name => '$_strategyAreaPrefix$digest';
+  String get name => '$strategyAreaPrefix$digest';
 }
 
 sealed class StoreName {

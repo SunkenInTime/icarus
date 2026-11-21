@@ -9,6 +9,8 @@ const _runs = 60;
 
 bool _readsAll(ElementPayload payload) => true;
 
+bool _readsAllGroups(LineupGroupPayload payload) => true;
+
 final _created = DateTime.utc(2026);
 
 ElementPayload _agent(String id, double x) => ElementPayload(
@@ -92,7 +94,7 @@ StrategyRowSet _strategy(String id, {required int items, int pageCount = 2}) {
 Future<LibraryStore> _open(MemoryStorage storage) async =>
     switch (await LibraryStore.open(
       MemoryEngine(storage),
-      canRead: _readsAll,
+      canRead: const CanRead(element: _readsAll, lineupGroup: _readsAllGroups),
     )) {
       StoreOpened(:final store) => store,
       StoreNotOpened(:final problem) => throw StateError('$problem'),

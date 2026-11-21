@@ -81,9 +81,12 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 - **A row this build cannot read is carried, never touched.** An element
   whose kind is unknown, whose payload version is newer than
   `newestElementPayloadVersion`, whose data is not an object, or that the
-  app's `canRead` check refuses is an `UnreadableElement`; any other row that
-  does not decode is its kind's unreadable case. `canRead` answers and never
-  throws. Every op aimed at one is refused with `UnreadableTarget`, including
+  app's `canRead.element` check refuses is an `UnreadableElement`; a lineup
+  group that breaks the server's graph rule or that `canRead.lineupGroup`
+  refuses is an `UnreadableLineupGroup`; any other row that does not decode
+  is its kind's unreadable case. Readable means the package's structural
+  rule and the app's decoder both accept the row. `canRead` answers and
+  never throws. Every op aimed at one is refused with `UnreadableTarget`, including
   a delete. It keeps its id: an add under the id of an unreadable element on
   another page is refused. A page that cannot be read keeps its place when
   its `sortIndex` can be read: a page op that would have to move it is
@@ -276,8 +279,12 @@ This package runs them on `MemoryEngine` in `test/engine_test.dart`, along
 with broken engines the checks catch: one that loses writes in a crash, one
 that grants everyone a lease, three whose prefixes match like SQL `LIKE`
 (in `keys`, `entries` and `areas`), one that cuts a delete past the limit down onto a
-valid name, and one that applies part of a commit and answers
-`CommitUnknown`. Every commit a check makes is compared with storage before
+valid name, one that applies part of a commit and answers
+`CommitUnknown`, and a small test engine (`test/sloppy_engine.dart`) that
+keeps the whole contract until one flaw is switched on: a lease granted to
+two callers asking at once, a held write that lands after its engine
+closed, a commit cut short by a crash that leaves its first change, or a
+held write that lands after its lease was released. Every commit a check makes is compared with storage before
 and after it: `CommitApplied` must show every change, `CommitRefused` none,
 and `CommitUnknown` all or none, never part.
 
@@ -316,10 +323,13 @@ and `CommitUnknown` all or none, never part.
   or its engine closes, and once ended it never works again: every call
   through it answers `LeaseEnded` before any other check (a bad name, a
   name past the limit), as `CommitRefused` for a commit, and changes
-  nothing. A commit pending when its lease ends either lands whole before
-  the next lease is granted, or does not land; the suite looks at storage
-  at the moment the next lease is granted, before letting the held write
-  go, and again after.
+  nothing. Two callers asking at the same moment get one lease between
+  them. A commit pending when its lease ends, by release, by the engine
+  closing or by a crash, either lands whole before the next lease is
+  granted, or does not land. The suite holds a write, ends its lease, waits
+  for the ending or 200 ms, asks for the next lease and waits for its
+  answer, looks at storage and writes through the new lease if it was
+  granted, and only then lets the held write go; it looks again after.
 - **Closing.** A lease asked for after `close` is exactly
   `LeaseFailed(EngineClosed)`; one asked for during `close` is either
   refused that way or granted and then ended by the close.
@@ -409,8 +419,8 @@ commit whole or not at all, across areas and across a crash, so the disk
 holds the strategy from before the edit or after it, never part of it.
 Library edits (`editLibrary`) and summary rebuilds are one commit the same
 way; removing a strategy is `ClearArea` of its area and a `Delete` of its
-summary. The summary is also the record of which strategies exist, and it
-is written in the same commit as the rows. `editLibrary` copies the list
+summary. Opening and reading never commit: the only calls that write are
+`commit`, `editLibrary` and `rebuildSummary`. `editLibrary` copies the list
 it is given when it is called, not when its turn comes.
 
 Every save returns a `Saving`, which the caller has to handle:
@@ -430,12 +440,17 @@ Every save returns a `Saving`, which the caller has to handle:
   not encode or read back, reading the pages the op needs failed, or the
   store has stopped (`StoreStopped`) or closed (`StoreClosed`).
 - `SaveInDoubt(failure)`: the engine could not say whether the commit
-  applied. The store is finished. After a save in doubt the caller reopens
-  and reads: what is stored is what was saved. To keep the edit, it issues
-  the same op again, and `applyOp`'s own rules decide: an edit that landed
-  comes back as `NothingToSave` or a typed refusal, and one that did not is
-  applied. `test/store_outcome_test.dart` checks this for every op type and
-  every library edit.
+  applied. The store is finished, and the result comes back only once its
+  lease is released, so the caller can reopen at once. After a save in
+  doubt the caller reopens and reads: what is stored is what was saved.
+  Whether to issue the edit again is the editor's call, and it is safe only
+  for an edit that carries the base or the expected revision it was made
+  against, so the op's own conflict rules apply: a field merge without a
+  base skips the revision check, and issued again it can overwrite a newer
+  edit another tab saved in between; a `RemoveStrategy` issued again can
+  clear a strategy another tab has just edited. With no other writer,
+  `test/store_outcome_test.dart` shows for every op type and every library
+  edit that issuing it again leaves it applied once.
 
 Saves and reads run one at a time, in the order they were called. A store
 finishes when it closes, when its lease ends, or after a save in doubt; the
@@ -457,10 +472,22 @@ lists its folders.
 
 ### Reading
 
-`readStrategy` and `readPage` return a `Reading`: `Found`, `NotFound`, or
-`NotRead` when the device failed. A strategy whose own row cannot be read
-but whose id is known still reads: `StrategyContent.strategy` is its
+`readStrategy` and `readPage` return a `Reading`: `Found`, `NotFound`,
+`NotRead` when the device failed, or `InUnreadableStrategy(listing)` when
+the strategy's area holds rows but its own row is missing or has no id. Such
+a strategy is listed in `unreadableStrategies`, refuses every write with
+`StrategyNotReadable`, including `RemoveStrategy`, and is removed only by
+`RemoveUnreadableStrategy`. A strategy whose own row cannot be read but whose
+id is known still reads: `StrategyContent.strategy` is its
 `UnreadableStrategy`, and its pages read as usual; edits to it are refused.
+
+**Rows whose page has no row.** Settings and content under a page name
+whose page row is missing, or has no id, are treated alike: they are kept,
+reported in `StrategyContent.unplaced`, counted as damaged (or newer, for a
+kind this build does not know), and their names refuse writes. Adding a
+page whose names they hold is refused with `UnplacedRowInTheWay`; copying
+from that page id is refused with `CopyLeavesRowsBehind`; a copy from an id
+with no page row and no content is left to `applyOp`, as on the server.
 Unreadable pages, settings, elements and lineup groups whose ids are known
 come back in the same lists as readable ones; rows with no id come back in
 `unplaced`; a name under `content/<p>/` of a kind this build does not know
@@ -491,13 +518,21 @@ page. Every commit writes the new summary in the same commit as its rows.
 counts rows of a kind this build does not know and elements from a newer
 build (the app says "made with a newer version"), `damaged` counts every
 other row it cannot read (the app says "could not be read").
-`rebuildSummary` recomputes the summary from the rows alone. When the store
-opens and cannot read a summary, it rebuilds it; when the strategy's own row
-cannot be read either, the strategy is listed in `unreadableStrategies`.
-When a page read finds rows its strategy's summary does not account for, the
-store rebuilds that summary. A repair the device refuses still updates the
-summary in memory, since it is worked out from the rows on disk; the next
-save writes it.
+The summary is a cache of the rows. `rebuildSummary` recomputes it from
+the rows alone and writes it. When the store opens and cannot read a
+summary, it rebuilds it in memory; when the strategy's own row cannot be
+read either, the strategy is listed in `unreadableStrategies`. Whenever rows
+are loaded, by a read or by an edit, the in-memory summary is brought up to
+date with them. A summary changed in memory this way is marked as not yet
+in storage: the next save of that strategy writes it, and `rebuildSummary`
+writes it even if it compares equal to the one in memory.
+
+A summary that is lost from storage is found again by `findStrategies()`,
+which the app runs after open (open itself lists no areas). It lists the
+strategy areas with `areas`, rebuilds in memory the summary of each strategy
+that has a readable row and no summary, and lists each area that holds rows
+with neither as an unreadable strategy. It returns `StrategiesFound(rebuilt,
+unreadable)` or `StrategiesNotSearched(failure)`, and commits nothing.
 
 ### Telling the editor what changed
 

@@ -999,4 +999,262 @@ void main() {
       },
     );
   });
+
+  group('Rows that are missing', () {
+    Contents without(Contents base, String area, Iterable<String> names) => {
+      ...base,
+      area: {...base[area]!}..removeWhere((key, _) => names.contains(key)),
+    };
+
+    SomeUnreadable readabilityOf(LibraryStore store) =>
+        listOf(store).strategies.single.readability as SomeUnreadable;
+
+    test(
+      'with only a page row gone, its settings and content are kept, reported, counted and in the way',
+      () async {
+        final clean = await seededClean();
+        final before = without(clean, sampleArea, [pageName('page-a')]);
+        final disk = MemoryStorage(before);
+        final store = await openStore(MemoryEngine(disk));
+        final content = strategyOf(await store.readStrategy(strategyId));
+        expect(content.pages.map((page) => page.publicId), [
+          'page-b',
+          'page-c',
+        ]);
+        expect(content.settings.keys, unorderedEquals(['page-b', 'page-c']));
+        expect(
+          content.unplaced.map((row) => row.ref.name),
+          unorderedEquals([
+            settingsName('page-a'),
+            elementName('page-a', 'jett'),
+            elementName('page-a', 'sova'),
+            elementName('page-a', 'line'),
+            lineupName('page-a', 'g1'),
+          ]),
+        );
+        expect(
+          await store.readPage(strategyId, 'page-a'),
+          isA<NotFound<PageContent>>(),
+        );
+        expect(readabilityOf(store).damaged, 5);
+        expect(
+          await store.commit(
+            strategyId,
+            const PageAddOp(
+              opId: 'over-orphans',
+              pagePublicId: 'page-a',
+              sortIndex: 0,
+              expectedStrategyRevision: 1,
+              settings: defaultSettings,
+            ),
+          ),
+          isA<Refused<Committed, CommitRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            isA<UnplacedRowInTheWay>(),
+          ),
+        );
+        expect(
+          await store.commit(
+            strategyId,
+            const PageAddOp(
+              opId: 'copy-orphans',
+              pagePublicId: 'page-copy',
+              sortIndex: 3,
+              expectedStrategyRevision: 1,
+              settings: defaultSettings,
+              copyContentFromPagePublicId: 'page-a',
+            ),
+          ),
+          isA<Refused<Committed, CommitRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            isA<CopyLeavesRowsBehind>(),
+          ),
+        );
+        expect(sameContents(disk.contents, before), isTrue);
+      },
+    );
+
+    test(
+      'a copy from a page id with no row and no content is left to applyOp',
+      () async {
+        final store = await openOn(await seededClean());
+        expect(
+          await store.commit(
+            strategyId,
+            const PageAddOp(
+              opId: 'copy-nothing',
+              pagePublicId: 'page-copy',
+              sortIndex: 3,
+              expectedStrategyRevision: 1,
+              settings: defaultSettings,
+              copyContentFromPagePublicId: 'page-nowhere',
+            ),
+          ),
+          isNot(
+            isA<Refused<Committed, CommitRefusal>>().having(
+              (refused) => refused.reason,
+              'reason',
+              isA<CopyLeavesRowsBehind>(),
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'with only the header gone, the strategy reads as unreadable, refuses every write, and is removed by reference',
+      () async {
+        final before = without(await seededClean(), sampleArea, ['strategy']);
+        final disk = MemoryStorage(before);
+        final store = await openStore(MemoryEngine(disk));
+        final reading = await store.readStrategy(strategyId);
+        expect(reading, isA<InUnreadableStrategy<StrategyContent>>());
+        final listing =
+            (reading as InUnreadableStrategy<StrategyContent>).listing;
+        expect(listing.ref, StrategyRef(sampleArea));
+        expect(
+          await store.readPage(strategyId, 'page-a'),
+          isA<InUnreadableStrategy<PageContent>>(),
+        );
+        final notReadable = isA<StrategyNotReadable>().having(
+          (reason) => reason.ref,
+          'ref',
+          StrategyRef(sampleArea),
+        );
+        expect(
+          await store.commit(strategyId, moveJett),
+          isA<Refused<Committed, CommitRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            notReadable,
+          ),
+        );
+        expect(
+          await store.editLibrary([const RemoveStrategy(strategyId)]),
+          isA<Refused<LibraryEdited, LibraryRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            notReadable,
+          ),
+        );
+        expect(sameContents(disk.contents, before), isTrue);
+        expect(listOf(store).unreadableStrategies.single.ref, listing.ref);
+        savedValue(
+          await store.editLibrary([RemoveUnreadableStrategy(listing.ref)]),
+        );
+        expect(disk.contents[sampleArea], isNull);
+        expect(disk.contents['library']?[summaryName(strategyId)], isNull);
+      },
+    );
+
+    test(
+      'with only the summary gone, findStrategies brings the strategy back and the next rebuild writes it',
+      () async {
+        final clean = await seededClean();
+        final disk = MemoryStorage(
+          without(clean, 'library', [summaryName(strategyId)]),
+        );
+        final (engine, counts) = counting(MemoryEngine(disk));
+        final store = await openStore(engine);
+        expect(listOf(store).strategies, isEmpty);
+        counts.reset();
+        final found = await store.findStrategies();
+        expect(counts.areaListings, ['s/']);
+        expect(counts.commits, 0);
+        expect(
+          found,
+          isA<StrategiesFound>()
+              .having(
+                (found) => found.rebuilt.map((summary) => summary.publicId),
+                'rebuilt',
+                [strategyId],
+              )
+              .having((found) => found.unreadable, 'unreadable', isEmpty),
+        );
+        expect(
+          listOf(store).strategies.single.toJson(),
+          listOf(await openOn(clean)).strategies.single.toJson(),
+        );
+        savedValue(await store.rebuildSummary(strategyId));
+        expect(sameContents(disk.contents, clean), isTrue);
+      },
+    );
+
+    test(
+      'findStrategies reports an area with rows and neither header nor summary as unreadable',
+      () async {
+        final clean = await seededClean();
+        final disk = MemoryStorage({
+          ...without(clean, 'library', [summaryName(strategyId)]),
+          sampleArea: {...clean[sampleArea]!}..remove('strategy'),
+        });
+        final store = await openStore(MemoryEngine(disk));
+        final found = await store.findStrategies() as StrategiesFound;
+        expect(found.rebuilt, isEmpty);
+        expect(found.unreadable.single.ref, StrategyRef(sampleArea));
+        expect(
+          listOf(store).unreadableStrategies.single.ref,
+          StrategyRef(sampleArea),
+        );
+        expect(await store.findStrategies(), isA<StrategiesFound>());
+      },
+    );
+
+    test(
+      'an edit that loads a page before any read brings the summary up to date',
+      () async {
+        final stale = {
+          ...seeded,
+          'library': {
+            ...seeded['library']!,
+            summaryName(strategyId):
+                (await seededClean())['library']![summaryName(strategyId)]!,
+          },
+        };
+        final disk = MemoryStorage(stale);
+        final store = await openStore(MemoryEngine(disk));
+        savedValue(await store.commit(strategyId, moveJett));
+        expect(readabilityOf(store).damaged, 1);
+        expect(readabilityOf(store).newer, 2);
+        await store.close();
+        final again = await openStore(MemoryEngine(disk));
+        expect(readabilityOf(again).newer, 2);
+      },
+    );
+
+    test('a settings row that cannot be read is counted as damaged', () async {
+      final clean = await seededClean();
+      final store = await openOn({
+        ...clean,
+        sampleArea: {
+          ...clean[sampleArea]!,
+          settingsName('page-b'): jsonEncode({
+            'pagePublicId': 'page-b',
+            'revision': 'one',
+          }),
+        },
+      });
+      strategyOf(await store.readStrategy(strategyId));
+      expect(readabilityOf(store).damaged, 1);
+    });
+
+    test(
+      'a row of a newer kind on a page with no row is counted as newer',
+      () async {
+        final clean = await seededClean();
+        final store = await openOn({
+          ...without(clean, sampleArea, [pageName('page-a')]),
+          sampleArea: {
+            ...without(clean, sampleArea, [pageName('page-a')])[sampleArea]!,
+            pinName: unknownRowJson,
+          },
+        });
+        strategyOf(await store.readStrategy(strategyId));
+        expect(readabilityOf(store).newer, 1);
+        expect(readabilityOf(store).damaged, 5);
+      },
+    );
+  });
 }

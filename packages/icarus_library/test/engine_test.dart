@@ -2,6 +2,7 @@ import 'package:icarus_library/engine_contract.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:test/test.dart';
 
+import 'sloppy_engine.dart';
 import 'store_support.dart';
 
 final class MemoryHarness implements EngineHarness {
@@ -205,6 +206,33 @@ void main() {
   for (final MapEntry(key: what, value: (wrap, check)) in broken.entries) {
     test('the contract fails an engine $what', () async {
       final results = await runAll(() => WrappedHarness(wrap));
+      expect(results[check], isA<Broke>(), reason: '$results');
+    });
+  }
+
+  test(
+    'the sloppy test engine with no flaw keeps the whole contract',
+    () async {
+      final results = await runAll(() => SloppyHarness(Flaw.none));
+      expect(
+        results.entries.where((entry) => entry.value is Broke).toList(),
+        isEmpty,
+      );
+    },
+  );
+
+  final flawed = {
+    Flaw.racyLease: 'grants one lease when two callers ask at the same moment',
+    Flaw.writesAfterClose:
+        'a write pending when its engine closes lands whole before the next grant or not at all',
+    Flaw.appliesFirstBeforeHold:
+        'a commit across areas cut short by a crash is seen whole or not at all',
+    Flaw.writesAfterRelease:
+        'a write pending when its lease ends lands whole before the next grant or not at all',
+  };
+  for (final MapEntry(key: flaw, value: check) in flawed.entries) {
+    test('the contract fails an engine with the flaw ${flaw.name}', () async {
+      final results = await runAll(() => SloppyHarness(flaw));
       expect(results[check], isA<Broke>(), reason: '$results');
     });
   }

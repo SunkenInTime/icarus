@@ -161,6 +161,15 @@ void main() {
               {...link}..remove('originId'),
           ],
         },
+        'a link whose notes this build cannot read': (data) => {
+          ...data,
+          'links': [
+            for (final link
+                in (data['links']! as List<Object?>)
+                    .cast<Map<String, Object?>>())
+              {...link, 'notes': true},
+          ],
+        },
         'a link to an origin the group does not hold': (data) => {
           ...data,
           'links': [
