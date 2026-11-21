@@ -7,6 +7,7 @@ import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/shadow_store.dart';
+import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/startup/launch_clock.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -59,7 +60,8 @@ String _describeState(ShadowState state) => switch (state) {
 String _describeOpened(LibraryStoreOpened opened) => switch (opened) {
       LibraryStoreReady() => 'opened',
       LibraryStoreHeldElsewhere() => 'held by another instance of the app',
-      LibraryStoreRefused(:final failure) => 'refused: $failure',
+      LibraryStoreRefused(:final failure) =>
+        'refused: ${storageFailureWords(failure, StoreStep.opening)} ($failure)',
       LibraryStoreTooSmall(:final maxKeyLength) =>
         'the engine holds keys of only $maxKeyLength characters',
     };
@@ -86,7 +88,8 @@ int _count<T>(List<Object> items) => items.whereType<T>().length;
 
 List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
       StoreNotChecked(:final failure) => [
-          'STORE check could not read: $failure'
+          'STORE check could not read: '
+              '${storageFailureWords(failure, StoreStep.read)} ($failure)',
         ],
       final StoreChecked checked => [
           'STORE check Hive ${checked.hiveStrategies} strategies '
@@ -209,9 +212,13 @@ Future<List<String>> waitForShadowStore(
     ShadowChecking() =>
       throw StoreStepFailed(['the shadow copy is ${_describeState(state)}']),
   };
-  final file = switch (c.read(libraryStoreProvider)) {
-    LibraryStoreReady(:final file) => file,
+  final (file, origin) = switch (c.read(libraryStoreProvider)) {
+    LibraryStoreReady(:final file, :final origin) => (file, origin),
     final other => throw StoreStepFailed(['the store is $other']),
+  };
+  final originName = switch (origin) {
+    StorageCreated() => 'created',
+    StorageExisted() => 'existed',
   };
   final libraryChanged = [
     for (final name in run.hiveFilesChanged)
@@ -222,7 +229,7 @@ Future<List<String>> waitForShadowStore(
       if (!_libraryBoxFiles.contains(name)) name,
   ];
   final lines = [
-    'STORE opened ${file.path}',
+    'STORE opened ${file.path}; the library $originName',
     _sizes(file),
     ..._describeCopy(run),
     ...describeCheck(run.check, run.checkTook),
@@ -233,7 +240,8 @@ Future<List<String>> waitForShadowStore(
         '${othersChanged.isEmpty ? 'none' : othersChanged.join(', ')}',
   ];
   final strategies = run.copy.strategies;
-  final counts = {
+  final counts = <String, Object>{
+    'origin': originName,
     'copied': _count<StrategyCopied>(strategies),
     'unchanged': _count<StrategyUnchanged>(strategies),
     'tookHiveVersion': _count<StrategyTookHiveVersion>(strategies),
@@ -241,6 +249,10 @@ Future<List<String>> waitForShadowStore(
   };
   final problems = [
     if (run.copy case ShadowCopyStopped(:final stop)) 'the copy stopped: $stop',
+    if (origin is StorageCreated &&
+        strategies.any((strategy) =>
+            strategy is! StrategyCopied && strategy is! StrategyNotCopied))
+      'the library was created, yet the copy found strategies already in it',
     if (_count<StrategyNotCopied>(strategies) case final n when n > 0)
       '$n strategies not copied',
     if (_count<StrategyChangedOnBothSides>(strategies) case final n when n > 0)
@@ -250,7 +262,8 @@ Future<List<String>> waitForShadowStore(
     switch (run.check) {
       StoreChecked(isExact: true) => null,
       StoreChecked() => 'the store differs from Hive',
-      StoreNotChecked(:final failure) => 'the check failed: $failure',
+      StoreNotChecked(:final failure) => 'the check failed: '
+          '${storageFailureWords(failure, StoreStep.read)} ($failure)',
     },
     if (libraryChanged.isNotEmpty)
       'library boxes changed: ${libraryChanged.join(', ')}',
@@ -281,7 +294,8 @@ Future<String?> closeStoreLine(ProviderContainer c) async {
   return switch (c.read(libraryStoreProvider)) {
     LibraryStoreClosed(released: Released()) => 'STORE closed',
     LibraryStoreClosed(released: ReleaseFailed(:final failure)) =>
-      'FAIL STORE closed with a failure: $failure',
+      'FAIL STORE closed with a failure: '
+          '${storageFailureWords(failure, StoreStep.release)} ($failure)',
     final other => 'FAIL STORE did not close: $other',
   };
 }

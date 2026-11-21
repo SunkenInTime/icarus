@@ -12,8 +12,8 @@ Future<LibraryStoreOpened> openLibraryStore(File file) async {
   }
   final engine = SqliteEngine(file.path);
   switch (await LibraryStore.open(engine, canRead: appCanRead)) {
-    case StoreOpened(:final store):
-      return LibraryStoreReady(file, store, engine.close);
+    case StoreOpened(:final store, :final origin):
+      return LibraryStoreReady(file, store, origin, engine.close);
     case StoreNotOpened(:final problem):
       await engine.close();
       return switch (problem) {

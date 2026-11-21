@@ -3,6 +3,7 @@ import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_record.dart';
 import 'package:icarus/library_store/rows_digest.dart';
+import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -95,7 +96,8 @@ final class StoreCouldNotEncode extends CopyRefusal {
   final WouldNotReadBack failure;
 
   @override
-  String toString() => 'the store would not write it: $failure';
+  String toString() =>
+      '${storageFailureWords(failure, StoreStep.refusedSave)} ($failure)';
 }
 
 final class StoreHoldsItWithoutRecord extends CopyRefusal {
@@ -133,27 +135,32 @@ sealed class CopyStop {
   const CopyStop(this.failure);
 
   final StorageFailure failure;
+
+  StoreStep get step;
+
+  @override
+  String toString() => '${storageFailureWords(failure, step)} ($failure)';
 }
 
 final class StoreDidNotSave extends CopyStop {
   const StoreDidNotSave(super.failure);
 
   @override
-  String toString() => 'the store did not save: $failure';
+  StoreStep get step => StoreStep.refusedSave;
 }
 
 final class StoreSaveInDoubt extends CopyStop {
   const StoreSaveInDoubt(super.failure);
 
   @override
-  String toString() => 'the store could not say whether it saved: $failure';
+  StoreStep get step => StoreStep.saveInDoubt;
 }
 
 final class StoreDidNotRead extends CopyStop {
   const StoreDidNotRead(super.failure);
 
   @override
-  String toString() => 'the store could not be read: $failure';
+  StoreStep get step => StoreStep.read;
 }
 
 sealed class ShadowCopy {

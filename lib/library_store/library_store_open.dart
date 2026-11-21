@@ -36,9 +36,11 @@ sealed class LibraryStoreOpened extends LibraryStoreState {
 }
 
 final class LibraryStoreReady extends LibraryStoreOpened {
-  const LibraryStoreReady(super.file, this.store, this.closeEngine);
+  const LibraryStoreReady(
+      super.file, this.store, this.origin, this.closeEngine);
 
   final LibraryStore store;
+  final StorageOrigin origin;
   final Future<Releasing> Function() closeEngine;
 }
 
