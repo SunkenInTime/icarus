@@ -17,5 +17,3 @@ String derivedId(String seed) {
     hex.substring(20),
   ].join('-');
 }
-
-String undoOpId(String opId) => derivedId(jsonEncode([opId, 'undo']));

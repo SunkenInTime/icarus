@@ -73,7 +73,11 @@ void main() {
     expect(trashed.revision, 1);
     expect(session.rows.element('jett'), agent);
     expect(namesInOrder(session.rows), ['Page 1', 'Retake']);
-    expect(result.undo, const UndoByRestoringPage('page-b'));
+    expect(session.buildUndoOf(result), isA<RestoreFromTrash>());
+    expect(
+      (session.buildUndoOf(result) as RestoreFromTrash).pagePublicId,
+      'page-b',
+    );
   });
 
   test('editing content on a page in the trash fails', () {
@@ -199,7 +203,7 @@ void main() {
       ),
     );
     expect(namesInOrder(session.rows), ['Page 1', 'Retake', 'Page 3']);
-    session.apply(undoOp(moved));
+    session.apply(session.undo(moved));
     expect(namesInOrder(session.rows), namesInOrder(before));
     expect(
       [
@@ -221,7 +225,7 @@ void main() {
       ),
     );
     expect(session.pageAt('page-c').name, 'Execute');
-    session.apply(undoOp(renamed));
+    session.apply(session.undo(renamed));
     expect(session.pageAt('page-c').name, 'Retake');
   });
 
@@ -271,6 +275,45 @@ void main() {
           ],
         ),
       );
+      const larger = PageSettings(
+        agentSize: 2,
+        abilitySize: 1,
+        useNeutralTeamColors: false,
+      );
+      final result = session.apply(
+        const PageSettingsPatchOp(
+          opId: 'settings',
+          pagePublicId: 'page-a',
+          settings: larger,
+          expectedPageSettingsRevision: 1,
+        ),
+      );
+      expect(
+        session.buildUndoOf(result),
+        isA<UndoReady>().having(
+          (ready) => ready.op,
+          'op',
+          isA<PageSettingsPatchOp>()
+              .having((op) => op.settings, 'settings', defaultSettings)
+              .having((op) => op.expectedPageSettingsRevision, 'revision', 2),
+        ),
+      );
+      session.apply(session.undo(result));
+      expect(session.settingsAt('page-a').settings, defaultSettings);
+    },
+  );
+
+  test(
+    'writing exactly the defaults to settings that were never set leaves nothing to undo',
+    () {
+      final session = Session(
+        strategyRows(
+          pages: [page('page-a', sortIndex: 0)],
+          pageSettings: [
+            ReadablePageSettings(pagePublicId: 'page-a', revision: 1),
+          ],
+        ),
+      );
       final result = session.apply(
         const PageSettingsPatchOp(
           opId: 'settings',
@@ -279,14 +322,7 @@ void main() {
           expectedPageSettingsRevision: 1,
         ),
       );
-      expect(
-        result.undo,
-        const UndoByWritingDefaultSettings(
-          pagePublicId: 'page-a',
-          expectedPageSettingsRevision: 2,
-        ),
-      );
-      expect(session.settingsAt('page-a').settings, defaultSettings);
+      expect(session.buildUndoOf(result), isA<NothingToUndo>());
     },
   );
 
@@ -305,7 +341,7 @@ void main() {
     );
     expect(session.rows.strategy.themeProfileId, isNull);
     expect(session.rows.strategy.revision, 4);
-    session.apply(undoOp(cleared));
+    session.apply(session.undo(cleared));
     expect(session.rows.strategy.themeProfileId, 'ember');
   });
 
@@ -353,7 +389,10 @@ void main() {
       final first = applied(applyOp(rows, copy));
       final second = applied(applyOp(rows, copy));
       expect(second.rows.toList(), first.rows.toList());
-      expect(second.undo, first.undo);
+      expect(
+        (second.undo as RemoveAddedPage).pagePublicId,
+        (first.undo as RemoveAddedPage).pagePublicId,
+      );
       final other = applied(
         applyOp(
           rows,

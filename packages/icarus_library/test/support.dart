@@ -125,11 +125,6 @@ Refusal refused(ApplyResult result) {
   fail('Expected the op to be refused, got ${describe(result)}');
 }
 
-StrategyOp undoOp(OpApplied result) => switch (result.undo) {
-  UndoWithOp(:final op) => op,
-  final other => fail('Expected an undo op, got $other'),
-};
-
 final class Session {
   Session(this.rows);
 
@@ -142,6 +137,20 @@ final class Session {
   }
 
   ApplyResult attempt(StrategyOp op) => applyOp(rows, op);
+
+  int _undos = 0;
+
+  UndoBuild buildUndoOf(OpApplied result) => buildUndo(
+    rows,
+    result.undo,
+    opId: 'undo-${_undos++}',
+    defaultSettings: defaultSettings,
+  );
+
+  StrategyOp undo(OpApplied result) => switch (buildUndoOf(result)) {
+    UndoReady(:final op) => op,
+    final other => fail('Expected an undo op, got $other'),
+  };
 
   ReadablePageRow pageAt(String pageId) => switch (rows.page(pageId)) {
     final ReadablePageRow page => page,

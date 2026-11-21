@@ -115,7 +115,7 @@ void main() {
                 as RowChanged;
         expect(header.fields, {RowField.updatedAt});
         expect((header.after as ReadableStrategy).updatedAt, editedAt);
-        expect(committed.undo, isA<UndoWithOp>());
+        expect(committed.undo, isA<RestoreElementFields>());
         expect(edited.summary.updatedAt, editedAt);
         expect(edited.summary.createdAt, strategyCreatedAt);
         await pumpEventQueue();

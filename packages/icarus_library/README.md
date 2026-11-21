@@ -26,7 +26,7 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 - **Ops**: the fourteen the server takes, as the sealed `StrategyOp`, sent
   exactly as the app sends them today (`toJson`).
 - **`applyOp`**: given a strategy's rows and an op, the rows the server would
-  hold after accepting it, the op that undoes it, and which rows and fields
+  hold after accepting it, what an undo puts back, and which rows and fields
   changed. It is a pure function of the two: the same rows and op always give
   the same result, ids included.
 - **The store** (`LibraryStore`): where a library's rows live on the device,
@@ -141,13 +141,71 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   accepted write raises that row's revision by one.
 - **Applying an op twice gives the rows that applying it once gave.** The
   second time it is `OpUnchanged`.
-- **Ids come from the op.** The undo op's id and the ids of rows a page copy
-  creates are derived from the op's id (and, for a copy, the source row's
-  id), so recomputing the base with its pending ops never renames anything.
-  A derived copy id never takes the id of a row the strategy already has.
-- **An undo names only what the op changed.** Undoing an edit to an agent's
-  position writes the position back and leaves a teammate's change to its
-  side alone.
+- **Ids come from the op.** The ids of rows a page copy creates are derived
+  from the op's id and the source row's id, so recomputing the base with its
+  pending ops never renames anything. A derived copy id never takes the id
+  of a row the strategy already has.
+- **An undo is a value, built into an op when it is used.** `applyOp`
+  returns an `Undo` saying what to put back for the row it changed: the
+  fields with their values before and after the edit
+  (`RestoreStrategyFields`, `RestorePageFields`, `RestorePagePlace`,
+  `RestoreSettings`, `RestoreElementFields`, `RestoreGroupFields`), that the
+  row did not exist (`RemoveAddedPage`, `RemoveAddedElement`,
+  `RemoveAddedGroup`), or the whole row before a delete
+  (`RestoreTrashedPage`, `RestoreDeletedElement`, `RestoreDeletedGroup`).
+  `buildUndo(rows, undo, opId:, defaultSettings:)` is a pure function that
+  turns it into an op against the rows as they are when the user presses
+  undo, with their current revisions, so a run of undos works for every
+  row kind. It answers `UndoReady(op)`; `RestoreFromTrash(page)` for a
+  deleted page, since restoring from the trash is a call of its own and
+  not an op; `NothingToUndo` when every field is already back; or
+  `UndoBlocked` with `TargetGone`, `TargetUnreadable`, `ChangedSince` (a
+  field the edit wrote now holds something else, so the undo would
+  overwrite a change not in the history being undone) or `CannotClear`.
+  An undo puts back the fields its edit wrote and nothing else, and only
+  into the row lifetime its edit was made in:
+  - Fields the edit did not write are left alone: undoing an edit to an
+    agent's position writes the position back and keeps a teammate's later
+    change to its side.
+  - Fields are compared with the field rules' defaults filled in on both
+    sides, so a default made explicit is not a change, and a built op that
+    would change nothing answers `NothingToUndo`.
+  - For an element, every field of a field group the edit wrote counts as
+    written, as it does for the server's merge: once a teammate moves an
+    image, undoing its scale is `ChangedSince`.
+  - Lineup items are compared by id and content, never by position, since
+    the server's merge cannot keep positions; an item an undo put back last
+    never reads as someone else's change. Undoing an edit that reordered a
+    group's items writes the payload as it is now with only that order put
+    back, so a teammate's later landing move stays.
+  - A delete's undo records the revision its tombstone was left at and
+    restores only over that tombstone: if the row was brought back and
+    deleted again since, it is `ChangedSince`. The editor's own undo and
+    redo never trip this, because applying a built undo returns a fresh
+    value that replaces the old one on the other stack.
+  - An undo that only puts back a place is the reorder op
+    (`element.reorder`, `lineup.reorder`, `page.reorder`). Element and
+    lineup group undos that write fields are merges whose base is what the
+    edit left, so the server refuses one that races a newer change
+    (`field_conflict`); the others carry the current revision.
+  - An undo that deletes a page (the undo of a page add) is a page delete
+    like any other: the page goes to the trash with whatever is on it, and
+    the cloud queue's check before sending a page delete applies to it.
+  - Undoing a link add after a teammate removed the other link that used a
+    landing removes that landing too, because the server keeps a landing
+    only while a link uses it.
+
+  Redo is the same mechanism: applying a built undo returns the value that
+  undoes it. A new edit to a field blocks redo of an older edit to that
+  field and leaves other redos alone; the editor clears its redo stack on
+  any new edit. Each new undo or redo needs a fresh op id; retrying the same
+  built op after an unknown outcome uses the same id. Reusing the original
+  edit's id makes the server treat the undo as that edit again, a no-op.
+  `test/undo_sequence_test.dart` runs 3,000 random runs of one to four
+  edits on one page, over every row kind, and checks that undoing them in
+  reverse, each undo built when it is used, puts every stored row back,
+  tombstones included, and that redoing them returns to the end; the few
+  differences the protocol forces are listed in the test as a table.
 
 ## Where it differs from the server on purpose
 
@@ -173,11 +231,10 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   order. The server uses `localeCompare`, which can order punctuation
   differently.
 - Undoing the first settings edit on a page whose settings were never set
-  is `UndoByWritingDefaultSettings`: the page showed the app's default
-  settings, and the server's `pageContent.patch` requires settings, so the
-  undo cannot store them as absent again. The app, which owns the
-  defaults, writes them; afterwards the row holds explicit defaults where
-  it held none, and the page looks as it did.
+  writes the defaults the app passes to `buildUndo`: the page showed them,
+  and the server's `pageContent.patch` requires settings, so the undo
+  cannot store them as absent again. Afterwards the row holds explicit
+  defaults where it held none, and the page looks as it did.
 - Undoing an edit that set `isAutoNamed` on a page saved before that field
   existed writes `isAutoNamed: false` where the field was absent. A page op
   cannot clear the field, and the server reads absent as `false`.
@@ -185,15 +242,18 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   last, because the server's merge appends the items it adds. The order is
   visible: the lineup panel opened from an origin lists its lineups in
   stored order and opens on the first, and connector lines are drawn in
-  the order their links are stored.
+  the order their links are stored. The undo value keeps each item's
+  place (`RestoreGroupFields.indexBefore`) and the built op carries the item
+  there, so if the panel sorts by something stable, or the merge ever keeps
+  places, nothing here has to change.
 - An undo value is good only for the life of the strategy it was made in.
   The editor drops its undo history when a strategy is removed or replaced,
   for example by an import under the same ids.
 - An element op whose payload version is newer than this build reads is
   applied, as the server applies it, and the element becomes an
   `UnreadableElement` from a newer build holding that payload whole.
-- An edit that first sets `mapDoor`, `isZone` or a picture id (`assetId`)
-  has `UndoUnavailable`. Those fields are never cleared (a door goes back to
+- Undoing an edit that first set `mapDoor`, `isZone` or a picture id
+  (`assetId`) is `UndoBlocked(CannotClear)`. Those fields are never cleared (a door goes back to
   rest by deleting its row, a zone stays a zone, and the server keeps a
   picture id that a write leaves out), so there is no value an undo could
   write.
@@ -310,6 +370,12 @@ fails when the server's outcome or rows differ from `applyOp`'s, and when
 either differs from the story, and when a story is missing from the
 report. `--replay` skips them. `test/merge_stories_test.dart` plays the same
 stories through `applyOp` alone.
+
+Then come eight undo seeds: sequences from the same generator as the seeds,
+where three steps in ten take an earlier step's undo value, usually the
+latest, and send the op `buildUndo` makes from it at that moment, so undos,
+redos and undos of older edits all reach the server. They run with the
+stories so the seeded corpus and its coverage floors stay as they are.
 
 `tool/merge_seeds.dart` adds 12 seeded sequences on the stories' strategy,
 weighted toward the cases a field merge exists for: offline edits of one

@@ -555,3 +555,39 @@ Map<String, StrategyOp> everyOpType() => {
 };
 
 final moveJett = everyOpType()['element.patch']!;
+
+Future<StrategyRowSet> rowsIn(
+  LibraryStore store,
+  String strategyPublicId,
+) async {
+  final content = strategyOf(await store.readStrategy(strategyPublicId));
+  final elements = <ElementRow>[];
+  final groups = <LineupGroupRow>[];
+  for (final page in content.pages) {
+    final onPage = pageOf(
+      await store.readPage(strategyPublicId, page.publicId),
+    );
+    elements.addAll(onPage.elements);
+    groups.addAll(onPage.lineupGroups);
+  }
+  return StrategyRowSet(
+    strategy: headerOf(content),
+    pages: content.pages,
+    settings: content.settings.values,
+    elements: elements,
+    lineupGroups: groups,
+  );
+}
+
+var _storeUndos = 0;
+
+Future<UndoBuild> undoIn(
+  LibraryStore store,
+  Undo undo, {
+  String strategyPublicId = strategyId,
+}) async => buildUndo(
+  await rowsIn(store, strategyPublicId),
+  undo,
+  opId: 'store-undo-${_storeUndos++}',
+  defaultSettings: defaultSettings,
+);

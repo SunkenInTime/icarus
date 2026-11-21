@@ -283,19 +283,32 @@ LiveElement _after(LiveElement row, StrategyOp op) => switch (applyOp(
   final other => throw StateError('$op did not apply: $other'),
 };
 
-StrategyOp _undo(LiveElement row, StrategyOp op) => switch (applyOp(
-  StrategyRowSet(
+StrategyOp _undo(LiveElement row, StrategyOp op) {
+  StrategyRowSet holding(LiveElement element) => StrategyRowSet(
     strategy: storyRows.strategy,
     pages: storyRows.pages,
     settings: storyRows.settings,
-    elements: [row],
+    elements: [element],
     lineupGroups: const [],
-  ),
-  op,
-)) {
-  OpApplied(undo: UndoWithOp(:final op)) => op,
-  final other => throw StateError('$op has no undo op: $other'),
-};
+  );
+  final rows = holding(row);
+  return switch (applyOp(rows, op)) {
+    OpApplied(:final undo, rows: final written) => switch (buildUndo(
+      rows.withRows(written),
+      undo,
+      opId: '${op.opId}-undo',
+      defaultSettings: const PageSettings(
+        agentSize: 1,
+        abilitySize: 1,
+        useNeutralTeamColors: false,
+      ),
+    )) {
+      UndoReady(:final op) => op,
+      final other => throw StateError('$op has no undo op: $other'),
+    },
+    final other => throw StateError('$op has no undo op: $other'),
+  };
+}
 
 LineupGroupPayload _groupWith({
   List<String> withoutLinks = const [],
@@ -590,8 +603,8 @@ List<MergeStory> mergeStories() {
       },
     ),
     MergeStory(
-      'undo of an image scale puts its position back with its scale over a '
-      'teammate\'s move',
+      'an undo of an image scale built before a teammate\'s move is refused '
+      'rather than overwriting the move',
       ops: [
         scaled,
         ElementPatchOp(
@@ -605,11 +618,11 @@ List<MergeStory> mergeStories() {
         ),
         _undo(_photo, scaled),
       ],
-      outcomes: [_applied, _applied, _applied],
+      outcomes: [_applied, _applied, _rejected('field_conflict')],
       expected: {
         'photo': {
-          'position': {'x': 10, 'y': 10},
-          'scale': 1,
+          'position': {'x': 1, 'y': 1},
+          'scale': 2,
         },
       },
     ),
