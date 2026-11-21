@@ -31,6 +31,14 @@ What doesn't run on Linux:
 - Growing the window to 2400x1350 (`spawn-barriers-all-maps`) crashes the Linux app with signal 11. Resizes up to 1600x900 work.
 - The app draws system cursors instead of its custom drawing and rotation cursors, because the vendored `custom_mouse_cursor` has no Linux code. Shots don't include the cursor, so they look the same.
 
+## Steps not in the reference
+
+The step list at the top of `lib/dev/drive/drive.dart` is a comment, and new comments are not added to the code, so these steps are listed here instead:
+
+- `{"logItems": tag}` writes every item on the open page as JSON: agents, abilities, texts, pictures and utilities by id with their position, freehand drawings with their point count and first point, and each lineup's origins and landings. A run can then be held against the server's rows.
+- `{"tapItem": id, "button": "secondary"?}` taps, or right-clicks, a placed item by id.
+- `{"dragKey": key, "by": [dx, dy]}` drags the widget with that key, as the lineup placement editor's ends (`lineup-edit-agent-<id>`, `lineup-edit-ability-<id>`) need.
+
 ## Keeping the two in step
 
 `run.ps1` and `linux.dart` are two launchers for the same driver. The driver decides pass or fail and writes the `SUMMARY` line; the launchers only set it up and read the log. `test/drive_linux_runner_test.dart` fails when the driver reads an `ICARUS_DRIVE_*` variable one launcher doesn't set, when Linux refuses a step the driver no longer has, or when either build stops refusing production. A change to what an instance gets goes into both launchers in the same commit.
