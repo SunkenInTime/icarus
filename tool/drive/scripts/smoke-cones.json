@@ -24,6 +24,12 @@
   {"hoverAt": [60, 700]},
   {"wait": 0.5},
   {"shot": "{out}/3-agent-inside-smoke.png"},
+  {"tapAt": [650, 450], "button": "secondary"},
+  {"wait": 1},
+  {"tapText": "Copy sightline report"},
+  {"wait": 3},
+  {"hoverAt": [60, 700]},
+  {"wait": 0.5},
 
   {"dragAgent": "dark-cover", "by": [-60, 0], "steps": 60, "held": "{out}/4-dragging-dark-cover.png"},
   {"wait": 1},
