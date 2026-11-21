@@ -460,6 +460,7 @@ void main() {
           publicId: 'from-a-newer-build',
           pagePublicId: pageId,
           problem: 'a kind from a newer build',
+          reason: const FromNewerBuild(),
           stored: {
             'publicId': 'from-a-newer-build',
             'pagePublicId': pageId,

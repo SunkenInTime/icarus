@@ -62,11 +62,35 @@ final class NotAdmitted extends Admission {
   final String problem;
 }
 
-bool _nestsWithin(String text, int limit) {
+sealed class _Scan {
+  const _Scan();
+}
+
+final class _Clean extends _Scan {
+  const _Clean();
+}
+
+final class _Unsafe extends _Scan {
+  const _Unsafe(this.problem);
+
+  final String problem;
+}
+
+const _largestExactWhole = '9007199254740991';
+
+bool _isDigit(int unit) => unit >= 0x30 && unit <= 0x39;
+
+bool _isExact(String digits) =>
+    digits.length < _largestExactWhole.length ||
+    (digits.length == _largestExactWhole.length &&
+        digits.compareTo(_largestExactWhole) <= 0);
+
+_Scan _scan(String text) {
   var depth = 0;
   var inString = false;
   var escaped = false;
-  for (var at = 0; at < text.length; at++) {
+  var at = 0;
+  while (at < text.length) {
     final unit = text.codeUnitAt(at);
     if (inString) {
       if (escaped) {
@@ -76,6 +100,33 @@ bool _nestsWithin(String text, int limit) {
       } else if (unit == 0x22) {
         inString = false;
       }
+      at++;
+      continue;
+    }
+    if (_isDigit(unit)) {
+      final start = at;
+      while (at < text.length && _isDigit(text.codeUnitAt(at))) {
+        at++;
+      }
+      final whole =
+          at == text.length ||
+          !const [0x2e, 0x65, 0x45].contains(text.codeUnitAt(at));
+      if (whole && !_isExact(text.substring(start, at))) {
+        return const _Unsafe(
+          'holds a whole number JavaScript cannot hold exactly',
+        );
+      }
+      while (at < text.length &&
+          (_isDigit(text.codeUnitAt(at)) ||
+              const [
+                0x2e,
+                0x65,
+                0x45,
+                0x2b,
+                0x2d,
+              ].contains(text.codeUnitAt(at)))) {
+        at++;
+      }
       continue;
     }
     switch (unit) {
@@ -83,17 +134,20 @@ bool _nestsWithin(String text, int limit) {
         inString = true;
       case 0x5b || 0x7b:
         depth++;
-        if (depth > limit) return false;
+        if (depth > maxJsonDepth) {
+          return const _Unsafe('nests deeper than $maxJsonDepth');
+        }
       case 0x5d || 0x7d:
         depth--;
     }
+    at++;
   }
-  return true;
+  return const _Clean();
 }
 
 Admission admit(String text) {
-  if (!_nestsWithin(text, maxJsonDepth)) {
-    return NotAdmitted(text, 'nests deeper than $maxJsonDepth');
+  if (_scan(text) case _Unsafe(:final problem)) {
+    return NotAdmitted(text, problem);
   }
   final Object? parsed;
   try {
@@ -109,6 +163,29 @@ Admission admit(String text) {
     final json => Admitted._(json),
   };
 }
+
+sealed class Encoding {
+  const Encoding();
+}
+
+final class Encoded extends Encoding {
+  const Encoded(this.text);
+
+  final String text;
+}
+
+final class NotEncoded extends Encoding {
+  const NotEncoded(this.problem);
+
+  final String problem;
+}
+
+Encoding encodeJson(Object? value) => isJson(value)
+    ? Encoded(canonicalJson(value))
+    : const NotEncoded(
+        'holds a number that is not finite, nesting deeper than '
+        '$maxJsonDepth, or a value that is not JSON',
+      );
 
 Object? frozenJson(Object? value) => switch (_freeze(value)) {
   _NotJson() => throw ArgumentError.value(value, 'value', 'not a JSON value'),

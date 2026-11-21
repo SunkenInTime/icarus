@@ -1,4 +1,5 @@
 import 'json.dart';
+import 'lineup_graph.dart';
 import 'ops.dart';
 import 'payloads.dart';
 import 'wire.dart';
@@ -98,27 +99,34 @@ bool? _booleanAt(Object? json, String key) => switch (_object(json)?[key]) {
 
 const _misplaced = 'stored under the name of another row';
 
-bool _isLineupGraph(Map<String, Object?> data) =>
-    ['origins', 'landings', 'links'].every(
-      (collection) => switch (data[collection]) {
-        final List<Object?> items => items.every(
-          (item) => item is Map<String, Object?> && item['id'] is String,
-        ),
-        _ => false,
-      },
-    );
-
 final class RowSpot {
-  const RowSpot({required this.name, required this.names});
+  const RowSpot({required this.names, this.known});
 
-  final String name;
   final bool Function(String id) names;
+  final String? known;
 
-  String idIn(Object? stored, String field) =>
+  String? idIn(Object? stored, String field) =>
       switch (_object(stored)?[field]) {
         final String id when names(id) => id,
-        _ => name,
+        _ => known,
       };
+}
+
+sealed class Parsed<R extends Row> {
+  const Parsed();
+}
+
+final class Placed<R extends Row> extends Parsed<R> {
+  const Placed(this.row);
+
+  final R row;
+}
+
+final class Unplaced<R extends Row> extends Parsed<R> {
+  Unplaced(Object? stored, this.problem) : stored = frozenJson(stored);
+
+  final Object? stored;
+  final String problem;
 }
 
 sealed class StrategyRow extends Row {
@@ -170,28 +178,24 @@ sealed class StrategyRow extends Row {
         );
       });
 
-  static StrategyRow parse(Admission stored, {required RowSpot spot}) =>
-      _fromAdmission(
-        stored,
-        (json) => switch (decode(json)) {
-          Read(:final value) when spot.names(value.publicId) => value,
-          Read() => UnreadableStrategy(
-            publicId: spot.idIn(json, 'publicId'),
-            stored: json,
-            problem: _misplaced,
+  static Parsed<StrategyRow> parse(Admission stored, {required RowSpot spot}) {
+    Parsed<StrategyRow> unreadable(Object? stored, String problem) =>
+        switch (spot.idIn(stored, 'publicId')) {
+          final id? => Placed(
+            UnreadableStrategy(publicId: id, stored: stored, problem: problem),
           ),
-          CouldNotRead(:final problem) => UnreadableStrategy(
-            publicId: spot.idIn(json, 'publicId'),
-            stored: json,
-            problem: problem,
-          ),
-        },
-        (stored, problem) => UnreadableStrategy(
-          publicId: spot.name,
-          stored: stored,
-          problem: problem,
-        ),
-      );
+          null => Unplaced(stored, problem),
+        };
+    return _fromAdmission(
+      stored,
+      (json) => switch (decode(json)) {
+        Read(:final value) when spot.names(value.publicId) => Placed(value),
+        Read() => unreadable(json, _misplaced),
+        CouldNotRead(:final problem) => unreadable(json, problem),
+      },
+      unreadable,
+    );
+  }
 }
 
 final class ReadableStrategy extends StrategyRow {
@@ -320,28 +324,24 @@ sealed class FolderRow extends Row {
         );
       });
 
-  static FolderRow parse(Admission stored, {required RowSpot spot}) =>
-      _fromAdmission(
-        stored,
-        (json) => switch (decode(json)) {
-          Read(:final value) when spot.names(value.publicId) => value,
-          Read() => UnreadableFolder(
-            publicId: spot.idIn(json, 'publicId'),
-            stored: json,
-            problem: _misplaced,
+  static Parsed<FolderRow> parse(Admission stored, {required RowSpot spot}) {
+    Parsed<FolderRow> unreadable(Object? stored, String problem) =>
+        switch (spot.idIn(stored, 'publicId')) {
+          final id? => Placed(
+            UnreadableFolder(publicId: id, stored: stored, problem: problem),
           ),
-          CouldNotRead(:final problem) => UnreadableFolder(
-            publicId: spot.idIn(json, 'publicId'),
-            stored: json,
-            problem: problem,
-          ),
-        },
-        (stored, problem) => UnreadableFolder(
-          publicId: spot.name,
-          stored: stored,
-          problem: problem,
-        ),
-      );
+          null => Unplaced(stored, problem),
+        };
+    return _fromAdmission(
+      stored,
+      (json) => switch (decode(json)) {
+        Read(:final value) when spot.names(value.publicId) => Placed(value),
+        Read() => unreadable(json, _misplaced),
+        CouldNotRead(:final problem) => unreadable(json, problem),
+      },
+      unreadable,
+    );
+  }
 }
 
 final class ReadableFolder extends FolderRow {
@@ -479,26 +479,34 @@ sealed class PageRow extends Row {
         };
       });
 
-  static PageRow parse(
+  static Parsed<PageRow> parse(
     Admission stored, {
     required RowSpot spot,
     required RowSpot strategy,
   }) {
-    UnreadablePage unreadable(Object? stored, String problem) => UnreadablePage(
-      publicId: spot.idIn(stored, 'publicId'),
-      strategyPublicId: strategy.idIn(stored, 'strategyPublicId'),
-      sortIndex: _wholeAt(stored, 'sortIndex'),
-      trashed: _booleanAt(stored, 'deleted'),
-      stored: stored,
-      problem: problem,
-    );
+    Parsed<PageRow> unreadable(Object? stored, String problem) => switch ((
+      spot.idIn(stored, 'publicId'),
+      strategy.idIn(stored, 'strategyPublicId'),
+    )) {
+      (final id?, final strategyId?) => Placed(
+        UnreadablePage(
+          publicId: id,
+          strategyPublicId: strategyId,
+          sortIndex: _wholeAt(stored, 'sortIndex'),
+          trashed: _booleanAt(stored, 'deleted'),
+          stored: stored,
+          problem: problem,
+        ),
+      ),
+      _ => Unplaced(stored, problem),
+    };
     return _fromAdmission(
       stored,
       (json) => switch (decode(json)) {
         Read(:final value)
             when spot.names(value.publicId) &&
                 strategy.names(value.strategyPublicId) =>
-          value,
+          Placed(value),
         Read() => unreadable(json, _misplaced),
         CouldNotRead(:final problem) => unreadable(json, problem),
       },
@@ -722,28 +730,31 @@ sealed class PageSettingsRow extends Row {
     );
   });
 
-  static PageSettingsRow parse(Admission stored, {required RowSpot spot}) =>
-      _fromAdmission(
-        stored,
-        (json) => switch (decode(json)) {
-          Read(:final value) when spot.names(value.pagePublicId) => value,
-          Read() => UnreadablePageSettings(
-            pagePublicId: spot.idIn(json, 'pagePublicId'),
-            stored: json,
-            problem: _misplaced,
+  static Parsed<PageSettingsRow> parse(
+    Admission stored, {
+    required RowSpot spot,
+  }) {
+    Parsed<PageSettingsRow> unreadable(Object? stored, String problem) =>
+        switch (spot.idIn(stored, 'pagePublicId')) {
+          final id? => Placed(
+            UnreadablePageSettings(
+              pagePublicId: id,
+              stored: stored,
+              problem: problem,
+            ),
           ),
-          CouldNotRead(:final problem) => UnreadablePageSettings(
-            pagePublicId: spot.idIn(json, 'pagePublicId'),
-            stored: json,
-            problem: problem,
-          ),
-        },
-        (stored, problem) => UnreadablePageSettings(
-          pagePublicId: spot.name,
-          stored: stored,
-          problem: problem,
-        ),
-      );
+          null => Unplaced(stored, problem),
+        };
+    return _fromAdmission(
+      stored,
+      (json) => switch (decode(json)) {
+        Read(:final value) when spot.names(value.pagePublicId) => Placed(value),
+        Read() => unreadable(json, _misplaced),
+        CouldNotRead(:final problem) => unreadable(json, problem),
+      },
+      unreadable,
+    );
+  }
 }
 
 final class ReadablePageSettings extends PageSettingsRow {
@@ -864,29 +875,42 @@ sealed class ElementRow extends Row {
         pagePublicId: pagePublicId,
         stored: frozen,
         problem: problem,
+        reason: _reasonFor(frozen, canRead),
       ),
     };
   }
 
-  static ElementRow parse(
+  static Parsed<ElementRow> parse(
     Admission stored, {
     required RowSpot spot,
     required RowSpot page,
     required bool Function(ElementPayload payload) canRead,
   }) {
-    UnreadableElement unreadable(Object? stored, String problem) =>
+    Parsed<ElementRow> unreadable(Object? stored, String problem) => switch ((
+      spot.idIn(stored, 'publicId'),
+      page.idIn(stored, 'pagePublicId'),
+    )) {
+      (final id?, final pageId?) => Placed(
         UnreadableElement(
-          publicId: spot.idIn(stored, 'publicId'),
-          pagePublicId: page.idIn(stored, 'pagePublicId'),
+          publicId: id,
+          pagePublicId: pageId,
           stored: stored,
           problem: problem,
-        );
+          reason: _reasonFor(stored, canRead),
+        ),
+      ),
+      _ => Unplaced(stored, problem),
+    };
     return _fromAdmission(
       stored,
       (json) => switch (decode(json, canRead: canRead)) {
+        Read(value: UnreadableElement(:final problem)) => unreadable(
+          json,
+          problem,
+        ),
         Read(:final value)
             when spot.names(value.publicId) && page.names(value.pagePublicId) =>
-          value,
+          Placed(value),
         Read() => unreadable(json, _misplaced),
         CouldNotRead(:final problem) => unreadable(json, problem),
       },
@@ -948,6 +972,7 @@ sealed class ReadableElementRow extends ElementRow {
           'deleted': deleted,
         },
         problem: 'a payload version from a newer build',
+        reason: const FromNewerBuild(),
       );
     }
     return deleted
@@ -1003,17 +1028,44 @@ final class DeletedElement extends ReadableElementRow {
   }) : super._();
 }
 
+sealed class UnreadableReason {
+  const UnreadableReason();
+}
+
+final class Damaged extends UnreadableReason {
+  const Damaged();
+}
+
+final class FromNewerBuild extends UnreadableReason {
+  const FromNewerBuild();
+}
+
+UnreadableReason _reasonFor(
+  Object? stored,
+  bool Function(ElementPayload payload) canRead,
+) => switch (_object(stored)?['payload']) {
+  {'kind': final String kind} when ElementKind.named(kind) == null =>
+    const FromNewerBuild(),
+  final payload => switch (ElementPayload.decode(payload)) {
+    Read(:final value) when !value.isReadable || !canRead(value) =>
+      const FromNewerBuild(),
+    Read() || CouldNotRead() => const Damaged(),
+  },
+};
+
 final class UnreadableElement extends ElementRow {
   UnreadableElement({
     required super.publicId,
     required super.pagePublicId,
     required Object? stored,
     required this.problem,
+    required this.reason,
   }) : stored = frozenJson(stored),
        super._();
 
   final Object? stored;
   final String problem;
+  final UnreadableReason reason;
 
   @override
   Object? toJson() => stored;
@@ -1044,10 +1096,9 @@ sealed class LineupGroupRow extends Row {
         final strategyPublicId = fields.string('strategyPublicId');
         final pagePublicId = fields.string('pagePublicId');
         final payload = fields.decoded('payload', LineupGroupPayload.decode);
-        if (payload != null && !_isLineupGraph(payload.data)) {
-          fields.reject(
-            'its origins, landings and links are not lists of items',
-          );
+        if (payload != null &&
+            checkLineupPayload(payload, publicId) is! ValidLineupGroup) {
+          fields.reject('its lineup graph is not one the server stores');
         }
         final sortIndex = fields.whole('sortIndex');
         final revision = fields.whole('revision');
@@ -1074,20 +1125,29 @@ sealed class LineupGroupRow extends Row {
               );
       });
 
-  static LineupGroupRow parse(
+  static Parsed<LineupGroupRow> parse(
     Admission stored, {
     required RowSpot spot,
     required RowSpot page,
     required RowSpot strategy,
   }) {
-    UnreadableLineupGroup unreadable(Object? stored, String problem) =>
-        UnreadableLineupGroup(
-          publicId: spot.idIn(stored, 'publicId'),
-          strategyPublicId: strategy.idIn(stored, 'strategyPublicId'),
-          pagePublicId: page.idIn(stored, 'pagePublicId'),
-          stored: stored,
-          problem: problem,
-        );
+    Parsed<LineupGroupRow> unreadable(Object? stored, String problem) =>
+        switch ((
+          spot.idIn(stored, 'publicId'),
+          strategy.idIn(stored, 'strategyPublicId'),
+          page.idIn(stored, 'pagePublicId'),
+        )) {
+          (final id?, final strategyId?, final pageId?) => Placed(
+            UnreadableLineupGroup(
+              publicId: id,
+              strategyPublicId: strategyId,
+              pagePublicId: pageId,
+              stored: stored,
+              problem: problem,
+            ),
+          ),
+          _ => Unplaced(stored, problem),
+        };
     return _fromAdmission(
       stored,
       (json) => switch (decode(json)) {
@@ -1095,7 +1155,7 @@ sealed class LineupGroupRow extends Row {
             when spot.names(value.publicId) &&
                 page.names(value.pagePublicId) &&
                 strategy.names(value.strategyPublicId) =>
-          value,
+          Placed(value),
         Read() => unreadable(json, _misplaced),
         CouldNotRead(:final problem) => unreadable(json, problem),
       },

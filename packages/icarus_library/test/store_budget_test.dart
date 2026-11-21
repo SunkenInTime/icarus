@@ -62,6 +62,12 @@ Future<(LibraryStore, Counts)> openedOn(Contents disk) async {
   return (await openStore(engine), counts);
 }
 
+void expectNoReads(Counts counts) {
+  expect(counts.reads, isEmpty, reason: 'point reads');
+  expect(counts.keyListings, isEmpty, reason: 'key listings');
+  expect(counts.entryListings, isEmpty, reason: 'entry listings');
+}
+
 void main() {
   for (final (strategies, items) in [(5, 10), (60, 300)]) {
     group('With $strategies strategies of $items items a page', () {
@@ -72,7 +78,7 @@ void main() {
       });
 
       test(
-        'moving one item is one commit of four keys, reading nothing',
+        'moving one item is one commit of three names, reading nothing',
         () async {
           final (store, counts) = await openedOn(disk);
           pageOf(await store.readPage('s1', 's1-page-1'));
@@ -87,78 +93,74 @@ void main() {
               ),
               (strategyArea('s1'), 'strategy'),
               ('library', summaryName('s1')),
-              ('library', 'last-save'),
             ]),
           );
           expect(counts.deleted, isEmpty);
-          expect(counts.calls, 1);
-          expect(counts.reads, isEmpty);
-          expect(counts.listings, isEmpty);
+          expect(counts.commits, 1);
+          expectNoReads(counts);
         },
       );
 
       test(
-        'moving one item on a page not yet open lists and reads only that page',
+        'moving one item on a page not yet open is one entries call for that page',
         () async {
           final (store, counts) = await openedOn(disk);
           strategyOf(await store.readStrategy('s1'));
           counts.reset();
           savedValue(await store.commit('s1', moveOne('s1')));
-          expect(counts.keyWrites, 4);
-          expect(counts.calls, 1);
-          expect(counts.listings, [
+          expect(counts.keyWrites, 3);
+          expect(counts.commits, 1);
+          expect(counts.reads, isEmpty);
+          expect(counts.keyListings, isEmpty);
+          expect(counts.entryListings, [
             (strategyArea('s1'), 'content/${digestOf('s1-page-1')}/'),
           ]);
-          expect(counts.listed, items);
-          expect(counts.reads, hasLength(items));
+          expect(counts.listedEntries, hasLength(items));
         },
       );
 
-      test('opening a page lists and reads only that page', () async {
+      test('opening a page is one entries call for that page', () async {
         final (store, counts) = await openedOn(disk);
         strategyOf(await store.readStrategy('s2'));
         counts.reset();
         final page = pageOf(await store.readPage('s2', 's2-page-2'));
         expect(page.elements, hasLength(items));
-        expect(counts.listings, [
+        expect(counts.reads, isEmpty);
+        expect(counts.keyListings, isEmpty);
+        expect(counts.entryListings, [
           (strategyArea('s2'), 'content/${digestOf('s2-page-2')}/'),
         ]);
-        expect(counts.listed, items);
-        expect(
-          counts.reads.map((read) => read.$2),
-          everyElement(startsWith('content/${digestOf('s2-page-2')}/')),
-        );
+        expect(counts.listedEntries, hasLength(items));
+        expect(counts.commits, 0);
       });
 
       test(
-        'opening a strategy reads its row, pages and settings, and lists its keys',
+        'opening a strategy is one read, one key listing and two entries calls',
         () async {
           final (store, counts) = await openedOn(disk);
           counts.reset();
           strategyOf(await store.readStrategy('s3'));
-          expect(counts.listings, [
-            (strategyArea('s3'), ''),
+          expect(counts.reads, [(strategyArea('s3'), 'strategy')]);
+          expect(counts.keyListings, [(strategyArea('s3'), '')]);
+          expect(counts.listedKeys, 1 + 3 + 3 + 3 * items);
+          expect(counts.entryListings, [
             (strategyArea('s3'), 'page/'),
             (strategyArea('s3'), 'settings/'),
           ]);
-          expect(counts.reads.map((read) => read.$2), [
-            'strategy',
-            ...[for (var i = 0; i < 3; i++) pageName('s3-page-$i')]..sort(),
-            ...[for (var i = 0; i < 3; i++) settingsName('s3-page-$i')]..sort(),
-          ]);
-          expect(counts.listed, (1 + 3 + 3 + 3 * items) + 3 + 3);
+          expect(counts.listedEntries, hasLength(3 + 3));
         },
       );
 
-      test('opening the library list reads only summaries', () async {
+      test('opening the library list is one entries call', () async {
         final (store, counts) = await openedOn(disk);
         expect(listOf(store).strategies, hasLength(strategies));
-        expect(counts.listings, [('library', '')]);
-        expect(counts.reads.toSet(), {
-          ('library', 'last-save'),
+        expect(counts.reads, isEmpty);
+        expect(counts.keyListings, isEmpty);
+        expect(counts.entryListings, [('library', '')]);
+        expect(counts.listedEntries.toSet(), {
           for (var i = 0; i < strategies; i++) ('library', summaryName('s$i')),
         });
-        expect(counts.calls, 0);
+        expect(counts.commits, 0);
       });
     });
   }
@@ -180,23 +182,25 @@ void main() {
 
     test('a cold open, a cold page read and one warm move', () async {
       final (store, counts) = await openedOn(disk);
-      expect(counts.reads, [
-        ('library', 'last-save'),
-        ('library', 'last-save'),
-        ('library', summaryName('big')),
-      ]);
+      expect(counts.reads, isEmpty);
+      expect(counts.entryListings, [('library', '')]);
+      expect(counts.listedEntries, [('library', summaryName('big'))]);
       counts.reset();
       final content = strategyOf(await store.readStrategy('big'));
       expect(content.pages, hasLength(20));
-      expect(counts.reads, hasLength(1 + 20 + 20));
-      expect(counts.listed, (1 + 20 + 20 + 20 * 300) + 20 + 20);
+      expect(counts.reads, hasLength(1));
+      expect(counts.keyListings, hasLength(1));
+      expect(counts.listedKeys, 1 + 20 + 20 + 20 * 300);
+      expect(counts.entryListings, hasLength(2));
+      expect(counts.listedEntries, hasLength(20 + 20));
       counts.reset();
       pageOf(await store.readPage('big', 'big-page-7'));
-      expect(counts.listings, [
+      expect(counts.reads, isEmpty);
+      expect(counts.keyListings, isEmpty);
+      expect(counts.entryListings, [
         (strategyArea('big'), 'content/${digestOf('big-page-7')}/'),
       ]);
-      expect(counts.listed, 300);
-      expect(counts.reads, hasLength(300));
+      expect(counts.listedEntries, hasLength(300));
       counts.reset();
       savedValue(
         await store.commit(
@@ -213,10 +217,9 @@ void main() {
           ),
         ),
       );
-      expect(counts.keyWrites, 4);
-      expect(counts.calls, 1);
-      expect(counts.reads, isEmpty);
-      expect(counts.listings, isEmpty);
+      expect(counts.keyWrites, 3);
+      expect(counts.commits, 1);
+      expectNoReads(counts);
     });
   });
 }

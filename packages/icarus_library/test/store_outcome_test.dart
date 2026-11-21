@@ -19,45 +19,26 @@ ElementAddOp deepElement(String id, int depth) => ElementAddOp(
 );
 
 final class FailingListLease extends ForwardingLease {
-  FailingListLease(super.inner, this.failures);
-
-  final List<bool> failures;
+  FailingListLease(super.inner);
 
   @override
-  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async {
-    if (area == 'library' && failures.isNotEmpty && failures.removeAt(0)) {
-      return const StorageFailed(DeviceFailure('the disk went away'));
-    }
-    return super.entries(area, prefix);
-  }
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
+      area == 'library'
+      ? const StorageFailed(DeviceFailure('the disk went away'))
+      : super.entries(area, prefix);
 }
 
-Future<int> inDoubt(MemoryStorage disk, Failing how, Edit edit) async {
-  final store = await openStore(flaky(MemoryEngine(disk), {0: how}));
-  final result = await edit(store);
-  await store.close();
-  return switch (result) {
-    SaveInDoubt(:final attempt) => attempt,
-    final other => fail('expected doubt, got ${describeSaving(other)}'),
-  };
-}
+Future<LibraryStore> reopen(MemoryStorage disk) =>
+    openStore(MemoryEngine(disk));
 
-Future<LastSave> lastSaveOn(MemoryStorage disk) async {
-  switch (await LibraryStore.open(
-    MemoryEngine(disk),
-    canRead: readsKnownKinds,
-  )) {
-    case StoreOpened(:final store, :final lastSave):
-      await store.close();
-      return lastSave;
-    case StoreNotOpened(:final problem):
-      fail('$problem');
-  }
-}
+final unreadableArea = strategyArea('strategy-garbled');
+
+const savedAgainWithNoChange = {'putting one folder twice in one edit'};
 
 void main() {
   late Contents seeded;
   late Contents filed;
+  late Contents withUnreadable;
 
   setUpAll(() async {
     seeded = await seededContents();
@@ -72,17 +53,20 @@ void main() {
     );
     await store.close();
     filed = storage.contents;
+    withUnreadable = {
+      ...seeded,
+      'library': {
+        ...seeded['library']!,
+        summaryName('strategy-garbled'): '{"not":"a summary"',
+      },
+      unreadableArea: {'strategy': '{"garbled"'},
+    };
   });
 
   const otherId = 'strategy-2';
   final edits = <String, (Contents Function(), Edit)>{
     for (final MapEntry(key: name, value: op) in everyOpType().entries)
       name: (() => seeded, (store) => store.commit(strategyId, op)),
-    'a row at the depth limit': (
-      () => seeded,
-      (store) =>
-          store.commit(strategyId, deepElement('deep', maxJsonDepth - 3)),
-    ),
     'adding a strategy': (
       () => seeded,
       (store) => store.editLibrary([
@@ -100,9 +84,28 @@ void main() {
         AddStrategy(sampleStrategy(id: otherId, prefix: 'x-')),
       ]),
     ),
+    'removing a strategy that cannot be read': (
+      () => withUnreadable,
+      (store) => store.editLibrary([
+        RemoveUnreadableStrategy(StrategyRef(unreadableArea)),
+      ]),
+    ),
     'moving a strategy between folders': (
       () => filed,
       (store) => store.editLibrary([const MoveStrategy(strategyId, 'f2')]),
+    ),
+    'putting a folder': (
+      () => filed,
+      (store) => store.editLibrary([
+        PutFolder(ReadableFolder(publicId: 'f3', name: 'Split')),
+      ]),
+    ),
+    'putting one folder twice in one edit': (
+      () => filed,
+      (store) => store.editLibrary([
+        PutFolder(ReadableFolder(publicId: 'f3', name: 'Split')),
+        PutFolder(ReadableFolder(publicId: 'f3', name: 'Haven')),
+      ]),
     ),
     'removing a folder': (
       () => filed,
@@ -111,180 +114,190 @@ void main() {
   };
 
   for (final MapEntry(key: name, value: (before, edit)) in edits.entries) {
-    test(
-      'saving $name returns its outcome, and the next open agrees',
-      () async {
-        final cleanDisk = MemoryStorage(before());
-        final (engine, counts) = counting(MemoryEngine(cleanDisk));
-        final clean = await openStore(engine);
-        counts.reset();
-        savedValue(await edit(clean));
-        expect(counts.calls, 1, reason: 'a save is one commit');
-        await clean.close();
-        final after = withoutSlot(cleanDisk.contents);
-        expect(sameContents(after, withoutSlot(before())), isFalse);
+    test('$name is one commit, and issuing it again after a save in doubt '
+        'leaves it applied once', () async {
+      final cleanDisk = MemoryStorage(before());
+      final (engine, counts) = counting(MemoryEngine(cleanDisk));
+      final clean = await openStore(engine);
+      counts.reset();
+      savedValue(await edit(clean));
+      expect(counts.commits, 1, reason: 'a save is one commit');
+      await clean.close();
+      final once = cleanDisk.contents;
+      expect(sameContents(once, before()), isFalse);
 
-        for (final how in Failing.values) {
-          final disk = MemoryStorage(before());
-          final store = await openStore(flaky(MemoryEngine(disk), {0: how}));
-          final result = await edit(store);
-          await store.close();
-          final expected = switch (how) {
-            Failing.refused || Failing.lost => withoutSlot(before()),
-            Failing.landed => after,
-          };
-          expect(
-            sameContents(withoutSlot(disk.contents), expected),
-            isTrue,
-            reason: '$name ${how.name}: the stored rows',
-          );
-          final lastSave = await lastSaveOn(disk);
-          switch ((how, result)) {
-            case (Failing.refused, NotSaved()):
-              break;
-            case (Failing.landed, SaveInDoubt(:final attempt)):
-              expect(
-                lastSave,
-                isA<LastSaveWas>().having(
-                  (was) => was.attempt,
-                  'attempt',
-                  attempt,
-                ),
-              );
-            case (Failing.lost, SaveInDoubt(:final attempt)):
-              expect(
-                lastSave,
-                isNot(
-                  isA<LastSaveWas>().having(
-                    (was) => was.attempt,
-                    'attempt',
-                    attempt,
-                  ),
-                ),
-              );
-            case _:
-              fail('$name ${how.name}: ${describeSaving(result)}');
-          }
+      for (final how in [Failing.landed, Failing.lost]) {
+        final disk = MemoryStorage(before());
+        final store = await openStore(flaky(MemoryEngine(disk), {0: how}));
+        expect(await edit(store), isA<SaveInDoubt<Object?, Object?>>());
+        expect(
+          store.library,
+          isA<LibraryShut>().having(
+            (shut) => shut.failure,
+            'failure',
+            isA<StoreStopped>(),
+          ),
+        );
+        final again = await reopen(disk);
+        final second = await edit(again);
+        await again.close();
+        expect(
+          sameContents(disk.contents, once),
+          isTrue,
+          reason: '$name ${how.name}: the stored rows after issuing it again',
+        );
+        switch (how) {
+          case Failing.landed when savedAgainWithNoChange.contains(name):
+            expect(second, isA<Saved<Object?, Object?>>());
+          case Failing.landed:
+            expect(
+              second,
+              isNot(isA<Saved<Object?, Object?>>()),
+              reason: '$name landed, then: ${describeSaving(second)}',
+            );
+          case Failing.lost:
+            expect(
+              second,
+              isA<Saved<Object?, Object?>>(),
+              reason: '$name lost, then: ${describeSaving(second)}',
+            );
+          case Failing.refused:
+            fail('not a save in doubt');
         }
-      },
-    );
+      }
+    });
   }
 
-  test(
-    'two saves in doubt in a row are each answered by the open after them',
-    () async {
-      final disk = MemoryStorage(seeded);
-      final landed = await inDoubt(
-        disk,
-        Failing.landed,
-        (store) => store.commit(strategyId, moveJett),
-      );
-      expect(
-        await lastSaveOn(disk),
-        isA<LastSaveWas>().having((was) => was.attempt, 'attempt', landed),
-      );
-      final lost = await inDoubt(
-        disk,
-        Failing.lost,
-        (store) => store.commit(strategyId, everyOpType()['element.reorder']!),
-      );
-      final answer = await lastSaveOn(disk);
-      expect(
-        answer,
-        isA<LastSaveWas>().having((was) => was.attempt, 'attempt', landed),
-      );
-      expect(
-        answer,
-        isNot(isA<LastSaveWas>().having((was) => was.attempt, 'attempt', lost)),
-      );
-    },
-  );
-
-  test(
-    'an open that fails part way still reports the last save, and so does the next',
-    () async {
-      final disk = MemoryStorage(seeded);
-      final landed = await inDoubt(
-        disk,
-        Failing.landed,
-        (store) => store.commit(strategyId, moveJett),
-      );
-      final failures = [true];
-      final failing = await LibraryStore.open(
-        WrappingEngine(
-          MemoryEngine(disk),
-          (lease) => FailingListLease(lease, failures),
-        ),
-        canRead: readsKnownKinds,
-      );
-      expect(
-        failing,
-        isA<StoreNotOpened>()
-            .having(
-              (opening) => opening.problem,
-              'problem',
-              isA<OpenStorageFailed>(),
-            )
-            .having(
-              (opening) => opening.lastSave,
-              'last save',
-              isA<LastSaveWas>().having(
-                (was) => was.attempt,
-                'attempt',
-                landed,
-              ),
-            ),
-      );
-      expect(
-        await lastSaveOn(disk),
-        isA<LastSaveWas>().having((was) => was.attempt, 'attempt', landed),
-      );
-    },
-  );
-
-  Contents withSlot(String? text) => {
-    ...seeded,
-    'library': {
-      for (final MapEntry(:key, :value) in seeded['library']!.entries)
-        if (key != 'last-save') key: value,
-      'last-save': ?text,
-    },
-  };
-
-  test('each save writes one above the attempt the slot holds', () async {
-    final disk = MemoryStorage(withSlot('41'));
-    final (engine, counts) = counting(MemoryEngine(disk));
-    final store = await openStore(engine);
+  test('a refused commit changes nothing and leaves the store open', () async {
+    final disk = MemoryStorage(seeded);
+    final store = await openStore(
+      flaky(MemoryEngine(disk), {0: Failing.refused}),
+    );
+    expect(
+      await store.commit(strategyId, moveJett),
+      isA<NotSaved<Committed, CommitRefusal>>(),
+    );
+    expect(sameContents(disk.contents, seeded), isTrue);
     savedValue(await store.commit(strategyId, moveJett));
-    expect(counts.calls, 1);
-    expect(disk.contents['library']!['last-save'], '42');
-    savedValue(
-      await store.editLibrary([
-        PutFolder(ReadableFolder(publicId: 'f1', name: 'Ascent')),
-      ]),
+  });
+
+  test(
+    'a store with a save in doubt lets go of the storage, closes its changes and refuses every call',
+    () async {
+      final disk = MemoryStorage(seeded);
+      final store = await openStore(
+        flaky(MemoryEngine(disk), {0: Failing.lost}),
+      );
+      final ended = expectLater(store.changes, emitsDone);
+      expect(
+        await store.commit(strategyId, moveJett),
+        isA<SaveInDoubt<Committed, CommitRefusal>>(),
+      );
+      await ended;
+      final stopped = isA<StoreStopped>();
+      expect(
+        await store.commit(strategyId, moveJett),
+        isA<NotSaved<Committed, CommitRefusal>>().having(
+          (result) => result.failure,
+          'failure',
+          stopped,
+        ),
+      );
+      expect(
+        await store.readStrategy(strategyId),
+        isA<NotRead<StrategyContent>>().having(
+          (read) => read.failure,
+          'failure',
+          stopped,
+        ),
+      );
+      expect(
+        await store.editLibrary([const RemoveStrategy(strategyId)]),
+        isA<NotSaved<LibraryEdited, LibraryRefusal>>().having(
+          (result) => result.failure,
+          'failure',
+          stopped,
+        ),
+      );
+      expect(
+        await LibraryStore.open(MemoryEngine(disk), canRead: readsKnownKinds),
+        isA<StoreOpened>(),
+      );
+      expect(await store.close(), isA<Released>());
+    },
+  );
+
+  group('An open that fails part way', () {
+    test('at the library listing opens nothing and writes nothing', () async {
+      final disk = MemoryStorage(withUnreadable);
+      expect(
+        await LibraryStore.open(
+          WrappingEngine(MemoryEngine(disk), FailingListLease.new),
+          canRead: readsKnownKinds,
+        ),
+        isA<StoreNotOpened>().having(
+          (opening) => opening.problem,
+          'problem',
+          isA<OpenStorageFailed>(),
+        ),
+      );
+      expect(sameContents(disk.contents, withUnreadable), isTrue);
+      expect(await reopen(disk), isA<LibraryStore>());
+    });
+
+    Contents damagedSummary() => {
+      ...seeded,
+      'library': {...seeded['library']!, summaryName(strategyId): '{}'},
+    };
+
+    test(
+      'at a summary repair that is refused still opens, listing the rebuilt summary',
+      () async {
+        final disk = MemoryStorage(damagedSummary());
+        final store = await openStore(
+          flaky(MemoryEngine(disk), {0: Failing.refused}),
+        );
+        expect(listOf(store).strategies.single.publicId, strategyId);
+        expect(sameContents(disk.contents, damagedSummary()), isTrue);
+        await store.close();
+        final repaired = await reopen(disk);
+        expect(listOf(repaired).strategies.single.publicId, strategyId);
+        expect(sameContents(disk.contents, seeded), isTrue);
+      },
     );
-    expect(disk.contents['library']!['last-save'], '43');
-    await store.close();
-    expect(
-      await inDoubt(
-        disk,
-        Failing.lost,
-        (store) => store.commit(strategyId, everyOpType()['element.reorder']!),
-      ),
-      44,
-    );
-    expect(
-      await lastSaveOn(disk),
-      isA<LastSaveWas>().having((was) => was.attempt, 'attempt', 43),
+
+    test(
+      'at a summary repair in doubt does not open, and lets the next open repair it',
+      () async {
+        final disk = MemoryStorage(damagedSummary());
+        expect(
+          await LibraryStore.open(
+            flaky(MemoryEngine(disk), {0: Failing.lost}),
+            canRead: readsKnownKinds,
+          ),
+          isA<StoreNotOpened>().having(
+            (opening) => opening.problem,
+            'problem',
+            isA<OpenStorageFailed>(),
+          ),
+        );
+        expect(sameContents(disk.contents, damagedSummary()), isTrue);
+        final repaired = await reopen(disk);
+        expect(listOf(repaired).strategies.single.publicId, strategyId);
+        expect(sameContents(disk.contents, seeded), isTrue);
+      },
     );
   });
 
-  test('a slot at the largest whole number refuses the next save', () async {
-    final before = withSlot('9007199254740991');
-    final disk = MemoryStorage(before);
+  test('a row nested deeper than the store reads is not saved', () async {
+    final disk = MemoryStorage(seeded);
     final store = await openStore(MemoryEngine(disk));
+    savedValue(
+      await store.commit(strategyId, deepElement('deep', maxJsonDepth - 3)),
+    );
+    final before = disk.contents;
     expect(
-      await store.commit(strategyId, moveJett),
+      await store.commit(strategyId, deepElement('too-deep', maxJsonDepth - 2)),
       isA<NotSaved<Committed, CommitRefusal>>().having(
         (result) => result.failure,
         'failure',
@@ -294,43 +307,77 @@ void main() {
     expect(sameContents(disk.contents, before), isTrue);
   });
 
-  for (final slot in [null, 'garbled']) {
-    test('after a slot that is ${slot ?? 'missing'}, no attempt this process '
-        'issued is issued again', () async {
-      final disk = MemoryStorage(withSlot(slot));
-      final lost = await inDoubt(
-        disk,
-        Failing.lost,
-        (store) => store.commit(strategyId, moveJett),
-      );
-      expect(disk.contents['library']!['last-save'], slot);
+  test(
+    'a settings edit holding a number that is not finite is refused before anything is written',
+    () async {
+      final disk = MemoryStorage(seeded);
       final store = await openStore(MemoryEngine(disk));
-      savedValue(await store.commit(strategyId, moveJett));
-      await store.close();
       expect(
-        await lastSaveOn(disk),
-        isA<LastSaveWas>().having(
-          (was) => was.attempt,
-          'attempt',
-          greaterThan(lost),
+        await store.commit(
+          strategyId,
+          const PageSettingsPatchOp(
+            opId: 'nan',
+            pagePublicId: 'page-a',
+            settings: PageSettings(
+              agentSize: double.nan,
+              abilitySize: 1,
+              useNeutralTeamColors: false,
+            ),
+            expectedPageSettingsRevision: 1,
+          ),
+        ),
+        isA<Refused<Committed, CommitRefusal>>().having(
+          (result) => result.reason,
+          'reason',
+          isA<OpRefusal>().having(
+            (reason) => reason.refusal,
+            'refusal',
+            const Failed(FailureCode.invalidPayload),
+          ),
         ),
       );
-    });
-  }
+      expect(sameContents(disk.contents, seeded), isTrue);
+    },
+  );
 
-  test('a row nested deeper than the store reads is not saved', () async {
-    final disk = MemoryStorage(seeded);
-    final store = await openStore(MemoryEngine(disk));
-    expect(
-      await store.commit(strategyId, deepElement('too-deep', maxJsonDepth - 2)),
-      isA<NotSaved<Committed, CommitRefusal>>().having(
-        (result) => result.failure,
-        'failure',
-        isA<WouldNotReadBack>(),
-      ),
-    );
-    expect(sameContents(disk.contents, seeded), isTrue);
-  });
+  test(
+    'an added strategy holding a number that is not finite is not saved',
+    () async {
+      final disk = MemoryStorage(seeded);
+      final store = await openStore(MemoryEngine(disk));
+      final rows = sampleStrategy(id: 'strategy-nan', prefix: 'n-');
+      expect(
+        await store.editLibrary([
+          AddStrategy(
+            StrategyRowSet(
+              strategy: rows.strategy,
+              pages: rows.pages,
+              settings: [
+                for (final row in rows.settings)
+                  ReadablePageSettings(
+                    pagePublicId: row.pagePublicId,
+                    revision: 1,
+                    settings: const PageSettings(
+                      agentSize: double.infinity,
+                      abilitySize: 1,
+                      useNeutralTeamColors: false,
+                    ),
+                  ),
+              ],
+              elements: rows.elements,
+              lineupGroups: rows.lineupGroups,
+            ),
+          ),
+        ]),
+        isA<NotSaved<LibraryEdited, LibraryRefusal>>().having(
+          (result) => result.failure,
+          'failure',
+          isA<WouldNotReadBack>(),
+        ),
+      );
+      expect(sameContents(disk.contents, seeded), isTrue);
+    },
+  );
 
   test(
     'a revision reaches the largest whole number JavaScript holds, and no further',
@@ -369,9 +416,7 @@ void main() {
       expect(sameContents(disk.contents, atLargest), isTrue);
       await store.close();
       final page = pageOf(
-        await (await openStore(
-          MemoryEngine(disk),
-        )).readPage(strategyId, 'page-a'),
+        await (await reopen(disk)).readPage(strategyId, 'page-a'),
       );
       expect((elementOn(page, 'jett') as LiveElement).revision, largest);
     },
@@ -380,15 +425,15 @@ void main() {
   test(
     'a strategy with a very long id is added and removed on a small engine',
     () async {
-      final disk = MemoryStorage();
+      final disk = MemoryStorage({}, 255);
       final id = 'x' * 300;
-      final store = await openStore(MemoryEngine(disk, maxKeyLength: 255));
+      final store = await openStore(MemoryEngine(disk));
       savedValue(
         await store.editLibrary([AddStrategy(sampleStrategy(id: id))]),
       );
       savedValue(await store.editLibrary([RemoveStrategy(id)]));
       await store.close();
-      final reopened = await openStore(MemoryEngine(disk, maxKeyLength: 255));
+      final reopened = await reopen(disk);
       expect(listOf(reopened).strategies, isEmpty);
     },
   );
@@ -398,7 +443,7 @@ void main() {
     () async {
       expect(
         await LibraryStore.open(
-          MemoryEngine(MemoryStorage(), maxKeyLength: longestName - 1),
+          MemoryEngine(MemoryStorage({}, longestName - 1)),
           canRead: readsKnownKinds,
         ),
         isA<StoreNotOpened>().having(

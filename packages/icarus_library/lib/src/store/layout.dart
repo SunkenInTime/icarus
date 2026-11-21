@@ -6,8 +6,6 @@ import '../rows.dart';
 
 const libraryArea = 'library';
 
-const lastSaveKey = 'last-save';
-
 const _strategyAreaPrefix = 's/';
 
 const _digestLength = 32;
@@ -26,6 +24,12 @@ String digestOf(String text) {
 final _digest = RegExp(r'^[0-9a-f]{32}$');
 
 bool _isDigest(String text) => _digest.hasMatch(text);
+
+StrategyArea? strategyAreaNamed(String area) =>
+    area.startsWith(_strategyAreaPrefix) &&
+        _isDigest(area.substring(_strategyAreaPrefix.length))
+    ? StrategyArea(area.substring(_strategyAreaPrefix.length))
+    : null;
 
 String strategyArea(String strategyPublicId) =>
     '$_strategyAreaPrefix${digestOf(strategyPublicId)}';
@@ -54,22 +58,6 @@ final class StrategyArea extends StoreArea {
   @override
   String get name => '$_strategyAreaPrefix$digest';
 }
-
-final class ForeignArea extends StoreArea {
-  const ForeignArea(this.name);
-
-  @override
-  final String name;
-}
-
-StoreArea readArea(String area) => switch (area) {
-  libraryArea => const LibraryArea(),
-  _
-      when area.startsWith(_strategyAreaPrefix) &&
-          _isDigest(area.substring(_strategyAreaPrefix.length)) =>
-    StrategyArea(area.substring(_strategyAreaPrefix.length)),
-  _ => ForeignArea(area),
-};
 
 sealed class StoreName {
   const StoreName();
@@ -149,13 +137,6 @@ final class UnknownKindName extends StoreName {
   final String name;
 }
 
-final class LastSaveName extends StoreName {
-  const LastSaveName();
-
-  @override
-  String get name => lastSaveKey;
-}
-
 final class ForeignName extends StoreName {
   const ForeignName(this.area, this.name);
 
@@ -196,7 +177,6 @@ StoreName readName(StoreArea area, String name) =>
         LineupName(page, digest),
       (StrategyArea(), ['content', final page, _, _]) when _isDigest(page) =>
         UnknownKindName(page, name),
-      (LibraryArea(), [lastSaveKey]) => const LastSaveName(),
       _ => ForeignName(area.name, name),
     };
 

@@ -637,6 +637,7 @@ StrategyFromRows strategyFromRows(StrategyRowSet rows, StrategyTimes times) {
               pagePublicId: element.pagePublicId,
               stored: element.toJson(),
               problem: 'this build cannot draw it',
+              reason: const FromNewerBuild(),
             ),
           );
         case Read(value: AgentItem(:final agent)):

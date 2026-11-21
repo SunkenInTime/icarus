@@ -36,11 +36,16 @@ String _classify(Object row) => switch (row) {
   _ => fail('not a row: $row'),
 };
 
-String _find<T>(Iterable<T> rows, bool Function(T row) named) {
+String _find<T>(
+  Iterable<T> rows,
+  bool Function(T row) named,
+  Set<StoredRowRef> unplaced,
+  StoredRowRef ref,
+) {
   for (final row in rows) {
     if (named(row)) return _classify(row!);
   }
-  return 'missing';
+  return unplaced.contains(ref) ? 'unplaced' : 'missing';
 }
 
 Future<View> viewOf(
@@ -50,50 +55,68 @@ Future<View> viewOf(
 ) async {
   final view = <String, String>{};
   final list = listOf(store);
+  final libraryUnplaced = {for (final row in list.unplaced) row.ref};
   for (final folder in folders) {
     view['folder $folder'] = _find(
       list.folders,
-      (row) => row.publicId == folder || row.publicId == folderName(folder),
+      (row) => row.publicId == folder,
+      libraryUnplaced,
+      StoredRowRef('library', folderName(folder)),
     );
   }
-  for (final summary in list.strategies) {
-    view['summary ${summary.publicId}'] = _canon(summary.toJson());
-  }
   for (final MapEntry(key: id, value: rows) in strategies.entries) {
+    final area = strategyArea(id);
     final content = strategyOf(await store.readStrategy(id));
+    final unplaced = {for (final row in content.unplaced) row.ref};
     view['$id strategy'] = _classify(content.strategy);
     for (final page in rows.pages) {
       final pageId = page.publicId;
       view['$id page $pageId'] = _find(
         content.pages,
-        (row) => row.publicId == pageId || row.publicId == pageName(pageId),
+        (row) => row.publicId == pageId,
+        unplaced,
+        StoredRowRef(area, pageName(pageId)),
       );
       view['$id settings $pageId'] = _find(
         content.settings.values,
-        (row) =>
-            row.pagePublicId == pageId ||
-            row.pagePublicId == settingsName(pageId),
+        (row) => row.pagePublicId == pageId,
+        unplaced,
+        StoredRowRef(area, settingsName(pageId)),
       );
-      final onPage = pageOf(await store.readPage(id, pageId));
-      for (final element in rows.elements.where(
+      final elementsHere = rows.elements.where(
         (row) => row.pagePublicId == pageId,
-      )) {
-        view['$id element ${element.publicId}'] = _find(
-          onPage.elements,
-          (row) =>
-              row.publicId == element.publicId ||
-              row.publicId == elementName(pageId, element.publicId),
-        );
-      }
-      for (final group in rows.lineupGroups.where(
+      );
+      final groupsHere = rows.lineupGroups.where(
         (row) => row.pagePublicId == pageId,
-      )) {
-        view['$id lineup ${group.publicId}'] = _find(
-          onPage.lineupGroups,
-          (row) =>
-              row.publicId == group.publicId ||
-              row.publicId == lineupName(pageId, group.publicId),
-        );
+      );
+      switch (await store.readPage(id, pageId)) {
+        case Found(value: final onPage):
+          final onPageUnplaced = {for (final row in onPage.unplaced) row.ref};
+          for (final element in elementsHere) {
+            view['$id element ${element.publicId}'] = _find(
+              onPage.elements,
+              (row) => row.publicId == element.publicId,
+              onPageUnplaced,
+              StoredRowRef(area, elementName(pageId, element.publicId)),
+            );
+          }
+          for (final group in groupsHere) {
+            view['$id lineup ${group.publicId}'] = _find(
+              onPage.lineupGroups,
+              (row) => row.publicId == group.publicId,
+              onPageUnplaced,
+              StoredRowRef(area, lineupName(pageId, group.publicId)),
+            );
+          }
+        case NotFound():
+          for (final element in elementsHere) {
+            view['$id element ${element.publicId}'] = 'unreachable';
+          }
+          for (final group in groupsHere) {
+            view['$id lineup ${group.publicId}'] = 'unreachable';
+          }
+        case NotRead(:final failure):
+          fail('$id $pageId: $failure');
       }
     }
   }
@@ -123,11 +146,149 @@ Map<(String, String), String> namesOfRows(
   },
 };
 
-typedef Corruption = ({String name, String text, List<String> allowed});
+typedef Corruption = ({String name, String text, Outcome outcome});
 
-const _anything = <String>[];
+sealed class Outcome {
+  const Outcome();
+}
 
-const _unreadable = ['unreadable'];
+final class Readable extends Outcome {
+  const Readable(this.json);
+
+  final Object? json;
+}
+
+final class Unreadable extends Outcome {
+  const Unreadable({this.newer = false});
+
+  final bool newer;
+}
+
+final class NoId extends Outcome {
+  const NoId();
+}
+
+final class Rebuilt extends Outcome {
+  const Rebuilt();
+}
+
+enum Field { id, parent, string, whole, number, boolean, object, payload }
+
+const _fields = <String, Map<String, Field>>{
+  'folder': {
+    'publicId': Field.id,
+    'name': Field.string,
+    'parentFolderPublicId': Field.string,
+  },
+  'strategy': {
+    'publicId': Field.id,
+    'name': Field.string,
+    'mapData': Field.string,
+    'revision': Field.whole,
+    'createdAt': Field.whole,
+    'updatedAt': Field.whole,
+  },
+  'page': {
+    'publicId': Field.id,
+    'strategyPublicId': Field.parent,
+    'name': Field.string,
+    'sortIndex': Field.whole,
+    'isAttack': Field.boolean,
+    'revision': Field.whole,
+    'deleted': Field.boolean,
+  },
+  'settings': {
+    'pagePublicId': Field.id,
+    'revision': Field.whole,
+    'settings': Field.object,
+  },
+  'element': {
+    'publicId': Field.id,
+    'pagePublicId': Field.parent,
+    'sortIndex': Field.whole,
+    'revision': Field.whole,
+    'deleted': Field.boolean,
+    'payload': Field.payload,
+  },
+  'lineup': {
+    'publicId': Field.id,
+    'strategyPublicId': Field.parent,
+    'pagePublicId': Field.parent,
+    'sortIndex': Field.whole,
+    'revision': Field.whole,
+    'deleted': Field.boolean,
+    'payload': Field.payload,
+  },
+};
+
+const _optional = {'parentFolderPublicId', 'settings'};
+
+bool _fits(Field field, Object? value) => switch (field) {
+  Field.string => value is String,
+  Field.whole =>
+    value is num &&
+        value.abs() <= 9007199254740991 &&
+        value == value.roundToDouble(),
+  Field.number => value is num,
+  Field.boolean => value is bool,
+  Field.id || Field.parent || Field.object || Field.payload => false,
+};
+
+Outcome _noId(String kind) =>
+    kind == 'strategy' ? const Unreadable() : const NoId();
+
+Outcome _either(bool readable, Object? replaced) =>
+    readable ? Readable(replaced) : const Unreadable();
+
+Outcome expected(String kind, Object? json, List<Object> at, Object? value) {
+  if (kind == 'summary') return const Rebuilt();
+  final replaced = _replaced(json, at, value);
+  if (at.isEmpty) return _noId(kind);
+  final field = _fields[kind]![at.first]!;
+  if (at.length == 1) {
+    return switch (field) {
+      Field.id => _noId(kind),
+      Field.parent => const Unreadable(),
+      _ when value == null && _optional.contains(at.first) => Readable(
+        _without(json, at),
+      ),
+      _ => _either(_fits(field, value), replaced),
+    };
+  }
+  final rest = at.sublist(1);
+  return switch ((kind, rest)) {
+    ('settings', ['agentSize' || 'abilitySize']) => _either(
+      _fits(Field.number, value),
+      replaced,
+    ),
+    ('settings', ['useNeutralTeamColors']) => _either(
+      _fits(Field.boolean, value),
+      replaced,
+    ),
+    ('element', ['kind']) => _either(value == 'text', replaced),
+    ('element', ['payloadVersion']) => Unreadable(newer: value == 7),
+    ('element', ['data']) => const Unreadable(),
+    ('element', ['data', ...]) => Readable(replaced),
+    ('lineup', ['kind'] || ['payloadVersion'] || ['data']) =>
+      const Unreadable(),
+    ('lineup', ['data', 'id']) => const Unreadable(),
+    ('lineup', ['data', 'origins' || 'landings' || 'links']) =>
+      const Unreadable(),
+    ('lineup', ['data', 'origins' || 'landings' || 'links', _]) =>
+      const Unreadable(),
+    ('lineup', ['data', 'origins', _, 'id' || 'agent']) => const Unreadable(),
+    ('lineup', ['data', 'landings', _, 'id' || 'ability']) =>
+      const Unreadable(),
+    ('lineup', ['data', 'links', _, 'originId' || 'landingId']) =>
+      const Unreadable(),
+    ('lineup', ['data', 'links', _, 'id']) => _either(
+      value is String,
+      replaced,
+    ),
+    ('lineup', ['data', ...]) => Readable(replaced),
+    _ => fail('no expectation for $kind ${at.join('/')}'),
+  };
+}
 
 Iterable<(List<Object>, Object?)> _positions(
   Object? json,
@@ -194,75 +355,67 @@ List<Object?> _otherTypes(Object? value) => [
 
 const _marker = 'NUMBER_GOES_HERE';
 
-const _numbers = [
+const _unholdable = [
   '1e400',
   '-1e400',
   '9223372036854775808',
   '-9223372036854775809',
+  '9007199254740993',
   '123456789012345678901234567890',
-  '1e308',
 ];
 
-List<Corruption> corruptionsOf(String text, Random random) {
+List<Corruption> corruptionsOf(String kind, String text, Random random) {
   final json = jsonDecode(text);
+  final whole = kind == 'summary' ? const Rebuilt() : _noId(kind);
   final corruptions = <Corruption>[
-    (name: 'empty', text: '', allowed: _unreadable),
+    (name: 'empty', text: '', outcome: whole),
     (
       name: 'cut at a third',
       text: text.substring(0, text.length ~/ 3),
-      allowed: _unreadable,
+      outcome: whole,
     ),
     (
       name: 'cut before the end',
       text: text.substring(0, text.length - 1),
-      allowed: _unreadable,
+      outcome: whole,
     ),
     (
       name: 'arbitrary characters',
       text: String.fromCharCodes([
         for (var i = 0; i < 40; i++) random.nextInt(0x10000),
       ]),
-      allowed: _unreadable,
+      outcome: whole,
     ),
     (
       name: 'nested too deep',
       text: '${'[' * 300}$text${']' * 300}',
-      allowed: _unreadable,
+      outcome: whole,
     ),
   ];
   for (final (at, value) in _positions(json, const [])) {
-    final opaque = at.length >= 2 && at[0] == 'payload' && at[1] == 'data';
     final where = at.isEmpty ? 'the row' : at.join('/');
     for (final other in _otherTypes(value)) {
       if (at.isEmpty && other is Map) continue;
       corruptions.add((
         name: '$where as ${jsonEncode(other)}',
         text: jsonEncode(_replaced(json, at, other)),
-        allowed: opaque
-            ? _anything
-            : [
-                'unreadable',
-                if (other == null && at.isNotEmpty && at.last is String)
-                  _canon(_without(json, at)),
-              ],
+        outcome: expected(kind, json, at, other),
       ));
     }
     if (value is num) {
       final template = jsonEncode(_replaced(json, at, _marker));
-      for (final number in _numbers) {
+      for (final number in _unholdable) {
         corruptions.add((
           name: '$where as $number',
           text: template.replaceFirst('"$_marker"', number),
-          allowed: switch (number) {
-            _ when opaque => _anything,
-            '1e400' || '-1e400' => _unreadable,
-            _ => [
-              'unreadable',
-              _canon(jsonDecode(template.replaceFirst('"$_marker"', number))),
-            ],
-          },
+          outcome: whole,
         ));
       }
+      corruptions.add((
+        name: '$where as 1e308',
+        text: template.replaceFirst('"$_marker"', '1e308'),
+        outcome: expected(kind, json, at, 1e308),
+      ));
     }
   }
   return corruptions;
@@ -273,6 +426,7 @@ void main() {
   late View baseline;
   late Map<(String, String), String> rowAt;
   late Map<String, StrategyRowSet> fixture;
+  late Map<String, String> baselineSummaries;
   const folderIds = ['f-root', 'f-child'];
 
   setUpAll(() async {
@@ -299,11 +453,16 @@ void main() {
       _secondId: sampleStrategy(id: _secondId, prefix: 'x-'),
     };
     rowAt = namesOfRows(fixture, folderIds);
-    baseline = await viewOf(await openOn(populated), fixture, folderIds);
+    final first = await openOn(populated);
+    baseline = await viewOf(first, fixture, folderIds);
+    baselineSummaries = {
+      for (final summary in listOf(first).strategies)
+        summary.publicId: _canon(summary.toJson()),
+    };
   });
 
   test(
-    'every corruption of a stored row leaves that row unreadable and the rest as they were',
+    'every corruption of a stored row reads as stated, and leaves every other row and summary as it was',
     () async {
       final random = Random(624);
       var cases = 0;
@@ -311,7 +470,16 @@ void main() {
         for (final MapEntry(:key, :value) in values.entries) {
           final viewKey = rowAt[(area, key)];
           if (viewKey == null) continue;
-          for (final corruption in corruptionsOf(value, random)) {
+          final words = viewKey.split(' ');
+          final kind = words.first == 'folder' || words.first == 'summary'
+              ? words.first
+              : words[1];
+          final owner = words.first == 'folder'
+              ? null
+              : words.first == 'summary'
+              ? words[1]
+              : words.first;
+          for (final corruption in corruptionsOf(kind, value, random)) {
             cases++;
             final where = '$area $key: ${corruption.name}';
             final opening = await LibraryStore.open(
@@ -329,36 +497,65 @@ void main() {
               StoreNotOpened(:final problem) => fail('$where: $problem'),
             };
             final view = await viewOf(store, fixture, folderIds);
+            final unreachable = kind == 'page' && corruption.outcome is NoId
+                ? {
+                    for (final row in fixture[owner]!.elements)
+                      if (row.pagePublicId == words[2])
+                        '$owner element ${row.publicId}',
+                    for (final row in fixture[owner]!.lineupGroups)
+                      if (row.pagePublicId == words[2])
+                        '$owner lineup ${row.publicId}',
+                  }
+                : const <String>{};
             for (final MapEntry(key: row, value: before) in baseline.entries) {
               final now = view[row];
-              if (row == viewKey && !row.startsWith('summary')) {
-                if (corruption.allowed.isNotEmpty) {
-                  expect(corruption.allowed, contains(now), reason: where);
-                }
-                continue;
+              if (row == viewKey) {
+                expect(now, switch (corruption.outcome) {
+                  Readable(:final json) => _canon(json),
+                  Unreadable() => 'unreadable',
+                  NoId() => 'unplaced',
+                  Rebuilt() => before,
+                }, reason: where);
+              } else if (unreachable.contains(row)) {
+                expect(now, 'unreachable', reason: where);
+              } else {
+                expect(now, before, reason: '$where changed $row');
               }
-              expect(now, before, reason: '$where changed $row');
             }
-            for (final id in [strategyId, _secondId]) {
-              final rebuilt = await store.rebuildSummary(id);
+            for (final id in fixture.keys) {
               expect(
-                rebuilt,
+                await store.rebuildSummary(id),
                 isNot(isA<NotSaved<StrategySummary, CommitRefusal>>()),
                 reason: where,
               );
             }
-            final damaged = viewKey.split(' ').first;
-            final kind = viewKey.split(' ')[1];
-            if (view[viewKey] == 'unreadable' &&
-                fixture.containsKey(damaged) &&
-                kind != 'strategy') {
-              final summary = listOf(
-                store,
-              ).strategies.firstWhere((summary) => summary.publicId == damaged);
+            final summaries = {
+              for (final summary in listOf(store).strategies)
+                summary.publicId: summary,
+            };
+            for (final id in fixture.keys) {
+              if (id == owner && kind != 'summary') continue;
               expect(
-                summary.readability,
-                isA<SomeUnreadable>(),
-                reason: '$where: the summary does not say a row is unreadable',
+                _canon(summaries[id]!.toJson()),
+                baselineSummaries[id],
+                reason: '$where changed the summary of $id',
+              );
+            }
+            if (owner != null && kind != 'summary' && kind != 'strategy') {
+              expect(
+                summaries[owner]!.readability,
+                switch (corruption.outcome) {
+                  Readable() || Rebuilt() => isA<AllReadable>(),
+                  Unreadable(newer: true) =>
+                    isA<SomeUnreadable>()
+                        .having((some) => some.damaged, 'damaged', 0)
+                        .having((some) => some.newer, 'newer', 1),
+                  Unreadable() || NoId() =>
+                    isA<SomeUnreadable>()
+                        .having((some) => some.damaged, 'damaged', 1)
+                        .having((some) => some.newer, 'newer', 0),
+                },
+                reason: '$where: the summary readability',
               );
             }
           }
@@ -368,58 +565,6 @@ void main() {
     },
   );
 
-  test('a last-save slot holding anything still lets the store open', () async {
-    final readings = <String, int?>{
-      '1': 1,
-      '42': 42,
-      '9007199254740991': 9007199254740991,
-      '9007199254740992': null,
-      '0': null,
-      '-3': null,
-      '042': null,
-      '+5': null,
-      ' 5': null,
-      '5.0': null,
-      '': null,
-      'x': null,
-      '1e400': null,
-      '{}': null,
-      'a' * 32: null,
-      '[' * 20000: null,
-    };
-    for (final MapEntry(key: text, value: attempt) in readings.entries) {
-      final opening = await LibraryStore.open(
-        MemoryEngine(
-          MemoryStorage({
-            ...populated,
-            'library': {...populated['library']!, 'last-save': text},
-          }),
-        ),
-        canRead: readsKnownKinds,
-      );
-      expect(
-        opening,
-        isA<StoreOpened>().having(
-          (opened) => opened.lastSave,
-          'last save',
-          switch (attempt) {
-            final attempt? => isA<LastSaveWas>().having(
-              (was) => was.attempt,
-              'attempt',
-              attempt,
-            ),
-            null => isA<LastSaveUnreadable>().having(
-              (unreadable) => unreadable.text,
-              'text',
-              text,
-            ),
-          },
-        ),
-        reason: text.length > 40 ? text.substring(0, 40) : text,
-      );
-    }
-  });
-
   test('a folder of 20,000 nested arrays is read as unreadable', () async {
     final store = await openOn({
       ...populated,
@@ -428,11 +573,10 @@ void main() {
         folderName('f-root'): '${'[' * 20000}${']' * 20000}',
       },
     });
+    expect(listOf(store).folders.map((folder) => folder.publicId), ['f-child']);
     expect(
-      listOf(
-        store,
-      ).folders.firstWhere((folder) => folder.publicId != 'f-child'),
-      isA<UnreadableFolder>(),
+      listOf(store).unplaced.single.ref,
+      StoredRowRef('library', folderName('f-root')),
     );
   });
 }

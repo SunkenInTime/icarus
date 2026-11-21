@@ -120,6 +120,56 @@ void main() {
     );
   });
 
+  test('the last live page cannot be deleted beside an unreadable page', () {
+    final session = Session(
+      strategyRows(
+        pages: [
+          page('page-a', sortIndex: 0),
+          UnreadablePage(
+            publicId: 'page-held',
+            strategyPublicId: 'strategy-1',
+            sortIndex: 1,
+            trashed: false,
+            stored: const {'publicId': 'page-held', 'sortIndex': 1},
+            problem: 'from a newer build',
+          ),
+        ],
+      ),
+    );
+    expect(
+      refused(
+        session.attempt(
+          const PageDeleteOp(
+            opId: 'delete',
+            pagePublicId: 'page-a',
+            expectedStrategyRevision: 1,
+          ),
+        ),
+      ),
+      const Failed(FailureCode.invalidOp),
+    );
+  });
+
+  test('settings and palettes keep a copy of the fields they were given', () {
+    final extra = <String, Object?>{'glow': 1};
+    final settings = PageSettings.keeping(
+      agentSize: 1,
+      abilitySize: 1,
+      useNeutralTeamColors: false,
+      unknownFields: extra,
+    );
+    final palette = ThemePalette.keeping(
+      base: '#000',
+      detail: '#111',
+      highlight: '#222',
+      unknownFields: extra,
+    );
+    extra['glow'] = 2;
+    expect(settings.toJson()['glow'], 1);
+    expect(palette.toJson()['glow'], 1);
+    expect(() => settings.unknownFields['glow'] = 3, throwsUnsupportedError);
+  });
+
   test('a page op made on an old strategy revision is refused', () {
     final session = Session(strategyRows(pages: autoNamed));
     expect(

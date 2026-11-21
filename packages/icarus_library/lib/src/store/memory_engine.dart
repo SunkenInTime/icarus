@@ -16,12 +16,16 @@ final class WriteHold implements PendingWrite {
 }
 
 final class MemoryStorage {
-  MemoryStorage([Map<String, Map<String, String>> contents = const {}]) {
+  MemoryStorage([
+    Map<String, Map<String, String>> contents = const {},
+    this.maxKeyLength = 1024,
+  ]) {
     for (final MapEntry(key: area, value: values) in contents.entries) {
       _area(area).addAll(values);
     }
   }
 
+  final int maxKeyLength;
   final _areas = <String, SplayTreeMap<String, String>>{};
   _MemoryLease? _holder;
   WriteHold? _hold;
@@ -38,10 +42,9 @@ final class MemoryStorage {
 }
 
 final class MemoryEngine implements StorageEngine {
-  MemoryEngine(this.storage, {this.maxKeyLength = 1024});
+  MemoryEngine(this.storage);
 
   final MemoryStorage storage;
-  final int maxKeyLength;
   final _granted = <_MemoryLease>[];
   var _closed = false;
 
@@ -51,7 +54,7 @@ final class MemoryEngine implements StorageEngine {
     if (storage._holder case final holder? when holder.status is Holding) {
       return const HeldByAnotherWriter();
     }
-    final lease = _MemoryLease(storage, maxKeyLength);
+    final lease = _MemoryLease(storage);
     storage._holder = lease;
     _granted.add(lease);
     return Leased(lease);
@@ -68,11 +71,12 @@ final class MemoryEngine implements StorageEngine {
 }
 
 final class _MemoryLease implements StorageLease {
-  _MemoryLease(this._storage, this.maxKeyLength);
+  _MemoryLease(this._storage);
 
   final MemoryStorage _storage;
+
   @override
-  final int maxKeyLength;
+  int get maxKeyLength => _storage.maxKeyLength;
   LeaseStatus _status = const Holding();
 
   @override
@@ -110,16 +114,22 @@ final class _MemoryLease implements StorageLease {
         ],
       );
 
+  StorageFailure? _refusal(Change change) => switch (change) {
+    Change(:final area) when !isArea(area) => NameNotAllowed(area, ''),
+    Put(:final area, :final key) || Delete(:final area, :final key)
+        when !isName(key) =>
+      NameNotAllowed(area, key),
+    Put(:final area, :final key) || Delete(:final area, :final key)
+        when key.length > maxKeyLength =>
+      KeyTooLong(area, key),
+    _ => null,
+  };
+
   @override
   Future<Committing> commit(List<Change> changes) async {
     if (_status is Ended) return const CommitRefused(LeaseEnded());
     for (final change in changes) {
-      if (change case Put(
-        :final area,
-        :final key,
-      ) when key.length > maxKeyLength) {
-        return CommitRefused(KeyTooLong(area, key));
-      }
+      if (_refusal(change) case final failure?) return CommitRefused(failure);
     }
     if (_storage._hold case final hold?) {
       _storage._hold = null;

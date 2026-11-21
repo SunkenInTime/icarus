@@ -111,10 +111,10 @@ void main() {
       isA<Refused<Committed, CommitRefusal>>().having(
         (refused) => refused.reason,
         'reason',
-        isA<OpRefusal>().having(
-          (reason) => reason.refusal,
-          'refusal',
-          UnreadableTarget(ElementKey(elementName('page-a', 'garbled'))),
+        isA<UnplacedRowInTheWay>().having(
+          (reason) => reason.ref,
+          'ref',
+          StoredRowRef(sampleArea, elementName('page-a', 'garbled')),
         ),
       ),
     );
@@ -146,56 +146,85 @@ void main() {
     expect(stored['publicId'], carried.publicId);
   });
 
-  test(
-    'a lineup group whose links are not items reads as unreadable, and its page is not copied',
-    () async {
-      final groupName = lineupName('page-a', 'g1');
-      final group = jsonDecode(seeded[sampleArea]![groupName]!) as Map;
-      final payload = group['payload'] as Map;
-      final broken = jsonEncode({
-        ...group,
-        'payload': {
-          ...payload,
-          'data': {
-            ...payload['data'] as Map,
-            'links': ['not an item'],
-          },
+  final brokenGraphs =
+      <String, Map<String, Object?> Function(Map<String, Object?> data)>{
+        'links that are not items': (data) => {
+          ...data,
+          'links': ['not an item'],
         },
-      });
-      final area = {...seeded[sampleArea]!, groupName: broken}
-        ..remove(elementName('page-a', 'garbled'))
-        ..remove(pinName);
-      final disk = MemoryStorage({...seeded, sampleArea: area});
-      final store = await openStore(MemoryEngine(disk));
-      final page = pageOf(await store.readPage(strategyId, 'page-a'));
-      expect(
-        page.lineupGroups.single,
-        isA<UnreadableLineupGroup>()
-            .having((row) => row.publicId, 'id', 'g1')
-            .having((row) => jsonEncode(row.stored), 'stored', broken),
-      );
-      expect(
-        await store.commit(
-          strategyId,
-          const PageAddOp(
-            opId: 'copy-a',
-            pagePublicId: 'page-copy',
-            sortIndex: 3,
-            expectedStrategyRevision: 1,
-            settings: defaultSettings,
-            copyContentFromPagePublicId: 'page-a',
+        'a link with no origin': (data) => {
+          ...data,
+          'links': [
+            for (final link
+                in (data['links']! as List<Object?>)
+                    .cast<Map<String, Object?>>())
+              {...link}..remove('originId'),
+          ],
+        },
+        'a link to an origin the group does not hold': (data) => {
+          ...data,
+          'links': [
+            for (final link
+                in (data['links']! as List<Object?>)
+                    .cast<Map<String, Object?>>())
+              {...link, 'originId': 'elsewhere'},
+          ],
+        },
+      };
+
+  for (final MapEntry(key: what, value: breakIt) in brokenGraphs.entries) {
+    test(
+      'a lineup group with $what reads as unreadable, its page is not copied, '
+      'and the summary counts it',
+      () async {
+        final groupName = lineupName('page-a', 'g1');
+        final group = jsonDecode(seeded[sampleArea]![groupName]!) as Map;
+        final payload = group['payload'] as Map;
+        final broken = jsonEncode({
+          ...group,
+          'payload': {
+            ...payload,
+            'data': breakIt((payload['data']! as Map).cast<String, Object?>()),
+          },
+        });
+        final area = {...seeded[sampleArea]!, groupName: broken}
+          ..remove(elementName('page-a', 'garbled'))
+          ..remove(pinName);
+        final disk = MemoryStorage({...seeded, sampleArea: area});
+        final store = await openStore(MemoryEngine(disk));
+        final page = pageOf(await store.readPage(strategyId, 'page-a'));
+        expect(
+          page.lineupGroups.single,
+          isA<UnreadableLineupGroup>()
+              .having((row) => row.publicId, 'id', 'g1')
+              .having((row) => jsonEncode(row.stored), 'stored', broken),
+        );
+        expect(
+          await store.commit(
+            strategyId,
+            const PageAddOp(
+              opId: 'copy-a',
+              pagePublicId: 'page-copy',
+              sortIndex: 3,
+              expectedStrategyRevision: 1,
+              settings: defaultSettings,
+              copyContentFromPagePublicId: 'page-a',
+            ),
           ),
-        ),
-        isA<Refused<Committed, CommitRefusal>>().having(
-          (refused) => refused.reason,
-          'reason',
-          isA<OpRefusal>(),
-        ),
-      );
-      expect(
-        sameContents(disk.contents, {...seeded, sampleArea: area}),
-        isTrue,
-      );
-    },
-  );
+          isA<Refused<Committed, CommitRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            isA<OpRefusal>(),
+          ),
+        );
+        expect(disk.contents[sampleArea], area);
+        expect(
+          listOf(store).strategies.single.readability,
+          isA<SomeUnreadable>()
+              .having((some) => some.damaged, 'damaged', 1)
+              .having((some) => some.newer, 'newer', 1),
+        );
+      },
+    );
+  }
 }

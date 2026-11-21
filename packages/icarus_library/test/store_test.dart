@@ -53,17 +53,13 @@ void main() {
       final content = pageOf(await store.readPage(strategyId, 'page-a'));
       expect(
         content.elements.map((row) => row.publicId),
-        unorderedEquals([
-          'jett',
-          'sova',
-          'line',
-          'smoke',
-          elementName('page-a', 'garbled'),
-        ]),
+        unorderedEquals(['jett', 'sova', 'line', 'smoke']),
       );
-      final garbled =
-          elementOn(content, elementName('page-a', 'garbled'))
-              as UnreadableElement;
+      final garbled = content.unplaced.single;
+      expect(
+        garbled.ref,
+        StoredRowRef(sampleArea, elementName('page-a', 'garbled')),
+      );
       expect(garbled.stored, garbledJson);
       expect(elementOn(content, 'smoke'), isA<UnreadableElement>());
       expect(content.lineupGroups.single.publicId, 'g1');
@@ -147,7 +143,7 @@ void main() {
         await store.commit(strategyId, moveJett),
         isA<NothingToSave<Committed, CommitRefusal>>(),
       );
-      expect(counts.calls, 0);
+      expect(counts.commits, 0);
     });
 
     test('an op the rows refuse is refused with the reason', () async {
@@ -276,7 +272,11 @@ void main() {
           isA<LibraryShut>().having(
             (shut) => shut.failure,
             'failure',
-            isA<LeaseEnded>(),
+            isA<StoreStopped>().having(
+              (stopped) => stopped.cause,
+              'cause',
+              isA<LeaseEnded>(),
+            ),
           ),
         );
         expect(
@@ -418,7 +418,7 @@ void main() {
   });
 
   group('Decoding what is stored', () {
-    const tooEarly = -9223372036854775808;
+    const tooEarly = -8640000000000001;
 
     test(
       'a summary with a time out of range is rebuilt from the rows',
@@ -449,7 +449,18 @@ void main() {
           },
         });
         expect(listOf(store).strategies, isEmpty);
-        expect(listOf(store).unreadableStrategies.single.publicId, strategyId);
+        expect(
+          listOf(store).unreadableStrategies.single.header,
+          isA<Placed<StrategyRow>>().having(
+            (placed) => placed.row,
+            'row',
+            isA<UnreadableStrategy>().having(
+              (row) => row.publicId,
+              'id',
+              strategyId,
+            ),
+          ),
+        );
         final content = strategyOf(await store.readStrategy(strategyId));
         expect(content.strategy, isA<UnreadableStrategy>());
         expect(content.pages, hasLength(3));
@@ -531,34 +542,77 @@ void main() {
 
     test('an element cannot take the id an unreadable element holds', () async {
       final store = await openOn(seeded);
-      for (final (id, held) in [
-        ('smoke', 'smoke'),
-        ('garbled', elementName('page-a', 'garbled')),
-      ]) {
-        expect(
-          await store.commit(
-            strategyId,
-            ElementAddOp(
-              opId: 'take-$id',
-              elementPublicId: id,
-              pagePublicId: 'page-b',
-              payload: agent(id).payload,
-              sortIndex: 0,
-            ),
+      expect(
+        await store.commit(
+          strategyId,
+          ElementAddOp(
+            opId: 'take-smoke',
+            elementPublicId: 'smoke',
+            pagePublicId: 'page-b',
+            payload: agent('smoke').payload,
+            sortIndex: 0,
           ),
-          isA<Refused<Committed, CommitRefusal>>().having(
-            (refused) => refused.reason,
-            'reason',
-            isA<OpRefusal>().having(
-              (reason) => reason.refusal,
-              'refusal',
-              UnreadableTarget(ElementKey(held)),
-            ),
+        ),
+        isA<Refused<Committed, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<OpRefusal>().having(
+            (reason) => reason.refusal,
+            'refusal',
+            const UnreadableTarget(ElementKey('smoke')),
           ),
-          reason: id,
-        );
-      }
+        ),
+      );
     });
+
+    for (final (heldOn, addedOn) in [
+      ('page-a', 'page-b'),
+      ('page-b', 'page-a'),
+    ]) {
+      test(
+        'an element added on $addedOn beside a row with no id on $heldOn stays findable after a reopen',
+        () async {
+          final disk = MemoryStorage({
+            ...seeded,
+            sampleArea: {
+              ...seeded[sampleArea]!,
+              elementName(heldOn, 'twin'): garbledJson,
+            },
+          });
+          final store = await openStore(MemoryEngine(disk));
+          savedValue(
+            await store.commit(
+              strategyId,
+              ElementAddOp(
+                opId: 'beside',
+                elementPublicId: 'twin',
+                pagePublicId: addedOn,
+                payload: agent('twin').payload,
+                sortIndex: 0,
+              ),
+            ),
+          );
+          await store.close();
+          expect(
+            disk.contents[sampleArea]![elementName(heldOn, 'twin')],
+            garbledJson,
+          );
+          final reopened = await openStore(MemoryEngine(disk));
+          savedValue(
+            await reopened.commit(
+              strategyId,
+              ElementReorderOp(
+                opId: 'move-twin',
+                elementPublicId: 'twin',
+                pagePublicId: addedOn,
+                sortIndex: 4,
+                expectedElementRevision: 1,
+              ),
+            ),
+          );
+        },
+      );
+    }
 
     test('a page holding a row that is not JSON is not copied', () async {
       final store = await openOn(seeded);
@@ -703,10 +757,7 @@ void main() {
         final disk = MemoryStorage(seeded);
         final store = await openStore(MemoryEngine(disk));
         savedValue(await store.editLibrary([const RemoveStrategy(strategyId)]));
-        expect(
-          withoutSlot(disk.contents).values.expand((area) => area.keys),
-          isEmpty,
-        );
+        expect(disk.contents.values.expand((area) => area.keys), isEmpty);
         expect(listOf(store).strategies, isEmpty);
         expect(
           await store.readStrategy(strategyId),
@@ -772,5 +823,180 @@ void main() {
         );
       }
     });
+  });
+
+  group('Rows with no id', () {
+    final garbledArea = strategyArea('strategy-garbled');
+
+    Contents withGarbledStrategy(Contents base) => {
+      ...base,
+      'library': {
+        ...base['library']!,
+        summaryName('strategy-garbled'): '{"broken"',
+      },
+      garbledArea: {'strategy': '{"broken"'},
+    };
+
+    test(
+      'an unreadable strategy is listed by its reference, and removing it takes that reference',
+      () async {
+        final storage = MemoryStorage(seeded);
+        final setup = await openStore(MemoryEngine(storage));
+        savedValue(
+          await setup.editLibrary([
+            AddStrategy(sampleStrategy(id: garbledArea, prefix: 'named-')),
+          ]),
+        );
+        await setup.close();
+        final disk = MemoryStorage(withGarbledStrategy(storage.contents));
+        final store = await openStore(MemoryEngine(disk));
+        final listing = listOf(store).unreadableStrategies.single;
+        expect(listing.ref, StrategyRef(garbledArea));
+        expect(listing.header, isA<Unplaced<StrategyRow>>());
+        expect(
+          listOf(store).strategies.map((summary) => summary.publicId),
+          unorderedEquals([strategyId, garbledArea]),
+        );
+        expect(
+          await store.editLibrary([
+            RemoveUnreadableStrategy(StrategyRef(strategyArea('elsewhere'))),
+          ]),
+          isA<Refused<LibraryEdited, LibraryRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            isA<NoSuchUnreadableStrategy>(),
+          ),
+        );
+        savedValue(
+          await store.editLibrary([RemoveUnreadableStrategy(listing.ref)]),
+        );
+        expect(disk.contents[garbledArea], isNull);
+        expect(
+          disk.contents['library']![summaryName('strategy-garbled')],
+          isNull,
+        );
+        expect(
+          disk.contents[strategyArea(garbledArea)],
+          storage.contents[strategyArea(garbledArea)],
+        );
+        expect(listOf(store).unreadableStrategies, isEmpty);
+        expect(
+          listOf(store).strategies.map((summary) => summary.publicId),
+          unorderedEquals([strategyId, garbledArea]),
+        );
+      },
+    );
+
+    test(
+      'settings with no id stay apart from the settings of a page whose id is that name',
+      () async {
+        final storage = MemoryStorage();
+        final setup = await openStore(MemoryEngine(storage));
+        final odd = settingsName('page-a');
+        savedValue(
+          await setup.editLibrary([
+            AddStrategy(
+              StrategyRowSet(
+                strategy: strategyRow(),
+                pages: [
+                  LivePage(
+                    publicId: 'page-a',
+                    strategyPublicId: strategyId,
+                    name: 'Page 1',
+                    sortIndex: 0,
+                    isAttack: true,
+                    revision: 1,
+                  ),
+                  LivePage(
+                    publicId: odd,
+                    strategyPublicId: strategyId,
+                    name: 'Page 2',
+                    sortIndex: 1,
+                    isAttack: true,
+                    revision: 1,
+                  ),
+                ],
+                settings: [settings('page-a'), settings(odd)],
+              ),
+            ),
+          ]),
+        );
+        await setup.close();
+        final store = await openOn({
+          ...storage.contents,
+          sampleArea: {...storage.contents[sampleArea]!, odd: '{"pagePub'},
+        });
+        final content = strategyOf(await store.readStrategy(strategyId));
+        expect(content.settings.keys, [odd]);
+        expect(content.settings[odd], isA<ReadablePageSettings>());
+        expect(content.unplaced.single.ref, StoredRowRef(sampleArea, odd));
+      },
+    );
+
+    test('an edit uses the changes it was given when it was called', () async {
+      final store = await openOn(seeded);
+      final changes = <LibraryChange>[
+        PutFolder(ReadableFolder(publicId: 'f1', name: 'Ascent')),
+      ];
+      final reading = store.readStrategy(strategyId);
+      final editing = store.editLibrary(changes);
+      changes
+        ..clear()
+        ..add(const RemoveStrategy(strategyId));
+      await reading;
+      savedValue(await editing);
+      expect(listOf(store).folders.map((folder) => folder.publicId), ['f1']);
+      expect(listOf(store).strategies, hasLength(1));
+    });
+
+    test('a commit names each name once, keeping the last', () async {
+      final (engine, counts) = counting(MemoryEngine(MemoryStorage(seeded)));
+      final store = await openStore(engine);
+      counts.reset();
+      savedValue(
+        await store.editLibrary([
+          PutFolder(ReadableFolder(publicId: 'f1', name: 'Ascent')),
+          PutFolder(ReadableFolder(publicId: 'f1', name: 'Bind')),
+        ]),
+      );
+      expect(counts.written, [('library', folderName('f1'))]);
+      expect((listOf(store).folders.single as ReadableFolder).name, 'Bind');
+    });
+
+    test(
+      'a page read that finds rows the summary does not count rebuilds it',
+      () async {
+        final stale = {
+          ...seeded,
+          'library': {
+            ...seeded['library']!,
+            summaryName(strategyId):
+                (await seededClean())['library']![summaryName(strategyId)]!,
+          },
+        };
+        final store = await openOn(stale);
+        expect(listOf(store).strategies.single.readability, isA<AllReadable>());
+        pageOf(await store.readPage(strategyId, 'page-a'));
+        expect(
+          listOf(store).strategies.single.readability,
+          isA<SomeUnreadable>()
+              .having((some) => some.damaged, 'damaged', 1)
+              .having((some) => some.newer, 'newer', 2),
+        );
+      },
+    );
+
+    test(
+      'a rebuild counts rows of a kind this build does not know apart from damaged ones',
+      () async {
+        final store = await openOn(seeded);
+        expect(
+          listOf(store).strategies.single.readability,
+          isA<SomeUnreadable>()
+              .having((some) => some.damaged, 'damaged', 1)
+              .having((some) => some.newer, 'newer', 2),
+        );
+      },
+    );
   });
 }

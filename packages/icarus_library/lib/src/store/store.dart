@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:collection/collection.dart';
 
@@ -24,19 +23,17 @@ sealed class StoreOpening {
 }
 
 final class StoreOpened extends StoreOpening {
-  StoreOpened(this.store, this.lastSave, List<ForeignName> foreignNames)
+  StoreOpened(this.store, List<ForeignName> foreignNames)
     : foreignNames = List.unmodifiable(foreignNames);
 
   final LibraryStore store;
-  final LastSave lastSave;
   final List<ForeignName> foreignNames;
 }
 
 final class StoreNotOpened extends StoreOpening {
-  const StoreNotOpened(this.problem, this.lastSave);
+  const StoreNotOpened(this.problem);
 
   final OpenProblem problem;
-  final LastSave lastSave;
 }
 
 sealed class _State {
@@ -47,29 +44,45 @@ final class _Ready extends _State {
   const _Ready();
 }
 
-final class _Stopped extends _State {
-  const _Stopped(this.cause);
+final class _Shut extends _State {
+  const _Shut(this.failure);
 
-  final StorageFailure cause;
-}
-
-final class _Closed extends _State {
-  const _Closed();
+  final StorageFailure failure;
 }
 
 DateTime _now() => DateTime.now().toUtc();
 
-String _stored(Object? json) => canonicalJson(json);
+RowSpot _named(String digest, {String? known}) =>
+    RowSpot(names: (id) => namesId(digest, id), known: known);
 
-LastSave _slotReading(String text) => switch (int.tryParse(text)) {
-  final attempt?
-      when attempt >= 1 && attempt <= largestSafeWhole && '$attempt' == text =>
-    LastSaveWas(attempt),
-  _ => LastSaveUnreadable(text),
-};
+sealed class _Write {
+  const _Write(this.area);
 
-RowSpot _spot(StoreName name, String digest) =>
-    RowSpot(name: name.name, names: (id) => namesId(digest, id));
+  final String area;
+}
+
+final class _PutRow extends _Write {
+  const _PutRow(super.area, this.row);
+
+  final Row row;
+}
+
+final class _PutSummary extends _Write {
+  const _PutSummary(this.digest, this.summary) : super(libraryArea);
+
+  final String digest;
+  final StrategySummary summary;
+}
+
+final class _DeleteName extends _Write {
+  const _DeleteName(super.area, this.name);
+
+  final String name;
+}
+
+final class _ClearArea extends _Write {
+  const _ClearArea(super.area);
+}
 
 sealed class _FolderPlace {
   const _FolderPlace();
@@ -99,6 +112,9 @@ final class _UnderUnreadable extends _FolderPlace {
   final UnreadableFolder folder;
 }
 
+FolderRow? _folderWithId(Map<String, FolderRow> folders, String id) =>
+    rowWithId(folders, id, (row) => row.publicId);
+
 _FolderPlace _placeOf(String folderPublicId, Map<String, FolderRow> folders) {
   final chain = <String>[];
   final seen = <String>{};
@@ -106,17 +122,30 @@ _FolderPlace _placeOf(String folderPublicId, Map<String, FolderRow> folders) {
   while (at != null) {
     if (!seen.add(at)) return _Looped(chain.sublist(chain.indexOf(at)));
     chain.add(at);
-    switch (folders[digestOf(at)]) {
-      case final ReadableFolder folder when folder.publicId == at:
+    switch (_folderWithId(folders, at)) {
+      case final ReadableFolder folder:
         at = folder.parentFolderPublicId;
       case final UnreadableFolder folder:
         return _UnderUnreadable(folder);
-      case ReadableFolder() || null:
+      case null:
         return _UnderMissing(at);
     }
   }
   return _Filed(chain);
 }
+
+LibraryRefusal? _filingRefusal(
+  String folderPublicId,
+  Map<String, FolderRow> folders, {
+  String? moving,
+}) => switch (_placeOf(folderPublicId, folders)) {
+  _Filed(:final chain) when moving != null && chain.contains(moving) =>
+    FolderInsideItself(moving),
+  _Filed() => null,
+  _Looped(:final loop) => FolderLoop(loop),
+  _UnderMissing(:final folderPublicId) => NoSuchFolder(folderPublicId),
+  _UnderUnreadable(:final folder) => UnreadableRowInTheWay(folder),
+};
 
 final class _WatchedLease {
   _WatchedLease(this._inner, this._ended);
@@ -146,22 +175,39 @@ final class _WatchedLease {
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
       _watch(_inner.entries(area, prefix));
 
-  Future<Committing> commit(List<Change> changes) async {
-    final result = await _inner.commit(changes);
-    if (result
-        case CommitRefused(failure: LeaseEnded()) ||
-            CommitUnknown(failure: LeaseEnded())) {
-      _ended();
-    }
-    return result;
-  }
+  Future<Committing> commit(List<Change> changes) => _inner.commit(changes);
 
   Future<Releasing> release() => _inner.release();
 }
 
+sealed class _Rebuilt {
+  const _Rebuilt();
+}
+
+final class _RebuiltSummary extends _Rebuilt {
+  const _RebuiltSummary(this.summary);
+
+  final StrategySummary summary;
+}
+
+final class _CannotRebuild extends _Rebuilt {
+  const _CannotRebuild(this.refusal);
+
+  final CommitRefusal refusal;
+}
+
+final class _RebuildNotRead extends _Rebuilt {
+  const _RebuildNotRead(this.failure);
+
+  final StorageFailure failure;
+}
+
 final class LibraryStore {
   LibraryStore._(StorageLease lease, this._canRead, this._clock) {
-    _lease = _WatchedLease(lease, _leaseEnded);
+    _lease = _WatchedLease(
+      lease,
+      () => _shut(const StoreStopped(LeaseEnded())),
+    );
   }
 
   static Future<StoreOpening> open(
@@ -171,93 +217,63 @@ final class LibraryStore {
   }) async {
     switch (await engine.lease()) {
       case HeldByAnotherWriter():
-        return const StoreNotOpened(StoreAlreadyOpen(), LastSaveNotRead());
+        return const StoreNotOpened(StoreAlreadyOpen());
       case LeaseFailed(:final failure):
-        return StoreNotOpened(
-          OpenStorageFailed(failure),
-          const LastSaveNotRead(),
-        );
+        return StoreNotOpened(OpenStorageFailed(failure));
       case Leased(:final lease):
-        StoreOpening? opening;
-        try {
-          opening = await _open(lease, canRead, clock);
-          return opening;
-        } finally {
-          if (opening is! StoreOpened) await lease.release();
+        if (lease.maxKeyLength < longestName) {
+          await lease.release();
+          return StoreNotOpened(EngineTooSmall(lease.maxKeyLength));
+        }
+        final store = LibraryStore._(lease, canRead, clock);
+        final foreign = <ForeignName>[];
+        switch (await store._readLibrary(foreign)) {
+          case Done():
+            return StoreOpened(store, foreign);
+          case StorageFailed(:final failure):
+            await store.close();
+            return StoreNotOpened(OpenStorageFailed(failure));
         }
     }
   }
 
-  static Future<StoreOpening> _open(
-    StorageLease lease,
-    CanRead canRead,
-    DateTime Function() clock,
-  ) async {
-    if (lease.maxKeyLength < longestName) {
-      return StoreNotOpened(
-        EngineTooSmall(lease.maxKeyLength),
-        const LastSaveNotRead(),
-      );
-    }
-    final store = LibraryStore._(lease, canRead, clock);
-    final LastSave lastSave;
-    switch (await store._lease.read(libraryArea, lastSaveKey)) {
-      case KeyNotRead(:final failure):
-        return StoreNotOpened(
-          OpenStorageFailed(failure),
-          const LastSaveNotRead(),
-        );
-      case KeyMissing():
-        lastSave = const NoSaveRecorded();
-      case KeyHeld(:final value):
-        lastSave = _slotReading(value);
-    }
-    store._nextAttempt = switch (lastSave) {
-      LastSaveWas(:final attempt) => attempt + 1,
-      NoSaveRecorded() ||
-      LastSaveUnreadable() ||
-      LastSaveNotRead() => _highestIssued + 1,
-    };
-    final foreign = <ForeignName>[];
-    if (await store._readLibrary(foreign) case StorageFailed(:final failure)) {
-      return StoreNotOpened(OpenStorageFailed(failure), lastSave);
-    }
-    return StoreOpened(store, lastSave, foreign);
-  }
-
-  static var _highestIssued = 0;
-
   late final _WatchedLease _lease;
-  late int _nextAttempt;
   final CanRead _canRead;
   final DateTime Function() _clock;
   _State _state = const _Ready();
   Future<void> _tail = Future.value();
+  Future<Releasing>? _released;
   Future<Releasing>? _closing;
   final _summaries = <String, StrategySummary>{};
-  final _unreadableStrategies = <String, UnreadableStrategy>{};
+  final _unreadable = <String, UnreadableStrategyListing>{};
   final _folders = <String, FolderRow>{};
+  final _unplaced = <String, UnplacedRow>{};
   final _strategies = <String, LoadedStrategy>{};
   final _changes = StreamController<StoreChange>.broadcast();
 
   Stream<StoreChange> get changes => _changes.stream;
 
-  LibraryState get library => switch ((_state, _lease.status)) {
-    (_Closed(), _) => const LibraryShut(StoreClosed()),
-    (_, Ended()) => const LibraryShut(LeaseEnded()),
-    (_Stopped(:final cause), _) => LibraryShut(StoreStopped(cause)),
-    (_Ready(), Holding()) => LibraryOpen(
-      LibraryList(
-        strategies: _summaries.values.toList(),
-        unreadableStrategies: _unreadableStrategies.values.toList(),
-        folders: _folders.values.toList(),
+  LibraryState get library {
+    _settle();
+    return switch (_state) {
+      _Shut(:final failure) => LibraryShut(failure),
+      _Ready() => LibraryOpen(
+        LibraryList(
+          strategies: _summaries.values.toList(),
+          unreadableStrategies: _unreadable.values.toList(),
+          folders: _folders.values.toList(),
+          unplaced: _unplaced.values.toList(),
+        ),
       ),
-    ),
-  };
+    };
+  }
 
-  void _leaseEnded() {
-    if (_state is! _Closed) _state = const _Stopped(LeaseEnded());
-    if (!_changes.isClosed) unawaited(_changes.close());
+  void _shut(StorageFailure failure) {
+    if (_state case _Ready()) {
+      _state = _Shut(failure);
+      _released = _lease.release();
+      if (!_changes.isClosed) unawaited(_changes.close());
+    }
   }
 
   void _emit(StoreChange change) {
@@ -265,10 +281,8 @@ final class LibraryStore {
   }
 
   Future<Releasing> close() => _closing ??= _inTurn(() async {
-    _state = const _Closed();
-    final released = await _lease.release();
-    if (!_changes.isClosed) unawaited(_changes.close());
-    return released;
+    _shut(const StoreClosed());
+    return _released!;
   });
 
   Future<T> _inTurn<T>(FutureOr<T> Function() task) async {
@@ -284,98 +298,133 @@ final class LibraryStore {
   }
 
   Stored<void> _settle() {
-    if (_lease.status is Ended) _leaseEnded();
+    if (_lease.status is Ended) _shut(const StoreStopped(LeaseEnded()));
     return switch (_state) {
       _Ready() => done,
-      _Stopped(:final cause) => StorageFailed(StoreStopped(cause)),
-      _Closed() => const StorageFailed(StoreClosed()),
+      _Shut(:final failure) => StorageFailed(failure),
     };
   }
 
-  Row _readBack(Row row, String text) {
-    final stored = admit(text);
-    RowSpot spot(String id) =>
-        RowSpot(name: nameOf(row).name, names: (other) => other == id);
-    return switch (row) {
-      StrategyRow(:final publicId) => StrategyRow.parse(
+  Parsed<Row> _parseAt(String area, StoreName name, Admission stored) {
+    final strategy = switch (strategyAreaNamed(area)) {
+      StrategyArea(:final digest) => _named(digest),
+      null => RowSpot(names: (_) => false),
+    };
+    return switch (name) {
+      SummaryName() ||
+      UnknownKindName() ||
+      ForeignName() => Unplaced(null, '${name.name} holds no row'),
+      FolderName(:final digest) => FolderRow.parse(
         stored,
-        spot: spot(publicId),
+        spot: _named(digest),
       ),
-      FolderRow(:final publicId) => FolderRow.parse(
+      HeaderName() => StrategyRow.parse(stored, spot: strategy),
+      PageName(:final digest) => PageRow.parse(
         stored,
-        spot: spot(publicId),
+        spot: _named(digest),
+        strategy: strategy,
       ),
-      PageRow(:final publicId, :final strategyPublicId) => PageRow.parse(
+      SettingsName(:final digest) => PageSettingsRow.parse(
         stored,
-        spot: spot(publicId),
-        strategy: RowSpot(
-          name: strategyPublicId,
-          names: (id) => id == strategyPublicId,
-        ),
+        spot: _named(digest),
       ),
-      PageSettingsRow(:final pagePublicId) => PageSettingsRow.parse(
+      ElementName(:final page, :final digest) => ElementRow.parse(
         stored,
-        spot: spot(pagePublicId),
-      ),
-      ElementRow(:final publicId, :final pagePublicId) => ElementRow.parse(
-        stored,
-        spot: spot(publicId),
-        page: RowSpot(name: pagePublicId, names: (id) => id == pagePublicId),
+        spot: _named(digest),
+        page: _named(page),
         canRead: _canRead,
       ),
-      LineupGroupRow(
-        :final publicId,
-        :final pagePublicId,
-        :final strategyPublicId,
-      ) =>
-        LineupGroupRow.parse(
-          stored,
-          spot: spot(publicId),
-          page: RowSpot(name: pagePublicId, names: (id) => id == pagePublicId),
-          strategy: RowSpot(
-            name: strategyPublicId,
-            names: (id) => id == strategyPublicId,
-          ),
-        ),
+      LineupName(:final page, :final digest) => LineupGroupRow.parse(
+        stored,
+        spot: _named(digest),
+        page: _named(page),
+        strategy: strategy,
+      ),
     };
   }
 
-  Stored<void> _readsBack(String area, Row row, String text) =>
-      switch (_readBack(row, text)) {
-        final back when back == row => done,
-        final back => StorageFailed(
-          WouldNotReadBack(area, nameOf(row).name, 'reads back as $back'),
-        ),
-      };
+  Stored<Change> _change(_Write write) {
+    StorageFailed<Change> wouldNot(String name, String problem) =>
+        StorageFailed(WouldNotReadBack(write.area, name, problem));
+    switch (write) {
+      case _PutRow(:final area, :final row):
+        final name = nameOf(row);
+        switch (encodeJson(row.toJson())) {
+          case NotEncoded(:final problem):
+            return wouldNot(name.name, problem);
+          case Encoded(:final text):
+            final back = _parseAt(area, name, admit(text));
+            return switch (back) {
+              Placed(row: final back) when back == row && back.key == row.key =>
+                Done(Put(area, name.name, text)),
+              Placed(row: final back) => wouldNot(name.name, 'reads as $back'),
+              Unplaced(:final problem) => wouldNot(name.name, problem),
+            };
+        }
+      case _PutSummary(:final digest, :final summary):
+        final name = SummaryName(digest).name;
+        switch (encodeJson(summary.toJson())) {
+          case NotEncoded(:final problem):
+            return wouldNot(name, problem);
+          case Encoded(:final text):
+            return switch (admit(text)) {
+              Admitted(:final json) => switch (StrategySummary.decode(json)) {
+                Read(:final value) when value == summary => Done(
+                  Put(libraryArea, name, text),
+                ),
+                Read(:final value) => wouldNot(name, 'reads as $value'),
+                CouldNotRead(:final problem) => wouldNot(name, problem),
+              },
+              NotAdmitted(:final problem) => wouldNot(name, problem),
+            };
+        }
+      case _DeleteName(:final area, :final name):
+        return Done(Delete(area, name));
+      case _ClearArea(:final area):
+        return Done(ClearArea(area));
+    }
+  }
 
-  Future<Saving<S, R>> _save<S, R>(
-    List<Change> changes,
+  static List<Change> _collapsed(List<Change> changes) {
+    final kept = <Change>[];
+    final named = <(String, String)>{};
+    final cleared = <String>{};
+    for (final change in changes.reversed) {
+      switch (change) {
+        case ClearArea(:final area):
+          if (cleared.add(area)) kept.add(change);
+        case Put(:final area, :final key) || Delete(:final area, :final key):
+          if (!cleared.contains(area) && named.add((area, key))) {
+            kept.add(change);
+          }
+      }
+    }
+    return kept.reversed.toList();
+  }
+
+  Future<Saving<S, R>> _commit<S, R>(
+    List<_Write> writes,
     S Function() take,
   ) async {
     if (_settle() case StorageFailed(:final failure)) return NotSaved(failure);
-    final attempt = _nextAttempt;
-    if (_slotReading('$attempt') is! LastSaveWas) {
-      return NotSaved(
-        WouldNotReadBack(
-          libraryArea,
-          lastSaveKey,
-          'attempt $attempt is past the whole numbers the store reads',
-        ),
-      );
+    final changes = <Change>[];
+    for (final write in writes) {
+      switch (_change(write)) {
+        case Done(value: final change):
+          changes.add(change);
+        case StorageFailed(:final failure):
+          return NotSaved(failure);
+      }
     }
-    _highestIssued = max(_highestIssued, attempt);
-    switch (await _lease.commit([
-      ...changes,
-      Put(libraryArea, lastSaveKey, '$attempt'),
-    ])) {
+    switch (await _lease.commit(_collapsed(changes))) {
       case CommitApplied():
-        _nextAttempt = attempt + 1;
         return Saved(take());
       case CommitRefused(:final failure):
+        if (failure is LeaseEnded) _shut(const StoreStopped(LeaseEnded()));
         return NotSaved(failure);
       case CommitUnknown(:final failure):
-        if (_state is _Ready) _state = _Stopped(failure);
-        return SaveInDoubt(failure, attempt);
+        _shut(StoreStopped(failure));
+        return SaveInDoubt(failure);
     }
   }
 
@@ -404,12 +453,16 @@ final class LibraryStore {
               toRebuild.add(digest);
           }
         case final FolderName name:
-          _folders[name.digest] = FolderRow.parse(
-            admit(value),
-            spot: _spot(name, name.digest),
-          );
-        case LastSaveName():
-          break;
+          switch (FolderRow.parse(admit(value), spot: _named(name.digest))) {
+            case Placed(:final row):
+              _folders[name.digest] = row;
+            case Unplaced(:final stored, :final problem):
+              _unplaced[key] = UnplacedRow(
+                ref: StoredRowRef(libraryArea, key),
+                stored: stored,
+                problem: problem,
+              );
+          }
         case final ForeignName name:
           foreign.add(name);
         case _:
@@ -417,27 +470,110 @@ final class LibraryStore {
       }
     }
     for (final digest in toRebuild) {
-      switch (await _rebuild(digest)) {
-        case Saved() || NothingToSave():
-          break;
-        case NotSaved(:final failure) || SaveInDoubt(:final failure):
-          return StorageFailed(failure);
-        case Refused(
-          reason: UnreadableRowInTheWay(row: final UnreadableStrategy row),
-        ):
-          _unreadableStrategies[digest] = row;
-        case Refused():
-          break;
+      if (await _repair(digest) case StorageFailed(:final failure)) {
+        return StorageFailed(failure);
       }
     }
     return done;
   }
 
+  Future<Stored<void>> _repair(String digest) async {
+    switch (await _rebuilt(digest)) {
+      case _RebuiltSummary(:final summary):
+        return _saveRepair(digest, summary);
+      case _RebuildNotRead(:final failure):
+        return StorageFailed(failure);
+      case _CannotRebuild():
+        if (_strategies[digest] case final strategy?) {
+          _unreadable[digest] = UnreadableStrategyListing(
+            ref: StrategyRef(strategy.area),
+            header: strategy.header,
+          );
+        }
+        return done;
+    }
+  }
+
+  Future<Stored<void>> _saveRepair(
+    String digest,
+    StrategySummary summary,
+  ) async {
+    if (summary == _summaries[digest]) return done;
+    _summaries[digest] = summary;
+    _unreadable.remove(digest);
+    return switch (await _commit<void, void>([
+      _PutSummary(digest, summary),
+    ], () {})) {
+      SaveInDoubt(:final failure) => StorageFailed(failure),
+      Saved() || NothingToSave() || Refused() || NotSaved() => done,
+    };
+  }
+
+  Future<_Rebuilt> _rebuilt(String digest) async {
+    final LoadedStrategy strategy;
+    switch (await _strategyAt(digest)) {
+      case Found(:final value):
+        strategy = value;
+      case NotFound():
+        return _CannotRebuild(NoSuchStrategy(StrategyArea(digest).name));
+      case NotRead(:final failure):
+        return _RebuildNotRead(failure);
+    }
+    final ReadableStrategy header;
+    switch (strategy.header) {
+      case Placed(row: final ReadableStrategy row):
+        header = row;
+      case Placed(row: final UnreadableStrategy row):
+        return _CannotRebuild(UnreadableRowInTheWay(row));
+      case Unplaced():
+        return _CannotRebuild(
+          UnplacedRowInTheWay(strategy.refOf(const HeaderName().name)),
+        );
+    }
+    if (await _loadPages(strategy, strategy.pageDigests) case StorageFailed(
+      :final failure,
+    )) {
+      return _RebuildNotRead(failure);
+    }
+    final tallies = <String, PageTally>{};
+    var unplacedRows = strategy.unplaced.length;
+    for (final pageDigest in strategy.pageDigests) {
+      final loaded = strategy.loadedPage(pageDigest)!;
+      for (final row in loaded.elements.values) {
+        tallies[row.pagePublicId] =
+            (tallies[row.pagePublicId] ?? PageTally.empty).plus(row, 1);
+      }
+      for (final row in loaded.lineupGroups.values) {
+        tallies[row.pagePublicId] =
+            (tallies[row.pagePublicId] ?? PageTally.empty).plusGroup(row, 1);
+      }
+      if (loaded.unplaced.isEmpty && loaded.unknownKinds.isEmpty) continue;
+      switch (strategy.pageIdOf(pageDigest)) {
+        case final pageId?:
+          tallies[pageId] = (tallies[pageId] ?? PageTally.empty)
+              .plusDamaged(loaded.unplaced.length)
+              .plusNewer(loaded.unknownKinds.length);
+        case null:
+          unplacedRows += loaded.unplaced.length + loaded.unknownKinds.length;
+      }
+    }
+    return _RebuiltSummary(
+      StrategySummary.of(
+        strategy: header,
+        pages: strategy.pages,
+        settings: strategy.allSettings,
+        tallies: tallies,
+        unplacedRows: unplacedRows,
+      ),
+    );
+  }
+
   Future<Reading<LoadedStrategy>> _strategyAt(String digest) async {
     if (_strategies[digest] case final loaded?) return Found(loaded);
-    final area = StrategyArea(digest).name;
-    final StrategyRow header;
-    switch (await _lease.read(area, const HeaderName().name)) {
+    final area = StrategyArea(digest);
+    final known = _summaries[digest]?.publicId;
+    final Parsed<StrategyRow> header;
+    switch (await _lease.read(area.name, const HeaderName().name)) {
       case KeyNotRead(:final failure):
         return NotRead(failure);
       case KeyMissing():
@@ -445,53 +581,73 @@ final class LibraryStore {
       case KeyHeld(:final value):
         header = StrategyRow.parse(
           admit(value),
-          spot: RowSpot(name: area, names: (id) => namesId(digest, id)),
+          spot: _named(digest, known: known),
         );
     }
+    final strategyId = switch (header) {
+      Placed(:final row) => row.publicId,
+      Unplaced() => known,
+    };
     final List<StoreName> names;
-    switch (await _lease.keys(area, '')) {
+    switch (await _lease.keys(area.name, '')) {
       case StorageFailed(:final failure):
         return NotRead(failure);
       case Done(:final value):
-        names = [for (final key in value) readName(StrategyArea(digest), key)];
+        names = [for (final key in value) readName(area, key)];
     }
     final pages = <String, PageRow>{};
-    switch (await _lease.entries(area, 'page/')) {
+    final settings = <String, PageSettingsRow>{};
+    final unplaced = <String, UnplacedRow>{};
+    void keepUnplaced(String key, Object? stored, String problem) =>
+        unplaced[key] = UnplacedRow(
+          ref: StoredRowRef(area.name, key),
+          stored: stored,
+          problem: problem,
+        );
+    switch (await _lease.entries(area.name, 'page/')) {
       case StorageFailed(:final failure):
         return NotRead(failure);
       case Done(:final value):
         for (final (:key, :value) in value) {
-          if (readName(StrategyArea(digest), key) case final PageName name) {
-            pages[name.digest] = PageRow.parse(
+          if (readName(area, key) case final PageName name) {
+            switch (PageRow.parse(
               admit(value),
-              spot: _spot(name, name.digest),
-              strategy: RowSpot(
-                name: header.publicId,
-                names: (id) => namesId(digest, id),
-              ),
-            );
+              spot: _named(name.digest),
+              strategy: _named(digest, known: strategyId),
+            )) {
+              case Placed(:final row):
+                pages[name.digest] = row;
+              case Unplaced(:final stored, :final problem):
+                keepUnplaced(key, stored, problem);
+            }
           }
         }
     }
-    final settings = <String, PageSettingsRow>{};
-    switch (await _lease.entries(area, 'settings/')) {
+    switch (await _lease.entries(area.name, 'settings/')) {
       case StorageFailed(:final failure):
         return NotRead(failure);
       case Done(:final value):
         for (final (:key, :value) in value) {
-          if (readName(StrategyArea(digest), key)
-              case final SettingsName name) {
-            settings[name.digest] = PageSettingsRow.parse(
+          if (readName(area, key) case final SettingsName name) {
+            switch (PageSettingsRow.parse(
               admit(value),
-              spot: _spot(name, name.digest),
-            );
+              spot: _named(name.digest),
+            )) {
+              case Placed(:final row):
+                settings[name.digest] = row;
+              case Unplaced(:final stored, :final problem):
+                keepUnplaced(key, stored, problem);
+            }
           }
         }
     }
     final loaded = LoadedStrategy(
+      digest: digest,
       header: header,
+      strategyId: strategyId,
       pages: pages,
       settings: settings,
+      unplaced: unplaced,
       names: names,
     );
     _strategies[digest] = loaded;
@@ -500,23 +656,22 @@ final class LibraryStore {
 
   Future<Reading<LoadedStrategy>> _strategy(String strategyPublicId) async =>
       switch (await _strategyAt(digestOf(strategyPublicId))) {
-        Found(value: final loaded)
-            when loaded.header is ReadableStrategy &&
-                loaded.header.publicId != strategyPublicId =>
-          const NotFound(),
+        Found(value: final loaded) => switch (loaded.header) {
+          Placed(:final row) when row.publicId == strategyPublicId => Found(
+            loaded,
+          ),
+          Placed() || Unplaced() => const NotFound(),
+        },
         final reading => reading,
       };
 
   Future<Stored<void>> _loadPages(
-    String digest,
     LoadedStrategy strategy,
     Iterable<String> pageDigests,
   ) async {
     for (final page in pageDigests) {
       if (strategy.isLoaded(page)) continue;
-      if (await _loadPage(digest, strategy, page) case StorageFailed(
-        :final failure,
-      )) {
+      if (await _loadPage(strategy, page) case StorageFailed(:final failure)) {
         return StorageFailed(failure);
       }
     }
@@ -524,39 +679,49 @@ final class LibraryStore {
   }
 
   Future<Stored<void>> _loadPage(
-    String digest,
     LoadedStrategy strategy,
     String pageDigest,
   ) async {
-    final area = StrategyArea(digest);
+    final area = StrategyArea(strategy.digest);
     final page = LoadedPage();
-    final pageSpot = RowSpot(
-      name: strategy.pageIdOf(pageDigest),
-      names: (id) => namesId(pageDigest, id),
-    );
+    final pageSpot = _named(pageDigest, known: strategy.pageIdOf(pageDigest));
+    final strategySpot = _named(strategy.digest, known: strategy.strategyId);
     switch (await _lease.entries(area.name, pageContentPrefix(pageDigest))) {
       case StorageFailed(:final failure):
         return StorageFailed(failure);
       case Done(:final value):
         for (final (:key, :value) in value) {
+          void keepUnplaced(Object? stored, String problem) =>
+              page.unplaced[key] = UnplacedRow(
+                ref: StoredRowRef(area.name, key),
+                stored: stored,
+                problem: problem,
+              );
           switch (readName(area, key)) {
             case final ElementName name:
-              page.elements[name.digest] = ElementRow.parse(
+              switch (ElementRow.parse(
                 admit(value),
-                spot: _spot(name, name.digest),
+                spot: _named(name.digest),
                 page: pageSpot,
                 canRead: _canRead,
-              );
+              )) {
+                case Placed(:final row):
+                  page.elements[name.digest] = row;
+                case Unplaced(:final stored, :final problem):
+                  keepUnplaced(stored, problem);
+              }
             case final LineupName name:
-              page.lineupGroups[name.digest] = LineupGroupRow.parse(
+              switch (LineupGroupRow.parse(
                 admit(value),
-                spot: _spot(name, name.digest),
+                spot: _named(name.digest),
                 page: pageSpot,
-                strategy: RowSpot(
-                  name: strategy.header.publicId,
-                  names: (id) => namesId(digest, id),
-                ),
-              );
+                strategy: strategySpot,
+              )) {
+                case Placed(:final row):
+                  page.lineupGroups[name.digest] = row;
+                case Unplaced(:final stored, :final problem):
+                  keepUnplaced(stored, problem);
+              }
             case UnknownKindName(:final name):
               page.unknownKinds.add(UnknownKindRow(key: name, text: value));
             case final ForeignName name:
@@ -570,6 +735,19 @@ final class LibraryStore {
     return done;
   }
 
+  Future<Stored<void>> _checkTally(
+    LoadedStrategy strategy,
+    String pageDigest,
+  ) async {
+    final summary = _summaries[strategy.digest];
+    final pageId = strategy.pageIdOf(pageDigest);
+    if (summary == null || pageId == null) return done;
+    final loaded = strategy.loadedPage(pageDigest)!;
+    final stored = summary.tallies[pageId] ?? PageTally.empty;
+    if (loaded.tally() == stored) return done;
+    return _repair(strategy.digest);
+  }
+
   Future<Reading<StrategyContent>> readStrategy(String strategyPublicId) =>
       _inTurn(() async {
         if (_settle() case StorageFailed(:final failure)) {
@@ -578,9 +756,13 @@ final class LibraryStore {
         return switch (await _strategy(strategyPublicId)) {
           Found(value: final strategy) => Found(
             StrategyContent(
-              strategy: strategy.header,
+              strategy: switch (strategy.header) {
+                Placed(:final row) => row,
+                Unplaced() => throw StateError('found by id'),
+              },
               pages: _ordered(strategy.pages),
               settings: strategy.settingsByPage,
+              unplaced: strategy.unplaced.values.toList(),
               foreignNames: strategy.foreignNames,
             ),
           ),
@@ -606,9 +788,19 @@ final class LibraryStore {
     final page = strategy.page(pagePublicId);
     if (page == null) return const NotFound();
     final pageDigest = digestOf(pagePublicId);
-    if (await _loadPages(digestOf(strategyPublicId), strategy, [pageDigest])
-        case StorageFailed(:final failure)) {
+    final wasLoaded = strategy.isLoaded(pageDigest);
+    if (await _loadPages(strategy, [pageDigest]) case StorageFailed(
+      :final failure,
+    )) {
       return NotRead(failure);
+    }
+    if (!wasLoaded) {
+      if (await _checkTally(strategy, pageDigest) case StorageFailed(
+        :final failure,
+      )) {
+        return NotRead(failure);
+      }
+      if (_settle() case StorageFailed(:final failure)) return NotRead(failure);
     }
     final loaded = strategy.loadedPage(pageDigest)!;
     return Found(
@@ -618,6 +810,7 @@ final class LibraryStore {
         elements: loaded.elements.values.toList(),
         lineupGroups: loaded.lineupGroups.values.toList(),
         unknownKinds: loaded.unknownKinds,
+        unplaced: loaded.unplaced.values.toList(),
         foreignNames: loaded.foreignNames,
       ),
     );
@@ -659,39 +852,46 @@ final class LibraryStore {
         },
         ElementAddOp(:final pagePublicId, :final elementPublicId) => [
           digestOf(pagePublicId),
-          ?strategy.pageOfElement(elementPublicId),
+          ...strategy.pagesOfElement(elementPublicId),
         ],
         ElementPatchOp(:final pagePublicId, :final elementPublicId) => [
           if (pagePublicId != null) digestOf(pagePublicId),
-          ?strategy.pageOfElement(elementPublicId),
+          ...strategy.pagesOfElement(elementPublicId),
         ],
         ElementDeleteOp(:final elementPublicId) ||
         ElementReorderOp(
           :final elementPublicId,
-        ) => [?strategy.pageOfElement(elementPublicId)],
+        ) => strategy.pagesOfElement(elementPublicId),
         LineupGroupAddOp(:final pagePublicId, :final lineupPublicId) => [
           digestOf(pagePublicId),
-          ?strategy.pageOfLineupGroup(lineupPublicId),
+          ...strategy.pagesOfLineupGroup(lineupPublicId),
         ],
         LineupGroupPatchOp(:final pagePublicId, :final lineupPublicId) => [
           if (pagePublicId != null) digestOf(pagePublicId),
-          ?strategy.pageOfLineupGroup(lineupPublicId),
+          ...strategy.pagesOfLineupGroup(lineupPublicId),
         ],
         LineupGroupDeleteOp(:final lineupPublicId) ||
         LineupGroupReorderOp(
           :final lineupPublicId,
-        ) => [?strategy.pageOfLineupGroup(lineupPublicId)],
+        ) => strategy.pagesOfLineupGroup(lineupPublicId),
       };
 
-  static bool _holdsOtherThan(Row? current, Row written) => switch (current) {
-    null => false,
-    UnreadableStrategy() ||
-    UnreadableFolder() ||
-    UnreadablePage() ||
-    UnreadablePageSettings() ||
-    UnreadableElement() ||
-    UnreadableLineupGroup() => true,
-    final row => row.key != written.key,
+  static CommitRefusal? _inTheWay(Held held, Row written) => switch (held) {
+    HeldNothing() => null,
+    HeldUnplaced(:final row) => UnplacedRowInTheWay(row.ref),
+    HeldRow(
+      row: UnreadableStrategy() ||
+          UnreadableFolder() ||
+          UnreadablePage() ||
+          UnreadablePageSettings() ||
+          UnreadableElement() ||
+          UnreadableLineupGroup(),
+    ) =>
+      OpRefusal(UnreadableTarget(written.key)),
+    HeldRow(:final row) when row.key != written.key => OpRefusal(
+      UnreadableTarget(written.key),
+    ),
+    HeldRow() => null,
   };
 
   static List<RowWrite> _stamped(
@@ -740,7 +940,6 @@ final class LibraryStore {
         if (_settle() case StorageFailed(:final failure)) {
           return NotSaved(failure);
         }
-        final digest = digestOf(strategyPublicId);
         final LoadedStrategy strategy;
         switch (await _strategy(strategyPublicId)) {
           case Found(:final value):
@@ -750,24 +949,33 @@ final class LibraryStore {
           case NotRead(:final failure):
             return NotSaved(failure);
         }
+        final digest = strategy.digest;
         final ReadableStrategy header;
         switch (strategy.header) {
-          case final UnreadableStrategy row:
-            return Refused(UnreadableRowInTheWay(row));
-          case final ReadableStrategy row:
+          case Placed(row: final ReadableStrategy row):
             header = row;
+          case Placed(row: final UnreadableStrategy row):
+            return Refused(UnreadableRowInTheWay(row));
+          case Unplaced():
+            return Refused(NoSuchStrategy(strategyPublicId));
         }
         final summary = _summaries[digest];
         if (summary == null) return Refused(NoSuchStrategy(strategyPublicId));
-        if (await _loadPages(digest, strategy, _pagesFor(op, strategy))
+        if (await _loadPages(strategy, _pagesFor(op, strategy))
             case StorageFailed(:final failure)) {
           return NotSaved(failure);
         }
         if (op case PageAddOp(copyContentFromPagePublicId: final source?)) {
           if (strategy.loadedPage(digestOf(source)) case final page?
               when page.unknownKinds.isNotEmpty ||
-                  page.foreignNames.isNotEmpty) {
+                  page.foreignNames.isNotEmpty ||
+                  page.unplaced.isNotEmpty) {
             return Refused(CopyLeavesRowsBehind(source));
+          }
+        }
+        if (op is PageAddOp || op is PageDeleteOp || op is PageReorderOp) {
+          if (strategy.unplacedPages.firstOrNull case final row?) {
+            return Refused(UnplacedRowInTheWay(row.ref));
           }
         }
         final OpApplied applied;
@@ -780,36 +988,24 @@ final class LibraryStore {
             applied = result;
         }
         final writes = _stamped(header, applied.writes, _clock());
-        final area = StrategyArea(digest).name;
-        final changes = <Change>[];
+        final area = strategy.area;
+        final changes = <_Write>[];
         for (final write in writes) {
-          if (_holdsOtherThan(strategy.current(write.after), write.after)) {
-            return Refused(OpRefusal(UnreadableTarget(write.after.key)));
+          if (_inTheWay(strategy.heldUnder(nameOf(write.after)), write.after)
+              case final refusal?) {
+            return Refused(refusal);
           }
-          final text = _stored(write.after.toJson());
-          if (_readsBack(area, write.after, text) case StorageFailed(
-            :final failure,
-          )) {
-            return NotSaved(failure);
-          }
-          final name = nameOf(write.after).name;
-          changes.add(Put(area, name, text));
+          changes.add(_PutRow(area, write.after));
           if (write case RowChanged(
             :final before,
-          ) when nameOf(before).name != name) {
-            changes.add(Delete(area, nameOf(before).name));
+          ) when nameOf(before).name != nameOf(write.after).name) {
+            changes.add(_DeleteName(area, nameOf(before).name));
           }
         }
         final (after, pages, settings) = strategy.after(header, writes);
         final summaryAfter = summary.after(after, pages, settings, writes);
-        changes.add(
-          Put(
-            libraryArea,
-            SummaryName(digest).name,
-            _stored(summaryAfter.toJson()),
-          ),
-        );
-        final CommitResult result = await _save(changes, () {
+        changes.add(_PutSummary(digest, summaryAfter));
+        final CommitResult result = await _commit(changes, () {
           strategy.take(writes);
           _summaries[digest] = summaryAfter;
           return Committed(
@@ -829,12 +1025,42 @@ final class LibraryStore {
 
   Future<RebuildResult> rebuildSummary(String strategyPublicId) =>
       _inTurn(() async {
-        final result = await _rebuild(digestOf(strategyPublicId));
+        if (_settle() case StorageFailed(:final failure)) {
+          return NotSaved(failure);
+        }
+        switch (await _strategy(strategyPublicId)) {
+          case Found():
+            break;
+          case NotFound():
+            return Refused(NoSuchStrategy(strategyPublicId));
+          case NotRead(:final failure):
+            return NotSaved(failure);
+        }
+        final digest = digestOf(strategyPublicId);
+        final StrategySummary rebuilt;
+        switch (await _rebuilt(digest)) {
+          case _RebuiltSummary(:final summary):
+            rebuilt = summary;
+          case _CannotRebuild(:final refusal):
+            return Refused(refusal);
+          case _RebuildNotRead(:final failure):
+            return NotSaved(failure);
+        }
+        if (rebuilt == _summaries[digest]) return const NothingToSave();
+        final result = await _commit<StrategySummary, CommitRefusal>(
+          [_PutSummary(digest, rebuilt)],
+          () {
+            _summaries[digest] = rebuilt;
+            _unreadable.remove(digest);
+            return rebuilt;
+          },
+        );
         if (result case Saved(:final value)) {
           _emit(
             LibraryEdited(
               summaries: [value],
               removedStrategies: const [],
+              removedUnreadableStrategies: const [],
               folders: const [],
               removedFolders: const [],
             ),
@@ -843,73 +1069,25 @@ final class LibraryStore {
         return result;
       });
 
-  Future<RebuildResult> _rebuild(String digest) async {
-    if (_settle() case StorageFailed(:final failure)) return NotSaved(failure);
-    final LoadedStrategy strategy;
-    switch (await _strategyAt(digest)) {
-      case Found(:final value):
-        strategy = value;
-      case NotFound():
-        return Refused(NoSuchStrategy(StrategyArea(digest).name));
-      case NotRead(:final failure):
+  Future<LibraryEditResult> editLibrary(List<LibraryChange> changes) {
+    final asked = List<LibraryChange>.of(changes);
+    return _inTurn(() async {
+      if (_settle() case StorageFailed(:final failure)) {
         return NotSaved(failure);
-    }
-    final ReadableStrategy header;
-    switch (strategy.header) {
-      case final UnreadableStrategy row:
-        return Refused(UnreadableRowInTheWay(row));
-      case final ReadableStrategy row:
-        header = row;
-    }
-    if (await _loadPages(digest, strategy, strategy.pageDigests)
-        case StorageFailed(:final failure)) {
-      return NotSaved(failure);
-    }
-    final tallies = <String, PageTally>{};
-    for (final page in strategy.pageDigests) {
-      for (final row in strategy.elementsOnPage(page)) {
-        tallies[row.pagePublicId] =
-            (tallies[row.pagePublicId] ?? PageTally.empty).plus(row, 1);
       }
-      for (final row in strategy.lineupGroupsOnPage(page)) {
-        tallies[row.pagePublicId] =
-            (tallies[row.pagePublicId] ?? PageTally.empty).plusGroup(row, 1);
+      final edit = _LibraryEdit(this);
+      for (final change in asked) {
+        if (await edit.add(change) case _Stop(:final result)) return result;
       }
-    }
-    final rebuilt = StrategySummary.of(
-      strategy: header,
-      pages: strategy.pages,
-      settings: strategy.allSettings,
-      tallies: tallies,
-    );
-    if (rebuilt == _summaries[digest]) return const NothingToSave();
-    return _save(
-      [Put(libraryArea, SummaryName(digest).name, _stored(rebuilt.toJson()))],
-      () {
-        _summaries[digest] = rebuilt;
-        _unreadableStrategies.remove(digest);
-        return rebuilt;
-      },
-    );
+      if (edit.isEmpty) return const NothingToSave();
+      final result = await _commit<LibraryEdited, LibraryRefusal>(
+        edit.writes,
+        edit.take,
+      );
+      if (result case Saved(:final value)) _emit(value);
+      return result;
+    });
   }
-
-  Future<LibraryEditResult> editLibrary(List<LibraryChange> changes) =>
-      _inTurn(() async {
-        if (_settle() case StorageFailed(:final failure)) {
-          return NotSaved(failure);
-        }
-        final edit = _LibraryEdit(this);
-        for (final change in changes) {
-          if (await edit.add(change) case _Stop(:final result)) return result;
-        }
-        if (edit.isEmpty) return const NothingToSave();
-        final result = await _save<LibraryEdited, LibraryRefusal>(
-          edit.changes,
-          edit.take,
-        );
-        if (result case Saved(:final value)) _emit(value);
-        return result;
-      });
 }
 
 sealed class _Step {
@@ -929,23 +1107,42 @@ final class _Stop extends _Step {
 final class _LibraryEdit {
   _LibraryEdit(this._store)
     : _folders = {..._store._folders},
-      _summaries = {..._store._summaries};
+      _summaries = {..._store._summaries},
+      _unreadable = {..._store._unreadable};
 
   final LibraryStore _store;
   final Map<String, FolderRow> _folders;
   final Map<String, StrategySummary> _summaries;
-  final changes = <Change>[];
+  final Map<String, UnreadableStrategyListing> _unreadable;
+  final writes = <_Write>[];
   final _headers = <String, ReadableStrategy>{};
   final _putSummaries = <String, StrategySummary>{};
-  final _removedStrategies = <String, String>{};
+  final _removed = <String, String>{};
+  final _removedUnreadable = <String, StrategyRef>{};
   final _putFolders = <String, ReadableFolder>{};
   final _removedFolders = <String, String>{};
 
-  bool get isEmpty => changes.isEmpty;
+  bool get isEmpty => writes.isEmpty;
+
+  StrategySummary? _summaryWithId(String id) =>
+      switch (_summaries[digestOf(id)]) {
+        final summary? when summary.publicId == id => summary,
+        _ => null,
+      };
+
+  UnreadableStrategyListing? _unreadableWithId(String id) =>
+      switch (_unreadable[digestOf(id)]) {
+        final listing? &&
+                UnreadableStrategyListing(
+                  header: Placed(row: StrategyRow(:final publicId)),
+                )
+            when publicId == id =>
+          listing,
+        _ => null,
+      };
 
   bool _hasStrategy(String id) =>
-      _summaries.containsKey(digestOf(id)) ||
-      _store._unreadableStrategies.containsKey(digestOf(id));
+      _summaryWithId(id) != null || _unreadableWithId(id) != null;
 
   RowKey? _outside(StrategyRowSet rows) {
     final id = rows.strategy.publicId;
@@ -967,35 +1164,32 @@ final class _LibraryEdit {
     return null;
   }
 
-  _Step _put(String area, Row row) {
-    final text = _stored(row.toJson());
-    if (_store._readsBack(area, row, text) case StorageFailed(:final failure)) {
-      return _Stop(NotSaved(failure));
-    }
-    changes.add(Put(area, nameOf(row).name, text));
-    return const _Next();
+  void _removeArea(String digest) {
+    writes
+      ..add(_ClearArea(StrategyArea(digest).name))
+      ..add(_DeleteName(libraryArea, SummaryName(digest).name));
+    _summaries.remove(digest);
+    _putSummaries.remove(digest);
+    _unreadable.remove(digest);
+    _headers.removeWhere((id, _) => digestOf(id) == digest);
   }
 
   Future<_Step> add(LibraryChange change) async {
     switch (change) {
       case AddStrategy(:final rows):
         final id = rows.strategy.publicId;
-        if (_hasStrategy(id) || _removedStrategies.containsKey(digestOf(id))) {
+        final digest = digestOf(id);
+        if (_hasStrategy(id) ||
+            _removed.containsKey(digest) ||
+            _removedUnreadable.containsKey(digest)) {
           return _Stop(Refused(StrategyAlreadyInStore(id)));
         }
         if (_outside(rows) case final key?) {
           return _Stop(Refused(RowOutsideStrategy(key)));
         }
         if (rows.strategy.folderPublicId case final folder?) {
-          switch (_placeOf(folder, _folders)) {
-            case _Filed():
-              break;
-            case _Looped(:final loop):
-              return _Stop(Refused(FolderLoop(loop)));
-            case _UnderMissing(:final folderPublicId):
-              return _Stop(Refused(NoSuchFolder(folderPublicId)));
-            case _UnderUnreadable(:final folder):
-              return _Stop(Refused(UnreadableRowInTheWay(folder)));
+          if (_filingRefusal(folder, _folders) case final refusal?) {
+            return _Stop(Refused(refusal));
           }
         }
         final area = strategyArea(id);
@@ -1008,7 +1202,7 @@ final class _LibraryEdit {
             break;
         }
         for (final row in rows.rows) {
-          if (_put(area, row) case final _Stop stop) return stop;
+          writes.add(_PutRow(area, row));
         }
         _headers[id] = rows.strategy;
         final tallies = <String, PageTally>{};
@@ -1026,6 +1220,7 @@ final class _LibraryEdit {
             pages: rows.pages,
             settings: rows.settings,
             tallies: tallies,
+            unplacedRows: 0,
           ),
         );
       case RemoveStrategy(:final strategyPublicId):
@@ -1033,28 +1228,26 @@ final class _LibraryEdit {
           return _Stop(Refused(NoSuchStrategy(strategyPublicId)));
         }
         final digest = digestOf(strategyPublicId);
-        changes
-          ..add(ClearArea(strategyArea(strategyPublicId)))
-          ..add(Delete(libraryArea, SummaryName(digest).name));
-        _headers.remove(strategyPublicId);
-        _summaries.remove(digest);
-        _putSummaries.remove(digest);
-        _removedStrategies[digest] = strategyPublicId;
+        _removeArea(digest);
+        _removed[digest] = strategyPublicId;
+      case RemoveUnreadableStrategy(:final ref):
+        final digest = switch (strategyAreaNamed(ref.area)) {
+          StrategyArea(:final digest) => digest,
+          null => null,
+        };
+        if (digest == null || !_unreadable.containsKey(digest)) {
+          return _Stop(Refused(NoSuchUnreadableStrategy(ref)));
+        }
+        _removeArea(digest);
+        _removedUnreadable[digest] = ref;
       case MoveStrategy(:final strategyPublicId, :final folderPublicId):
-        final summary = _summaries[digestOf(strategyPublicId)];
+        final summary = _summaryWithId(strategyPublicId);
         if (summary == null) {
           return _Stop(Refused(NoSuchStrategy(strategyPublicId)));
         }
         if (folderPublicId != null) {
-          switch (_placeOf(folderPublicId, _folders)) {
-            case _Filed():
-              break;
-            case _Looped(:final loop):
-              return _Stop(Refused(FolderLoop(loop)));
-            case _UnderMissing(:final folderPublicId):
-              return _Stop(Refused(NoSuchFolder(folderPublicId)));
-            case _UnderUnreadable(:final folder):
-              return _Stop(Refused(UnreadableRowInTheWay(folder)));
+          if (_filingRefusal(folderPublicId, _folders) case final refusal?) {
+            return _Stop(Refused(refusal));
           }
         }
         final ReadableStrategy current;
@@ -1078,45 +1271,37 @@ final class _LibraryEdit {
           revision: current.revision + 1,
           updatedAt: now.isAfter(current.updatedAt) ? now : current.updatedAt,
         );
-        if (_put(strategyArea(strategyPublicId), moved) case final _Stop stop) {
-          return stop;
-        }
+        writes.add(_PutRow(strategyArea(strategyPublicId), moved));
         _headers[strategyPublicId] = moved;
         _putSummary(summary.withHeader(moved));
       case PutFolder(:final folder):
         final id = folder.publicId;
         final digest = digestOf(id);
+        if (_store._unplaced[FolderName(digest).name] case final row?) {
+          return _Stop(Refused(UnplacedRowInTheWay(row.ref)));
+        }
         if (_folders[digest] case final UnreadableFolder row) {
           return _Stop(Refused(UnreadableRowInTheWay(row)));
         }
         if (folder.parentFolderPublicId case final parent?) {
-          switch (_placeOf(parent, _folders)) {
-            case _Filed(:final chain) when chain.contains(id):
-              return _Stop(Refused(FolderInsideItself(id)));
-            case _Filed():
-              break;
-            case _Looped(:final loop):
-              return _Stop(Refused(FolderLoop(loop)));
-            case _UnderMissing(:final folderPublicId):
-              return _Stop(Refused(NoSuchFolder(folderPublicId)));
-            case _UnderUnreadable(:final folder):
-              return _Stop(Refused(UnreadableRowInTheWay(folder)));
+          if (_filingRefusal(parent, _folders, moving: id)
+              case final refusal?) {
+            return _Stop(Refused(refusal));
           }
         }
-        if (_folders[digest] == folder) return const _Next();
-        if (_put(libraryArea, folder) case final _Stop stop) return stop;
+        if (_folderWithId(_folders, id) == folder) return const _Next();
+        writes.add(_PutRow(libraryArea, folder));
         _folders[digest] = folder;
         _putFolders[digest] = folder;
         _removedFolders.remove(digest);
       case RemoveFolder(:final folderPublicId):
         final digest = digestOf(folderPublicId);
-        switch (_folders[digest]) {
-          case final ReadableFolder folder
-              when folder.publicId == folderPublicId:
+        switch (_folderWithId(_folders, folderPublicId)) {
+          case ReadableFolder():
             break;
           case final UnreadableFolder row:
             return _Stop(Refused(UnreadableRowInTheWay(row)));
-          case ReadableFolder() || null:
+          case null:
             return const _Next();
         }
         final holdsFolder = _folders.values.any(
@@ -1133,7 +1318,7 @@ final class _LibraryEdit {
         _folders.remove(digest);
         _putFolders.remove(digest);
         _removedFolders[digest] = folderPublicId;
-        changes.add(Delete(libraryArea, FolderName(digest).name));
+        writes.add(_DeleteName(libraryArea, FolderName(digest).name));
     }
     return const _Next();
   }
@@ -1141,8 +1326,8 @@ final class _LibraryEdit {
   Future<Reading<StrategyRow>> _header(String strategyPublicId) async {
     if (_headers[strategyPublicId] case final header?) return Found(header);
     return switch (await _store._strategy(strategyPublicId)) {
-      Found(:final value) => Found(value.header),
-      NotFound() => const NotFound(),
+      Found(value: LoadedStrategy(header: Placed(:final row))) => Found(row),
+      Found() || NotFound() => const NotFound(),
       NotRead(:final failure) => NotRead(failure),
     };
   }
@@ -1151,21 +1336,19 @@ final class _LibraryEdit {
     final digest = digestOf(summary.publicId);
     _summaries[digest] = summary;
     _putSummaries[digest] = summary;
-    _removedStrategies.remove(digest);
-    changes.add(
-      Put(libraryArea, SummaryName(digest).name, _stored(summary.toJson())),
-    );
+    _removed.remove(digest);
+    writes.add(_PutSummary(digest, summary));
   }
 
   LibraryEdited take() {
-    for (final digest in _removedStrategies.keys) {
+    for (final digest in {..._removed.keys, ..._removedUnreadable.keys}) {
       _store._summaries.remove(digest);
       _store._strategies.remove(digest);
-      _store._unreadableStrategies.remove(digest);
+      _store._unreadable.remove(digest);
     }
     _store._summaries.addAll(_putSummaries);
     for (final MapEntry(:key, :value) in _headers.entries) {
-      _store._strategies[digestOf(key)]?.header = value;
+      _store._strategies[digestOf(key)]?.header = Placed(value);
     }
     for (final digest in _removedFolders.keys) {
       _store._folders.remove(digest);
@@ -1173,7 +1356,8 @@ final class _LibraryEdit {
     _store._folders.addAll(_putFolders);
     return LibraryEdited(
       summaries: _putSummaries.values.toList(),
-      removedStrategies: _removedStrategies.values.toList(),
+      removedStrategies: _removed.values.toList(),
+      removedUnreadableStrategies: _removedUnreadable.values.toList(),
       folders: _putFolders.values.toList(),
       removedFolders: _removedFolders.values.toList(),
     );

@@ -273,43 +273,53 @@ is a list of checks any engine runs against an `EngineHarness` it supplies
 app stops without closing, and `holdNextWrite`, which keeps the engine's next
 commit pending until `letGo`). Each check returns `Passed` or `Broke(what)`.
 This package runs them on `MemoryEngine` in `test/engine_test.dart`, along
-with three broken engines the checks catch: one that loses writes in a
-crash, one that grants everyone a lease, and one whose prefixes match like
-SQL `LIKE`.
+with broken engines the checks catch: one that loses writes in a crash, one
+that grants everyone a lease, two whose prefixes match like SQL `LIKE` (in
+`keys` and in `entries`), one that cuts a delete past the limit down onto a
+valid name, and one that applies part of a commit and answers
+`CommitUnknown`. Every commit a check makes is compared with storage before
+and after it: `CommitApplied` must show every change, `CommitRefused` none,
+and `CommitUnknown` all or none, never part.
 
-- **Names.** Areas and keys use only `nameAlphabet` (`a-z`, `0-9`, `-`, `.`,
-  `/`, `_`); areas are at most `maxAreaLength` (64) characters. Names are
-  compared exactly, a prefix matches exactly (no wildcards, no folding), and
-  listings are in ascending code unit order. A lease's `maxKeyLength` is at
-  least 255 and never changes for a given storage.
-- **Names past the limit.** A commit that puts one is
-  `CommitRefused(KeyTooLong)` and applies none of its changes; reading one is
-  `KeyMissing`; deleting one changes nothing, since no such name can be
-  stored.
+- **Names.** Areas and keys are non-empty and use only `nameAlphabet`
+  (`a-z`, `0-9`, `-`, `.`, `/`, `_`); areas are at most `maxAreaLength`
+  (64) characters. Names are compared exactly, a prefix matches literally
+  (`_`, `-` and `.` are ordinary characters), and listings are in ascending
+  code unit order. A storage's `maxKeyLength` is at least 255 and never
+  changes; it belongs to the storage, not to an engine object.
+- **A commit naming a bad name is refused whole.** A `Put`, `Delete` or
+  `ClearArea` naming anything outside the alphabet is
+  `CommitRefused(NameNotAllowed)`; a key past the limit, whether put or
+  deleted, is `CommitRefused(KeyTooLong)`. Either way none of the commit's
+  changes apply, so a delete past the limit never touches a valid name.
+  Reading a name past the limit is `KeyMissing`.
 - **Reading.** `read(area, key)` is `KeyHeld(value)`, `KeyMissing` or
   `KeyNotRead(failure)`. `keys(area, prefix)` lists names, `entries` lists
   them with their values.
 - **Writing is one commit, and says whether it had an effect.**
   `commit(changes)` takes any list of `Put(area, key, value)`,
-  `Delete(area, key)` and `ClearArea(area)` across any areas and applies all
-  of them or none, also across a crash. It returns `CommitApplied`, which is
-  on disk and survives a crash including power loss; `CommitRefused(failure)`,
-  with a guarantee that nothing changed; or `CommitUnknown(failure)`, when the
-  engine cannot know.
+  `Delete(area, key)` and `ClearArea(area)` across any areas, applies them
+  in list order, and applies all of them or none, also across a crash. An
+  empty commit applies and changes nothing. It returns `CommitApplied`,
+  which is on disk and survives a crash including power loss;
+  `CommitRefused(failure)`, with a guarantee that nothing changed; or
+  `CommitUnknown(failure)`, meaning all or none applied and the engine
+  cannot say which.
 - **One writer at a time, for its whole life.** An engine grants one lease at
   a time for the storage under it, whichever engine object, process or tab
   asks: a second `lease()` is `HeldByAnotherWriter` until the first is
   released, also while the first holder's write is pending. A lease's
   `status` is `Holding` or `Ended`. It ends when its holder calls `release()`
   or its engine closes, and once ended it never works again: every call
-  through it returns `LeaseEnded`, as `CommitRefused` for a commit, and
-  changes nothing, even after another writer has come and gone, and even for
-  a name past the limit. A commit pending when its lease ends either lands
-  whole before the next lease is granted, or does not land; if the engine
-  cannot tell which, it returns `CommitUnknown`.
-- **Closing.** A lease asked for after `close` is `LeaseFailed(EngineClosed)`;
-  one asked for during `close` is either refused that way or granted and then
-  ended by the close.
+  through it answers `LeaseEnded` before any other check (a bad name, a
+  name past the limit), as `CommitRefused` for a commit, and changes
+  nothing. A commit pending when its lease ends either lands whole before
+  the next lease is granted, or does not land; the suite looks at storage
+  at the moment the next lease is granted, before letting the held write
+  go, and again after.
+- **Closing.** A lease asked for after `close` is exactly
+  `LeaseFailed(EngineClosed)`; one asked for during `close` is either
+  refused that way or granted and then ended by the close.
 - **Releasing** returns `Released`, or `ReleaseFailed(failure)` when the
   device failed while letting go. Either way the lease is ended for its
   holder; after `ReleaseFailed` the storage may still refuse a new lease
@@ -320,7 +330,7 @@ SQL `LIKE`.
 
 | Area | Names |
 | --- | --- |
-| `library` | `summary/<s>`, `folder/<f>`, `last-save` |
+| `library` | `summary/<s>`, `folder/<f>` |
 | `s/<s>` | `strategy`, `page/<p>`, `settings/<p>`, `content/<p>/e/<e>`, `content/<p>/l/<l>` |
 
 **Names.** Each `<x>` is `digestOf(id)`: the SHA-256 of the id's UTF-16
@@ -329,31 +339,61 @@ Any id can be stored, including an empty one or one holding a lone
 surrogate, and every name has a fixed length. The longest is an element
 name, `longestName` (75) characters; the store checks the lease's
 `maxKeyLength` against it once, at open, and does not open
-(`EngineTooSmall`) on an engine that cannot hold it. The id itself is kept
-in the row's value, and a row counts under a name only when the id in its
-value has that digest; a row under another id's name reads as unreadable.
-A row that cannot be read at all carries its name where its id would be.
+(`EngineTooSmall`) on an engine that cannot hold it.
+
+**Ids come from the value, never from the name.** A row's id is kept in its
+value, and each parse returns `Placed(row)` or `Unplaced`. A row is placed
+when every id it carries is known: its own id from its value, when that id
+has the digest its name holds; a parent's id (the page of an element, the
+strategy of a page) from its value the same way, or else from the parent
+row the store already read. A row whose own id cannot be known that way is
+an `UnplacedRow`: its `StoredRowRef` (area and name), its stored value and
+the problem. No field typed as a public id ever holds a name. Unplaced rows
+come in their own lists (`LibraryList.unplaced`, `StrategyContent.unplaced`,
+`PageContent.unplaced`); lists and maps of rows keyed by id hold only placed
+rows. Every lookup by id goes through one function per row kind, which
+returns the row under that id's name only when the id inside it is that id.
+
+A strategy whose own row cannot be read, and whose summary cannot be read
+or rebuilt, is listed in `LibraryList.unreadableStrategies` as an
+`UnreadableStrategyListing`: its `StrategyRef` and its header as parsed.
+`RemoveUnreadableStrategy(ref)` removes it; `RemoveStrategy(id)` removes
+one whose id is known.
 
 A name of any other shape is a `ForeignName`, kept as it is and never read
-as a row: those in `library` or in an area the store does not use are
-reported in `StoreOpened.foreignNames`, those in a strategy's area in
-`StrategyContent.foreignNames` and `PageContent.foreignNames`. A name under
-`content/<p>/` of a kind this build does not know is an `UnknownKindRow`.
-Removing a strategy clears its whole area, foreign names included.
+as a row. The store reads only the library area and the areas of strategies
+it lists (there is no call that lists areas), so `foreignNames` covers those
+areas only: `StoreOpened.foreignNames` for the library area,
+`StrategyContent.foreignNames` and `PageContent.foreignNames` for a
+strategy's. A name under `content/<p>/` of a kind this build does not know
+is an `UnknownKindRow`. Removing a strategy clears its whole area, foreign
+names included.
 
-**Row text reads back.** Before a save is sent, every row it writes is
-encoded and parsed back the way the next open will read it; if any row
-would come back different (nested deeper than `maxJsonDepth`, or a number
-JavaScript cannot hold exactly), the save is `NotSaved(WouldNotReadBack)`
-and nothing is written.
+**What is admitted.** Stored text goes through `admit`, which scans it once
+before decoding: nesting deeper than `maxJsonDepth`, or a whole-number
+token outside the range JavaScript holds exactly (anywhere in the text,
+fields this build does not know included), makes the row unreadable with
+its text kept. So the VM and the web read the same rows the same way, and
+a rewrite can never save a number the web rounded.
 
-**What a read costs.** Opening the store reads `last-save`, then lists the
-library area with one `entries` call, and reads nothing of any strategy.
-Reading a strategy reads its row, lists every name in its area (so it knows
-which page each element is on, and which names are foreign), and reads its
-pages and settings with one `entries` call each. Reading a page is one
-`entries` call under `content/<p>/`. A read page stays in memory until the
-store closes or `unload(strategy)` drops the strategy.
+**One place commits.** Exactly one function in the store calls
+`lease.commit`. It takes typed writes (a row, a summary, a delete, a clear),
+encodes each, and parses the text back with the parser its name's kind
+dictates, summaries included; a value that cannot be encoded (a number
+that is not finite) and one that would read back differently are the same
+`NotSaved(WouldNotReadBack)`, and nothing is written. A commit names each
+(area, name) at most once: when an edit writes one twice, the last write
+is kept.
+
+**What a read costs.** Opening the store lists the library area with one
+`entries` call and reads nothing of any strategy, when every summary is
+readable; each summary it cannot read costs a read of that strategy and
+all its pages, to rebuild it. Reading a strategy reads its row, lists
+every name in its area (so it knows which page each element is on, and
+which names are foreign), and reads its pages and settings with one
+`entries` call each. Reading a page is one `entries` call under
+`content/<p>/`. A read page stays in memory until the store closes or
+`unload(strategy)` drops the strategy.
 
 ### Saving an edit
 
@@ -361,54 +401,47 @@ store closes or `unload(strategy)` drops the strategy.
 `applyOp`, sets the strategy row's `updatedAt` to the later of now and its
 current value, and sends one engine commit holding a `Put` for each row it
 changed, a `Delete` of the old name when an element or lineup group moves
-page, a `Put` of the strategy's new summary, and a `Put` of the save's
-attempt number under `library/last-save`. The engine applies a commit whole or not at
-all, across areas and across a crash, so the disk holds the strategy from
-before the edit or after it, never part of it. Library edits
-(`editLibrary`) and summary rebuilds are one commit the same way; removing
-a strategy is `ClearArea` of its area and a `Delete` of its summary.
+page, and a `Put` of the strategy's new summary. The engine applies a
+commit whole or not at all, across areas and across a crash, so the disk
+holds the strategy from before the edit or after it, never part of it.
+Library edits (`editLibrary`) and summary rebuilds are one commit the same
+way; removing a strategy is `ClearArea` of its area and a `Delete` of its
+summary. The summary is also the record of which strategies exist, and it
+is written in the same commit as the rows. `editLibrary` copies the list
+it is given when it is called, not when its turn comes.
 
 Every save returns a `Saving`, which the caller has to handle:
 
 - `Saved`: the engine applied the commit.
 - `NothingToSave`: the op changes nothing.
 - `Refused`: `OpRefusal` when `applyOp` refused it, `NoSuchStrategy`,
-  `UnreadableRowInTheWay` when the strategy's own row cannot be read, or
-  `CopyLeavesRowsBehind`. For library edits: `StrategyAlreadyInStore` (also
-  when any name is already stored for that strategy), `RowOutsideStrategy`
-  (a row of an added strategy names another strategy or a page it does not
-  have), `NoSuchFolder`, `FolderNotEmpty`, `FolderInsideItself`,
-  `FolderLoop`.
+  `UnreadableRowInTheWay` when the strategy's own row cannot be read,
+  `UnplacedRowInTheWay` when the name it would write holds a row with no
+  id (or, for an op that places pages, when the strategy holds a page with
+  no id), or `CopyLeavesRowsBehind`. For library edits:
+  `StrategyAlreadyInStore` (also when any name is already stored for that
+  strategy), `RowOutsideStrategy` (a row of an added strategy names another
+  strategy or a page it does not have), `NoSuchUnreadableStrategy`,
+  `NoSuchFolder`, `FolderNotEmpty`, `FolderInsideItself`, `FolderLoop`.
 - `NotSaved`: nothing changed. The engine refused the commit, a row would
-  not read back, reading the pages the op needs failed, or the store has
-  stopped (`StoreStopped`) or closed (`StoreClosed`).
-- `SaveInDoubt(failure, attempt)`: the engine could not say whether the
-  commit applied. The store stops, so nothing is saved on top of a state it
-  does not know. The next store to open reads `last-save` and reports it as
-  `lastSave` on `StoreOpened`, or on `StoreNotOpened` when the open fails
-  after reading it: `LastSaveWas(attempt)`, `NoSaveRecorded`,
-  `LastSaveUnreadable(text)`, or `LastSaveNotRead`. The save in doubt
-  landed exactly when `LastSaveWas` holds its attempt. Only the latest
-  attempt is kept, and that is enough: a store in doubt saves nothing more,
-  so the next commit comes from a store that has already read the slot.
+  not encode or read back, reading the pages the op needs failed, or the
+  store has stopped (`StoreStopped`) or closed (`StoreClosed`).
+- `SaveInDoubt(failure)`: the engine could not say whether the commit
+  applied. The store is finished. After a save in doubt the caller reopens
+  and reads: what is stored is what was saved. To keep the edit, it issues
+  the same op again, and `applyOp`'s own rules decide: an edit that landed
+  comes back as `NothingToSave` or a typed refusal, and one that did not is
+  applied. `test/store_outcome_test.dart` checks this for every op type and
+  every library edit.
 
-  Attempts are counted, not drawn. The store is the only writer under its
-  lease, so when `last-save` reads as `LastSaveWas(n)` its next attempt is
-  `n + 1`, and a save in doubt as attempt `n` is answered at the next open
-  by `n` (applied) or what the slot held before (not applied). The slot
-  reads as an attempt only when it is a whole number from 1 to the largest
-  JavaScript holds exactly, written in plain decimal; a save whose attempt
-  would pass that is `NotSaved(WouldNotReadBack)`. When the slot is
-  missing (`NoSaveRecorded`) or holds anything else (`LastSaveUnreadable`),
-  counting restarts one above the highest attempt this process has issued,
-  so no attempt a caller in this process holds is issued again; a new
-  process holds no attempts in doubt.
-
-Saves and reads run one at a time, in the order they were called. `close`
-releases the lease at once, whatever the `changes` listeners are doing, and
-returns what the release returned; afterwards saves are
-`NotSaved(StoreClosed)` and reads `NotRead(StoreClosed)`. A store whose lease
-ended stops, and every later save and read says so.
+Saves and reads run one at a time, in the order they were called. A store
+finishes when it closes, when its lease ends, or after a save in doubt; the
+three differ only in the reason they carry (`StoreClosed`, or
+`StoreStopped` with the cause). A finished store has released its lease, so
+the reopen it requires is never blocked; it has closed `changes`; and every
+later save and read returns that reason. `close` waits for operations called
+before it, not for `changes` listeners, and returns what the release
+returned; a second `close` returns the same.
 
 **Folders.** `PutFolder` writes the folder row whole, replacing what was
 stored, so a rename reads the folder first and puts it back with the new
@@ -423,24 +456,26 @@ lists its folders.
 
 `readStrategy` and `readPage` return a `Reading`: `Found`, `NotFound`, or
 `NotRead` when the device failed. A strategy whose own row cannot be read
-still reads: `StrategyContent.strategy` is its `UnreadableStrategy`, and its
-pages read as usual; edits to it are refused. Unreadable pages, settings,
-elements and lineup groups come back in the same lists as readable ones; a
-name under `content/<p>/` of a kind this build does not know comes back as
-an `UnknownKindRow` with its text as stored. `library` is `LibraryOpen` with
-the list (summaries, strategies whose own row cannot be read, folders), or
-`LibraryShut` once the store has closed, stopped or lost its lease, so a
-closed store never hands out data that looks current.
+but whose id is known still reads: `StrategyContent.strategy` is its
+`UnreadableStrategy`, and its pages read as usual; edits to it are refused.
+Unreadable pages, settings, elements and lineup groups whose ids are known
+come back in the same lists as readable ones; rows with no id come back in
+`unplaced`; a name under `content/<p>/` of a kind this build does not know
+comes back as an `UnknownKindRow` with its text as stored. `library` is
+`LibraryOpen` with the list (summaries, unreadable strategies, folders,
+unplaced library rows), or `LibraryShut` once the store has finished, so a
+finished store never hands out data that looks current.
 
 A page copy whose source page cannot be read, or holds a row of a kind this
-build does not know or under a foreign name, is refused (`UnreadableTarget`,
-`CopyLeavesRowsBehind`) rather than copied without them.
+build does not know, a row with no id, or a foreign name, is refused
+(`UnreadableTarget`, `CopyLeavesRowsBehind`) rather than copied without
+them.
 
 ### Deleting
 
 The store writes no name whose row it cannot read, with one exception:
-`RemoveStrategy` clears the strategy's whole area, these rows included,
-because the user asked for the whole strategy to go.
+removing a strategy clears its whole area, these rows included, because
+the user asked for the whole strategy to go.
 
 ### Summaries
 
@@ -449,9 +484,17 @@ A `StrategySummary` holds the name, map, folder, created and updated times
 the agents placed on live pages, and how many items they hold. It also keeps
 a tally per page, so trashing a page updates the counts without reading that
 page. Every commit writes the new summary in the same commit as its rows.
-`rebuildSummary` recomputes it from the rows alone. When the store opens and
-cannot read a summary, it rebuilds it; when the strategy's own row cannot be
-read either, the strategy is listed in `unreadableStrategies`.
+`readability` is `AllReadable` or `SomeUnreadable(damaged, newer)`: `newer`
+counts rows of a kind this build does not know and elements from a newer
+build (the app says "made with a newer version"), `damaged` counts every
+other row it cannot read (the app says "could not be read").
+`rebuildSummary` recomputes the summary from the rows alone. When the store
+opens and cannot read a summary, it rebuilds it; when the strategy's own row
+cannot be read either, the strategy is listed in `unreadableStrategies`.
+When a page read finds rows its strategy's summary does not account for, the
+store rebuilds that summary. A repair the device refuses still updates the
+summary in memory, since it is worked out from the rows on disk; the next
+save writes it.
 
 ### Telling the editor what changed
 

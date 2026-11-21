@@ -134,8 +134,14 @@ final class PageSettings {
     required this.agentSize,
     required this.abilitySize,
     required this.useNeutralTeamColors,
-    this.unknownFields = const {},
-  });
+  }) : unknownFields = const {};
+
+  PageSettings.keeping({
+    required this.agentSize,
+    required this.abilitySize,
+    required this.useNeutralTeamColors,
+    required Map<String, Object?> unknownFields,
+  }) : unknownFields = frozenJsonObject(unknownFields);
 
   static Decoded<PageSettings> decode(Object? json) =>
       JsonFields.read(json, 'page settings', (fields) {
@@ -147,7 +153,7 @@ final class PageSettings {
           'abilitySize',
           'useNeutralTeamColors',
         });
-        return () => PageSettings(
+        return () => PageSettings.keeping(
           agentSize: agentSize,
           abilitySize: abilitySize,
           useNeutralTeamColors: neutral,
@@ -180,8 +186,14 @@ final class ThemePalette {
     required this.base,
     required this.detail,
     required this.highlight,
-    this.unknownFields = const {},
-  });
+  }) : unknownFields = const {};
+
+  ThemePalette.keeping({
+    required this.base,
+    required this.detail,
+    required this.highlight,
+    required Map<String, Object?> unknownFields,
+  }) : unknownFields = frozenJsonObject(unknownFields);
 
   static Decoded<ThemePalette> decode(Object? json) =>
       JsonFields.read(json, 'theme palette', (fields) {
@@ -189,7 +201,7 @@ final class ThemePalette {
         final detail = fields.string('detail');
         final highlight = fields.string('highlight');
         final unknown = fields.rest(const {'base', 'detail', 'highlight'});
-        return () => ThemePalette(
+        return () => ThemePalette.keeping(
           base: base,
           detail: detail,
           highlight: highlight,

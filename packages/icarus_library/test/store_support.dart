@@ -19,16 +19,6 @@ const _contentsEqual = DeepCollectionEquality();
 bool sameContents(Contents left, Contents right) =>
     _contentsEqual.equals(left, right);
 
-Contents withoutSlot(Contents contents) => {
-  for (final MapEntry(:key, :value) in contents.entries)
-    key: key == 'library'
-        ? {
-            for (final MapEntry(:key, :value) in value.entries)
-              if (key != 'last-save') key: value,
-          }
-        : value,
-};
-
 String pageName(String page) => 'page/${digestOf(page)}';
 
 String settingsName(String page) => 'settings/${digestOf(page)}';
@@ -154,21 +144,25 @@ abstract base class ForwardingLease implements StorageLease {
 
 final class Counts {
   final reads = <(String, String)>[];
-  final listings = <(String, String)>[];
+  final keyListings = <(String, String)>[];
+  final entryListings = <(String, String)>[];
+  final listedEntries = <(String, String)>[];
   final written = <(String, String)>[];
   final deleted = <(String, String)>[];
-  int listed = 0;
-  int calls = 0;
+  int listedKeys = 0;
+  int commits = 0;
 
   int get keyWrites => written.length + deleted.length;
 
   void reset() {
     reads.clear();
-    listings.clear();
+    keyListings.clear();
+    entryListings.clear();
+    listedEntries.clear();
     written.clear();
     deleted.clear();
-    listed = 0;
-    calls = 0;
+    listedKeys = 0;
+    commits = 0;
   }
 }
 
@@ -185,26 +179,27 @@ final class CountingLease extends ForwardingLease {
 
   @override
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async {
-    counts.listings.add((area, prefix));
+    counts.entryListings.add((area, prefix));
     final result = await super.entries(area, prefix);
     if (result case Done(:final value)) {
-      counts.listed += value.length;
-      counts.reads.addAll([for (final entry in value) (area, entry.key)]);
+      counts.listedEntries.addAll([
+        for (final entry in value) (area, entry.key),
+      ]);
     }
     return result;
   }
 
   @override
   Future<Stored<List<String>>> keys(String area, String prefix) async {
-    counts.listings.add((area, prefix));
+    counts.keyListings.add((area, prefix));
     final result = await super.keys(area, prefix);
-    if (result case Done(:final value)) counts.listed += value.length;
+    if (result case Done(:final value)) counts.listedKeys += value.length;
     return result;
   }
 
   @override
   Future<Committing> commit(List<Change> changes) {
-    counts.calls++;
+    counts.commits++;
     for (final change in changes) {
       switch (change) {
         case Put(:final area, :final key):
@@ -397,6 +392,14 @@ StrategyRowSet sampleStrategy({String id = strategyId, String prefix = ''}) =>
 final sampleArea = strategyArea(strategyId);
 
 final pinName = 'content/${digestOf('page-a')}/pin/${digestOf('pin-1')}';
+
+Future<Contents> seededClean() async {
+  final storage = MemoryStorage();
+  final store = await openStore(MemoryEngine(storage));
+  savedValue(await store.editLibrary([AddStrategy(sampleStrategy())]));
+  await store.close();
+  return storage.contents;
+}
 
 Future<Contents> seededContents() async {
   final storage = MemoryStorage();

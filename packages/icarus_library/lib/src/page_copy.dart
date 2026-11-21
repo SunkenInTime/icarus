@@ -89,7 +89,7 @@ final class PageCopy {
           revision: 1,
           unknownFields: unknownFields,
         );
-      case UnreadableElement(:final stored, :final problem):
+      case UnreadableElement(:final stored, :final problem, :final reason):
         final publicId = _elementId(source.publicId);
         final json = switch (stored) {
           final Map<String, Object?> json => json,
@@ -118,6 +118,7 @@ final class PageCopy {
             'revision': 1,
           },
           problem: problem,
+          reason: reason,
         );
     }
   }

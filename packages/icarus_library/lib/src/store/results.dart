@@ -32,10 +32,9 @@ final class NotSaved<S, R> extends Saving<S, R> {
 }
 
 final class SaveInDoubt<S, R> extends Saving<S, R> {
-  const SaveInDoubt(this.failure, this.attempt);
+  const SaveInDoubt(this.failure);
 
   final StorageFailure failure;
-  final int attempt;
 }
 
 typedef CommitResult = Saving<Committed, CommitRefusal>;
@@ -86,6 +85,15 @@ final class UnreadableRowInTheWay implements CommitRefusal, LibraryRefusal {
   String toString() => 'UnreadableRowInTheWay(${row.key})';
 }
 
+final class UnplacedRowInTheWay implements CommitRefusal, LibraryRefusal {
+  const UnplacedRowInTheWay(this.ref);
+
+  final StoredRowRef ref;
+
+  @override
+  String toString() => 'UnplacedRowInTheWay($ref)';
+}
+
 final class CopyLeavesRowsBehind extends CommitRefusal {
   const CopyLeavesRowsBehind(this.pagePublicId);
 
@@ -93,6 +101,15 @@ final class CopyLeavesRowsBehind extends CommitRefusal {
 
   @override
   String toString() => 'CopyLeavesRowsBehind($pagePublicId)';
+}
+
+final class NoSuchUnreadableStrategy extends LibraryRefusal {
+  const NoSuchUnreadableStrategy(this.ref);
+
+  final StrategyRef ref;
+
+  @override
+  String toString() => 'NoSuchUnreadableStrategy($ref)';
 }
 
 final class FolderLoop extends LibraryRefusal {
@@ -174,15 +191,20 @@ final class LibraryEdited extends StoreChange {
   LibraryEdited({
     required List<StrategySummary> summaries,
     required List<String> removedStrategies,
+    required List<StrategyRef> removedUnreadableStrategies,
     required List<FolderRow> folders,
     required List<String> removedFolders,
   }) : summaries = List.unmodifiable(summaries),
        removedStrategies = List.unmodifiable(removedStrategies),
+       removedUnreadableStrategies = List.unmodifiable(
+         removedUnreadableStrategies,
+       ),
        folders = List.unmodifiable(folders),
        removedFolders = List.unmodifiable(removedFolders);
 
   final List<StrategySummary> summaries;
   final List<String> removedStrategies;
+  final List<StrategyRef> removedUnreadableStrategies;
   final List<FolderRow> folders;
   final List<String> removedFolders;
 }
@@ -221,6 +243,57 @@ final class NotUnloaded extends Unloading {
   final StorageFailure failure;
 }
 
+final class StoredRowRef {
+  const StoredRowRef(this.area, this.name);
+
+  final String area;
+  final String name;
+
+  @override
+  bool operator ==(Object other) =>
+      other is StoredRowRef && other.area == area && other.name == name;
+
+  @override
+  int get hashCode => Object.hash(area, name);
+
+  @override
+  String toString() => 'StoredRowRef($area, $name)';
+}
+
+final class StrategyRef {
+  const StrategyRef(this.area);
+
+  final String area;
+
+  @override
+  bool operator ==(Object other) => other is StrategyRef && other.area == area;
+
+  @override
+  int get hashCode => area.hashCode;
+
+  @override
+  String toString() => 'StrategyRef($area)';
+}
+
+final class UnplacedRow {
+  const UnplacedRow({
+    required this.ref,
+    required this.stored,
+    required this.problem,
+  });
+
+  final StoredRowRef ref;
+  final Object? stored;
+  final String problem;
+}
+
+final class UnreadableStrategyListing {
+  const UnreadableStrategyListing({required this.ref, required this.header});
+
+  final StrategyRef ref;
+  final Parsed<StrategyRow> header;
+}
+
 final class UnknownKindRow {
   const UnknownKindRow({required this.key, required this.text});
 
@@ -233,14 +306,17 @@ final class StrategyContent {
     required this.strategy,
     required List<PageRow> pages,
     required Map<String, PageSettingsRow> settings,
+    required List<UnplacedRow> unplaced,
     required List<ForeignName> foreignNames,
   }) : pages = List.unmodifiable(pages),
        settings = Map.unmodifiable(settings),
+       unplaced = List.unmodifiable(unplaced),
        foreignNames = List.unmodifiable(foreignNames);
 
   final StrategyRow strategy;
   final List<PageRow> pages;
   final Map<String, PageSettingsRow> settings;
+  final List<UnplacedRow> unplaced;
   final List<ForeignName> foreignNames;
 }
 
@@ -251,10 +327,12 @@ final class PageContent {
     required List<ElementRow> elements,
     required List<LineupGroupRow> lineupGroups,
     required List<UnknownKindRow> unknownKinds,
+    required List<UnplacedRow> unplaced,
     required List<ForeignName> foreignNames,
   }) : elements = List.unmodifiable(elements),
        lineupGroups = List.unmodifiable(lineupGroups),
        unknownKinds = List.unmodifiable(unknownKinds),
+       unplaced = List.unmodifiable(unplaced),
        foreignNames = List.unmodifiable(foreignNames);
 
   final PageRow page;
@@ -262,6 +340,7 @@ final class PageContent {
   final List<ElementRow> elements;
   final List<LineupGroupRow> lineupGroups;
   final List<UnknownKindRow> unknownKinds;
+  final List<UnplacedRow> unplaced;
   final List<ForeignName> foreignNames;
 }
 
@@ -284,15 +363,18 @@ final class LibraryShut extends LibraryState {
 final class LibraryList {
   LibraryList({
     required List<StrategySummary> strategies,
-    required List<UnreadableStrategy> unreadableStrategies,
+    required List<UnreadableStrategyListing> unreadableStrategies,
     required List<FolderRow> folders,
+    required List<UnplacedRow> unplaced,
   }) : strategies = List.unmodifiable(strategies),
        unreadableStrategies = List.unmodifiable(unreadableStrategies),
-       folders = List.unmodifiable(folders);
+       folders = List.unmodifiable(folders),
+       unplaced = List.unmodifiable(unplaced);
 
   final List<StrategySummary> strategies;
-  final List<UnreadableStrategy> unreadableStrategies;
+  final List<UnreadableStrategyListing> unreadableStrategies;
   final List<FolderRow> folders;
+  final List<UnplacedRow> unplaced;
 }
 
 sealed class LibraryChange {
@@ -309,6 +391,12 @@ final class RemoveStrategy extends LibraryChange {
   const RemoveStrategy(this.strategyPublicId);
 
   final String strategyPublicId;
+}
+
+final class RemoveUnreadableStrategy extends LibraryChange {
+  const RemoveUnreadableStrategy(this.ref);
+
+  final StrategyRef ref;
 }
 
 final class MoveStrategy extends LibraryChange {
@@ -359,28 +447,4 @@ final class EngineTooSmall extends OpenProblem {
 
   @override
   String toString() => 'EngineTooSmall($limit < $needed)';
-}
-
-sealed class LastSave {
-  const LastSave();
-}
-
-final class LastSaveWas extends LastSave {
-  const LastSaveWas(this.attempt);
-
-  final int attempt;
-}
-
-final class NoSaveRecorded extends LastSave {
-  const NoSaveRecorded();
-}
-
-final class LastSaveUnreadable extends LastSave {
-  const LastSaveUnreadable(this.text);
-
-  final String text;
-}
-
-final class LastSaveNotRead extends LastSave {
-  const LastSaveNotRead();
 }

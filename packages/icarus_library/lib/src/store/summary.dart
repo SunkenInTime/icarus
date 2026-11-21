@@ -6,7 +6,7 @@ import '../payloads.dart';
 import '../rows.dart';
 import '../wire.dart';
 
-const summaryVersion = 3;
+const summaryVersion = 4;
 
 enum Sides { attack, defend, mixed }
 
@@ -19,43 +19,65 @@ final class AllReadable extends Readability {
 }
 
 final class SomeUnreadable extends Readability {
-  const SomeUnreadable(this.rows);
+  const SomeUnreadable({required this.damaged, required this.newer});
 
-  final int rows;
+  final int damaged;
+  final int newer;
 }
 
 final class PageTally {
   PageTally({
     required this.items,
     required Map<String, int> agents,
-    required this.unreadable,
+    required this.damaged,
+    required this.newer,
   }) : agents = Map.unmodifiable(agents);
 
-  static final empty = PageTally(items: 0, agents: const {}, unreadable: 0);
+  static final empty = PageTally(
+    items: 0,
+    agents: const {},
+    damaged: 0,
+    newer: 0,
+  );
 
   final int items;
   final Map<String, int> agents;
-  final int unreadable;
+  final int damaged;
+  final int newer;
+
+  PageTally _with({
+    int? items,
+    Map<String, int>? agents,
+    int damaged = 0,
+    int newer = 0,
+  }) => PageTally(
+    items: items ?? this.items,
+    agents: agents ?? this.agents,
+    damaged: this.damaged + damaged,
+    newer: this.newer + newer,
+  );
+
+  PageTally plusDamaged(int count) => _with(damaged: count);
+
+  PageTally plusNewer(int count) => _with(newer: count);
 
   PageTally plusGroup(LineupGroupRow row, int sign) => switch (row) {
-    UnreadableLineupGroup() => PageTally(
-      items: items,
-      agents: agents,
-      unreadable: unreadable + sign,
-    ),
+    UnreadableLineupGroup() => _with(damaged: sign),
     ReadableLineupGroupRow() => this,
   };
 
   PageTally plus(ElementRow row, int sign) {
+    final counted = switch (row) {
+      UnreadableElement(reason: Damaged()) => _with(damaged: sign),
+      UnreadableElement(reason: FromNewerBuild()) => _with(newer: sign),
+      LiveElement() || DeletedElement() => this,
+    };
     final live = switch (row) {
       LiveElement() => true,
       DeletedElement() => false,
       UnreadableElement(:final deleted) => deleted == false,
     };
-    final unreadable = this.unreadable + (row is UnreadableElement ? sign : 0);
-    if (!live) {
-      return PageTally(items: items, agents: agents, unreadable: unreadable);
-    }
+    if (!live) return counted;
     final agent = switch (row) {
       LiveElement(:final payload) when payload.kind == ElementKind.agent =>
         switch (payload.data['type']) {
@@ -73,23 +95,21 @@ final class PageTally {
         counts[agent] = count;
       }
     }
-    return PageTally(
-      items: items + sign,
-      agents: counts,
-      unreadable: unreadable,
-    );
+    return counted._with(items: items + sign, agents: counts);
   }
 
   Map<String, Object?> toJson() => {
     'items': items,
     'agents': {for (final key in agents.keys.sorted()) key: agents[key]},
-    'unreadable': unreadable,
+    'damaged': damaged,
+    'newer': newer,
   };
 
   static Decoded<PageTally> decode(Object? json) =>
       JsonFields.read(json, 'page tally', (fields) {
         final items = fields.whole('items');
-        final unreadable = fields.whole('unreadable');
+        final damaged = fields.whole('damaged');
+        final newer = fields.whole('newer');
         final agents = fields.object('agents');
         if (!agents.values.every(isSafeWhole)) {
           fields.reject('expected agent counts');
@@ -100,7 +120,8 @@ final class PageTally {
             for (final MapEntry(:key, :value) in agents.entries)
               key: (value as num).toInt(),
           },
-          unreadable: unreadable,
+          damaged: damaged,
+          newer: newer,
         );
       });
 
@@ -125,6 +146,7 @@ final class StrategySummary {
     required List<String> agents,
     required this.itemCount,
     required this.readability,
+    required this.unplacedRows,
     required Map<String, PageTally> tallies,
   }) : agents = List.unmodifiable(agents),
        tallies = Map.unmodifiable(tallies);
@@ -134,11 +156,14 @@ final class StrategySummary {
     required Iterable<PageRow> pages,
     required Iterable<PageSettingsRow> settings,
     required Map<String, PageTally> tallies,
+    required int unplacedRows,
   }) {
-    final unreadable =
-        tallies.values.fold(0, (sum, tally) => sum + tally.unreadable) +
+    final damaged =
+        tallies.values.fold(0, (sum, tally) => sum + tally.damaged) +
         pages.whereType<UnreadablePage>().length +
-        settings.whereType<UnreadablePageSettings>().length;
+        settings.whereType<UnreadablePageSettings>().length +
+        unplacedRows;
+    final newer = tallies.values.fold(0, (sum, tally) => sum + tally.newer);
     final live = pages.whereType<LivePage>().toList();
     final liveTallies = [
       for (final page in live) tallies[page.publicId] ?? PageTally.empty,
@@ -159,9 +184,10 @@ final class StrategySummary {
       },
       agents: {for (final tally in liveTallies) ...tally.agents.keys}.sorted(),
       itemCount: liveTallies.fold(0, (sum, tally) => sum + tally.items),
-      readability: unreadable == 0
+      readability: damaged == 0 && newer == 0
           ? const AllReadable()
-          : SomeUnreadable(unreadable),
+          : SomeUnreadable(damaged: damaged, newer: newer),
+      unplacedRows: unplacedRows,
       tallies: tallies,
     );
   }
@@ -177,6 +203,7 @@ final class StrategySummary {
   final List<String> agents;
   final int itemCount;
   final Readability readability;
+  final int unplacedRows;
   final Map<String, PageTally> tallies;
 
   StrategySummary after(
@@ -217,6 +244,7 @@ final class StrategySummary {
       pages: pages,
       settings: settings,
       tallies: tallies,
+      unplacedRows: unplacedRows,
     );
   }
 
@@ -232,6 +260,7 @@ final class StrategySummary {
     agents: agents,
     itemCount: itemCount,
     readability: readability,
+    unplacedRows: unplacedRows,
     tallies: tallies,
   );
 
@@ -247,10 +276,15 @@ final class StrategySummary {
     'sides': sides.name,
     'agents': agents,
     'itemCount': itemCount,
-    'unreadableRows': switch (readability) {
+    'damagedRows': switch (readability) {
       AllReadable() => 0,
-      SomeUnreadable(:final rows) => rows,
+      SomeUnreadable(:final damaged) => damaged,
     },
+    'newerRows': switch (readability) {
+      AllReadable() => 0,
+      SomeUnreadable(:final newer) => newer,
+    },
+    'unplacedRows': unplacedRows,
     'tallies': {
       for (final page in tallies.keys.sorted()) page: tallies[page]!.toJson(),
     },
@@ -275,7 +309,9 @@ final class StrategySummary {
           fields.reject('expected agents');
         }
         final itemCount = fields.whole('itemCount');
-        final unreadableRows = fields.whole('unreadableRows');
+        final damaged = fields.whole('damagedRows');
+        final newer = fields.whole('newerRows');
+        final unplacedRows = fields.whole('unplacedRows');
         final tallies = <String, PageTally>{};
         for (final MapEntry(:key, :value) in fields.object('tallies').entries) {
           switch (PageTally.decode(value)) {
@@ -296,9 +332,10 @@ final class StrategySummary {
           sides: sides!,
           agents: (agents! as List<Object?>).cast<String>(),
           itemCount: itemCount,
-          readability: unreadableRows == 0
+          readability: damaged == 0 && newer == 0
               ? const AllReadable()
-              : SomeUnreadable(unreadableRows),
+              : SomeUnreadable(damaged: damaged, newer: newer),
+          unplacedRows: unplacedRows,
           tallies: tallies,
         );
       });

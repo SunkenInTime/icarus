@@ -77,10 +77,56 @@ final class WildcardLease extends ForwardingLease {
       };
 }
 
-final class WildcardHarness extends MemoryHarness {
+final class EntriesWildcardLease extends ForwardingLease {
+  EntriesWildcardLease(super.inner);
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
+      switch (await inner.entries(area, '')) {
+        Done(:final value) => Done([
+          for (final entry in value)
+            if (WildcardLease(inner)._matches(entry.key, prefix)) entry,
+        ]),
+        final failed => failed,
+      };
+}
+
+final class TruncatingLease extends ForwardingLease {
+  TruncatingLease(super.inner);
+
+  @override
+  Future<Committing> commit(List<Change> changes) => inner.commit([
+    for (final change in changes)
+      switch (change) {
+        Delete(:final area, :final key) when key.length > maxKeyLength =>
+          Delete(area, key.substring(0, maxKeyLength)),
+        final other => other,
+      },
+  ]);
+}
+
+final class PartlyUnknownLease extends ForwardingLease {
+  PartlyUnknownLease(super.inner);
+
+  @override
+  Future<Committing> commit(List<Change> changes) async {
+    if (changes.length < 20) return inner.commit(changes);
+    final landed = await inner.commit(changes.take(1).toList());
+    return switch (landed) {
+      CommitApplied() => const CommitUnknown(DeviceFailure('cut short')),
+      final other => other,
+    };
+  }
+}
+
+final class WrappedHarness extends MemoryHarness {
+  WrappedHarness(this.wrap);
+
+  final StorageLease Function(StorageLease lease) wrap;
+
   @override
   Future<StorageEngine> open() async =>
-      WrappingEngine(MemoryEngine(storage), WildcardLease.new);
+      WrappingEngine(MemoryEngine(storage), wrap);
 
   @override
   Future<void> close(StorageEngine engine) =>
@@ -124,13 +170,38 @@ void main() {
     },
   );
 
+  final broken = {
+    'whose key prefixes match like SQL LIKE': (
+      WildcardLease.new,
+      'keys and entries match a prefix literally',
+    ),
+    'whose entry prefixes match like SQL LIKE': (
+      EntriesWildcardLease.new,
+      'keys and entries match a prefix literally',
+    ),
+    'that cuts a delete past the limit down onto a valid name': (
+      TruncatingLease.new,
+      'a commit naming anything outside the alphabet or past the limit is refused whole',
+    ),
+  };
+  for (final MapEntry(key: what, value: (wrap, check)) in broken.entries) {
+    test('the contract fails an engine $what', () async {
+      final results = await runAll(() => WrappedHarness(wrap));
+      expect(results[check], isA<Broke>(), reason: '$results');
+    });
+  }
+
   test(
-    'the contract fails an engine whose prefixes match like SQL LIKE',
+    'a partial commit reported unknown fails every check it reaches',
     () async {
-      final results = await runAll(WildcardHarness.new);
+      final results = await runAll(
+        () => WrappedHarness(PartlyUnknownLease.new),
+      );
       expect(
-        results['matches names exactly and lists them in ascending code unit order'],
-        isA<Broke>(),
+        results.entries
+            .where((entry) => entry.value is Broke)
+            .map((e) => e.key),
+        isNotEmpty,
       );
     },
   );

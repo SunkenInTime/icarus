@@ -1,33 +1,85 @@
+import 'package:collection/collection.dart';
+
 import '../outcome.dart';
 import '../rows.dart';
 import '../strategy_rows.dart';
 import 'layout.dart';
 import 'results.dart';
+import 'summary.dart';
 
-const _nameTaken = 'another row holds the name of this id';
+sealed class Held {
+  const Held();
+}
+
+final class HeldNothing extends Held {
+  const HeldNothing();
+}
+
+final class HeldRow extends Held {
+  const HeldRow(this.row);
+
+  final Row row;
+}
+
+final class HeldUnplaced extends Held {
+  const HeldUnplaced(this.row);
+
+  final UnplacedRow row;
+}
+
+R? rowWithId<R extends Row>(
+  Map<String, R> byDigest,
+  String id,
+  String Function(R row) idOf,
+) => switch (byDigest[digestOf(id)]) {
+  final row? when idOf(row) == id => row,
+  _ => null,
+};
 
 final class LoadedPage {
   final elements = <String, ElementRow>{};
   final lineupGroups = <String, LineupGroupRow>{};
   final unknownKinds = <UnknownKindRow>[];
+  final unplaced = <String, UnplacedRow>{};
   final foreignNames = <ForeignName>[];
+
+  PageTally tally() {
+    var tally = PageTally.empty
+        .plusDamaged(unplaced.length)
+        .plusNewer(unknownKinds.length);
+    for (final row in elements.values) {
+      tally = tally.plus(row, 1);
+    }
+    for (final row in lineupGroups.values) {
+      tally = tally.plusGroup(row, 1);
+    }
+    return tally;
+  }
 }
 
 final class LoadedStrategy {
   LoadedStrategy({
+    required this.digest,
     required this.header,
+    required this.strategyId,
     required Map<String, PageRow> pages,
     required Map<String, PageSettingsRow> settings,
+    required Map<String, UnplacedRow> unplaced,
     required Iterable<StoreName> names,
   }) {
     _pages.addAll(pages);
     _settings.addAll(settings);
+    this.unplaced.addAll(unplaced);
     for (final name in names) {
       switch (name) {
         case ElementName(:final page, :final digest):
-          _elementPages[digest] = page;
+          (_elementPages[digest] ??= {}).add(page);
+          _contentPages.add(page);
         case LineupName(:final page, :final digest):
-          _lineupPages[digest] = page;
+          (_lineupPages[digest] ??= {}).add(page);
+          _contentPages.add(page);
+        case UnknownKindName(:final page):
+          _contentPages.add(page);
         case final ForeignName name:
           foreignNames.add(name);
         case _:
@@ -36,51 +88,42 @@ final class LoadedStrategy {
     }
   }
 
-  StrategyRow header;
+  final String digest;
+  Parsed<StrategyRow> header;
+  final String? strategyId;
+  final unplaced = <String, UnplacedRow>{};
   final foreignNames = <ForeignName>[];
   final _pages = <String, PageRow>{};
   final _settings = <String, PageSettingsRow>{};
-  final _elementPages = <String, String>{};
-  final _lineupPages = <String, String>{};
+  final _elementPages = <String, Set<String>>{};
+  final _lineupPages = <String, Set<String>>{};
+  final _contentPages = <String>{};
   final _loaded = <String, LoadedPage>{};
+
+  String get area => StrategyArea(digest).name;
+
+  StoredRowRef refOf(String name) => StoredRowRef(area, name);
 
   Iterable<PageRow> get pages => _pages.values;
 
   Iterable<PageSettingsRow> get allSettings => _settings.values;
+
+  Iterable<UnplacedRow> get unplacedPages => [
+    for (final MapEntry(:key, :value) in unplaced.entries)
+      if (key.startsWith('page/')) value,
+  ];
 
   Map<String, PageSettingsRow> get settingsByPage => {
     for (final row in _settings.values) row.pagePublicId: row,
   };
 
   PageRow? page(String pagePublicId) =>
-      switch (_pages[digestOf(pagePublicId)]) {
-        final ReadablePageRow row when row.publicId != pagePublicId =>
-          UnreadablePage(
-            publicId: pagePublicId,
-            strategyPublicId: row.strategyPublicId,
-            sortIndex: null,
-            trashed: null,
-            stored: row.toJson(),
-            problem: _nameTaken,
-          ),
-        final row => row,
-      };
+      rowWithId(_pages, pagePublicId, (row) => row.publicId);
 
   PageSettingsRow? settingsOf(String pagePublicId) =>
-      switch (_settings[digestOf(pagePublicId)]) {
-        final ReadablePageSettings row when row.pagePublicId != pagePublicId =>
-          UnreadablePageSettings(
-            pagePublicId: pagePublicId,
-            stored: row.toJson(),
-            problem: _nameTaken,
-          ),
-        final row => row,
-      };
+      rowWithId(_settings, pagePublicId, (row) => row.pagePublicId);
 
-  String pageIdOf(String pageDigest) => switch (_pages[pageDigest]) {
-    final row? => row.publicId,
-    null => pageContentPrefix(pageDigest),
-  };
+  String? pageIdOf(String pageDigest) => _pages[pageDigest]?.publicId;
 
   LoadedPage? loadedPage(String pageDigest) => _loaded[pageDigest];
 
@@ -89,56 +132,40 @@ final class LoadedStrategy {
   void addLoadedPage(String pageDigest, LoadedPage page) =>
       _loaded[pageDigest] = page;
 
-  Set<String> get pageDigests => {
-    ..._pages.keys,
-    ..._elementPages.values,
-    ..._lineupPages.values,
-  };
+  Set<String> get pageDigests => {..._pages.keys, ..._contentPages};
 
-  String? pageOfElement(String elementPublicId) =>
-      _elementPages[digestOf(elementPublicId)];
+  Iterable<String> pagesOfElement(String elementPublicId) =>
+      _elementPages[digestOf(elementPublicId)] ?? const {};
 
-  String? pageOfLineupGroup(String lineupPublicId) =>
-      _lineupPages[digestOf(lineupPublicId)];
+  Iterable<String> pagesOfLineupGroup(String lineupPublicId) =>
+      _lineupPages[digestOf(lineupPublicId)] ?? const {};
 
   LoadedPage _mustBeLoaded(String pageDigest) =>
       _loaded[pageDigest] ??
       (throw StateError('page $pageDigest was not loaded before applying'));
 
-  ElementRow? element(String elementPublicId) {
-    final digest = digestOf(elementPublicId);
-    return switch (_elementPages[digest]) {
-      null => null,
-      final page => switch (_mustBeLoaded(page).elements[digest]) {
-        final ReadableElementRow row when row.publicId != elementPublicId =>
-          UnreadableElement(
-            publicId: elementPublicId,
-            pagePublicId: row.pagePublicId,
-            stored: row.toJson(),
-            problem: _nameTaken,
-          ),
-        final row => row,
-      },
-    };
-  }
+  ElementRow? element(String elementPublicId) => pagesOfElement(elementPublicId)
+      .map(
+        (page) => rowWithId(
+          _mustBeLoaded(page).elements,
+          elementPublicId,
+          (row) => row.publicId,
+        ),
+      )
+      .nonNulls
+      .firstOrNull;
 
-  LineupGroupRow? lineupGroup(String lineupPublicId) {
-    final digest = digestOf(lineupPublicId);
-    return switch (_lineupPages[digest]) {
-      null => null,
-      final page => switch (_mustBeLoaded(page).lineupGroups[digest]) {
-        final ReadableLineupGroupRow row when row.publicId != lineupPublicId =>
-          UnreadableLineupGroup(
-            publicId: lineupPublicId,
-            strategyPublicId: row.strategyPublicId,
-            pagePublicId: row.pagePublicId,
-            stored: row.toJson(),
-            problem: _nameTaken,
-          ),
-        final row => row,
-      },
-    };
-  }
+  LineupGroupRow? lineupGroup(String lineupPublicId) =>
+      pagesOfLineupGroup(lineupPublicId)
+          .map(
+            (page) => rowWithId(
+              _mustBeLoaded(page).lineupGroups,
+              lineupPublicId,
+              (row) => row.publicId,
+            ),
+          )
+          .nonNulls
+          .firstOrNull;
 
   Iterable<ElementRow> elementsOnPage(String pageDigest) =>
       _mustBeLoaded(pageDigest).elements.values;
@@ -149,15 +176,31 @@ final class LoadedStrategy {
   StrategyRows rowsUnder(ReadableStrategy strategy) =>
       _LoadedRows(this, strategy);
 
-  Row? current(Row row) => switch (nameOf(row)) {
-    HeaderName() => header,
-    PageName(:final digest) => _pages[digest],
-    SettingsName(:final digest) => _settings[digest],
-    ElementName(:final page, :final digest) => _loaded[page]?.elements[digest],
-    LineupName(:final page, :final digest) =>
-      _loaded[page]?.lineupGroups[digest],
-    _ => null,
-  };
+  Held heldUnder(StoreName name) {
+    final row = switch (name) {
+      HeaderName() => switch (header) {
+        Placed(:final row) => row,
+        Unplaced() => null,
+      },
+      PageName(:final digest) => _pages[digest],
+      SettingsName(:final digest) => _settings[digest],
+      ElementName(:final page, :final digest) =>
+        _loaded[page]?.elements[digest],
+      LineupName(:final page, :final digest) =>
+        _loaded[page]?.lineupGroups[digest],
+      _ => null,
+    };
+    if (row != null) return HeldRow(row);
+    final unplacedHere = switch (name) {
+      ElementName(:final page) ||
+      LineupName(:final page) => _loaded[page]?.unplaced[name.name],
+      _ => unplaced[name.name],
+    };
+    return switch (unplacedHere) {
+      final found? => HeldUnplaced(found),
+      null => const HeldNothing(),
+    };
+  }
 
   (ReadableStrategy, List<PageRow>, List<PageSettingsRow>) after(
     ReadableStrategy strategy,
@@ -196,12 +239,12 @@ final class LoadedStrategy {
     switch (row) {
       case ElementRow(:final pagePublicId, :final publicId):
         _loaded[digestOf(pagePublicId)]?.elements.remove(digestOf(publicId));
-        _elementPages.remove(digestOf(publicId));
+        _elementPages[digestOf(publicId)]?.remove(digestOf(pagePublicId));
       case LineupGroupRow(:final pagePublicId, :final publicId):
         _loaded[digestOf(pagePublicId)]?.lineupGroups.remove(
           digestOf(publicId),
         );
-        _lineupPages.remove(digestOf(publicId));
+        _lineupPages[digestOf(publicId)]?.remove(digestOf(pagePublicId));
       case StrategyRow() || FolderRow() || PageRow() || PageSettingsRow():
         throw StateError('$row does not change name');
     }
@@ -210,7 +253,7 @@ final class LoadedStrategy {
   void _keep(Row row) {
     switch (row) {
       case StrategyRow():
-        header = row;
+        header = Placed(row);
       case PageRow(:final publicId):
         _pages[digestOf(publicId)] = row;
       case PageSettingsRow(:final pagePublicId):
@@ -218,11 +261,13 @@ final class LoadedStrategy {
       case ElementRow(:final pagePublicId, :final publicId):
         final page = digestOf(pagePublicId);
         _mustBeLoaded(page).elements[digestOf(publicId)] = row;
-        _elementPages[digestOf(publicId)] = page;
+        (_elementPages[digestOf(publicId)] ??= {}).add(page);
+        _contentPages.add(page);
       case LineupGroupRow(:final pagePublicId, :final publicId):
         final page = digestOf(pagePublicId);
         _mustBeLoaded(page).lineupGroups[digestOf(publicId)] = row;
-        _lineupPages[digestOf(publicId)] = page;
+        (_lineupPages[digestOf(publicId)] ??= {}).add(page);
+        _contentPages.add(page);
       case FolderRow():
         throw StateError('$row is not written as a row of a strategy');
     }

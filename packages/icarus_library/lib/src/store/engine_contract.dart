@@ -60,25 +60,124 @@ T _done<T>(Stored<T> stored, String what) => switch (stored) {
   StorageFailed(:final failure) => _broke('$what failed: $failure'),
 };
 
-void _applied(Committing committing, String what) {
+typedef _Areas = Map<String, Map<String, String>>;
+
+Set<String> _areasOf(List<Change> changes) => {
+  for (final change in changes)
+    if (isArea(change.area)) change.area,
+};
+
+Future<_Areas> _snapshot(StorageLease lease, Set<String> areas) async => {
+  for (final area in areas)
+    area: {
+      for (final (:key, :value) in _done(
+        await lease.entries(area, ''),
+        'listing $area',
+      ))
+        key: value,
+    },
+};
+
+_Areas _after(_Areas before, List<Change> changes) {
+  final after = {
+    for (final MapEntry(:key, :value) in before.entries) key: {...value},
+  };
+  for (final change in changes) {
+    switch ((change, after[change.area])) {
+      case (_, null):
+        break;
+      case (Put(:final key, :final value), final values?):
+        values[key] = value;
+      case (Delete(:final key), final values?):
+        values.remove(key);
+      case (ClearArea(), final values?):
+        values.clear();
+    }
+  }
+  return after;
+}
+
+bool _sameAreas(_Areas left, _Areas right) =>
+    left.length == right.length &&
+    left.entries.every(
+      (area) =>
+          right[area.key]?.length == area.value.length &&
+          area.value.entries.every(
+            (entry) => right[area.key]![entry.key] == entry.value,
+          ),
+    );
+
+void _effect(
+  Committing committing,
+  _Areas before,
+  _Areas expected,
+  _Areas seen,
+  String what,
+) {
+  final none = _sameAreas(seen, before);
+  final all = _sameAreas(seen, expected);
+  switch (committing) {
+    case CommitApplied() when !all:
+      _broke('$what: CommitApplied, but not every change is there');
+    case CommitRefused() when !none:
+      _broke('$what: $committing, but it changed storage');
+    case CommitUnknown() when !all && !none:
+      _broke('$what: $committing left some of its changes and not others');
+    case _:
+      return;
+  }
+}
+
+Future<Committing> _commit(
+  StorageLease lease,
+  List<Change> changes,
+  String what,
+) async {
+  final areas = _areasOf(changes);
+  final before = await _snapshot(lease, areas);
+  final committing = await lease.commit(changes);
+  _effect(
+    committing,
+    before,
+    _after(before, changes),
+    await _snapshot(lease, areas),
+    what,
+  );
+  return committing;
+}
+
+Future<void> _applied(
+  StorageLease lease,
+  List<Change> changes,
+  String what,
+) async {
+  final committing = await _commit(lease, changes, what);
   if (committing is! CommitApplied) {
     _broke('$what gave $committing, not CommitApplied');
   }
 }
 
-Future<Committing> _put(
+Future<void> _put(
   StorageLease lease,
   String area,
   Map<String, String> values,
-) => lease.commit([
+  String what,
+) => _applied(lease, [
   for (final MapEntry(:key, :value) in values.entries) Put(area, key, value),
-]);
+], what);
 
-Future<Committing> _delete(
+Future<void> _refusedAs<F extends StorageFailure>(
   StorageLease lease,
-  String area,
-  List<String> keys,
-) => lease.commit([for (final key in keys) Delete(area, key)]);
+  List<Change> changes,
+  String what,
+) async {
+  switch (await _commit(lease, changes, what)) {
+    case CommitRefused(:final failure) when failure is F:
+      return;
+    case final other:
+      _broke('$what gave $other, not CommitRefused($F)');
+  }
+}
 
 String? _value(KeyRead read, String what) => switch (read) {
   KeyHeld(:final value) => value,
@@ -102,6 +201,18 @@ void _sameList(List<Object?> actual, List<Object?> expected, String what) {
   }
 }
 
+Future<List<String>> _entryKeys(
+  StorageLease lease,
+  String area,
+  String prefix,
+) async => [
+  for (final (:key, value: _) in _done(
+    await lease.entries(area, prefix),
+    'entries $area $prefix',
+  ))
+    key,
+];
+
 void _ended(Object result, String what) {
   switch (result) {
     case StorageFailed(failure: LeaseEnded()) ||
@@ -115,6 +226,12 @@ void _ended(Object result, String what) {
 
 void _endedStatus(StorageLease lease, String when) {
   if (lease.status is! Ended) _broke('a lease $when still says it holds');
+}
+
+Future<void> _turns(int count) async {
+  for (var i = 0; i < count; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
 }
 
 EngineCheck _check(
@@ -150,27 +267,19 @@ final List<EngineCheck> engineContract = [
   ) async {
     final first = await harness.open();
     final lease = await _lease(first);
-    _applied(await _put(lease, 'c', {'old': '1'}), 'seed');
-    _applied(await _put(lease, 'd', {'x': '1', 'y': '2'}), 'seed');
-    _applied(
-      await lease.commit(const [
-        Put('a', 'one', '1'),
-        Put('b', 'two', '2'),
-        Delete('c', 'old'),
-        ClearArea('d'),
-      ]),
-      'a commit across four areas',
-    );
-    switch (await lease.commit([
+    await _put(lease, 'c', {'old': '1'}, 'seed');
+    await _put(lease, 'd', {'x': '1', 'y': '2'}, 'seed');
+    await _applied(lease, const [
+      Put('a', 'one', '1'),
+      Put('b', 'two', '2'),
+      Delete('c', 'old'),
+      ClearArea('d'),
+    ], 'a commit across four areas');
+    await _refusedAs<KeyTooLong>(lease, [
       const Put('a', 'three', '3'),
       const Delete('b', 'two'),
       Put('c', 'k' * (lease.maxKeyLength + 1), 'too long'),
-    ])) {
-      case CommitRefused():
-        break;
-      case final other:
-        _broke('a commit holding a name past the limit gave $other');
-    }
+    ], 'a commit holding a name past the limit');
     await harness.crash(first);
     final reopened = await _lease(await harness.open());
     _same(await _read(reopened, 'a', 'one'), '1', 'area a');
@@ -179,18 +288,96 @@ final List<EngineCheck> engineContract = [
     _sameList(_done(await reopened.keys('d', ''), 'keys'), [], 'area d');
     _same(await _read(reopened, 'a', 'three'), null, 'a refused commit');
   }),
+  _check('applies the changes of one commit in list order', (harness) async {
+    final engine = await harness.open();
+    final lease = await _lease(engine);
+    await _put(lease, 'c', {'x': '0'}, 'seed');
+    await _applied(lease, const [
+      Put('a', 'k', '1'),
+      Put('a', 'k', '2'),
+      Put('b', 'k', '1'),
+      Delete('b', 'k'),
+      Put('c', 'k', '1'),
+      ClearArea('c'),
+      ClearArea('d'),
+      Put('d', 'k', '1'),
+    ], 'a commit naming the same names more than once');
+    _same(await _read(lease, 'a', 'k'), '2', 'a later put');
+    _same(await _read(lease, 'b', 'k'), null, 'a delete after a put');
+    _sameList(_done(await lease.keys('c', ''), 'keys'), [], 'a clear after');
+    _same(await _read(lease, 'd', 'k'), '1', 'a put after a clear');
+    await harness.close(engine);
+  }),
+  _check('an empty commit applies and changes nothing', (harness) async {
+    final engine = await harness.open();
+    final lease = await _lease(engine);
+    await _put(lease, 'a', {'x': '1'}, 'seed');
+    await _applied(lease, const [], 'an empty commit');
+    _same(await _read(lease, 'a', 'x'), '1', 'after an empty commit');
+    await harness.close(engine);
+  }),
+  _check(
+    'a commit naming anything outside the alphabet or past the limit is refused whole',
+    (harness) async {
+      final engine = await harness.open();
+      final lease = await _lease(engine);
+      final limit = lease.maxKeyLength;
+      await _put(lease, 'a', {'kept': '1', 'k' * limit: 'longest'}, 'seed');
+      const ok = Put('a', 'new', '1');
+      final cases = <String, (List<Change>, bool)>{
+        'a name with a capital letter': (
+          [ok, const Put('a', 'Bad', 'x')],
+          true,
+        ),
+        'a name with a space': ([ok, const Put('a', 'a b', 'x')], true),
+        'a name with %': ([ok, const Put('a', 'a%', 'x')], true),
+        'an empty name': ([ok, const Put('a', '', 'x')], true),
+        'a delete of a name outside the alphabet': (
+          [ok, const Delete('a', 'Kept')],
+          true,
+        ),
+        'an area outside the alphabet': ([ok, const Put('A', 'x', 'x')], true),
+        'an area past its limit': (
+          [ok, Put('a' * (maxAreaLength + 1), 'x', 'x')],
+          true,
+        ),
+        'a clear of an area outside the alphabet': (
+          [ok, const ClearArea('A')],
+          true,
+        ),
+        'a put past the limit': ([ok, Put('a', 'k' * (limit + 1), 'x')], false),
+        'a delete past the limit': (
+          [ok, Delete('a', 'k' * (limit + 1))],
+          false,
+        ),
+      };
+      for (final MapEntry(key: what, value: (changes, alphabet))
+          in cases.entries) {
+        if (alphabet) {
+          await _refusedAs<NameNotAllowed>(lease, changes, what);
+        } else {
+          await _refusedAs<KeyTooLong>(lease, changes, what);
+        }
+        _same(await _read(lease, 'a', 'new'), null, '$what: the valid put');
+      }
+      _same(await _read(lease, 'a', 'kept'), '1', 'a name refused deletes');
+      _same(
+        await _read(lease, 'a', 'k' * limit),
+        'longest',
+        'the longest name beside a delete past the limit',
+      );
+      await harness.close(engine);
+    },
+  ),
   _check('clearing an area deletes every name in it and nothing else', (
     harness,
   ) async {
     final engine = await harness.open();
     final lease = await _lease(engine);
-    _applied(
-      await _put(lease, 'area-1', {'a': '1', 'b/c': '2', 'z': '3'}),
-      'seed',
-    );
-    _applied(await _put(lease, 'area-10', {'a': '1'}), 'seed');
-    _applied(await _put(lease, 'area-2', {'a': '1'}), 'seed');
-    _applied(await lease.commit(const [ClearArea('area-1')]), 'clear');
+    await _put(lease, 'area-1', {'a': '1', 'b/c': '2', 'z': '3'}, 'seed');
+    await _put(lease, 'area-10', {'a': '1'}, 'seed');
+    await _put(lease, 'area-2', {'a': '1'}, 'seed');
+    await _applied(lease, const [ClearArea('area-1')], 'clear');
     _sameList(_done(await lease.keys('area-1', ''), 'keys'), [], 'cleared');
     _same(await _read(lease, 'area-10', 'a'), '1', 'a similar area');
     _same(await _read(lease, 'area-2', 'a'), '1', 'another area');
@@ -201,7 +388,7 @@ final List<EngineCheck> engineContract = [
   ) async {
     final engine = await harness.open();
     final lease = await _lease(engine);
-    _applied(await _put(lease, 'one', _values), 'write');
+    await _put(lease, 'one', _values, 'write');
     for (final MapEntry(:key, :value) in _values.entries) {
       _same(await _read(lease, 'one', key), value, 'read $key');
       _same(await _read(lease, 'two', key), null, 'other area');
@@ -220,30 +407,51 @@ final List<EngineCheck> engineContract = [
       for (final unit in nameAlphabet.codeUnits)
         'n${String.fromCharCode(unit)}x',
       'n_',
-      'n%',
       'nx_y',
       'nxay',
-    ].where(isName).toList();
-    _applied(
-      await _put(lease, 'a', {for (final name in names) name: name}),
-      'write',
-    );
+    ];
+    await _put(lease, 'a', {for (final name in names) name: name}, 'write');
     final sorted = [...names]..sort(_compareUnits);
     _sameList(_done(await lease.keys('a', ''), 'keys'), sorted, 'order');
-    _sameList(_done(await lease.keys('a', 'n_'), 'keys'), [
-      for (final name in sorted)
-        if (name.startsWith('n_')) name,
-    ], 'a prefix holding _');
-    _sameList(_done(await lease.keys('a', 'nx_'), 'keys'), [
-      'nx_y',
-    ], 'a prefix holding _ within a name');
-    _sameList(_done(await lease.keys('a', 'n-'), 'keys'), [
-      'n-x',
-    ], 'a prefix holding -');
+    _sameList(await _entryKeys(lease, 'a', ''), sorted, 'entries order');
     for (final name in names) {
       _same(await _read(lease, 'a', name), name, 'read $name');
     }
     _same(await _read(lease, 'a', 'n_x_'), null, 'a near name');
+    await harness.close(engine);
+  }),
+  _check('keys and entries match a prefix literally', (harness) async {
+    final engine = await harness.open();
+    final lease = await _lease(engine);
+    const names = [
+      'a-b',
+      'a.b',
+      'a/b',
+      'a_b',
+      'aab',
+      'ab',
+      'axb',
+      'x_y',
+      'xay',
+      'xy',
+    ];
+    await _put(lease, 'a', {for (final name in names) name: name}, 'write');
+    for (final prefix in ['a_', 'a-', 'a.', 'a/', 'x_', 'x_y', 'a.b', 'aa']) {
+      final expected = [
+        for (final name in [...names]..sort(_compareUnits))
+          if (name.startsWith(prefix)) name,
+      ];
+      _sameList(
+        _done(await lease.keys('a', prefix), 'keys'),
+        expected,
+        'keys under $prefix',
+      );
+      _sameList(
+        await _entryKeys(lease, 'a', prefix),
+        expected,
+        'entries under $prefix',
+      );
+    }
     await harness.close(engine);
   }),
   _check('lists keys with values by prefix', (harness) async {
@@ -256,7 +464,7 @@ final List<EngineCheck> engineContract = [
       'pages': '4',
       'other': '5',
     };
-    _applied(await _put(lease, 'a', values), 'write');
+    await _put(lease, 'a', values, 'write');
     const under = ['page/a', 'page/a/x', 'page/b'];
     _sameList(_done(await lease.keys('a', 'page/'), 'keys'), under, 'keys');
     _sameList(
@@ -276,19 +484,25 @@ final List<EngineCheck> engineContract = [
   _check('a delete removes only the names it gives', (harness) async {
     final engine = await harness.open();
     final lease = await _lease(engine);
-    _applied(await _put(lease, 'a', {'x': '1', 'y': '2', 'z': '3'}), 'write');
-    _applied(await _delete(lease, 'a', ['x', 'z', 'never']), 'delete');
+    await _put(lease, 'a', {'x': '1', 'y': '2', 'z': '3'}, 'write');
+    await _applied(lease, const [
+      Delete('a', 'x'),
+      Delete('a', 'z'),
+      Delete('a', 'never'),
+    ], 'delete');
     _sameList(_done(await lease.keys('a', ''), 'keys'), ['y'], 'kept');
     await harness.close(engine);
   }),
   _check('a commit that applied survives a crash, whole', (harness) async {
     final before = await harness.open();
     final lease = await _lease(before);
-    _applied(
-      await _put(lease, 'a', {for (var i = 0; i < 50; i++) 'k$i': 'v$i'}),
-      'write',
-    );
-    _applied(await _delete(lease, 'a', ['k7', 'k8']), 'delete');
+    await _put(lease, 'a', {
+      for (var i = 0; i < 50; i++) 'k$i': 'v$i',
+    }, 'write');
+    await _applied(lease, const [
+      Delete('a', 'k7'),
+      Delete('a', 'k8'),
+    ], 'delete');
     await harness.crash(before);
     final after = await harness.open();
     final reopened = await _lease(after);
@@ -302,7 +516,7 @@ final List<EngineCheck> engineContract = [
     await harness.close(after);
   }),
   _check(
-    'holds names up to a limit of at least 255 that never changes, and handles longer ones as stated',
+    'holds names up to a limit of at least 255 that never changes, and reads longer ones as missing',
     (harness) async {
       final engine = await harness.open();
       final lease = await _lease(engine);
@@ -310,22 +524,11 @@ final List<EngineCheck> engineContract = [
       if (limit < 255) _broke('maxKeyLength $limit is under 255');
       final area = 'a' * maxAreaLength;
       final longest = 'k' * limit;
-      _applied(await _put(lease, area, {longest: 'v'}), 'write');
+      await _put(lease, area, {longest: 'v'}, 'write');
       _same(await _read(lease, area, longest), 'v', 'the longest name');
-      switch (await _put(lease, area, {'${longest}k': 'v', 'short': 'v'})) {
-        case CommitRefused(failure: KeyTooLong()):
-          break;
-        case final other:
-          _broke('a name past the limit gave $other, not CommitRefused');
-      }
-      _same(await _read(lease, area, 'short'), null, 'a refused write landed');
       if (await lease.read(area, '${longest}k') is! KeyMissing) {
         _broke('reading a name past the limit was not KeyMissing');
       }
-      _applied(
-        await _delete(lease, area, ['${longest}k']),
-        'a delete past the limit',
-      );
       await lease.release();
       await harness.close(engine);
       final again = await _lease(await harness.open());
@@ -344,13 +547,13 @@ final List<EngineCheck> engineContract = [
       _broke('the same engine leased its storage twice');
     }
     final pending = harness.holdNextWrite(first);
-    final writing = _put(held, 'a', {'x': 'first'});
+    final writing = held.commit(const [Put('a', 'x', 'first')]);
     await pending.reached;
     if (await second.lease() is! HeldByAnotherWriter) {
       _broke('a second lease was granted while the first was writing');
     }
     pending.letGo();
-    _applied(await writing, 'write');
+    if (await writing is! CommitApplied) _broke('the held write did not apply');
     if (await held.release() is! Released) _broke('release did not release');
     _endedStatus(held, 'released');
     final next = await _lease(second);
@@ -359,17 +562,32 @@ final List<EngineCheck> engineContract = [
     await harness.close(second);
   }),
   _check(
-    'a write pending when its lease ends lands before the next grant or not at all',
+    'a write pending when its lease ends lands whole before the next grant or not at all',
     (harness) async {
       final first = await harness.open();
       final second = await harness.open();
       final held = await _lease(first);
       final values = {for (var i = 0; i < 20; i++) 'k$i': 'v$i'};
+      final changes = [
+        for (final MapEntry(:key, :value) in values.entries)
+          Put('a', key, value),
+      ];
+      final before = await _snapshot(held, {'a'});
+      final expected = _after(before, changes);
       final pending = harness.holdNextWrite(first);
-      final writing = _put(held, 'a', values);
+      final writing = held.commit(changes);
       await pending.reached;
       final releasing = held.release();
-      final leasing = second.lease();
+      StorageLease? granted;
+      final leasing = second.lease().then((leasing) {
+        if (leasing case Leased(:final lease)) granted = lease;
+        return leasing;
+      });
+      await _turns(20);
+      _Areas? atGrant;
+      if (granted case final lease?) {
+        atGrant = await _snapshot(lease, {'a'});
+      }
       pending.letGo();
       await releasing;
       final next = switch (await leasing) {
@@ -377,68 +595,61 @@ final List<EngineCheck> engineContract = [
         HeldByAnotherWriter() => await _lease(second),
         LeaseFailed(:final failure) => _broke('leasing failed: $failure'),
       };
-      final atGrant = [
-        for (final key in values.keys) await _read(next, 'a', key),
-      ];
+      atGrant ??= await _snapshot(next, {'a'});
       final wrote = await writing;
-      final afterWrite = [
-        for (final key in values.keys) await _read(next, 'a', key),
-      ];
-      _sameList(afterWrite, atGrant, 'the old lease wrote after the new grant');
-      switch (wrote) {
-        case CommitApplied():
-          _sameList(atGrant, values.values.toList(), 'a commit that applied');
-        case CommitRefused():
-          _sameList(
-            atGrant,
-            List<String?>.filled(values.length, null),
-            'a commit that was refused',
-          );
-        case CommitUnknown():
-          break;
+      final afterWrite = await _snapshot(next, {'a'});
+      if (!_sameAreas(afterWrite, atGrant)) {
+        _broke('the ended lease wrote after the next lease was granted');
       }
+      _effect(wrote, before, expected, atGrant, 'the pending write');
       await harness.close(first);
       await harness.close(second);
     },
   ),
-  _check('a released lease refuses every call and changes nothing', (
+  _check('an ended lease answers LeaseEnded before anything else', (
     harness,
   ) async {
     final engine = await harness.open();
     final lease = await _lease(engine);
-    _applied(await _put(lease, 'a', {'x': 'kept'}), 'write');
+    await _put(lease, 'a', {'x': 'kept'}, 'write');
     await lease.release();
     _endedStatus(lease, 'released');
+    final long = 'k' * (lease.maxKeyLength + 1);
     _ended(await lease.read('a', 'x'), 'read');
+    _ended(await lease.read('a', long), 'read of a long name');
+    _ended(await lease.read('A', 'x'), 'read outside the alphabet');
     _ended(await lease.keys('a', ''), 'keys');
     _ended(await lease.entries('a', ''), 'entries');
-    _ended(await _put(lease, 'a', {'x': 'lost'}), 'write');
-    _ended(
-      await _put(lease, 'a', {'k' * 4096: 'lost'}),
-      'write of a long name',
-    );
-    _ended(await _delete(lease, 'a', ['x']), 'delete');
+    _ended(await lease.commit(const [Put('a', 'x', 'lost')]), 'write');
+    _ended(await lease.commit([Put('a', long, 'lost')]), 'long write');
+    _ended(await lease.commit([Delete('a', long)]), 'long delete');
+    _ended(await lease.commit(const [Put('A', 'x', 'lost')]), 'bad area');
+    _ended(await lease.commit(const []), 'empty commit');
+    _ended(await lease.commit(const [Delete('a', 'x')]), 'delete');
     final next = await _lease(engine);
     _same(await _read(next, 'a', 'x'), 'kept', 'after release');
     await harness.close(engine);
   }),
   _check(
-    'a lease ends when its engine closes, stays ended, and a closed engine grants none',
+    'a lease ends when its engine closes, stays ended, and a closed engine answers EngineClosed',
     (harness) async {
       final first = await harness.open();
       final old = await _lease(first);
-      _applied(await _put(old, 'a', {'name': 'before'}), 'write');
+      await _put(old, 'a', {'name': 'before'}, 'write');
       await harness.close(first);
       _endedStatus(old, 'whose engine closed');
-      _ended(await _put(old, 'a', {'name': 'stale'}), 'write');
-      if (await first.lease() is! LeaseFailed) {
-        _broke('a closed engine granted a lease');
+      _ended(await old.commit(const [Put('a', 'name', 'stale')]), 'write');
+      switch (await first.lease()) {
+        case LeaseFailed(failure: EngineClosed()):
+          break;
+        case final other:
+          _broke('a closed engine answered $other, not EngineClosed');
       }
       final second = await harness.open();
       final current = await _lease(second);
-      _applied(await _put(current, 'a', {'name': 'renamed'}), 'write');
+      await _put(current, 'a', {'name': 'renamed'}, 'write');
       await current.release();
-      _ended(await _put(old, 'a', {'name': 'stale'}), 'write');
+      _ended(await old.commit(const [Put('a', 'name', 'stale')]), 'write');
       _ended(await old.read('a', 'name'), 'read');
       final check = await _lease(second);
       _same(

@@ -6,6 +6,7 @@ import 'derived_id.dart';
 import 'field_merge.dart';
 import 'field_rules.dart';
 import 'json.dart';
+import 'lineup_graph.dart';
 import 'ops.dart';
 import 'outcome.dart';
 import 'page_copy.dart';
@@ -14,7 +15,8 @@ import 'rows.dart';
 import 'strategy_rows.dart';
 
 ApplyResult applyOp(StrategyRows rows, StrategyOp op) {
-  if (exceedsSizePolicy(op.toJson())) {
+  final json = op.toJson();
+  if (!isJson(json) || exceedsSizePolicy(json)) {
     return _failed(FailureCode.invalidPayload);
   }
   final apply = _Apply(rows, undoOpId(op.opId), op.opId);
@@ -274,7 +276,9 @@ final class _Apply {
       case _Found(:final row):
         live = row;
     }
-    if (live.length <= 1) return _failed(FailureCode.invalidOp);
+    if (live.whereType<_LiveSlot>().length <= 1) {
+      return _failed(FailureCode.invalidOp);
+    }
     final List<RowWrite> moved;
     switch (placed([
       for (final slot in live)
@@ -1085,6 +1089,7 @@ ElementRow _elementRow({
           'deleted': false,
         },
         problem: 'a payload version from a newer build',
+        reason: const FromNewerBuild(),
       );
 
 OpRefused? _elementTypeRefusal(ElementPayload payload) {
@@ -1098,45 +1103,11 @@ OpRefused? _elementTypeRefusal(ElementPayload payload) {
 OpRefused? _lineupPayloadRefusal(
   LineupGroupPayload payload,
   String lineupPublicId,
-) {
-  if (payload.payloadVersion != lineupGroupPayloadVersion) {
-    return _failed(FailureCode.invalidLineupPayloadVersion);
-  }
-  final data = payload.data;
-  final id = data['id'];
-  if (id is! String || id.isEmpty || id != lineupPublicId) {
-    return _failed(FailureCode.invalidLineupPayloadData);
-  }
-  final origins = _idsOfEntries(data['origins'], 'agent');
-  final landings = _idsOfEntries(data['landings'], 'ability');
-  final links = _idsOfEntries(data['links'], null);
-  if (origins == null || landings == null || links == null) {
-    return _failed(FailureCode.invalidLineupPayloadData);
-  }
-  final linkList = lineupItems(data, 'links');
-  if (linkList.isEmpty) return _failed(FailureCode.invalidLineupPayloadData);
-  for (final link in linkList) {
-    if (!origins.contains(link['originId']) ||
-        !landings.contains(link['landingId'])) {
-      return _failed(FailureCode.invalidLineupPayloadData);
-    }
-  }
-  return null;
-}
-
-Set<String>? _idsOfEntries(Object? entries, String? markerKey) {
-  if (entries is! List<Object?>) return null;
-  final ids = <String>{};
-  for (final entry in entries) {
-    if (entry is! Map<String, Object?>) return null;
-    final id = entry['id'];
-    if (id is! String || id.isEmpty || !ids.add(id)) return null;
-    if (markerKey != null && entry[markerKey] is! Map<String, Object?>) {
-      return null;
-    }
-  }
-  return ids;
-}
+) => switch (checkLineupPayload(payload, lineupPublicId)) {
+  ValidLineupGroup() => null,
+  OtherLineupVersion() => _failed(FailureCode.invalidLineupPayloadVersion),
+  BrokenLineupGraph() => _failed(FailureCode.invalidLineupPayloadData),
+};
 
 Set<String> lineupGroupItems(Map<String, Object?> data) => {
   for (final (collection, prefix) in const [

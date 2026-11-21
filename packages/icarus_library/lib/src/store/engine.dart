@@ -37,6 +37,16 @@ final class KeyTooLong extends StorageFailure {
   String toString() => 'KeyTooLong($area, $key)';
 }
 
+final class NameNotAllowed extends StorageFailure {
+  const NameNotAllowed(this.area, this.key);
+
+  final String area;
+  final String key;
+
+  @override
+  String toString() => 'NameNotAllowed($area, $key)';
+}
+
 final class EngineClosed extends StorageFailure {
   const EngineClosed();
 
@@ -220,6 +230,9 @@ const maxAreaLength = 64;
 const nameAlphabet = 'abcdefghijklmnopqrstuvwxyz0123456789-./_';
 
 bool isName(String name) =>
+    name.isNotEmpty &&
     name.codeUnits.every((unit) => nameAlphabet.codeUnits.contains(unit));
+
+bool isArea(String area) => area.length <= maxAreaLength && isName(area);
 
 const done = Done<void>(null);
