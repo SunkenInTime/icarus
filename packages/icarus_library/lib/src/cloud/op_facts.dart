@@ -1,4 +1,5 @@
 import '../ops.dart';
+import 'pending.dart';
 
 sealed class Target {
   const Target();
@@ -51,6 +52,9 @@ final class ElementTarget extends Target {
 
   @override
   int get hashCode => Object.hash(ElementTarget, elementPublicId);
+
+  @override
+  String toString() => 'ElementTarget($elementPublicId)';
 }
 
 final class LineupTarget extends Target {
@@ -105,20 +109,20 @@ Iterable<String> pagesNeeded(StrategyOp op) => switch (op) {
   LineupGroupPatchOp(:final pagePublicId) => [?pagePublicId],
 };
 
-StrategyOp rebased(StrategyOp op, int revision) => switch (op) {
+StrategyOp _rewritten(StrategyOp op, String opId, int? to) => switch (op) {
   StrategyPatchOp() => StrategyPatchOp(
-    opId: op.opId,
-    expectedStrategyRevision: revision,
+    opId: opId,
+    expectedStrategyRevision: to ?? op.expectedStrategyRevision,
     name: op.name,
     mapData: op.mapData,
     themeProfile: op.themeProfile,
     themeOverridePalette: op.themeOverridePalette,
   ),
   PageAddOp() => PageAddOp(
-    opId: op.opId,
+    opId: opId,
     pagePublicId: op.pagePublicId,
     sortIndex: op.sortIndex,
-    expectedStrategyRevision: revision,
+    expectedStrategyRevision: to ?? op.expectedStrategyRevision,
     name: op.name,
     isAutoNamed: op.isAutoNamed,
     isAttack: op.isAttack,
@@ -126,92 +130,184 @@ StrategyOp rebased(StrategyOp op, int revision) => switch (op) {
     copyContentFromPagePublicId: op.copyContentFromPagePublicId,
   ),
   PagePatchOp() => PagePatchOp(
-    opId: op.opId,
+    opId: opId,
     pagePublicId: op.pagePublicId,
-    expectedPageRevision: revision,
+    expectedPageRevision: to ?? op.expectedPageRevision,
     name: op.name,
     isAutoNamed: op.isAutoNamed,
     isAttack: op.isAttack,
   ),
   PageDeleteOp() => PageDeleteOp(
-    opId: op.opId,
+    opId: opId,
     pagePublicId: op.pagePublicId,
-    expectedStrategyRevision: revision,
+    expectedStrategyRevision: to ?? op.expectedStrategyRevision,
   ),
   PageReorderOp() => PageReorderOp(
-    opId: op.opId,
+    opId: opId,
     pagePublicId: op.pagePublicId,
     sortIndex: op.sortIndex,
-    expectedStrategyRevision: revision,
+    expectedStrategyRevision: to ?? op.expectedStrategyRevision,
   ),
   PageSettingsPatchOp() => PageSettingsPatchOp(
-    opId: op.opId,
+    opId: opId,
     pagePublicId: op.pagePublicId,
     settings: op.settings,
-    expectedPageSettingsRevision: revision,
+    expectedPageSettingsRevision: to ?? op.expectedPageSettingsRevision,
   ),
-  ElementAddOp(expectedElementRevision: null) => op,
   ElementAddOp() => ElementAddOp(
-    opId: op.opId,
+    opId: opId,
     elementPublicId: op.elementPublicId,
     pagePublicId: op.pagePublicId,
     payload: op.payload,
     sortIndex: op.sortIndex,
-    expectedElementRevision: revision,
+    expectedElementRevision: to ?? op.expectedElementRevision,
   ),
   ElementPatchOp() => ElementPatchOp(
-    opId: op.opId,
+    opId: opId,
     elementPublicId: op.elementPublicId,
-    expectedElementRevision: revision,
+    expectedElementRevision: to ?? op.expectedElementRevision,
     pagePublicId: op.pagePublicId,
     payload: op.payload,
     sortIndex: op.sortIndex,
     merge: op.merge,
   ),
   ElementDeleteOp() => ElementDeleteOp(
-    opId: op.opId,
+    opId: opId,
     elementPublicId: op.elementPublicId,
     pagePublicId: op.pagePublicId,
-    expectedElementRevision: revision,
+    expectedElementRevision: to ?? op.expectedElementRevision,
     lastWriterWins: op.lastWriterWins,
   ),
   ElementReorderOp() => ElementReorderOp(
-    opId: op.opId,
+    opId: opId,
     elementPublicId: op.elementPublicId,
     pagePublicId: op.pagePublicId,
     sortIndex: op.sortIndex,
-    expectedElementRevision: revision,
+    expectedElementRevision: to ?? op.expectedElementRevision,
   ),
-  LineupGroupAddOp(expectedLineupRevision: null) => op,
   LineupGroupAddOp() => LineupGroupAddOp(
-    opId: op.opId,
+    opId: opId,
     lineupPublicId: op.lineupPublicId,
     pagePublicId: op.pagePublicId,
     payload: op.payload,
     sortIndex: op.sortIndex,
-    expectedLineupRevision: revision,
+    expectedLineupRevision: to ?? op.expectedLineupRevision,
   ),
   LineupGroupPatchOp() => LineupGroupPatchOp(
-    opId: op.opId,
+    opId: opId,
     lineupPublicId: op.lineupPublicId,
-    expectedLineupRevision: revision,
+    expectedLineupRevision: to ?? op.expectedLineupRevision,
     pagePublicId: op.pagePublicId,
     payload: op.payload,
     sortIndex: op.sortIndex,
     merge: op.merge,
   ),
   LineupGroupDeleteOp() => LineupGroupDeleteOp(
-    opId: op.opId,
+    opId: opId,
     lineupPublicId: op.lineupPublicId,
     pagePublicId: op.pagePublicId,
-    expectedLineupRevision: revision,
+    expectedLineupRevision: to ?? op.expectedLineupRevision,
     lastWriterWins: op.lastWriterWins,
   ),
   LineupGroupReorderOp() => LineupGroupReorderOp(
-    opId: op.opId,
+    opId: opId,
     lineupPublicId: op.lineupPublicId,
     pagePublicId: op.pagePublicId,
     sortIndex: op.sortIndex,
-    expectedLineupRevision: revision,
+    expectedLineupRevision: to ?? op.expectedLineupRevision,
   ),
+};
+
+StrategyOp rebased(StrategyOp op, int revision) => switch (expectedOf(op)) {
+  null => op,
+  _ => _rewritten(op, op.opId, revision),
+};
+
+StrategyOp renamed(StrategyOp op, String opId) => _rewritten(op, opId, null);
+
+int? expectedOf(StrategyOp op) => switch (op) {
+  StrategyPatchOp(:final expectedStrategyRevision) ||
+  PageAddOp(:final expectedStrategyRevision) ||
+  PageDeleteOp(:final expectedStrategyRevision) ||
+  PageReorderOp(:final expectedStrategyRevision) => expectedStrategyRevision,
+  PagePatchOp(:final expectedPageRevision) => expectedPageRevision,
+  PageSettingsPatchOp(:final expectedPageSettingsRevision) =>
+    expectedPageSettingsRevision,
+  ElementAddOp(:final expectedElementRevision) => expectedElementRevision,
+  ElementPatchOp(:final expectedElementRevision) ||
+  ElementDeleteOp(:final expectedElementRevision) ||
+  ElementReorderOp(:final expectedElementRevision) => expectedElementRevision,
+  LineupGroupAddOp(:final expectedLineupRevision) => expectedLineupRevision,
+  LineupGroupPatchOp(:final expectedLineupRevision) ||
+  LineupGroupDeleteOp(:final expectedLineupRevision) ||
+  LineupGroupReorderOp(:final expectedLineupRevision) => expectedLineupRevision,
+};
+
+bool writesWhole(StrategyOp op) => switch (op) {
+  ElementAddOp() ||
+  LineupGroupAddOp() ||
+  ElementDeleteOp() ||
+  LineupGroupDeleteOp() ||
+  PageSettingsPatchOp() => true,
+  ElementPatchOp(merge: null, payload: _?) ||
+  LineupGroupPatchOp(merge: null, payload: _?) => true,
+  ElementPatchOp() || LineupGroupPatchOp() => false,
+  StrategyPatchOp() ||
+  PageAddOp() ||
+  PagePatchOp() ||
+  PageDeleteOp() ||
+  PageReorderOp() ||
+  ElementReorderOp() ||
+  LineupGroupReorderOp() => false,
+};
+
+StrategyOp sendForm(StrategyOp op, SendPolicy policy) {
+  final live = policy == SendPolicy.live;
+  return switch (op) {
+    ElementPatchOp(merge: FieldMerge(base: _?, :final fields)) when live =>
+      ElementPatchOp(
+        opId: op.opId,
+        elementPublicId: op.elementPublicId,
+        expectedElementRevision: op.expectedElementRevision,
+        pagePublicId: op.pagePublicId,
+        payload: op.payload,
+        sortIndex: op.sortIndex,
+        merge: FieldMerge(fields: fields),
+      ),
+    LineupGroupPatchOp(merge: FieldMerge(base: _?, :final fields)) when live =>
+      LineupGroupPatchOp(
+        opId: op.opId,
+        lineupPublicId: op.lineupPublicId,
+        expectedLineupRevision: op.expectedLineupRevision,
+        pagePublicId: op.pagePublicId,
+        payload: op.payload,
+        sortIndex: op.sortIndex,
+        merge: FieldMerge(fields: fields),
+      ),
+    ElementDeleteOp(:final lastWriterWins) when lastWriterWins != live =>
+      ElementDeleteOp(
+        opId: op.opId,
+        elementPublicId: op.elementPublicId,
+        pagePublicId: op.pagePublicId,
+        expectedElementRevision: op.expectedElementRevision,
+        lastWriterWins: live,
+      ),
+    LineupGroupDeleteOp(:final lastWriterWins) when lastWriterWins != live =>
+      LineupGroupDeleteOp(
+        opId: op.opId,
+        lineupPublicId: op.lineupPublicId,
+        pagePublicId: op.pagePublicId,
+        expectedLineupRevision: op.expectedLineupRevision,
+        lastWriterWins: live,
+      ),
+    _ => op,
+  };
+}
+
+bool serverChecks(StrategyOp sent) => switch (sent) {
+  ElementPatchOp(merge: FieldMerge(base: null)) ||
+  LineupGroupPatchOp(merge: FieldMerge(base: null)) => false,
+  ElementDeleteOp(lastWriterWins: true) ||
+  LineupGroupDeleteOp(lastWriterWins: true) => false,
+  _ => true,
 };

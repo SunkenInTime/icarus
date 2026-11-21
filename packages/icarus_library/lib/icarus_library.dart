@@ -64,6 +64,11 @@ export 'src/cloud/op_facts.dart'
         SettingsTarget,
         ElementTarget,
         LineupTarget,
-        targetOf;
+        targetOf,
+        sendForm,
+        expectedOf,
+        pagesNeeded,
+        serverChecks;
 export 'src/cloud/pending.dart';
 export 'src/cloud/queue.dart';
+export 'src/cloud/sync.dart';

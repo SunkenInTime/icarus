@@ -8,23 +8,26 @@ sealed class QueueEvent {
 }
 
 final class UserEdited extends QueueEvent {
-  const UserEdited(this.edit, {required this.clientId});
+  const UserEdited(this.edit);
 
   final Edit edit;
-  final String clientId;
 }
 
 sealed class Edit {
   const Edit();
 
   StrategyOp get op;
+
+  Scope get scope;
 }
 
 final class PlainEdit extends Edit {
-  const PlainEdit(this.op);
+  const PlainEdit._(this.op, this.scope);
 
   @override
   final StrategyOp op;
+  @override
+  final Scope scope;
 }
 
 final class PageDeleteEdit extends Edit {
@@ -33,40 +36,98 @@ final class PageDeleteEdit extends Edit {
   @override
   final PageDeleteOp op;
   final SeenPage seen;
+
+  @override
+  Scope get scope => OnPage(op.pagePublicId);
 }
 
-final class BatchClaimed extends QueueEvent {
-  BatchClaimed(List<String> opIds) : opIds = List.unmodifiable(opIds);
+sealed class EditMaking {
+  const EditMaking();
+}
 
+final class EditMade extends EditMaking {
+  const EditMade(this.edit);
+
+  final PlainEdit edit;
+}
+
+final class NeedsRowPage extends EditMaking {
+  const NeedsRowPage(this.op);
+
+  final StrategyOp op;
+}
+
+EditMaking editOf(StrategyOp op, {String? rowPage}) => switch ((op, rowPage)) {
+  (StrategyPatchOp(), _) => EditMade(PlainEdit._(op, const StrategyWide())),
+  (
+    PageAddOp(:final pagePublicId) ||
+        PagePatchOp(:final pagePublicId) ||
+        PageDeleteOp(:final pagePublicId) ||
+        PageReorderOp(:final pagePublicId) ||
+        PageSettingsPatchOp(:final pagePublicId) ||
+        ElementAddOp(:final pagePublicId) ||
+        ElementDeleteOp(:final pagePublicId) ||
+        ElementReorderOp(:final pagePublicId) ||
+        LineupGroupAddOp(:final pagePublicId) ||
+        LineupGroupDeleteOp(:final pagePublicId) ||
+        LineupGroupReorderOp(:final pagePublicId),
+    _,
+  ) =>
+    EditMade(PlainEdit._(op, OnPage(pagePublicId))),
+  (ElementPatchOp() || LineupGroupPatchOp(), final page?) => EditMade(
+    PlainEdit._(op, OnPage(page)),
+  ),
+  (ElementPatchOp() || LineupGroupPatchOp(), null) => NeedsRowPage(op),
+};
+
+final class BatchClaimed extends QueueEvent {
+  BatchClaimed(this.attempt, List<String> opIds)
+    : opIds = List.unmodifiable(opIds);
+
+  final Attempt attempt;
   final List<String> opIds;
 }
 
 final class ClaimReleased extends QueueEvent {
-  ClaimReleased(List<String> opIds) : opIds = List.unmodifiable(opIds);
+  const ClaimReleased(this.attemptId);
 
-  final List<String> opIds;
+  final String attemptId;
 }
 
 final class OpAnswered extends QueueEvent {
-  const OpAnswered(this.answer);
+  const OpAnswered(this.attempt, this.answer, {required this.base});
 
+  final Attempt attempt;
   final OpAnswer answer;
+  final BaseRow base;
+}
+
+sealed class BaseRow {
+  const BaseRow();
+}
+
+final class BaseHolds extends BaseRow {
+  const BaseHolds(this.revision);
+
+  final int revision;
+}
+
+final class BaseLacks extends BaseRow {
+  const BaseLacks();
 }
 
 final class TransportFailed extends QueueEvent {
-  TransportFailed(List<String> opIds, this.failure, {required this.at})
-    : opIds = List.unmodifiable(opIds);
+  const TransportFailed(this.attemptId, this.failure, {required this.at});
 
-  final List<String> opIds;
+  final String attemptId;
   final TransportFailure failure;
   final DateTime at;
 }
 
 final class BatchRefused extends QueueEvent {
-  BatchRefused(List<String> opIds, this.refusal)
-    : opIds = List.unmodifiable(opIds);
+  const BatchRefused(this.attemptId, this.refusal);
 
-  final List<String> opIds;
+  final String attemptId;
   final BatchRefusal refusal;
 }
 
@@ -91,6 +152,10 @@ final class ConnectionReturned extends QueueEvent {
 
 final class AccountChanged extends QueueEvent {
   const AccountChanged();
+}
+
+final class EditAccessConfirmed extends QueueEvent {
+  const EditAccessConfirmed();
 }
 
 sealed class UserAction extends QueueEvent {
@@ -119,6 +184,14 @@ final class UserDeletedAnyway extends UserAction {
 
 final class UserDiscarded extends UserAction {
   const UserDiscarded(super.opId);
+}
+
+final class PageRestored extends QueueEvent {
+  PageRestored(this.pagePublicId, Map<String, String> freshOpIds)
+    : freshOpIds = Map.unmodifiable(freshOpIds);
+
+  final String pagePublicId;
+  final Map<String, String> freshOpIds;
 }
 
 final class BaseArrived extends QueueEvent {
