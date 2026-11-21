@@ -371,11 +371,21 @@ Future<String> _saveCost(StrategyData strategy, int items) async {
     };
     StrategyRowSet rowsOf(StrategyData model) =>
         (strategyToRows(model) as StrategyRowsMade).rows;
-    await store.putStrategy(rowsOf(strategy));
+    final first = await store.putStrategy(rowsOf(strategy));
     final withAgents = [
       for (final page in strategy.pages)
         if (page.agentData.isNotEmpty) page.id,
     ];
+    final notMeasured = switch (first) {
+      Saved() when withAgents.isEmpty => 'no page holds an agent to move',
+      Saved() => null,
+      final other => 'the first save answered $other',
+    };
+    if (notMeasured != null) {
+      await store.close();
+      return 'largest strategy, $items items on ${strategy.pages.length} '
+          'pages: save cost not measured, $notMeasured';
+    }
     final convert = <int>[];
     final save = <int>[];
     var current = strategy;
