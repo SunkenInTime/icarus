@@ -85,6 +85,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
   double? localLength;
   bool isDragging = false;
   String? _activeDragId;
+  String? _heldId;
   final _dragOrigin = ViewConeDragOrigin();
   ProviderContainer? _container;
 
@@ -98,13 +99,17 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
   void dispose() {
     // Flutter skips onDragEnd once the Draggable has gone, which would leave
     // the wall hidden for good.
-    if (_activeDragId case final id?) {
+    final carriedId = _activeDragId, heldId = _heldId;
+    if (carriedId != null || heldId != null) {
       final container = _container!;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (container.read(wallCarriedProvider) == id) {
+        if (carriedId != null &&
+            container.read(wallCarriedProvider) == carriedId) {
           container.read(wallCarriedProvider.notifier).set(null);
         }
-        container.read(heldAbilityProvider.notifier).letGo(id);
+        if (heldId != null) {
+          container.read(heldAbilityProvider.notifier).letGo(heldId);
+        }
       });
     }
     _dragOrigin.dispose();
@@ -149,15 +154,26 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     _dragOrigin.update(details);
     final at = _dragOrigin.value;
     final id = _activeDragId;
-    if (at == null || id == null || !blocksSight(ability.data)) return;
-    ref
-        .read(heldAbilityProvider.notifier)
-        .hold(ability.copyWith(id: id, position: ability.position + at - dot));
+    if (at == null || id == null) return;
+    _hold(ability.copyWith(id: id, position: ability.position + at - dot));
   }
 
   void _endDrag(DraggableDetails details, String id) {
     _dragOrigin.end();
     widget.onDragEnd(details, id);
+    _letGo();
+  }
+
+  void _hold(PlacedAbility asDrawn) {
+    if (widget.isLineUp || !blocksSight(asDrawn.data)) return;
+    _heldId = asDrawn.id;
+    ref.read(heldAbilityProvider.notifier).hold(asDrawn);
+  }
+
+  void _letGo() {
+    final id = _heldId;
+    if (id == null) return;
+    _heldId = null;
     ref.read(heldAbilityProvider.notifier).letGo(id);
   }
 
@@ -377,11 +393,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             setState(() {
               localRotation = newRotation;
             });
-            if (!widget.isLineUp && blocksSight(abilityRef.data)) {
-              ref
-                  .read(heldAbilityProvider.notifier)
-                  .hold(abilityRef.copyWith(rotation: newRotation));
-            }
+            _hold(abilityRef.copyWith(rotation: newRotation));
             if (isResizableSquare) {
               final Offset currentPosLength = (currentPosition -
                   rotateOffset(lengthOrigin, rotationOrigin, sideRotation));
@@ -403,8 +415,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                   );
             } else {
               _commitRotation();
-              ref.read(heldAbilityProvider.notifier).letGo(abilityRef.id);
             }
+            _letGo();
 
             setState(() {
               rotationOrigin = Offset.zero;
