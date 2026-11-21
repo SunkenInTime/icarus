@@ -52,10 +52,16 @@ decodes a payload into a typed item at the edge of the editor.
   every row in `OpApplied.writes` and the strategy's summary. The engine
   contract requires a commit to apply whole or not at all, across areas and
   across a crash, and a conformance suite checks every engine against it, so
-  the disk holds the rows from before the edit or after it, never half. The
-  IndexedDB engine cannot keep that promise in two cases the browser causes
-  (a quota abort in Firefox, and an abort that itself fails); there a commit
-  can be partly applied and is reported as in doubt.
+  a granted lease shows the rows from before the edit or after it, never
+  half. A commit the engine reports in doubt is whole or absent by the next
+  lease. The IndexedDB engine keeps this even where the browser does not (a
+  quota abort in Firefox, an abort that itself fails), by recording each
+  commit's changes in one put before applying them, ending the lease when a
+  commit is in doubt so no later record replaces that one, and finishing the
+  commit, if it landed in part or its changes never started, while taking
+  the next lease. That recovery belongs to the next lease that is granted: a
+  lease refused or timed out on the way may already have written some of
+  those rows.
 - A save the engine cannot answer for is in doubt, and the store that made it
   is finished: it releases its lease and refuses every later call. The caller
   reopens and reads, and what is stored is what was saved. To keep the edit
@@ -163,13 +169,13 @@ What decided it:
   reproduced through the engine in 5 runs out of 5). So the web engine checks
   the room the browser reports before each commit and refuses one that would
   not fit, with nothing written, and a quota abort that still happens is a
-  save in doubt, not a refused one. On this engine a commit can be partly
-  applied in two cases: that quota abort, and an abort that itself fails
-  after the browser has taken part of the commit. That is accepted on two
-  conditions: the web build is cloud only, and the cloud store's commits are
-  required to be safe when any subset of their row changes is applied
-  ([#667](https://github.com/SunkenInTime/icarus/pull/667)). A local library
-  on the web would need the engine to keep before-images first. A stop or a
+  save in doubt, not a refused one. To keep every commit whole on this
+  engine too, it writes the commit's complete list of changes as one record
+  in its own transaction, then applies the changes in a second one; while
+  taking the next lease it checks the rows against that record and applies
+  it again only if they do not match. A commit in doubt is therefore whole
+  or absent by the next lease on every engine, and the contract checks
+  exactly that. A stop or a
   failed sync at any point of creating a desktop library can leave a file
   without its tables, and the next open creates the library in it. A file
   that is not provably uncreated, or that has a log or a journal holding

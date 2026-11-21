@@ -16,7 +16,7 @@ google-chrome --headless=new --user-data-dir="$profile" --enable-logging=stderr 
   "http://127.0.0.1:$port/index.html" 2>"$log" &
 chrome=$!
 for _ in $(seq 1 600); do
-  if grep -q 'done"' "$log"; then break; fi
+  if grep -q 'icarus: done' "$log"; then break; fi
   sleep 1
 done
 kill "$chrome" 2>/dev/null || true
