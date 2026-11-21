@@ -76,6 +76,42 @@ void main() {
     expect(server.row, agent('B'));
     expect(container.read(strategyOpQueueProvider).needsAttention, isFalse);
   });
+
+  test(
+      "putting an item back after a delete that removed a teammate's move "
+      'asks instead of overwriting it', () async {
+    final server = _Server(row: agent('A'))..teammateWrites(agent('T'));
+    final (container, queue) = _start(server);
+
+    await queue.enqueue(const ElementDeleteOp(
+      opId: 'delete',
+      elementPublicId: 'agent-1',
+      pagePublicId: 'page-1',
+      expectedElementRevision: 1,
+      lastWriterWins: true,
+    ));
+    await queue.flushNow();
+    await queue.enqueue(putBack('B'));
+    await queue.flushNow();
+    await _until(() => container.read(strategyOpQueueProvider).needsAttention);
+
+    expect(server.deleted, isTrue);
+    expect(server.row, agent('T'));
+  });
+
+  test("putting an item back after a teammate's delete asks", () async {
+    final server = _Server(row: agent('A'))..teammateDeletes();
+    final (container, queue) = _start(server);
+
+    await queue.enqueue(delete);
+    await queue.flushNow();
+    await queue.enqueue(putBack('B'));
+    await queue.flushNow();
+    await _until(() => container.read(strategyOpQueueProvider).needsAttention);
+
+    expect(server.deleted, isTrue);
+    expect(server.row, agent('A'));
+  });
 }
 
 (ProviderContainer, StrategyOpQueueNotifier) _start(_Server server) {
@@ -114,6 +150,16 @@ final class _Server extends ConvexStrategyRepository {
 
   void release() => _release.complete();
 
+  void teammateWrites(Map<String, dynamic> next) {
+    row = next;
+    _revision += 1;
+  }
+
+  void teammateDeletes() {
+    deleted = true;
+    _revision += 1;
+  }
+
   @override
   Future<List<OpAck>> applyBatch({
     required String strategyPublicId,
@@ -145,10 +191,14 @@ final class _Server extends ConvexStrategyRepository {
     }
 
     switch (op) {
-      case ElementDeleteOp(:final expectedElementRevision):
-        if (deleted)
+      case ElementDeleteOp(
+          :final expectedElementRevision,
+          :final lastWriterWins
+        ):
+        if (deleted) {
           return NoopOpAck(opId: op.opId, currentRevision: _revision);
-        if (expectedElementRevision != _revision) {
+        }
+        if (!lastWriterWins && expectedElementRevision != _revision) {
           return refuse(OpRejectionReason.revisionMismatch);
         }
         return write(row, isDeleted: true);
