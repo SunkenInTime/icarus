@@ -475,8 +475,9 @@ final class Model {
         TransportFailed(attempt, TransportFailure.timeout, at: clock),
         'timed out $attempt',
       );
-      if (random.nextBool())
-        late.addAll([for (final a in answers) (attempt, a)]);
+      if (random.nextBool()) {
+        late.addAll([for (final answer in answers) (attempt, answer)]);
+      }
       return;
     }
     final order = [...answers];
