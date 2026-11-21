@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:collection/collection.dart';
 
@@ -1252,11 +1253,54 @@ final class _Stop extends _Step {
   final LibraryEditResult result;
 }
 
+final class _Staged<V extends Object> extends MapBase<String, V> {
+  _Staged(this._base);
+
+  final Map<String, V> _base;
+  final _put = <String, V>{};
+  final _gone = <String>{};
+
+  @override
+  V? operator [](Object? key) =>
+      _gone.contains(key) ? null : _put[key] ?? _base[key];
+
+  @override
+  void operator []=(String key, V value) {
+    _gone.remove(key);
+    _put[key] = value;
+  }
+
+  @override
+  V? remove(Object? key) {
+    final was = this[key];
+    _put.remove(key);
+    if (key is String) _gone.add(key);
+    return was;
+  }
+
+  @override
+  bool containsKey(Object? key) =>
+      !_gone.contains(key) && (_put.containsKey(key) || _base.containsKey(key));
+
+  @override
+  Iterable<String> get keys => {
+    ..._put.keys,
+    for (final key in _base.keys)
+      if (!_gone.contains(key)) key,
+  };
+
+  @override
+  void clear() {
+    _put.clear();
+    _gone.addAll(_base.keys);
+  }
+}
+
 final class _LibraryEdit {
   _LibraryEdit(this._store)
-    : _folders = {..._store._folders},
-      _summaries = {..._store._summaries},
-      _unreadable = {..._store._unreadable};
+    : _folders = _Staged(_store._folders),
+      _summaries = _Staged(_store._summaries),
+      _unreadable = _Staged(_store._unreadable);
 
   final LibraryStore _store;
   final Map<String, FolderRow> _folders;

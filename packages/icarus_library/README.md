@@ -896,6 +896,13 @@ way; removing a strategy is `ClearArea` of its area and a `Delete` of its
 summary. Opening and reading never commit: the only calls that write are
 `commit`, `editLibrary` and `rebuildSummary`. `editLibrary` copies the list
 it is given when it is called, not when its turn comes. A library edit
+stages what it changes over the store's folders, summaries and unreadable
+strategies without copying them, and applies the staged changes only once
+the engine applies the commit, so adding, moving or removing a strategy
+costs the same in a library of any size.
+`test/library_edit_cost_test.dart` requires the same engine work for each
+at 100 and 2,800 strategies, and `test/library_edit_time_test.dart`
+(tagged `timing`) requires the fastest of each to stay within 1.5 times. A library edit
 saves what differs from the stored rows when it ends: moving a strategy
 into a folder and back in one edit is `NothingToSave`, several moves of
 one strategy raise its revision once, and a strategy added in the same
@@ -1077,7 +1084,9 @@ for the memory engine and IndexedDB in headless Chrome, compiled with
 `dart run tool/store_benchmark.dart` times opening the store and a
 700-strategy library list, opening a 300-item page where half the items are
 1000-point drawings (in a strategy not yet read, and in one already read),
-and two commits on that page. `test/store_budget_test.dart` counts what each
+and two commits on that page; `growth` times adding, moving and removing
+one strategy at library sizes from 100 to 2,800, one library edit at a
+time. `test/store_budget_test.dart` counts what each
 of those asks the engine to read, list and write, and how many keys each
 listing returns, and fails when a count grows; it includes a strategy of 20
 pages with 300 items each.
