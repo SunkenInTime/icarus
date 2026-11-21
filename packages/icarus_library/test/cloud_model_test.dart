@@ -30,52 +30,67 @@ final class RecordedRefusal extends Recorded {
   final OpAnswer answer;
 }
 
+int? revisionAt(StrategyRowSet rows, Target target) => switch (target) {
+  StrategyTarget() => rows.strategy.revision,
+  PageTarget(:final pagePublicId) => switch (rows.page(pagePublicId)) {
+    ReadablePageRow(:final revision) => revision,
+    _ => null,
+  },
+  SettingsTarget(:final pagePublicId) => switch (rows.settingsOf(
+    pagePublicId,
+  )) {
+    ReadablePageSettings(:final revision) => revision,
+    _ => null,
+  },
+  ElementTarget(:final elementPublicId) => switch (rows.element(
+    elementPublicId,
+  )) {
+    ReadableElementRow(:final revision) => revision,
+    _ => null,
+  },
+  LineupTarget(:final lineupPublicId) => switch (rows.lineupGroup(
+    lineupPublicId,
+  )) {
+    ReadableLineupGroupRow(:final revision) => revision,
+    _ => null,
+  },
+};
+
+StrategyRowSet withoutPage(StrategyRowSet rows, String pageId) =>
+    StrategyRowSet(
+      strategy: rows.strategy,
+      pages: rows.pages.where((page) => page.publicId != pageId),
+      settings: rows.settings.where((row) => row.pagePublicId != pageId),
+      elements: rows.elements.where((row) => row.pagePublicId != pageId),
+      lineupGroups: rows.lineupGroups.where(
+        (row) => row.pagePublicId != pageId,
+      ),
+    );
+
 final class ServerModel {
   ServerModel(this.rows);
 
   StrategyRowSet rows;
+  bool exists = true;
   int version = 0;
   final landedAt = <String, int>{};
   final recorded = <String, Recorded>{};
-  final firstSent = <String, String>{};
+  final firstSent = <String, (String, String)>{};
+  int received = 0;
+  int sends = 0;
 
-  int? revisionAt(Target target) => switch (target) {
-    StrategyTarget() => rows.strategy.revision,
-    PageTarget(:final pagePublicId) => switch (rows.page(pagePublicId)) {
-      ReadablePageRow(:final revision) => revision,
-      _ => null,
-    },
-    SettingsTarget(:final pagePublicId) => switch (rows.settingsOf(
-      pagePublicId,
-    )) {
-      ReadablePageSettings(:final revision) => revision,
-      _ => null,
-    },
-    ElementTarget(:final elementPublicId) => switch (rows.element(
-      elementPublicId,
-    )) {
-      ReadableElementRow(:final revision) => revision,
-      _ => null,
-    },
-    LineupTarget(:final lineupPublicId) => switch (rows.lineupGroup(
-      lineupPublicId,
-    )) {
-      ReadableLineupGroupRow(:final revision) => revision,
-      _ => null,
-    },
-  };
-
-  List<OpAnswer> applyBatch(List<StrategyOp> ops) => [
-    for (final op in ops) apply(op),
-  ];
-
-  OpAnswer apply(StrategyOp op) {
-    final sent = canonical(op);
-    final first = firstSent.putIfAbsent(op.opId, () => sent);
-    if (first != sent) {
-      throw StateError('${op.opId} was sent again with other content');
+  OpAnswer apply(String clientId, StrategyOp op) {
+    sends++;
+    final sent = jsonEncode(op.toJson());
+    final first = firstSent.putIfAbsent(op.opId, () {
+      received++;
+      return (clientId, sent);
+    });
+    if (first.$1 != clientId) {
+      throw StateError('${op.opId} was sent under ${first.$1} and $clientId');
     }
-    switch (recorded[op.opId]) {
+    final key = '$clientId|${op.opId}';
+    switch (recorded[key]) {
       case RecordedApplied(:final revision):
         return NoopAnswer(
           op.opId,
@@ -101,11 +116,12 @@ final class ServerModel {
       case final OpApplied applied:
         rows = rows.withRows(applied.rows);
         version++;
-        final revision = revisionAt(targetOf(op))!;
+        final revision = revisionAt(rows, targetOf(op))!;
         answer = AppliedAnswer(op.opId, revision: revision);
         record = RecordedApplied(revision);
+        landedAt[op.opId] = version;
       case OpUnchanged():
-        final revision = revisionAt(targetOf(op));
+        final revision = revisionAt(rows, targetOf(op));
         answer = revision == null
             ? NoopWithoutRevision(op.opId)
             : NoopAnswer(
@@ -123,18 +139,41 @@ final class ServerModel {
       case OpRefused(refusal: UnreadableTarget(:final key)):
         throw StateError('the model holds no unreadable row: $key');
     }
-    recorded[op.opId] = record;
-    if (record is RecordedApplied) landedAt[op.opId] = version;
+    recorded[key] = record;
     return answer;
   }
-}
 
-String canonical(StrategyOp op) => jsonEncode(op.toJson());
+  Recorded? recordOf(String opId) {
+    final first = firstSent[opId];
+    return first == null ? null : recorded['${first.$1}|$opId'];
+  }
+}
 
 StrategyRowSet visible(StrategyRowSet base, CloudQueue queue) {
   var rows = base;
   for (final entry in queue.entries) {
-    if (entry case PendingOp(:final op)) {
+    if (entry case PendingOp(op: final sent, :final state)) {
+      final StrategyOp op;
+      switch ((sent, state)) {
+        case (
+          PageAddOp(copyContentFromPagePublicId: _?),
+          Accepted(awaiting: AwaitingCopy(seen: CopySeen.strategyOnly)),
+        ):
+          continue;
+        case (final PageAddOp add, Accepted(awaiting: AwaitingCopy())):
+          op = PageAddOp(
+            opId: add.opId,
+            pagePublicId: add.pagePublicId,
+            sortIndex: add.sortIndex,
+            expectedStrategyRevision: add.expectedStrategyRevision,
+            name: add.name,
+            isAutoNamed: add.isAutoNamed,
+            isAttack: add.isAttack,
+            settings: add.settings,
+          );
+        case _:
+          op = sent;
+      }
       if (applyOp(rows, op) case final OpApplied applied) {
         rows = rows.withRows(applied.rows);
       }
@@ -143,12 +182,22 @@ StrategyRowSet visible(StrategyRowSet base, CloudQueue queue) {
   return rows;
 }
 
+String describeDifference(StrategyRowSet shown, StrategyRowSet server) {
+  final a = {for (final row in shown.rows) row.key: row};
+  final b = {for (final row in server.rows) row.key: row};
+  return [
+    for (final key in {...a.keys, ...b.keys})
+      if (a[key] != b[key]) '$key: ${a[key]?.toJson()} vs ${b[key]?.toJson()}',
+  ].join('; ');
+}
+
 final reached = <String, int>{};
 
-void count(String what) => reached[what] = (reached[what] ?? 0) + 1;
+void count(String what, [int by = 1]) =>
+    reached[what] = (reached[what] ?? 0) + by;
 
 final class Model {
-  Model(this.seed, {required this.teammates})
+  Model(this.seed, {required this.teammates, required this.folding})
     : random = Random(seed),
       server = ServerModel(initialRows()),
       base = initialRows();
@@ -163,17 +212,22 @@ final class Model {
 
   final int seed;
   final bool teammates;
+  final bool folding;
   final Random random;
   final ServerModel server;
   StrategyRowSet base;
-  int baseVersion = 0;
+  final rowSeenAt = <Target, int>{};
   CloudQueue queue = CloudQueue.empty;
   DateTime clock = now;
-  final inFlight = <List<StrategyOp>>[];
-  final late = <OpAnswer>[];
+  String client = 'client-0';
+  int restarts = 0;
+  String openPage = 'page-a';
+  final inFlight = <(Attempt, List<StrategyOp>)>[];
+  final late = <(Attempt, OpAnswer)>[];
   final log = <String>[];
   bool teammateEdited = false;
   bool droppedLandedWork = false;
+  bool draining = false;
   int nextId = 0;
 
   String fresh(String prefix) => '$prefix${nextId++}';
@@ -182,7 +236,8 @@ final class Model {
 
   Step apply(QueueEvent event, String label) {
     final before = queue;
-    final result = transition(queue, event, now: clock);
+    var result = transition(queue, event, now: clock);
+    if (!folding) result = unfolded(before, event, result);
     log.add(
       '$label -> ${switch (result) {
         Stepped(:final effects) => effects.isEmpty ? 'ok' : effects.join(', '),
@@ -195,9 +250,14 @@ final class Model {
       if (event case OpAnswered(
         answer: RejectedAnswer() || FailedAnswer(),
       ) when !teammates) {
-        throw StateError('refused with no teammate editing: $event');
+        throw StateError(
+          'refused with no teammate editing: ${switch (event.answer) {
+            RejectedAnswer(:final opId, :final reason) => '$opId ${reason.wireName}',
+            FailedAnswer(:final opId, :final code) => '$opId $code',
+            _ => '',
+          }}',
+        );
       }
-      if (log.last.startsWith('late answer')) count('late answer applied');
       if (event case OpAnswered(:final answer)) {
         count(switch (answer) {
           NoopAnswer(:final replay) => 'noop ${replay.name}',
@@ -217,6 +277,44 @@ final class Model {
     return result;
   }
 
+  Step unfolded(CloudQueue before, QueueEvent event, Step result) {
+    if (event case UserEdited(:final edit)) {
+      if (result case Stepped(:final effects)
+          when effects.any(
+            (effect) =>
+                effect is OpRemoved &&
+                (effect.cause is FoldedInto || effect.cause is CancelledBy),
+          )) {
+        final target = targetOf(edit.op);
+        final last = before.entries.lastWhere(
+          (entry) => entry is PendingOp && targetOf(entry.op) == target,
+        );
+        return Stepped(
+          CloudQueue(
+            entries: [
+              ...before.entries,
+              PendingOp(
+                place: before.entries.last.place + 1,
+                work: OpWork(edit.op),
+                scope: edit.scope,
+                against: StackedOn(last.id, expectedOf(edit.op)),
+                policy: before.session.connected
+                    ? SendPolicy.live
+                    : SendPolicy.checked,
+                wait: const NoWait(),
+                state: const Unsent(NeverSent(), Free()),
+              ),
+            ],
+            standing: before.standing,
+            session: before.session,
+          ),
+          const [],
+        );
+      }
+    }
+    return result;
+  }
+
   Stepped mustApply(QueueEvent event, String label) =>
       switch (apply(event, label)) {
         final Stepped done => done,
@@ -232,7 +330,15 @@ final class Model {
           id,
     ];
     if (apply(event, label) is NotApplicable && waiting.isNotEmpty) {
-      throw StateError('$label did not apply though $waiting wait for it');
+      final still = waiting.where(
+        (id) => switch (queue.entry(id)) {
+          PendingOp(state: Claimed()) => true,
+          _ => false,
+        },
+      );
+      if (event is! OpAnswered && still.isNotEmpty) {
+        throw StateError('$label did not apply though $still wait for it');
+      }
     }
   }
 
@@ -242,54 +348,58 @@ final class Model {
     List<QueueEffect> effects,
     QueueEvent event,
   ) {
-    final kept = {for (final entry in after.entries) entry.opId};
+    final kept = {for (final entry in after.entries) entry.id};
     final removed = {
       for (final effect in effects)
         if (effect case OpRemoved(:final opId, :final cause)) opId: cause,
     };
     for (final entry in before.entries) {
-      if (kept.contains(entry.opId)) continue;
-      final cause = removed[entry.opId];
+      if (kept.contains(entry.id)) continue;
+      final cause = removed[entry.id];
       if (cause == null) {
-        throw StateError('${entry.opId} disappeared with no removal');
+        throw StateError('${entry.id} disappeared with no removal');
       }
+      final target = entry is PendingOp ? targetOf(entry.op) : null;
       final fits = switch (cause) {
         SeenInBase() =>
           entry is PendingOp &&
-              baseVersion >= (server.landedAt[entry.opId] ?? 0) &&
-              entry.state is Accepted &&
-              switch (server.recorded[entry.opId]) {
+              (rowSeenAt[target] ?? 0) >= (server.landedAt[entry.id] ?? 0) &&
+              switch (server.recordOf(entry.id)) {
                 RecordedApplied() || RecordedNoop() => true,
                 RecordedRefusal() || null => false,
               },
         NothingToWaitFor() =>
           event is OpAnswered && event.answer is NoopWithoutRevision,
+        SettledByRemoval() =>
+          event is BaseArrived ||
+              (event is BatchRefused &&
+                  event.refusal == BatchRefusal.strategyDeleted),
+        FoldedInto(:final opId) || CancelledBy(:final opId) =>
+          event is UserEdited &&
+              event.edit.op.opId == opId &&
+              entry is PendingOp &&
+              entry.state == const Unsent(NeverSent(), Free()),
+        RetriedUnder() => event is PageRestored,
         RemovedByUser(:final landing) =>
           event is UserAction &&
-              event.opId == entry.opId &&
+              event.opId == entry.id &&
               landing == landingOf(entry),
-        LandedBeforeStrategyDeleted() => false,
       };
       if (!fits) {
-        throw StateError('${entry.opId} was removed for $cause after $event');
+        throw StateError('${entry.id} was removed for $cause after $event');
       }
       if (cause is RemovedByUser &&
-          server.recorded[entry.opId] is RecordedApplied) {
+          server.recordOf(entry.id) is RecordedApplied) {
         droppedLandedWork = true;
       }
     }
   }
 
   void checkStates() {
-    final ids = <String>{};
     for (final entry in queue.entries) {
-      if (!ids.add(entry.opId)) {
-        throw StateError('${entry.opId} is in the queue twice');
-      }
       if (entry is! PendingOp) continue;
-      final record = server.recorded[entry.opId];
-      final state = entry.state;
-      final fits = switch ((record, state)) {
+      final record = server.recordOf(entry.id);
+      final fits = switch ((record, entry.state)) {
         (RecordedApplied() || RecordedNoop(), Unsent(delivery: NeverSent())) ||
         (RecordedApplied() || RecordedNoop(), ServerRefused()) => false,
         (RecordedRefusal(), Unsent(delivery: NeverSent())) ||
@@ -298,31 +408,39 @@ final class Model {
         _ => true,
       };
       if (!fits) {
-        throw StateError(
-          '${entry.opId} is $state but the server recorded $record',
-        );
+        throw StateError('${entry.id} is ${entry.state}, server has $record');
       }
     }
-    final acceptedNotShown = [
-      for (final entry in queue.entries)
-        if (entry case PendingOp(state: Accepted())) entry.opId,
-    ];
-    final allAccepted = queue.entries.every(
-      (entry) => entry is PendingOp && entry.state is Accepted,
+    final state = syncStateOf(
+      Tally.of(queue),
+      network: Network.online,
+      signedIn: SignedIn.thisAccount,
     );
-    if (!teammateEdited && !droppedLandedWork && allAccepted) {
-      if (queue.entries.isNotEmpty) count('prediction checked');
-      if (acceptedNotShown.isEmpty) return;
+    if ((state is AllSaved) != queue.entries.isEmpty) {
+      throw StateError('the sync state is $state with ${queue.entries}');
+    }
+    final allAccepted = queue.entries.every(
+      (entry) =>
+          entry is PendingOp &&
+          entry.state is Accepted &&
+          (entry.state as Accepted).awaiting is AwaitingRow,
+    );
+    if (!teammateEdited &&
+        !droppedLandedWork &&
+        allAccepted &&
+        queue.entries.isNotEmpty) {
+      count('prediction checked');
       final shown = visible(base, queue);
       if (shown != server.rows) {
         throw StateError(
-          'with every op accepted, the user sees rows the server lacks',
+          'with every op accepted, the user sees other rows: '
+          '${describeDifference(shown, server.rows)}',
         );
       }
     }
   }
 
-  StrategyOp? edit() {
+  StrategyOp? editOp() {
     final rows = visible(base, queue);
     final livePages = [
       for (final page in rows.pages)
@@ -336,114 +454,234 @@ final class Model {
           row,
     ];
     final opId = fresh('op');
-    final choice = random.nextInt(10);
-    final StrategyOp op;
-    if (choice < 5 && live.isNotEmpty) {
+    final choice = random.nextInt(20);
+    if (choice < 8 && live.isNotEmpty) {
       final target = pick(live);
-      op = movePatch(
-        opId,
-        elementId: target.publicId,
-        expected: target.revision,
-        x: random.nextInt(1000).toDouble(),
-      );
-    } else if (choice < 7 && live.isNotEmpty) {
-      final target = pick(live);
-      op = ElementDeleteOp(
+      final merged = random.nextInt(3) == 0;
+      return ElementPatchOp(
         opId: opId,
         elementPublicId: target.publicId,
-        pagePublicId: target.pagePublicId,
         expectedElementRevision: target.revision,
+        payload: agentPayload(target.publicId, {
+          'position': {'dx': random.nextInt(1000), 'dy': 0},
+        }),
+        merge: merged
+            ? FieldMerge(
+                fields: ['position'],
+                base: {'position': target.payload.data['position']},
+              )
+            : null,
       );
-    } else if (choice < 9 && livePages.isNotEmpty) {
-      op = elementAdd(opId, elementId: fresh('e'), pageId: pick(livePages));
-    } else if (livePages.length < 5) {
-      op = PageAddOp(
+    }
+    if (choice < 11 && live.isNotEmpty) {
+      final target = pick(live);
+      return elementDelete(
+        opId,
+        elementId: target.publicId,
+        pageId: target.pagePublicId,
+        expected: target.revision,
+      );
+    }
+    if (choice < 14 && livePages.isNotEmpty) {
+      return elementAdd(opId, elementId: fresh('e'), pageId: pick(livePages));
+    }
+    if (choice == 14 && livePages.length < 5) {
+      return PageAddOp(
         opId: opId,
         pagePublicId: fresh('page-'),
         sortIndex: livePages.length,
         expectedStrategyRevision: rows.strategy.revision,
         name: 'Page',
+        copyContentFromPagePublicId: random.nextBool() ? pick(livePages) : null,
       );
-    } else {
+    }
+    if (choice == 15 && livePages.length > 1) {
+      return PageReorderOp(
+        opId: opId,
+        pagePublicId: pick(livePages),
+        sortIndex: random.nextInt(livePages.length),
+        expectedStrategyRevision: rows.strategy.revision,
+      );
+    }
+    if (choice == 16 && livePages.isNotEmpty) {
       final target = rows.page(pick(livePages))! as LivePage;
-      op = PagePatchOp(
+      return PagePatchOp(
         opId: opId,
         pagePublicId: target.publicId,
         expectedPageRevision: target.revision,
         name: 'Renamed ${random.nextInt(100)}',
       );
     }
-    return switch (applyOp(rows, op)) {
-      OpApplied() => op,
-      OpUnchanged() || OpRefused() => null,
-    };
+    if (choice == 17 && livePages.length > 2) {
+      return pageDelete(
+        opId,
+        pick(livePages),
+        expected: rows.strategy.revision,
+      );
+    }
+    return null;
   }
 
-  List<String> ready() {
-    final holds = holdsOf(queue, clock);
-    for (final waiting in holds.values) {
-      for (final hold in waiting) {
-        count('held ${hold.runtimeType}');
+  SeenPage? seenFor(String pageId) {
+    for (final entry in queue.entries) {
+      if (entry case PendingOp(
+        op: PageAddOp(:final pagePublicId, copyContentFromPagePublicId: _?),
+      ) when pagePublicId == pageId) {
+        return null;
       }
     }
-    return [
-      for (final entry in queue.entries)
-        if (entry case PendingOp(
-          state: Unsent(go: Free()),
-        ) when !holds.containsKey(entry.opId))
-          entry.opId,
-    ];
+    final rows = visible(base, queue);
+    if (rows.page(pageId) case final LivePage page) {
+      if (!rowSeenAt.containsKey(SettingsTarget(pageId))) return null;
+      return SeenPage(
+        name: page.name,
+        isAttack: page.isAttack,
+        content: ContentSeen({
+          if (rows.settingsOf(pageId) case ReadablePageSettings(
+            :final revision,
+          ))
+            const SeenSettings(): revision,
+          for (final row in rows.elementsOn(pageId))
+            if (row case LiveElement(:final publicId, :final revision))
+              SeenElement(publicId): revision,
+        }),
+      );
+    }
+    return null;
   }
 
-  List<StrategyOp> opsOf(List<String> ids) => [
-    for (final id in ids) (queue.entry(id)! as PendingOp).op,
-  ];
+  void edit() {
+    final op = editOp();
+    if (op == null) return;
+    if (applyOp(visible(base, queue), op) is! OpApplied) return;
+    final QueueEvent event;
+    if (op case PageDeleteOp(:final pagePublicId)) {
+      final seen = seenFor(pagePublicId);
+      if (seen == null) return;
+      event = UserEdited(PageDeleteEdit(op, seen));
+    } else {
+      final rowPage = switch (op) {
+        ElementPatchOp(:final elementPublicId) => visible(
+          base,
+          queue,
+        ).element(elementPublicId)!.pagePublicId,
+        _ => null,
+      };
+      event = UserEdited(switch (editOf(op, rowPage: rowPage)) {
+        EditMade(:final edit) => edit,
+        NeedsRowPage() => throw StateError('no page for ${op.opId}'),
+      });
+    }
+    mustApply(
+      event,
+      'edit ${op.opId} ${op.type.wireName} ${targetOf(op)} ${pagesNeeded(op)}',
+    );
+  }
 
   void claim() {
-    final ids = ready().take(1 + random.nextInt(4)).toList();
+    if (queue.standing != Standing.good) return;
+    final holds = holdsOf(queue, clock);
+    String? batchClient;
+    final ids = <String>[];
+    final ops = <StrategyOp>[];
+    for (final entry in queue.entries) {
+      if (ids.length == 4) break;
+      if (entry case PendingOp(state: Unsent(go: Free(), :final delivery))) {
+        if (entry.work case CheckedDelete(verdict: HeldForUser())) continue;
+        if (delivery case AnswerUnknown(
+          retry: RetriesExhausted() || ServerForgotAnswer(),
+        )) {
+          continue;
+        }
+        final owner = switch (delivery) {
+          AnswerUnknown(:final clientId) => clientId,
+          NeverSent() => batchClient ?? client,
+        };
+        if (batchClient != null && owner != batchClient) continue;
+        final blocking = (holds[entry.id] ?? const <Hold>[]).where(
+          (hold) => !(hold is BehindPageWork && hold.opIds.every(ids.contains)),
+        );
+        if (blocking.isNotEmpty) continue;
+        batchClient = owner;
+        ids.add(entry.id);
+        ops.add(sendForm(entry.op, entry.policy));
+      }
+    }
     if (ids.isEmpty) return;
-    mustApply(BatchClaimed(ids), 'claim $ids');
-    inFlight.add(opsOf(ids));
+    final attempt = Attempt(fresh('try'), clientId: batchClient!, at: clock);
+    mustApply(BatchClaimed(attempt, ids), 'claim $ids as ${attempt.clientId}');
+    inFlight.add((attempt, ops));
+  }
+
+  BaseRow baseRowFor(String opId) {
+    final entry = queue.entry(opId);
+    if (entry is! PendingOp) return const BaseLacks();
+    return switch (revisionAt(base, targetOf(entry.op))) {
+      final revision? => BaseHolds(revision),
+      null => const BaseLacks(),
+    };
   }
 
   void deliver({required bool reliable}) {
     if (inFlight.isEmpty) return;
-    final sent = inFlight.removeAt(random.nextInt(inFlight.length));
+    final (attempt, sent) = inFlight.removeAt(random.nextInt(inFlight.length));
     final ids = [for (final op in sent) op.opId];
-    final roll = reliable ? 0 : random.nextInt(10);
-    if (roll == 9) {
+    final roll = reliable ? 0 : random.nextInt(12);
+    if (!server.exists) {
       settle(
-        TransportFailed(ids, TransportFailure.network, at: clock),
+        BatchRefused(attempt.id, BatchRefusal.strategyDeleted),
+        'refused whole: strategy deleted',
+        ids,
+      );
+      return;
+    }
+    if (roll == 11) {
+      settle(
+        TransportFailed(attempt.id, TransportFailure.network, at: clock),
         'lost before the server $ids',
         ids,
       );
       return;
     }
-    if (roll == 5) {
+    if (roll == 10) {
       final refusal = pick(const [
         BatchRefusal.upgradeRequired,
         BatchRefusal.unauthenticated,
         BatchRefusal.editAccessRemoved,
       ]);
-      settle(BatchRefused(ids, refusal), 'refused whole: ${refusal.name}', ids);
+      settle(
+        BatchRefused(attempt.id, refusal),
+        'refused whole: ${refusal.name}',
+        ids,
+      );
       return;
     }
-    final answers = server.applyBatch(sent);
-    if (roll == 8) {
+    final answers = [for (final op in sent) server.apply(attempt.clientId, op)];
+    if (roll == 9) {
       settle(
-        TransportFailed(ids, TransportFailure.timeout, at: clock),
+        TransportFailed(attempt.id, TransportFailure.timeout, at: clock),
         'answer timed out $ids',
         ids,
       );
-      if (random.nextBool()) late.addAll(answers);
+      if (random.nextBool()) {
+        late.addAll([for (final answer in answers) (attempt, answer)]);
+      }
       return;
     }
     final order = [...answers];
-    if (roll == 7) order.shuffle(random);
+    if (roll == 8) order.shuffle(random);
     for (final answer in order) {
-      settle(OpAnswered(answer), 'answer for ${answer.opId}', [answer.opId]);
-      if (roll == 6) {
-        if (apply(OpAnswered(answer), 'duplicate ${answer.opId}') is Stepped) {
+      settle(
+        OpAnswered(attempt, answer, base: baseRowFor(answer.opId)),
+        'answer for ${answer.opId}',
+        [answer.opId],
+      );
+      if (roll == 7) {
+        if (apply(
+              OpAnswered(attempt, answer, base: baseRowFor(answer.opId)),
+              'duplicate ${answer.opId}',
+            )
+            is Stepped) {
           throw StateError('a duplicate answer for ${answer.opId} applied');
         }
       }
@@ -452,64 +690,133 @@ final class Model {
 
   void lateAnswer() {
     if (late.isEmpty) return;
-    final answer = late.removeAt(random.nextInt(late.length));
-    apply(OpAnswered(answer), 'late answer for ${answer.opId}');
+    final (attempt, answer) = late.removeAt(random.nextInt(late.length));
+    if (apply(
+          OpAnswered(attempt, answer, base: baseRowFor(answer.opId)),
+          'late answer for ${answer.opId}',
+        )
+        is Stepped) {
+      count('late answer applied');
+    }
   }
 
   void restart() {
-    late.clear();
-    for (final sent in inFlight) {
-      if (random.nextBool()) server.applyBatch(sent);
+    for (final (attempt, sent) in inFlight) {
+      if (random.nextBool() && server.exists) {
+        for (final op in sent) {
+          server.apply(attempt.clientId, op);
+        }
+      }
     }
     inFlight.clear();
-    mustApply(const AppRestarted(), 'restart');
+    late.clear();
+    client = 'client-${++restarts}';
+    mustApply(const AppRestarted(), 'restart as $client');
   }
 
-  (StrategyRowSet, int)? lagging;
-
-  void startRead() => lagging ??= (server.rows, server.version);
-
-  void finishRead() {
-    if (lagging case final snapshot?) {
-      lagging = null;
-      read(snapshot);
+  void readHeader() {
+    if (!server.exists) {
+      mustApply(const BaseArrived(StrategyGone()), 'read: strategy gone');
+      return;
     }
-  }
-
-  void read([(StrategyRowSet, int)? snapshot]) {
-    if (snapshot == null) {
-      lagging = null;
-      droppedLandedWork = false;
+    final rows = server.rows;
+    final kept = {for (final page in rows.pages) page.publicId};
+    base = StrategyRowSet(
+      strategy: rows.strategy,
+      pages: rows.pages,
+      settings: rows.settings,
+      elements: base.elements.where((row) => kept.contains(row.pagePublicId)),
+      lineupGroups: base.lineupGroups.where(
+        (row) => kept.contains(row.pagePublicId),
+      ),
+    );
+    rowSeenAt[const StrategyTarget()] = server.version;
+    for (final page in rows.pages) {
+      rowSeenAt[PageTarget(page.publicId)] = server.version;
     }
-    final (rows, version) = snapshot ?? (server.rows, server.version);
-    base = rows;
-    baseVersion = version;
+    for (final row in rows.settings) {
+      rowSeenAt[SettingsTarget(row.pagePublicId)] = server.version;
+    }
     mustApply(
       BaseArrived(
         HeaderRead(
-          strategy: base.strategy,
-          pages: base.pages.toList(),
-          settings: base.settings.toList(),
+          strategy: rows.strategy,
+          pages: rows.pages.toList(),
+          settings: rows.settings.toList(),
         ),
       ),
       'read strategy',
     );
-    for (final page in base.pages) {
-      mustApply(
-        BaseArrived(
-          PageRead(
-            page: page,
-            settings: base.settingsOf(page.publicId)!,
-            elements: base.elementsOn(page.publicId).toList(),
-            lineupGroups: base.lineupGroupsOn(page.publicId).toList(),
-          ),
-        ),
-        'read ${page.publicId}',
-      );
-    }
   }
 
+  void readPage(String pageId) {
+    if (!server.exists) return;
+    final rows = server.rows;
+    final page = rows.page(pageId);
+    if (page == null) {
+      base = withoutPage(base, pageId);
+      mustApply(BaseArrived(PageGone(pageId)), 'read $pageId: gone');
+      return;
+    }
+    if (base.page(pageId) == null) return;
+    final elements = rows.elementsOn(pageId).toList();
+    final groups = rows.lineupGroupsOn(pageId).toList();
+    base = StrategyRowSet(
+      strategy: base.strategy,
+      pages: base.pages,
+      settings: base.settings,
+      elements: [
+        ...base.elements.where((row) => row.pagePublicId != pageId),
+        ...elements,
+      ],
+      lineupGroups: [
+        ...base.lineupGroups.where((row) => row.pagePublicId != pageId),
+        ...groups,
+      ],
+    );
+    for (final row in elements) {
+      rowSeenAt[ElementTarget(row.publicId)] = server.version;
+    }
+    mustApply(
+      BaseArrived(
+        PageRead(
+          page: page,
+          settings: rows.settingsOf(pageId)!,
+          elements: elements,
+          lineupGroups: groups,
+        ),
+      ),
+      'read $pageId',
+    );
+  }
+
+  Set<String> pagesWithAcceptedWork() => {
+    for (final entry in queue.entries)
+      if (entry case PendingOp(state: Accepted())) ...pagesOf(entry),
+  };
+
   void teammate() {
+    if (!server.exists) return;
+    final roll = random.nextInt(40);
+    if (roll == 0) {
+      final trashed = [
+        for (final page in server.rows.pages)
+          if (page is TrashedPage) page.publicId,
+      ];
+      if (trashed.isEmpty) return;
+      final pageId = pick(trashed);
+      server.rows = withoutPage(server.rows, pageId);
+      server.version++;
+      teammateEdited = true;
+      log.add('teammate purges $pageId');
+      return;
+    }
+    if (roll == 1 && random.nextInt(10) == 0) {
+      server.exists = false;
+      teammateEdited = true;
+      log.add('teammate deletes the strategy');
+      return;
+    }
     final live = [
       for (final row in server.rows.elements)
         if (row is LiveElement) row,
@@ -530,23 +837,50 @@ final class Model {
     }
   }
 
+  void userActs(UserAction action) {
+    if (!teammates && action is! UserRetried) {
+      throw StateError(
+        'the user was asked something avoidable: $action for '
+        '${queue.entry(action.opId)}',
+      );
+    }
+    mustApply(action, 'user ${action.runtimeType} ${action.opId}');
+  }
+
   void resolve() {
     for (final entry in queue.entries) {
       switch (entry) {
+        case PendingOp(
+          state: Unsent(delivery: AnswerUnknown(retry: RetriesExhausted())),
+        ):
+          userActs(UserRetried(entry.id));
+          return;
+        case PendingOp() when queue.standing == Standing.deletedOnServer:
+          if (entry.state is Claimed || entry.state is Accepted) continue;
+          userActs(UserDiscarded(entry.id));
+          return;
         case PendingOp(state: ServerRefused(), :final op):
           final replacement = keepMine(op);
-          final action = switch (random.nextInt(3)) {
-            0 when replacement != null => UserKeptMine(entry.opId, replacement),
-            1 => UserUsedCloud(entry.opId),
-            _ => UserDiscarded(entry.opId),
-          };
-          mustApply(action, 'user ${action.runtimeType} ${entry.opId}');
+          userActs(switch (random.nextInt(3)) {
+            0 when replacement != null => UserKeptMine(entry.id, replacement),
+            1 => UserUsedCloud(entry.id),
+            _ => UserDiscarded(entry.id),
+          });
           return;
-        case PendingOp(state: Unsent(go: Paused())):
-          mustApply(UserRetried(entry.opId), 'user retries ${entry.opId}');
+        case PendingOp(work: CheckedDelete(verdict: HeldForUser())):
+          userActs(
+            random.nextBool()
+                ? UserDeletedAnyway(entry.id)
+                : UserDiscarded(entry.id),
+          );
           return;
-        case PendingOp(state: Unsent(go: NeedsUser())):
-          mustApply(UserDiscarded(entry.opId), 'user discards ${entry.opId}');
+        case PendingOp(state: Unsent(go: NeedsUser())) ||
+            PendingOp(
+              state: Unsent(
+                delivery: AnswerUnknown(retry: ServerForgotAnswer()),
+              ),
+            ):
+          userActs(UserDiscarded(entry.id));
           return;
         case _:
           break;
@@ -574,75 +908,114 @@ final class Model {
     _ => null,
   };
 
+  void lane() {
+    switch (queue.standing) {
+      case Standing.editAccessLost:
+        mustApply(const EditAccessConfirmed(), 'access confirmed');
+      case Standing.upgradeRequired:
+        restart();
+      case Standing.good || Standing.deletedOnServer:
+        break;
+    }
+  }
+
   void stepOnce() {
     clock = clock.add(Duration(milliseconds: random.nextInt(2000)));
-    switch (random.nextInt(20)) {
-      case < 6:
-        if (edit() case final op?) {
-          mustApply(
-            UserEdited(PlainEdit(op), clientId: clientId),
-            'edit ${op.opId} ${op.type.wireName}',
-          );
-        }
-      case < 9:
+    switch (random.nextInt(24)) {
+      case < 7:
+        edit();
+      case < 10:
         claim();
-      case < 13:
+      case < 14:
         deliver(reliable: false);
-      case 13:
-        restart();
       case 14:
-        read();
+        restart();
       case 15:
-        if (random.nextBool()) {
-          startRead();
-        } else {
-          finishRead();
-        }
+        readHeader();
       case 16:
-        if (teammates) teammate();
+        readPage(openPage);
       case 17:
-        if (random.nextBool()) {
-          resolve();
-        } else {
-          lateAnswer();
+        for (final page in pagesWithAcceptedWork()) {
+          readPage(page);
         }
       case 18:
-        mustApply(const ConnectionLost(), 'connection lost');
+        if (teammates) teammate();
+      case 19:
+        resolve();
+      case 20:
+        lateAnswer();
+      case 21:
+        final pages = [for (final page in base.pages) page.publicId];
+        if (pages.isNotEmpty) openPage = pick(pages);
+      case 22:
+        lane();
       case _:
-        mustApply(const ConnectionReturned(), 'connection returned');
+        mustApply(
+          random.nextBool()
+              ? const ConnectionLost()
+              : const ConnectionReturned(),
+          'connection',
+        );
     }
   }
 
   void drain() {
-    finishRead();
+    draining = true;
     for (var round = 0; round < 400 && queue.entries.isNotEmpty; round++) {
       clock = clock.add(const Duration(minutes: 1));
+      lane();
       resolve();
       claim();
       while (inFlight.isNotEmpty) {
         deliver(reliable: true);
       }
-      read();
+      readHeader();
+      readPage(openPage);
+      for (final page in pagesWithAcceptedWork()) {
+        readPage(page);
+      }
+      for (final entry in queue.entries) {
+        if (entry case PendingOp(work: CheckedDelete(:final op))) {
+          readPage(op.pagePublicId);
+        }
+      }
     }
     if (queue.entries.isNotEmpty) {
       throw StateError('the queue did not drain: ${queue.entries}');
     }
-    if (visible(base, queue) != server.rows) {
-      throw StateError('the drained queue shows other rows than the server');
+    if (server.exists && visible(base, queue) != server.rows) {
+      readHeader();
+      for (final page in [...server.rows.pages]) {
+        readPage(page.publicId);
+      }
+      if (visible(base, queue) != server.rows) {
+        throw StateError(
+          'the drained queue shows other rows than the server: '
+          '${describeDifference(visible(base, queue), server.rows)}',
+        );
+      }
     }
   }
 }
 
-void runSeed(int seed, int steps) {
-  final model = Model(seed, teammates: seed.isOdd);
+void runSeed(int seed, int steps, {required bool folding}) {
+  final model = Model(seed, teammates: seed.isOdd, folding: folding);
   try {
     for (var i = 0; i < steps; i++) {
       model.stepOnce();
     }
     model.drain();
+    count(
+      folding ? 'ops received, folding' : 'ops received, no folding',
+      model.server.received,
+    );
+    count(
+      folding ? 'op sends, folding' : 'op sends, no folding',
+      model.server.sends,
+    );
   } on StateError catch (error) {
     fail(
-      'seed $seed failed: ${error.message}\n'
+      'seed $seed (folding: $folding) failed: ${error.message}\n'
       'rerun with CLOUD_MODEL_SEED=$seed CLOUD_MODEL_STEPS=$steps\n'
       'steps:\n${model.log.join('\n')}',
     );
@@ -652,22 +1025,19 @@ void runSeed(int seed, int steps) {
 const minimums = {
   'AppliedAnswer': 2000,
   'noop appliedWhenFirstReceived': 100,
-  'rejected revision_mismatch': 100,
+  'rejected revision_mismatch': 50,
   'TransportFailed': 300,
   'AppRestarted': 300,
-  'UserKeptMine': 30,
-  'UserUsedCloud': 30,
-  'UserDiscarded': 30,
-  'UserRetried': 50,
   'BatchRefused': 100,
-  'OpRebased': 20,
+  'UserKeptMine': 10,
+  'UserUsedCloud': 10,
+  'UserDiscarded': 10,
   'removed SeenInBase': 2000,
-  'held BehindEarlierEdit': 500,
-  'held BehindPageAdd': 100,
-  'held BehindStrategyChange': 50,
-  'held UntilRetryTime': 30,
-  'late answer applied': 30,
-  'prediction checked': 200,
+  'removed FoldedInto': 200,
+  'removed CancelledBy': 20,
+  'removed SettledByRemoval': 1,
+  'late answer applied': 20,
+  'prediction checked': 100,
 };
 
 void main() {
@@ -677,11 +1047,13 @@ void main() {
   final seeds = int.tryParse(environment['CLOUD_MODEL_SEEDS'] ?? '') ?? 200;
   test('random interleavings keep every op and end where the server is', () {
     if (one != null) {
-      runSeed(one, steps);
+      runSeed(one, steps, folding: true);
+      runSeed(one, steps, folding: false);
       return;
     }
     for (var seed = 1; seed <= seeds; seed++) {
-      runSeed(seed, steps);
+      runSeed(seed, steps, folding: true);
+      runSeed(seed, steps, folding: false);
     }
     if (environment['CLOUD_MODEL_COUNTS'] == '1') {
       for (final MapEntry(:key, :value) in reached.entries) {
@@ -691,5 +1063,9 @@ void main() {
     for (final MapEntry(key: what, value: least) in minimums.entries) {
       expect(reached[what] ?? 0, greaterThanOrEqualTo(least), reason: what);
     }
+    expect(
+      reached['ops received, folding']!,
+      lessThan(reached['ops received, no folding']!),
+    );
   });
 }

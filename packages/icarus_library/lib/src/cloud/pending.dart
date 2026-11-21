@@ -1,53 +1,74 @@
-import 'dart:convert';
-
 import '../json.dart';
 import '../ops.dart';
 import '../outcome.dart';
 
-const maxCloudOpBytes = 900 * 1024;
-const maxCloudArrayEntries = 8000;
 const retriesBeforePause = 8;
 
-sealed class QueueEntry {
-  const QueueEntry({required this.opId, required this.clientId});
+const serverRemembersAnswersFor = Duration(days: 30);
 
-  final String opId;
-  final String clientId;
+sealed class QueueEntry {
+  const QueueEntry({required this.place});
+
+  final int place;
+
+  String get id;
 }
 
 final class PendingOp extends QueueEntry {
-  PendingOp({
-    required this.op,
-    required super.clientId,
-    required this.check,
+  const PendingOp({
+    required super.place,
+    required this.work,
+    required this.scope,
+    required this.against,
+    required this.policy,
+    required this.wait,
     required this.state,
-  }) : super(opId: op.opId);
+  });
 
-  final StrategyOp op;
-  final DeleteCheck check;
+  final Work work;
+  final Scope scope;
+  final Against against;
+  final SendPolicy policy;
+  final BaseWait wait;
   final PendingState state;
 
+  StrategyOp get op => work.op;
+
+  String get opId => work.op.opId;
+
+  @override
+  String get id => work.op.opId;
+
   PendingOp copyWith({
-    StrategyOp? op,
-    DeleteCheck? check,
+    Work? work,
+    Against? against,
+    SendPolicy? policy,
+    BaseWait? wait,
     PendingState? state,
   }) => PendingOp(
-    op: op ?? this.op,
-    clientId: clientId,
-    check: check ?? this.check,
+    place: place,
+    work: work ?? this.work,
+    scope: scope,
+    against: against ?? this.against,
+    policy: policy ?? this.policy,
+    wait: wait ?? this.wait,
     state: state ?? this.state,
   );
 
   @override
   bool operator ==(Object other) =>
       other is PendingOp &&
-      other.op == op &&
-      other.clientId == clientId &&
-      other.check == check &&
+      other.place == place &&
+      other.work == work &&
+      other.scope == scope &&
+      other.against == against &&
+      other.policy == policy &&
+      other.wait == wait &&
       other.state == state;
 
   @override
-  int get hashCode => Object.hash(op, clientId, check, state);
+  int get hashCode =>
+      Object.hash(place, work, scope, against, policy, wait, state);
 
   @override
   String toString() => 'PendingOp($opId, $state)';
@@ -55,25 +76,248 @@ final class PendingOp extends QueueEntry {
 
 final class RetiredOp extends QueueEntry {
   RetiredOp({
-    required super.opId,
-    required super.clientId,
-    required this.stored,
-  });
+    required super.place,
+    required this.opId,
+    required this.clientId,
+    required this.landing,
+    required Object? stored,
+  }) : stored = frozenJson(stored);
 
+  final String opId;
+  final String clientId;
+  final Landing landing;
   final Object? stored;
+
+  @override
+  String get id => opId;
 
   @override
   bool operator ==(Object other) =>
       other is RetiredOp &&
+      other.place == place &&
       other.opId == opId &&
       other.clientId == clientId &&
+      other.landing == landing &&
       sameJson(other.stored, stored);
 
   @override
-  int get hashCode => Object.hash(opId, clientId);
+  int get hashCode => Object.hash(place, opId, clientId, landing);
 
   @override
   String toString() => 'RetiredOp($opId)';
+}
+
+final class UnreadableEntry extends QueueEntry {
+  const UnreadableEntry({
+    required super.place,
+    required this.text,
+    required this.problem,
+  });
+
+  final String text;
+  final String problem;
+
+  @override
+  String get id => 'unreadable/$place';
+
+  @override
+  bool operator ==(Object other) =>
+      other is UnreadableEntry &&
+      other.place == place &&
+      other.text == text &&
+      other.problem == problem;
+
+  @override
+  int get hashCode => Object.hash(place, text, problem);
+
+  @override
+  String toString() => 'UnreadableEntry($place, $problem)';
+}
+
+enum Landing { notLanded, mayHaveLanded }
+
+sealed class Work {
+  const Work();
+
+  StrategyOp get op;
+}
+
+final class OpWork extends Work {
+  const OpWork(this.op);
+
+  @override
+  final StrategyOp op;
+
+  @override
+  bool operator ==(Object other) => other is OpWork && other.op == op;
+
+  @override
+  int get hashCode => Object.hash(OpWork, op);
+
+  @override
+  String toString() => 'OpWork(${op.opId})';
+}
+
+final class CheckedDelete extends Work {
+  const CheckedDelete(this.op, this.seen, this.verdict);
+
+  @override
+  final PageDeleteOp op;
+  final SeenPage seen;
+  final DeleteVerdict verdict;
+
+  @override
+  bool operator ==(Object other) =>
+      other is CheckedDelete &&
+      other.op == op &&
+      other.seen == seen &&
+      other.verdict == verdict;
+
+  @override
+  int get hashCode => Object.hash(CheckedDelete, op, seen, verdict);
+
+  @override
+  String toString() => 'CheckedDelete(${op.opId}, $verdict)';
+}
+
+sealed class DeleteVerdict {
+  const DeleteVerdict();
+}
+
+final class AwaitingCheck extends DeleteVerdict {
+  const AwaitingCheck();
+
+  @override
+  bool operator ==(Object other) => other is AwaitingCheck;
+
+  @override
+  int get hashCode => (AwaitingCheck).hashCode;
+
+  @override
+  String toString() => 'AwaitingCheck';
+}
+
+final class HeldForUser extends DeleteVerdict {
+  const HeldForUser(this.cause);
+
+  final HeldDeleteCause cause;
+
+  @override
+  bool operator ==(Object other) =>
+      other is HeldForUser && other.cause == cause;
+
+  @override
+  int get hashCode => Object.hash(HeldForUser, cause);
+
+  @override
+  String toString() => 'HeldForUser(${cause.name})';
+}
+
+enum HeldDeleteCause { pageChanged, contentNeverRead, pageUnreadable }
+
+sealed class Scope {
+  const Scope();
+}
+
+final class StrategyWide extends Scope {
+  const StrategyWide();
+
+  @override
+  bool operator ==(Object other) => other is StrategyWide;
+
+  @override
+  int get hashCode => (StrategyWide).hashCode;
+
+  @override
+  String toString() => 'StrategyWide';
+}
+
+final class OnPage extends Scope {
+  const OnPage(this.pagePublicId);
+
+  final String pagePublicId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is OnPage && other.pagePublicId == pagePublicId;
+
+  @override
+  int get hashCode => Object.hash(OnPage, pagePublicId);
+
+  @override
+  String toString() => 'OnPage($pagePublicId)';
+}
+
+sealed class Against {
+  const Against();
+}
+
+final class OnBase extends Against {
+  const OnBase(this.revision);
+
+  final int? revision;
+
+  @override
+  bool operator ==(Object other) =>
+      other is OnBase && other.revision == revision;
+
+  @override
+  int get hashCode => Object.hash(OnBase, revision);
+
+  @override
+  String toString() => 'OnBase($revision)';
+}
+
+final class StackedOn extends Against {
+  const StackedOn(this.opId, this.revision);
+
+  final String opId;
+  final int? revision;
+
+  @override
+  bool operator ==(Object other) =>
+      other is StackedOn && other.opId == opId && other.revision == revision;
+
+  @override
+  int get hashCode => Object.hash(StackedOn, opId, revision);
+
+  @override
+  String toString() => 'StackedOn($opId, $revision)';
+}
+
+enum SendPolicy { live, checked }
+
+sealed class BaseWait {
+  const BaseWait();
+}
+
+final class NoWait extends BaseWait {
+  const NoWait();
+
+  @override
+  bool operator ==(Object other) => other is NoWait;
+
+  @override
+  int get hashCode => (NoWait).hashCode;
+
+  @override
+  String toString() => 'NoWait';
+}
+
+final class UntilBaseShows extends BaseWait {
+  const UntilBaseShows(this.revision);
+
+  final int revision;
+
+  @override
+  bool operator ==(Object other) =>
+      other is UntilBaseShows && other.revision == revision;
+
+  @override
+  int get hashCode => Object.hash(UntilBaseShows, revision);
+
+  @override
+  String toString() => 'UntilBaseShows($revision)';
 }
 
 sealed class PendingState {
@@ -98,35 +342,74 @@ final class Unsent extends PendingState {
 }
 
 final class Claimed extends PendingState {
-  const Claimed(this.before);
+  const Claimed(this.attempt, this.before);
 
+  final Attempt attempt;
   final Unclaimed before;
 
   @override
-  bool operator ==(Object other) => other is Claimed && other.before == before;
+  bool operator ==(Object other) =>
+      other is Claimed && other.attempt == attempt && other.before == before;
 
   @override
-  int get hashCode => Object.hash(Claimed, before);
+  int get hashCode => Object.hash(Claimed, attempt, before);
 
   @override
-  String toString() => 'Claimed($before)';
+  String toString() => 'Claimed(${attempt.id}, $before)';
 }
 
 final class Accepted extends PendingState {
-  const Accepted(this.revision);
+  const Accepted(this.revision, {this.awaiting = const AwaitingRow()});
 
   final int revision;
+  final AwaitingBase awaiting;
 
   @override
   bool operator ==(Object other) =>
-      other is Accepted && other.revision == revision;
+      other is Accepted &&
+      other.revision == revision &&
+      other.awaiting == awaiting;
 
   @override
-  int get hashCode => Object.hash(Accepted, revision);
+  int get hashCode => Object.hash(Accepted, revision, awaiting);
 
   @override
-  String toString() => 'Accepted($revision)';
+  String toString() => 'Accepted($revision, $awaiting)';
 }
+
+sealed class AwaitingBase {
+  const AwaitingBase();
+}
+
+final class AwaitingRow extends AwaitingBase {
+  const AwaitingRow();
+
+  @override
+  bool operator ==(Object other) => other is AwaitingRow;
+
+  @override
+  int get hashCode => (AwaitingRow).hashCode;
+
+  @override
+  String toString() => 'AwaitingRow';
+}
+
+final class AwaitingCopy extends AwaitingBase {
+  const AwaitingCopy(this.seen);
+
+  final CopySeen seen;
+
+  @override
+  bool operator ==(Object other) => other is AwaitingCopy && other.seen == seen;
+
+  @override
+  int get hashCode => Object.hash(AwaitingCopy, seen);
+
+  @override
+  String toString() => 'AwaitingCopy(${seen.name})';
+}
+
+enum CopySeen { neither, strategyOnly }
 
 final class ServerRefused extends PendingState {
   const ServerRefused(this.refusal);
@@ -142,6 +425,27 @@ final class ServerRefused extends PendingState {
 
   @override
   String toString() => 'ServerRefused($refusal)';
+}
+
+final class Attempt {
+  const Attempt(this.id, {required this.clientId, required this.at});
+
+  final String id;
+  final String clientId;
+  final DateTime at;
+
+  @override
+  bool operator ==(Object other) =>
+      other is Attempt &&
+      other.id == id &&
+      other.clientId == clientId &&
+      other.at == at;
+
+  @override
+  int get hashCode => Object.hash(id, clientId, at);
+
+  @override
+  String toString() => 'Attempt($id, $clientId)';
 }
 
 sealed class Unclaimed {
@@ -163,34 +467,50 @@ final class NeverSent extends Unclaimed {
 
 final class AnswerUnknown extends Unclaimed {
   const AnswerUnknown({
+    required this.clientId,
+    required this.firstSentAt,
     required this.failures,
-    required this.retryAt,
+    required this.retry,
     required this.cause,
   });
 
+  final String clientId;
+  final DateTime firstSentAt;
   final int failures;
-  final RetryAt retryAt;
+  final Backoff retry;
   final SendCut cause;
+
+  AnswerUnknown copyWith({int? failures, Backoff? retry, SendCut? cause}) =>
+      AnswerUnknown(
+        clientId: clientId,
+        firstSentAt: firstSentAt,
+        failures: failures ?? this.failures,
+        retry: retry ?? this.retry,
+        cause: cause ?? this.cause,
+      );
 
   @override
   bool operator ==(Object other) =>
       other is AnswerUnknown &&
+      other.clientId == clientId &&
+      other.firstSentAt == firstSentAt &&
       other.failures == failures &&
-      other.retryAt == retryAt &&
+      other.retry == retry &&
       other.cause == cause;
 
   @override
-  int get hashCode => Object.hash(AnswerUnknown, failures, retryAt, cause);
+  int get hashCode =>
+      Object.hash(AnswerUnknown, clientId, firstSentAt, failures, retry, cause);
 
   @override
-  String toString() => 'AnswerUnknown($failures, $retryAt, $cause)';
+  String toString() => 'AnswerUnknown($clientId, $failures, $retry, $cause)';
 }
 
-sealed class RetryAt {
-  const RetryAt();
+sealed class Backoff {
+  const Backoff();
 }
 
-final class RetryNow extends RetryAt {
+final class RetryNow extends Backoff {
   const RetryNow();
 
   @override
@@ -203,7 +523,7 @@ final class RetryNow extends RetryAt {
   String toString() => 'RetryNow';
 }
 
-final class RetryAfter extends RetryAt {
+final class RetryAfter extends Backoff {
   const RetryAfter(this.at);
 
   final DateTime at;
@@ -216,6 +536,32 @@ final class RetryAfter extends RetryAt {
 
   @override
   String toString() => 'RetryAfter(${at.toIso8601String()})';
+}
+
+final class RetriesExhausted extends Backoff {
+  const RetriesExhausted();
+
+  @override
+  bool operator ==(Object other) => other is RetriesExhausted;
+
+  @override
+  int get hashCode => (RetriesExhausted).hashCode;
+
+  @override
+  String toString() => 'RetriesExhausted';
+}
+
+final class ServerForgotAnswer extends Backoff {
+  const ServerForgotAnswer();
+
+  @override
+  bool operator ==(Object other) => other is ServerForgotAnswer;
+
+  @override
+  int get hashCode => (ServerForgotAnswer).hashCode;
+
+  @override
+  String toString() => 'ServerForgotAnswer';
 }
 
 sealed class SendCut {
@@ -270,21 +616,6 @@ final class Free extends Go {
   String toString() => 'Free';
 }
 
-final class Paused extends Go {
-  const Paused(this.reason);
-
-  final PauseReason reason;
-
-  @override
-  bool operator ==(Object other) => other is Paused && other.reason == reason;
-
-  @override
-  int get hashCode => Object.hash(Paused, reason);
-
-  @override
-  String toString() => 'Paused(${reason.name})';
-}
-
 final class NeedsUser extends Go {
   const NeedsUser(this.reason);
 
@@ -300,8 +631,6 @@ final class NeedsUser extends Go {
   @override
   String toString() => 'NeedsUser($reason)';
 }
-
-enum PauseReason { retriesExhausted, editAccessRemoved, upgradeRequired }
 
 sealed class UserReason {
   const UserReason();
@@ -337,7 +666,7 @@ final class NoLongerFits extends UserReason {
 }
 
 final class IncompletePageCopy extends UserReason {
-  const IncompletePageCopy(this.pagePublicId);
+  const IncompletePageCopy.imported(this.pagePublicId);
 
   final String pagePublicId;
 
@@ -352,35 +681,20 @@ final class IncompletePageCopy extends UserReason {
   String toString() => 'IncompletePageCopy($pagePublicId)';
 }
 
-final class HeldPageDelete extends UserReason {
-  const HeldPageDelete(this.cause);
+final class OnDeletedPage extends UserReason {
+  const OnDeletedPage(this.pagePublicId);
 
-  final HeldDeleteCause cause;
+  final String pagePublicId;
 
   @override
   bool operator ==(Object other) =>
-      other is HeldPageDelete && other.cause == cause;
+      other is OnDeletedPage && other.pagePublicId == pagePublicId;
 
   @override
-  int get hashCode => Object.hash(HeldPageDelete, cause);
+  int get hashCode => Object.hash(OnDeletedPage, pagePublicId);
 
   @override
-  String toString() => 'HeldPageDelete(${cause.name})';
-}
-
-enum HeldDeleteCause { pageChanged, contentNeverRead, pageUnreadable }
-
-final class StrategyDeleted extends UserReason {
-  const StrategyDeleted();
-
-  @override
-  bool operator ==(Object other) => other is StrategyDeleted;
-
-  @override
-  int get hashCode => (StrategyDeleted).hashCode;
-
-  @override
-  String toString() => 'StrategyDeleted';
+  String toString() => 'OnDeletedPage($pagePublicId)';
 }
 
 sealed class ServerRefusal {
@@ -501,38 +815,6 @@ final class ServerSnapshot extends ServerCopy {
 
 enum SnapshotTarget { strategy, page, pageContent, element, lineup }
 
-sealed class DeleteCheck {
-  const DeleteCheck();
-}
-
-final class NoCheck extends DeleteCheck {
-  const NoCheck();
-
-  @override
-  bool operator ==(Object other) => other is NoCheck;
-
-  @override
-  int get hashCode => (NoCheck).hashCode;
-
-  @override
-  String toString() => 'NoCheck';
-}
-
-final class CheckAgainst extends DeleteCheck {
-  const CheckAgainst(this.seen);
-
-  final SeenPage seen;
-
-  @override
-  bool operator ==(Object other) => other is CheckAgainst && other.seen == seen;
-
-  @override
-  int get hashCode => Object.hash(CheckAgainst, seen);
-
-  @override
-  String toString() => 'CheckAgainst($seen)';
-}
-
 final class SeenPage {
   const SeenPage({
     required this.name,
@@ -645,32 +927,13 @@ final class SeenLineupGroup extends SeenPart {
   String toString() => 'lineup:$id';
 }
 
-sealed class CloudSize {
-  const CloudSize();
+DateTime retryTimeAfter(DateTime failedAt, int failures) {
+  final wait = 300 * (1 << failures.clamp(0, 6));
+  final at = failedAt.millisecondsSinceEpoch + wait;
+  return DateTime.fromMillisecondsSinceEpoch(
+    at > _latestMillis ? _latestMillis : at,
+    isUtc: true,
+  );
 }
 
-final class WithinPolicy extends CloudSize {
-  const WithinPolicy();
-}
-
-final class OverPolicy extends CloudSize {
-  const OverPolicy();
-}
-
-CloudSize cloudSizeOf(StrategyOp op) {
-  final json = op.toJson();
-  return utf8.encode(jsonEncode(json)).length > maxCloudOpBytes ||
-          _tooManyEntries(json)
-      ? const OverPolicy()
-      : const WithinPolicy();
-}
-
-bool _tooManyEntries(Object? value) => switch (value) {
-  final List<Object?> list =>
-    list.length > maxCloudArrayEntries || list.any(_tooManyEntries),
-  final Map<String, Object?> map => map.values.any(_tooManyEntries),
-  _ => false,
-};
-
-DateTime retryTimeAfter(DateTime failedAt, int failures) =>
-    failedAt.add(Duration(milliseconds: 300 * (1 << failures.clamp(0, 6))));
+const _latestMillis = 8640000000000000;
