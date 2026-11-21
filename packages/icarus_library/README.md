@@ -420,9 +420,10 @@ it cannot prove that an engine admits one writer under every timing; each
 engine carries its own tests with real concurrency, real processes for
 SQLite and real tabs or workers for IndexedDB. Every commit a check makes is compared with storage before
 and after it: `CommitApplied` must show every change, `CommitRefused` none,
-and `CommitUnknown` all or none, never part. The IndexedDB engine can break
-that last promise in two cases the browser causes, described under
-IndexedDB below: there `CommitUnknown` can mean partly applied.
+and `CommitUnknown` whole or nothing by the next lease. An in-doubt commit
+is judged only after a new lease, because an engine may finish it while
+granting that lease (the IndexedDB engine does, below); no engine may leave
+one in part.
 
 A read sees every commit that has answered. A read issued while a commit is
 still in flight may see the rows from before it; nothing promises more, and
@@ -610,26 +611,62 @@ unit, exactly, and a prefix is a key range from `[area, prefix]` up to the
 next string after the prefix. There is no SQLite and no WebAssembly on the
 web.
 
-- **A commit is one `readwrite` transaction** holding every put, delete and
-  area clear (a delete over the area's key range). It is `CommitApplied` when
-  the transaction fires `complete`, never on a request's `success`. An
-  `abort` is `CommitRefused` naming the browser's error, with one exception:
-  an abort for `QuotaExceededError` is `CommitUnknown(AbortedForQuota)`. The
-  engine tells a quota abort from other aborts by `transaction.error.name`
-  alone.
-- **On this engine, `CommitUnknown` can mean partly applied.** In two cases:
-  - Firefox can keep part of a transaction that aborted on quota: requests
-    queued after the failing put still take effect
-    ([bug 2080749](https://bugzilla.mozilla.org/show_bug.cgi?id=2080749)).
-    Through this engine in Firefox 160, before the room check below existed,
-    it happened in 5 runs out of 5: the aborted commit's delete and its last
-    put were in the database afterwards.
-  - A put that throws while the commit is queued makes the engine abort the
-    transaction. If that abort throws too and the browser completes the
-    transaction anyway, the puts queued before the throw have landed.
+- **A commit is two transactions, and lands whole.** Both run with strict
+  durability over the `rows` store and a second store, `last`.
+  1. **The record.** One put of a single fixed record, `last/commit`,
+     holding the commit's complete list of puts, deletes and area clears. A
+     transaction with one request is either kept or not; there is nothing
+     queued after it that the browser could keep on its own.
+  2. **The changes**, as one transaction holding every put, delete and area
+     clear (a delete over the area's key range).
+
+  The next commit's record overwrites this one, so there is no third
+  transaction and nothing to clean up. The next commit's record waits until
+  this commit's changes have been handed to the browser: both transactions
+  cover both stores, so the browser runs them in the order they were made,
+  and a partly kept step 2 can never lose its record.
+- **What each outcome means.**
+  - The record refused (an abort that is not for room, or a failure to start
+    it): `CommitRefused`, nothing changed.
+  - The record aborted for room (`AbortedForQuota`) or given no answer
+    (`NoAnswer`): `CommitUnknown`. The record may or may not have been kept,
+    and the next lease settles it either way, whole.
+  - The record kept and the changes `complete`: `CommitApplied`.
+  - The record kept and the changes aborted for any reason, failing to start,
+    or given no answer: `CommitUnknown`. The next lease completes the
+    commit. Once the record has landed, the commit is never reported refused,
+    because the next lease will apply it.
+- **Finishing the last commit while taking the lease.** After the lock is
+  held and the browser's durability checked, and before the lease is granted,
+  the engine reads the record and checks the rows against it: every key it
+  put holds that value, every key it deleted is gone, and every area it
+  cleared holds exactly the keys put after the clear. If they match (the
+  usual case), opening writes nothing. If they do not, the engine applies the
+  record's changes again; puts, deletes and area clears give the same rows
+  however many times they run, so a commit that landed in part is completed
+  and one that landed whole is untouched. This is the one write opening may
+  make: the store never commits at open, but this engine may complete its own
+  last commit, which it already promised, while taking the lease. If that
+  write fails for room, the lease is refused as `StorageFull` (`OutOfRoom`),
+  the record stays, and nothing is lost; the next lease with room completes
+  it. An intact library opens on a full disk, because the check only reads.
+  A record that cannot be read, or holds something the engine would never
+  write, is `DamagedLibrary`; one from a newer engine format is
+  `NewerFormat`. The check is never skipped.
+- **Why.** Firefox can keep part of a transaction that aborted for room:
+  requests queued after the failing one still take effect
+  ([bug 2080749](https://bugzilla.mozilla.org/show_bug.cgi?id=2080749),
+  unconfirmed and unfixed when this was written). Through this engine in
+  Firefox 160 it happened 5 runs out of 5 before the room check existed. And
+  a put that throws while the changes are queued, followed by an abort that
+  throws too, can leave the browser completing the transaction with the puts
+  queued before the throw. Both now end in `CommitUnknown` and a next lease
+  that finds the commit whole. The engine tells a quota abort from other
+  aborts by `transaction.error.name` alone.
 - **Room is checked before a commit.** The engine asks the browser for
   `navigator.storage.estimate()` when it leases. A commit with puts is
-  charged two bytes per character of area, key and value plus 1 KiB per put;
+  charged twice (once for the record, once for the rows) two bytes per
+  character of area, key and value plus 1 KiB per put;
   its charge is reserved when the commit is admitted and given back if the
   commit is refused, so commits issued together are admitted one after
   another against the room left by those before them. A commit that would
@@ -651,27 +688,14 @@ web.
   `navigator.storage`, or `estimate()` fails or gives no answer within 10 s,
   the engine commits without the check, and `IndexedDbLease.roomCheck` is
   `RoomNotChecked` with the reason; with a figure it is `RoomChecked`. An
-  estimate that fails after the engine had a figure keeps that figure.
+  estimate that fails after the engine had a figure leaves the room
+  unchecked too: the old figure is not used as if it had been checked.
 - **A full disk is a quota abort in Firefox.** Firefox does not lower its
   reported quota as the disk fills, so the room check cannot see a full disk
   coming. Staged on a nearly full tmpfs (`tool/disk_full_web.sh`), Firefox
   aborted with `QuotaExceededError` in 4 runs out of 4, and every time it
-  rolled the whole commit back. The engine answers it
-  `CommitUnknown(AbortedForQuota)` all the same. No other kind of abort was
-  staged in Firefox for real; that other aborts roll back whole is the spec's
-  promise, checked here only with aborts the test itself starts.
-- **Why partly applied is tolerable today.** The web build is cloud only
-  (`lib/config/platform_policy.dart`: `webBeta` has
-  `allowsLocalLibrary: false`), so the web store holds a copy of server rows
-  plus edits waiting to be sent. That alone does not make it safe: a partly
-  applied commit can remove or replace an unsent edit, which the server has
-  never seen. So the cloud store's commits are required to be safe when any
-  subset of their row changes is applied, and its tests inject exactly that
-  ([#667](https://github.com/SunkenInTime/icarus/pull/667)). The store
-  reports the commit as `SaveInDoubt` carrying `AbortedForQuota` and shuts.
-  The day the web build allows a local library, this engine needs
-  before-images to undo a partly kept commit, or it must not be used on the
-  Firefox versions with this bug.
+  rolled the whole commit back. Either way the next lease settles the commit
+  whole.
 - **Whatever is thrown is answered, and the lock always comes back.** A
   lease that throws anything while it asks for the lock, opens the database
   or checks it is `LeaseFailed`; the database is then closed, a database the
@@ -679,11 +703,10 @@ web.
   one before it did. Every browser call made while acquiring or releasing a
   lease has a time limit (10 s by default, `IndexedDbEngine.patience`), after
   which the caller gets `NoAnswer`. Release always closes the database and
-  lets go of the lock, and says `ReleaseFailed` if either step failed. A put
-  that throws while the commit is queued aborts it and answers
-  `CommitRefused`; if the abort throws too, the answer is `CommitUnknown`. A
-  throw anywhere else in a commit, including while reading
-  `transaction.error`, is `CommitUnknown`. A read whose callback throws is a
+  lets go of the lock, and says `ReleaseFailed` if either step failed. A
+  throw while the record is queued aborts it and answers `CommitRefused` (or
+  `CommitUnknown` if the abort throws too); any throw once the record has
+  landed, including while reading `transaction.error`, is `CommitUnknown`. A read whose callback throws is a
   failure, never a caller left waiting.
 - **Errors in browser callbacks are completed, not chained.** A callback
   runs in the root zone, and Dart does not carry an error from a future made
@@ -770,7 +793,8 @@ answers each step with its own result:
   stays open unless the failure ended its lease; then every later step
   answers `StoreStopped`;
 - **a save in doubt:** `SaveInDoubt(failure)`: the edit may or may not be
-  stored (on IndexedDB, possibly in part), and the store stops;
+  stored, and the store stops. Every engine settles it whole or nothing by
+  the next lease;
 - **a read:** `NotRead(failure)`: that read failed. As with a refused save,
   the store stays open unless the lease ended.
 
@@ -801,7 +825,7 @@ opened:
 - The **engine format** is the engine's own layout: on SQLite the tables,
   their columns and keys, and the generation row, kept in `user_version`
   (`sqliteFormat`); on IndexedDB the object store and its keys, kept in the
-  database version (`indexedDbFormat`, which is also the version the engine
+  database version (`indexedDbFormat`, 2, which is also the version the engine
   opens with). Written when the engine creates the storage. It changes when
   an older engine would misread the layout or write into it wrongly. It does
   not change for what rows hold.
@@ -812,8 +836,11 @@ opened:
   an older store would misread the rows or write into them wrongly; a change
   that older stores read and keep correctly does not change it.
 
-Both are 1, the first format, and nothing earlier shipped. A build that
-raises a number must also say how it moves a library from the lower one. A
+The engine format is 2 on IndexedDB (format 1 had no `last` store; opening
+a format 1 database runs the browser's upgrade, which adds the store and
+changes no row) and 1 on SQLite; the store format is 1. Nothing earlier
+shipped. A build that raises a number must also say how it moves a library
+from the lower one. A
 `format` row is read only when it is a plain decimal of one to nine digits
 with no sign, no leading zero and no spaces (`1`, `2`, `17`); anything else,
 including a longer number, is `DamagedLibrary`, never a newer format.
@@ -854,10 +881,11 @@ over it exhaustively.
     have been saved."
   - read: "There isn't enough storage space to read part of your library."
 - `AbortedForQuota`: the browser aborted an IndexedDB commit for lack of
-  room (in Firefox, a full disk too). Certain: the browser aborted the save.
-  Only possible: that part of it was kept (Firefox, bug 2080749). Comes only
-  as a save in doubt. "The browser ran out of storage while saving, so this
-  change may be only partly saved."
+  room (in Firefox, a full disk too). Certain: the browser aborted the save,
+  and the next time the library opens the save is there whole or not at all,
+  never in part. Only possible: which of the two. Comes only as a save in
+  doubt. "The browser ran out of storage while saving, so this change may not
+  have been saved."
 
 **`NewerFormat`**: a number above what this build knows. Certain: the
 library holds a format number higher than this build knows, which is the
@@ -987,7 +1015,16 @@ reading or writing your library."
   small room, makes `close`, `deleteDatabase` and `transaction.error` throw,
   upgrades, deletes and
   force-closes the database under a lease, refuses a second lease on the
-  origin, and hands the library to a worker while commits are in flight. The
+  origin, and hands the library to a worker while commits are in flight. It
+  cuts a commit at every point it can be cut (the record aborted, aborted
+  for room and kept or lost, or given no answer; the changes failing to
+  start, aborted, aborted for room keeping nothing, the first request or only
+  the last as Firefox did, or given no answer; a throw while queued with an
+  abort that throws too) and checks that the next lease finds the commit
+  whole or absent, as each answer says. It also opens an intact library on a
+  full disk, refuses one whose last commit needs completing until there is
+  room, refuses an unreadable or newer record, and upgrades a format 1
+  database with rows. The
   structured-clone failure is staged by patching `put`, not caused by a real
   value. It cannot crash the browser, cut its power, or run Safari. The real
   quota and full-disk runs in Firefox are tools run by hand
@@ -1370,10 +1407,14 @@ engine cost tool ahead of time, and `build/engine_costs/bundle/bin/engine_costs
 <folder>` times, on the memory engine and on SQLite in `<folder>`: opening the
 store and listing a 700-strategy library, opening a 20-page strategy, a cold
 read of a 300-item page, saving a moved item and a 1000-point drawing, 200
-moves awaited one by one and 200 issued at once, and one engine write of a
-single key. `tool/engine_costs_web.sh` does the same
-for the memory engine and IndexedDB in headless Chrome, compiled with
-`dart compile js -O4`.
+moves awaited one by one and 200 issued at once, saving a one-page strategy
+of 300 items, and one engine write of a single key. `tool/engine_costs_web.sh`
+does the same for the memory engine and IndexedDB in headless Chrome,
+compiled with `dart compile js -O4`, and `tool/firefox_page.sh
+tool/engine_costs_web.dart` in Firefox. On IndexedDB it also reports the size
+of the last commit's record after that 300-item save, and how long taking
+the lease takes when the last commit was that save and when it was one
+row.
 
 `dart run tool/store_benchmark.dart` times opening the store and a
 700-strategy library list, opening a 300-item page where half the items are

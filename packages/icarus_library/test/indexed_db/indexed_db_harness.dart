@@ -37,6 +37,9 @@ const _patch = '''
     swallowReads: false,
     storeCreationThrows: false,
     deleteOnVersionError: false,
+    cut: null,
+    writes: 0,
+    full: false,
     opened: [],
   };
   globalThis.icarusFaults = faults;
@@ -49,9 +52,32 @@ const _patch = '''
   };
   const transaction = IDBDatabase.prototype.transaction;
   IDBDatabase.prototype.transaction = function (...args) {
+    const cut = faults.cut;
+    let number = 0;
+    if (args[1] === 'readwrite') {
+      faults.writes++;
+      number = faults.writes;
+    }
+    if (cut && cut.kind === 'start' && cut.write === number) {
+      faults.cut = null;
+      throw new TypeError('the transaction could not start');
+    }
     const made = transaction.apply(this, faults.dropOptions ? args.slice(0, 2) : args);
     if (faults.swallowComplete && args[1] === 'readwrite') {
       Object.defineProperty(made, 'oncomplete', { set() {}, get() { return null; } });
+    }
+    if (cut && cut.kind === 'silence' && cut.write === number) {
+      faults.cut = null;
+      Object.defineProperty(made, 'oncomplete', { set() {}, get() { return null; } });
+    }
+    if (cut && (cut.kind === 'quota' || cut.kind === 'abort') && cut.write === number) {
+      faults.cut = null;
+      made.icarusCut = cut;
+      made.icarusOps = [];
+    }
+    if (faults.full && args[1] === 'readwrite') {
+      made.icarusCut = { kind: 'quota', keep: 'none' };
+      made.icarusOps = [];
     }
     return made;
   };
@@ -124,6 +150,25 @@ const _patch = '''
       return transactionError.get.call(this);
     },
   });
+  faults.putRecord = (name, text) => new Promise((resolve) => {
+    const opening = indexedDB.open(name);
+    opening.onsuccess = () => {
+      const db = opening.result;
+      const transaction = db.transaction('last', 'readwrite');
+      transaction.objectStore('last').put(text, 'commit');
+      transaction.oncomplete = () => { db.close(); resolve(); };
+    };
+  });
+  faults.makeFormatOne = (name, area, key, value) => new Promise((resolve) => {
+    const opening = indexedDB.open(name, 1);
+    opening.onupgradeneeded = () => opening.result.createObjectStore('rows');
+    opening.onsuccess = () => {
+      const db = opening.result;
+      const transaction = db.transaction('rows', 'readwrite');
+      transaction.objectStore('rows').put(value, [area, key]);
+      transaction.oncomplete = () => { db.close(); resolve(); };
+    };
+  });
   faults.putRaw = (name, area, key, kind) => new Promise((resolve) => {
     const opening = indexedDB.open(name);
     opening.onsuccess = () => {
@@ -154,8 +199,10 @@ const _patch = '''
     opening.addEventListener('success', () => faults.opened.push(opening.result));
     return opening;
   };
+  const originals = {};
   const wrap = (name) => {
     const original = IDBObjectStore.prototype[name];
+    originals[name] = original;
     IDBObjectStore.prototype[name] = function (...args) {
       if (name === 'put' && faults.throwValue !== null && args[0] === faults.throwValue) {
         throw new DOMException('the value cannot be cloned', 'DataCloneError');
@@ -164,7 +211,29 @@ const _patch = '''
         throw new TypeError('the value is broken');
       }
       const request = original.apply(this, args);
+      const cutting = this.transaction.icarusCut;
+      if (cutting) {
+        const transaction = this.transaction;
+        const ops = transaction.icarusOps;
+        ops.push({ store: this.name, name, args });
+        if (ops.length === 1) {
+          request.addEventListener('success', () => {
+            if (cutting.kind === 'quota') {
+              Object.defineProperty(transaction, 'error', {
+                value: new DOMException('the quota was exceeded', 'QuotaExceededError'),
+              });
+            }
+            transaction.abort();
+            const kept = { none: [], first: ops.slice(0, 1), last: ops.slice(-1) }[cutting.keep];
+            if (kept.length > 0) {
+              const leak = transaction.db.transaction([...new Set(kept.map((op) => op.store))], 'readwrite');
+              for (const op of kept) originals[op.name].apply(leak.objectStore(op.store), op.args);
+            }
+          });
+        }
+      }
       if (faults.abortNext || faults.quotaNext) {
+        if (cutting) return request;
         const quota = faults.quotaNext;
         faults.abortNext = false;
         faults.quotaNext = false;
@@ -248,6 +317,39 @@ void storeCreationThrows(bool throws) =>
 
 void deleteOnVersionError(bool delete) =>
     _faults['deleteOnVersionError'] = delete.toJS;
+
+void cutWrite(String kind, int write, {String keep = 'none'}) {
+  final cut = JSObject()
+    ..['kind'] = kind.toJS
+    ..['write'] = write.toJS
+    ..['keep'] = keep.toJS;
+  _faults['writes'] = 0.toJS;
+  _faults['cut'] = cut;
+}
+
+void clearCut() => _faults['cut'] = null;
+
+void storageFull(bool full) => _faults['full'] = full.toJS;
+
+Future<void> putRecord(String name, String text) =>
+    (_faults.callMethod<JSPromise<JSAny?>>(
+      'putRecord'.toJS,
+      name.toJS,
+      text.toJS,
+    )).toDart;
+
+Future<void> makeFormatOne(
+  String name,
+  String area,
+  String key,
+  String value,
+) => (_faults.callMethod<JSPromise<JSAny?>>(
+  'makeFormatOne'.toJS,
+  name.toJS,
+  area.toJS,
+  key.toJS,
+  value.toJS,
+)).toDart;
 
 void closeThrows(bool throws) => _faults['closeThrows'] = throws.toJS;
 

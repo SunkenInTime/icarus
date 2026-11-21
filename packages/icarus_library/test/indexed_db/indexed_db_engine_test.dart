@@ -164,10 +164,12 @@ void main() {
     await engine.close();
   });
 
-  test('a put that throws while the commit is being queued leaves nothing of '
-      'the commit and is refused', () async {
+  test('a put that throws while the changes are being queued leaves the '
+      'commit in doubt, and the next lease finds it whole', () async {
     final lease = await openIndexedDb(name);
-    committed(await lease.commit(const [Put('a', 'k', 'old')]));
+    committed(
+      await lease.commit(const [Put('a', 'k', 'old'), Put('c', 'x', 'gone')]),
+    );
     throwOnPutOf('too big');
     expect(
       await lease
@@ -177,12 +179,15 @@ void main() {
             ClearArea('c'),
           ])
           .timeout(const Duration(seconds: 5)),
-      isA<CommitRefused>(),
+      isA<CommitUnknown>(),
     );
     throwOnPutOf(null);
-    expect(valueOf(await lease.read('a', 'k')), 'old');
-    expect(valueOf(await lease.read('b', 'k')), isNull);
     expect(await lease.release(), isA<Released>());
+    final next = await openIndexedDb(name);
+    expect(valueOf(await next.read('a', 'k')), 'new');
+    expect(valueOf(await next.read('b', 'k')), 'too big');
+    expect(await next.read('c', 'x'), isA<KeyMissing>());
+    await next.release();
   });
 
   test('a lease asked for while the engine closes is refused or ended by the '
@@ -241,7 +246,7 @@ void main() {
       'instead of waiting on it', () async {
     final lease = await openIndexedDb(name);
     committed(await lease.commit(const [Put('a', 'k', 'v')]));
-    expect(await upgradeFinishes(name, 2), isTrue);
+    expect(await upgradeFinishes(name, 3), isTrue);
     expect(lease.status, isA<Ended>());
     expect(
       await lease.commit(const [Put('a', 'k', 'w')]),
@@ -355,21 +360,24 @@ void main() {
     await (await openIndexedDb(name)).release();
   });
 
-  test('a put that throws something other than a DOMException while queued '
-      'refuses the commit and leaves nothing of it', () async {
-    final lease = await openIndexedDb(name);
-    throwPlainlyOnPutOf('broken');
-    final result = await lease
-        .commit(const [
-          Put('a', 'first', 'kept?'),
-          Put('a', 'second', 'broken'),
-        ])
-        .timeout(const Duration(seconds: 5));
-    throwPlainlyOnPutOf(null);
-    expect(result, isA<CommitRefused>());
-    expect(await lease.read('a', 'first'), isA<KeyMissing>());
-    expect(await lease.release(), isA<Released>());
-  });
+  test(
+    'a put that throws something other than a DOMException while queued '
+    'leaves the commit in doubt, and the next lease finds it whole',
+    () async {
+      final lease = await openIndexedDb(name);
+      throwPlainlyOnPutOf('broken');
+      final result = await lease
+          .commit(const [Put('a', 'first', 'v'), Put('a', 'second', 'broken')])
+          .timeout(const Duration(seconds: 5));
+      throwPlainlyOnPutOf(null);
+      expect(result, isA<CommitUnknown>());
+      expect(await lease.release(), isA<Released>());
+      final next = await openIndexedDb(name);
+      expect(valueOf(await next.read('a', 'first')), 'v');
+      expect(valueOf(await next.read('a', 'second')), 'broken');
+      await next.release();
+    },
+  );
 
   test('when the abort after a failed queue throws too, the commit is in doubt '
       'and release still answers', () async {
@@ -490,7 +498,7 @@ void main() {
 
   test('commits issued together are admitted against the room one after '
       'another, not all against the same headroom', () async {
-    pretendRoomLeft(roomMargin + 30000);
+    pretendRoomLeft(roomMargin + 60000);
     final lease = await openIndexedDb(name);
     final big = 'x' * 10000;
     final outcomes = await Future.wait([
@@ -651,7 +659,7 @@ void main() {
     'a database at a newer engine format is refused and left as it was',
     () async {
       await (await openIndexedDb(name)).release();
-      expect(await upgradeFinishes(name, 2), isTrue);
+      expect(await upgradeFinishes(name, 3), isTrue);
       expect(
         await IndexedDbEngine(name).lease(),
         isA<LeaseFailed>().having(
@@ -659,12 +667,12 @@ void main() {
           'failure',
           isA<NewerFormat>()
               .having((newer) => newer.layer, 'layer', FormatLayer.engine)
-              .having((newer) => newer.found, 'found', 2)
-              .having((newer) => newer.known, 'known', 1),
+              .having((newer) => newer.found, 'found', 3)
+              .having((newer) => newer.known, 'known', 2),
         ),
       );
       final raw = await openRaw(name);
-      expect(raw.version, 2);
+      expect(raw.version, 3);
       raw.close();
     },
   );
@@ -791,7 +799,7 @@ void main() {
   test('a newer database cleared between the version error and the version '
       'lookup is not created again, and is not reported as format 1', () async {
     await (await openIndexedDb(name)).release();
-    expect(await upgradeFinishes(name, 2), isTrue);
+    expect(await upgradeFinishes(name, 3), isTrue);
     deleteOnVersionError(true);
     final leasing = await IndexedDbEngine(
       name,
@@ -806,6 +814,212 @@ void main() {
       ),
     );
     expect(await databaseExists(name), isFalse);
+  });
+
+  group('a commit cut at every point it can be cut', () {
+    const seed = <Change>[
+      Put('a', 'k1', 'old'),
+      Put('a', 'k2', 'old'),
+      Put('b', 'gone', 'old'),
+      Put('c', 'x', 'old'),
+      Put('c', 'y', 'old'),
+    ];
+    const changes = <Change>[
+      Put('a', 'k1', 'new'),
+      Put('a', 'k3', 'new'),
+      Delete('b', 'gone'),
+      ClearArea('c'),
+      Put('c', 'z', 'new'),
+    ];
+    const before = {
+      'a': {'k1': 'old', 'k2': 'old'},
+      'b': {'gone': 'old'},
+      'c': {'x': 'old', 'y': 'old'},
+    };
+    const after = {
+      'a': {'k1': 'new', 'k2': 'old', 'k3': 'new'},
+      'b': <String, String>{},
+      'c': {'z': 'new'},
+    };
+
+    Future<Map<String, Map<String, String>>> contents(
+      StorageLease lease,
+    ) async => {
+      for (final area in ['a', 'b', 'c'])
+        area: {
+          for (final (:key, :value) in stored(await lease.entries(area, '')))
+            key: value,
+        },
+    };
+
+    final cuts = <String, (void Function(), Matcher, Object)>{
+      'the record aborted': (
+        abortNextAfterItsFirstRequest,
+        isA<CommitRefused>(),
+        before,
+      ),
+      'the record aborted for room, kept': (
+        () => cutWrite('quota', 1, keep: 'last'),
+        isA<CommitUnknown>(),
+        after,
+      ),
+      'the record aborted for room, lost': (
+        () => cutWrite('quota', 1),
+        isA<CommitUnknown>(),
+        before,
+      ),
+      'the record with no answer': (
+        () => cutWrite('silence', 1),
+        isA<CommitUnknown>(),
+        after,
+      ),
+      'the changes failing to start': (
+        () => cutWrite('start', 2),
+        isA<CommitUnknown>(),
+        after,
+      ),
+      'the changes aborted after their first request': (
+        () => cutWrite('abort', 2),
+        isA<CommitUnknown>(),
+        after,
+      ),
+      'the changes aborted for room, nothing kept': (
+        () => cutWrite('quota', 2),
+        isA<CommitUnknown>(),
+        after,
+      ),
+      'the changes aborted for room, the first request kept': (
+        () => cutWrite('quota', 2, keep: 'first'),
+        isA<CommitUnknown>(),
+        after,
+      ),
+      'the changes aborted for room, only the last request kept, as in '
+          'Firefox bug 2080749': (
+        () => cutWrite('quota', 2, keep: 'last'),
+        isA<CommitUnknown>(),
+        after,
+      ),
+      'the changes with no answer': (
+        () => cutWrite('silence', 2),
+        isA<CommitUnknown>(),
+        after,
+      ),
+      'a change that throws while queued, and an abort that throws too': (
+        () {
+          throwPlainlyOnPutOf('new');
+          abortThrows(true);
+        },
+        isA<CommitUnknown>(),
+        after,
+      ),
+    };
+    for (final MapEntry(key: cut, value: (arm, answered, settled))
+        in cuts.entries) {
+      test('$cut: answered as it should be, and the next lease finds the '
+          'commit whole or absent, never in part', () async {
+        final engine = IndexedDbEngine(
+          name,
+          patience: const Duration(milliseconds: 500),
+        );
+        final lease = await leaseOf(engine);
+        committed(await lease.commit(seed));
+        arm();
+        final outcome = await lease
+            .commit(changes)
+            .timeout(const Duration(seconds: 5));
+        clearCut();
+        throwPlainlyOnPutOf(null);
+        abortThrows(false);
+        expect(outcome, answered, reason: cut);
+        await engine.close();
+        final next = IndexedDbEngine(name);
+        final reopened = await leaseOf(next);
+        final seen = await contents(reopened);
+        expect(seen, anyOf(equals(before), equals(after)), reason: cut);
+        expect(seen, settled, reason: cut);
+        await next.close();
+      });
+    }
+  });
+
+  test('an intact library opens on a full disk without a write; one whose '
+      'last commit needs completing is refused as storage full, loses '
+      'nothing, and is completed once there is room', () async {
+    final lease = await openIndexedDb(name);
+    committed(await lease.commit(const [Put('a', 'k', 'v')]));
+    await lease.release();
+    storageFull(true);
+    final intact = await IndexedDbEngine(name).lease();
+    expect(intact, isA<Leased>());
+    if (intact case Leased(lease: final opened)) {
+      expect(valueOf(await opened.read('a', 'k')), 'v');
+      await opened.release();
+    }
+    storageFull(false);
+
+    final writer = await openIndexedDb(name);
+    cutWrite('quota', 2);
+    expect(
+      await writer.commit(const [Put('a', 'k', 'w'), Put('b', 'k', 'w')]),
+      isA<CommitUnknown>(),
+    );
+    clearCut();
+    await writer.release();
+    storageFull(true);
+    expect(
+      await IndexedDbEngine(name).lease(),
+      isA<LeaseFailed>().having(
+        (failed) => failed.failure,
+        'failure',
+        isA<StorageFull>(),
+      ),
+    );
+    storageFull(false);
+    final completed = await openIndexedDb(name);
+    expect(valueOf(await completed.read('a', 'k')), 'w');
+    expect(valueOf(await completed.read('b', 'k')), 'w');
+    await completed.release();
+  });
+
+  test('a record of the last commit that cannot be read is a damaged library, '
+      'and one from a newer engine format is a newer format, at the lease; '
+      'the check is never skipped', () async {
+    await (await openIndexedDb(name)).release();
+    for (final (record, failure) in [
+      ('not json', isA<DamagedLibrary>()),
+      ('{"format":2,"changes":[["put","Bad","k","v"]]}', isA<DamagedLibrary>()),
+      ('{"format":2}', isA<DamagedLibrary>()),
+      (
+        '{"format":3,"changes":[]}',
+        isA<NewerFormat>()
+            .having((newer) => newer.found, 'found', 3)
+            .having((newer) => newer.known, 'known', 2),
+      ),
+    ]) {
+      await putRecord(name, record);
+      expect(
+        await IndexedDbEngine(name).lease(),
+        isA<LeaseFailed>().having(
+          (failed) => failed.failure,
+          'failure',
+          failure,
+        ),
+        reason: record,
+      );
+    }
+  });
+
+  test('a format 1 database with rows opens, gets the store for the last '
+      'commit, and loses nothing', () async {
+    await makeFormatOne(name, 'a', 'k', 'kept');
+    final lease = await openIndexedDb(name);
+    expect(valueOf(await lease.read('a', 'k')), 'kept');
+    committed(await lease.commit(const [Put('a', 'k2', 'new')]));
+    await lease.release();
+    final raw = await openRaw(name);
+    expect(raw.version, 2);
+    expect(raw.objectStoreNames.contains('last'), isTrue);
+    raw.close();
   });
 
   group('the engine contract', () {

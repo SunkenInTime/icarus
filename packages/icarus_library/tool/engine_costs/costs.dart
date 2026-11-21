@@ -113,6 +113,18 @@ final class Times {
   }
 }
 
+Future<void> saveOnePageStrategy(StorageEngine engine) async {
+  final store = await _open(engine);
+  _saved(
+    await store.editLibrary([
+      AddStrategy(
+        _strategy('page', pages: 1, items: pageItems, drawingPages: 1),
+      ),
+    ]),
+  );
+  await store.close();
+}
+
 Future<LibraryStore> _open(StorageEngine engine) async =>
     switch (await LibraryStore.open(engine, canRead: _readsAll)) {
       StoreOpened(:final store) => store,
@@ -276,6 +288,19 @@ Future<List<String>> measure(EngineOpener open, EngineCloser close) async {
       ),
     );
   }
+  final onePage = Times('save a one-page strategy of $pageItems items');
+  final pageStrategy = _strategy(
+    'page',
+    pages: 1,
+    items: pageItems,
+    drawingPages: 1,
+  );
+  for (var i = 0; i < 5; i++) {
+    _saved(
+      await onePage.time(() => store.editLibrary([AddStrategy(pageStrategy)])),
+    );
+    _saved(await store.editLibrary([const RemoveStrategy('page')]));
+  }
   await store.close();
   await close(engine);
   final split = await _pageReadSplit(open, close);
@@ -289,6 +314,7 @@ Future<List<String>> measure(EngineOpener open, EngineCloser close) async {
     '$burst moves issued at once: all saved after '
         '${(allSaved / 1000).toStringAsFixed(1)} ms',
     removal.summary,
+    onePage.summary,
     page.summary,
     ...split,
   ];

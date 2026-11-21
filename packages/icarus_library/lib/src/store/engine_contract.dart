@@ -107,7 +107,7 @@ bool _sameAreas(_Areas left, _Areas right) =>
           ),
     );
 
-void _effect(
+void _effectSeenInItsOwnLease(
   Committing committing,
   _Areas before,
   _Areas expected,
@@ -121,10 +121,29 @@ void _effect(
       _broke('$what: CommitApplied, but not every change is there');
     case CommitRefused() when !none:
       _broke('$what: $committing, but it changed storage');
-    case CommitUnknown(failure: AbortedForQuota()):
+    case CommitApplied() || CommitRefused() || CommitUnknown():
       return;
+  }
+}
+
+void _effectAtTheNextLease(
+  Committing committing,
+  _Areas before,
+  _Areas expected,
+  _Areas seen,
+  String what,
+) {
+  final none = _sameAreas(seen, before);
+  final all = _sameAreas(seen, expected);
+  switch (committing) {
+    case CommitApplied() when !all:
+      _broke('$what: CommitApplied, but not every change is there');
+    case CommitRefused() when !none:
+      _broke('$what: $committing, but it changed storage');
     case CommitUnknown() when !all && !none:
-      _broke('$what: $committing left some of its changes and not others');
+      _broke(
+        '$what: $committing was neither whole nor absent at the next lease',
+      );
     case CommitApplied() || CommitRefused() || CommitUnknown():
       return;
   }
@@ -138,7 +157,7 @@ Future<Committing> _commit(
   final areas = _areasOf(changes);
   final before = await _snapshot(lease, areas);
   final committing = await lease.commit(changes);
-  _effect(
+  _effectSeenInItsOwnLease(
     committing,
     before,
     _after(before, changes),
@@ -266,7 +285,13 @@ Future<void> _heldThroughEnd(
   next ??= await _lease(second);
   atGrant ??= await _snapshot(next, areas);
   final wrote = await writing;
-  _effect(wrote, before, expected, atGrant, 'a write held while $how');
+  _effectAtTheNextLease(
+    wrote,
+    before,
+    expected,
+    atGrant,
+    'a write held while $how',
+  );
   final later = await _snapshot(next, areas);
   final kept = {
     for (final MapEntry(:key, :value) in atGrant.entries) key: {...value},

@@ -267,28 +267,6 @@ void main() {
     });
   }
 
-  test('a partial commit reported unknown for a quota abort is never called '
-      'partial by the contract, the one case allowed to be', () async {
-    for (final check in engineContract) {
-      final result = await check.run(
-        WrappedHarness(
-          (lease) => PartlyUnknownLease(
-            lease,
-            () {},
-            failure: const AbortedForQuota('the browser aborted for room'),
-          ),
-        ),
-      );
-      if (result case Broke(:final what)) {
-        expect(
-          what,
-          isNot(contains('left some of its changes')),
-          reason: check.name,
-        );
-      }
-    }
-  });
-
   test(
     'a partial commit reported unknown fails every check it reaches',
     () async {

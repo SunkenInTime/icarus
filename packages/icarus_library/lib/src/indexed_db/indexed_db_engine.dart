@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
@@ -10,9 +11,13 @@ import '../store/engine_contract.dart';
 
 const _rows = 'rows';
 
+const _last = 'last';
+
+const _lastCommitKey = 'commit';
+
 const indexedDbMaxKeyLength = 1024;
 
-const indexedDbFormat = 1;
+const indexedDbFormat = 2;
 
 const roomMargin = 1024 * 1024;
 
@@ -59,6 +64,9 @@ StorageFailure? _done(void Function() call, String what) {
 
 StorageFailure? _closeDatabase(IDBDatabase db) =>
     _done(() => db.close(), 'closing the database');
+
+StorageFailure? _abortOf(IDBTransaction transaction) =>
+    _done(() => transaction.abort(), 'aborting');
 
 void _into<T>(Completer<T> answer, T Function() compute) {
   if (answer.isCompleted) return;
@@ -177,12 +185,13 @@ Future<_Opened> _openDatabase(String name, Duration patience) {
   var created = false;
   final request = window.indexedDB.open(name, indexedDbFormat);
   request
-    ..onupgradeneeded = ((IDBVersionChangeEvent _) {
-      created = true;
-      final made = _done(
-        () => (request.result! as IDBDatabase).createObjectStore(_rows),
-        'creating the rows store',
-      );
+    ..onupgradeneeded = ((IDBVersionChangeEvent event) {
+      created = event.oldVersion == 0;
+      final made = _done(() {
+        final db = request.result! as IDBDatabase;
+        if (event.oldVersion < 1) db.createObjectStore(_rows);
+        if (event.oldVersion < 2) db.createObjectStore(_last);
+      }, 'creating the library\'s stores');
       if (made case final failure?) {
         _into(opened, () => _Refused(failure));
         _done(() => request.transaction?.abort(), 'aborting the upgrade');
@@ -266,7 +275,253 @@ StorageFailure? _problemWith(IDBDatabase db) {
   if (!db.objectStoreNames.contains(_rows)) {
     return const DamagedLibrary('not an Icarus library (no rows store)');
   }
+  if (!db.objectStoreNames.contains(_last)) {
+    return const DamagedLibrary('not an Icarus library (no last-commit store)');
+  }
   return null;
+}
+
+String _recordOf(List<Change> changes) => jsonEncode({
+  'format': indexedDbFormat,
+  'changes': [
+    for (final change in changes)
+      switch (change) {
+        Put(:final area, :final key, :final value) => ['put', area, key, value],
+        Delete(:final area, :final key) => ['delete', area, key],
+        ClearArea(:final area) => ['clear', area],
+      },
+  ],
+});
+
+sealed class _LastCommit {
+  const _LastCommit();
+}
+
+final class _NoLastCommit extends _LastCommit {
+  const _NoLastCommit();
+}
+
+final class _Recorded extends _LastCommit {
+  const _Recorded(this.changes);
+
+  final List<Change> changes;
+}
+
+final class _Unreadable extends _LastCommit {
+  const _Unreadable(this.failure);
+
+  final StorageFailure failure;
+}
+
+const _damagedRecord = DamagedLibrary(
+  'the record of the last commit cannot be read',
+);
+
+_LastCommit _parsedRecord(String text) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(text);
+  } on FormatException {
+    return const _Unreadable(_damagedRecord);
+  }
+  switch (decoded) {
+    case {'format': final int format} when format > indexedDbFormat:
+      return _Unreadable(
+        NewerFormat(FormatLayer.engine, found: format, known: indexedDbFormat),
+      );
+    case {'format': final int _, 'changes': final List<Object?> listed}:
+      final changes = <Change>[];
+      for (final entry in listed) {
+        switch (entry) {
+          case ['put', final String area, final String key, final String value]
+              when isArea(area) && isName(key):
+            changes.add(Put(area, key, value));
+          case ['delete', final String area, final String key]
+              when isArea(area) && isName(key):
+            changes.add(Delete(area, key));
+          case ['clear', final String area] when isArea(area):
+            changes.add(ClearArea(area));
+          case _:
+            return const _Unreadable(_damagedRecord);
+        }
+      }
+      return _Recorded(changes);
+    case _:
+      return const _Unreadable(_damagedRecord);
+  }
+}
+
+void _queueChanges(IDBObjectStore rows, List<Change> changes) {
+  for (final change in changes) {
+    switch (change) {
+      case Put(:final area, :final key, :final value):
+        rows.put(value.toJS, _key(area, key));
+      case Delete(:final area, :final key):
+        rows.delete(_key(area, key));
+      case ClearArea(:final area):
+        rows.delete(_rangeOf(area, ''));
+    }
+  }
+}
+
+IDBKeyRange _rangeOf(String area, String prefix) => IDBKeyRange.bound(
+  _key(area, prefix),
+  switch (_afterUnits(prefix)) {
+    null => [area.toJS, JSArray<JSAny>()].toJS,
+    final after => _key(area, after),
+  },
+  false,
+  true,
+);
+
+IDBTransaction _writeTransaction(IDBDatabase db) => db.transaction(
+  [_rows.toJS, _last.toJS].toJS,
+  'readwrite',
+  IDBTransactionOptions(durability: 'strict'),
+);
+
+Future<_LastCommit> _lastCommit(IDBDatabase db, Duration patience) async {
+  final transaction = db.transaction(_last.toJS, 'readonly');
+  final answer = await _answer(
+    transaction.objectStore(_last).getAll(_lastCommitKey.toJS),
+    'reading the record of the last commit',
+    patience,
+  );
+  return switch (answer) {
+    _Failed(:final failure) => _Unreadable(failure),
+    _Value(:final value) => switch (_list(value)) {
+      [] => const _NoLastCommit(),
+      [final stored] => switch (_text(stored)) {
+        final text? => _parsedRecord(text),
+        null => const _Unreadable(_damagedRecord),
+      },
+      _ => const _Unreadable(_damagedRecord),
+    },
+  };
+}
+
+Future<Stored<bool>> _landedWhole(
+  IDBDatabase db,
+  List<Change> changes,
+  Duration patience,
+) async {
+  final cleared = <String>{};
+  final expected = <String, Map<String, String?>>{};
+  for (final change in changes) {
+    switch (change) {
+      case Put(:final area, :final key, :final value):
+        (expected[area] ??= {})[key] = value;
+      case Delete(:final area, :final key):
+        (expected[area] ??= {})[key] = null;
+      case ClearArea(:final area):
+        cleared.add(area);
+        expected[area] = {};
+    }
+  }
+  const what = 'checking the last commit';
+  final rows = db.transaction(_rows.toJS, 'readonly').objectStore(_rows);
+  final areaKeys = {
+    for (final area in cleared)
+      area: _answer(rows.getAllKeys(_rangeOf(area, '')), what, patience),
+  };
+  final spans = {
+    for (final MapEntry(key: area, value: keys) in expected.entries)
+      if (keys.isNotEmpty)
+        area: () {
+          final sorted = keys.keys.toList()..sort(compareCodeUnits);
+          final span = IDBKeyRange.bound(
+            _key(area, sorted.first),
+            _key(area, sorted.last),
+          );
+          return (
+            keys: _answer(rows.getAllKeys(span), what, patience),
+            values: _answer(rows.getAll(span), what, patience),
+          );
+        }(),
+  };
+  for (final MapEntry(key: area, value: listing) in areaKeys.entries) {
+    switch (await listing) {
+      case _Failed(:final failure):
+        return StorageFailed(failure);
+      case _Value(:final value):
+        final present = _namesIn(value, 1);
+        if (present == null) return const StorageFailed(_notAName);
+        final wanted = {
+          for (final MapEntry(:key, :value) in expected[area]!.entries)
+            if (value != null) key,
+        };
+        if (present.length != wanted.length || !wanted.containsAll(present)) {
+          return const Done(false);
+        }
+    }
+  }
+  for (final MapEntry(key: area, value: span) in spans.entries) {
+    switch ((await span.keys, await span.values)) {
+      case (_Failed(:final failure), _) || (_, _Failed(:final failure)):
+        return StorageFailed(failure);
+      case (_Value(value: final keys), _Value(value: final values)):
+        final names = _namesIn(keys, 1);
+        final texts = _list(values);
+        if (names == null) return const StorageFailed(_notAName);
+        if (texts == null || texts.length != names.length) {
+          return const StorageFailed(_notText);
+        }
+        final stored = <String, String>{};
+        for (var i = 0; i < names.length; i++) {
+          final text = _text(texts[i]);
+          if (text == null) return const StorageFailed(_notText);
+          stored[names[i]] = text;
+        }
+        for (final MapEntry(:key, :value) in expected[area]!.entries) {
+          if (stored[key] != value) return const Done(false);
+        }
+    }
+  }
+  return const Done(true);
+}
+
+Future<StorageFailure?> _replay(
+  IDBDatabase db,
+  List<Change> changes,
+  Duration patience,
+) {
+  const what = 'completing the last commit';
+  final finished = Completer<StorageFailure?>();
+  final transaction = _writeTransaction(db);
+  transaction
+    ..oncomplete = ((Event _) => _into(finished, () => null)).toJS
+    ..onabort = ((Event _) => _into(
+      finished,
+      () => switch (transaction.error) {
+        final error? when error.name == 'QuotaExceededError' => OutOfRoom(
+          '$what: ${error.message}',
+        ),
+        final error => _named(error, what),
+      },
+    )).toJS;
+  _queueChanges(transaction.objectStore(_rows), changes);
+  return finished.future.timeout(
+    patience,
+    onTimeout: () => NoAnswer(what, patience),
+  );
+}
+
+Future<StorageFailure?> _finishLastCommit(
+  IDBDatabase db,
+  Duration patience,
+) async {
+  switch (await _lastCommit(db, patience)) {
+    case _NoLastCommit():
+      return null;
+    case _Unreadable(:final failure):
+      return failure;
+    case _Recorded(:final changes):
+      return switch (await _landedWhole(db, changes, patience)) {
+        StorageFailed(:final failure) => failure,
+        Done(value: true) => null,
+        Done(value: false) => await _replay(db, changes, patience),
+      };
+  }
 }
 
 Future<bool> _keepsWritesStrict(IDBDatabase db, Duration patience) {
@@ -513,6 +768,9 @@ final class IndexedDbEngine implements StorageEngine {
     if (!await _keepsWritesStrict(db, patience)) {
       return const LeaseFailed(BrowserLacks(BrowserFeature.strictDurability));
     }
+    if (await _finishLastCommit(db, patience) case final failure?) {
+      return LeaseFailed(failure);
+    }
     final room = _Room(patience);
     await room.ask();
     final lease = acquiring.lease = IndexedDbLease._(db, lock, room, patience);
@@ -654,15 +912,8 @@ final class IndexedDbLease implements StorageLease {
     ),
   );
 
-  static IDBKeyRange _under(String area, String prefix) => IDBKeyRange.bound(
-    _key(area, prefix),
-    switch (_afterUnits(prefix)) {
-      null => [area.toJS, JSArray<JSAny>()].toJS,
-      final after => _key(area, after),
-    },
-    false,
-    true,
-  );
+  static IDBKeyRange _under(String area, String prefix) =>
+      _rangeOf(area, prefix);
 
   @override
   Future<Stored<List<String>>> areas(String prefix) => _reading(
@@ -747,7 +998,7 @@ final class IndexedDbLease implements StorageLease {
   }
 
   Future<Committing> _committed(List<Change> changes) async {
-    final charge = _Room.charge(changes);
+    final charge = 2 * _Room.charge(changes);
     var admitted = false;
     Committing outcome;
     try {
@@ -791,12 +1042,73 @@ final class IndexedDbLease implements StorageLease {
       return (landing: Future.value(CommitRefused(failure)));
     }
     admitted();
-    return switch (_transaction('readwrite')) {
-      StorageFailed(:final failure) => (
-        landing: Future.value(CommitRefused(failure)),
-      ),
-      Done(value: final transaction) => (landing: _queue(transaction, changes)),
-    };
+    switch (await _record(changes)) {
+      case _RecordRefused(:final failure):
+        return (landing: Future.value(CommitRefused(failure)));
+      case _RecordInDoubt(:final failure):
+        return (landing: Future.value(CommitUnknown(failure)));
+      case _RecordKept():
+        break;
+    }
+    final IDBTransaction transaction;
+    try {
+      transaction = _writeTransaction(_db);
+    } on Object catch (error) {
+      return (
+        landing: Future.value(
+          CommitUnknown(_thrown(error, 'starting the changes')),
+        ),
+      );
+    }
+    return (landing: _queue(transaction, changes));
+  }
+
+  Future<_RecordOutcome> _record(List<Change> changes) {
+    const what = 'recording the commit';
+    final recorded = Completer<_RecordOutcome>();
+    final IDBTransaction transaction;
+    try {
+      transaction = _writeTransaction(_db);
+    } on Object catch (error) {
+      return Future.value(_RecordRefused(_thrown(error, what)));
+    }
+    StorageFailure? notQueued;
+    transaction
+      ..oncomplete = ((Event _) => _into(
+        recorded,
+        () => switch (notQueued) {
+          final failure? => _RecordInDoubt(failure),
+          null => const _RecordKept(),
+        },
+      )).toJS
+      ..onabort = ((Event _) => _into(
+        recorded,
+        () => switch ((notQueued, transaction.error)) {
+          (final StorageFailure failure?, _) => _RecordRefused(failure),
+          (null, final error?) when error.name == 'QuotaExceededError' =>
+            _RecordInDoubt(AbortedForQuota(error.message)),
+          (null, final error) => _RecordRefused(_named(error, what)),
+        },
+      )).toJS;
+    try {
+      transaction
+          .objectStore(_last)
+          .put(_recordOf(changes).toJS, _lastCommitKey.toJS);
+    } on Object catch (error) {
+      final failure = notQueued = _thrown(error, what);
+      if (_abortOf(transaction) case final unconfirmed?) {
+        _into(
+          recorded,
+          () => _RecordInDoubt(
+            DeviceFailure('$failure, and the abort failed: $unconfirmed'),
+          ),
+        );
+      }
+    }
+    return recorded.future.timeout(
+      _patience,
+      onTimeout: () => _RecordInDoubt(NoAnswer(what, _patience)),
+    );
   }
 
   Future<Committing> _queue(IDBTransaction transaction, List<Change> changes) {
@@ -812,29 +1124,18 @@ final class IndexedDbLease implements StorageLease {
       )).toJS
       ..onabort = ((Event _) => _into(
         landed,
-        () => switch ((notQueued, transaction.error)) {
-          (final StorageFailure failure?, _) => CommitRefused(failure),
+        () => CommitUnknown(switch ((notQueued, transaction.error)) {
+          (final StorageFailure failure?, _) => failure,
           (null, final error?) when error.name == 'QuotaExceededError' =>
-            CommitUnknown(AbortedForQuota(error.message)),
-          (null, final error) => CommitRefused(_named(error, 'committing')),
-        },
+            AbortedForQuota(error.message),
+          (null, final error) => _named(error, 'committing'),
+        }),
       )).toJS;
     try {
-      final rows = transaction.objectStore(_rows);
-      for (final change in changes) {
-        switch (change) {
-          case Put(:final area, :final key, :final value):
-            rows.put(value.toJS, _key(area, key));
-          case Delete(:final area, :final key):
-            rows.delete(_key(area, key));
-          case ClearArea(:final area):
-            rows.delete(_under(area, ''));
-        }
-      }
+      _queueChanges(transaction.objectStore(_rows), changes);
     } on Object catch (error) {
       final failure = notQueued = _thrown(error, 'queuing a change');
-      if (_done(() => transaction.abort(), 'aborting')
-          case final unconfirmed?) {
+      if (_abortOf(transaction) case final unconfirmed?) {
         _into(
           landed,
           () => CommitUnknown(
@@ -863,6 +1164,26 @@ final class IndexedDbLease implements StorageLease {
     ].nonNulls;
     return failures.isEmpty ? const Released() : ReleaseFailed(failures.first);
   }
+}
+
+sealed class _RecordOutcome {
+  const _RecordOutcome();
+}
+
+final class _RecordKept extends _RecordOutcome {
+  const _RecordKept();
+}
+
+final class _RecordRefused extends _RecordOutcome {
+  const _RecordRefused(this.failure);
+
+  final StorageFailure failure;
+}
+
+final class _RecordInDoubt extends _RecordOutcome {
+  const _RecordInDoubt(this.failure);
+
+  final StorageFailure failure;
 }
 
 final class _HeldCommit implements PendingWrite {
