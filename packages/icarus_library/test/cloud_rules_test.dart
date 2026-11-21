@@ -4,6 +4,7 @@ import 'package:icarus_library/icarus_library.dart';
 import 'package:test/test.dart';
 
 import 'cloud_support.dart';
+import 'support.dart';
 
 StrategyRowSet teammate(StrategyRowSet rows, StrategyOp op) => withOp(rows, op);
 
@@ -196,6 +197,29 @@ void main() {
     expect(client.queue.base.rows[const ElementTarget('e1')], before);
   });
 
+  test('an unreadable row still gives its revision as base evidence', () {
+    final client = Client();
+    client.must(
+      BaseArrived(
+        PageRead(
+          page: page('page-a', sortIndex: 0),
+          settings: settings('page-a'),
+          elements: [
+            UnreadableElement(
+              publicId: 'e1',
+              pagePublicId: 'page-a',
+              stored: const {'publicId': 'e1', 'revision': 5, 'deleted': false},
+              problem: 'newer',
+              reason: const FromNewerBuild(),
+            ),
+          ],
+          lineupGroups: const [],
+        ),
+      ),
+    );
+    expect(client.queue.base.rows[const ElementTarget('e1')]?.revision, 5);
+  });
+
   group('rule 4: attempts are numbered by the queue', () {
     test('an answer counts only from an attempt that contained the op', () {
       final client = Client();
@@ -238,9 +262,9 @@ void main() {
       final later = now.add(
         serverRemembersAnswersFor + const Duration(hours: 1),
       );
-      expect(viewsOf(client.queue, now)['move']!.go, isA<Free>());
+      expect(entryViews(client.queue, now)['move']!.go, isA<Free>());
       expect(
-        viewsOf(client.queue, later)['move']!.go,
+        entryViews(client.queue, later)['move']!.go,
         isA<NeedsUser>().having(
           (go) => go.reason,
           'reason',

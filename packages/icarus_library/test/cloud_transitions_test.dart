@@ -329,7 +329,7 @@ final events = <String, QueueEvent Function(Client)>{
 String describe(Client client, String id) {
   final entry = client.queue.entry(id);
   if (entry == null) return 'gone';
-  final view = viewsOf(client.queue, client.at)[id];
+  final view = entryViews(client.queue, client.at)[id];
   return switch (entry) {
     PendingOp() =>
       '${view!.state}, ${view.go}${view.holds.isEmpty ? '' : ', ${view.holds.join(', ')}'}',
@@ -436,7 +436,7 @@ void main() {
     final standings = <Standing>{};
     for (final row in rows) {
       final client = row.build();
-      final views = viewsOf(client.queue, client.at);
+      final views = entryViews(client.queue, client.at);
       kinds.add(kindOf(client.queue.entry(row.subject)!, views[row.subject]));
       standings.add(standingOf(client.queue));
     }

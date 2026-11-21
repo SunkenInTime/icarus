@@ -456,7 +456,7 @@ bool _open(PendingState state) => switch (state) {
   NeverSent() || Claimed() || AnswerUnknown() || ServerRefused() => true,
 };
 
-Map<String, EntryView> viewsOf(CloudQueue queue, DateTime now) {
+Map<String, EntryView> entryViews(CloudQueue queue, DateTime now) {
   final views = <String, EntryView>{};
   final states = {
     for (final entry in queue.entries)
@@ -1227,7 +1227,7 @@ Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
     case UserDeletedAnyway(:final opId):
       final entry = queue.entry(opId);
       if (entry == null) return NotApplicable(NoSuchOp(opId));
-      final view = viewsOf(queue, now)[opId];
+      final view = entryViews(queue, now)[opId];
       if ((entry, view?.go) case (
         PendingOp(work: CheckedDelete(:final op)) && final PendingOp delete,
         NeedsUser(reason: DeleteHeld()),
@@ -1280,7 +1280,7 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
   );
   if (change is PlainEdit && at >= 0) {
     final last = edit.entries[at] as PendingOp;
-    final views = viewsOf(queue, now);
+    final views = entryViews(queue, now);
     final view = views[last.id]!;
     final later = edit.entries.skip(at + 1).whereType<PendingOp>();
     final lastPages = pagesOf(last);
@@ -1342,7 +1342,7 @@ Step _claim(
   final queue = edit.queue;
   final standing = standingOf(queue);
   if (standing != Standing.good) return NotApplicable(StandingBlocks(standing));
-  final views = viewsOf(queue, now);
+  final views = entryViews(queue, now);
   var previous = -1;
   final ops = <StrategyOp>[];
   for (final opId in opIds) {
@@ -1445,7 +1445,7 @@ Step _keepMine(
   final queue = edit.queue;
   final entry = queue.entry(opId);
   if (entry is! PendingOp) return NotApplicable(NoSuchOp(opId));
-  final view = viewsOf(queue, now)[opId]!;
+  final view = entryViews(queue, now)[opId]!;
   if (!_userMayReplace(view)) {
     return NotApplicable(NotInThatState(opId, '${view.state}, ${view.go}'));
   }
@@ -1488,7 +1488,7 @@ Step _userRemoves(_Edit edit, String opId, UserRemoval action, DateTime now) {
   final standing = standingOf(queue);
   final allowed = switch (entry) {
     RetiredOp() || UnreadableEntry() => action == UserRemoval.discarded,
-    final PendingOp op => switch ((viewsOf(queue, now)[op.id]!, action)) {
+    final PendingOp op => switch ((entryViews(queue, now)[op.id]!, action)) {
       (EntryView(state: Claimed() || Accepted()), _) => false,
       (final view, UserRemoval.usedCloud) => _userMayReplace(view),
       (EntryView(state: ServerRefused()), _) => true,

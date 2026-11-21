@@ -263,7 +263,7 @@ final class Model {
   }
 
   void checkStates() {
-    final views = viewsOf(client.queue, clock);
+    final views = entryViews(client.queue, clock);
     for (final entry in client.queue.entries) {
       if (entry is! PendingOp) continue;
       final state = views[entry.id]!.state;
@@ -314,7 +314,7 @@ final class Model {
     if (roll < 7 && live.isNotEmpty) {
       final target = pick(live);
       final payload = agentPayload(target.publicId, {
-        ...target.payload.data,
+        ...target.payload.data.toJson(),
         'position': {'dx': random.nextInt(1000), 'dy': 0},
       });
       return ElementPatchOp(
@@ -413,7 +413,7 @@ final class Model {
 
   void claim() {
     if (standingOf(client.queue) != Standing.good) return;
-    final views = viewsOf(client.queue, clock);
+    final views = entryViews(client.queue, clock);
     String? owner;
     final ids = <String>[];
     for (final entry in client.queue.entries) {
@@ -579,7 +579,7 @@ final class Model {
   }
 
   Set<String> pagesTheLaneReads() {
-    final views = viewsOf(client.queue, clock);
+    final views = entryViews(client.queue, clock);
     return {
       openPage,
       for (final entry in client.queue.entries)
@@ -647,7 +647,7 @@ final class Model {
   }
 
   void userActs({required bool draining}) {
-    final views = viewsOf(client.queue, clock);
+    final views = entryViews(client.queue, clock);
     for (final entry in client.queue.entries) {
       final view = views[entry.id];
       final UserAction? action = switch ((entry, view)) {

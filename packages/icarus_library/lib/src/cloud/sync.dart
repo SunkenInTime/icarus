@@ -1,3 +1,4 @@
+import '../json.dart';
 import '../wire.dart';
 import 'pending.dart';
 import 'queue.dart';
@@ -36,7 +37,7 @@ final class Tally {
   static final empty = Tally(standing: Standing.good);
 
   factory Tally.of(CloudQueue queue, DateTime now) {
-    final views = viewsOf(queue, now);
+    final views = entryViews(queue, now);
     final waiting = <Waiting, int>{};
     final attention = <Attention, int>{};
     var unreadable = 0;
@@ -105,9 +106,7 @@ final class Tally {
         if (standing == null) fields.reject('expected a standing');
         Map<T, int> counts<T extends Enum>(String key, List<T> values) {
           final found = <T, int>{};
-          final raw = fields.has(key)
-              ? fields.object(key)
-              : const <String, Object?>{};
+          final raw = fields.has(key) ? fields.object(key) : JsonObject.empty;
           for (final MapEntry(:key, :value) in raw.entries) {
             final name = values.asNameMap()[key];
             if (name == null || !isSafeWhole(value) || (value! as num) <= 0) {

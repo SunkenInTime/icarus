@@ -30,7 +30,7 @@ StrategyOp? opOver(StrategyRowSet rows, Random random, String opId) {
   if (live.isEmpty) return null;
   final target = live[random.nextInt(live.length)];
   final payload = agentPayload(target.publicId, {
-    ...target.payload.data,
+    ...target.payload.data.toJson(),
     'position': {'dx': random.nextInt(50), 'dy': random.nextInt(50)},
   });
   return switch (random.nextInt(9)) {

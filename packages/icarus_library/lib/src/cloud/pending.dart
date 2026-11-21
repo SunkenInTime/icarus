@@ -87,7 +87,7 @@ final class RetiredOp extends QueueEntry {
     required this.clientId,
     required this.landing,
     required Object? stored,
-  }) : stored = frozenJson(stored);
+  }) : stored = jsonValue(stored);
 
   final String opId;
   final String clientId;
@@ -524,11 +524,11 @@ final class ServerSnapshot extends ServerCopy {
     required this.target,
     required this.revision,
     required Map<String, Object?> value,
-  }) : value = frozenJsonObject(value);
+  }) : value = jsonObject(value);
 
   final SnapshotTarget target;
   final int revision;
-  final Map<String, Object?> value;
+  final JsonObject value;
 
   @override
   bool operator ==(Object other) =>
