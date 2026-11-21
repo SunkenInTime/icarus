@@ -116,6 +116,55 @@ CloudLineupRows cloudLineupRows(
   Map<String, String> groupOf = const {},
   Set<String> takenGroupIds = const {},
 }) {
+  final assigned = <String, String>{};
+  final rows = <CloudLineupRow>[];
+  for (final (:id, :lineUps)
+      in lineupGroups(graph, groupOf: groupOf, takenGroupIds: takenGroupIds)) {
+    for (final link in lineUps.links) {
+      assigned[link.id] = id;
+    }
+    // A spot carried by two rows stays with the group it was in.
+    for (final spot in [
+      for (final origin in lineUps.origins) origin.id,
+      for (final landing in lineUps.landings) landing.id,
+    ]) {
+      assigned.putIfAbsent(spot, () => groupOf[spot] ?? id);
+    }
+    rows.add(
+      CloudLineupRow(
+        publicId: id,
+        payload: cloudLineupsPayload({
+          'id': id,
+          'origins': [for (final origin in lineUps.origins) origin.toJson()],
+          'landings': [
+            for (final landing in lineUps.landings) landing.toJson(),
+          ],
+          'links': [for (final link in lineUps.links) link.toJson()],
+        }),
+      ),
+    );
+  }
+  return CloudLineupRows(rows: rows, groupOf: assigned);
+}
+
+LineUpGraph lineUpsInGroupOrder(
+  LineUpGraph graph, {
+  Map<String, String> groupOf = const {},
+}) {
+  final groups = [
+    for (final (id: _, :lineUps) in lineupGroups(graph, groupOf: groupOf))
+      lineUps,
+  ];
+  return groups
+      .fold(LineUpGraph.empty, (order, group) => order.followedBy(group))
+      .followedBy(graph);
+}
+
+List<({String id, LineUpGraph lineUps})> lineupGroups(
+  LineUpGraph graph, {
+  Map<String, String> groupOf = const {},
+  Set<String> takenGroupIds = const {},
+}) {
   final originIds = {for (final origin in graph.origins) origin.id};
   final landingIds = {for (final landing in graph.landings) landing.id};
   final links = [
@@ -180,38 +229,40 @@ CloudLineupRows cloudLineupRows(
     }
   }
 
-  final groups = LineUpGraph(
-    origins: graph.origins,
-    landings: graph.landings,
-    links: links,
-  ).groupsBy((link) => linkGroup[link.id]!);
-  final assigned = <String, String>{};
-  final rows = <CloudLineupRow>[];
-  for (final group in groups) {
-    final id = linkGroup[group.links.first.id]!;
-    for (final link in group.links) {
-      assigned[link.id] = id;
-    }
-    // A spot carried by two rows stays with the group it was in.
-    for (final spot in [
-      for (final origin in group.origins) origin.id,
-      for (final landing in group.landings) landing.id,
-    ]) {
-      assigned.putIfAbsent(spot, () => groupOf[spot] ?? id);
-    }
-    rows.add(
-      CloudLineupRow(
-        publicId: id,
-        payload: cloudLineupsPayload({
-          'id': id,
-          'origins': [for (final origin in group.origins) origin.toJson()],
-          'landings': [for (final landing in group.landings) landing.toJson()],
-          'links': [for (final link in group.links) link.toJson()],
-        }),
-      ),
-    );
+  final linksByGroup = <String, List<LineUpLink>>{};
+  for (final link in links) {
+    (linksByGroup[linkGroup[link.id]!] ??= []).add(link);
   }
-  return CloudLineupRows(rows: rows, groupOf: assigned);
+  return [
+    for (final MapEntry(key: id, value: groupLinks) in linksByGroup.entries)
+      (
+        id: id,
+        lineUps: graph.linksWithSpots(
+          {for (final link in groupLinks) link.id},
+        ),
+      ),
+  ];
+}
+
+Map<String, String> sharedSpotGroups(Iterable<LineUpLink> links) {
+  final parent = <String, String>{};
+  String find(String node) {
+    final up = parent[node] ?? node;
+    if (up == node) return node;
+    return parent[node] = find(up);
+  }
+
+  void union(String a, String b) {
+    final rootA = find(a);
+    final rootB = find(b);
+    if (rootA != rootB) parent[rootA] = rootB;
+  }
+
+  for (final link in links) {
+    union('k:${link.id}', 'o:${link.originId}');
+    union('k:${link.id}', 'l:${link.landingId}');
+  }
+  return {for (final link in links) link.id: find('k:${link.id}')};
 }
 
 /// A page's lineups as its [lineups] on the server describe them. Deleted

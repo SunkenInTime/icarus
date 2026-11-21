@@ -1,19 +1,27 @@
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/providers/action_provider.dart';
-import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 
 import 'library_rows/generated_strategies.dart';
 
@@ -57,14 +65,15 @@ LineUpGraph _readBack(LineUpGraph graph) {
 }
 
 class _Editor {
-  _Editor() {
-    container = ProviderContainer(
-      overrides: [actionProvider.overrideWith(_TestActionProvider.new)],
-    );
+  _Editor([ProviderContainer? inStrategy])
+      : container = inStrategy ??
+            ProviderContainer(
+              overrides: [actionProvider.overrideWith(_TestActionProvider.new)],
+            ) {
     addTearDown(container.dispose);
   }
 
-  late final ProviderContainer container;
+  final ProviderContainer container;
   var _next = 0;
 
   LineUpProvider get lineUps => container.read(lineUpProvider.notifier);
@@ -230,64 +239,177 @@ void main() {
     expect(_orderOf(editor.state.graph), _orderOf(interleaved));
   });
 
-  test('generated edits keep the editor in the order the page reads back in',
-      () {
-    for (var seed = 0; seed < 150; seed++) {
-      final random = Random(seed);
-      final editor = _Editor();
-      final steps = <String>[];
-      T pick<T>(List<T> from) => from[random.nextInt(from.length)];
+  group('in a strategy on this device', () {
+    late Directory store;
+    late Box<StrategyData> strategies;
 
-      for (var step = 0; step < 40; step++) {
-        final state = editor.state;
-        final roll = state.links.isEmpty ? 0 : random.nextInt(10);
-        switch (roll) {
-          case 0 || 1:
-            editor.fresh();
-            steps.add('fresh');
-          case 2 || 3:
-            editor.fromOrigin(pick(state.origins).id);
-            steps.add('from origin');
-          case 4:
-            editor.toLanding(pick(state.landings).id);
-            steps.add('to landing');
-          case 5:
-            switch (random.nextInt(3)) {
-              case 0:
-                editor.lineUps.deleteLink(pick(state.links).id);
-                steps.add('delete lineup');
-              case 1:
-                editor.lineUps.deleteOrigin(pick(state.origins).id);
-                steps.add('delete origin');
-              case _:
-                editor.lineUps.deleteLanding(pick(state.landings).id);
-                steps.add('delete landing');
-            }
-          case 6:
-            editor.history.undoAction();
-            steps.add('undo');
-          case 7:
-            editor.history.redoAction();
-            steps.add('redo');
-          case 8:
-            final picked = {
-              for (final link in state.links)
-                if (random.nextBool()) link.id,
-            };
-            editor.lineUps.addCopies(state.graph.copyOfLinks(picked));
-            steps.add('paste ${picked.length}');
-          case _:
-            final page = generatedPage(
-              id: 'source',
-              sortIndex: 0,
-              optionals: Optionals.unset,
-              isAttack: true,
-            ).copyWith(lineUpGraph: state.graph);
-            editor.lineUps.fromHive(page.copyWith(id: 'copy').lineUpGraph);
-            steps.add('copy page');
-        }
-        editor.expectReadOrder('seed $seed: ${steps.join(', ')}');
-      }
+    setUp(() async {
+      store = await Directory.systemTemp.createTemp('icarus-lineup-order-');
+      Hive.init(store.path);
+      if (!Hive.isAdapterRegistered(9)) registerIcarusAdapters(Hive);
+      strategies = await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
+      await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+      await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+      await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
+      await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
+    });
+
+    tearDown(() async {
+      await Hive.close();
+      await store.delete(recursive: true);
+    });
+
+    Future<_Editor> open(List<StrategyPage> pages) async {
+      final strategy = StrategyData(
+        id: 'strategy',
+        name: 'Order',
+        mapData: MapValue.ascent,
+        versionNumber: Settings.versionNumber,
+        lastEdited: DateTime.utc(2026, 11, 21),
+        folderID: null,
+        pages: pages,
+      );
+      await strategies.put(strategy.id, strategy);
+      final container = ProviderContainer();
+      container.read(strategyProvider.notifier)
+        ..setFromState(
+          StrategyState(
+            isSaved: true,
+            stratName: strategy.name,
+            id: strategy.id,
+            storageDirectory: null,
+            activePageId: pages.first.id,
+          ),
+        )
+        ..activePageID = pages.first.id;
+      container.read(lineUpProvider.notifier).fromHive(pages.first.lineUpGraph);
+      return _Editor(container);
     }
+
+    StrategyPage page(String id, int sortIndex, [LineUpGraph? lineUps]) =>
+        generatedPage(
+          id: id,
+          sortIndex: sortIndex,
+          optionals: Optionals.unset,
+          isAttack: true,
+        ).copyWith(lineUpGraph: lineUps ?? LineUpGraph.empty);
+
+    LineUpGraph saved(String pageId) => strategies
+        .get('strategy')!
+        .pages
+        .singleWhere((page) => page.id == pageId)
+        .lineUpGraph;
+
+    test('lineups copied onto a page saved interleaved leave it grouped',
+        () async {
+      final graph = sharedSpotLineups('next');
+      final interleaved = LineUpGraph(
+        origins: graph.origins,
+        landings: graph.landings,
+        links: [graph.links[3], ...graph.links.take(3)],
+      );
+      final editor = await open([page('one', 0), page('next', 1, interleaved)]);
+      final a = editor.fresh();
+
+      final result = await editor.container
+          .read(strategyProvider.notifier)
+          .copyLineUpsToAdjacentPage(
+        linkIds: {a.id},
+        direction: PageTransitionDirection.forward,
+      );
+
+      expect(result, PageCopyResult.copied);
+      final next = saved('next');
+      expect(next.links, hasLength(5));
+      expect(_orderOf(next), _orderOf(_readBack(next)));
+    });
+
+    test('generated edits keep the editor in the order the page reads back in',
+        () async {
+      for (var seed = 0; seed < 40; seed++) {
+        final random = Random(seed);
+        final editor = await open([page('page-$seed', 0)]);
+        final strategy = editor.container.read(strategyProvider.notifier);
+        final steps = <String>[];
+        T pick<T>(List<T> from) => from[random.nextInt(from.length)];
+
+        for (var step = 0; step < 30; step++) {
+          final state = editor.state;
+          final roll = state.links.isEmpty ? 0 : random.nextInt(11);
+          switch (roll) {
+            case 0 || 1:
+              editor.fresh();
+              steps.add('fresh');
+            case 2 || 3:
+              editor.fromOrigin(pick(state.origins).id);
+              steps.add('from origin');
+            case 4:
+              editor.toLanding(pick(state.landings).id);
+              steps.add('to landing');
+            case 5:
+              switch (random.nextInt(3)) {
+                case 0:
+                  editor.lineUps.deleteLink(pick(state.links).id);
+                  steps.add('delete lineup');
+                case 1:
+                  editor.lineUps.deleteOrigin(pick(state.origins).id);
+                  steps.add('delete origin');
+                case _:
+                  editor.lineUps.deleteLanding(pick(state.landings).id);
+                  steps.add('delete landing');
+              }
+            case 6:
+              editor.history.undoAction();
+              steps.add('undo');
+            case 7:
+              editor.history.redoAction();
+              steps.add('redo');
+            case 8:
+              final picked = {
+                for (final link in state.links)
+                  if (random.nextBool()) link.id,
+              };
+              editor.lineUps.addCopies(state.graph.copyOfLinks(picked));
+              steps.add('paste ${picked.length}');
+            case 9:
+              final link = pick(state.links);
+              final result = await strategy.copyLineUpsToAdjacentPage(
+                linkIds: {
+                  for (final other in state.links)
+                    if (other.originId == link.originId) other.id,
+                },
+                direction: PageTransitionDirection.backward,
+              );
+              steps.add('copy to the page before: ${result.name}');
+              final before = editor.container.read(strategyProvider);
+              final pages = [...strategies.get('strategy')!.pages]
+                ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+              final index =
+                  pages.indexWhere((page) => page.id == before.activePageId);
+              if (index > 0) {
+                final there = pages[index - 1].lineUpGraph;
+                expect(
+                  _orderOf(there),
+                  _orderOf(_readBack(there)),
+                  reason: 'seed $seed: ${steps.join(', ')}',
+                );
+              }
+            case _:
+              await strategy.addPage();
+              steps.add('copy page');
+              final copied = saved(
+                editor.container.read(strategyProvider).activePageId!,
+              );
+              expect(
+                _orderOf(editor.state.graph),
+                _orderOf(copied),
+                reason: 'seed $seed: ${steps.join(', ')}',
+              );
+          }
+          editor.expectReadOrder('seed $seed: ${steps.join(', ')}');
+        }
+        await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
+      }
+    });
   });
 }

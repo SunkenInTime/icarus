@@ -12,6 +12,7 @@ import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/lineup_group_order.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1568,10 +1569,8 @@ class StrategyProvider extends Notifier<StrategyState> {
         for (final page in strat.pages)
           if (page.id == target.id)
             page.copyWith(
-              lineUpGraph: LineUpGraph(
-                origins: [...page.lineUpOrigins, ...lineUps.origins],
-                landings: [...page.lineUpLandings, ...lineUps.landings],
-                links: [...page.lineUpLinks, ...lineUps.links],
+              lineUpGraph: lineUpsInGroupOrder(
+                page.lineUpGraph.followedBy(lineUps),
               ),
             )
           else

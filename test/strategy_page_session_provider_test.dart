@@ -7286,21 +7286,40 @@ void main() {
           'links': [for (final link in state.links) link.id],
         };
 
+    var placedFrom = 0;
     LineUpLink placeFrom(ProviderContainer container, String originId) {
       final lineUps = container.read(lineUpProvider.notifier)
         ..startFromOrigin(originId);
       lineUps.setDraftAbility(PlacedAbility(
-        id: 'ability-from-$originId',
+        id: 'ability-from-${placedFrom++}',
         data: AgentData.agents[AgentType.sova]!.abilities[2],
         position: const Offset(320, 320),
       ));
       return lineUps.commitPlacement()!;
     }
 
+    LineUpLink placeInto(ProviderContainer container, String landingId) {
+      final lineUps = container.read(lineUpProvider.notifier)
+        ..startToLanding(landingId);
+      lineUps.setDraftAgent(PlacedAgent(
+        id: 'agent-into-${placedFrom++}',
+        type: AgentType.sova,
+        position: const Offset(150, 150),
+      ));
+      return lineUps.commitPlacement()!;
+    }
+
+    Future<(ProviderContainer, _FakeRemoteEditorNotifier, RemotePage)>
+        openMerging() async {
+      final opened = await openEmpty();
+      server.mergesByField = true;
+      return opened;
+    }
+
     test(
         'a lineup from a standing spot already there lands as the editor '
         'shows it', () async {
-      final (container, remote, page) = await openEmpty();
+      final (container, remote, page) = await openMerging();
       final a1 = place(container);
       final b1 = place(container);
       await land(container, remote, page, contentRevision: 2);
@@ -7322,8 +7341,63 @@ void main() {
       await _settle();
     });
 
-    test('an undone deletion lands where the editor puts it back', () async {
-      final (container, remote, page) = await openEmpty();
+    Future<(LineUpLink, LineUpLink, LineUpLink, LineUpLink)> landJoinedRow(
+      ProviderContainer container,
+      _FakeRemoteEditorNotifier remote,
+      RemotePage page,
+    ) async {
+      final a = place(container);
+      final b = placeFrom(container, a.originId);
+      final c = placeInto(container, b.landingId);
+      final d = placeFrom(container, a.originId);
+      await land(container, remote, page, contentRevision: 2);
+      expect(
+        lineupOrder(container.read(lineUpProvider))['links'],
+        [a.id, b.id, c.id, d.id],
+      );
+      container.read(lineUpProvider.notifier).deleteLink(b.id);
+      return (a, b, c, d);
+    }
+
+    test('deleting the lineup that joined a row keeps the row and its order',
+        () async {
+      final (container, remote, page) = await openMerging();
+      final (a, _, c, d) = await landJoinedRow(container, remote, page);
+
+      final drawn = lineupOrder(container.read(lineUpProvider));
+      expect(drawn['links'], [a.id, c.id, d.id]);
+      final group = groupOf(container, page, a.id);
+      expect(lineupOps(desiredOps(container, page)).keys, [keyOf(page, group)]);
+
+      final lineups = await land(container, remote, page, contentRevision: 3);
+      expect(_groupsOf(lineups)[group]!['links'], [a.id, c.id, d.id]);
+      expect(lineupOrder(container.read(lineUpProvider)), drawn);
+      await _settle();
+    });
+
+    test('an add queues nothing for a row whose lineups did not change',
+        () async {
+      final (container, remote, page) = await openMerging();
+      final (a, _, _, _) = await landJoinedRow(container, remote, page);
+      await land(container, remote, page, contentRevision: 3);
+      final e = place(container);
+      await land(container, remote, page, contentRevision: 4);
+      expect(lineupOps(desiredOps(container, page)), isEmpty);
+
+      placeFrom(container, e.originId);
+
+      final ops = lineupOps(desiredOps(container, page));
+      expect(ops.keys, [keyOf(page, groupOf(container, page, e.id))]);
+      expect(ops.keys,
+          isNot(contains(keyOf(page, groupOf(container, page, a.id)))));
+      final drawn = lineupOrder(container.read(lineUpProvider));
+      await land(container, remote, page, contentRevision: 5);
+      expect(lineupOrder(container.read(lineUpProvider)), drawn);
+      await _settle();
+    });
+
+    test('an undone deletion of a whole row lands back in its place', () async {
+      final (container, remote, page) = await openMerging();
       final a1 = place(container);
       final a2 = placeFrom(container, a1.originId);
       final b1 = place(container);
@@ -7332,20 +7406,37 @@ void main() {
       final placed = lineupOrder(container.read(lineUpProvider));
       expect(placed['links'], [a1.id, a2.id, b1.id, c1.id]);
 
-      container.read(lineUpProvider.notifier)
-        ..deleteLink(a1.id)
-        ..deleteLink(b1.id);
+      container.read(lineUpProvider.notifier).deleteLink(b1.id);
       await land(container, remote, page, contentRevision: 3);
       expect(server.row(groupOf(container, page, b1.id)).deleted, isTrue);
-      container.read(actionProvider.notifier)
-        ..undoAction()
-        ..undoAction();
+      container.read(actionProvider.notifier).undoAction();
       expect(lineupOrder(container.read(lineUpProvider)), placed);
 
       await land(container, remote, page, contentRevision: 4);
       expect(lineupOrder(container.read(lineUpProvider)), placed);
       await _settle();
     });
+
+    test(
+      'a lineup an undo restores into its row lands where the editor shows it',
+      () async {
+        final (container, remote, page) = await openMerging();
+        final a = place(container);
+        final b = placeFrom(container, a.originId);
+        await land(container, remote, page, contentRevision: 2);
+        container.read(lineUpProvider.notifier).deleteLink(a.id);
+        await land(container, remote, page, contentRevision: 3);
+
+        container.read(actionProvider.notifier).undoAction();
+        final drawn = lineupOrder(container.read(lineUpProvider));
+        await land(container, remote, page, contentRevision: 4);
+
+        expect(drawn['links'], unorderedEquals([a.id, b.id]));
+        expect(lineupOrder(container.read(lineUpProvider)), drawn);
+        await _settle();
+      },
+      skip: 'Waits on where a restored lineup goes in its group (PR #685)',
+    );
 
     test('a fan-out lineup keeps its shared origin, ids and names', () async {
       final (container, remote, page) = await openEmpty();

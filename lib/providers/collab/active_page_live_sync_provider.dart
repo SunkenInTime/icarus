@@ -169,6 +169,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   String? lineupGroupOf(String pageId, String itemId) =>
       _lineupGroupOfByPage[pageId]?[itemId];
 
+  Map<String, String> lineupGroupsOf(String pageId) =>
+      Map.unmodifiable(_lineupGroupOfByPage[pageId] ?? const {});
+
   @override
   ActivePageLiveSyncState build() {
     return const ActivePageLiveSyncState();

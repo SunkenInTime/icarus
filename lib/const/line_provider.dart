@@ -7,11 +7,16 @@ import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/weapons.dart';
+import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/const/lineup_group_order.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -386,7 +391,7 @@ class LineUpGraph {
     final newIds = <String, String>{};
     String renamed(String id) => newIds[id] ??= newId(id);
     final part = linksWithSpots(linkIds);
-    return LineUpGraph(
+    return lineUpsInGroupOrder(LineUpGraph(
       origins: [
         for (final origin in part.origins)
           LineUpOrigin(
@@ -413,7 +418,7 @@ class LineUpGraph {
                 landingId: renamed(link.landingId),
               ),
       ],
-    ).inGroupOrder;
+    ));
   }
 
   LineUpGraph linksWithSpots(Set<String> linkIds) {
@@ -1302,7 +1307,7 @@ class LineUpProvider extends Notifier<LineUpState> {
       landings: [landing],
       links: [link],
     );
-    final placed = state.graph.withLineUpsPlaced(added);
+    final placed = state.graph.withLineUpsPlaced(added, groupOf: _groupOf);
     state = state.copyWith(
       origins: placed.origins,
       landings: placed.landings,
@@ -1525,17 +1530,21 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
+  Map<String, String> get _groupOf {
+    final source = ref.container.read(strategyProvider).source;
+    final pageId = ref.container.read(strategyPageSessionProvider).activePageId;
+    if (source != StrategySource.cloud || pageId == null) {
+      return const {};
+    }
+    return ref.container
+        .read(activePageLiveSyncProvider.notifier)
+        .lineupGroupsOf(pageId);
+  }
+
   void _record(UserAction action) {
     ref.read(actionProvider.notifier).addAction(action);
   }
 
-  /// Moves the graph from [from] to [to] for the entries they name, leaving
-  /// every other entry's state alone, in group order. Links only in [from]
-  /// are removed. Entries in [to] are put back only where missing, where
-  /// [formerly] had them: one that exists now keeps its current state (edits
-  /// since are kept, and a restored link joins the surviving shared landing).
-  /// An origin or landing exists only while some link uses it, so any node
-  /// left without a link is dropped.
   void _apply({
     required LineUpGraph from,
     required LineUpGraph to,
@@ -1550,7 +1559,7 @@ class LineUpProvider extends Notifier<LineUpState> {
         for (final link in state.links)
           if (!droppedLinks.contains(link.id)) link,
       ],
-    ).withLineUpsPlaced(to, formerly: formerly);
+    ).withLineUpsPlaced(to, formerly: formerly, groupOf: _groupOf);
     final usedOrigins = placed.links.map((link) => link.originId).toSet();
     final usedLandings = placed.links.map((link) => link.landingId).toSet();
 
@@ -1744,7 +1753,10 @@ class LineUpProvider extends Notifier<LineUpState> {
   /// forkLineUpGraph). A recovery step rather than an edit, so it is not
   /// undoable, as taking the cloud's version is not.
   void addRecovered(LineUpGraph graph) {
-    final placed = state.graph.withLineUpsPlaced(graph.deepCopy());
+    final placed = state.graph.withLineUpsPlaced(
+      graph.deepCopy(),
+      groupOf: _groupOf,
+    );
     state = state.copyWith(
       origins: placed.origins,
       landings: placed.landings,

@@ -1,58 +1,31 @@
+import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/const/line_provider.dart';
 
 extension LineUpGroupOrder on LineUpGraph {
-  List<LineUpGraph> groupsBy(String Function(LineUpLink link) groupOf) {
-    final linksByGroup = <String, List<LineUpLink>>{};
-    for (final link in links) {
-      (linksByGroup[groupOf(link)] ??= []).add(link);
-    }
-    return [
-      for (final groupLinks in linksByGroup.values) _withSpotsOf(groupLinks),
-    ];
-  }
-
-  LineUpGraph get inGroupOrder {
-    final originIds = {for (final origin in origins) origin.id};
-    final landingIds = {for (final landing in landings) landing.id};
-    final aimed = [
-      for (final link in links)
-        if (originIds.contains(link.originId) &&
-            landingIds.contains(link.landingId))
-          link,
-    ];
-    final groupOf = sharedSpotGroups(aimed);
-    final groups = LineUpGraph(
-      origins: origins,
-      landings: landings,
-      links: aimed,
-    ).groupsBy((link) => groupOf[link.id]!);
-    final grouped = LineUpGraph(
-      origins: [for (final group in groups) ...group.origins],
-      landings: [for (final group in groups) ...group.landings],
-      links: [for (final group in groups) ...group.links],
-    );
-    return grouped.followedBy(this);
-  }
-
   LineUpGraph withLineUpsPlaced(
     LineUpGraph incoming, {
     LineUpOrder formerly = LineUpOrder.none,
+    Map<String, String> groupOf = const {},
   }) {
-    return LineUpGraph(
-      origins: _placed(
-        origins,
-        incoming.origins,
-        formerly.origins,
-        (origin) => origin.id,
+    return lineUpsInGroupOrder(
+      LineUpGraph(
+        origins: _placed(
+          origins,
+          incoming.origins,
+          formerly.origins,
+          (origin) => origin.id,
+        ),
+        landings: _placed(
+          landings,
+          incoming.landings,
+          formerly.landings,
+          (landing) => landing.id,
+        ),
+        links:
+            _placed(links, incoming.links, formerly.links, (link) => link.id),
       ),
-      landings: _placed(
-        landings,
-        incoming.landings,
-        formerly.landings,
-        (landing) => landing.id,
-      ),
-      links: _placed(links, incoming.links, formerly.links, (link) => link.id),
-    ).inGroupOrder;
+      groupOf: groupOf,
+    );
   }
 
   LineUpGraph followedBy(LineUpGraph rest) => LineUpGraph(
@@ -60,22 +33,6 @@ extension LineUpGroupOrder on LineUpGraph {
         landings: _appended(landings, rest.landings, (landing) => landing.id),
         links: _appended(links, rest.links, (link) => link.id),
       );
-
-  LineUpGraph _withSpotsOf(List<LineUpLink> groupLinks) {
-    final originIds = {for (final link in groupLinks) link.originId};
-    final landingIds = {for (final link in groupLinks) link.landingId};
-    return LineUpGraph(
-      origins: [
-        for (final origin in origins)
-          if (originIds.contains(origin.id)) origin,
-      ],
-      landings: [
-        for (final landing in landings)
-          if (landingIds.contains(landing.id)) landing,
-      ],
-      links: groupLinks,
-    );
-  }
 }
 
 class LineUpOrder {
@@ -95,27 +52,6 @@ class LineUpOrder {
   final List<String> origins;
   final List<String> landings;
   final List<String> links;
-}
-
-Map<String, String> sharedSpotGroups(Iterable<LineUpLink> links) {
-  final parent = <String, String>{};
-  String find(String node) {
-    final up = parent[node] ?? node;
-    if (up == node) return node;
-    return parent[node] = find(up);
-  }
-
-  void union(String a, String b) {
-    final rootA = find(a);
-    final rootB = find(b);
-    if (rootA != rootB) parent[rootA] = rootB;
-  }
-
-  for (final link in links) {
-    union('k:${link.id}', 'o:${link.originId}');
-    union('k:${link.id}', 'l:${link.landingId}');
-  }
-  return {for (final link in links) link.id: find('k:${link.id}')};
 }
 
 List<T> _appended<T>(List<T> first, List<T> rest, String Function(T) idOf) {
