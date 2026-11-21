@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
@@ -130,7 +131,12 @@ final class Mirroring extends ShadowMode {
 }
 
 StoreMirror storeMirror() =>
-    StoreMirror(readHive: _hiveLibrary, breathe: _breathe);
+    StoreMirror(readHive: _hiveLibrary, breathe: _betweenAnimations);
+
+Future<void> _betweenAnimations() => Future.any([
+      SchedulerBinding.instance.scheduleTask<void>(() {}, Priority.idle),
+      Future<void>.delayed(const Duration(milliseconds: 500)),
+    ]);
 
 final shadowProvider = NotifierProvider<ShadowNotifier, ShadowState>(
   ShadowNotifier.new,

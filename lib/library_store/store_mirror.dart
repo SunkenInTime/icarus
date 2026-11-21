@@ -127,6 +127,7 @@ final class StoreMirror implements LocalLibraryFollower {
           _kick();
           return;
       }
+      await breathe();
       final strategies = {..._strategies};
       final folders = {..._folders};
       _strategies.clear();
