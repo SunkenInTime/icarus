@@ -64,6 +64,10 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
     was: the strategy row's `updatedAt` stamp, the rows a reorder renumbers,
     a summary rebuild, a page copy.
   - Summaries are disposable and rebuilt from rows, so they keep nothing.
+  - A deleted row's payload is whatever the last write left there, and is
+    not part of what undo restores: undoing an add over a deleted element
+    or lineup group deletes it again with the added payload, as the server
+    does.
   - Extra fields in a payload envelope are kept by merges and rewrites, but
     they are not a reason to save: a whole write that differs only there is
     `NothingToSave`, because the server's validators allow no extra envelope
@@ -357,8 +361,8 @@ store closes or `unload(strategy)` drops the strategy.
 `applyOp`, sets the strategy row's `updatedAt` to the later of now and its
 current value, and sends one engine commit holding a `Put` for each row it
 changed, a `Delete` of the old name when an element or lineup group moves
-page, a `Put` of the strategy's new summary, and a `Put` of a new attempt
-id under `library/last-save`. The engine applies a commit whole or not at
+page, a `Put` of the strategy's new summary, and a `Put` of the save's
+attempt number under `library/last-save`. The engine applies a commit whole or not at
 all, across areas and across a crash, so the disk holds the strategy from
 before the edit or after it, never part of it. Library edits
 (`editLibrary`) and summary rebuilds are one commit the same way; removing
@@ -387,7 +391,18 @@ Every save returns a `Saving`, which the caller has to handle:
   landed exactly when `LastSaveWas` holds its attempt. Only the latest
   attempt is kept, and that is enough: a store in doubt saves nothing more,
   so the next commit comes from a store that has already read the slot.
-  The attempt is 128 random bits, issued for that one save.
+
+  Attempts are counted, not drawn. The store is the only writer under its
+  lease, so when `last-save` reads as `LastSaveWas(n)` its next attempt is
+  `n + 1`, and a save in doubt as attempt `n` is answered at the next open
+  by `n` (applied) or what the slot held before (not applied). The slot
+  reads as an attempt only when it is a whole number from 1 to the largest
+  JavaScript holds exactly, written in plain decimal; a save whose attempt
+  would pass that is `NotSaved(WouldNotReadBack)`. When the slot is
+  missing (`NoSaveRecorded`) or holds anything else (`LastSaveUnreadable`),
+  counting restarts one above the highest attempt this process has issued,
+  so no attempt a caller in this process holds is issued again; a new
+  process holds no attempts in doubt.
 
 Saves and reads run one at a time, in the order they were called. `close`
 releases the lease at once, whatever the `changes` listeners are doing, and

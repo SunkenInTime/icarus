@@ -35,7 +35,7 @@ final class SaveInDoubt<S, R> extends Saving<S, R> {
   const SaveInDoubt(this.failure, this.attempt);
 
   final StorageFailure failure;
-  final String attempt;
+  final int attempt;
 }
 
 typedef CommitResult = Saving<Committed, CommitRefusal>;
@@ -368,7 +368,7 @@ sealed class LastSave {
 final class LastSaveWas extends LastSave {
   const LastSaveWas(this.attempt);
 
-  final String attempt;
+  final int attempt;
 }
 
 final class NoSaveRecorded extends LastSave {

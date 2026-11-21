@@ -369,7 +369,25 @@ void main() {
   );
 
   test('a last-save slot holding anything still lets the store open', () async {
-    for (final text in ['', 'x', '1e400', '{}', 'a' * 32, '[' * 20000]) {
+    final readings = <String, int?>{
+      '1': 1,
+      '42': 42,
+      '9007199254740991': 9007199254740991,
+      '9007199254740992': null,
+      '0': null,
+      '-3': null,
+      '042': null,
+      '+5': null,
+      ' 5': null,
+      '5.0': null,
+      '': null,
+      'x': null,
+      '1e400': null,
+      '{}': null,
+      'a' * 32: null,
+      '[' * 20000: null,
+    };
+    for (final MapEntry(key: text, value: attempt) in readings.entries) {
       final opening = await LibraryStore.open(
         MemoryEngine(
           MemoryStorage({
@@ -384,8 +402,20 @@ void main() {
         isA<StoreOpened>().having(
           (opened) => opened.lastSave,
           'last save',
-          text == 'a' * 32 ? isA<LastSaveWas>() : isA<LastSaveUnreadable>(),
+          switch (attempt) {
+            final attempt? => isA<LastSaveWas>().having(
+              (was) => was.attempt,
+              'attempt',
+              attempt,
+            ),
+            null => isA<LastSaveUnreadable>().having(
+              (unreadable) => unreadable.text,
+              'text',
+              text,
+            ),
+          },
         ),
+        reason: text.length > 40 ? text.substring(0, 40) : text,
       );
     }
   });

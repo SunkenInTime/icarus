@@ -32,7 +32,7 @@ final class FailingListLease extends ForwardingLease {
   }
 }
 
-Future<String> inDoubt(MemoryStorage disk, Failing how, Edit edit) async {
+Future<int> inDoubt(MemoryStorage disk, Failing how, Edit edit) async {
   final store = await openStore(flaky(MemoryEngine(disk), {0: how}));
   final result = await edit(store);
   await store.close();
@@ -241,6 +241,82 @@ void main() {
       );
     },
   );
+
+  Contents withSlot(String? text) => {
+    ...seeded,
+    'library': {
+      for (final MapEntry(:key, :value) in seeded['library']!.entries)
+        if (key != 'last-save') key: value,
+      'last-save': ?text,
+    },
+  };
+
+  test('each save writes one above the attempt the slot holds', () async {
+    final disk = MemoryStorage(withSlot('41'));
+    final (engine, counts) = counting(MemoryEngine(disk));
+    final store = await openStore(engine);
+    savedValue(await store.commit(strategyId, moveJett));
+    expect(counts.calls, 1);
+    expect(disk.contents['library']!['last-save'], '42');
+    savedValue(
+      await store.editLibrary([
+        PutFolder(ReadableFolder(publicId: 'f1', name: 'Ascent')),
+      ]),
+    );
+    expect(disk.contents['library']!['last-save'], '43');
+    await store.close();
+    expect(
+      await inDoubt(
+        disk,
+        Failing.lost,
+        (store) => store.commit(strategyId, everyOpType()['element.reorder']!),
+      ),
+      44,
+    );
+    expect(
+      await lastSaveOn(disk),
+      isA<LastSaveWas>().having((was) => was.attempt, 'attempt', 43),
+    );
+  });
+
+  test('a slot at the largest whole number refuses the next save', () async {
+    final before = withSlot('9007199254740991');
+    final disk = MemoryStorage(before);
+    final store = await openStore(MemoryEngine(disk));
+    expect(
+      await store.commit(strategyId, moveJett),
+      isA<NotSaved<Committed, CommitRefusal>>().having(
+        (result) => result.failure,
+        'failure',
+        isA<WouldNotReadBack>(),
+      ),
+    );
+    expect(sameContents(disk.contents, before), isTrue);
+  });
+
+  for (final slot in [null, 'garbled']) {
+    test('after a slot that is ${slot ?? 'missing'}, no attempt this process '
+        'issued is issued again', () async {
+      final disk = MemoryStorage(withSlot(slot));
+      final lost = await inDoubt(
+        disk,
+        Failing.lost,
+        (store) => store.commit(strategyId, moveJett),
+      );
+      expect(disk.contents['library']!['last-save'], slot);
+      final store = await openStore(MemoryEngine(disk));
+      savedValue(await store.commit(strategyId, moveJett));
+      await store.close();
+      expect(
+        await lastSaveOn(disk),
+        isA<LastSaveWas>().having(
+          (was) => was.attempt,
+          'attempt',
+          greaterThan(lost),
+        ),
+      );
+    });
+  }
 
   test('a row nested deeper than the store reads is not saved', () async {
     final disk = MemoryStorage(seeded);

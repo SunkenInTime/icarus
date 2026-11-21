@@ -61,14 +61,12 @@ DateTime _now() => DateTime.now().toUtc();
 
 String _stored(Object? json) => canonicalJson(json);
 
-final _random = Random();
-
-String _newAttempt() => [
-  for (var i = 0; i < 16; i++)
-    _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
-].join();
-
-final _attempt = RegExp(r'^[0-9a-f]{32}$');
+LastSave _slotReading(String text) => switch (int.tryParse(text)) {
+  final attempt?
+      when attempt >= 1 && attempt <= largestSafeWhole && '$attempt' == text =>
+    LastSaveWas(attempt),
+  _ => LastSaveUnreadable(text),
+};
 
 RowSpot _spot(StoreName name, String digest) =>
     RowSpot(name: name.name, names: (id) => namesId(digest, id));
@@ -211,11 +209,15 @@ final class LibraryStore {
         );
       case KeyMissing():
         lastSave = const NoSaveRecorded();
-      case KeyHeld(:final value) when _attempt.hasMatch(value):
-        lastSave = LastSaveWas(value);
       case KeyHeld(:final value):
-        lastSave = LastSaveUnreadable(value);
+        lastSave = _slotReading(value);
     }
+    store._nextAttempt = switch (lastSave) {
+      LastSaveWas(:final attempt) => attempt + 1,
+      NoSaveRecorded() ||
+      LastSaveUnreadable() ||
+      LastSaveNotRead() => _highestIssued + 1,
+    };
     final foreign = <ForeignName>[];
     if (await store._readLibrary(foreign) case StorageFailed(:final failure)) {
       return StoreNotOpened(OpenStorageFailed(failure), lastSave);
@@ -223,7 +225,10 @@ final class LibraryStore {
     return StoreOpened(store, lastSave, foreign);
   }
 
+  static var _highestIssued = 0;
+
   late final _WatchedLease _lease;
+  late int _nextAttempt;
   final CanRead _canRead;
   final DateTime Function() _clock;
   _State _state = const _Ready();
@@ -348,12 +353,23 @@ final class LibraryStore {
     S Function() take,
   ) async {
     if (_settle() case StorageFailed(:final failure)) return NotSaved(failure);
-    final attempt = _newAttempt();
+    final attempt = _nextAttempt;
+    if (_slotReading('$attempt') is! LastSaveWas) {
+      return NotSaved(
+        WouldNotReadBack(
+          libraryArea,
+          lastSaveKey,
+          'attempt $attempt is past the whole numbers the store reads',
+        ),
+      );
+    }
+    _highestIssued = max(_highestIssued, attempt);
     switch (await _lease.commit([
       ...changes,
-      Put(libraryArea, lastSaveKey, attempt),
+      Put(libraryArea, lastSaveKey, '$attempt'),
     ])) {
       case CommitApplied():
+        _nextAttempt = attempt + 1;
         return Saved(take());
       case CommitRefused(:final failure):
         return NotSaved(failure);

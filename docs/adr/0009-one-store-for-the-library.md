@@ -49,14 +49,14 @@ decodes a payload into a typed item at the edge of the editor.
   user sees are worked out by applying pending ops to the base, and the base
   changes only when the server confirms. In a local strategy the store
   applies the op in memory and sends the engine one commit holding every
-  row in `OpApplied.writes`, the strategy's summary, and a new attempt id in
-  one fixed slot. The engine contract requires a commit to apply whole or
+  row in `OpApplied.writes`, the strategy's summary, and the save's attempt
+  number in one fixed slot. The engine contract requires a commit to apply whole or
   not at all, across areas and across a crash, and a conformance suite
   checks every engine against it, so the disk holds the rows from before
   the edit or after it, never half.
 - A save the engine cannot answer for is in doubt. The caller holds the
-  attempt id the store issued for that one save (random, so it does not
-  repeat on a storage), and the store that gave it stops. The next open
+  attempt number the store issued for that one save, which is one above the
+  number the slot held, and the store that gave it stops. The next open
   reads the slot and reports the attempt it holds: the save landed exactly
   when that is its attempt. The slot keeps only the latest attempt, which is
   enough because a store in doubt saves nothing more, so the next commit
