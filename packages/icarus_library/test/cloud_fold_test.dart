@@ -33,7 +33,21 @@ StrategyOp? opOver(StrategyRowSet rows, Random random, String opId) {
     ...target.payload.data.toJson(),
     'position': {'dx': random.nextInt(50), 'dy': random.nextInt(50)},
   });
-  return switch (random.nextInt(9)) {
+  return switch (random.nextInt(11)) {
+    9 || 10 => ElementPatchOp(
+      opId: opId,
+      elementPublicId: target.publicId,
+      expectedElementRevision: target.revision,
+      payload: payload,
+      sortIndex: target.sortIndex,
+      merge: FieldMerge(
+        fields: ['position'],
+        base: {
+          if (target.payload.data.containsKey('position'))
+            'position': target.payload.data['position'],
+        },
+      ),
+    ),
     7 => ElementPatchOp(
       opId: opId,
       elementPublicId: target.publicId,
@@ -175,6 +189,47 @@ void main() {
       'element.add+element.patch',
       'element.add+element.delete cancel',
     });
+  });
+
+  StrategyRowSet skipping(StrategyRowSet rows, List<StrategyOp> ops) {
+    var at = rows;
+    for (final op in ops) {
+      if (applyOp(at, op) case final OpApplied done) {
+        at = at.withRows(done.rows);
+      }
+    }
+    return at;
+  }
+
+  test('a fold behind a claimed edit of the same row equals sending all '
+      'three, whether that edit is then applied or refused', () {
+    final random = Random(11);
+    var checked = 0;
+    for (var round = 0; round < 4000; round++) {
+      final start = initialRows();
+      final before = opOver(start, random, 'before');
+      if (before is! ElementPatchOp) continue;
+      final afterBefore = skipping(start, [before]);
+      final first = followUp(afterBefore, random, before);
+      if (first == null) continue;
+      final afterFirst = skipping(afterBefore, [first]);
+      final then = followUp(afterFirst, random, first);
+      if (then == null) continue;
+      if (fold(first, then) case FoldedOp(op: final folded)) {
+        expect(
+          liveContent(skipping(start, [before, folded])),
+          liveContent(skipping(start, [before, first, then])),
+          reason: 'applied: ${first.toJson()} then ${then.toJson()}',
+        );
+        expect(
+          liveContent(skipping(start, [folded])),
+          liveContent(skipping(start, [first, then])),
+          reason: 'refused: ${first.toJson()} then ${then.toJson()}',
+        );
+        checked++;
+      }
+    }
+    expect(checked, greaterThan(100));
   });
 
   test('a fold never happens into an entry that is held', () {

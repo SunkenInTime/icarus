@@ -35,7 +35,7 @@ Starts as: never sent, free, behind first (sameRow).
 | Event | Result |
 | --- | --- |
 | user edits another item | z: never sent, free |
-| user edits the same item | w: never sent, free, behind x (sameRow) |
+| user edits the same item | x: gone; w: never sent, free, behind first (sameRow); removes x (FoldedInto(w)) |
 | attempt 1 released | first: never sent, free |
 | attempt 1 transport failed | first: answer unknown (1 failures, retry after 2026-11-20T12:00:00.600Z), free, until 2026-11-20T12:00:00.600Z |
 | attempt 1 refused whole: upgradeRequired | first: never sent, free; standing upgradeRequired; holds sending until upgrade |

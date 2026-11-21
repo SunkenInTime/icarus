@@ -1416,13 +1416,20 @@ minted by the caller and must never repeat: the app uses UUID v4
 (`package:uuid`). The queue refuses an id it holds, but it cannot remember ids
 it has removed.
 
-**Folding.** A new edit folds into the last entry for its row only when that
-entry has never been sent, is free and unheld, and nothing later touches its
-pages or the page list. `test/cloud_fold_test.dart` checks that, for every pair
-`fold` accepts, the folded op gives the rows the two ops give in sequence.
-What survives: a patch into a patch and a patch into an add on one element,
-and an add then a delete cancelling when nothing else in the queue targets
-that row.
+**Folding.** A new edit folds into the last entry for its row when that
+entry has never been sent and nothing later touches its pages or the page
+list. That entry may be waiting only behind a claimed or unanswered earlier
+edit of the same row, or for its retry time; neither changes what it will be
+sent against. It keeps its place and what it was authored against. It never
+folds into an entry held behind something refused, needing the user, on a
+deleted page, or behind page work, a copy or a strategy change. An add then a
+delete cancel only when nothing else in the queue targets that row.
+`test/cloud_fold_test.dart` checks every pair `fold` accepts against the two
+ops in sequence through `applyOp`, alone and behind a claimed edit of the same
+row that is then applied or refused. What survives: whole and field-merge
+patches (with or without a field base) into a patch, and a patch into an add,
+on one element or lineup group. `test/cloud_burst_test.dart` measures bursts
+of 2 to 20 moves, rotations and resizes of one item, claimed part-way.
 
 **The sync state** (`Tally`, `syncStateOf`, `accountSyncState`) is derived
 from the entries and the standing. An empty queue reads as all saved only in

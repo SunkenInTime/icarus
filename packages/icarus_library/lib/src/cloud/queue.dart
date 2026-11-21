@@ -1295,7 +1295,7 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
         last.scope == change.scope &&
         view.state is NeverSent &&
         view.go is Free &&
-        view.holds.isEmpty) {
+        view.holds.every((hold) => _foldableHold(hold, views))) {
       final othersOnRow = edit.entries.whereType<PendingOp>().any(
         (entry) => entry.id != last.id && targetOf(entry.op) == target,
       );
@@ -1331,6 +1331,15 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
   );
   return edit.done();
 }
+
+bool _foldableHold(Hold hold, Map<String, EntryView> views) => switch (hold) {
+  BehindEntry(:final opId, why: Dependency.sameRow) => switch (views[opId]) {
+    EntryView(state: Claimed() || AnswerUnknown(), go: Free()) => true,
+    _ => false,
+  },
+  UntilRetryTime() => true,
+  BehindEntry() || AwaitingPageRead() || AwaitingBase() => false,
+};
 
 Step _claim(
   _Edit edit,
