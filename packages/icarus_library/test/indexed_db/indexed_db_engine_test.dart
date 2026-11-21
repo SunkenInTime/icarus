@@ -137,24 +137,138 @@ void main() {
     },
   );
 
-  test('a quota error is a failure the caller receives, the write does not '
-      'land, and the store saves again afterwards', () async {
+  test('a quota error leaves the save in doubt, since a browser can keep part '
+      'of an aborted transaction; the store shuts, and a store opened after it '
+      'saves again', () async {
     final engine = IndexedDbEngine(name);
     final store = await openStore(engine);
     savedValue(await store.editLibrary([AddStrategy(sampleStrategy())]));
     exceedQuotaNext();
     final op = everyOpType()['element.patch']!;
-    final refused = await store.commit(strategyId, op);
     expect(
-      refused,
-      isA<NotSaved<Committed, CommitRefusal>>().having(
+      await store.commit(strategyId, op),
+      isA<SaveInDoubt<Committed, CommitRefusal>>().having(
         (result) => '${result.failure}',
         'failure',
         contains('QuotaExceededError'),
       ),
     );
-    savedValue(await store.commit(strategyId, op));
     await store.close();
+    final reopened = await openStore(engine);
+    savedValue(await reopened.commit(strategyId, op));
+    await reopened.close();
+    await engine.close();
+  });
+
+  test('a put that throws while the commit is being queued leaves nothing of '
+      'the commit and is refused', () async {
+    final lease = await openIndexedDb(name);
+    committed(await lease.commit(const [Put('a', 'k', 'old')]));
+    throwOnPutOf('too big');
+    expect(
+      await lease
+          .commit(const [
+            Put('a', 'k', 'new'),
+            Put('b', 'k', 'too big'),
+            ClearArea('c'),
+          ])
+          .timeout(const Duration(seconds: 5)),
+      isA<CommitRefused>(),
+    );
+    throwOnPutOf(null);
+    expect(valueOf(await lease.read('a', 'k')), 'old');
+    expect(valueOf(await lease.read('b', 'k')), isNull);
+    expect(await lease.release(), isA<Released>());
+  });
+
+  test('a lease asked for while the engine closes is refused or ended by the '
+      'close, and once close returns the next engine can lease', () async {
+    for (var round = 0; round < 10; round++) {
+      final engine = IndexedDbEngine(name);
+      final leasing = engine.lease();
+      await engine.close();
+      switch (await leasing) {
+        case Leased(:final lease):
+          expect(lease.status, isA<Ended>(), reason: 'round $round');
+        case LeaseFailed(failure: EngineClosed()):
+          break;
+        case final other:
+          fail('round $round: $other');
+      }
+      final next = IndexedDbEngine(name);
+      expect(await next.lease(), isA<Leased>(), reason: 'round $round');
+      await next.close();
+    }
+  });
+
+  test('a lock request the browser rejects is a failed lease, and a name Web '
+      'Locks keep for themselves is refused when the engine is made', () async {
+    expect(() => IndexedDbEngine('-reserved'), throwsArgumentError);
+    rejectLockRequests(true);
+    final leasing = await IndexedDbEngine(
+      name,
+    ).lease().timeout(const Duration(seconds: 5));
+    rejectLockRequests(false);
+    expect(leasing, isA<LeaseFailed>());
+    await (await openIndexedDb(name)).release();
+  });
+
+  test('a browser that does not keep a write transaction strict is refused '
+      'a lease', () async {
+    dropTransactionOptions(true);
+    final leasing = await IndexedDbEngine(name).lease();
+    dropTransactionOptions(false);
+    expect(leasing, isA<LeaseFailed>());
+    await (await openIndexedDb(name)).release();
+  });
+
+  test('another connection upgrading or deleting the database ends the lease '
+      'instead of waiting on it', () async {
+    final lease = await openIndexedDb(name);
+    committed(await lease.commit(const [Put('a', 'k', 'v')]));
+    expect(await upgradeFinishes(name, 2), isTrue);
+    expect(lease.status, isA<Ended>());
+    expect(
+      await lease.commit(const [Put('a', 'k', 'w')]),
+      isA<CommitRefused>().having(
+        (refused) => refused.failure,
+        'failure',
+        isA<LeaseEnded>(),
+      ),
+    );
+    await deleteDatabase(name);
+    final again = await openIndexedDb(name);
+    committed(await again.commit(const [Put('a', 'k', 'v')]));
+    await deleteDatabase(name);
+    expect(again.status, isA<Ended>());
+  });
+
+  test('the browser closing the database ends the lease', () async {
+    final lease = await openIndexedDb(name);
+    forceCloseOpenedDatabases();
+    expect(lease.status, isA<Ended>());
+    expect(await lease.read('a', 'k'), isA<KeyNotRead>());
+  });
+
+  test('a second release does not answer before the first has let go of '
+      'the library', () async {
+    final engine = IndexedDbEngine(name);
+    final lease = await leaseOf(engine);
+    final pending = engine.holdNextCommit();
+    final writing = lease.commit(const [Put('a', 'k', 'held')]);
+    await pending.reached;
+    final first = lease.release();
+    var secondAnswered = false;
+    final second = lease.release().then((releasing) {
+      secondAnswered = true;
+      return releasing;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(secondAnswered, isFalse);
+    pending.letGo();
+    await writing;
+    expect(await first, isA<Released>());
+    expect(await second, isA<Released>());
     await engine.close();
   });
 

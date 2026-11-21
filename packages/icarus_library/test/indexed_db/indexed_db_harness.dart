@@ -13,11 +13,38 @@ import '../store_support.dart';
 const _patch = '''
 (() => {
   if (globalThis.icarusFaults) return;
-  const faults = { abortNext: false, quotaNext: false };
+  const faults = {
+    abortNext: false,
+    quotaNext: false,
+    throwValue: null,
+    rejectLocks: false,
+    dropOptions: false,
+    opened: [],
+  };
   globalThis.icarusFaults = faults;
+  const request = LockManager.prototype.request;
+  LockManager.prototype.request = function (...args) {
+    if (faults.rejectLocks) {
+      return Promise.reject(new DOMException('locks are denied', 'SecurityError'));
+    }
+    return request.apply(this, args);
+  };
+  const transaction = IDBDatabase.prototype.transaction;
+  IDBDatabase.prototype.transaction = function (...args) {
+    return transaction.apply(this, faults.dropOptions ? args.slice(0, 2) : args);
+  };
+  const open = IDBFactory.prototype.open;
+  IDBFactory.prototype.open = function (...args) {
+    const opening = open.apply(this, args);
+    opening.addEventListener('success', () => faults.opened.push(opening.result));
+    return opening;
+  };
   const wrap = (name) => {
     const original = IDBObjectStore.prototype[name];
     IDBObjectStore.prototype[name] = function (...args) {
+      if (name === 'put' && faults.throwValue !== null && args[0] === faults.throwValue) {
+        throw new DOMException('the value cannot be cloned', 'DataCloneError');
+      }
       const request = original.apply(this, args);
       if (faults.abortNext || faults.quotaNext) {
         const quota = faults.quotaNext;
@@ -49,6 +76,34 @@ JSObject get _faults {
 void abortNextAfterItsFirstRequest() => _faults['abortNext'] = true.toJS;
 
 void exceedQuotaNext() => _faults['quotaNext'] = true.toJS;
+
+void throwOnPutOf(String? value) => _faults['throwValue'] = value?.toJS;
+
+void rejectLockRequests(bool reject) => _faults['rejectLocks'] = reject.toJS;
+
+void dropTransactionOptions(bool drop) => _faults['dropOptions'] = drop.toJS;
+
+void forceCloseOpenedDatabases() {
+  for (final db in (_faults['opened']! as JSArray<IDBDatabase>).toDart) {
+    db.dispatchEvent(Event('close'));
+  }
+  _faults['opened'] = JSArray<IDBDatabase>();
+}
+
+Future<bool> upgradeFinishes(String name, int version) {
+  final finished = Completer<bool>();
+  final opening = window.indexedDB.open(name, version);
+  opening
+    ..onsuccess = ((Event _) {
+      (opening.result! as IDBDatabase).close();
+      finished.complete(true);
+    }).toJS
+    ..onerror = ((Event _) => finished.complete(false)).toJS;
+  return finished.future.timeout(
+    const Duration(seconds: 5),
+    onTimeout: () => false,
+  );
+}
 
 Future<void> deleteDatabase(String name) {
   final deleted = Completer<void>();
