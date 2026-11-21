@@ -200,6 +200,14 @@ bool _belowLargestFinite(String text, int start, int digits) {
       written.compareTo(_largestFiniteDigits) <= 0;
 }
 
+bool _writtenAsADouble(String digits) {
+  final written = double.parse(digits).toString();
+  return (written.endsWith('.0')
+          ? written.substring(0, written.length - 2)
+          : written) ==
+      digits;
+}
+
 bool _isExact(String digits) =>
     digits.length < _largestExactWhole.length ||
     (digits.length == _largestExactWhole.length &&
@@ -280,9 +288,12 @@ _Scan _scan(String text) {
       if (!fraction && !hasExponent) {
         if (integerDigits >= _largestExactWhole.length &&
             !_isExact(text.substring(start, at))) {
-          return const _Unsafe(
-            'holds a whole number JavaScript cannot hold exactly',
-          );
+          if (!_writtenAsADouble(text.substring(start, at))) {
+            return const _Unsafe(
+              'holds a whole number JavaScript cannot hold exactly',
+            );
+          }
+          unusual = true;
         }
         continue;
       }
@@ -319,18 +330,53 @@ _Scan _scan(String text) {
   return unusual ? const _Unusual() : const _Ordinary();
 }
 
-bool allNumbersFinite(Object? json) => switch (json) {
-  final double number => number.isFinite,
-  final List<Object?> list => list.every(allNumbersFinite),
-  final Map<String, Object?> map => map.values.every(allNumbersFinite),
-  _ => true,
-};
+const _wholesAreDoubles = identical(1, 1.0);
 
-Admission admit(String text) => admitChecking(text, allNumbersFinite);
+const _largestExactInt = 9007199254740991;
+
+bool _exactAsADouble(int value) =>
+    BigInt.from(value.toDouble()) == BigInt.from(value);
+
+bool _heldAsADouble(Object? value) =>
+    !_wholesAreDoubles && value is int && value.abs() > _largestExactInt;
+
+bool settleNumbers(Object? json) {
+  switch (json) {
+    case final double number:
+      return number.isFinite;
+    case final List<Object?> list:
+      for (var at = 0; at < list.length; at++) {
+        final item = list[at];
+        if (_heldAsADouble(item)) {
+          list[at] = (item! as int).toDouble();
+        } else if (!settleNumbers(item)) {
+          return false;
+        }
+      }
+      return true;
+    case final Map<String, Object?> map:
+      final asDoubles = <String>[];
+      for (final MapEntry(:key, :value) in map.entries) {
+        if (_heldAsADouble(value)) {
+          asDoubles.add(key);
+        } else if (!settleNumbers(value)) {
+          return false;
+        }
+      }
+      for (final key in asDoubles) {
+        map[key] = (map[key]! as int).toDouble();
+      }
+      return true;
+    case _:
+      return true;
+  }
+}
+
+Admission admit(String text) => admitChecking(text, settleNumbers);
 
 Admission admitChecking(
   String text,
-  bool Function(Object? decoded) numbersFinite,
+  bool Function(Object? decoded) numbersSettled,
 ) {
   final scan = _scan(text);
   if (scan case _Unsafe(:final problem)) {
@@ -342,7 +388,7 @@ Admission admitChecking(
   } on FormatException catch (error) {
     return NotAdmitted(text, 'not JSON: ${error.message}');
   }
-  if (scan is _Unusual && !numbersFinite(parsed)) {
+  if (scan is _Unusual && !numbersSettled(parsed)) {
     return NotAdmitted(text, 'holds a number that is not finite');
   }
   return Admitted._(_view(parsed));
@@ -391,7 +437,7 @@ JsonObject jsonObject(Map<Object?, Object?> value) =>
     jsonObjectOrNull(value) ??
     (throw ArgumentError.value(value, 'value', 'not a JSON object'));
 
-const _largestWholeAsInt = 9.2e18;
+const _largestWholeAsInt = 9007199254740992.0;
 
 Object? _asJavaScript(Object? value, {required bool sortKeys}) =>
     switch (_raw(value)) {
@@ -409,6 +455,8 @@ Object? _asJavaScript(Object? value, {required bool sortKeys}) =>
           when value == value.truncateToDouble() &&
               value.abs() < _largestWholeAsInt =>
         value.toInt(),
+      final int value when _heldAsADouble(value) && _exactAsADouble(value) =>
+        value.toDouble(),
       final value => value,
     };
 

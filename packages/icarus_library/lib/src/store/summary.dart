@@ -158,6 +158,11 @@ final class StrategySummary {
     required Map<String, PageTally> tallies,
     required PageTally elsewhere,
   }) {
+    final pageIds = {for (final page in pages) page.publicId};
+    tallies = {
+      for (final MapEntry(:key, :value) in tallies.entries)
+        if (pageIds.contains(key)) key: value,
+    };
     final damaged =
         tallies.values.fold(0, (sum, tally) => sum + tally.damaged) +
         pages.whereType<UnreadablePage>().length +
@@ -215,6 +220,11 @@ final class StrategySummary {
     Iterable<RowWrite> writes,
   ) {
     final tallies = {...this.tallies};
+    for (final write in writes) {
+      if (write case RowAdded(after: PageRow(:final publicId))) {
+        tallies.remove(publicId);
+      }
+    }
     for (final write in writes) {
       if (write case RowChanged(before: final ElementRow before)) {
         tallies[before.pagePublicId] =

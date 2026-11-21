@@ -95,7 +95,7 @@ final class LoadedStrategy {
   }
 
   final String digest;
-  Parsed<StrategyRow> header;
+  StrategyHeader header;
   final String? strategyId;
   final unplaced = <String, UnplacedRow>{};
   final foreignNames = <ForeignName>[];
@@ -139,6 +139,12 @@ final class LoadedStrategy {
   Iterable<UnplacedRow> orphansUnder(String pageDigest) => [
     if (!_pages.containsKey(pageDigest)) ...[
       ...?_loaded[pageDigest]?.unplaced.values,
+      for (final row in [...?_loaded[pageDigest]?.unknownKinds])
+        UnplacedRow(
+          ref: refOf(row.key),
+          stored: row.text,
+          problem: 'a kind this build does not know, on a page with no row',
+        ),
       ...unplaced.values.where(
         (row) => row.ref.name == SettingsName(pageDigest).name,
       ),
@@ -239,8 +245,8 @@ final class LoadedStrategy {
   Held heldUnder(StoreName name) {
     final row = switch (name) {
       HeaderName() => switch (header) {
-        Placed(:final row) => row,
-        Unplaced() => null,
+        Placed<StrategyRow>(:final row) => row,
+        Placed() || Unplaced() || HeaderAbsent() => null,
       },
       PageName(:final digest) => _pages[digest],
       SettingsName(:final digest) => _settings[digest],

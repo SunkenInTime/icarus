@@ -56,6 +56,17 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   `NotAdmitted` with the text kept and why. A row holding a number token it
   refuses is unreadable with its text kept, even when a later duplicate key
   would replace that value; no build writes duplicate keys.
+  A whole number past the exact range is refused unless it is exactly how
+  JavaScript writes some double, because the web build writes a whole
+  double of 2^53 or more without a fraction (`1152921504606847000` for
+  2^60). Such a number is unusual, and on the VM the walk turns it into
+  that double, so both platforms hold the same value. A number with a point
+  or an exponent is a double on both platforms, so `9007199254740993e0`
+  reads as 9007199254740992, and saving writes that value. The store's
+  writer keeps a whole double of 2^53 or more as a double, and writes an
+  int past 2^53 as the double that holds it exactly, as JavaScript would,
+  so what the VM writes reads back as the same double. An int no double
+  holds keeps its digits, and the read-back before a commit refuses it.
 - **Rows stay values by type.** Every JSON value a row holds (payload
   `data`, `unknownFields`, an unreadable row's `stored`) is a `JsonObject`
   or a `JsonList`. Neither is a `Map` or a `List`: they offer reads only,
@@ -161,13 +172,31 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 - Pages that share a place are ordered by `publicId` with Dart's string
   order. The server uses `localeCompare`, which can order punctuation
   differently.
+- Undoing the first settings edit on a page whose settings were never set
+  is `UndoByWritingDefaultSettings`: the page showed the app's default
+  settings, and the server's `pageContent.patch` requires settings, so the
+  undo cannot store them as absent again. The app, which owns the
+  defaults, writes them; afterwards the row holds explicit defaults where
+  it held none, and the page looks as it did.
+- Undoing an edit that set `isAutoNamed` on a page saved before that field
+  existed writes `isAutoNamed: false` where the field was absent. A page op
+  cannot clear the field, and the server reads absent as `false`.
+- Undoing a lineup merge that removed a link or another item writes the
+  group's payload whole, not as a merge: the server's merge appends the
+  items it adds, so a merge would put the item back last instead of in its
+  place. The undo still carries the expected revision, so it is refused
+  rather than overwriting a group someone has changed since.
+- An element op whose payload version is newer than this build reads is
+  applied, as the server applies it, and the element becomes an
+  `UnreadableElement` from a newer build holding that payload whole.
 - An edit that first sets `mapDoor`, `isZone` or a picture id (`assetId`)
   has `UndoUnavailable`. Those fields are never cleared (a door goes back to
   rest by deleting its row, a zone stays a zone, and the server keeps a
   picture id that a write leaves out), so there is no value an undo could
   write.
-- Whole numbers of 9.2e18 or more that arrive as decimals compare and measure
-  as Dart writes them, not as JavaScript does.
+- A whole double of 2^53 or more compares and measures as Dart writes it
+  (`1152921504606846976.0`), not as JavaScript does
+  (`1152921504606847000`). Both read back as the same double.
 - Each op is applied alone. The server also lets several page ops queued from
   the same strategy revision land in one batch; that belongs to whoever sends
   batches.
@@ -458,12 +487,20 @@ Library edits (`editLibrary`) and summary rebuilds are one commit the same
 way; removing a strategy is `ClearArea` of its area and a `Delete` of its
 summary. Opening and reading never commit: the only calls that write are
 `commit`, `editLibrary` and `rebuildSummary`. `editLibrary` copies the list
-it is given when it is called, not when its turn comes.
+it is given when it is called, not when its turn comes. A library edit
+saves what differs from the stored rows when it ends: moving a strategy
+into a folder and back in one edit is `NothingToSave`, and several moves
+of one strategy raise its revision once.
 
 Every save returns a `Saving`, which the caller has to handle:
 
 - `Saved`: the engine applied the commit.
 - `NothingToSave`: the op changes nothing.
+
+An edit to a strategy that has rows but no summary, before `findStrategies`
+has run, is saved like any other: the store rebuilds the summary from the
+rows it loads and writes it in the same commit, and the strategy appears in
+the library list.
 - `Refused`: `OpRefusal` when `applyOp` refused it, `NoSuchStrategy`,
   `UnreadableRowInTheWay` when the strategy's own row cannot be read,
   `UnplacedRowInTheWay` when the name it would write holds a row with no
@@ -526,7 +563,8 @@ id is known still reads: `StrategyContent.strategy` is its
 whose page row is missing, or has no id, are treated alike: they are kept,
 reported in `StrategyContent.unplaced`, counted as damaged (or newer, for a
 kind this build does not know), and their names refuse writes. Adding a
-page whose names they hold is refused with `UnplacedRowInTheWay`; copying
+page whose names they hold, including a row of a kind this build does not
+know, is refused with `UnplacedRowInTheWay`; copying
 from that page id is refused with `CopyLeavesRowsBehind`; a copy from an id
 with no page row and no content is left to `applyOp`, as on the server.
 Unreadable pages, settings, elements and lineup groups whose ids are known
@@ -538,9 +576,12 @@ unplaced library rows), or `LibraryShut` once the store has finished, so a
 finished store never hands out data that looks current.
 
 A page copy whose source page cannot be read, or holds a row of a kind this
-build does not know, a row with no id, or a foreign name, is refused
-(`UnreadableTarget`, `CopyLeavesRowsBehind`) rather than copied without
-them.
+build does not know, a row with no id, a foreign name, or an element whose
+`deleted` flag cannot be read, is refused (`UnreadableTarget`,
+`CopyLeavesRowsBehind`) rather than copied without them.
+
+`PageContent.settings` is `SettingsStored(row)` or `NoSettingsStored`, for a
+page saved before settings rows existed.
 
 ### Deleting
 
@@ -564,16 +605,25 @@ the rows alone and writes it. When the store opens and cannot read a
 summary, it rebuilds it in memory; when the strategy's own row cannot be
 read either, the strategy is listed in `unreadableStrategies`. Whenever rows
 are loaded, by a read or by an edit, the in-memory summary is brought up to
-date with them. A summary changed in memory this way is marked as not yet
-in storage: the next save of that strategy writes it, and `rebuildSummary`
+date with them, and so is the summary a library edit writes: moving a
+strategy into a folder before its pages were read saves the summary its
+rows give, not the stored one. A page tally counts only pages the strategy
+has, so a lost page row is counted once, as orphaned rows, and a page added
+under the id of a page that is wholly gone starts empty. A summary changed
+in memory this way is marked as not yet in storage: the next save of that strategy writes it, and `rebuildSummary`
 writes it even if it compares equal to the one in memory.
 
 A summary that is lost from storage is found again by `findStrategies()`,
 which the app runs after open (open itself lists no areas). It lists the
 strategy areas with `areas`, rebuilds in memory the summary of each strategy
 that has a readable row and no summary, and lists each area that holds rows
-with neither as an unreadable strategy. It returns `StrategiesFound(rebuilt,
-unreadable)` or `StrategiesNotSearched(failure)`, and commits nothing.
+with neither as an unreadable strategy. A listed strategy whose area holds
+no rows at all becomes an unreadable strategy too ("none of its rows are
+stored"), so the user sees it is gone, and `RemoveUnreadableStrategy`
+removes its summary. It works out every answer before it changes the list,
+so a read that fails partway leaves the list as it was. It returns
+`StrategiesFound(rebuilt, unreadable)` or `StrategiesNotSearched(failure)`,
+and commits nothing.
 
 ### Telling the editor what changed
 

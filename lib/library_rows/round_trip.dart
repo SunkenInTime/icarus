@@ -38,11 +38,7 @@ RoundTrip roundTrip(StrategyData strategy) {
     case StrategyRowsRefused() && final refused:
       return RoundTripRefusedToRows(refused);
     case StrategyRowsMade() && final made:
-      final times = StrategyTimes(
-        createdAt: made.summary.createdAt,
-        lastEdited: made.summary.lastEdited,
-      );
-      switch (strategyFromRows(made.rows, times)) {
+      switch (strategyFromRows(made.rows)) {
         case StrategyDataRefused() && final refused:
           return RoundTripRefusedFromRows(made, refused);
         case StrategyDataMade() && final back:

@@ -120,17 +120,29 @@ final class TruncatingLease extends ForwardingLease {
   ]);
 }
 
+final class EmptyCommitClearsLease extends ForwardingLease {
+  EmptyCommitClearsLease(super.inner);
+
+  @override
+  Future<Committing> commit(List<Change> changes) =>
+      inner.commit(changes.isEmpty ? const [ClearArea('b')] : changes);
+}
+
 final class PartlyUnknownLease extends ForwardingLease {
-  PartlyUnknownLease(super.inner);
+  PartlyUnknownLease(super.inner, this.cut);
+
+  final void Function() cut;
 
   @override
   Future<Committing> commit(List<Change> changes) async {
     if (changes.length < 20) return inner.commit(changes);
-    final landed = await inner.commit(changes.take(1).toList());
-    return switch (landed) {
-      CommitApplied() => const CommitUnknown(DeviceFailure('cut short')),
-      final other => other,
-    };
+    switch (await inner.commit(changes.take(1).toList())) {
+      case CommitApplied():
+        cut();
+        return const CommitUnknown(DeviceFailure('cut short'));
+      case final other:
+        return other;
+    }
   }
 }
 
@@ -198,6 +210,10 @@ void main() {
       AreasWildcardLease.new,
       'lists the areas that hold names under a prefix, literally and in code unit order',
     ),
+    'whose empty commit clears an area': (
+      EmptyCommitClearsLease.new,
+      'an empty commit applies and changes nothing',
+    ),
     'that cuts a delete past the limit down onto a valid name': (
       TruncatingLease.new,
       'a commit naming anything outside the alphabet or past the limit is refused whole',
@@ -247,15 +263,19 @@ void main() {
   test(
     'a partial commit reported unknown fails every check it reaches',
     () async {
-      final results = await runAll(
-        () => WrappedHarness(PartlyUnknownLease.new),
-      );
-      expect(
-        results.entries
-            .where((entry) => entry.value is Broke)
-            .map((e) => e.key),
-        isNotEmpty,
-      );
+      final reached = <String>[];
+      for (final check in engineContract) {
+        var cut = false;
+        final result = await check.run(
+          WrappedHarness(
+            (lease) => PartlyUnknownLease(lease, () => cut = true),
+          ),
+        );
+        if (!cut) continue;
+        reached.add(check.name);
+        expect(result, isA<Broke>(), reason: check.name);
+      }
+      expect(reached, isNotEmpty);
     },
   );
 

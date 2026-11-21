@@ -32,13 +32,6 @@ final class StrategySummaryFields {
   final int lineupCount;
 }
 
-final class StrategyTimes {
-  const StrategyTimes({required this.createdAt, required this.lastEdited});
-
-  final DateTime createdAt;
-  final DateTime lastEdited;
-}
-
 sealed class StrategyToRows {
   const StrategyToRows();
 }
@@ -525,7 +518,7 @@ MapValue? _mapNamed(String name) {
   return null;
 }
 
-StrategyFromRows strategyFromRows(StrategyRowSet rows, StrategyTimes times) {
+StrategyFromRows strategyFromRows(StrategyRowSet rows) {
   final strategyRow = rows.strategy;
   final problems = <DataProblem>[];
   final map = _mapNamed(strategyRow.mapData);
@@ -710,8 +703,8 @@ StrategyFromRows strategyFromRows(StrategyRowSet rows, StrategyTimes times) {
       name: strategyRow.name,
       mapData: map,
       versionNumber: Settings.versionNumber,
-      lastEdited: times.lastEdited,
-      createdAt: times.createdAt,
+      lastEdited: strategyRow.updatedAt,
+      createdAt: strategyRow.createdAt,
       folderID: strategyRow.folderPublicId,
       themeProfileId: strategyRow.themeProfileId,
       themeOverridePalette: palette,

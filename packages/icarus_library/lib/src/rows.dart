@@ -115,7 +115,17 @@ final class RowSpot {
       };
 }
 
-sealed class Parsed<R extends Row> {
+sealed class StrategyHeader {
+  const StrategyHeader();
+}
+
+final class HeaderAbsent extends StrategyHeader {
+  const HeaderAbsent(this.problem);
+
+  final String problem;
+}
+
+sealed class Parsed<R extends Row> implements StrategyHeader {
   const Parsed();
 }
 

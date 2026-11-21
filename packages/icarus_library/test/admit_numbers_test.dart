@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/src/json.dart'
-    show admitChecking, allNumbersFinite;
+    show admitChecking, canonicalJson, settleNumbers;
 import 'package:test/test.dart';
 
 bool _writtenWholeOnTheWeb(double number) =>
@@ -45,7 +45,7 @@ void main() {
   var walks = 0;
   bool counted(Object? decoded) {
     walks++;
-    return allNumbersFinite(decoded);
+    return settleNumbers(decoded);
   }
 
   setUp(() => walks = 0);
@@ -92,6 +92,85 @@ void main() {
       expect(walks, 2);
     },
   );
+
+  test(
+    'a whole double of 2^53 or more, written by this platform, reads back as the same double',
+    () {
+      final numbers = [
+        9007199254740992.0,
+        1152921504606846976.0,
+        -1152921504606846976.0,
+        9223372036854775808.0,
+        1e20,
+        123456789012345680000.0,
+      ];
+      for (final text in [
+        jsonEncode({'points': numbers}),
+        canonicalJson({'points': numbers}),
+      ]) {
+        final admitted = admitChecking(text, counted);
+        expect(admitted, isA<Admitted>(), reason: text);
+        final points = ((admitted as Admitted).json! as JsonObject)['points']!;
+        expect([...(points as JsonList)], numbers, reason: text);
+        for (final point in points) {
+          expect(point, isA<double>(), reason: text);
+        }
+      }
+    },
+  );
+
+  test(
+    'a number with a point or an exponent is a double on every platform, and saving it keeps its value',
+    () {
+      for (final (text, value) in [
+        ('[9007199254740993e0]', 9007199254740992.0),
+        ('[9007199254740991.1]', 9007199254740991.0),
+        ('[1.5e300]', 1.5e300),
+      ]) {
+        final read =
+            (admitChecking(text, counted) as Admitted).json! as JsonList;
+        expect(read.single, value, reason: text);
+        final again =
+            (admitChecking(canonicalJson(read), counted) as Admitted).json!
+                as JsonList;
+        expect(again.single, value, reason: text);
+      }
+    },
+  );
+
+  test(
+    'a whole number past 2^53 is written as the double that holds it exactly, and otherwise keeps its digits and is refused on reading',
+    () {
+      expect(
+        canonicalJson([int.parse('1000000000000000000')]),
+        canonicalJson([1e18]),
+      );
+      final inexact = canonicalJson([int.parse('1152921504606846977')]);
+      expect(inexact, '[1152921504606846977]');
+      expect(admitChecking(inexact, counted), isA<NotAdmitted>());
+    },
+    testOn: 'vm',
+  );
+
+  test('a whole number JavaScript writes for no double is refused', () {
+    for (final text in [
+      '[9007199254740993]',
+      '[1152921504606846976]',
+      '[9223372036854775808]',
+      '[99999999999999999999]',
+    ]) {
+      expect(
+        admitChecking(text, counted),
+        isA<NotAdmitted>().having(
+          (refused) => refused.problem,
+          'problem',
+          'holds a whole number JavaScript cannot hold exactly',
+        ),
+        reason: text,
+      );
+    }
+    expect(walks, 0);
+  });
 
   test('what the scan refuses by its spelling is refused before any walk', () {
     for (final text in [

@@ -321,19 +321,19 @@ void main() {
           StrategyImportExportService.strategyDataFromRemoteSnapshot(
         snapshotOf(mine),
       );
-      final mineBack = switch (strategyFromRows(
-        mine,
-        StrategyTimes(
-          createdAt: exported.createdAt,
-          lastEdited: exported.lastEdited,
-        ),
-      )) {
+      final mineBack = switch (strategyFromRows(mine)) {
         StrategyDataMade(:final strategy) => strategy,
         StrategyDataRefused(:final problems) =>
           throw TestFailure('refused: $problems'),
       };
       expect(
-        strategyDifferences(mineBack, exported).map((d) => '$d'),
+        strategyDifferences(
+          mineBack.copyWith(
+            createdAt: exported.createdAt,
+            lastEdited: exported.lastEdited,
+          ),
+          exported,
+        ).map((d) => '$d'),
         [if (strategy.folderID != null) 'value folderID'],
         reason: name,
       );
@@ -366,19 +366,19 @@ void main() {
     final exported = StrategyImportExportService.strategyDataFromRemoteSnapshot(
       upgradeRemoteFullSnapshot(snapshotOf(old)),
     );
-    final mineBack = switch (strategyFromRows(
-      old,
-      StrategyTimes(
-        createdAt: exported.createdAt,
-        lastEdited: exported.lastEdited,
-      ),
-    )) {
+    final mineBack = switch (strategyFromRows(old)) {
       StrategyDataMade(:final strategy) => strategy,
       StrategyDataRefused(:final problems) =>
         throw TestFailure('refused: $problems'),
     };
     expect(
-      strategyDifferences(mineBack, exported).map((d) => '$d'),
+      strategyDifferences(
+        mineBack.copyWith(
+          createdAt: exported.createdAt,
+          lastEdited: exported.lastEdited,
+        ),
+        exported,
+      ).map((d) => '$d'),
       ['value folderID'],
     );
     final corrected = mineBack.pages.first.abilityData

@@ -57,6 +57,13 @@ Future<View> viewOf(
 ) async {
   final view = <String, String>{};
   final list = listOf(store);
+  final listed = {
+    for (final summary in list.strategies)
+      summary.publicId: _canon(summary.toJson()),
+  };
+  for (final id in strategies.keys) {
+    view['summary $id'] = listed[id] ?? 'missing';
+  }
   final libraryUnplaced = {for (final row in list.unplaced) row.ref};
   for (final folder in folders) {
     view['folder $folder'] = _find(
@@ -244,9 +251,52 @@ Outcome _noId(String kind) =>
 Outcome _either(bool readable, Object? replaced) =>
     readable ? Readable(replaced) : const Unreadable();
 
+bool _isTime(Object? value) =>
+    value is num &&
+    value.isFinite &&
+    value == value.truncate() &&
+    value.abs() <= 8640000000000000;
+
+bool _isTally(Object? json) =>
+    json is Map<String, Object?> &&
+    _fits(Field.whole, json['items']) &&
+    _fits(Field.whole, json['damaged']) &&
+    _fits(Field.whole, json['newer']) &&
+    json['agents'] is Map<String, Object?> &&
+    (json['agents']! as Map<String, Object?>).values.every(
+      (count) => _fits(Field.whole, count),
+    );
+
+bool _readsAsSummaryOf(Object? json, Object? id) =>
+    json is Map<String, Object?> &&
+    json['summaryVersion'] == 5 &&
+    json['publicId'] == id &&
+    json['name'] is String &&
+    json['mapData'] is String &&
+    (!json.containsKey('folderPublicId') || json['folderPublicId'] is String) &&
+    _isTime(json['createdAt']) &&
+    _isTime(json['updatedAt']) &&
+    _fits(Field.whole, json['pageCount']) &&
+    const ['attack', 'defend', 'mixed'].contains(json['sides']) &&
+    json['agents'] is List<Object?> &&
+    (json['agents']! as List<Object?>).every((agent) => agent is String) &&
+    _fits(Field.whole, json['itemCount']) &&
+    _fits(Field.whole, json['damagedRows']) &&
+    _fits(Field.whole, json['newerRows']) &&
+    _isTally(json['elsewhere']) &&
+    json['tallies'] is Map<String, Object?> &&
+    (json['tallies']! as Map<String, Object?>).values.every(_isTally);
+
 Outcome expected(String kind, Object? json, List<Object> at, Object? value) {
-  if (kind == 'summary') return const Rebuilt();
   final replaced = _replaced(json, at, value);
+  if (kind == 'summary') {
+    return _readsAsSummaryOf(
+          replaced,
+          (json! as Map<String, Object?>)['publicId'],
+        )
+        ? Readable(replaced)
+        : const Rebuilt();
+  }
   if (at.isEmpty) return _noId(kind);
   final field = _fields[kind]![at.first]!;
   if (at.length == 1) {
@@ -424,11 +474,17 @@ List<Corruption> corruptionsOf(String kind, String text, Random random) {
           outcome: whole,
         ));
       }
-      corruptions.add((
-        name: '$where as 1e308',
-        text: template.replaceFirst('"$_marker"', '1e308'),
-        outcome: expected(kind, json, at, 1e308),
-      ));
+      corruptions
+        ..add((
+          name: '$where as 1e308',
+          text: template.replaceFirst('"$_marker"', '1e308'),
+          outcome: expected(kind, json, at, 1e308),
+        ))
+        ..add((
+          name: '$where as 1152921504606847000, as JavaScript writes 2^60',
+          text: template.replaceFirst('"$_marker"', '1152921504606847000'),
+          outcome: expected(kind, json, at, 1152921504606846976.0),
+        ));
       if (longNumbers) {
         longNumbers = false;
         corruptions
@@ -544,6 +600,7 @@ void main() {
     () async {
       final random = Random(624);
       var cases = 0;
+      final summaryOutcomes = <Type>{};
       for (final MapEntry(key: area, value: values) in populated.entries) {
         for (final MapEntry(:key, :value) in values.entries) {
           final viewKey = rowAt[(area, key)];
@@ -559,6 +616,9 @@ void main() {
               : words.first;
           for (final corruption in corruptionsOf(kind, value, random)) {
             cases++;
+            if (kind == 'summary') {
+              summaryOutcomes.add(corruption.outcome.runtimeType);
+            }
             final where = '$area $key: ${corruption.name}';
             final opening = await LibraryStore.open(
               MemoryEngine(
@@ -605,17 +665,31 @@ void main() {
                 expect(now, before, reason: '$where changed $row');
               }
             }
-            for (final id in fixture.keys) {
-              expect(
-                await store.rebuildSummary(id),
-                isNot(isA<NotSaved<StrategySummary, CommitRefusal>>()),
-                reason: where,
-              );
-            }
             final summaries = {
               for (final summary in listOf(store).strategies)
                 summary.publicId: summary,
             };
+            for (final id in fixture.keys) {
+              final ownRowUnreadable =
+                  id == owner &&
+                  kind == 'strategy' &&
+                  corruption.outcome is! Readable;
+              expect(
+                await store.rebuildSummary(id),
+                ownRowUnreadable
+                    ? isA<Refused<StrategySummary, CommitRefusal>>()
+                    : anyOf(
+                        isA<NothingToSave<StrategySummary, CommitRefusal>>(),
+                        isA<Saved<StrategySummary, CommitRefusal>>().having(
+                          (saved) => _canon(saved.value.toJson()),
+                          'rebuilt',
+                          _canon(summaries[id]!.toJson()),
+                        ),
+                      ),
+                reason:
+                    '$where: rebuilding $id disagrees with the summary its reads kept',
+              );
+            }
             for (final id in fixture.keys) {
               if (id == owner && kind != 'summary') continue;
               expect(
@@ -649,6 +723,7 @@ void main() {
         }
       }
       expect(cases, greaterThan(500));
+      expect(summaryOutcomes, {Readable, Rebuilt});
     },
   );
 

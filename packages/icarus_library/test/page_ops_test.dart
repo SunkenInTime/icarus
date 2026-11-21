@@ -260,26 +260,35 @@ void main() {
     },
   );
 
-  test('changing settings that were never set cannot be undone by an op', () {
-    final session = Session(
-      strategyRows(
-        pages: [page('page-a', sortIndex: 0)],
-        pageSettings: [
-          ReadablePageSettings(pagePublicId: 'page-a', revision: 1),
-        ],
-      ),
-    );
-    final result = session.apply(
-      const PageSettingsPatchOp(
-        opId: 'settings',
-        pagePublicId: 'page-a',
-        settings: defaultSettings,
-        expectedPageSettingsRevision: 1,
-      ),
-    );
-    expect(result.undo, isA<UndoUnavailable>());
-    expect(session.settingsAt('page-a').settings, defaultSettings);
-  });
+  test(
+    'changing settings that were never set is undone by writing the defaults the page showed',
+    () {
+      final session = Session(
+        strategyRows(
+          pages: [page('page-a', sortIndex: 0)],
+          pageSettings: [
+            ReadablePageSettings(pagePublicId: 'page-a', revision: 1),
+          ],
+        ),
+      );
+      final result = session.apply(
+        const PageSettingsPatchOp(
+          opId: 'settings',
+          pagePublicId: 'page-a',
+          settings: defaultSettings,
+          expectedPageSettingsRevision: 1,
+        ),
+      );
+      expect(
+        result.undo,
+        const UndoByWritingDefaultSettings(
+          pagePublicId: 'page-a',
+          expectedPageSettingsRevision: 2,
+        ),
+      );
+      expect(session.settingsAt('page-a').settings, defaultSettings);
+    },
+  );
 
   test('clearing the theme and undoing it brings the theme back', () {
     final themed = StrategyRowSet(

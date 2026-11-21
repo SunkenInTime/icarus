@@ -67,11 +67,46 @@ final _table = [
     lineupName('page-b', 'g0'),
     '/payload',
   ),
+  Replaced(
+    'lineup.patch removing the first of three links',
+    lineupName('page-c', 'g4'),
+    '/payload/data/links/0',
+  ),
+  Replaced(
+    'lineup.patch removing the first of three links',
+    lineupName('page-c', 'g4'),
+    '/payload/data/origins/0',
+  ),
 ];
 
 const _undoneOtherwise = <String, Undo>{
   'page.delete': UndoByRestoringPage('page-a'),
+  'pageContent.patch on settings never set': UndoByWritingDefaultSettings(
+    pagePublicId: 'page-c',
+    expectedPageSettingsRevision: 2,
+  ),
 };
+
+final _undoneAutoNamed = {
+  'page.patch naming a page saved before isAutoNamed': pageName('page-c'),
+};
+
+final _manyLinks = LineupGroupPayload(
+  payloadVersion: 1,
+  data: {
+    'id': 'g4',
+    'origins': [origin('g4-o1'), origin('g4-o2')],
+    'landings': [landing('g4-l1'), landing('g4-l2')],
+    'links': [
+      for (final (id, from, to) in [
+        ('g4-k1', 'g4-o1', 'g4-l1'),
+        ('g4-k2', 'g4-o2', 'g4-l1'),
+        ('g4-k3', 'g4-o2', 'g4-l2'),
+      ])
+        {'id': id, 'originId': from, 'landingId': to, 'notes': id},
+    ],
+  },
+);
 
 final _deletedAgainHolding = {
   'element.add over a deleted element': (
@@ -128,6 +163,29 @@ Map<String, StrategyOp> _ops() => {
     payload: lineupPayload('g1', notes: 'merged'),
     merge: FieldMerge(fields: ['links/g1-k']),
   ),
+  'page.patch naming a page saved before isAutoNamed': const PagePatchOp(
+    opId: 'op-auto-named',
+    pagePublicId: 'page-c',
+    expectedPageRevision: 1,
+    name: 'Retake C',
+    isAutoNamed: false,
+  ),
+  'pageContent.patch on settings never set': const PageSettingsPatchOp(
+    opId: 'op-first-settings',
+    pagePublicId: 'page-c',
+    settings: defaultSettings,
+    expectedPageSettingsRevision: 1,
+  ),
+  'lineup.patch removing the first of three links': LineupGroupPatchOp(
+    opId: 'op-unlink',
+    lineupPublicId: 'g4',
+    expectedLineupRevision: 1,
+    payload: _manyLinks.withData({
+      ..._manyLinks.data.toMap(),
+      'links': [...(_manyLinks.data['links']! as JsonList).skip(1)],
+    }),
+    merge: FieldMerge(fields: ['links/g4-k1']),
+  ),
   'lineup.add over a deleted group': LineupGroupAddOp(
     opId: 'op-regroup',
     lineupPublicId: 'g0',
@@ -168,7 +226,11 @@ StrategyRowSet _fixture() {
         deletedBy: const DeletedByName('coach'),
       ),
     ],
-    settings: sample.settings,
+    settings: [
+      for (final row in sample.settings)
+        if (row.pagePublicId != 'page-c') row,
+      ReadablePageSettings(pagePublicId: 'page-c', revision: 1),
+    ],
     elements: [
       for (final row in sample.elements)
         if (row.publicId != 'jett') row,
@@ -194,6 +256,14 @@ StrategyRowSet _fixture() {
     lineupGroups: [
       ...sample.lineupGroups,
       lineupGroup('g3', pageId: 'page-b', strategy: strategyId),
+      LiveLineupGroup(
+        strategyPublicId: strategyId,
+        publicId: 'g4',
+        pagePublicId: 'page-c',
+        payload: _manyLinks,
+        sortIndex: 0,
+        revision: 1,
+      ),
       DeletedLineupGroup(
         strategyPublicId: strategyId,
         publicId: 'g0',
@@ -317,6 +387,8 @@ void main() {
           final added,
         ) when row == key) {
           expect(now, {...?was, 'payload': added}, reason: '$name, $key');
+        } else if (_undoneAutoNamed[name] == key) {
+          expect(now, {...?was, 'isAutoNamed': false}, reason: '$name, $key');
         } else {
           expect(now, was, reason: '$name, $key');
         }

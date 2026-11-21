@@ -427,7 +427,10 @@ final class _Apply {
             expectedPageSettingsRevision: after.revision,
           ),
         ),
-        null => const UndoUnavailable(),
+        null => UndoByWritingDefaultSettings(
+          pagePublicId: op.pagePublicId,
+          expectedPageSettingsRevision: after.revision,
+        ),
       },
     );
   }
@@ -959,6 +962,21 @@ final class _Apply {
     final byItem = write.dataFields.every(
       (field) => lineupField(field) != null,
     );
+    final after = switch (write.after) {
+      ReadableLineupGroupRow(:final payload) => payload,
+      _ => before.payload,
+    };
+    bool holds(LineupGroupPayload payload, String field) =>
+        switch (lineupField(field)) {
+          (:final collection, :final id) => lineupItems(
+            payload.data.raw,
+            collection,
+          ).any((item) => item['id'] == id),
+          null => false,
+        };
+    final putsBack = write.dataFields.any(
+      (field) => holds(before.payload, field) && !holds(after, field),
+    );
     final mergeFields = [
       if (payloadChanged) ...write.dataFields.toList()..sort(),
       if (movedPlace) placeField,
@@ -969,7 +987,7 @@ final class _Apply {
       expectedLineupRevision: before.revision + 1,
       payload: payloadChanged ? before.payload : null,
       sortIndex: movedPlace ? before.sortIndex : null,
-      merge: whole || mergeFields.isEmpty || !byItem
+      merge: whole || putsBack || mergeFields.isEmpty || !byItem
           ? null
           : FieldMerge(fields: mergeFields),
     );
@@ -997,7 +1015,8 @@ final class _Apply {
       if (element case UnreadableElement(
         :final key,
         :final stored,
-      ) when stored is! JsonObject) {
+        :final deleted,
+      ) when stored is! JsonObject || deleted == null) {
         return OpRefused(UnreadableTarget(key));
       }
     }
