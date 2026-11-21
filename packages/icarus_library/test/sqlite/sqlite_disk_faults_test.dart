@@ -33,7 +33,10 @@ Future<(num, int)> _jett(LibraryStore store) async {
     (row) => row.publicId == 'jett',
   );
   return switch (jett.payload.data['position']) {
-    {'dx': final num x} => (x, jett.revision),
+    final JsonObject position when position['dx'] is num => (
+      position['dx']! as num,
+      jett.revision,
+    ),
     final other => fail('jett has no position: $other'),
   };
 }

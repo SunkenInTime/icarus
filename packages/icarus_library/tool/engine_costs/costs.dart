@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:icarus_library/icarus_library.dart';
-import 'package:icarus_library/src/json.dart' show frozenJson;
+import 'package:icarus_library/src/json.dart' show adoptJson;
 
 const strategies = 700;
 const bigPages = 20;
@@ -312,7 +312,7 @@ Future<List<String>> _pageReadSplit(
   );
   final parse = Times('  of which jsonDecode of those $pageItems values');
   final freeze = Times(
-    '  of which copying the decoded values into unmodifiable ones',
+    '  of which handing the decoded values on as read-only views',
   );
   for (var run = 0; run < coldRuns; run++) {
     switch (await listing.time(() => lease.areas('s/'))) {
@@ -334,7 +334,7 @@ Future<List<String>> _pageReadSplit(
     );
     await freeze.time(() async {
       for (final value in decoded) {
-        frozenJson(value);
+        adoptJson(value);
       }
     });
   }

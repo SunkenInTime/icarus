@@ -204,9 +204,12 @@ What decided it:
   on the loaded XFS disk. A page read costs about the same on every engine,
   because the engine's part of it is small: reading the page's 300 rows is
   2.3 ms on SQLite and 44 ms on IndexedDB, and the rest is decoding them.
-  Under JavaScript, copying the decoded values into unmodifiable ones is
-  the largest part of that (164 to 271 ms timed on its own, against 22 to
-  27 ms for `jsonDecode`); on the VM `jsonDecode` is (110 ms against 46 ms).
+  When these figures were taken, copying the decoded values into
+  unmodifiable ones was the largest part of that under JavaScript (164 to
+  271 ms timed on its own, against 22 to 27 ms for `jsonDecode`); on the VM
+  `jsonDecode` was (110 ms against 46 ms). The store now hands decoded rows on
+  as read-only views instead of copying them (#665), so the cold-read row
+  above predates that change and was not measured again here.
   Listing areas on IndexedDB walks a cursor one event per area, which is why
   it costs 105 ms; the store calls it once after open. macOS, where
   `fullfsync` makes each sync slower, is not measured.

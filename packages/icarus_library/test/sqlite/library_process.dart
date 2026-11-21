@@ -48,8 +48,10 @@ Future<(int, int)> jettPosition(LibraryStore store) async {
     (row) => row.publicId == 'jett',
   );
   return switch (jett.payload.data['position']) {
-    {'dx': final int x} => (x, jett.revision),
-    {'dx': final num x} => (x.toInt(), jett.revision),
+    final JsonObject position when position['dx'] is num => (
+      (position['dx']! as num).toInt(),
+      jett.revision,
+    ),
     final other => throw StateError('jett has no position: $other'),
   };
 }
