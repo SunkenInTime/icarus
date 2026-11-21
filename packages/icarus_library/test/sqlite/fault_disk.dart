@@ -425,6 +425,9 @@ final class FaultLibraryFiles implements LibraryFiles {
   void rename(String from, String to) => disk._rename(from, to);
 
   @override
+  void pause(Duration duration) {}
+
+  @override
   Database open(String path, {required bool create}) => sqlite3.open(
     path,
     vfs: vfs.name,

@@ -48,6 +48,20 @@ Future<String> _refusal(String path) async {
   };
 }
 
+Future<(String, int, int)> _holdBriefly(String path) async {
+  final engine = SqliteEngine(path);
+  final leasing = await engine.lease();
+  final start = DateTime.now().microsecondsSinceEpoch;
+  await Future<void>.delayed(const Duration(milliseconds: 150));
+  final end = DateTime.now().microsecondsSinceEpoch;
+  await engine.close();
+  return switch (leasing) {
+    Leased() => ('leased', start, end),
+    HeldByAnotherWriter() => ('held', 0, 0),
+    LeaseFailed(:final failure) => ('failed: $failure', 0, 0),
+  };
+}
+
 Future<Process> _start(String mode, String path) => Process.start(
   Platform.resolvedExecutable,
   ['run', 'test/sqlite/library_process.dart', mode, path],
@@ -156,7 +170,6 @@ void main() {
     }
     first.stdin.writeln('go');
     await first.stdin.flush();
-    var refusals = 0;
     final engine = SqliteEngine(path);
     late StorageLease lease;
     while (true) {
@@ -164,7 +177,6 @@ void main() {
         case Leased(lease: final granted):
           lease = granted;
         case HeldByAnotherWriter():
-          refusals++;
           continue;
         case LeaseFailed(:final failure):
           fail('$failure');
@@ -176,7 +188,6 @@ void main() {
       final value = valueOf(await lease.read(probeArea, 'k$key'));
       generations.add(value!.split('-').first);
     }
-    expect(refusals, greaterThan(0));
     expect(generations, {'$handoffBatches'});
     await first.stdin.close();
     expect(await first.exitCode, 0);
@@ -184,6 +195,42 @@ void main() {
     expect(lines, contains('released $handoffBatches written'));
     await engine.close();
   });
+
+  for (final existing in [true, false]) {
+    test(
+      'four isolates asking at once for a library that '
+      '${existing ? 'exists' : 'does not exist yet'}: never two holding it '
+      'at the same time, one always gets it, and it opens afterwards',
+      () async {
+        for (var round = 0; round < 20; round++) {
+          final file = '${directory.path}/at-once-$round.sqlite';
+          if (existing) await SqliteEngine(file).close();
+          if (existing) expect(await _refusal(file), 'leased');
+          final outcomes = await Future.wait([
+            for (var i = 0; i < 4; i++) Isolate.run(() => _holdBriefly(file)),
+          ]);
+          final held = [
+            for (final (outcome, start, end) in outcomes)
+              if (outcome == 'leased') (start, end),
+          ]..sort((a, b) => a.$1.compareTo(b.$1));
+          expect(held, isNotEmpty, reason: 'round $round: $outcomes');
+          for (var i = 1; i < held.length; i++) {
+            expect(
+              held[i].$1,
+              greaterThanOrEqualTo(held[i - 1].$2),
+              reason: 'round $round: two leases overlapped',
+            );
+          }
+          expect(
+            [for (final (outcome, _, _) in outcomes) outcome],
+            everyElement(anyOf('leased', 'held')),
+            reason: 'round $round',
+          );
+          expect(await _refusal(file), 'leased', reason: 'round $round');
+        }
+      },
+    );
+  }
 
   test('a file that is not a library is refused, never opened empty', () async {
     await File(path).writeAsString('notes from a user');

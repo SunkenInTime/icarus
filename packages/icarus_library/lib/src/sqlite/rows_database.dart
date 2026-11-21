@@ -85,7 +85,48 @@ final class RowsDatabase {
        _supersede = supersede,
        _clearArea = clearArea;
 
-  static RowsOpening open(Database db, {required bool fresh}) {
+  static String? _prepareConnection(Database db) {
+    db
+      ..execute('PRAGMA locking_mode = EXCLUSIVE')
+      ..execute('PRAGMA busy_timeout = 0');
+    final mode = db.select('PRAGMA journal_mode = WAL').single.columnAt(0);
+    if (mode != 'wal') return 'no write-ahead log ($mode)';
+    db
+      ..execute('PRAGMA synchronous = FULL')
+      ..execute('PRAGMA fullfsync = ON')
+      ..execute('PRAGMA journal_size_limit = 4194304')
+      ..execute('BEGIN IMMEDIATE');
+    return null;
+  }
+
+  static RowsOpening? create(Database db) {
+    try {
+      if (_prepareConnection(db) case final problem?) {
+        db.close();
+        return refusedFor(problem);
+      }
+      db
+        ..execute(
+          'CREATE TABLE rows (area TEXT NOT NULL, key TEXT NOT NULL, '
+          'value TEXT NOT NULL, PRIMARY KEY (area, key)) STRICT',
+        )
+        ..execute('CREATE TABLE generation (value INTEGER NOT NULL) STRICT')
+        ..execute('INSERT INTO generation VALUES (0)')
+        ..execute('PRAGMA user_version = $librarySchemaVersion')
+        ..execute('PRAGMA application_id = $libraryApplicationId')
+        ..execute('COMMIT')
+        ..close();
+      return null;
+    } on SqliteException catch (error) {
+      db.close();
+      return openingFailed(error);
+    } on FormatException catch (error) {
+      db.close();
+      return refusedFor('damaged (${_undescribed(error)})');
+    }
+  }
+
+  static RowsOpening open(Database db) {
     final prepared = <PreparedStatement>[];
     PreparedStatement prepare(String sql) {
       final statement = db.prepare(sql, persistent: true);
@@ -94,30 +135,11 @@ final class RowsDatabase {
     }
 
     try {
-      db
-        ..execute('PRAGMA locking_mode = EXCLUSIVE')
-        ..execute('PRAGMA busy_timeout = 0');
-      final mode = db.select('PRAGMA journal_mode = WAL').single.columnAt(0);
-      if (mode != 'wal') {
+      if (_prepareConnection(db) case final problem?) {
         db.close();
-        return refusedFor('no write-ahead log ($mode)');
+        return refusedFor(problem);
       }
-      db
-        ..execute('PRAGMA synchronous = FULL')
-        ..execute('PRAGMA fullfsync = ON')
-        ..execute('PRAGMA journal_size_limit = 4194304')
-        ..execute('BEGIN IMMEDIATE');
-      if (fresh) {
-        db
-          ..execute(
-            'CREATE TABLE rows (area TEXT NOT NULL, key TEXT NOT NULL, '
-            'value TEXT NOT NULL, PRIMARY KEY (area, key)) STRICT',
-          )
-          ..execute('CREATE TABLE generation (value INTEGER NOT NULL) STRICT')
-          ..execute('INSERT INTO generation VALUES (0)')
-          ..execute('PRAGMA application_id = $libraryApplicationId')
-          ..execute('PRAGMA user_version = $librarySchemaVersion');
-      } else if (_problemIn(db) case final problem?) {
+      if (_problemIn(db) case final problem?) {
         db
           ..execute('ROLLBACK')
           ..close();

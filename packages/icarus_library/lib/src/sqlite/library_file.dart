@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:sqlite3/sqlite3.dart';
 
@@ -13,6 +14,8 @@ abstract interface class LibraryFiles {
   void rename(String from, String to);
 
   Database open(String path, {required bool create});
+
+  void pause(Duration duration);
 }
 
 final class DiskLibraryFiles implements LibraryFiles {
@@ -32,9 +35,24 @@ final class DiskLibraryFiles implements LibraryFiles {
     path,
     mode: create ? OpenMode.readWriteCreate : OpenMode.readWrite,
   );
+
+  @override
+  void pause(Duration duration) => sleep(duration);
 }
 
+const _patience = Duration(milliseconds: 250);
+
 RowsOpening openLibraryFile(String path, LibraryFiles files) {
+  final waited = Stopwatch()..start();
+  final random = Random();
+  while (true) {
+    final opening = _openOnce(path, files);
+    if (opening is! RowsHeld || waited.elapsed >= _patience) return opening;
+    files.pause(Duration(milliseconds: 2 + random.nextInt(20)));
+  }
+}
+
+RowsOpening _openOnce(String path, LibraryFiles files) {
   try {
     if (!files.exists(path)) {
       if (files.exists('$path-wal')) {
@@ -42,7 +60,7 @@ RowsOpening openLibraryFile(String path, LibraryFiles files) {
       }
       if (_create(path, files) case final RowsOpening refused) return refused;
     }
-    return RowsDatabase.open(files.open(path, create: false), fresh: false);
+    return RowsDatabase.open(files.open(path, create: false));
   } on FileSystemException catch (error) {
     return RowsRefused(DeviceFailure('$error'));
   } on SqliteException catch (error) {
@@ -51,16 +69,28 @@ RowsOpening openLibraryFile(String path, LibraryFiles files) {
 }
 
 RowsOpening? _create(String path, LibraryFiles files) {
-  final creating = '$path.creating';
-  for (final leftover in [creating, '$creating-wal', '$creating-journal']) {
-    if (files.exists(leftover)) files.delete(leftover);
+  final lock = files.open('$path.lock', create: true);
+  try {
+    lock
+      ..execute('PRAGMA locking_mode = EXCLUSIVE')
+      ..execute('BEGIN EXCLUSIVE');
+  } on SqliteException catch (error) {
+    lock.close();
+    return openingFailed(error);
   }
-  switch (RowsDatabase.open(files.open(creating, create: true), fresh: true)) {
-    case RowsOpened(:final rows):
-      rows.close();
-    case final refused:
+  try {
+    if (files.exists(path)) return null;
+    final creating = '$path.creating';
+    for (final leftover in [creating, '$creating-wal', '$creating-journal']) {
+      if (files.exists(leftover)) files.delete(leftover);
+    }
+    if (RowsDatabase.create(files.open(creating, create: true))
+        case final RowsOpening refused) {
       return refused;
+    }
+    files.rename(creating, path);
+    return null;
+  } finally {
+    lock.close();
   }
-  files.rename(creating, path);
-  return null;
 }

@@ -440,8 +440,11 @@ a `hooks` package newer than Flutter 3.44.4 allows.
   `DeviceFailure` naming SQLite's error code. SQLite can describe damage with
   bytes that are not UTF-8; `package:sqlite3` throws a `FormatException` for
   that, and the engine returns it as a failure too.
-- **Keys** are at most 1024 characters. A commit that puts a longer name is
-  `CommitRefused(KeyTooLong)`; reading one is `KeyMissing`.
+- **Names are checked before anything is written.** A commit whose put,
+  delete or area clear names anything outside the alphabet is
+  `CommitRefused(NameNotAllowed)`, and one with a key past 1024 characters is
+  `CommitRefused(KeyTooLong)`; none of its changes apply. Reading a name past
+  the limit is `KeyMissing`.
 - **Closing** ends every lease the engine granted, and the engine grants no
   more (`LeaseFailed(EngineClosed)`).
 - `SqliteEngine.holdNextCommit()` parks the next commit on the worker isolate
@@ -480,7 +483,8 @@ web.
   go of the lock. The browser would order them anyway: a transaction started
   by the next holder waits for every overlapping transaction created before
   it.
-- **Keys** are at most 1024 characters, with the same rules as SQLite.
+- **Names** follow the same rules as SQLite, checked before the transaction
+  starts.
 - **Closing** ends every lease and grants no more.
 - `IndexedDbEngine.holdNextCommit()` parks the next commit before its
   transaction starts, counted as a commit in flight.
