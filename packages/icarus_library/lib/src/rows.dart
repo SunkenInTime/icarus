@@ -330,6 +330,7 @@ sealed class FolderRow extends Row {
     'iconFontPackage',
     'color',
     'customColorValue',
+    'createdAt',
   };
 
   static Decoded<ReadableFolder> decode(Object? json) =>
@@ -343,6 +344,7 @@ sealed class FolderRow extends Row {
         final iconFontPackage = fields.optionalString('iconFontPackage');
         final color = fields.optionalString('color');
         final customColorValue = fields.optionalWhole('customColorValue');
+        final createdAt = fields.optionalTime('createdAt');
         final unknown = fields.rest(_known);
         return () => ReadableFolder(
           publicId: publicId,
@@ -354,6 +356,7 @@ sealed class FolderRow extends Row {
           iconFontPackage: iconFontPackage,
           color: color,
           customColorValue: customColorValue,
+          createdAt: createdAt,
           unknownFields: unknown,
         );
       });
@@ -389,6 +392,7 @@ final class ReadableFolder extends FolderRow {
     this.iconFontPackage,
     this.color,
     this.customColorValue,
+    this.createdAt,
     this.unknownFields = JsonObject.empty,
   }) : super._(publicId);
 
@@ -400,6 +404,7 @@ final class ReadableFolder extends FolderRow {
   final String? iconFontPackage;
   final String? color;
   final int? customColorValue;
+  final DateTime? createdAt;
   final JsonObject unknownFields;
 
   @override
@@ -419,6 +424,8 @@ final class ReadableFolder extends FolderRow {
     if (iconFontPackage != null) 'iconFontPackage': iconFontPackage,
     if (color != null) 'color': color,
     if (customColorValue != null) 'customColorValue': customColorValue,
+    if (createdAt case final createdAt?)
+      'createdAt': createdAt.millisecondsSinceEpoch,
   };
 }
 

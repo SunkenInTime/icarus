@@ -13,6 +13,7 @@ import '../strategy_rows.dart';
 import '../undo.dart';
 import '../wire.dart';
 import 'engine.dart';
+import 'hive_record.dart';
 import 'layout.dart';
 import 'loaded_strategy.dart';
 import 'results.dart';
@@ -82,6 +83,12 @@ final class _PutSummary extends _Write {
 
   final String digest;
   final StrategySummary summary;
+}
+
+final class _PutHiveRecord extends _Write {
+  const _PutHiveRecord(this.record) : super(libraryArea);
+
+  final HiveRecordDigest record;
 }
 
 final class _DeleteName extends _Write {
@@ -301,6 +308,7 @@ final class LibraryStore {
   final _unreadable = <String, UnreadableStrategyListing>{};
   final _folders = <String, FolderRow>{};
   final _unplaced = <String, UnplacedRow>{};
+  final _hiveRecords = <String, HiveRecordDigest>{};
   final _strategies = <String, LoadedStrategy>{};
   final _unsaved = <String>{};
   final _changes = StreamController<StoreChange>.broadcast();
@@ -317,6 +325,10 @@ final class LibraryStore {
           unreadableStrategies: _unreadable.values.toList(),
           folders: _folders.values.toList(),
           unplaced: _unplaced.values.toList(),
+          hiveRecords: {
+            for (final record in _hiveRecords.values)
+              record.strategyPublicId: record,
+          },
         ),
       ),
     };
@@ -367,6 +379,7 @@ final class LibraryStore {
     return switch (name) {
       FormatName() ||
       SummaryName() ||
+      HiveRecordName() ||
       UnknownKindName() ||
       ForeignName() => Unplaced(null, '${name.name} holds no row'),
       FolderName(:final digest) => FolderRow.parse(
@@ -426,6 +439,23 @@ final class LibraryStore {
             return switch (admit(text)) {
               Admitted(:final json) => switch (StrategySummary.decode(json)) {
                 Read(:final value) when value == summary => Done(
+                  Put(libraryArea, name, text),
+                ),
+                Read(:final value) => wouldNot(name, 'reads as $value'),
+                CouldNotRead(:final problem) => wouldNot(name, problem),
+              },
+              NotAdmitted(:final problem) => wouldNot(name, problem),
+            };
+        }
+      case _PutHiveRecord(:final record):
+        final name = HiveRecordName(digestOf(record.strategyPublicId)).name;
+        switch (encodeJson(record.toJson())) {
+          case NotEncoded(:final problem):
+            return wouldNot(name, problem);
+          case Encoded(:final text):
+            return switch (admit(text)) {
+              Admitted(:final json) => switch (HiveRecordDigest.decode(json)) {
+                Read(:final value) when value == record => Done(
                   Put(libraryArea, name, text),
                 ),
                 Read(:final value) => wouldNot(name, 'reads as $value'),
@@ -537,6 +567,34 @@ final class LibraryStore {
               _unplaced[key] = UnplacedRow(
                 ref: StoredRowRef(libraryArea, key),
                 stored: stored,
+                problem: problem,
+              );
+          }
+        case HiveRecordName(:final digest):
+          final admitted = admit(value);
+          switch (admitted) {
+            case Admitted(:final json):
+              switch (HiveRecordDigest.decode(json)) {
+                case Read(value: final record)
+                    when namesId(digest, record.strategyPublicId):
+                  _hiveRecords[digest] = record;
+                case Read():
+                  _unplaced[key] = UnplacedRow(
+                    ref: StoredRowRef(libraryArea, key),
+                    stored: json,
+                    problem: 'stored under the name of another strategy',
+                  );
+                case CouldNotRead(:final problem):
+                  _unplaced[key] = UnplacedRow(
+                    ref: StoredRowRef(libraryArea, key),
+                    stored: json,
+                    problem: problem,
+                  );
+              }
+            case NotAdmitted(:final text, :final problem):
+              _unplaced[key] = UnplacedRow(
+                ref: StoredRowRef(libraryArea, key),
+                stored: text,
                 problem: problem,
               );
           }
@@ -1657,6 +1715,8 @@ final class _LibraryEdit {
   final _removedUnreadable = <String, StrategyRef>{};
   final _putFolders = <String, ReadableFolder>{};
   final _removedFolders = <String, String>{};
+  final _putHiveRecords = <String, HiveRecordDigest>{};
+  final _removedHiveRecords = <String>{};
 
   bool get isEmpty => writes.isEmpty;
 
@@ -1683,7 +1743,10 @@ final class _LibraryEdit {
   void _removeArea(String digest) {
     writes
       ..add(_ClearArea(StrategyArea(digest).name))
-      ..add(_DeleteName(libraryArea, SummaryName(digest).name));
+      ..add(_DeleteName(libraryArea, SummaryName(digest).name))
+      ..add(_DeleteName(libraryArea, HiveRecordName(digest).name));
+    _putHiveRecords.remove(digest);
+    _removedHiveRecords.add(digest);
     _summaries.remove(digest);
     _putSummaries.remove(digest);
     _unreadable.remove(digest);
@@ -1854,6 +1917,24 @@ final class _LibraryEdit {
         _folders[digest] = folder;
         _putFolders[digest] = folder;
         _removedFolders.remove(digest);
+      case RememberHiveRecord(:final record):
+        final id = record.strategyPublicId;
+        final digest = digestOf(id);
+        if (_summaryWithId(id) == null) {
+          return _Stop(Refused(NoSuchStrategy(id)));
+        }
+        final name = HiveRecordName(digest).name;
+        if (!_removedHiveRecords.contains(digest)) {
+          if (_store._unplaced[name] case final row?) {
+            return _Stop(Refused(UnplacedRowInTheWay(row.ref)));
+          }
+        }
+        final current = _removedHiveRecords.contains(digest)
+            ? _putHiveRecords[digest]
+            : _putHiveRecords[digest] ?? _store._hiveRecords[digest];
+        if (current == record) return const _Next();
+        writes.add(_PutHiveRecord(record));
+        _putHiveRecords[digest] = record;
       case RemoveFolder(:final folderPublicId):
         final digest = digestOf(folderPublicId);
         switch (_folderWithId(_folders, folderPublicId)) {
@@ -1926,6 +2007,11 @@ final class _LibraryEdit {
     for (final digest in _removedFolders.keys) {
       _store._folders.remove(digest);
     }
+    for (final digest in _removedHiveRecords) {
+      _store._hiveRecords.remove(digest);
+      _store._unplaced.remove(HiveRecordName(digest).name);
+    }
+    _store._hiveRecords.addAll(_putHiveRecords);
     _store._folders.addAll(_putFolders);
     return LibraryEdited(
       summaries: _putSummaries.values.toList(),

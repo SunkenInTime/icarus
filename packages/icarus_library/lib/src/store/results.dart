@@ -3,6 +3,7 @@ import '../rows.dart';
 import '../strategy_rows.dart';
 import '../undo.dart';
 import 'engine.dart';
+import 'hive_record.dart';
 import 'layout.dart';
 import 'summary.dart';
 
@@ -414,15 +415,18 @@ final class LibraryList {
     required List<UnreadableStrategyListing> unreadableStrategies,
     required List<FolderRow> folders,
     required List<UnplacedRow> unplaced,
+    required Map<String, HiveRecordDigest> hiveRecords,
   }) : strategies = List.unmodifiable(strategies),
        unreadableStrategies = List.unmodifiable(unreadableStrategies),
        folders = List.unmodifiable(folders),
-       unplaced = List.unmodifiable(unplaced);
+       unplaced = List.unmodifiable(unplaced),
+       hiveRecords = Map.unmodifiable(hiveRecords);
 
   final List<StrategySummary> strategies;
   final List<UnreadableStrategyListing> unreadableStrategies;
   final List<FolderRow> folders;
   final List<UnplacedRow> unplaced;
+  final Map<String, HiveRecordDigest> hiveRecords;
 }
 
 sealed class LibraryChange {
@@ -458,6 +462,12 @@ final class PutFolder extends LibraryChange {
   const PutFolder(this.folder);
 
   final ReadableFolder folder;
+}
+
+final class RememberHiveRecord extends LibraryChange {
+  const RememberHiveRecord(this.record);
+
+  final HiveRecordDigest record;
 }
 
 final class RemoveFolder extends LibraryChange {
