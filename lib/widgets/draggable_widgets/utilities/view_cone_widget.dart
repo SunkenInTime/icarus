@@ -11,12 +11,10 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/map_doors_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/page_occluders_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/view_cone/page_occluders.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
-import 'package:icarus/view_cone/vision_occluders.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
@@ -129,9 +127,7 @@ class ViewConeWidget extends ConsumerWidget {
           isAttack: mapState.isAttack,
         );
         final changedDoors = ref.watch(changedMapDoorsProvider);
-        heightCone = Consumer(builder: (context, ref, _) {
-          final List<VisionOccluder> page = PageOccludersScope.maybeOf(context) ??
-              ref.watch(pageOccludersProvider);
+        heightCone = Builder(builder: (context) {
           final carried = carriedBySelection(context);
           return SvgHeightViewCone(
             runtime: runtime,
@@ -145,13 +141,10 @@ class ViewConeWidget extends ConsumerWidget {
             elevation: resolvedElevation,
             opacity: opacity,
             changedDoors: changedDoors,
-            occluders: carried == null
-                ? page
-                : movedOccluders(
-                    page,
-                    -selectionDragInWorld(carried,
-                        isAttack: mapState.isAttack),
-                  ),
+            blockers: SightBlockersScope.of(context),
+            carriedBy: carried == null
+                ? Offset.zero
+                : selectionDragInWorld(carried, isAttack: mapState.isAttack),
           );
         });
       }
@@ -169,6 +162,7 @@ class ViewConeWidget extends ConsumerWidget {
           coneAngleDegrees: angle,
           lengthVirtual: currentLength,
           visionElevationCm: resolvedElevation,
+          blockers: SightBlockersScope.of(context),
         );
       }
     }

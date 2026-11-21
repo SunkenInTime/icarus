@@ -36,5 +36,17 @@ class ViewConeDragOrigin extends ValueNotifier<Offset?> {
     value = _origin + worldDelta * (_isAttack ? 1 : -1);
   }
 
+  Offset? anchorSeenFrom({required bool isAttack}) {
+    if (value == null) return null;
+    Offset side(Offset point, bool isAttack) => _coordinates.positionForSide(
+          canonicalPosition: point,
+          reflectionOffset: Offset.zero,
+          isAttack: isAttack,
+        );
+    final grabbed = _coordinates.coordinateToScreen(side(_origin, _isAttack));
+    final held = _coordinates.screenToCoordinate(grabbed + _screenDelta / _zoom);
+    return side(held, isAttack);
+  }
+
   void end() => value = null;
 }

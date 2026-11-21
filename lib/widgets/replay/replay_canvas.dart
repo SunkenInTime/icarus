@@ -13,7 +13,6 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/view_cone/cone_coverage.dart';
-import 'package:icarus/view_cone/page_occluders.dart';
 import 'package:icarus/replay/replay_drawing.dart';
 import 'package:icarus/replay/replay_frame.dart';
 import 'package:icarus/replay/replay_playback.dart';
@@ -735,7 +734,7 @@ class _ReplayCanvasState extends ConsumerState<ReplayCanvas>
           behavior: HitTestBehavior.opaque,
           onTapUp: (details) =>
               _tapped(_controller.toScene(details.localPosition)),
-          child: PageOccludersScope.none(child: canvas),
+          child: canvas,
         );
       },
     );

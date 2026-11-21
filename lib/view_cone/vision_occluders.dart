@@ -192,3 +192,41 @@ double _signedArea(List<Offset> polygon) {
   }
   return area / 2;
 }
+
+@immutable
+class SightBlock {
+  const SightBlock({required this.name, required this.shape});
+
+  final String name;
+  final VisionOccluder shape;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SightBlock && other.name == name && other.shape == shape;
+
+  @override
+  int get hashCode => Object.hash(name, shape);
+}
+
+class SightBlockers extends ChangeNotifier {
+  final _byOwner = <Object, SightBlock>{};
+  var _disposed = false;
+
+  Iterable<SightBlock> get all => _byOwner.values;
+
+  void declare(Object owner, SightBlock? block) {
+    if (_disposed || _byOwner[owner] == block) return;
+    if (block == null) {
+      _byOwner.remove(owner);
+    } else {
+      _byOwner[owner] = block;
+    }
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+}

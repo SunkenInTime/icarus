@@ -123,25 +123,18 @@ class TransitionEntriesLayer extends ConsumerWidget {
       strategySettingsProvider.select((s) => s.useNeutralTeamColors),
     );
 
-    return PageOccludersScope(
-      occluders: [
-        for (final entry in orderedEntries)
-          if (renderer.occluderAt(entry) case final occluder?) occluder,
-      ],
-      child: IgnorePointer(
-        ignoring: true,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            // Under every icon, as on the canvas.
-            for (final entry in orderedEntries)
-              if (renderer.buildWall(entry,
-                      neutralTeamColors: neutralTeamColors)
-                  case final wall?)
-                wall,
-            for (final entry in orderedEntries) renderer.buildEntry(entry),
-          ],
-        ),
+    return IgnorePointer(
+      ignoring: true,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Under every icon, as on the canvas.
+          for (final entry in orderedEntries)
+            if (renderer.buildWall(entry, neutralTeamColors: neutralTeamColors)
+                case final wall?)
+              wall,
+          for (final entry in orderedEntries) renderer.drawnEntry(entry),
+        ],
       ),
     );
   }
@@ -266,9 +259,25 @@ class _EntryRenderer {
 
   bool get _pastHalfway => t >= 0.5;
 
-  VisionOccluder? occluderAt(PageTransitionEntry entry) {
+  Widget drawnEntry(PageTransitionEntry entry) {
     final shown = entry.to ?? entry.from;
-    if (shown is! PlacedAbility || !blocksSight(shown.data)) return null;
+    if (shown is! PlacedAbility || !blocksSight(shown.data)) {
+      return buildEntry(entry);
+    }
+    return SightBlocker(
+      key: ValueKey('sight_${entry.id}'),
+      block: switch (_blockerAt(entry, shown)) {
+        final shape? => SightBlock(
+            name: sightBlockName(shown.data),
+            shape: shape,
+          ),
+        null => null,
+      },
+      child: buildEntry(entry),
+    );
+  }
+
+  VisionOccluder? _blockerAt(PageTransitionEntry entry, PlacedAbility shown) {
     final directionalOffset = coordinateSystem.scale(28) *
         (direction == PageTransitionDirection.forward ? 1.0 : -1.0);
     Offset slid(Offset position, double screenX) =>
@@ -996,41 +1005,49 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
     final neutralTeamColors = ref.watch(
       strategySettingsProvider.select((s) => s.useNeutralTeamColors),
     );
-    return PageOccludersScope(
-      occluders: pageOccluders(
-        orderedWidgets.whereType<PlacedAbility>(),
-        mapScale: mapScale,
-      ),
-      child: IgnorePointer(
-        ignoring: true,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            for (final widget in orderedWidgets)
-              if (widget is PlacedAbility &&
-                  PageTransitionEntry.wallPathOf(widget) != null)
-                Positioned.fill(
-                  key: ValueKey('wall_${widget.id}'),
-                  child: CustomPaint(
-                    painter: WallPainter(
-                      line: smoothWallLine(
-                        WallOnScreen.of(
-                          widget,
-                          mapScale: mapScale,
-                          abilitySize: abilitySize,
-                          isAttack: isAttack,
-                        ).points(widget.wallPath!),
-                      ),
-                      team: wallTeamColor(
-                        widget.isAlly,
-                        neutralTeamColors: neutralTeamColors,
-                      ),
-                      width: wallStrokeWidth(mapScale),
-                      edge: wallStrokeEdge(),
+    return IgnorePointer(
+      ignoring: true,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (final widget in orderedWidgets)
+            if (widget is PlacedAbility &&
+                PageTransitionEntry.wallPathOf(widget) != null)
+              Positioned.fill(
+                key: ValueKey('wall_${widget.id}'),
+                child: CustomPaint(
+                  painter: WallPainter(
+                    line: smoothWallLine(
+                      WallOnScreen.of(
+                        widget,
+                        mapScale: mapScale,
+                        abilitySize: abilitySize,
+                        isAttack: isAttack,
+                      ).points(widget.wallPath!),
                     ),
+                    team: wallTeamColor(
+                      widget.isAlly,
+                      neutralTeamColors: neutralTeamColors,
+                    ),
+                    width: wallStrokeWidth(mapScale),
+                    edge: wallStrokeEdge(),
                   ),
                 ),
-            for (final widget in orderedWidgets)
+              ),
+          for (final widget in orderedWidgets)
+            if (widget is PlacedAbility && blocksSight(widget.data))
+              SightBlocker(
+                key: ValueKey('sight_${widget.id}'),
+                block: sightBlockOf(widget, mapScale: mapScale),
+                child: staticPlacedWidgetView(
+                  widget: widget,
+                  mapScale: mapScale,
+                  abilitySize: abilitySize,
+                  agentSize: agentSize,
+                  isAttack: isAttack,
+                ),
+              )
+            else
               staticPlacedWidgetView(
                 widget: widget,
                 mapScale: mapScale,
@@ -1038,8 +1055,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
                 agentSize: agentSize,
                 isAttack: isAttack,
               ),
-          ],
-        ),
+        ],
       ),
     );
   }
