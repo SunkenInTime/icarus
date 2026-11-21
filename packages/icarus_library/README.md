@@ -912,6 +912,26 @@ and adding it back in the same edit with `StrategyAlreadyInStore`. `test/store_l
 random edits and checks that each saves what the same steps save one edit
 at a time, or refuses and saves nothing.
 
+**Several ops in one commit.** `commitAll(strategyPublicId, ops)` applies
+the ops in order, each to the rows the ones before it left, and sends one
+engine commit holding every row they changed and the summary after the
+last. It saves what committing the ops one by one at the same instant
+would save, with the same `StrategyEdited` for each op, but all of them or
+none: when any op is refused, or the engine refuses the commit, nothing is
+stored and nothing changes in memory. An op that changes nothing is
+skipped, and a batch where every op changes nothing is `NothingToSave`.
+`commit(strategyPublicId, op)` is `commitAll` with one op. The pages every
+op needs are loaded before the summary is read, so the summary a batch saves
+is the one a rebuild from the same rows gives. A summary keeps no tally for a
+page whose tally is empty.
+`test/store_batch_test.dart` replays the op sequences the parity run's own
+generator makes (`tool/parity_scenarios.dart`), in batches of random size,
+and checks each batch against the same ops committed one at a time and
+against a rebuild of the summary; it also checks the all or none, and that a
+batch of 300 ops is one engine commit that reads nothing it had not
+loaded. A batch costs about 110 µs an op on the memory engine, linearly
+(150, 300 and 600 ops), a third of it in `applyOp`.
+
 Every save returns a `Saving`, which the caller has to handle:
 
 - `Saved`: the engine applied the commit.
@@ -1016,6 +1036,8 @@ A `StrategySummary` holds the name, map, folder, created and updated times
 the agents placed on live pages, and how many items they hold. It also keeps
 a tally per page, so trashing a page updates the counts without reading that
 page. Every commit writes the new summary in the same commit as its rows.
+A page whose tally is empty has no entry, so a summary written after edits
+equals the one a rebuild gives.
 `readability` is `AllReadable` or `SomeUnreadable(damaged, newer)`: `newer`
 counts rows of a kind this build does not know and elements from a newer
 build (the app says "made with a newer version"), `damaged` counts every
@@ -1054,7 +1076,8 @@ and commits nothing.
 
 `changes` is a stream of `StrategyEdited` (the strategy, the op id, the
 `RowWrite`s with their changed fields and data fields, the rows removed, the
-new summary) and `LibraryEdited`. It fires after the save, once per `Saved`.
+new summary) and `LibraryEdited`. It fires after the save, once per `Saved`,
+and once per applied op, in order, after a `commitAll`.
 A local commit never removes a row; `removed` is there for cloud strategies,
 where the server rejecting a pending op can take a row away.
 
