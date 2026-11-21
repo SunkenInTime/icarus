@@ -110,7 +110,6 @@ Future<StoredStrategy> readStoredStrategy(
       elements: elements,
       lineupGroups: groups,
     ),
-    StrategyTimes(createdAt: header.createdAt, lastEdited: header.updatedAt),
   );
   return switch (back) {
     StrategyDataRefused(:final problems) => StoredUnreadable([

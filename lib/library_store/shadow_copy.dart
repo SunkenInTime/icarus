@@ -238,7 +238,7 @@ Future<ShadowCopy> copyHiveIntoStore(
   final stored = {for (final summary in list.strategies) summary.publicId};
   final unreadableIds = {
     for (final listing in list.unreadableStrategies)
-      if (listing.header case Placed(:final row)) row.publicId,
+      if (listing.header case HeaderPlaced(:final row)) row.publicId,
   };
   final hiveIds = {for (final strategy in hive.strategies) strategy.id};
   final total = hive.strategies.length;

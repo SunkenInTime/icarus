@@ -191,8 +191,8 @@ Future<StoreCheck> checkStoreAgainstHive(
     strategies.add(
       StrategyUnreadableInStore(
         switch (listing.header) {
-          Placed(:final row) => row.publicId,
-          Unplaced() => listing.ref.area,
+          HeaderPlaced(:final row) => row.publicId,
+          HeaderUnplaced() || HeaderAbsent() => listing.ref.area,
         },
         StoredUnreadable(['listed as unreadable: ${listing.ref}']),
       ),
