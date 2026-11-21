@@ -267,27 +267,25 @@ void main() {
     });
   }
 
-  test('a partial commit reported unknown for a quota abort is never called '
-      'partial by the contract, the one case allowed to be', () async {
-    for (final check in engineContract) {
-      final result = await check.run(
-        WrappedHarness(
-          (lease) => PartlyUnknownLease(
-            lease,
-            () {},
-            failure: const AbortedForQuota('the browser aborted for room'),
-          ),
+  test(
+    'a commit answered in doubt by a lease that then ends is reported as '
+    'in doubt by the contract, not as a failed listing on the ended lease',
+    () async {
+      final check = engineContract.singleWhere(
+        (check) =>
+            check.name == 'applies the changes of one commit in list order',
+      );
+      final result = await check.run(WrappedHarness(_DoubtThenEnd.new));
+      expect(
+        result,
+        isA<Broke>().having(
+          (broke) => broke.what,
+          'what',
+          contains('CommitUnknown'),
         ),
       );
-      if (result case Broke(:final what)) {
-        expect(
-          what,
-          isNot(contains('left some of its changes')),
-          reason: check.name,
-        );
-      }
-    }
-  });
+    },
+  );
 
   test(
     'a partial commit reported unknown fails every check it reaches',
@@ -345,4 +343,25 @@ void main() {
       );
     },
   );
+}
+
+final class _DoubtThenEnd extends ForwardingLease {
+  _DoubtThenEnd(super.inner);
+
+  var _ended = false;
+
+  @override
+  LeaseStatus get status => _ended ? const Ended() : inner.status;
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
+      _ended ? const StorageFailed(LeaseEnded()) : inner.entries(area, prefix);
+
+  @override
+  Future<Committing> commit(List<Change> changes) async {
+    if (_ended) return const CommitRefused(LeaseEnded());
+    if (changes.length < 2) return inner.commit(changes);
+    _ended = true;
+    return const CommitUnknown(DeviceFailure('in doubt'));
+  }
 }
