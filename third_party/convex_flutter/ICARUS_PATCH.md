@@ -21,6 +21,10 @@ reported a missing token, so a session the server refused looked signed in on
 desktop: the app showed "offline" and reconnected four times a second instead
 of asking the user to reconnect or sign out, as it does on web.
 
+A handle's watch of that flag stops at disposal before it reads another
+change. New auth clears the flag, and the replaced handle, disposed just
+before, would otherwise report its old token as accepted.
+
 Auth handles also carry an internal generation. Disposal only clears auth when
 the handle still owns the current generation, so a delayed cancellation from a
 replaced handle cannot erase the fresh callback.
