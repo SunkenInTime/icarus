@@ -41,6 +41,8 @@ const _patch = '''
     cut: null,
     writes: 0,
     full: false,
+    slowUpgradeUntil: 0,
+    swallowRowReads: false,
     opened: [],
   };
   globalThis.icarusFaults = faults;
@@ -85,7 +87,7 @@ const _patch = '''
   const getAll = IDBObjectStore.prototype.getAll;
   IDBObjectStore.prototype.getAll = function (...args) {
     const request = getAll.apply(this, args);
-    if (faults.swallowReads) {
+    if (faults.swallowReads || (faults.swallowRowReads && this.name === 'rows')) {
       Object.defineProperty(request, 'onsuccess', { set() {}, get() { return null; } });
     }
     return request;
@@ -93,7 +95,16 @@ const _patch = '''
   const createObjectStore = IDBDatabase.prototype.createObjectStore;
   IDBDatabase.prototype.createObjectStore = function (...args) {
     if (faults.storeCreationThrows) throw new TypeError('the store cannot be made');
-    return createObjectStore.apply(this, args);
+    const made = createObjectStore.apply(this, args);
+    if (args[0] === 'last' && Date.now() < faults.slowUpgradeUntil) {
+      const until = faults.slowUpgradeUntil;
+      const spin = () => {
+        if (Date.now() >= until) return;
+        made.get('spin').onsuccess = spin;
+      };
+      spin();
+    }
+    return made;
   };
   const abort = IDBTransaction.prototype.abort;
   IDBTransaction.prototype.abort = function (...args) {
@@ -335,6 +346,19 @@ void cutWrite(String kind, int write, {String keep = 'none'}) {
 }
 
 void clearCut() => _faults['cut'] = null;
+
+void slowUpgradeFor(Duration delay) => _faults['slowUpgradeUntil'] =
+    (DateTime.now().millisecondsSinceEpoch + delay.inMilliseconds).toJS;
+
+void swallowRowReads(bool swallow) => _faults['swallowRowReads'] = swallow.toJS;
+
+Future<int?> versionOf(String name) async {
+  final listed = await window.indexedDB.databases().toDart;
+  for (final info in listed.toDart) {
+    if (info.name == name) return info.version;
+  }
+  return null;
+}
 
 void storageFull(bool full) => _faults['full'] = full.toJS;
 

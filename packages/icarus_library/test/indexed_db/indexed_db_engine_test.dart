@@ -1171,6 +1171,122 @@ void main() {
     expect(await databaseExists(name), isFalse);
   });
 
+  test('an open that times out after its upgrade made the stores leaves no '
+      'new database behind', () async {
+    slowUpgradeFor(const Duration(milliseconds: 900));
+    expect(
+      await IndexedDbEngine(
+        name,
+        patience: const Duration(milliseconds: 300),
+      ).lease(),
+      isA<LeaseFailed>().having(
+        (failed) => failed.failure,
+        'failure',
+        isA<NoAnswer>(),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    expect(await databaseExists(name), isFalse);
+  });
+
+  test('an open of a format 1 database that times out during its upgrade '
+      'leaves the rows untouched, and the upgrade done or not done, never '
+      'half', () async {
+    await makeFormatOne(name, 'a', 'k', 'kept');
+    slowUpgradeFor(const Duration(milliseconds: 900));
+    expect(
+      await IndexedDbEngine(
+        name,
+        patience: const Duration(milliseconds: 300),
+      ).lease(),
+      isA<LeaseFailed>(),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    final raw = await openRaw(name);
+    final upgraded = raw.objectStoreNames.contains('last');
+    expect(raw.version, upgraded ? 2 : 1);
+    raw.close();
+    final lease = await openIndexedDb(name);
+    expect(valueOf(await lease.read('a', 'k')), 'kept');
+    await lease.release();
+  });
+
+  test('a record with a field the writer never emits is a damaged library, '
+      'and no row changes, not even one its clear names', () async {
+    final seeding = await openIndexedDb(name);
+    committed(await seeding.commit(const [Put('c', 'kept', 'v')]));
+    await seeding.release();
+    await putRecord(
+      name,
+      '{"format":2,"changes":[["clear","c"]],"unexpected":true}',
+    );
+    expect(
+      await IndexedDbEngine(name).lease(),
+      isA<LeaseFailed>().having(
+        (failed) => failed.failure,
+        'failure',
+        isA<DamagedLibrary>(),
+      ),
+    );
+    await putRecord(name, '{"format":2,"changes":[]}');
+    final lease = await openIndexedDb(name);
+    expect(valueOf(await lease.read('c', 'kept')), 'v');
+    await lease.release();
+  });
+
+  test('a check at open that cannot read every row it needs refuses the lease '
+      'rather than replaying on a partial view', () async {
+    final seeding = await openIndexedDb(name);
+    committed(await seeding.commit(const [ClearArea('c'), Put('d', 'k', 'v')]));
+    await seeding.release();
+    await putRaw(name, 'c', 'stray', 'text:mismatch');
+    await putRaw(name, 'd', 'k', 'text:changed');
+    swallowRowReads(true);
+    final leasing = await IndexedDbEngine(
+      name,
+      patience: const Duration(milliseconds: 300),
+    ).lease().timeout(const Duration(seconds: 5));
+    swallowRowReads(false);
+    expect(
+      leasing,
+      isA<LeaseFailed>().having(
+        (failed) => failed.failure,
+        'failure',
+        isA<NoAnswer>(),
+      ),
+    );
+    await putRecord(name, '{"format":2,"changes":[]}');
+    final lease = await openIndexedDb(name);
+    expect(valueOf(await lease.read('c', 'stray')), 'mismatch');
+    expect(valueOf(await lease.read('d', 'k')), 'changed');
+    await lease.release();
+  });
+
+  test('a replay that throws while queuing is aborted before the lease is '
+      'refused, leaves no prefix, and keeps the record', () async {
+    final writer = await openIndexedDb(name);
+    committed(await writer.commit(const [Put('a', 'k', 'old')]));
+    cutWrite('quota', 2);
+    expect(
+      await writer.commit(const [Put('a', 'k', 'new'), Put('b', 'k', 'boom')]),
+      isA<CommitUnknown>(),
+    );
+    clearCut();
+    await writer.release();
+    throwPlainlyOnPutOf('boom');
+    expect(
+      await IndexedDbEngine(name).lease().timeout(const Duration(seconds: 5)),
+      isA<LeaseFailed>(),
+    );
+    throwPlainlyOnPutOf(null);
+    final raw = await openRaw(name);
+    raw.close();
+    final lease = await openIndexedDb(name);
+    expect(valueOf(await lease.read('a', 'k')), 'new');
+    expect(valueOf(await lease.read('b', 'k')), 'boom');
+    await lease.release();
+  });
+
   test('a format 1 database with rows opens, gets the store for the last '
       'commit, and loses nothing', () async {
     await makeFormatOne(name, 'a', 'k', 'kept');

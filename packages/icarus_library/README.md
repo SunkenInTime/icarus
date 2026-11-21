@@ -452,10 +452,11 @@ the store awaits each commit before it reads.
   `Delete(area, key)` and `ClearArea(area)` across any areas, applies them
   in list order, and applies all of them or none, also across a crash. An
   empty commit applies and changes nothing. It returns `CommitApplied`,
-  which is on disk and survives a crash including power loss;
-  `CommitRefused(failure)`, with a guarantee that nothing changed; or
-  `CommitUnknown(failure)`, meaning all or none applied and the engine
-  cannot say which.
+  which the storage reported durable (SQLite synced its log; a browser
+  reported a strict transaction complete) and so survives a crash as far as
+  that report holds; `CommitRefused(failure)`, with a guarantee that nothing
+  changed; or `CommitUnknown(failure)`, meaning the next granted lease shows
+  all or none of it and the engine cannot say which.
 - **One writer at a time, for its whole life.** An engine grants one lease at
   a time for the storage under it, whichever engine object, process or tab
   asks: a second `lease()` is `HeldByAnotherWriter` until the first is
@@ -645,22 +646,32 @@ web.
   held and the browser's durability checked, and before the lease is granted,
   the engine reads the record and checks the rows against it: every key it
   put holds that value, every key it deleted is gone, and every area it
-  cleared holds exactly the keys put after the clear. If they match (the
-  usual case), opening writes no row. (Taking a lease still starts and aborts
+  cleared holds exactly the keys put after the clear. It waits for every
+  read it started, and a read that failed refuses the lease rather than
+  letting a mismatch it did see choose a replay. If they match (the usual
+  case), taking the lease writes no row. (Taking a lease still starts and aborts
   a read-write transaction to probe strict durability, and opening a format
   1 database runs the browser's upgrade; neither changes a row.) If they do
   not, the engine applies the
   record's changes again; puts, deletes and area clears give the same rows
-  however many times they run, so a commit that landed in part is completed
-  and one that landed whole is untouched. This is the one write opening may
-  make: the store never commits at open, but this engine may complete its own
-  last commit, which it already promised, while taking the lease. If that
-  write fails for room, the lease is refused as `StorageFull` (`OutOfRoom`),
-  the record stays, and nothing is lost; the next lease with room completes
-  it. An intact library opens on a full disk, because the check only reads.
-  A record that cannot be read, or holds something the engine would never
-  write, is `DamagedLibrary`; one from a newer engine format is
-  `NewerFormat`. The check is never skipped.
+  however many times they run, so a commit that landed in part is completed,
+  one that landed whole is untouched, and one whose record landed but whose
+  changes never started is applied whole. This is the one write taking the
+  lease may make: the store never commits at open, but this engine may
+  complete its own last commit, which it already promised, while taking the
+  lease. Recovery is a property of the next lease that is granted: a lease
+  that is refused or times out may already have written some of the
+  replay's rows, and the next one finishes the job. If the replay fails for
+  room, the lease is refused as `StorageFull` (`OutOfRoom`), the record
+  stays, and nothing is lost; the next lease with room completes it. A replay
+  that throws while it is being queued is aborted, and the lease is refused
+  once the browser confirms the abort (or says the abort failed). An intact
+  library opens on a full disk, because the check only reads. A record is
+  accepted only if it is exactly what the engine writes: an object with
+  `format` equal to the engine format and `changes`, nothing else, every
+  change of a kind and with names and lengths a commit is allowed. Anything
+  else is `DamagedLibrary`, or `NewerFormat` when its format is newer, and no
+  row changes. The check is never skipped.
 - **Why.** Firefox can keep part of a transaction that aborted for room:
   requests queued after the failing one still take effect
   ([bug 2080749](https://bugzilla.mozilla.org/show_bug.cgi?id=2080749),
@@ -717,7 +728,11 @@ web.
   lease created is deleted, and the lock is let go, each step whatever the
   one before it did. Every browser call made while acquiring or releasing a
   lease has a time limit (10 s by default, `IndexedDbEngine.patience`), after
-  which the caller gets `NoAnswer`. Release always closes the database and
+  which the caller gets `NoAnswer`. An open that has already answered
+  creates nothing behind the caller: an upgrade that arrives later aborts
+  itself, and if the upgrade made a new database before the open gave up,
+  the late success closes and deletes it. Upgrading a format 1 database is
+  the browser's own transaction, so it is done or not done, never half. Release always closes the database and
   lets go of the lock, and says `ReleaseFailed` if either step failed. A
   throw while the record is queued aborts it and answers `CommitRefused` (or
   `CommitUnknown` if the abort throws too); any throw once the record has
@@ -817,8 +832,10 @@ answers each step with its own result:
 
 **Was the library just created?** `StoreOpened.origin` is `StorageCreated`
 when the library held no `format` row and no row in any area when it was
-opened, and `StorageExisted` when it held a `format` row or any row. Opening
-decides and reports; it writes nothing. The `format` row, the store's
+opened, and `StorageExisted` when it held a `format` row or any row. The
+store's open decides and reports; the store writes nothing (on IndexedDB the
+engine may have just completed its own last commit while granting the
+lease, described under IndexedDB). The `format` row, the store's
 marker, goes into the first commit the store makes for any reason, in the
 same engine commit as that save. A library that lost its marker is existing,
 is never refused for it, and gets it back the same way. A new library that

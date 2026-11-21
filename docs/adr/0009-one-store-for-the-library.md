@@ -58,7 +58,10 @@ decodes a payload into a typed item at the edge of the editor.
   quota abort in Firefox, an abort that itself fails), by recording each
   commit's changes in one put before applying them, ending the lease when a
   commit is in doubt so no later record replaces that one, and finishing the
-  commit, if it landed in part, while taking the next lease.
+  commit, if it landed in part or its changes never started, while taking
+  the next lease. That recovery belongs to the next lease that is granted: a
+  lease refused or timed out on the way may already have written some of
+  those rows.
 - A save the engine cannot answer for is in doubt, and the store that made it
   is finished: it releases its lease and refuses every later call. The caller
   reopens and reads, and what is stored is what was saved. To keep the edit

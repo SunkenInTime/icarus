@@ -157,6 +157,7 @@ Future<Committing> _commit(
   final areas = _areasOf(changes);
   final before = await _snapshot(lease, areas);
   final committing = await lease.commit(changes);
+  if (committing is CommitUnknown) return committing;
   _effectSeenInItsOwnLease(
     committing,
     before,
