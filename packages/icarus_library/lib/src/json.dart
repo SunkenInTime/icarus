@@ -471,6 +471,34 @@ String canonicalJson(Object? value) =>
 bool sameJson(Object? left, Object? right) =>
     identical(left, right) || canonicalJson(left) == canonicalJson(right);
 
+bool sameJsonTree(Object? left, Object? right) {
+  if (identical(left, right)) return true;
+  final a = _raw(left);
+  final b = _raw(right);
+  if (a is Map<Object?, Object?>) {
+    if (b is! Map<Object?, Object?> || a.length != b.length) return false;
+    for (final key in a.keys) {
+      final other = b[key];
+      if (other == null && !b.containsKey(key)) return false;
+      if (!sameJsonTree(a[key], other)) return false;
+    }
+    return true;
+  }
+  if (a is List<Object?>) {
+    if (b is! List<Object?> || a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!sameJsonTree(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  if (a is double && b is double || a is int && b is int) return a == b;
+  if (a is num && b is num) {
+    return _asJavaScript(a, sortKeys: false) ==
+        _asJavaScript(b, sortKeys: false);
+  }
+  return b is! Map && b is! List && a == b;
+}
+
 const maxOpBytes = 900 * 1024;
 const maxArrayEntries = 8000;
 
