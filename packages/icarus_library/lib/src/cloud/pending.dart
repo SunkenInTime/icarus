@@ -383,17 +383,17 @@ sealed class ServerAnswer {
   const ServerAnswer();
 }
 
-final class NoAnswer extends ServerAnswer {
-  const NoAnswer();
+final class NotAnswered extends ServerAnswer {
+  const NotAnswered();
 
   @override
-  bool operator ==(Object other) => other is NoAnswer;
+  bool operator ==(Object other) => other is NotAnswered;
 
   @override
-  int get hashCode => (NoAnswer).hashCode;
+  int get hashCode => (NotAnswered).hashCode;
 
   @override
-  String toString() => 'NoAnswer';
+  String toString() => 'NotAnswered';
 }
 
 final class AnsweredApplied extends ServerAnswer {

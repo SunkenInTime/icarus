@@ -555,7 +555,7 @@ void main() {
             scope: const OnPage('page-c'),
             authored: const AuthoredNoRow(),
             policy: SendPolicy.checked,
-            answer: const NoAnswer(),
+            answer: const NotAnswered(),
             retriedAfter: 0,
           ),
         ],

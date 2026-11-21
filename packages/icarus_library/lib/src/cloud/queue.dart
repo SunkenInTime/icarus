@@ -792,7 +792,7 @@ final class EntryView {
 int _answeredAfterRead(PendingOp entry) => switch (entry.answer) {
   AnsweredApplied(:final afterRead) ||
   AnsweredRefused(:final afterRead) => afterRead,
-  NoAnswer() || AnsweredNothingToDo() => 0,
+  NotAnswered() || AnsweredNothingToDo() => 0,
 };
 
 String? _authoredPage(Scope scope) => switch (scope) {
@@ -1369,7 +1369,7 @@ void _settle(_Edit edit) {
         revision,
         afterRead,
       ),
-      NoAnswer() || AnsweredRefused() => null,
+      NotAnswered() || AnsweredRefused() => null,
     };
     if (cause != null) {
       edit.remove(entry.id, cause);
@@ -1387,7 +1387,7 @@ void _settle(_Edit edit) {
     derivationWork.visits++;
     final live = attempt.opIds.any(
       (opId) => switch (edit.index.byId[opId]) {
-        PendingOp(answer: NoAnswer()) => true,
+        PendingOp(answer: NotAnswered()) => true,
         _ => false,
       },
     );
@@ -1749,7 +1749,7 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
       scope: change.scope,
       authored: change.authored,
       policy: policy,
-      answer: const NoAnswer(),
+      answer: const NotAnswered(),
       retriedAfter: edit.lastAttempt,
     ),
   );
@@ -1825,7 +1825,7 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer) {
   if (index == -1) return NotApplicable(NoSuchOp(answer.opId));
   final entry = edit.entries[index];
   if (entry is! PendingOp) return NotApplicable(NoSuchOp(answer.opId));
-  if (entry.answer is! NoAnswer) return edit.done();
+  if (entry.answer is! NotAnswered) return edit.done();
   final afterRead = edit.lastRead;
   edit.put(
     entry.copyWith(
@@ -1915,7 +1915,7 @@ Step _keepMine(
       scope: entry.scope,
       authored: authored,
       policy: SendPolicy.checked,
-      answer: const NoAnswer(),
+      answer: const NotAnswered(),
       retriedAfter: edit.lastAttempt,
     ),
   );
@@ -1987,7 +1987,7 @@ Step _reissue(_Edit edit, Map<String, String> fresh, DateTime now) {
     }
     renamedAt[index] = entry.copyWith(
       work: work,
-      answer: const NoAnswer(),
+      answer: const NotAnswered(),
       policy: SendPolicy.checked,
       retriedAfter: edit.lastAttempt,
     );

@@ -154,7 +154,7 @@ final class _OnPage {
 
 bool _isAccepted(PendingOp entry) => switch (entry.answer) {
   AnsweredApplied() || AnsweredNothingToDo() => true,
-  NoAnswer() || AnsweredRefused() => false,
+  NotAnswered() || AnsweredRefused() => false,
 };
 
 int _slotAt(List<_Slot> slots, int place) {
@@ -718,7 +718,7 @@ PendingState stateOf(CloudQueue queue, PendingOp entry) {
       return ServerRefused(refusal);
     case AnsweredNothingToDo():
       return const Accepted(0);
-    case NoAnswer():
+    case NotAnswered():
       break;
   }
   final attempts = [
