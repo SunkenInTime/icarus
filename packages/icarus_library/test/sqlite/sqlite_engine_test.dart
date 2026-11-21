@@ -18,14 +18,26 @@ import '../store_support.dart';
 import '../support.dart';
 import 'fault_harness.dart' show blankDatabasePage, journalHoldingPages;
 import 'library_process.dart';
+import 'library_process_launcher.dart';
 
 final class FileHarness implements EngineHarness {
   FileHarness(this.path);
 
   final String path;
+  final _opened = <SqliteEngine>[];
 
   @override
-  Future<StorageEngine> open() async => SqliteEngine(path);
+  Future<StorageEngine> open() async {
+    final engine = SqliteEngine(path);
+    _opened.add(engine);
+    return engine;
+  }
+
+  Future<void> closeAll() async {
+    for (final engine in _opened) {
+      await engine.close();
+    }
+  }
 
   @override
   Future<void> close(StorageEngine engine) => (engine as SqliteEngine).close();
@@ -73,10 +85,8 @@ Future<(String, int, int)> _holdBriefly(String path) async {
   };
 }
 
-Future<Process> _start(String mode, String path) => Process.start(
-  Platform.resolvedExecutable,
-  ['run', 'test/sqlite/library_process.dart', mode, path],
-);
+Future<Process> _start(String mode, String path) =>
+    startLibraryProcess(mode, path);
 
 Future<int> _probeGeneration(StorageLease lease, String where) async {
   final generations = <String>{};
@@ -115,10 +125,14 @@ void main() {
 
   tearDown(() => directory.delete(recursive: true));
 
+  tearDownAll(removeLibraryProcess);
+
   group('the engine contract on library files', () {
     for (final check in engineContract) {
       test(check.name, () async {
-        final result = await check.run(FileHarness(path));
+        final harness = FileHarness(path);
+        addTearDown(harness.closeAll);
+        final result = await check.run(harness);
         expect(result, isA<Passed>(), reason: '$result');
       });
     }
