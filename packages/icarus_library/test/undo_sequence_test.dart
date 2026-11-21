@@ -37,6 +37,19 @@ LineupGroupPayload _groupPayload() => LineupGroupPayload(
   },
 );
 
+LineupGroupPayload _twoLinks(String id) => LineupGroupPayload(
+  payloadVersion: 1,
+  data: {
+    'id': id,
+    'origins': [_origin('$id-o')],
+    'landings': [_landing('$id-l')],
+    'links': [
+      _link('$id-k1', '$id-o', '$id-l'),
+      _link('$id-k2', '$id-o', '$id-l'),
+    ],
+  },
+);
+
 StrategyRowSet _start({required bool legacy}) => StrategyRowSet(
   strategy: ReadableStrategy(
     publicId: strategyId,
@@ -88,6 +101,14 @@ StrategyRowSet _start({required bool legacy}) => StrategyRowSet(
     ),
   ],
   lineupGroups: [
+    DeletedLineupGroup(
+      strategyPublicId: strategyId,
+      publicId: 'g0',
+      pagePublicId: 'page-a',
+      payload: _twoLinks('g0'),
+      sortIndex: 1,
+      revision: 2,
+    ),
     LiveLineupGroup(
       strategyPublicId: strategyId,
       publicId: 'g1',
@@ -233,7 +254,7 @@ final class _Edits {
     },
     'bring back a deleted agent': (rows, opId) =>
         switch (rows.element('ghost')) {
-          final DeletedElement ghost => ElementAddOp(
+          final DeletedElement ghost when ghost.revision == 2 => ElementAddOp(
             opId: opId,
             elementPublicId: 'ghost',
             pagePublicId: 'page-a',
@@ -301,24 +322,77 @@ final class _Edits {
         expectedLineupRevision: row.revision,
       );
     },
-    'delete or bring back a lineup group': (rows, opId) =>
-        switch (rows.lineupGroup('g1')) {
-          final LiveLineupGroup row => LineupGroupDeleteOp(
-            opId: opId,
-            lineupPublicId: 'g1',
-            pagePublicId: 'page-a',
-            expectedLineupRevision: row.revision,
-          ),
-          final DeletedLineupGroup row => LineupGroupAddOp(
-            opId: opId,
-            lineupPublicId: 'g1',
-            pagePublicId: 'page-a',
-            payload: _groupPayload(),
-            sortIndex: 0,
-            expectedLineupRevision: row.revision,
-          ),
-          _ => null,
-        },
+    'delete a lineup group': (rows, opId) {
+      final live = [
+        for (final row in rows.lineupGroups)
+          if (row is LiveLineupGroup) row,
+      ];
+      if (live.isEmpty) return null;
+      final row = pick(live);
+      return LineupGroupDeleteOp(
+        opId: opId,
+        lineupPublicId: row.publicId,
+        pagePublicId: row.pagePublicId,
+        expectedLineupRevision: row.revision,
+      );
+    },
+    'bring back a deleted lineup group': (rows, opId) => switch (rows
+        .lineupGroup('g0')) {
+      final DeletedLineupGroup row when row.revision == 2 => LineupGroupAddOp(
+        opId: opId,
+        lineupPublicId: 'g0',
+        pagePublicId: 'page-a',
+        payload: _twoLinks('g0'),
+        sortIndex: 1,
+        expectedLineupRevision: row.revision,
+      ),
+      _ => null,
+    },
+    'add a lineup group with two links': (rows, opId) {
+      final id = 'g-new-${_fresh++}';
+      return LineupGroupAddOp(
+        opId: opId,
+        lineupPublicId: id,
+        pagePublicId: 'page-a',
+        payload: _twoLinks(id),
+        sortIndex: 2,
+      );
+    },
+    'remove the first link of a group': (rows, opId) {
+      final groups = [
+        for (final row in rows.lineupGroups)
+          if (row case final LiveLineupGroup live
+              when (live.payload.data['links']! as JsonList).length > 1)
+            live,
+      ];
+      if (groups.isEmpty) return null;
+      final row = pick(groups);
+      final data = row.payload.data.toJson();
+      return lineupEditOp(
+        opId: opId,
+        base: row,
+        drawn: DrawnAt(row.revision),
+        payload: row.payload.withData({
+          ...data,
+          'links': [...(data['links']! as List<Object?>).skip(1)],
+        }),
+        sortIndex: row.sortIndex,
+        connection: Connection.live,
+      );
+    },
+    'reverse the links of the group whole': (rows, opId) {
+      final row = group(rows);
+      if (row == null) return null;
+      final data = row.payload.data.toJson();
+      final links = (data['links']! as List<Object?>).reversed.toList();
+      if (links.length < 2) return null;
+      return LineupGroupPatchOp(
+        opId: opId,
+        lineupPublicId: 'g1',
+        expectedLineupRevision: row.revision,
+        payload: row.payload.withData({...data, 'links': links}),
+      );
+    },
     'rename the page': (rows, opId) {
       final row = rows.page('page-a')! as LivePage;
       return PagePatchOp(
@@ -394,11 +468,6 @@ Object? _itemsById(Object? json) => switch (json) {
   _ => json,
 };
 
-Map<String, Object?> _withoutRevision(Row row) =>
-    {...row.toJson()! as Map<String, Object?>}
-      ..remove('revision')
-      ..remove('updatedAt');
-
 bool _isCleared(ElementKind kind, String field, Object? value) =>
     switch (laterField(kind, field)?.empty) {
       ClearedBy(value: final cleared) =>
@@ -406,46 +475,97 @@ bool _isCleared(ElementKind kind, String field, Object? value) =>
       NeverCleared() || null => false,
     };
 
-Map<String, Object?> _clearedAsAbsent(LiveElement row) {
-  final json = _withoutRevision(row);
-  final payload = json['payload']! as Map<String, Object?>;
-  final data = payload['data']! as Map<String, Object?>;
-  return {
-    ...json,
-    'payload': {
-      ...payload,
-      'data': {
-        for (final MapEntry(:key, :value) in data.entries)
-          if (!_isCleared(row.payload.kind, key, value)) key: value,
-      },
-    },
-  };
-}
+typedef _Stored = Map<String, Map<String, Object?>>;
 
-Map<String, Object?> _content(StrategyRowSet rows) => {
-  'strategy': _withoutRevision(rows.strategy),
-  'pages': {
-    for (final row in rows.pages)
-      row.key.id: {
-        ..._withoutRevision(row),
-        if (row case ReadablePageRow(isAutoNamed: null)) 'isAutoNamed': false,
-      },
-  },
-  'settings': {
-    for (final row in rows.settings)
-      if (row case ReadablePageSettings(:final pagePublicId, :final settings))
-        pagePublicId: (settings ?? defaultSettings).toJson(),
-  },
-  'elements': {
-    for (final row in rows.elements)
-      if (row is LiveElement) row.publicId: _clearedAsAbsent(row),
-  },
-  'groups': {
-    for (final row in rows.lineupGroups)
-      if (row is LiveLineupGroup)
-        row.publicId: _itemsById(_withoutRevision(row)),
-  },
+typedef _Pinned = ({String why, _Stored Function(_Stored rows) same});
+
+Map<String, Object?> _map(Object? json) => json! as Map<String, Object?>;
+
+_Stored _each(
+  _Stored rows,
+  Map<String, Object?> Function(String key, Map<String, Object?> row) change,
+) => {
+  for (final MapEntry(:key, :value) in rows.entries) key: change(key, value),
 };
+
+final List<_Pinned> _pinned = [
+  (
+    why: 'a revision and an updated time move forward with every write',
+    same: (rows) => _each(
+      rows,
+      (_, row) => {...row}
+        ..remove('revision')
+        ..remove('updatedAt'),
+    ),
+  ),
+  (
+    why:
+        'a page saved before isAutoNamed holds false after an undo, which '
+        'the server reads as the same',
+    same: (rows) => _each(
+      rows,
+      (key, row) =>
+          key.startsWith('page ') ? {'isAutoNamed': false, ...row} : row,
+    ),
+  ),
+  (
+    why: 'settings never set hold the app defaults after an undo',
+    same: (rows) => _each(
+      rows,
+      (key, row) => key.startsWith('settings ')
+          ? {'settings': defaultSettings.toJson(), ...row}
+          : row,
+    ),
+  ),
+  (
+    why:
+        'a later field at its cleared value is the same as no field, since '
+        'the server keeps it once set',
+    same: (rows) => _each(rows, (key, row) {
+      if (!key.startsWith('element ')) return row;
+      final payload = _map(row['payload']);
+      final kind = ElementKind.named(payload['kind'])!;
+      return {
+        ...row,
+        'payload': {
+          ...payload,
+          'data': {
+            for (final MapEntry(:key, :value) in _map(payload['data']).entries)
+              if (!_isCleared(kind, key, value)) key: value,
+          },
+        },
+      };
+    }),
+  ),
+  (
+    why: 'a lineup item put back by a merge comes back last',
+    same: (rows) => _each(
+      rows,
+      (key, row) => key.startsWith('group ') ? _map(_itemsById(row)) : row,
+    ),
+  ),
+  (
+    why: 'a deleted row holds whatever payload the last write left',
+    same: (rows) => _each(
+      rows,
+      (_, row) => row['deleted'] == true ? ({...row}..remove('payload')) : row,
+    ),
+  ),
+];
+
+_Stored _stored(StrategyRowSet rows) => {
+  'strategy': _map(rows.strategy.toJson()),
+  for (final row in rows.pages) 'page ${row.key.id}': _map(row.toJson()),
+  for (final row in rows.settings) 'settings ${row.key.id}': _map(row.toJson()),
+  for (final row in rows.elements) 'element ${row.key.id}': _map(row.toJson()),
+  for (final row in rows.lineupGroups)
+    'group ${row.key.id}': _map(row.toJson()),
+};
+
+_Stored _compared(_Stored rows, Set<String> startKeys) => _pinned.fold({
+  for (final MapEntry(:key, :value) in rows.entries)
+    if (startKeys.contains(key) || value['deleted'] != true) key: value,
+}, (rows, pinned) => pinned.same(rows));
 
 void main() {
   test(
@@ -460,7 +580,8 @@ void main() {
       var nothing = 0;
       while (runs < 3000) {
         final session = Session(_start(legacy: random.nextBool()));
-        final start = _content(session.rows);
+        final start = _stored(session.rows);
+        final startKeys = start.keys.toSet();
         final names = <String>[];
         final undos = <Undo>[];
         final length = 1 + random.nextInt(4);
@@ -483,7 +604,7 @@ void main() {
           }
         }
         final where = names.join(', then ');
-        final end = _content(session.rows);
+        final end = _stored(session.rows);
         final redos = <Undo>[];
         for (final undo in undos.reversed) {
           final StrategyOp op;
@@ -507,7 +628,11 @@ void main() {
               fail('$where: undo ${op.opId} gave ${describe(other)}');
           }
         }
-        expect(_content(session.rows), start, reason: '$where, undone');
+        expect(
+          _compared(_stored(session.rows), startKeys),
+          _compared(start, startKeys),
+          reason: '$where, undone',
+        );
         for (final redo in redos.reversed) {
           final op = switch (session.buildUndoOf(
             OpApplied(writes: const [], undo: redo),
@@ -522,7 +647,11 @@ void main() {
               fail('$where: redo ${op.opId} gave ${describe(other)}');
           }
         }
-        expect(_content(session.rows), end, reason: '$where, redone');
+        expect(
+          _compared(_stored(session.rows), startKeys),
+          _compared(end, startKeys),
+          reason: '$where, redone',
+        );
         runs++;
       }
       expect(used, edits.all.keys.toSet());

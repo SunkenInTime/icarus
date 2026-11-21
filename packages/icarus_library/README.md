@@ -162,16 +162,50 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   `UndoBlocked` with `TargetGone`, `TargetUnreadable`, `ChangedSince` (a
   field the edit wrote now holds something else, so the undo would
   overwrite a change not in the history being undone) or `CannotClear`.
-  Fields the edit did not write are left alone: undoing an edit to an
-  agent's position writes the position back and keeps a teammate's later
-  change to its side. Element and lineup group undos are merges whose base
-  is what the edit left, so the server refuses one that races a newer
-  change (`field_conflict`); the others carry the current revision. Redo is
-  the same mechanism: applying a built undo returns the value that undoes
-  it. `test/undo_sequence_test.dart` runs 3,000 random runs of one to four
+  An undo puts back the fields its edit wrote and nothing else, and only
+  into the row lifetime its edit was made in:
+  - Fields the edit did not write are left alone: undoing an edit to an
+    agent's position writes the position back and keeps a teammate's later
+    change to its side.
+  - Fields are compared with the field rules' defaults filled in on both
+    sides, so a default made explicit is not a change, and a built op that
+    would change nothing answers `NothingToUndo`.
+  - For an element, every field of a field group the edit wrote counts as
+    written, as it does for the server's merge: once a teammate moves an
+    image, undoing its scale is `ChangedSince`.
+  - Lineup items are compared by id and content, never by position, since
+    the server's merge cannot keep positions; an item an undo put back last
+    never reads as someone else's change. Undoing an edit that reordered a
+    group's items writes the payload as it is now with only that order put
+    back, so a teammate's later landing move stays.
+  - A delete's undo records the revision its tombstone was left at and
+    restores only over that tombstone: if the row was brought back and
+    deleted again since, it is `ChangedSince`. The editor's own undo and
+    redo never trip this, because applying a built undo returns a fresh
+    value that replaces the old one on the other stack.
+  - An undo that only puts back a place is the reorder op
+    (`element.reorder`, `lineup.reorder`, `page.reorder`). Element and
+    lineup group undos that write fields are merges whose base is what the
+    edit left, so the server refuses one that races a newer change
+    (`field_conflict`); the others carry the current revision.
+  - An undo that deletes a page (the undo of a page add) is a page delete
+    like any other: the page goes to the trash with whatever is on it, and
+    the cloud queue's check before sending a page delete applies to it.
+  - Undoing a link add after a teammate removed the other link that used a
+    landing removes that landing too, because the server keeps a landing
+    only while a link uses it.
+
+  Redo is the same mechanism: applying a built undo returns the value that
+  undoes it. A new edit to a field blocks redo of an older edit to that
+  field and leaves other redos alone; the editor clears its redo stack on
+  any new edit. Each new undo or redo needs a fresh op id; retrying the same
+  built op after an unknown outcome uses the same id. Reusing the original
+  edit's id makes the server treat the undo as that edit again, a no-op.
+  `test/undo_sequence_test.dart` runs 3,000 random runs of one to four
   edits on one page, over every row kind, and checks that undoing them in
-  reverse, each undo built when it is used, puts every row back, and that
-  redoing them returns to the end.
+  reverse, each undo built when it is used, puts every stored row back,
+  tombstones included, and that redoing them returns to the end; the few
+  differences the protocol forces are listed in the test as a table.
 
 ## Where it differs from the server on purpose
 

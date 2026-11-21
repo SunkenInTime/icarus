@@ -1,3 +1,4 @@
+import 'apply.dart';
 import 'field_merge.dart';
 import 'field_rules.dart';
 import 'json.dart';
@@ -78,9 +79,10 @@ final class RemoveAddedElement extends Undo {
 }
 
 final class RestoreDeletedElement extends Undo {
-  const RestoreDeletedElement(this.before);
+  const RestoreDeletedElement(this.before, {required this.deletedAt});
 
   final LiveElement before;
+  final int deletedAt;
 }
 
 final class RestoreElementFields extends Undo {
@@ -105,9 +107,10 @@ final class RemoveAddedGroup extends Undo {
 }
 
 final class RestoreDeletedGroup extends Undo {
-  const RestoreDeletedGroup(this.before);
+  const RestoreDeletedGroup(this.before, {required this.deletedAt});
 
   final LiveLineupGroup before;
+  final int deletedAt;
 }
 
 final class RestoreGroupFields extends Undo {
@@ -196,7 +199,7 @@ UndoBuild buildUndo(
   required PageSettings defaultSettings,
 }) {
   final build = _Build(rows, opId);
-  return switch (undo) {
+  final built = switch (undo) {
     RestoreStrategyFields() => build.strategyFields(undo),
     RestorePageFields() => build.pageFields(undo),
     RestorePagePlace() => build.pagePlace(undo),
@@ -209,6 +212,11 @@ UndoBuild buildUndo(
     RemoveAddedGroup() => build.addedGroup(undo),
     RestoreDeletedGroup() => build.deletedGroup(undo),
     RestoreGroupFields() => build.groupFields(undo),
+  };
+  return switch (built) {
+    UndoReady(:final op) when applyOp(rows, op) is OpUnchanged =>
+      const NothingToUndo(),
+    _ => built,
   };
 }
 
@@ -289,6 +297,49 @@ Map<String, Object?> _withoutCleared(ElementPayload payload) => {
     else
       key: value,
 };
+
+Map<String, Object?> _filled(Map<String, Object?> data) =>
+    withFieldDefaults(data)! as Map<String, Object?>;
+
+Map<String, Object?> _byId(Map<String, Object?> data, String collection) => {
+  for (final item in lineupItems(data, collection))
+    if (item['id'] case final String id) id: item,
+};
+
+bool _sameGroupContent(LineupGroupPayload left, LineupGroupPayload right) {
+  if (left.payloadVersion != right.payloadVersion) return false;
+  final a = _filled(left.data.raw);
+  final b = _filled(right.data.raw);
+  for (final key in {...a.keys, ...b.keys}) {
+    if (lineupCollections.contains(key)) {
+      if (!sameJson(_byId(a, key), _byId(b, key))) return false;
+    } else if (!_sameEntry(_entry(a, key), _entry(b, key))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+List<String> _idsIn(Map<String, Object?> data, String collection) => [
+  for (final item in lineupItems(data, collection))
+    if (item['id'] case final String id) id,
+];
+
+List<Map<String, Object?>> _inOrderOf(
+  List<Map<String, Object?>> items,
+  List<String> order,
+) {
+  final place = {for (final (index, id) in order.indexed) id: index};
+  final placed = [
+    for (final item in items)
+      if (place.containsKey(item['id'])) item,
+  ]..sort((a, b) => place[a['id']]!.compareTo(place[b['id']]!));
+  var next = 0;
+  return [
+    for (final item in items)
+      if (place.containsKey(item['id'])) placed[next++] else item,
+  ];
+}
 
 bool _sameContent(ElementPayload left, ElementPayload right) =>
     left.kind == right.kind &&
@@ -507,6 +558,8 @@ final class _Build {
       null => _blocked(TargetGone(key)),
       LiveElement() => const NothingToUndo(),
       UnreadableElement() => _blocked(TargetUnreadable(key)),
+      DeletedElement(:final revision) when revision != undo.deletedAt =>
+        _blocked(ChangedSince(key, const ['deleted'])),
       final DeletedElement now => UndoReady(
         ElementAddOp(
           opId: opId,
@@ -549,6 +602,15 @@ final class _Build {
     final rowFields = undo.fields.where(
       (field) => read(after, field) != read(before, field),
     );
+    final nowData = _filled(now.payload.data.raw);
+    final afterData = _filled(after.payload.data.raw);
+    final beforeData = _filled(before.payload.data.raw);
+    final written = groupedFields(
+      before.payload.kind,
+      beforeData,
+      afterData,
+      undo.dataFields.toSet(),
+    );
     final plan = _plan<String>({
       for (final field in rowFields)
         field.name: _stand(
@@ -556,11 +618,11 @@ final class _Build {
           read(after, field),
           read(before, field),
         ),
-      for (final field in undo.dataFields)
+      for (final field in written)
         'data/$field': _jsonStand(
-          _entry(now.payload.data.raw, field),
-          _entry(after.payload.data.raw, field),
-          _entry(before.payload.data.raw, field),
+          _entry(nowData, field),
+          _entry(afterData, field),
+          _entry(beforeData, field),
         ),
     });
     final Set<String> restore;
@@ -572,11 +634,22 @@ final class _Build {
       case _Restore(:final fields):
         restore = fields;
     }
+    if (restore.length == 1 && restore.contains(RowField.sortIndex.name)) {
+      return UndoReady(
+        ElementReorderOp(
+          opId: opId,
+          elementPublicId: before.publicId,
+          pagePublicId: now.pagePublicId,
+          sortIndex: before.sortIndex,
+          expectedElementRevision: now.revision,
+        ),
+      );
+    }
     final wholePayload =
         restore.contains(RowField.kind.name) ||
         restore.contains(RowField.payloadVersion.name);
     final data = {...now.payload.data.raw};
-    for (final field in undo.dataFields) {
+    for (final field in written) {
       if (!restore.contains('data/$field')) continue;
       final kept = before.payload.data.raw;
       if (kept.containsKey(field)) {
@@ -637,7 +710,7 @@ final class _Build {
       DeletedLineupGroup() => const NothingToUndo(),
       UnreadableLineupGroup() => _blocked(TargetUnreadable(key)),
       final LiveLineupGroup now
-          when now.payload == added.payload &&
+          when _sameGroupContent(now.payload, added.payload) &&
               now.sortIndex == added.sortIndex =>
         UndoReady(
           LineupGroupDeleteOp(
@@ -658,6 +731,8 @@ final class _Build {
       null => _blocked(TargetGone(key)),
       LiveLineupGroup() => const NothingToUndo(),
       UnreadableLineupGroup() => _blocked(TargetUnreadable(key)),
+      DeletedLineupGroup(:final revision) when revision != undo.deletedAt =>
+        _blocked(ChangedSince(key, const ['deleted'])),
       final DeletedLineupGroup now => UndoReady(
         LineupGroupAddOp(
           opId: opId,
@@ -689,13 +764,20 @@ final class _Build {
       RowField.payloadVersion => row.payload.payloadVersion,
       _ => null,
     };
-    Object? entry(ReadableLineupGroupRow row, String field) {
-      final data = row.payload.data.raw;
+    final nowData = _filled(now.payload.data.raw);
+    final afterData = _filled(after.payload.data.raw);
+    final beforeData = _filled(before.payload.data.raw);
+    Object? entry(Map<String, Object?> data, String field) {
       if (lineupField(field) case (:final collection, :final id)) {
-        for (final item in lineupItems(data, collection)) {
-          if (item['id'] == id) return item;
-        }
-        return _absent;
+        return _byId(data, collection)[id] ?? _absent;
+      }
+      if (lineupCollections.contains(field)) {
+        final kept = _idsIn(beforeData, field).toSet()
+          ..retainAll(_idsIn(afterData, field));
+        return [
+          for (final id in _idsIn(data, field))
+            if (kept.contains(id)) id,
+        ];
       }
       return _entry(data, field);
     }
@@ -711,11 +793,15 @@ final class _Build {
           read(before, field),
         ),
       for (final field in undo.dataFields)
-        'data/$field': _jsonStand(
-          entry(now, field),
-          entry(after, field),
-          entry(before, field),
-        ),
+        'data/$field': lineupCollections.contains(field)
+            ? (_sameEntry(entry(nowData, field), entry(beforeData, field))
+                  ? _Stand.back
+                  : _Stand.edited)
+            : _jsonStand(
+                entry(nowData, field),
+                entry(afterData, field),
+                entry(beforeData, field),
+              ),
     });
     final Set<String> restore;
     switch (plan) {
@@ -729,21 +815,23 @@ final class _Build {
     final sortIndex = restore.contains(RowField.sortIndex.name)
         ? before.sortIndex
         : now.sortIndex;
-    final whole =
-        restore.contains(RowField.payloadVersion.name) ||
-        undo.dataFields.any(
-          (field) =>
-              restore.contains('data/$field') && lineupField(field) == null,
-        );
-    if (whole) {
-      if (restore.length != rowFields.length + undo.dataFields.length) {
-        return _blocked(
-          ChangedSince(key, [
-            for (final field in undo.dataFields)
-              if (!restore.contains('data/$field')) 'data/$field',
-          ]),
-        );
-      }
+    final restoredData = [
+      for (final field in undo.dataFields)
+        if (restore.contains('data/$field')) field,
+    ];
+    if (restoredData.isEmpty &&
+        !restore.contains(RowField.payloadVersion.name)) {
+      return UndoReady(
+        LineupGroupReorderOp(
+          opId: opId,
+          lineupPublicId: before.publicId,
+          pagePublicId: now.pagePublicId,
+          sortIndex: before.sortIndex,
+          expectedLineupRevision: now.revision,
+        ),
+      );
+    }
+    if (restore.contains(RowField.payloadVersion.name)) {
       return UndoReady(
         LineupGroupPatchOp(
           opId: opId,
@@ -754,36 +842,72 @@ final class _Build {
         ),
       );
     }
+    final data = {...now.payload.data.raw};
     final lists = {
       for (final collection in lineupCollections)
-        collection: [...lineupItems(now.payload.data.raw, collection)],
+        collection: [...lineupItems(data, collection)],
     };
-    for (final field in undo.dataFields) {
-      if (!restore.contains('data/$field')) continue;
-      final (:collection, :id) = lineupField(field)!;
-      final list = lists[collection]!;
-      final at = list.indexWhere((item) => item['id'] == id);
-      switch (entry(before, field)) {
-        case final Map<String, Object?> item when at >= 0:
-          list[at] = item;
-        case final Map<String, Object?> item:
-          list.insert(
-            (undo.indexBefore(field) ?? list.length).clamp(0, list.length),
-            item,
-          );
-        case _:
-          if (at >= 0) list.removeAt(at);
+    var whole = false;
+    for (final field in restoredData) {
+      if (lineupField(field) case (:final collection, :final id)) {
+        final list = lists[collection]!;
+        final at = list.indexWhere((item) => item['id'] == id);
+        switch (_byId(before.payload.data.raw, collection)[id]) {
+          case final Map<String, Object?> item when at >= 0:
+            list[at] = item;
+          case final Map<String, Object?> item:
+            list.insert(
+              (undo.indexBefore(field) ?? list.length).clamp(0, list.length),
+              item,
+            );
+          case _:
+            if (at >= 0) list.removeAt(at);
+        }
+        continue;
       }
+      whole = true;
+      if (!lineupCollections.contains(field)) {
+        switch (_entry(before.payload.data.raw, field)) {
+          case _Absent():
+            data.remove(field);
+          case final value:
+            data[field] = value;
+        }
+      }
+    }
+    for (final field in restoredData) {
+      if (lineupCollections.contains(field)) {
+        lists[field] = _inOrderOf(
+          lists[field]!,
+          _idsIn(before.payload.data.raw, field),
+        );
+      }
+    }
+    final envelopeBack = !sameJson(
+      before.payload.unknownFields,
+      now.payload.unknownFields,
+    );
+    final payload = lineupPayloadAdopting(
+      envelopeBack ? before.payload : now.payload,
+      {...data, ...lists},
+    );
+    if (whole || envelopeBack) {
+      return UndoReady(
+        LineupGroupPatchOp(
+          opId: opId,
+          lineupPublicId: before.publicId,
+          expectedLineupRevision: now.revision,
+          payload: payload,
+          sortIndex: sortIndex == now.sortIndex ? null : sortIndex,
+        ),
+      );
     }
     return UndoReady(
       lineupEditOp(
         opId: opId,
         base: now,
         drawn: DrawnAt(now.revision),
-        payload: lineupPayloadAdopting(now.payload, {
-          ...now.payload.data.raw,
-          ...lists,
-        }),
+        payload: payload,
         sortIndex: sortIndex,
         connection: Connection.offline,
       ),

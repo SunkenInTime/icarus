@@ -489,7 +489,7 @@ final class _Apply {
     final after = live.rewritten(deleted: true);
     return OpApplied(
       writes: [_changed(live, after)],
-      undo: RestoreDeletedElement(live),
+      undo: RestoreDeletedElement(live, deletedAt: live.revision + 1),
     );
   }
 
@@ -701,7 +701,7 @@ final class _Apply {
     final after = existing.rewritten(deleted: true);
     return OpApplied(
       writes: [_changed(existing, after)],
-      undo: RestoreDeletedGroup(existing),
+      undo: RestoreDeletedGroup(existing, deletedAt: after.revision),
     );
   }
 
