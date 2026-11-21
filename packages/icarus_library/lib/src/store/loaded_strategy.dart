@@ -374,3 +374,74 @@ final class _LoadedRows implements StrategyRows {
   Iterable<LineupGroupRow> lineupGroupsOn(String pagePublicId) =>
       _loaded.lineupGroupsOnPage(digestOf(pagePublicId));
 }
+
+final class PendingRows implements StrategyRows {
+  PendingRows(this._loaded, this.strategy);
+
+  final LoadedStrategy _loaded;
+  final _pages = <String, PageRow>{};
+  final _settings = <String, PageSettingsRow>{};
+  final _elements = <String, ElementRow>{};
+  final _groups = <String, LineupGroupRow>{};
+
+  @override
+  ReadableStrategy strategy;
+
+  void take(Iterable<RowWrite> writes) {
+    for (final write in writes) {
+      switch (write.after) {
+        case final ReadableStrategy row:
+          strategy = row;
+        case final PageRow row:
+          _pages[row.publicId] = row;
+        case final PageSettingsRow row:
+          _settings[row.pagePublicId] = row;
+        case final ElementRow row:
+          _elements[row.publicId] = row;
+        case final LineupGroupRow row:
+          _groups[row.publicId] = row;
+        case UnreadableStrategy() || FolderRow():
+          throw StateError('${write.after} is not written by an op');
+      }
+    }
+  }
+
+  @override
+  Iterable<PageRow> get pages => [
+    for (final page in _loaded.pages)
+      if (!_pages.containsKey(page.publicId)) page,
+    ..._pages.values,
+  ];
+
+  @override
+  PageRow? page(String pagePublicId) =>
+      _pages[pagePublicId] ?? _loaded.page(pagePublicId);
+
+  @override
+  PageSettingsRow? settingsOf(String pagePublicId) =>
+      _settings[pagePublicId] ?? _loaded.settingsOf(pagePublicId);
+
+  @override
+  ElementRow? element(String elementPublicId) =>
+      _elements[elementPublicId] ?? _loaded.element(elementPublicId);
+
+  @override
+  LineupGroupRow? lineupGroup(String lineupPublicId) =>
+      _groups[lineupPublicId] ?? _loaded.lineupGroup(lineupPublicId);
+
+  @override
+  Iterable<ElementRow> elementsOn(String pagePublicId) => [
+    for (final row in _loaded.elementsOnPage(digestOf(pagePublicId)))
+      if (!_elements.containsKey(row.publicId)) row,
+    for (final row in _elements.values)
+      if (row.pagePublicId == pagePublicId) row,
+  ];
+
+  @override
+  Iterable<LineupGroupRow> lineupGroupsOn(String pagePublicId) => [
+    for (final row in _loaded.lineupGroupsOnPage(digestOf(pagePublicId)))
+      if (!_groups.containsKey(row.publicId)) row,
+    for (final row in _groups.values)
+      if (row.pagePublicId == pagePublicId) row,
+  ];
+}

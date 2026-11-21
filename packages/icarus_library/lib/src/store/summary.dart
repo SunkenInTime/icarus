@@ -161,7 +161,7 @@ final class StrategySummary {
     final pageIds = {for (final page in pages) page.publicId};
     tallies = {
       for (final MapEntry(:key, :value) in tallies.entries)
-        if (pageIds.contains(key)) key: value,
+        if (pageIds.contains(key) && value != PageTally.empty) key: value,
     };
     final damaged =
         tallies.values.fold(0, (sum, tally) => sum + tally.damaged) +
