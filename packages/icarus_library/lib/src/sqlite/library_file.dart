@@ -21,8 +21,11 @@ final class DiskLibraryFiles implements LibraryFiles {
 
   @override
   int? size(String path) {
-    final stat = FileStat.statSync(path);
-    return stat.type == FileSystemEntityType.notFound ? null : stat.size;
+    try {
+      return File(path).lengthSync();
+    } on PathNotFoundException {
+      return null;
+    }
   }
 
   @override
