@@ -7,9 +7,22 @@ Each section builds a queue by real events until op `x` is in that state, then a
 ## Who decides
 
 - The server's answer to an op is the only thing that takes it out of the queue or hands it to the user. Applied or nothing to do: done. Rejected: the user decides, and later work on that row waits behind it, unless the row the rejection carries already holds what the op wrote. Failed: the user decides.
-- Results (the latest rows the server sent this session) never hold, release, settle or drop an entry. They only decide when answered work stops being drawn on top of them, and whether a whole write made after a landed field merge still matches the row the user saw. The page delete below is the one exception.
-- An answer that never came is sent again under the same op id, in checked form, until 29 days after the op was first sent; the server remembers answers for 30. When the 29 days pass that is recorded, and the entry waits for the user and is never sent again.
-- Answered work that the latest results do not show yet is drawn as landed: an answer that names a whole row updates it, and a field merge, page add, page reorder or page delete is drawn until a result shows that row at the answered revision or later. Landed work never authors a send: a whole write on a row behind a landed field merge, or a page rename behind a landed page renumbering, waits for the result and then needs the user unless that row is as the user saw it.
+- When the user gives up an entry (takes the cloud's version or discards it), every later entry for the same row, page or strategy goes with it, because it was built on the work given up.
+- Results (the rows the server sent) never settle or drop an entry. They end the drawing of landed work, and they tell a whole-row write whether its row is as the user saw it. Two results also stop sending: the page delete below, and a result saying the strategy is gone, which stops every claim for that strategy.
+
+## Which revision an op names
+
+Nothing is predicted. An entry waits for the answer of the entry ahead of it on its row, and the revision it names is chosen when it is first claimed:
+
+- A whole-row write (an element or lineup group written whole, a page or its settings) goes only against a row this device fully knows: its own add or whole write answered applied at that revision, or a result showing the row as the user saw it. A "nothing to do", a field merge, a rejection or a page renumbering never makes a row fully known. Otherwise it waits for the row's result, and needs the user if a result of this session shows the row otherwise, or a result of its page no longer holds a row that results have shown before.
+- An undo of a delete goes without asking only when this device's delete was answered applied, at the tombstone revision that answer named. Anything else needs the user.
+- Everything else (deletes, reorders, page adds, reorders and deletes, strategy changes) names the latest revision the device has an answer or a result for, and the server decides. A delete sent live is last writer wins, as in the shipped app.
+
+## The resend window and the sender
+
+- An answer that never came is sent again under the same op id, in checked form, until 29 days after the op was first sent; the server remembers answers for 30. A batch refused whole (upgrade, sign-in, access) was never tried, so it does not start that clock. A transition that finds the 29 days passed records it, even when it changes nothing else; views show only what was recorded, and `look` records and returns the views of the queue it returns. Once recorded, the entry waits for the user and is never sent again.
+- The queue cannot stop a send it already handed over. The sender must give an attempt up as unanswered (`TransportFailed`) within `sendGiveUpAfter` (one hour) of claiming it, well inside the one-day margin between the queue's window and the server's memory. An open attempt shows as sending until the sender does so.
+- Answered work that the latest results do not show yet is drawn as landed, in the order the server applied it, off its source page and on its destination, until a result shows that row at the answered revision or later. A delete this device made stays known as its own until a result shows a later revision of the row.
 
 ## Folding
 
@@ -22,7 +35,7 @@ A field edit folds into an earlier field edit of the same row only when the earl
 
 ## The page delete exception, until #670
 
-The server guards a page delete by the strategy's revision only, so a page delete can land after a teammate added an element to the page ([#670](https://github.com/SunkenInTime/icarus/issues/670)). Until the server checks the page itself, a page delete waits for a result of its page and needs the user when that page no longer holds what the user saw, or when its content was never read. It goes when the page is already gone. All of this lives in `lib/src/cloud/held_page_delete.dart` and comes out in one piece when #670 lands.
+The server guards a page delete by the strategy's revision only, so a page delete can land after a teammate added an element to the page ([#670](https://github.com/SunkenInTime/icarus/issues/670)). Until the server checks the page itself, a page delete waits for a result of its page and needs the user when that page no longer holds what the user saw, or when its content was never read. It goes as soon as a result says the page is gone, since there is nothing left to protect. All of this lives in `lib/src/cloud/held_page_delete.dart` and comes out in one piece when #670 lands.
 
 ## waiting, nothing ahead of it
 
@@ -41,7 +54,7 @@ Starts as: waiting.
 | account changed | opens session 2 |
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
-| result: page-a with the item as this device wrote it at 2 | unchanged |
+| result: page-a with the item as this device wrote it at 2 | x: needs user: changed by someone else since the user saw it |
 | result: page-b gone | unchanged |
 | result: strategy gone | standing deletedOnServer |
 
@@ -487,7 +500,7 @@ Starts as: waiting.
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
-| result: page-a with the item as this device wrote it at 2 | unchanged |
+| result: page-a with the item as this device wrote it at 2 | x: needs user: changed by someone else since the user saw it |
 | result: page-b gone | unchanged |
 | result: strategy gone | unchanged |
 
@@ -515,7 +528,7 @@ Starts as: waiting.
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
-| result: page-a with the item as this device wrote it at 2 | unchanged |
+| result: page-a with the item as this device wrote it at 2 | x: needs user: changed by someone else since the user saw it |
 | result: page-b gone | unchanged |
 | result: strategy gone | standing deletedOnServer |
 
@@ -542,7 +555,7 @@ Starts as: waiting.
 | account changed | opens session 2 |
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
-| result: page-a with the item as this device wrote it at 2 | unchanged |
+| result: page-a with the item as this device wrote it at 2 | x: needs user: changed by someone else since the user saw it |
 | result: page-b gone | unchanged |
 | result: strategy gone | standing deletedOnServer |
 

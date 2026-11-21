@@ -203,3 +203,17 @@ SyncState accountSyncState(
   network: network,
   signedIn: signedIn,
 );
+
+final class QueueLook {
+  QueueLook(this.queue, this.now)
+    : views = entryViews(queue, now),
+      tally = Tally.of(queue, now);
+
+  final CloudQueue queue;
+  final DateTime now;
+  final Map<String, EntryView> views;
+  final Tally tally;
+}
+
+QueueLook look(CloudQueue queue, DateTime now) =>
+    QueueLook(recordExpiries(queue, now), now);

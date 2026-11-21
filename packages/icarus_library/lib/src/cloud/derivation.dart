@@ -279,7 +279,9 @@ final class _IndexEdit {
 
   List<_Slot> _day(int day) {
     final days = _forgetDays ??= {..._from.forgetDays};
-    if (_copiedDays.add(day)) days[day] = [...?days[day]];
+    if (_copiedDays.add(day) || !days.containsKey(day)) {
+      days[day] = [...?days[day]];
+    }
     return days[day]!;
   }
 
@@ -398,7 +400,23 @@ final class _IndexEdit {
     final byOp = _ownAttempts;
     for (final opId in attempt.opIds) {
       byOp[opId] = [...?byOp[opId], attempt.number];
+      if (attempt.outcome is AttemptRefusedWhole) continue;
       if (byId[opId] case PendingOp(window: WindowOpen())) {
+        forgetBy(opId, attempt.at);
+      }
+    }
+  }
+
+  void unsent(AttemptFact refused, Map<int, AttemptFact> attempts) {
+    for (final opId in refused.opIds) {
+      stopForgetting(opId);
+      if (byId[opId] is! PendingOp ||
+          (byId[opId]! as PendingOp).window is! WindowOpen) {
+        continue;
+      }
+      for (final number in attemptsByOp[opId] ?? const <int>[]) {
+        final attempt = attempts[number];
+        if (attempt == null || attempt.outcome is AttemptRefusedWhole) continue;
         forgetBy(opId, attempt.at);
       }
     }
@@ -432,6 +450,7 @@ final class _Change {
   final removed = <QueueEntry>[];
   final pages = <String>{};
   final targets = <Target>{};
+  final lives = <String>{};
   bool everything = false;
 }
 
@@ -491,9 +510,6 @@ final class _Lineage {
   final CloudQueue parent;
   final _Change change;
 }
-
-_Derivation _deriveAt(CloudQueue queue, DateTime now) =>
-    _derive(recordExpiries(queue, now), now);
 
 _Derivation _derive(CloudQueue queue, DateTime now) {
   final known = queue._derived;
@@ -636,6 +652,11 @@ final class _Deriving {
           _mark(id);
         }
       }
+      for (final page in change.lives) {
+        for (final id in index.ids(_PageLife(page))) {
+          _mark(id);
+        }
+      }
       if (nextExpiry case final next? when !now.isBefore(next)) {
         _rescan = true;
         for (final MapEntry(key: id, value: at) in expiry.entries) {
@@ -757,13 +778,13 @@ PendingState stateOf(CloudQueue queue, PendingOp entry) {
 DateTime? forgetsNextAt(CloudQueue queue) => queue._index.firstForgetting;
 
 Map<String, EntryView> entryViews(CloudQueue queue, DateTime now) =>
-    UnmodifiableMapView(_deriveAt(queue, now).views);
+    UnmodifiableMapView(_derive(queue, now).views);
 
 ({Map<Underway, int> waiting, Map<Attention, int> attention}) queueCounts(
   CloudQueue queue,
   DateTime now,
 ) {
-  final derived = _deriveAt(queue, now);
+  final derived = _derive(queue, now);
   return (
     waiting: Map.unmodifiable(derived.waiting),
     attention: Map.unmodifiable(derived.attention),
@@ -771,7 +792,7 @@ Map<String, EntryView> entryViews(CloudQueue queue, DateTime now) =>
 }
 
 Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
-  for (final view in _deriveAt(queue, now).views.values)
+  for (final view in _derive(queue, now).views.values)
     for (final hold in view.holds)
       if (hold case AwaitingResult(:final subject)) subject,
 };
@@ -793,9 +814,6 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
   }
   if (_oversized(entry)) {
     return (EntryView(const NeedsUser(Oversized()), const []), null);
-  }
-  if (entry.authored is AuthoredOverOthers) {
-    return (EntryView(const NeedsUser(ChangedUnseen()), const []), null);
   }
   final holds = <Hold>[];
   DateTime? until;
@@ -847,34 +865,25 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
     until = at;
   }
   final head = !holds.any((hold) => hold is BehindEntry);
-  if (entry.authored case AuthoredBehindMerge(
-    row: AuthoredRow(:final digest),
-  ) when head) {
-    final shown = _shownRow(queue.shown, target);
-    final page = switch ((target, entry.scope)) {
-      (PageTarget(:final pagePublicId), _) => pagePublicId,
-      (_, OnPage(:final pagePublicId)) => pagePublicId,
-      (_, Moving(:final from)) => from,
-      (_, StrategyWide()) => null,
-    };
-    final landedUnseen = queue.landed.any((work) => _landedOver(work, target));
-    final current = switch (target) {
-      PageTarget() => queue.shown.headerThisSession,
-      _ => page != null && queue.shown.pagesThisSession.contains(page),
-    };
-    if (landedUnseen || !current) {
-      holds.add(AwaitingResult(RowResult(target, page)));
-    } else if (shown != null && shown.digest != digest) {
-      return (EntryView(const NeedsUser(ChangedUnseen()), const []), null);
+  if (head && state is Waiting) {
+    switch (_judge(queue, entry)) {
+      case _NameAt():
+        break;
+      case _AwaitRow(:final page):
+        holds.add(AwaitingResult(RowResult(_rowTarget(op), page)));
+      case _AskUser():
+        return (EntryView(const NeedsUser(ChangedUnseen()), const []), null);
     }
   }
   if (entry.work case final CheckedDelete work) {
     final page = work.op.pagePublicId;
     final landedOnPage = queue.landed.any(
       (landed) =>
+          (queue.shown.highest[checkTargetOf(landed.op)] ?? 0) <
+              landed.revision &&
           (_landedPage(landed.op) ??
-              queue.shown.rows[targetOf(landed.op)]?.page) ==
-          page,
+                  queue.shown.rows[targetOf(landed.op)]?.page) ==
+              page,
     );
     switch (pageDeleteVerdict(
       queue.shown,
@@ -893,6 +902,11 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
   }
   return (EntryView(state, holds), until);
 }
+
+Target _rowTarget(StrategyOp op) => switch (checkTargetOf(op)) {
+  StrategyTarget() => targetOf(op),
+  final target => target,
+};
 
 String? _landedPage(StrategyOp op) => switch (op) {
   ElementAddOp(:final pagePublicId) ||

@@ -10,6 +10,8 @@ const serverRemembersAnswersFor = Duration(days: 30);
 
 const resendWindow = Duration(days: 29);
 
+const sendGiveUpAfter = Duration(hours: 1);
+
 const _setEquality = SetEquality<Object?>();
 const _mapEquality = MapEquality<Object?, Object?>();
 const _listEquality = ListEquality<Object?>();
@@ -340,12 +342,6 @@ final class AuthoredRow extends Authored {
   final String digest;
   final int? payloadVersion;
 
-  AuthoredRow at(int revision) => AuthoredRow(
-    revision: revision,
-    digest: digest,
-    payloadVersion: payloadVersion,
-  );
-
   @override
   bool operator ==(Object other) =>
       other is AuthoredRow &&
@@ -361,35 +357,6 @@ final class AuthoredRow extends Authored {
   String toString() => 'AuthoredRow($revision, $digest)';
 }
 
-final class AuthoredBehindMerge extends Authored {
-  const AuthoredBehindMerge(this.row);
-
-  final AuthoredRow row;
-
-  @override
-  bool operator ==(Object other) =>
-      other is AuthoredBehindMerge && other.row == row;
-
-  @override
-  int get hashCode => Object.hash(AuthoredBehindMerge, row);
-
-  @override
-  String toString() => 'AuthoredBehindMerge(${row.revision})';
-}
-
-final class AuthoredOverOthers extends Authored {
-  const AuthoredOverOthers();
-
-  @override
-  bool operator ==(Object other) => other is AuthoredOverOthers;
-
-  @override
-  int get hashCode => (AuthoredOverOthers).hashCode;
-
-  @override
-  String toString() => 'AuthoredOverOthers';
-}
-
 final class AuthoredUnreadable extends Authored {
   const AuthoredUnreadable();
 
@@ -401,6 +368,22 @@ final class AuthoredUnreadable extends Authored {
 
   @override
   String toString() => 'AuthoredUnreadable';
+}
+
+final class KeptOverServer extends Authored {
+  const KeptOverServer(this.revision);
+
+  final int revision;
+
+  @override
+  bool operator ==(Object other) =>
+      other is KeptOverServer && other.revision == revision;
+
+  @override
+  int get hashCode => Object.hash(KeptOverServer, revision);
+
+  @override
+  String toString() => 'KeptOverServer($revision)';
 }
 
 final class AuthoredNoRow extends Authored {
@@ -724,6 +707,7 @@ final class LandedWork {
     required this.op,
     required this.revision,
     required this.shape,
+    required this.own,
   });
 
   final int attempt;
@@ -731,6 +715,7 @@ final class LandedWork {
   final StrategyOp op;
   final int revision;
   final LandedShape shape;
+  final bool own;
 
   @override
   bool operator ==(Object other) =>
@@ -739,11 +724,12 @@ final class LandedWork {
       other.position == position &&
       other.op == op &&
       other.revision == revision &&
-      other.shape == shape;
+      other.shape == shape &&
+      other.own == own;
 
   @override
   int get hashCode =>
-      Object.hash(LandedWork, attempt, position, op, revision, shape);
+      Object.hash(LandedWork, attempt, position, op, revision, shape, own);
 
   int compareTo(LandedWork other) {
     final byAttempt = attempt.compareTo(other.attempt);
@@ -751,7 +737,8 @@ final class LandedWork {
   }
 
   @override
-  String toString() => 'Landed(${op.opId} at $revision, ${shape.name})';
+  String toString() =>
+      'Landed(${op.opId} at $revision, ${shape.name}${own ? '' : ', not ours'})';
 }
 
 final class StrategyFacts {

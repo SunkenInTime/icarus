@@ -334,6 +334,14 @@ Iterable<List<Fact>> orderings(List<Fact> facts) sync* {
           facts[index] is ReadFact) {
         return false;
       }
+      if (!used[other] &&
+          facts[index] is ClockFact &&
+          switch (facts[other]) {
+            EventFact(event: BatchRefused()) => true,
+            _ => false,
+          }) {
+        return false;
+      }
     }
     return true;
   }
@@ -369,10 +377,6 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
   var queue = start;
   var at = now;
   final server = model.copy();
-  final sentBefore = {
-    for (final attempt in start.attempts.values)
-      for (final op in attempt.ops) op.opId,
-  };
   final effects = <String>[];
   List<QueueEffect> step(QueueEvent event) {
     if (transition(queue, event, now: at) case Stepped(
@@ -404,7 +408,7 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
         final made = step(BatchClaimed(clientId: clientId, opIds: ids, at: at));
         for (final sent in made.whereType<SendBatch>()) {
           for (final op in sent.ops) {
-            if (sentBefore.contains(op.opId) &&
+            if (server.firstClient.containsKey(op.opId) &&
                 !at.isBefore(now.add(serverRemembersAnswersFor))) {
               throw StateError(
                 '${op.opId} was sent again after the server forgot it',

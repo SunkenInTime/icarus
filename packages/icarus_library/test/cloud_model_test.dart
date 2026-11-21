@@ -59,6 +59,11 @@ final class Model {
       checkRemovals(before, after, effects, event);
       client.queue = after;
       count(event.runtimeType.toString());
+      if (event case OpAnswered(
+        answer: NoopAnswer(replay: NoopReplay.notApplied),
+      )) {
+        count('nothing to do at another revision');
+      }
       for (final effect in effects) {
         if (effect case OpRemoved(:final cause)) {
           count('removed ${cause.runtimeType}');
@@ -139,10 +144,23 @@ final class Model {
         Delivered() => event is OpAnswered,
         FoldedInto(:final opId) =>
           event is UserEdited && event.edit.op.opId == opId,
-        RemovedByUser() => event is UserAction && event.opId == entry.id,
+        RemovedByUser() =>
+          event is UserAction &&
+              (event.opId == entry.id ||
+                  switch ((before.entry(event.opId), entry)) {
+                    (final PendingOp acted, final PendingOp later) =>
+                      entityOf(acted.op) == entityOf(later.op) &&
+                          acted.place < later.place,
+                    _ => false,
+                  }),
       };
       if (!fits) throw StateError('${entry.id} removed for $cause by $event');
       if (cause is RemovedByUser) userRemoved = true;
+      if (cause is RemovedByUser &&
+          event is UserAction &&
+          event.opId != entry.id) {
+        count('given up with its chain');
+      }
     }
   }
 
@@ -374,7 +392,9 @@ final class Model {
 
   void claim() {
     if (standingOf(client.queue) != Standing.good) return;
-    final views = entryViews(client.queue, clock);
+    final seen = look(client.queue, clock);
+    client.queue = seen.queue;
+    final views = seen.views;
     String? owner;
     final ids = <String>[];
     for (final entry in client.queue.entries) {
@@ -580,14 +600,51 @@ final class Model {
       ];
       if (live.isEmpty) return;
       final target = pick(live);
-      final op = movePatch(
-        fresh('t'),
-        elementId: target.publicId,
-        expected: target.revision,
-        rotation: 30,
-      );
+      final livePages = [
+        for (final page in server.rows.pages)
+          if (page is LivePage) page.publicId,
+      ];
+      final kind = random.nextInt(10);
+      final StrategyOp op = switch (kind) {
+        0 || 1 => ElementReorderOp(
+          opId: fresh('t'),
+          elementPublicId: target.publicId,
+          pagePublicId: target.pagePublicId,
+          sortIndex: random.nextInt(3),
+          expectedElementRevision: target.revision,
+        ),
+        2 => elementDelete(
+          fresh('t'),
+          elementId: target.publicId,
+          pageId: target.pagePublicId,
+          expected: target.revision,
+        ),
+        3 when livePages.length > 1 => ElementPatchOp(
+          opId: fresh('t'),
+          elementPublicId: target.publicId,
+          expectedElementRevision: target.revision,
+          pagePublicId: pick([
+            for (final page in livePages)
+              if (page != target.pagePublicId) page,
+          ]),
+          payload: target.payload,
+          sortIndex: 0,
+        ),
+        4 when livePages.length > 2 => pageDelete(
+          fresh('t'),
+          pick(livePages),
+          expected: server.rows.strategy.revision,
+        ),
+        _ => movePatch(
+          fresh('t'),
+          elementId: target.publicId,
+          expected: target.revision,
+          rotation: 30,
+        ),
+      };
       if (applyOp(server.rows, op) case final OpApplied done) {
         server.rows = server.rows.withRows(done.rows);
+        count('teammate ${op.type.wireName}');
       } else {
         return;
       }
@@ -597,7 +654,9 @@ final class Model {
   }
 
   void userActs({required bool draining}) {
-    final views = entryViews(client.queue, clock);
+    final seen = look(client.queue, clock);
+    client.queue = seen.queue;
+    final views = seen.views;
     for (final entry in client.queue.entries) {
       final view = views[entry.id];
       final UserAction? action = switch ((entry, view)) {
@@ -751,6 +810,8 @@ const minimums = {
   'removed Delivered': 1500,
   'removed FoldedInto': 20,
   'put-backs': 100,
+  'given up with its chain': 5,
+  'nothing to do at another revision': 20,
 };
 
 void main() {

@@ -2,6 +2,8 @@ import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/src/cloud/fold.dart';
 import 'package:icarus_library/src/cloud/op_facts.dart'
     show CopyExpanded, CopyNotExpanded, expandCopy;
+import 'package:icarus_library/src/cloud/visible.dart'
+    show SomePages, visibleOver;
 import 'package:icarus_library/src/field_merge.dart'
     show elementMergeBase, lineupMergeBase;
 import 'package:test/test.dart';
@@ -512,7 +514,7 @@ void main() {
         movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
       );
       sendAndAnswer(client, server, ['drag']);
-      client.edit(elementDelete('drop', expected: 2));
+      client.edit(movePatch('drop', x: 70, expected: 2));
       expect(client.view('drop').holds, [
         awaitingResult(const RowResult(ElementTarget('e1'), 'page-a')),
       ]);
@@ -529,7 +531,7 @@ void main() {
         movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
       );
       sendAndAnswer(client, server, ['drag']);
-      client.edit(elementDelete('drop', expected: 2));
+      client.edit(movePatch('drop', x: 70, expected: 2));
       client.read(server.rows, pages: ['page-a']);
       expect(stateOf(client, 'drop'), const NeedsUser(ChangedUnseen()));
     });
@@ -875,7 +877,7 @@ void main() {
           movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
         );
         sendAndAnswer(client, server, ['drag']);
-        client.edit(elementDelete('drop', expected: 2));
+        client.edit(movePatch('drop', x: 70, expected: 2));
         final tally = Tally.of(client.queue, now);
         expect(tally.waiting[Underway.awaitingResult], 1);
         expect(tally.waiting[Underway.unsent], isNull);
@@ -933,6 +935,7 @@ void main() {
     final attempt = client.claim(['del']);
     client.must(TransportFailed(attempt, TransportFailure.network, at: now));
     client.clock = now.add(resendWindow);
+    client.queue = look(client.queue, client.at).queue;
     expect(stateOf(client, 'del'), const NeedsUser(WindowClosed()));
     expect(client.view('back').holds, [
       const BehindEntry('del', Dependency.sameRow),
@@ -1195,12 +1198,240 @@ void main() {
     });
   });
 
-  test('a revision-checked edit takes its expected revision from the edit '
-      'queued ahead of it on the same row, not from rows that already show '
-      'that edit', () {
+  test('a revision-checked edit is sent naming the revision the answer '
+      'ahead of it gave, not the one it was drawn at', () {
     final client = online();
     client.edit(pageAdd('add', 'page-c', expected: 1));
     client.edit(pageDelete('drop', 'page-b', expected: 1));
-    expect(expectedOf((client.queue.entry('drop')! as PendingOp).op), 2);
+    final attempt = client.claim(['add']);
+    client.must(OpAnswered(attempt, const AppliedAnswer('add', revision: 2)));
+    client.claim(['drop']);
+    expect(expectedOf(client.lastSent().single), 2);
+  });
+
+  group('seventh review', () {
+    ElementReorderOp reorder(String opId, {required int expected}) =>
+        ElementReorderOp(
+          opId: opId,
+          elementPublicId: 'e1',
+          pagePublicId: 'page-a',
+          sortIndex: 1,
+          expectedElementRevision: expected,
+        );
+
+    Object? rotationOf(StrategyRows rows) =>
+        (rows.element('e1')! as LiveElement).payload.data.toJson()['rotation'];
+
+    test('a "nothing to do" at a teammate\'s revision does not lend that '
+        'revision to the whole write behind it', () {
+      final server = Server()
+        ..rows = withOp(
+          withOp(initialRows(), movePatch('t', rotation: 90)),
+          reorder('t2', expected: 2),
+        );
+      final client = Client();
+      client.edit(reorder('order', expected: 1));
+      client.edit(movePatch('whole', x: 40, expected: 2));
+      client.must(const ConnectionReturned());
+      sendAndAnswer(client, server, ['order']);
+      expect(client.view('whole').sendable, isFalse);
+      client.read(server.rows, pages: ['page-a']);
+      expect(stateOf(client, 'whole'), const NeedsUser(ChangedUnseen()));
+      expect(rotationOf(server.rows), 90);
+    });
+
+    test('taking the cloud\'s version gives up the rest of that row\'s '
+        'chain', () {
+      final server = Server()
+        ..rows = withOp(initialRows(), movePatch('t', rotation: 90));
+      final client = Client();
+      client.edit(movePatch('first', x: 40));
+      client.edit(movePatch('second', x: 60, expected: 2));
+      client.edit(movePatch('other', elementId: 'e2', x: 5));
+      client.must(const ConnectionReturned());
+      sendAndAnswer(client, server, ['first']);
+      expect(stateOf(client, 'first'), isA<NeedsUser>());
+      client.must(const UserUsedCloud('first'));
+      expect(client.queue.entries.map((entry) => entry.id), ['other']);
+      expect(
+        client.effects,
+        contains(
+          const OpRemoved(
+            'second',
+            RemovedByUser(UserRemoval.usedCloud, Landing.notLanded),
+          ),
+        ),
+      );
+      expect(rotationOf(server.rows), 90);
+    });
+
+    test('a view never records an expiry; look records it and shows it from '
+        'the queue it returns', () {
+      final client = online();
+      client.edit(elementAdd('add', elementId: 'e9'));
+      final attempt = client.claim(['add']);
+      client.must(TransportFailed(attempt, TransportFailure.network, at: now));
+      client.clock = now.add(const Duration(days: 31));
+      expect(
+        entryViews(client.queue, client.at)['add']!.state,
+        isA<Unanswered>(),
+      );
+      final seen = look(client.queue, client.at);
+      expect(seen.views['add']!.state, const NeedsUser(WindowClosed()));
+      final rebuilt = CloudQueue(
+        entries: seen.queue.entries,
+        attempts: seen.queue.attempts,
+        landed: seen.queue.landed,
+        nextAttempt: seen.queue.nextAttempt,
+        nextSession: seen.queue.nextSession,
+        shown: seen.queue.shown,
+        strategy: seen.queue.strategy,
+        session: seen.queue.session,
+      );
+      client.queue = rebuilt;
+      client.clock = now.add(const Duration(days: 28));
+      expect(
+        client.step(
+          BatchClaimed(clientId: clientId, opIds: const ['add'], at: client.at),
+        ),
+        isA<NotApplicable>(),
+      );
+    });
+
+    test('a batch refused whole does not start the resend window', () {
+      final client = online();
+      client.edit(movePatch('move'));
+      final attempt = client.claim(['move']);
+      client.must(BatchRefused(attempt, BatchRefusal.upgradeRequired));
+      client.must(const AppRestarted(build: 'build-2'));
+      client.clock = now.add(const Duration(days: 31));
+      client.queue = look(client.queue, client.at).queue;
+      expect(stateOf(client, 'move'), const Waiting());
+      expect(client.view('move').sendable, isTrue);
+    });
+
+    test('a sender gives an attempt up well inside the one-day margin', () {
+      expect(
+        sendGiveUpAfter,
+        lessThan(serverRemembersAnswersFor - resendWindow),
+      );
+    });
+
+    test('a delete does not wait behind a landed field merge, and a checked '
+        'delete names the latest revision the device knows', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
+      );
+      sendAndAnswer(client, server, ['drag']);
+      client.edit(elementDelete('drop', expected: 2));
+      expect(client.view('drop').sendable, isTrue);
+      client.must(const ConnectionLost());
+      client.must(const ConnectionReturned());
+      client.claim(['drop']);
+      expect(expectedOf(client.lastSent().single), 2);
+    });
+
+    test('an undo after a teammate deleted first needs the user', () {
+      final server = Server()..rows = withOp(initialRows(), elementDelete('t'));
+      final client = online();
+      final drawn = client.visible;
+      client.edit(elementDelete('del'));
+      sendAndAnswer(client, server, ['del']);
+      client.edit(putBackOf('back', drawn, 'e1'));
+      expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
+    });
+
+    test('an undo after a delete answered with no revision needs the user', () {
+      final client = online();
+      final drawn = client.visible;
+      client.edit(elementDelete('del'));
+      final attempt = client.claim(['del']);
+      client.must(OpAnswered(attempt, const NoopWithoutRevision('del')));
+      client.edit(putBackOf('back', drawn, 'e1'));
+      expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
+    });
+
+    test('an undo of this device\'s applied delete goes at the tombstone '
+        'revision even after a result showed the tombstone', () {
+      final server = Server();
+      final client = online();
+      final drawn = client.visible;
+      client.edit(elementDelete('del'));
+      sendAndAnswer(client, server, ['del']);
+      client.read(server.rows, pages: ['page-a']);
+      client.edit(putBackOf('back', drawn, 'e1'));
+      expect(client.view('back').sendable, isTrue);
+      final attempt = client.claim(['back']);
+      final sent = client.lastSent().single;
+      expect(expectedOf(sent), 2);
+      client.must(OpAnswered(attempt, server.apply(clientId, sent)));
+      expect(server.rows.element('e1'), isA<LiveElement>());
+    });
+
+    test('a landed move is drawn off its source page', () {
+      final server = Server();
+      final client = online();
+      final row = initialRows().element('e1')! as LiveElement;
+      client.edit(
+        ElementPatchOp(
+          opId: 'move',
+          elementPublicId: 'e1',
+          expectedElementRevision: 1,
+          pagePublicId: 'page-b',
+          payload: row.payload,
+          sortIndex: 0,
+        ),
+      );
+      sendAndAnswer(client, server, ['move']);
+      final source = visibleOver(
+        client.base,
+        client.queue,
+        SomePages(['page-a']),
+      );
+      expect(source.elementsOn('page-a').map((r) => r.publicId), ['e2']);
+    });
+
+    test('a whole write waiting on a row that a result of its page no longer '
+        'holds needs the user', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
+      );
+      sendAndAnswer(client, server, ['drag']);
+      client.edit(movePatch('drop', x: 70, expected: 2));
+      expect(client.view('drop').sendable, isFalse);
+      final row = server.rows.element('e1')! as LiveElement;
+      server.rows = withOp(
+        server.rows,
+        ElementPatchOp(
+          opId: 'away',
+          elementPublicId: 'e1',
+          expectedElementRevision: 2,
+          pagePublicId: 'page-b',
+          payload: row.payload,
+          sortIndex: 1,
+        ),
+      );
+      client.read(server.rows, pages: ['page-a']);
+      expect(stateOf(client, 'drop'), const NeedsUser(ChangedUnseen()));
+    });
+
+    test('a page delete waiting for its page goes once the page is gone', () {
+      final server = Server();
+      final client = online();
+      client.edit(elementAdd('add', elementId: 'n', pageId: 'page-b'));
+      sendAndAnswer(client, server, ['add']);
+      client.edit(pageDelete('drop', 'page-b'));
+      expect(client.view('drop').holds, [
+        awaitingResult(const PageResult('page-b')),
+      ]);
+      final gone = withOp(server.rows, pageDelete('t', 'page-b'));
+      client.arrive(headerReadOf(gone));
+      client.arrive(const PageGone('page-b'));
+      expect(client.view('drop').sendable, isTrue);
+    });
   });
 }

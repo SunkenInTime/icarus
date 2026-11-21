@@ -106,7 +106,7 @@ final rows = <Row>[
       ..edit(movePatch('first', merge: FieldMerge(fields: ['position'])));
     final attempt = client.claim(['first']);
     client.must(OpAnswered(attempt, const AppliedAnswer('first', revision: 2)));
-    return client..edit(elementDelete('x', expected: 2));
+    return client..edit(movePatch('x', x: 70, expected: 2));
   }),
   Row(
     'page delete waiting for its page to show this device\'s landed work',
@@ -145,10 +145,10 @@ final rows = <Row>[
       const FailedAnswer('x', KnownFailure(FailureCode.pageDeleted), 'deleted'),
     ),
   ),
-  Row(
-    'needs user: unanswered for 29 days',
-    () => sentAndLost()..clock = now.add(resendWindow),
-  ),
+  Row('needs user: unanswered for 29 days', () {
+    final client = sentAndLost()..clock = now.add(resendWindow);
+    return client..queue = look(client.queue, client.at).queue;
+  }),
   Row('needs user: retries exhausted', () {
     final client = Client()..edit(movePatch('x'));
     for (var i = 0; i < retriesBeforePause; i++) {
@@ -382,26 +382,73 @@ String renderTable() {
       'wrote. Failed: the user decides.',
     )
     ..writeln(
-      '- Results (the latest rows the server sent this session) never hold, '
-      'release, settle or drop an entry. They only decide when answered work '
-      'stops being drawn on top of them, and whether a whole write made '
-      'after a landed field merge still matches the row the user saw. The '
-      'page delete below is the one exception.',
+      '- When the user gives up an entry (takes the cloud\'s version or '
+      'discards it), every later entry for the same row, page or strategy '
+      'goes with it, because it was built on the work given up.',
     )
+    ..writeln(
+      '- Results (the rows the server sent) never settle or drop an entry. '
+      'They end the drawing of landed work, and they tell a whole-row write '
+      'whether its row is as the user saw it. Two results also stop sending: '
+      'the page delete below, and a result saying the strategy is gone, '
+      'which stops every claim for that strategy.',
+    )
+    ..writeln()
+    ..writeln('## Which revision an op names')
+    ..writeln()
+    ..writeln(
+      'Nothing is predicted. An entry waits for the answer of the entry ahead '
+      'of it on its row, and the revision it names is chosen when it is '
+      'first claimed:',
+    )
+    ..writeln()
+    ..writeln(
+      '- A whole-row write (an element or lineup group written whole, a page '
+      'or its settings) goes only against a row this device fully knows: '
+      'its own add or whole write answered applied at that revision, or a '
+      'result showing the row as the user saw it. A "nothing to do", a field '
+      'merge, a rejection or a page renumbering never makes a row fully '
+      'known. Otherwise it waits for the row\'s result, and needs the user '
+      'if a result of this session shows the row otherwise, or a result of '
+      'its page no longer holds a row that results have shown before.',
+    )
+    ..writeln(
+      '- An undo of a delete goes without asking only when this device\'s '
+      'delete was answered applied, at the tombstone revision that answer '
+      'named. Anything else needs the user.',
+    )
+    ..writeln(
+      '- Everything else (deletes, reorders, page adds, reorders and '
+      'deletes, strategy changes) names the latest revision the device has '
+      'an answer or a result for, and the server decides. A delete sent live '
+      'is last writer wins, as in the shipped app.',
+    )
+    ..writeln()
+    ..writeln('## The resend window and the sender')
+    ..writeln()
     ..writeln(
       '- An answer that never came is sent again under the same op id, in '
       'checked form, until 29 days after the op was first sent; the server '
-      'remembers answers for 30. When the 29 days pass that is recorded, and '
+      'remembers answers for 30. A batch refused whole (upgrade, sign-in, '
+      'access) was never tried, so it does not start that clock. A '
+      'transition that finds the 29 days passed records it, even when it '
+      'changes nothing else; views show only what was recorded, and `look` '
+      'records and returns the views of the queue it returns. Once recorded, '
       'the entry waits for the user and is never sent again.',
     )
     ..writeln(
+      '- The queue cannot stop a send it already handed over. The sender '
+      'must give an attempt up as unanswered (`TransportFailed`) within '
+      '`sendGiveUpAfter` (one hour) of claiming it, well inside the one-day '
+      'margin between the queue\'s window and the server\'s memory. An open '
+      'attempt shows as sending until the sender does so.',
+    )
+    ..writeln(
       '- Answered work that the latest results do not show yet is drawn as '
-      'landed: an answer that names a whole row updates it, and a field '
-      'merge, page add, page reorder or page delete is drawn until a result '
-      'shows that row at the answered revision or later. Landed work never '
-      'authors a send: a whole write on a row behind a landed field merge, or '
-      'a page rename behind a landed page renumbering, waits for the result '
-      'and then needs the user unless that row is as the user saw it.',
+      'landed, in the order the server applied it, off its source page and '
+      'on its destination, until a result shows that row at the answered '
+      'revision or later. A delete this device made stays known as its own '
+      'until a result shows a later revision of the row.',
     )
     ..writeln()
     ..writeln('## Folding')
@@ -439,8 +486,9 @@ String renderTable() {
       '([#670](https://github.com/SunkenInTime/icarus/issues/670)). Until the '
       'server checks the page itself, a page delete waits for a result of its '
       'page and needs the user when that page no longer holds what the user '
-      'saw, or when its content was never read. It goes when the page is '
-      'already gone. All of this lives in '
+      'saw, or when its content was never read. It goes as soon as a result '
+      'says the page is gone, since there is nothing left to protect. All of '
+      'this lives in '
       '`lib/src/cloud/held_page_delete.dart` and comes out in one piece when '
       '#670 lands.',
     );

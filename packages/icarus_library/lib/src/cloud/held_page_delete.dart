@@ -36,15 +36,15 @@ PageDeleteVerdict pageDeleteVerdict(
     ContentSeen(:final digests) => digests,
     ContentNeverRead() => null,
   };
+  final pageRow = shown.pages[page];
+  if (pageRow == null && shown.headerThisSession) {
+    return const PageAlreadyGone();
+  }
   if (digests == null) return const PageHeld(HeldDeleteCause.contentNeverRead);
   if (ownWorkLandedOnPage) return const PageResultAwaited();
   final content = shown.pagesThisSession.contains(page)
       ? shown.content[page]
       : null;
-  final pageRow = shown.pages[page];
-  if (pageRow == null && shown.headerThisSession) {
-    return const PageAlreadyGone();
-  }
   if (content == null || pageRow == null) return const PageResultAwaited();
   final current = {
     ...content,

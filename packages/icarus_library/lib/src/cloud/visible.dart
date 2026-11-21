@@ -45,7 +45,8 @@ StrategyRowSet visibleOver(StrategyRowSet base, CloudQueue queue, Pages pages) {
   });
   for (final op in [
     for (final work in queue.landed)
-      if (_visiblePage(work.op, pages)) work.op,
+      if (_visiblePage(work.op, pages) || _leaves(base, work.op, pages))
+        work.op,
     for (final PendingOp(:op) in entries) op,
   ]) {
     final onTop = switch ((expectedOf(op), _visibleRevision(rows, op))) {
@@ -66,3 +67,12 @@ bool _visiblePage(StrategyOp op, Pages pages) => switch (pages) {
     ElementTarget() || LineupTarget() => pagesNeeded(op).every(pages.contains),
   },
 };
+
+bool _leaves(StrategyRows rows, StrategyOp op, Pages pages) =>
+    switch ((pages, op)) {
+      (SomePages(:final pages), ElementPatchOp(:final elementPublicId)) =>
+        pages.contains(rows.element(elementPublicId)?.pagePublicId),
+      (SomePages(:final pages), LineupGroupPatchOp(:final lineupPublicId)) =>
+        pages.contains(rows.lineupGroup(lineupPublicId)?.pagePublicId),
+      _ => false,
+    };
