@@ -504,7 +504,7 @@ if ($hadPreexistingSupport) {
 $runningProcess = $null
 $testError = $null
 try {
-    Write-Host "Test started $([math]::Round($scriptClock.Elapsed.TotalSeconds, 1)) s after PowerShell loaded the script"
+    Write-Host "Script setup before the download took $([math]::Round($scriptClock.Elapsed.TotalSeconds, 1)) s"
     $downloadClock = [System.Diagnostics.Stopwatch]::StartNew()
     Invoke-WebRequest -Uri $PublicInstallerUrl -OutFile $publicInstaller
     Write-Host "Downloaded the public installer in $([math]::Round($downloadClock.Elapsed.TotalSeconds, 1)) s"
@@ -523,19 +523,23 @@ try {
     Install-Icarus -InstallerPath $publicInstaller -ExpectedVersion $PublicVersion
     $observedPublicInstallPath = $installedExe
     $observedPublicVersion = Assert-InstalledVersion -ExpectedVersion $PublicVersion
-    $webView2ReadAhead = [ordered]@{
-        background = if (-not [string]::IsNullOrWhiteSpace($BackgroundReadAheadResult) -and
-            (Test-Path $BackgroundReadAheadResult -PathType Leaf)) {
-            Get-Content $BackgroundReadAheadResult -Raw | ConvertFrom-Json
-        } else {
-            $null
+    $backgroundRead = $null
+    if (-not [string]::IsNullOrWhiteSpace($BackgroundReadAheadResult) -and
+        (Test-Path $BackgroundReadAheadResult -PathType Leaf)) {
+        try {
+            $backgroundRead = Get-Content $BackgroundReadAheadResult -Raw -ErrorAction Stop | ConvertFrom-Json
+            Write-Host "The background read of the WebView2 runtime finished at $($backgroundRead.finishedAt) after $($backgroundRead.seconds) s."
         }
-        beforeFirstLaunch = & (Join-Path $PSScriptRoot "read_webview2_runtime.ps1")
-    }
-    if ($null -eq $webView2ReadAhead.background) {
-        Write-Host "No finished background read of the WebView2 runtime was found."
+        catch {
+            $backgroundRead = $null
+            Write-Host "Could not read the background WebView2 read result: $($_.Exception.Message)"
+        }
     } else {
-        Write-Host "The background read of the WebView2 runtime finished at $($webView2ReadAhead.background.finishedAt) after $($webView2ReadAhead.background.seconds) s."
+        Write-Host "No finished background read of the WebView2 runtime was found."
+    }
+    $webView2ReadAhead = [ordered]@{
+        background = $backgroundRead
+        beforeFirstLaunch = & (Join-Path $PSScriptRoot "read_webview2_runtime.ps1")
     }
     $runningProcess = Start-And-ProveAlive -Label "Public $PublicVersion" -Arguments @($fixtureFullPath)
     Wait-ForStrategyLibrary

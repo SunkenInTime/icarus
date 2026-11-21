@@ -830,8 +830,8 @@ jobs:
         run: |
           Start-Process -FilePath powershell -WindowStyle Hidden -ArgumentList @(
             "-NoProfile", "-ExecutionPolicy", "Bypass",
-            "-File", "$PWD\scripts\read_webview2_runtime.ps1",
-            "-ResultPath", "$env:RUNNER_TEMP\webview2-read-ahead.json"
+            "-File", "`"$PWD\scripts\read_webview2_runtime.ps1`"",
+            "-ResultPath", "`"$env:RUNNER_TEMP\webview2-read-ahead.json`""
           )
 
       - name: Build Windows Client
