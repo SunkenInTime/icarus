@@ -94,6 +94,10 @@ final class InlineLease implements StorageLease {
       _ended ? const StorageFailed(LeaseEnded()) : rows.keys(area, prefix);
 
   @override
+  Future<Stored<List<String>>> areas(String prefix) async =>
+      _ended ? const StorageFailed(LeaseEnded()) : rows.areas(prefix);
+
+  @override
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
       _ended ? const StorageFailed(LeaseEnded()) : rows.entries(area, prefix);
 

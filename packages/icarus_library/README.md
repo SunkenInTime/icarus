@@ -414,8 +414,11 @@ a `hooks` package newer than Flutter 3.44.4 allows.
   not flush the drive's cache.
 - **One writer.** The connection takes an exclusive lock on the file and holds
   it until the lease is released (`locking_mode = EXCLUSIVE`). Another
-  connection in any isolate or process gets `SQLITE_BUSY` at once, which the
-  engine returns as `HeldByAnotherWriter`. Exclusive mode also means SQLite
+  connection in any isolate or process gets `SQLITE_BUSY`, which the engine
+  returns as `HeldByAnotherWriter`. Two openers at the same moment can each
+  take a shared lock and then both fail to upgrade it, so a refused open
+  closes its connection and tries again, 2 to 22 ms apart, for up to 250 ms;
+  one of them wins and the rest are refused. Exclusive mode also means SQLite
   keeps the log's index in memory, not in a shared `-shm` file.
 - **Off the UI thread.** SQLite's API blocks, so each lease runs it on its own
   isolate and answers one request at a time, in order. A release is queued
@@ -428,7 +431,12 @@ a `hooks` package newer than Flutter 3.44.4 allows.
   each index with its table and refuses that file.
 - **Creating a library** happens under `<path>.creating`, which is renamed to
   the library path once its tables exist, so a file at the library path is
-  always a whole library. A file there that is empty, not SQLite, another
+  always a whole library. Creators take turns through `<path>.lock`, an empty
+  SQLite file held with `BEGIN EXCLUSIVE`: only the holder looks for the
+  library, clears a leftover `.creating`, builds it and renames it, and a
+  creator that waited finds the library made. Without this, two processes
+  starting at once could rename a file with no tables into place, and every
+  later open refused it. A file there that is empty, not SQLite, another
   program's database or from a newer build is refused, and so is a missing
   file whose `-wal` log is still there. Nothing is ever opened as a new, empty
   library in place of one that existed.
@@ -440,6 +448,9 @@ a `hooks` package newer than Flutter 3.44.4 allows.
   `DeviceFailure` naming SQLite's error code. SQLite can describe damage with
   bytes that are not UTF-8; `package:sqlite3` throws a `FormatException` for
   that, and the engine returns it as a failure too.
+- **Listing areas** jumps from area to area through the primary key:
+  `min(area)` above the last one found, one index seek per area, so a large
+  area costs no more than a small one.
 - **Names are checked before anything is written.** A commit whose put,
   delete or area clear names anything outside the alphabet is
   `CommitRefused(NameNotAllowed)`, and one with a key past 1024 characters is
@@ -485,6 +496,9 @@ web.
   it.
 - **Names** follow the same rules as SQLite, checked before the transaction
   starts.
+- **Listing areas** walks a key cursor and, at each area, continues to
+  `[area, []]`, which sorts after every key of that area, so it lands on the
+  next area's first row without reading the rest.
 - **Closing** ends every lease and grants no more.
 - `IndexedDbEngine.holdNextCommit()` parks the next commit before its
   transaction starts, counted as a commit in flight.

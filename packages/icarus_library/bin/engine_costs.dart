@@ -59,6 +59,10 @@ final class _CallingIsolateLease implements StorageLease {
       _ended ? const StorageFailed(LeaseEnded()) : _rows.keys(area, prefix);
 
   @override
+  Future<Stored<List<String>>> areas(String prefix) async =>
+      _ended ? const StorageFailed(LeaseEnded()) : _rows.areas(prefix);
+
+  @override
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
       _ended ? const StorageFailed(LeaseEnded()) : _rows.entries(area, prefix);
 

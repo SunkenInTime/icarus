@@ -302,11 +302,21 @@ Future<List<String>> _pageReadSplit(
   final fetch = Times(
     '  of which the engine reading the page\'s $pageItems rows in one range',
   );
+  final listing = Times(
+    'list the strategy areas ($strategies, one of them '
+    '${bigPages * pageItems} rows)',
+  );
   final parse = Times('  of which jsonDecode of those $pageItems values');
   final freeze = Times(
     '  of which copying the decoded values into unmodifiable ones',
   );
   for (var run = 0; run < coldRuns; run++) {
+    switch (await listing.time(() => lease.areas('s/'))) {
+      case Done(:final value) when value.length == strategies:
+        break;
+      case final other:
+        throw StateError('areas: $other');
+    }
     final read = await fetch.time(
       () =>
           lease.entries(strategyArea('big'), 'content/${digestOf('big-p0')}/'),
@@ -326,5 +336,5 @@ Future<List<String>> _pageReadSplit(
   }
   await lease.release();
   await close(engine);
-  return [fetch.summary, parse.summary, freeze.summary];
+  return [fetch.summary, parse.summary, freeze.summary, listing.summary];
 }

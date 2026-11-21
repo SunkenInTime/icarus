@@ -26,6 +26,12 @@ final class _Keys extends _Request {
   final String prefix;
 }
 
+final class _Areas extends _Request {
+  const _Areas(super.id, this.prefix);
+
+  final String prefix;
+}
+
 final class _Entries extends _Request {
   const _Entries(super.id, this.area, this.prefix);
 
@@ -97,6 +103,7 @@ void _serve((String, SendPort) start) {
             _Read(:final area, :final key) => rows.read(area, key),
             _Keys(:final area, :final prefix) => rows.keys(area, prefix),
             _Entries(:final area, :final prefix) => rows.entries(area, prefix),
+            _Areas(:final prefix) => rows.areas(prefix),
             _Commit(:final changes) => rows.commit(changes),
             _Release() => _released(rows, requests),
           };
@@ -274,6 +281,10 @@ final class SqliteLease implements StorageLease {
   @override
   Future<Stored<List<String>>> keys(String area, String prefix) =>
       _ask((id) => _Keys(id, area, prefix), ended: _ended, gone: _failed);
+
+  @override
+  Future<Stored<List<String>>> areas(String prefix) =>
+      _ask((id) => _Areas(id, prefix), ended: _ended, gone: _failed);
 
   @override
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>

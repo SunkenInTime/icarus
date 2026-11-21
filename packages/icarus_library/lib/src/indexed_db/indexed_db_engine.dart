@@ -242,6 +242,47 @@ final class IndexedDbLease implements StorageLease {
   ];
 
   @override
+  Future<Stored<List<String>>> areas(String prefix) async {
+    switch (_transaction('readonly')) {
+      case StorageFailed(:final failure):
+        return StorageFailed(failure);
+      case Done(value: final transaction):
+        final lower = [prefix.toJS].toJS;
+        final range = switch (_afterUnits(prefix)) {
+          null => IDBKeyRange.lowerBound(lower),
+          final after => IDBKeyRange.bound(
+            lower,
+            [after.toJS].toJS,
+            false,
+            true,
+          ),
+        };
+        final found = <String>[];
+        final listed = Completer<Stored<List<String>>>();
+        final request = transaction.objectStore(_rows).openKeyCursor(range);
+        request
+          ..onsuccess = ((Event _) {
+            final cursor = request.result as IDBCursor?;
+            if (cursor == null) {
+              listed.complete(Done(found));
+              return;
+            }
+            final key = (cursor.key! as JSArray<JSString>).toDart;
+            final area = key[0].toDart;
+            found.add(area);
+            cursor.continue_([area.toJS, JSArray<JSAny>()].toJS);
+          }).toJS
+          ..onerror = ((Event event) {
+            event.preventDefault();
+            listed.complete(
+              StorageFailed(_failure(request.error, 'listing areas')),
+            );
+          }).toJS;
+        return listed.future;
+    }
+  }
+
+  @override
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async {
     switch (_transaction('readonly')) {
       case StorageFailed(:final failure):

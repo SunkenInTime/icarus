@@ -69,6 +69,8 @@ final class RowsDatabase {
     required PreparedStatement get,
     required PreparedStatement keysFrom,
     required PreparedStatement keysBetween,
+    required PreparedStatement areasFrom,
+    required PreparedStatement areasBetween,
     required PreparedStatement entriesFrom,
     required PreparedStatement entriesBetween,
     required PreparedStatement put,
@@ -78,6 +80,8 @@ final class RowsDatabase {
   }) : _get = get,
        _keysFrom = keysFrom,
        _keysBetween = keysBetween,
+       _areasFrom = areasFrom,
+       _areasBetween = areasBetween,
        _entriesFrom = entriesFrom,
        _entriesBetween = entriesBetween,
        _put = put,
@@ -157,6 +161,21 @@ final class RowsDatabase {
             'SELECT key FROM rows WHERE area = ?1 AND key >= ?2 AND key < ?3 '
             'ORDER BY key',
           ),
+          areasFrom: prepare(
+            'WITH RECURSIVE found(area) AS ('
+            'SELECT min(area) FROM rows WHERE area >= ?1 '
+            'UNION ALL SELECT (SELECT min(area) FROM rows '
+            'WHERE area > found.area) FROM found WHERE found.area IS NOT NULL'
+            ') SELECT area FROM found WHERE area IS NOT NULL',
+          ),
+          areasBetween: prepare(
+            'WITH RECURSIVE found(area) AS ('
+            'SELECT min(area) FROM rows WHERE area >= ?1 AND area < ?2 '
+            'UNION ALL SELECT (SELECT min(area) FROM rows '
+            'WHERE area > found.area AND area < ?2) FROM found '
+            'WHERE found.area IS NOT NULL'
+            ') SELECT area FROM found WHERE area IS NOT NULL',
+          ),
           entriesFrom: prepare(
             'SELECT key, value FROM rows WHERE area = ?1 AND key >= ?2 '
             'ORDER BY key',
@@ -215,6 +234,8 @@ final class RowsDatabase {
   final PreparedStatement _get;
   final PreparedStatement _keysFrom;
   final PreparedStatement _keysBetween;
+  final PreparedStatement _areasFrom;
+  final PreparedStatement _areasBetween;
   final PreparedStatement _entriesFrom;
   final PreparedStatement _entriesBetween;
   final PreparedStatement _put;
@@ -270,6 +291,22 @@ final class RowsDatabase {
       }
     }
     return Done(keys);
+  });
+
+  Stored<List<String>> areas(String prefix) => _guarded(() {
+    final areas = <String>[];
+    for (final row in switch (_after(prefix)) {
+      null => _areasFrom.select([prefix]),
+      final upper => _areasBetween.select([prefix, upper]),
+    }) {
+      switch (row.columnAt(0)) {
+        case final String area:
+          areas.add(area);
+        case _:
+          return _notText;
+      }
+    }
+    return Done(areas);
   });
 
   Stored<List<StoredEntry>> entries(String area, String prefix) => _guarded(() {
@@ -365,6 +402,8 @@ final class RowsDatabase {
       _get,
       _keysFrom,
       _keysBetween,
+      _areasFrom,
+      _areasBetween,
       _entriesFrom,
       _entriesBetween,
       _put,
